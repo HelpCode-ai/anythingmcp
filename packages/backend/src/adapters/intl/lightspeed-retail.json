@@ -1,0 +1,2537 @@
+{
+  "slug": "lightspeed-retail",
+  "name": "Lightspeed Retail (X-Series)",
+  "aliases": [
+    "Lightspeed X-Series",
+    "Vend",
+    "Lightspeed Retail POS",
+    "Lightspeed"
+  ],
+  "description": "Lightspeed Retail X-Series (formerly Vend) point of sale: outlets, registers, sales search by date, products and product families, categories, brands, suppliers, price books and promotions, stock levels, adjustments, consignments and purchase orders, customers, store credit and gift cards.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "lightspeed-retail",
+  "docsUrl": "https://x-series-api.lightspeedhq.com/docs/introduction",
+  "instructions": "## Lightspeed Retail (X-Series)\nThis connector uses the **Lightspeed Retail (X-Series) API** (formerly Vend), date version `2026-10`, of one store: `https://<domain_prefix>.retail.lightspeed.app/api/2026-10`. It reads outlets, registers, payment types, taxes, staff and shifts; the catalog (products and product families, categories, brands, tags, suppliers, price books, promotions); stock levels, stock adjustments, consignments and purchase orders; sales; customers, customer groups, store credit and gift cards. It can create and update products, customers, suppliers, consignments and stock adjustments and record sales. It does not cover Lightspeed Retail R-Series or Lightspeed Restaurant, which have other APIs.\n\n**Setup (2 minutes)**\n1. Personal tokens need the Plus plan or above. As an admin open the Retail POS back office, **Setup**, **Personal tokens**, click **Add personal token**, give it a name (and, if you like, an expiry date), generate it and copy the token.\n2. Paste it into `LIGHTSPEED_PERSONAL_TOKEN`. It is sent as `Authorization: Bearer <token>` and acts as the user who created it.\n3. Set `LIGHTSPEED_DOMAIN_PREFIX` to the first part of your store address: for `https://mystore.retail.lightspeed.app` it is `mystore`.\n4. Run `lightspeed_retail_get_retailer` to check the setup.\n\n**Workflow**\n- Store setup: `lightspeed_retail_get_retailer`, `lightspeed_retail_get_current_user`, `lightspeed_retail_list_outlets`, `lightspeed_retail_get_outlet`, `lightspeed_retail_list_registers`, `lightspeed_retail_get_register`, `lightspeed_retail_get_register_payments_summary` (till totals of the open shift), `lightspeed_retail_list_payment_types`, `lightspeed_retail_list_taxes`, `lightspeed_retail_get_tax`, `lightspeed_retail_list_users`, `lightspeed_retail_get_user`, `lightspeed_retail_list_shifts`.\n- Sales: for a period, a register, a customer or an invoice number use `lightspeed_retail_search` with `type: sales` and `date_from`/`date_to` (the plain list ignores dates). `lightspeed_retail_list_sales` walks all sales by version (for syncing), `lightspeed_retail_get_sale` reads one. `lightspeed_retail_create_sale` records a sale, `lightspeed_retail_update_sale` changes or completes a parked one, `lightspeed_retail_return_sale` starts a return.\n- Catalog: `lightspeed_retail_list_products` (or `sku` for one product), `lightspeed_retail_get_product`, `lightspeed_retail_get_product_family`, `lightspeed_retail_get_product_family_of_product`. Since 2026-10 a product family holds the shared data (name, brand, category, tags) and each product the per-variant data (codes, prices, suppliers): create with `lightspeed_retail_create_product_family`, add variants with `lightspeed_retail_add_products_to_family`, change shared data with `lightspeed_retail_update_product_family` and per-product data with `lightspeed_retail_update_product`; `lightspeed_retail_delete_product` removes one product. Reference data: `lightspeed_retail_list_product_categories`, `lightspeed_retail_list_product_types`, `lightspeed_retail_list_brands`, `lightspeed_retail_list_tags`, `lightspeed_retail_list_suppliers`, `lightspeed_retail_get_supplier`, `lightspeed_retail_create_supplier`, `lightspeed_retail_list_price_books`, `lightspeed_retail_list_promotions`, `lightspeed_retail_get_promotion`.\n- Stock: `lightspeed_retail_list_inventory_levels` (per outlet, filter and sort; `to_be_procured_only` for reorder lists), `lightspeed_retail_get_product_inventory_levels`, `lightspeed_retail_list_inventory_records`, `lightspeed_retail_list_stock_adjustments`, `lightspeed_retail_create_stock_adjustments`. Orders, transfers and stocktakes: `lightspeed_retail_list_consignments`, `lightspeed_retail_get_consignment`, `lightspeed_retail_list_consignment_products`, `lightspeed_retail_create_consignment`, `lightspeed_retail_list_purchase_orders`, `lightspeed_retail_get_purchase_order`.\n- Customers: find one with `lightspeed_retail_search` (`type: customers`, `email` or names), then `lightspeed_retail_get_customer`; `lightspeed_retail_list_customers`, `lightspeed_retail_create_customer`, `lightspeed_retail_update_customer`, `lightspeed_retail_delete_customer`, `lightspeed_retail_list_customer_groups`, `lightspeed_retail_get_customer_store_credit`. Gift cards: `lightspeed_retail_list_gift_cards`, `lightspeed_retail_get_gift_card`.\n\n**Switched off at install**: `lightspeed_retail_return_sale`, `lightspeed_retail_delete_product` and `lightspeed_retail_delete_customer`; they cannot be undone, so an admin switches them on when the team needs them.\n\n**Before writing**: sales, returns and stock adjustments change stock and the reports at once; show the user the lines and totals and wait for a yes. `lightspeed_retail_update_sale` replaces the whole sale.\n\n**Reading the answers**: answers wrap records in `data`. Ids are UUIDs. Money is a decimal number in the store currency. A sale has `totals` (`price` excluding tax, `tax`, `price_incl_tax`); on each line `pricing.price` is the unit price excluding tax, `pricing.total` the line total after discount, `pricing.cost_total` the cost, and `tax.amount` and `tax.total` the unit and line tax. Tax rates are fractions (0.2 = 20%). Times are UTC (ISO 8601); `date_from`/`date_to` take UTC, `time_from`/`time_to` local time with `timezone`. A sale `state` is closed, parked, pending (on account or layby) or voided.\n\n**Paging**: most lists page by version: the answer has `version: {min, max}`; pass `max` as `after` for the next page and stop when `data` is empty. `lightspeed_retail_search` and `lightspeed_retail_list_inventory_levels` page with `offset`; gift cards with `before`.\n\n**Limits and errors**: about 300 requests per 5 minutes per register plus 50 (429 with `Retry-After`). 401 means a wrong or expired token or a wrong domain prefix, 403 a user without the right (personal tokens act as their user), 404 a wrong id, 422 a validation error with the field named.",
+  "prerequisites": "A Lightspeed Retail X-Series store on the Plus plan or above (for personal tokens) and an admin user who creates a personal token.",
+  "requiredEnvVars": [
+    "LIGHTSPEED_DOMAIN_PREFIX",
+    "LIGHTSPEED_PERSONAL_TOKEN"
+  ],
+  "envVarMeta": {
+    "LIGHTSPEED_DOMAIN_PREFIX": {
+      "label": "Store domain prefix",
+      "kind": "setting",
+      "help": "The first part of your store address: for https://mystore.retail.lightspeed.app enter mystore.",
+      "example": "mystore",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+      "patternMessage": "Enter only the prefix, e.g. mystore, without https:// and without .retail.lightspeed.app."
+    },
+    "LIGHTSPEED_PERSONAL_TOKEN": {
+      "label": "Personal token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Retail POS, Setup, Personal tokens: add a token (admin users, Plus plan and above) and copy it.",
+      "link": "https://x-series-api.lightspeedhq.com/docs/authorization",
+      "pattern": "^[A-Za-z0-9._-]{20,}$",
+      "patternMessage": "Paste only the token, without spaces, quotes or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Lightspeed refused the personal token. Check that it was copied whole, has not expired and belongs to the store in LIGHTSPEED_DOMAIN_PREFIX.",
+    "403": "The token works but its user may not do this. Personal tokens act as the admin who created them; create the token with an admin user.",
+    "404": "No store answered at this address. Check LIGHTSPEED_DOMAIN_PREFIX: only the part before .retail.lightspeed.app.",
+    "429": "Lightspeed rate limit reached (about 300 requests per 5 minutes per register). Wait a few minutes and try again."
+  },
+  "probe": {
+    "tool": "lightspeed_retail_get_retailer"
+  },
+  "connector": {
+    "name": "Lightspeed Retail X-Series API",
+    "type": "REST",
+    "baseUrl": "https://{{LIGHTSPEED_DOMAIN_PREFIX}}.retail.lightspeed.app/api/2026-10",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{LIGHTSPEED_PERSONAL_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/retailer"
+  },
+  "tools": [
+    {
+      "name": "lightspeed_retail_get_retailer",
+      "description": "Get the retailer (store account): name, domain prefix, currency, time zone, tax settings and loyalty settings. Use it to check the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer"
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_current_user",
+      "description": "Get the user the personal token belongs to: name, email, account type (admin, manager, cashier) and the outlets they can use.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user"
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_outlets",
+      "description": "List the outlets (store locations) with name, address, time zone, default tax and receipt settings. Outlet ids filter sales, stock and payment types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/outlets",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_outlet",
+      "description": "Get one outlet (store location) by id with its address, time zone, default tax and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "description": "Outlet id (UUID)."
+          }
+        },
+        "required": [
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/outlets/{outlet_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_registers",
+      "description": "List registers (tills) with outlet, name, open or closed state, current register opening and invoice numbering.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/registers",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_register",
+      "description": "Get one register (till) by id with outlet, whether it is open and the current register opening (shift).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "register_id": {
+            "type": "string",
+            "description": "Register id (UUID)."
+          }
+        },
+        "required": [
+          "register_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/registers/{register_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_register_payments_summary",
+      "description": "Get the payments summary of the current opening of one register: expected amounts per payment type, cash movements and totals, as used to close the till.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "register_id": {
+            "type": "string",
+            "description": "Register id (UUID)."
+          }
+        },
+        "required": [
+          "register_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/registers/{register_id}/payments_summary"
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_payment_types",
+      "description": "List payment types (cash, card, gift card, store credit, on account, custom) with their id and config. Sales payments reference them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          },
+          "outlet_id": {
+            "type": "string",
+            "description": "Only payment types available at this outlet."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Only payment types for this currency, ISO 4217."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment_types",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted",
+          "outlet_id": "$outlet_id",
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_taxes",
+      "description": "List sales taxes with name, rate (a fraction, 0.2 = 20%) and components. Products and outlets reference them through tax_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/taxes",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_tax",
+      "description": "Get one sales tax by id with its name, rate as a fraction (0.2 = 20%) and tax components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tax_id": {
+            "type": "string",
+            "description": "Tax id (UUID)."
+          }
+        },
+        "required": [
+          "tax_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/taxes/{tax_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_users",
+      "description": "List users (staff) with name, email, account type and outlets. Sales reference them as user_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_user",
+      "description": "Get one user (staff member) by id with name, display name, email, account type and outlets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id (UUID)."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_shifts",
+      "description": "List staff shifts (clock in and clock out) with user, outlet, start and end time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shifts",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_products",
+      "description": "List products (each sellable item or variant) with name, SKU and codes, prices, family, supplier codes and active state. Find one product by SKU with sku.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Return only the product with this SKU (other filters are ignored)."
+          },
+          "includes": {
+            "type": "array",
+            "description": "Related data to side-load: families, brands, categories, suppliers, tags, variant_attributes, customizations, composite_components (brands to customizations need families too).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "families",
+                "brands",
+                "categories",
+                "suppliers",
+                "tags",
+                "variant_attributes",
+                "customizations",
+                "composite_components"
+              ]
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "after": "$after",
+          "page_size": "$page_size",
+          "sku": "$sku",
+          "includes[]": "$includes"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_product",
+      "description": "Get one product by id: variant name, codes, prices including and excluding tax, family, measurements, suppliers, outlet taxes and inventory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (UUID)."
+          },
+          "includes": {
+            "type": "array",
+            "description": "Related data to side-load: families, brands, categories, suppliers, tags, variant_attributes, customizations, composite_components (brands to customizations need families too).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "families",
+                "brands",
+                "categories",
+                "suppliers",
+                "tags",
+                "variant_attributes",
+                "customizations",
+                "composite_components"
+              ]
+            }
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}",
+        "queryParams": {
+          "includes[]": "$includes"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_product_family",
+      "description": "Get a product family by id: name, description, classification (STANDARD, VARIANT, COMPOSITE), brand, category, tags and all member products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "family_id": {
+            "type": "string",
+            "description": "Product family id."
+          },
+          "includes": {
+            "type": "array",
+            "description": "Related data to side-load: families, brands, categories, suppliers, tags, variant_attributes, customizations, composite_components (brands to customizations need families too).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "families",
+                "brands",
+                "categories",
+                "suppliers",
+                "tags",
+                "variant_attributes",
+                "customizations",
+                "composite_components"
+              ]
+            }
+          }
+        },
+        "required": [
+          "family_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_families/{family_id}",
+        "queryParams": {
+          "includes[]": "$includes"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_product_family_of_product",
+      "description": "Get the product family a product belongs to, with all its sibling variants or composite components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (UUID)."
+          },
+          "includes": {
+            "type": "array",
+            "description": "Related data to side-load: families, brands, categories, suppliers, tags, variant_attributes, customizations, composite_components (brands to customizations need families too).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "families",
+                "brands",
+                "categories",
+                "suppliers",
+                "tags",
+                "variant_attributes",
+                "customizations",
+                "composite_components"
+              ]
+            }
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/family",
+        "queryParams": {
+          "includes[]": "$includes"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_create_product_family",
+      "description": "Create a product family with its products: a STANDARD product, a VARIANT family (variant attributes, one product per variant) or a COMPOSITE. Each product needs at least one code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Family (product) name."
+          },
+          "classification": {
+            "type": "string",
+            "description": "STANDARD (one product), VARIANT (variants) or COMPOSITE (bundle).",
+            "enum": [
+              "STANDARD",
+              "VARIANT",
+              "COMPOSITE"
+            ]
+          },
+          "products": {
+            "type": "array",
+            "description": "Products: [{codes: [{type: CUSTOM|EAN|UPC|ISBN|JAN|ITF, code}], prices?: {price_excluding_tax, price_including_tax}, variant_attributes?: [value ids], suppliers?: [{supplier_id, code, price}], outlet_inventories?: [{outlet_id, current_amount, reorder_point, reorder_amount}], outlet_taxes?: [{outlet_id, tax_id}]}]. Prices are decimal strings.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "description": {
+            "type": "string",
+            "description": "Description (HTML allowed)."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Product category id."
+          },
+          "tag_ids": {
+            "type": "array",
+            "description": "Tag ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "track_inventory": {
+            "type": "boolean",
+            "description": "Track stock for the products."
+          },
+          "variant_attribute_ids": {
+            "type": "array",
+            "description": "For VARIANT families: variant attribute ids, e.g. Size and Colour.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "composite_components": {
+            "type": "array",
+            "description": "For COMPOSITE families: [{product_id, quantity}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "classification",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product_families",
+        "bodyMapping": {
+          "name": "$name",
+          "classification": "$classification",
+          "products": "$products",
+          "description": "$description",
+          "brand_id": "$brand_id",
+          "category_id": "$category_id",
+          "tag_ids": "$tag_ids",
+          "track_inventory": "$track_inventory",
+          "variant_attribute_ids": "$variant_attribute_ids",
+          "composite_components": "$composite_components"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_update_product_family",
+      "description": "Update the shared data of a product family: name, description, brand, category, tags, inventory tracking or composite components. Prices and codes are per product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "family_id": {
+            "type": "string",
+            "description": "Product family id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Family name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Product category id."
+          },
+          "tag_ids": {
+            "type": "array",
+            "description": "Tag ids (replaces the list).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "track_inventory": {
+            "type": "boolean",
+            "description": "Track stock."
+          },
+          "composite_components": {
+            "type": "array",
+            "description": "Composite components: [{product_id, quantity}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "family_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/product_families/{family_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "brand_id": "$brand_id",
+          "category_id": "$category_id",
+          "tag_ids": "$tag_ids",
+          "track_inventory": "$track_inventory",
+          "composite_components": "$composite_components"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_add_products_to_family",
+      "description": "Add products (new variants) to an existing product family, each with its codes, variant attribute values and prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "family_id": {
+            "type": "string",
+            "description": "Product family id."
+          },
+          "products": {
+            "type": "array",
+            "description": "Products to add, same shape as in lightspeed_retail_create_product_family.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "family_id",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product_families/{family_id}/products",
+        "bodyMapping": {
+          "__raw": "$products"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_update_product",
+      "description": "Update one product: prices, codes, supplier codes and prices, outlet taxes, inventory settings, measurements or whether it is active in store and online.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (UUID)."
+          },
+          "prices": {
+            "type": "object",
+            "description": "Prices as decimal strings: {price_excluding_tax, price_including_tax, loyalty_amount}."
+          },
+          "codes": {
+            "type": "array",
+            "description": "Codes (replaces the list): [{type, code}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "suppliers": {
+            "type": "array",
+            "description": "Suppliers: [{supplier_id, code, price}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "outlet_taxes": {
+            "type": "array",
+            "description": "Tax per outlet: [{outlet_id, tax_id}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "outlet_inventories": {
+            "type": "array",
+            "description": "Reorder settings per outlet: [{outlet_id, reorder_point, reorder_amount}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "active": {
+            "type": "object",
+            "description": "{in_store: boolean, ecwid: boolean} (ecwid = the online store)."
+          },
+          "measurements": {
+            "type": "object",
+            "description": "{weight, weight_unit, dimensions_length, dimensions_width, dimensions_height, dimensions_unit}."
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "Default tax id."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{product_id}",
+        "bodyMapping": {
+          "prices": "$prices",
+          "codes": "$codes",
+          "suppliers": "$suppliers",
+          "outlet_taxes": "$outlet_taxes",
+          "outlet_inventories": "$outlet_inventories",
+          "active": "$active",
+          "measurements": "$measurements",
+          "tax_id": "$tax_id"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_delete_product",
+      "description": "Delete one product. Its sales history stays, but the product can no longer be sold and the deletion cannot be undone; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (UUID)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/products/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "lightspeed_retail_list_product_categories",
+      "description": "List the product category tree (id, name, parent and path). Use parent=none for the top level.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent": {
+            "type": "string",
+            "description": "A category id to list its subcategories, or none for the top level."
+          },
+          "include": {
+            "type": "string",
+            "description": "family (default, the whole hierarchy) or children (direct children only).",
+            "enum": [
+              "family",
+              "children"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Categories per page (default 1000)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Category id after which to continue."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_categories",
+        "queryParams": {
+          "parent": "$parent",
+          "include": "$include",
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_product_types",
+      "description": "List the legacy product types with id and name. Newer stores organise products with categories instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_types",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_brands",
+      "description": "List the product brands of the store with id and name, paged by version. Families reference them as brand_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brands",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_tags",
+      "description": "List the product tags of the store with id and name, paged by version. Families reference them as tag_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_suppliers",
+      "description": "List suppliers with name, description, default markup and contact details. Products and purchase orders reference them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_supplier",
+      "description": "Get one supplier by id with contact person, email, phone, addresses, description and default markup.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supplier_id": {
+            "type": "string",
+            "description": "Supplier id (UUID)."
+          }
+        },
+        "required": [
+          "supplier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers/{supplier_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_create_supplier",
+      "description": "Create a supplier with a name, description, default markup and contact details (company, person, email, phone, address).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Supplier name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "default_markup": {
+            "type": "number",
+            "description": "Default markup in percent."
+          },
+          "contact": {
+            "type": "object",
+            "description": "Contact: {company_name, first_name, last_name, email, phone, mobile, website, physical_address1, physical_city, physical_postcode, physical_country_id}."
+          }
+        },
+        "required": [
+          "name",
+          "contact"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/suppliers",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "default_markup": "$default_markup",
+          "contact": "$contact"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_price_books",
+      "description": "List price books (special prices per customer group, outlet and validity dates) with their settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          },
+          "customer_group_id": {
+            "type": "string",
+            "description": "Only price books of this customer group."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/price_books",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted",
+          "customer_group_id": "$customer_group_id",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_promotions",
+      "description": "List promotions (discounts, buy X get Y, promo codes) with conditions, outlets, customer groups and validity dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "end_time_from": {
+            "type": "string",
+            "description": "Only promotions ending at or after this UTC time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "end_time_to": {
+            "type": "string",
+            "description": "Only promotions ending at or before this UTC time."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/promotions",
+        "queryParams": {
+          "end_time_from": "$end_time_from",
+          "end_time_to": "$end_time_to",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_promotion",
+      "description": "Get one promotion by id with its conditions, actions, outlets, customer groups, channels and validity dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "promotion_id": {
+            "type": "string",
+            "description": "Promotion id."
+          }
+        },
+        "required": [
+          "promotion_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/promotions/{promotion_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_inventory_levels",
+      "description": "List stock levels per product and outlet with counts, average cost, reorder point and amount. Filter by outlet, product or supplier and sort by count or cost. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_ids": {
+            "type": "array",
+            "description": "Only these outlet ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "product_ids": {
+            "type": "array",
+            "description": "Only these product ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "supplier_ids": {
+            "type": "array",
+            "description": "Only products of these supplier ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Include inactive products."
+          },
+          "include_composites": {
+            "type": "boolean",
+            "description": "Include composite products."
+          },
+          "group_variants": {
+            "type": "boolean",
+            "description": "Group the variants of a family into one row."
+          },
+          "to_be_procured_only": {
+            "type": "boolean",
+            "description": "Only products at or below their reorder point."
+          },
+          "sort_type": {
+            "type": "string",
+            "description": "Sort by.",
+            "enum": [
+              "total_count",
+              "total_cost",
+              "average_cost",
+              "reorder_point",
+              "reorder_amount",
+              "product_name",
+              "created_at"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "description": "Rows per page."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory_levels",
+        "bodyMapping": {
+          "location_ids": "$location_ids",
+          "product_ids": "$product_ids",
+          "supplier_ids": "$supplier_ids",
+          "include_inactive": "$include_inactive",
+          "include_composites": "$include_composites",
+          "group_variants": "$group_variants",
+          "to_be_procured_only": "$to_be_procured_only",
+          "sort_type": "$sort_type",
+          "sort_direction": "$sort_direction",
+          "size": "$size",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_product_inventory_levels",
+      "description": "Get the stock of one product in every outlet: current count, average cost, reorder point and reorder amount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (UUID)."
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Include the product even when inactive."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory_levels/{product_id}",
+        "queryParams": {
+          "include_inactive": "$include_inactive"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_inventory_records",
+      "description": "List raw inventory records (product, outlet, count, reorder settings) by version, for one product or the whole store. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Only this product id."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Version cursor for the next page."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records below this version."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "Include deleted records."
+          },
+          "variants": {
+            "type": "boolean",
+            "description": "Include the variants of the product."
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory",
+        "bodyMapping": {
+          "product_id": "$product_id",
+          "after": "$after",
+          "before": "$before",
+          "size": "$size",
+          "include_deleted": "$include_deleted",
+          "variants": "$variants",
+          "sort_direction": "$sort_direction"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_stock_adjustments",
+      "description": "List stock adjustments (damage, theft, stock found, internal use and custom reasons) with product, outlet, quantity and reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stock_adjustments",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_create_stock_adjustments",
+      "description": "Adjust stock up or down with a reason (damage, expiry, theft, internal use, donation, stock found, sample). quantity is the change, negative to remove. Confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_adjustments": {
+            "type": "array",
+            "description": "Adjustments: [{product_id, outlet_id, quantity (string, e.g. \"-2\"), reason: DAMAGE|EXPIRY|INTERNAL_USE|THEFT|DONATION|STOCK_FOUND|SAMPLE_FOR_SALE|CUSTOM, custom_inventory_adjustment_reason_id?}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "stock_adjustments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stock_adjustments",
+        "bodyMapping": {
+          "stock_adjustments": "$stock_adjustments"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_consignments",
+      "description": "List consignments: supplier orders, outlet transfers, returns and stocktakes, with status, outlet, supplier and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Consignment type.",
+            "enum": [
+              "SUPPLIER",
+              "OUTLET",
+              "STOCKTAKE",
+              "RETURN"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Consignment status.",
+            "enum": [
+              "OPEN",
+              "SENT",
+              "DISPATCHED",
+              "RECEIVED",
+              "STOCKTAKE_IN_PROGRESS",
+              "STOCKTAKE_SCHEDULED",
+              "STOCKTAKE_IN_PROGRESS_PROCESSED",
+              "STOCKTAKE_COMPLETE",
+              "CLOSED",
+              "CANCELLED"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "description": "Only consignments of this outlet."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/consignments",
+        "queryParams": {
+          "type": "$type",
+          "status": "$status",
+          "outlet_id": "$outlet_id",
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_consignment",
+      "description": "Get one consignment by id: type, status, outlet, source outlet or supplier, reference, due and received dates and cost and count totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "consignment_id": {
+            "type": "string",
+            "description": "Consignment id."
+          }
+        },
+        "required": [
+          "consignment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/consignments/{consignment_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_consignment_products",
+      "description": "List the products of a consignment with ordered and received counts and cost, for checking a delivery or stocktake.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "consignment_id": {
+            "type": "string",
+            "description": "Consignment id."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          }
+        },
+        "required": [
+          "consignment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/consignments/{consignment_id}/products",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_create_consignment",
+      "description": "Create a consignment: a supplier order, an outlet transfer, a supplier return or a stocktake, in OPEN status. Products are added in Lightspeed or later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Consignment name, e.g. Order 2026-10-30."
+          },
+          "type": {
+            "type": "string",
+            "description": "SUPPLIER (order), OUTLET (transfer), RETURN or STOCKTAKE.",
+            "enum": [
+              "SUPPLIER",
+              "OUTLET",
+              "RETURN",
+              "STOCKTAKE"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "description": "Receiving outlet (or the outlet counted)."
+          },
+          "source_outlet_id": {
+            "type": "string",
+            "description": "For OUTLET transfers: the sending outlet."
+          },
+          "supplier_id": {
+            "type": "string",
+            "description": "For SUPPLIER orders and returns: the supplier."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Your reference, e.g. a purchase order number."
+          },
+          "due_at": {
+            "type": "string",
+            "description": "Due date, e.g. 2026-11-05T00:00:00Z."
+          },
+          "status": {
+            "type": "string",
+            "description": "Initial status, usually OPEN."
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/consignments",
+        "bodyMapping": {
+          "data": {
+            "name": "$name",
+            "type": "$type",
+            "outlet_id": "$outlet_id",
+            "source_outlet_id": "$source_outlet_id",
+            "supplier_id": "$supplier_id",
+            "reference": "$reference",
+            "due_at": "$due_at",
+            "status": "$status"
+          }
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_purchase_orders",
+      "description": "List purchase orders to suppliers with number, supplier, outlet, status, ordered and received totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchase_orders",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_purchase_order",
+      "description": "Get one purchase order by id with supplier, outlet, status, dates, totals and delivery information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_id": {
+            "type": "string",
+            "description": "Purchase order id."
+          }
+        },
+        "required": [
+          "purchase_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchase_orders/{purchase_order_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_sales",
+      "description": "List sales by version (oldest changes first) with line items, payments, totals, customer, user, register and status. For a date range, an invoice number or a customer use lightspeed_retail_search instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_sale",
+      "description": "Get one sale by id: invoice number, status, date, line items with price, discount, tax and cost, payments, customer, user and register.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "Sale id (UUID)."
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales/{sale_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_search",
+      "description": "Search sales, products or customers. Sales by date range (date_from, date_to), outlet, register, user, customer, invoice number, state or product; products by SKU, supplier, brand or tag; customers by email, name, code or phone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "What to search.",
+            "enum": [
+              "sales",
+              "products",
+              "customers"
+            ]
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field, e.g. date for sales."
+          },
+          "order_direction": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, at most 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, for the next page."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "Include deleted records."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Sales: from this UTC time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Sales: up to this UTC time."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Sales: IANA time zone for time_from and time_to, e.g. Europe/London."
+          },
+          "time_from": {
+            "type": "string",
+            "description": "Sales: from this local time of day, HH:MM."
+          },
+          "time_to": {
+            "type": "string",
+            "description": "Sales: up to this local time of day, HH:MM."
+          },
+          "state": {
+            "type": "string",
+            "description": "Sales: state, e.g. closed, parked, pending, voided."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Sales: invoice number."
+          },
+          "outlet_id": {
+            "type": "string",
+            "description": "Sales: outlet id."
+          },
+          "register_id": {
+            "type": "string",
+            "description": "Sales: register id."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Sales: user (staff) id."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Sales: customer id."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Sales: contains this product id."
+          },
+          "payment_type_id": {
+            "type": "string",
+            "description": "Sales: paid with this payment type id."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Products: SKU."
+          },
+          "supplier_id": {
+            "type": "string",
+            "description": "Products: supplier id."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Products: brand id."
+          },
+          "tag_id": {
+            "type": "string",
+            "description": "Products: tag id."
+          },
+          "email": {
+            "type": "string",
+            "description": "Customers: email address."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "Customers: first name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Customers: last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Customers: company name."
+          },
+          "customer_code": {
+            "type": "string",
+            "description": "Customers: customer code."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Customers: phone number."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Customers: mobile number."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "type": "$type",
+          "order_by": "$order_by",
+          "order_direction": "$order_direction",
+          "page_size": "$page_size",
+          "offset": "$offset",
+          "deleted": "$deleted",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "timezone": "$timezone",
+          "time_from": "$time_from",
+          "time_to": "$time_to",
+          "state": "$state",
+          "invoice_number": "$invoice_number",
+          "outlet_id": "$outlet_id",
+          "register_id": "$register_id",
+          "user_id": "$user_id",
+          "customer_id": "$customer_id",
+          "product_id": "$product_id",
+          "payment_type_id": "$payment_type_id",
+          "sku": "$sku",
+          "supplier_id": "$supplier_id",
+          "brand_id": "$brand_id",
+          "tag_id": "$tag_id",
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company_name": "$company_name",
+          "customer_code": "$customer_code",
+          "phone": "$phone",
+          "mobile": "$mobile"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_create_sale",
+      "description": "Record a sale: line items with product, quantity, price and tax, payments and customer. state closed completes it, parked or pending saves it for later. It counts in reports and stock at once; confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "closed (completed), parked or pending (on account, layby).",
+            "enum": [
+              "closed",
+              "parked",
+              "pending"
+            ]
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Id of the user (staff) recording the sale."
+          },
+          "register_id": {
+            "type": "string",
+            "description": "Register (till) id."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id."
+          },
+          "date": {
+            "type": "string",
+            "description": "Sale time in UTC, e.g. 2026-10-30T14:00:00Z. Default now."
+          },
+          "note": {
+            "type": "string",
+            "description": "Sale note."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Invoice number; generated when left out."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Lines: [{product: {id}, quantity, pricing: {price (per unit, excluding tax), discount?, cost?}, tax: {id, amount (per unit)}}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "payments": {
+            "type": "array",
+            "description": "Payments: [{type: {config_id: payment type id}, amount, date?}]. For closed sales they must cover the total.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Sale attributes, e.g. [\"onaccount\"] or [\"layby\"].",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "state",
+          "user_id",
+          "register_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sales",
+        "bodyMapping": {
+          "state": "$state",
+          "source": {
+            "author_id": "$user_id",
+            "register_id": "$register_id"
+          },
+          "customer_id": "$customer_id",
+          "date": "$date",
+          "note": "$note",
+          "invoice_number": "$invoice_number",
+          "line_items": "$line_items",
+          "payments": "$payments",
+          "attributes": "$attributes"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_update_sale",
+      "description": "Update a parked or pending sale (lines, payments, customer, note) or complete it by setting state to closed. The whole sale is sent again, so read it first with lightspeed_retail_get_sale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "Sale id (UUID)."
+          },
+          "state": {
+            "type": "string",
+            "description": "New state.",
+            "enum": [
+              "closed",
+              "parked",
+              "pending",
+              "voided"
+            ]
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Id of the user making the change."
+          },
+          "register_id": {
+            "type": "string",
+            "description": "Register (till) id."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id."
+          },
+          "note": {
+            "type": "string",
+            "description": "Sale note."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "All lines of the sale (with their id to keep them).",
+            "items": {
+              "type": "object"
+            }
+          },
+          "payments": {
+            "type": "array",
+            "description": "All payments of the sale.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "sale_id",
+          "state",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sales/{sale_id}",
+        "bodyMapping": {
+          "state": "$state",
+          "source": {
+            "author_id": "$user_id",
+            "register_id": "$register_id"
+          },
+          "customer_id": "$customer_id",
+          "note": "$note",
+          "line_items": "$line_items",
+          "payments": "$payments"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_return_sale",
+      "description": "Start a return (refund) of a closed sale: Lightspeed creates a return sale linked to the original on the register. It refunds the customer and cannot be undone; confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "Id of the sale to return."
+          },
+          "register_id": {
+            "type": "string",
+            "description": "Register for the return sale (default the register of the original sale)."
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sales/{sale_id}/actions/return",
+        "queryParams": {
+          "register_id": "$register_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "lightspeed_retail_list_customers",
+      "description": "List customers by version with name, code, contact details, group, loyalty balance and on-account balance. To find one customer use lightspeed_retail_search with type customers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_customer",
+      "description": "Get one customer by id: name, code, email, phone, addresses, group, loyalty balance, store credit and on-account balance and year to date spend.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (UUID)."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_create_customer",
+      "description": "Create a customer with name, contact details, address, customer group, loyalty enrolment and marketing consent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "customer_code": {
+            "type": "string",
+            "description": "Customer code (unique, generated when left out on create)."
+          },
+          "customer_group_id": {
+            "type": "string",
+            "description": "Customer group id (for price books and discounts)."
+          },
+          "date_of_birth": {
+            "type": "string",
+            "description": "Date of birth, YYYY-MM-DD."
+          },
+          "gender": {
+            "type": "string",
+            "description": "Gender: M, F or X."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note."
+          },
+          "enable_loyalty": {
+            "type": "boolean",
+            "description": "Enrol in loyalty."
+          },
+          "do_not_email": {
+            "type": "boolean",
+            "description": "Do not send marketing email."
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "Tax id of the customer."
+          },
+          "physical_address_1": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "physical_address_2": {
+            "type": "string",
+            "description": "Address line 2."
+          },
+          "physical_suburb": {
+            "type": "string",
+            "description": "Suburb or district."
+          },
+          "physical_city": {
+            "type": "string",
+            "description": "City."
+          },
+          "physical_postcode": {
+            "type": "string",
+            "description": "Postcode."
+          },
+          "physical_state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "physical_country_id": {
+            "type": "string",
+            "description": "Country, ISO 3166-1 alpha-2, e.g. US."
+          },
+          "on_account_limit": {
+            "type": "number",
+            "description": "On-account credit limit."
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company_name": "$company_name",
+          "email": "$email",
+          "phone": "$phone",
+          "mobile": "$mobile",
+          "customer_code": "$customer_code",
+          "customer_group_id": "$customer_group_id",
+          "date_of_birth": "$date_of_birth",
+          "gender": "$gender",
+          "note": "$note",
+          "enable_loyalty": "$enable_loyalty",
+          "do_not_email": "$do_not_email",
+          "tax_id": "$tax_id",
+          "physical_address_1": "$physical_address_1",
+          "physical_address_2": "$physical_address_2",
+          "physical_suburb": "$physical_suburb",
+          "physical_city": "$physical_city",
+          "physical_postcode": "$physical_postcode",
+          "physical_state": "$physical_state",
+          "physical_country_id": "$physical_country_id",
+          "on_account_limit": "$on_account_limit"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_update_customer",
+      "description": "Update a customer: contact details, address, group, note, loyalty or marketing consent. first_name and last_name are required by the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (UUID)."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "customer_code": {
+            "type": "string",
+            "description": "Customer code (unique, generated when left out on create)."
+          },
+          "customer_group_id": {
+            "type": "string",
+            "description": "Customer group id (for price books and discounts)."
+          },
+          "date_of_birth": {
+            "type": "string",
+            "description": "Date of birth, YYYY-MM-DD."
+          },
+          "gender": {
+            "type": "string",
+            "description": "Gender: M, F or X."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note."
+          },
+          "enable_loyalty": {
+            "type": "boolean",
+            "description": "Enrol in loyalty."
+          },
+          "do_not_email": {
+            "type": "boolean",
+            "description": "Do not send marketing email."
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "Tax id of the customer."
+          },
+          "physical_address_1": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "physical_address_2": {
+            "type": "string",
+            "description": "Address line 2."
+          },
+          "physical_suburb": {
+            "type": "string",
+            "description": "Suburb or district."
+          },
+          "physical_city": {
+            "type": "string",
+            "description": "City."
+          },
+          "physical_postcode": {
+            "type": "string",
+            "description": "Postcode."
+          },
+          "physical_state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "physical_country_id": {
+            "type": "string",
+            "description": "Country, ISO 3166-1 alpha-2, e.g. US."
+          },
+          "on_account_limit": {
+            "type": "number",
+            "description": "On-account credit limit."
+          }
+        },
+        "required": [
+          "customer_id",
+          "first_name",
+          "last_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/customers/{customer_id}",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "company_name": "$company_name",
+          "email": "$email",
+          "phone": "$phone",
+          "mobile": "$mobile",
+          "customer_code": "$customer_code",
+          "customer_group_id": "$customer_group_id",
+          "date_of_birth": "$date_of_birth",
+          "gender": "$gender",
+          "note": "$note",
+          "enable_loyalty": "$enable_loyalty",
+          "do_not_email": "$do_not_email",
+          "tax_id": "$tax_id",
+          "physical_address_1": "$physical_address_1",
+          "physical_address_2": "$physical_address_2",
+          "physical_suburb": "$physical_suburb",
+          "physical_city": "$physical_city",
+          "physical_postcode": "$physical_postcode",
+          "physical_state": "$physical_state",
+          "physical_country_id": "$physical_country_id",
+          "on_account_limit": "$on_account_limit"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_delete_customer",
+      "description": "Delete a customer. Their past sales keep the history but the record and its loyalty balance are gone and cannot be restored; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (UUID)."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/customers/{customer_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "lightspeed_retail_list_customer_groups",
+      "description": "List customer groups (e.g. Retail, Wholesale, VIP) with id and name; price books and promotions target them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Version cursor: only records with a version above this one. Pass version.max of the previous page to get the next page (0 or empty for the first page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only records with a version below this one."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (the API documents 200 as the usual maximum)."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customer_groups",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "page_size": "$page_size",
+          "deleted": "$deleted"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_customer_store_credit",
+      "description": "Get the store credit of one customer: current balance and the list of store credit transactions (issued, redeemed, reversed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (UUID)."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/store_credits/{customer_id}"
+      }
+    },
+    {
+      "name": "lightspeed_retail_list_gift_cards",
+      "description": "List gift cards with number, balance, status (ACTIVE, REDEEMED, VOIDED, EXPIRED) and expiry, newest first. Filter by number or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_number": {
+            "type": "string",
+            "description": "Only the gift card with this number."
+          },
+          "status": {
+            "type": "string",
+            "description": "Gift card status.",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "REDEEMED",
+              "VOIDED",
+              "EXPIRED"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Cards per page (default and maximum 1000)."
+          },
+          "before": {
+            "type": "string",
+            "description": "Id of the last gift card of the previous page, to continue with older cards."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/gift_cards",
+        "queryParams": {
+          "card_number": "$card_number",
+          "status": "$status",
+          "page_size": "$page_size",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "lightspeed_retail_get_gift_card",
+      "description": "Get a gift card by its card number with balance, status, expiry and the transactions (issue, redeem, reverse).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_number": {
+            "type": "string",
+            "description": "Gift card number."
+          }
+        },
+        "required": [
+          "card_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/gift_cards/by_number/{card_number}"
+      }
+    }
+  ]
+}

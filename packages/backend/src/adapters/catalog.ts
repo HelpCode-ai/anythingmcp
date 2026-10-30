@@ -1,5 +1,6 @@
 // === AUTOGEN-IMPORTS-BEGIN === run scripts/regenerate-catalog.mjs ===
 import * as aBoss from './de/a-boss.json';
+import * as apaleo from './de/apaleo.json';
 import * as billbee from './de/billbee.json';
 import * as billomat from './de/billomat.json';
 import * as buchhaltungsbutler from './de/buchhaltungsbutler.json';
@@ -164,11 +165,13 @@ import * as clockify from './intl/clockify.json';
 import * as close from './intl/close.json';
 import * as cloudflare from './intl/cloudflare.json';
 import * as cloudinary from './intl/cloudinary.json';
+import * as clover from './intl/clover.json';
 import * as coda from './intl/coda.json';
 import * as coinbase from './intl/coinbase.json';
 import * as coingecko from './intl/coingecko.json';
 import * as coinglass from './intl/coinglass.json';
 import * as conductorMonitoring from './intl/conductor-monitoring.json';
+import * as connecteam from './intl/connecteam.json';
 import * as constantContact from './intl/constant-contact.json';
 import * as contentful from './intl/contentful.json';
 import * as convertkit from './intl/convertkit.json';
@@ -185,6 +188,7 @@ import * as dchub from './intl/dchub.json';
 import * as deedPage from './intl/deed-page.json';
 import * as deel from './intl/deel.json';
 import * as deepgram from './intl/deepgram.json';
+import * as deputy from './intl/deputy.json';
 import * as deribit from './intl/deribit.json';
 import * as dialpad from './intl/dialpad.json';
 import * as digitalocean from './intl/digitalocean.json';
@@ -316,6 +320,7 @@ import * as invoice123 from './intl/invoice123.json';
 import * as invoiced from './intl/invoiced.json';
 import * as iterable from './intl/iterable.json';
 import * as jev from './intl/jev.json';
+import * as jobber from './intl/jobber.json';
 import * as jotform from './intl/jotform.json';
 import * as judgeMe from './intl/judge-me.json';
 import * as kashflow from './intl/kashflow.json';
@@ -331,10 +336,13 @@ import * as lemlist from './intl/lemlist.json';
 import * as lemonsqueezy from './intl/lemonsqueezy.json';
 import * as lessAnnoyingCrm from './intl/less-annoying-crm.json';
 import * as lever from './intl/lever.json';
+import * as lightspeedRetail from './intl/lightspeed-retail.json';
 import * as linear from './intl/linear.json';
 import * as linkedin from './intl/linkedin.json';
 import * as linkedinAds from './intl/linkedin-ads.json';
+import * as lodgify from './intl/lodgify.json';
 import * as loops from './intl/loops.json';
+import * as loyverse from './intl/loyverse.json';
 import * as lusha from './intl/lusha.json';
 import * as magento from './intl/magento.json';
 import * as mailchimp from './intl/mailchimp.json';
@@ -366,6 +374,7 @@ import * as microsoftSharepoint from './intl/microsoft-sharepoint.json';
 import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as microsoftTodo from './intl/microsoft-todo.json';
 import * as microsoftWord from './intl/microsoft-word.json';
+import * as mindbody from './intl/mindbody.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mirakl from './intl/mirakl.json';
 import * as miraklConnect from './intl/mirakl-connect.json';
@@ -460,6 +469,7 @@ import * as quaderno from './intl/quaderno.json';
 import * as quickbooksOnline from './intl/quickbooks-online.json';
 import * as railway from './intl/railway.json';
 import * as ramp from './intl/ramp.json';
+import * as recruitee from './intl/recruitee.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
 import * as redditAds from './intl/reddit-ads.json';
@@ -471,6 +481,7 @@ import * as retellAi from './intl/retell-ai.json';
 import * as revolutBusiness from './intl/revolut-business.json';
 import * as ringcentral from './intl/ringcentral.json';
 import * as ringostat from './intl/ringostat.json';
+import * as rippling from './intl/rippling.json';
 import * as rivile from './intl/rivile.json';
 import * as rocketreach from './intl/rocketreach.json';
 import * as rollbar from './intl/rollbar.json';
@@ -499,7 +510,9 @@ import * as sendgrid from './intl/sendgrid.json';
 import * as sentry from './intl/sentry.json';
 import * as serpapi from './intl/serpapi.json';
 import * as serply from './intl/serply.json';
+import * as servicem8 from './intl/servicem8.json';
 import * as servicenow from './intl/servicenow.json';
+import * as servicetitan from './intl/servicetitan.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
 import * as shopee from './intl/shopee.json';
@@ -612,6 +625,7 @@ import * as zohoCrm from './intl/zoho-crm.json';
 import * as zohoMail from './intl/zoho-mail.json';
 import * as zoom from './intl/zoom.json';
 import * as zoominfo from './intl/zoominfo.json';
+import * as zuora from './intl/zuora.json';
 import * as digisac from './br/digisac.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as mercadoPago from './br/mercado-pago.json';
@@ -622,7 +636,11 @@ import * as flipkartSeller from './in/flipkart-seller.json';
 import * as interakt from './in/interakt.json';
 import * as razorpay from './in/razorpay.json';
 import * as tallyprime from './in/tallyprime.json';
+import * as freee from './jp/freee.json';
+import * as kintone from './jp/kintone.json';
 import * as lineMessaging from './jp/line-messaging.json';
+import * as moneyForwardInvoice from './jp/money-forward-invoice.json';
+import * as smarthr from './jp/smarthr.json';
 import * as paystack from './ng/paystack.json';
 import * as arubaFatturazione from './it/aruba-fatturazione.json';
 import * as bricobravo from './it/bricobravo.json';
@@ -903,6 +921,7 @@ function withEmailBuiltins(adapter: AdapterDefinition): AdapterDefinition {
 // === AUTOGEN-ARRAY-BEGIN === run scripts/regenerate-catalog.mjs ===
 const RAW_ADAPTERS: AdapterDefinition[] = [
   aBoss as unknown as AdapterDefinition,
+  apaleo as unknown as AdapterDefinition,
   billbee as unknown as AdapterDefinition,
   billomat as unknown as AdapterDefinition,
   buchhaltungsbutler as unknown as AdapterDefinition,
@@ -1067,11 +1086,13 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   close as unknown as AdapterDefinition,
   cloudflare as unknown as AdapterDefinition,
   cloudinary as unknown as AdapterDefinition,
+  clover as unknown as AdapterDefinition,
   coda as unknown as AdapterDefinition,
   coinbase as unknown as AdapterDefinition,
   coingecko as unknown as AdapterDefinition,
   coinglass as unknown as AdapterDefinition,
   conductorMonitoring as unknown as AdapterDefinition,
+  connecteam as unknown as AdapterDefinition,
   constantContact as unknown as AdapterDefinition,
   contentful as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
@@ -1088,6 +1109,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   deedPage as unknown as AdapterDefinition,
   deel as unknown as AdapterDefinition,
   deepgram as unknown as AdapterDefinition,
+  deputy as unknown as AdapterDefinition,
   deribit as unknown as AdapterDefinition,
   dialpad as unknown as AdapterDefinition,
   digitalocean as unknown as AdapterDefinition,
@@ -1219,6 +1241,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   invoiced as unknown as AdapterDefinition,
   iterable as unknown as AdapterDefinition,
   jev as unknown as AdapterDefinition,
+  jobber as unknown as AdapterDefinition,
   jotform as unknown as AdapterDefinition,
   judgeMe as unknown as AdapterDefinition,
   kashflow as unknown as AdapterDefinition,
@@ -1234,10 +1257,13 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   lemonsqueezy as unknown as AdapterDefinition,
   lessAnnoyingCrm as unknown as AdapterDefinition,
   lever as unknown as AdapterDefinition,
+  lightspeedRetail as unknown as AdapterDefinition,
   linear as unknown as AdapterDefinition,
   linkedin as unknown as AdapterDefinition,
   linkedinAds as unknown as AdapterDefinition,
+  lodgify as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
+  loyverse as unknown as AdapterDefinition,
   lusha as unknown as AdapterDefinition,
   magento as unknown as AdapterDefinition,
   mailchimp as unknown as AdapterDefinition,
@@ -1269,6 +1295,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftTeams as unknown as AdapterDefinition,
   microsoftTodo as unknown as AdapterDefinition,
   microsoftWord as unknown as AdapterDefinition,
+  mindbody as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mirakl as unknown as AdapterDefinition,
   miraklConnect as unknown as AdapterDefinition,
@@ -1363,6 +1390,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   quickbooksOnline as unknown as AdapterDefinition,
   railway as unknown as AdapterDefinition,
   ramp as unknown as AdapterDefinition,
+  recruitee as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
   redditAds as unknown as AdapterDefinition,
@@ -1374,6 +1402,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   revolutBusiness as unknown as AdapterDefinition,
   ringcentral as unknown as AdapterDefinition,
   ringostat as unknown as AdapterDefinition,
+  rippling as unknown as AdapterDefinition,
   rivile as unknown as AdapterDefinition,
   rocketreach as unknown as AdapterDefinition,
   rollbar as unknown as AdapterDefinition,
@@ -1402,7 +1431,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sentry as unknown as AdapterDefinition,
   serpapi as unknown as AdapterDefinition,
   serply as unknown as AdapterDefinition,
+  servicem8 as unknown as AdapterDefinition,
   servicenow as unknown as AdapterDefinition,
+  servicetitan as unknown as AdapterDefinition,
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
   shopee as unknown as AdapterDefinition,
@@ -1515,6 +1546,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zohoMail as unknown as AdapterDefinition,
   zoom as unknown as AdapterDefinition,
   zoominfo as unknown as AdapterDefinition,
+  zuora as unknown as AdapterDefinition,
   digisac as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   mercadoPago as unknown as AdapterDefinition,
@@ -1525,7 +1557,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   interakt as unknown as AdapterDefinition,
   razorpay as unknown as AdapterDefinition,
   tallyprime as unknown as AdapterDefinition,
+  freee as unknown as AdapterDefinition,
+  kintone as unknown as AdapterDefinition,
   lineMessaging as unknown as AdapterDefinition,
+  moneyForwardInvoice as unknown as AdapterDefinition,
+  smarthr as unknown as AdapterDefinition,
   paystack as unknown as AdapterDefinition,
   arubaFatturazione as unknown as AdapterDefinition,
   bricobravo as unknown as AdapterDefinition,

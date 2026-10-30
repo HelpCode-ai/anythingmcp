@@ -1,0 +1,1864 @@
+{
+  "slug": "money-forward-invoice",
+  "name": "Money Forward Cloud Invoice",
+  "aliases": [
+    "マネーフォワード クラウド請求書",
+    "MFクラウド請求書",
+    "Money Forward Invoice",
+    "マネーフォワード"
+  ],
+  "description": "Money Forward Cloud Invoice (マネーフォワード クラウド請求書): partners and their billing departments, items, billings in the qualified invoice format with lines and payment status, quotes with order status and conversion to billings, and the sending history. API v3 with OAuth 2.0 through the Money Forward App Portal.",
+  "instructions": "## Money Forward Cloud Invoice\nThis connector uses the **マネーフォワード クラウド請求書 API v3** (Money Forward Cloud Invoice, `https://invoice.moneyforward.com/api/v3`): your business details, partners (取引先) with their billing departments, items (品目), billings (請求書) in the qualified invoice format, quotes (見積書), payment and order status and the sending history.\n\nMoney Forward has separate APIs per product. This connector covers Cloud Invoice only. マネーフォワード クラウド会計 (Accounting: journals, accounts, trial balance) has its own API at `api-accounting.moneyforward.com` and an official MCP server; クラウド請求書Plus, 会計Plus and 債務支払 have their own APIs, partly on request.\n\n**Setup (about 10 minutes)**\n1. Sign in to the Money Forward Cloud **アプリポータル (App Portal)** at https://app-portal.moneyforward.com with a user of the business that may manage apps (アプリ連携権限), and register a new app.\n2. Enter a name, the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, and as **クライアント認証方式 (client authentication)** choose **CLIENT_SECRET_BASIC**.\n3. Copy the **Client ID** into `MONEY_FORWARD_CLIENT_ID` and the **Client Secret** into `MONEY_FORWARD_CLIENT_SECRET`, leave `MONEY_FORWARD_REFRESH_TOKEN` empty and install.\n4. Click **Authorize with Provider**, sign in to Money Forward and pick the business (事業者). The connector asks for `mfc/invoice/data.read mfc/invoice/data.write`; the authorization belongs to the business, not to one user. Run `money_forward_invoice_get_office` to check.\n\n**Workflow**\n- Business: `money_forward_invoice_get_office` (name, address, registration number).\n- Partners: `money_forward_invoice_list_partners`, `money_forward_invoice_get_partner`, `money_forward_invoice_create_partner`, `money_forward_invoice_update_partner`. Billings and quotes are addressed to a partner **department** (請求先), not to the partner: `money_forward_invoice_list_partner_departments`, `money_forward_invoice_get_partner_department`, `money_forward_invoice_create_partner_department`, `money_forward_invoice_update_partner_department`.\n- Items: `money_forward_invoice_list_items`, `money_forward_invoice_get_item`, `money_forward_invoice_create_item`, `money_forward_invoice_update_item`.\n- Billings: `money_forward_invoice_list_billings` (headers and totals, no lines), `money_forward_invoice_get_billing` (full), `money_forward_invoice_create_billing` (draft with lines), `money_forward_invoice_update_billing` (header), `money_forward_invoice_list_billing_items`, `money_forward_invoice_add_billing_item`, `money_forward_invoice_remove_billing_item` for lines, `money_forward_invoice_update_billing_payment_status` to mark paid. Show the partner, lines and total and wait for the user's yes before creating or changing one.\n- Quotes: `money_forward_invoice_list_quotes`, `money_forward_invoice_get_quote`, `money_forward_invoice_create_quote`, `money_forward_invoice_update_quote`, `money_forward_invoice_add_quote_item`, `money_forward_invoice_update_quote_order_status`, then `money_forward_invoice_convert_quote_to_billing` when the order comes in.\n- History: `money_forward_invoice_list_sent_histories`.\n- Sending by email is not part of the API: the documents stay drafts until someone sends them in Money Forward. `money_forward_invoice_post_billing` orders paid postal mailing.\n\n**Reading answers**: lists return `data` and `pagination` (`total_count`, `total_pages`, `current_page`, `per_page`); page with `page` and `per_page` (up to 100). Amounts are JPY and come as strings (`total_price`: \"11000\"); dates are `YYYY-MM-DD`, times ISO 8601 in JST. Ids are opaque strings. `payment_status` reads 未設定, 未入金, 入金済み; `is_locked` true means the billing can no longer be edited. Tax categories (`excise`): ten_percent, eight_percent_as_reduced_tax_rate, eight_percent, five_percent, tax_exemption, non_taxable, untaxable.\n\n**Errors**: 401 means the token expired or was revoked (authorize again); 403 that the app or the user lacks permission or the business is not on a plan with API access; 404 a wrong id; 400 or 422 a validation error whose message names the field (for example a missing `excise` on a line without `item_id`).\n\n**Switched off at install**: `money_forward_invoice_delete_billing`, `money_forward_invoice_delete_quote` and `money_forward_invoice_post_billing`; they cannot be undone (a deletion is final, a posting order sends paper and costs money), so an admin switches them on when the team needs them.",
+  "region": "jp",
+  "category": "accounting",
+  "icon": "money-forward",
+  "docsUrl": "https://invoice.moneyforward.com/docs/api/v3/index.html",
+  "appRegistrationUrl": "https://app-portal.moneyforward.com",
+  "prerequisites": "A Money Forward Cloud Invoice (クラウド請求書) business, and an app registered in the Money Forward App Portal by a user with app linkage rights, with the AnythingMCP redirect URI and client authentication CLIENT_SECRET_BASIC.",
+  "requiredEnvVars": [
+    "MONEY_FORWARD_CLIENT_ID",
+    "MONEY_FORWARD_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "MONEY_FORWARD_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "MONEY_FORWARD_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Money Forward App Portal, your app: the Client ID.",
+      "link": "https://app-portal.moneyforward.com"
+    },
+    "MONEY_FORWARD_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page, the Client Secret. Register the app with client authentication CLIENT_SECRET_BASIC.",
+      "link": "https://app-portal.moneyforward.com"
+    },
+    "MONEY_FORWARD_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Leave empty: Authorize with Provider fills it in.",
+      "advanced": true
+    }
+  },
+  "verifyHints": {
+    "401": "Money Forward did not accept the token. Authorize again, and check that the app uses client authentication CLIENT_SECRET_BASIC.",
+    "403": "The app or the business may not use this: check the app permissions in the App Portal and that the business uses Cloud Invoice."
+  },
+  "probe": {
+    "tool": "money_forward_invoice_get_office"
+  },
+  "connector": {
+    "name": "Money Forward Cloud Invoice API v3",
+    "type": "REST",
+    "baseUrl": "https://invoice.moneyforward.com/api/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MONEY_FORWARD_CLIENT_ID}}",
+      "clientSecret": "{{MONEY_FORWARD_CLIENT_SECRET}}",
+      "refreshToken": "{{MONEY_FORWARD_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://api.biz.moneyforward.com/authorize",
+      "tokenUrl": "https://api.biz.moneyforward.com/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "mfc/invoice/data.read mfc/invoice/data.write"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/office"
+  },
+  "tools": [
+    {
+      "name": "money_forward_invoice_get_office",
+      "description": "Read your own business (事業者): id, name, address, phone, office type and the invoice registration number (適格請求書発行事業者登録番号). The install check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/office"
+      }
+    },
+    {
+      "name": "money_forward_invoice_list_partners",
+      "description": "List partners (取引先) with id, code, name, kana, memo, their departments (請求先部門, with the id needed for billings) and default payment due date. Filter by name, code, kana or person in charge; several values comma separated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Partner name(s), comma separated."
+          },
+          "code": {
+            "type": "string",
+            "description": "Partner code(s), comma separated."
+          },
+          "name_kana": {
+            "type": "string",
+            "description": "Kana name(s), comma separated."
+          },
+          "partner_pic": {
+            "type": "string",
+            "description": "Partner contact person name(s)."
+          },
+          "office_pic": {
+            "type": "string",
+            "description": "Your staff member(s) in charge."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). pagination.total_pages says how many there are.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page (default 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/partners",
+        "queryParams": {
+          "name": "$name",
+          "code": "$code",
+          "name_kana": "$name_kana",
+          "partner_pic": "$partner_pic",
+          "office_pic": "$office_pic",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_get_partner",
+      "description": "Read one partner (取引先) with its departments and payment due date setting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partner_id": {
+            "type": "string",
+            "description": "Partner id."
+          }
+        },
+        "required": [
+          "partner_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/partners/{partner_id}"
+      }
+    },
+    {
+      "name": "money_forward_invoice_create_partner",
+      "description": "Create a partner (取引先) with up to 10 departments (請求先). A billing is addressed to a department, so give at least one with the address and email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Partner name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Partner code."
+          },
+          "name_kana": {
+            "type": "string",
+            "description": "Name in katakana."
+          },
+          "name_suffix": {
+            "type": "string",
+            "description": "Honorific, e.g. 御中 or 様."
+          },
+          "memo": {
+            "type": "string",
+            "description": "Internal memo."
+          },
+          "departments": {
+            "type": "array",
+            "description": "Up to 10 departments, e.g. [{\"person_dept\": \"経理部\", \"person_name\": \"山田 太郎\", \"email\": \"keiri@example.co.jp\", \"zip\": \"100-0001\", \"prefecture\": \"東京都\", \"address1\": \"千代田区千代田1-1\"}].",
+            "items": {
+              "type": "object",
+              "description": "One department (請求先).",
+              "properties": {
+                "zip": {
+                  "type": "string",
+                  "description": "Postal code, e.g. 100-0001."
+                },
+                "tel": {
+                  "type": "string",
+                  "description": "Phone number."
+                },
+                "prefecture": {
+                  "type": "string",
+                  "description": "Prefecture name, e.g. 東京都."
+                },
+                "address1": {
+                  "type": "string",
+                  "description": "Address line 1 (city and street)."
+                },
+                "address2": {
+                  "type": "string",
+                  "description": "Address line 2 (building)."
+                },
+                "person_name": {
+                  "type": "string",
+                  "description": "Contact person (担当者名)."
+                },
+                "person_title": {
+                  "type": "string",
+                  "description": "Contact title (役職)."
+                },
+                "person_dept": {
+                  "type": "string",
+                  "description": "Contact department (部署名)."
+                },
+                "office_member_name": {
+                  "type": "string",
+                  "description": "Your own staff member in charge (自社担当者)."
+                },
+                "email": {
+                  "type": "string",
+                  "description": "Email the invoices go to."
+                },
+                "cc_emails": {
+                  "type": "string",
+                  "description": "CC emails, comma separated."
+                },
+                "peppol_id": {
+                  "type": "string",
+                  "description": "Peppol ID for e-invoices, if any."
+                }
+              }
+            },
+            "maxItems": 10
+          },
+          "payment_deadline_setting": {
+            "type": "object",
+            "description": "Default payment due date for this partner (支払期日): {\"due_month\": \"next_month\", \"due_date\": -1, \"contingency_day\": \"move_to_earlier_day\"} means end of next month, moved earlier on holidays.",
+            "properties": {
+              "due_month": {
+                "type": "string",
+                "description": "this_month, next_month, two_months_after ... six_months_after.",
+                "enum": [
+                  "this_month",
+                  "next_month",
+                  "two_months_after",
+                  "three_months_after",
+                  "four_months_after",
+                  "five_months_after",
+                  "six_months_after"
+                ]
+              },
+              "due_date": {
+                "type": "integer",
+                "description": "Day of the month; -1 for the last day."
+              },
+              "contingency_day": {
+                "type": "string",
+                "description": "When the date is a holiday: move_to_earlier_day, keep_as_is or move_to_later_day.",
+                "enum": [
+                  "move_to_earlier_day",
+                  "keep_as_is",
+                  "move_to_later_day"
+                ]
+              }
+            },
+            "required": [
+              "due_month",
+              "due_date",
+              "contingency_day"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/partners",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "name_kana": "$name_kana",
+          "name_suffix": "$name_suffix",
+          "memo": "$memo",
+          "departments": "$departments",
+          "payment_deadline_setting": "$payment_deadline_setting"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_update_partner",
+      "description": "Change a partner (取引先): name, code, kana, honorific, memo or default payment due date. Departments change with money_forward_invoice_update_partner_department.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partner_id": {
+            "type": "string",
+            "description": "Partner id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Partner name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Partner code."
+          },
+          "name_kana": {
+            "type": "string",
+            "description": "Name in katakana."
+          },
+          "name_suffix": {
+            "type": "string",
+            "description": "Honorific."
+          },
+          "memo": {
+            "type": "string",
+            "description": "Internal memo."
+          },
+          "payment_deadline_setting": {
+            "type": "object",
+            "description": "Default payment due date for this partner (支払期日): {\"due_month\": \"next_month\", \"due_date\": -1, \"contingency_day\": \"move_to_earlier_day\"} means end of next month, moved earlier on holidays.",
+            "properties": {
+              "due_month": {
+                "type": "string",
+                "description": "this_month, next_month, two_months_after ... six_months_after.",
+                "enum": [
+                  "this_month",
+                  "next_month",
+                  "two_months_after",
+                  "three_months_after",
+                  "four_months_after",
+                  "five_months_after",
+                  "six_months_after"
+                ]
+              },
+              "due_date": {
+                "type": "integer",
+                "description": "Day of the month; -1 for the last day."
+              },
+              "contingency_day": {
+                "type": "string",
+                "description": "When the date is a holiday: move_to_earlier_day, keep_as_is or move_to_later_day.",
+                "enum": [
+                  "move_to_earlier_day",
+                  "keep_as_is",
+                  "move_to_later_day"
+                ]
+              }
+            },
+            "required": [
+              "due_month",
+              "due_date",
+              "contingency_day"
+            ]
+          }
+        },
+        "required": [
+          "partner_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/partners/{partner_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "name_kana": "$name_kana",
+          "name_suffix": "$name_suffix",
+          "memo": "$memo",
+          "payment_deadline_setting": "$payment_deadline_setting"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "money_forward_invoice_list_partner_departments",
+      "description": "List the departments (請求先部門) of a partner: id, address, contact person, email and CC. The department id is what billings and quotes are addressed to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partner_id": {
+            "type": "string",
+            "description": "Partner id."
+          }
+        },
+        "required": [
+          "partner_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/partners/{partner_id}/departments"
+      }
+    },
+    {
+      "name": "money_forward_invoice_get_partner_department",
+      "description": "Read one department of a partner with address, contact and email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partner_id": {
+            "type": "string",
+            "description": "Partner id."
+          },
+          "department_id": {
+            "type": "string",
+            "description": "Department id."
+          }
+        },
+        "required": [
+          "partner_id",
+          "department_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/partners/{partner_id}/departments/{department_id}"
+      }
+    },
+    {
+      "name": "money_forward_invoice_create_partner_department",
+      "description": "Add a department (請求先) to a partner, e.g. a second billing address or contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partner_id": {
+            "type": "string",
+            "description": "Partner id."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code, e.g. 100-0001."
+          },
+          "tel": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "prefecture": {
+            "type": "string",
+            "description": "Prefecture name, e.g. 東京都."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Address line 1 (city and street)."
+          },
+          "address2": {
+            "type": "string",
+            "description": "Address line 2 (building)."
+          },
+          "person_name": {
+            "type": "string",
+            "description": "Contact person (担当者名)."
+          },
+          "person_title": {
+            "type": "string",
+            "description": "Contact title (役職)."
+          },
+          "person_dept": {
+            "type": "string",
+            "description": "Contact department (部署名)."
+          },
+          "office_member_name": {
+            "type": "string",
+            "description": "Your own staff member in charge (自社担当者)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email the invoices go to."
+          },
+          "cc_emails": {
+            "type": "string",
+            "description": "CC emails, comma separated."
+          },
+          "peppol_id": {
+            "type": "string",
+            "description": "Peppol ID for e-invoices, if any."
+          }
+        },
+        "required": [
+          "partner_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/partners/{partner_id}/departments",
+        "bodyMapping": {
+          "zip": "$zip",
+          "tel": "$tel",
+          "prefecture": "$prefecture",
+          "address1": "$address1",
+          "address2": "$address2",
+          "person_name": "$person_name",
+          "person_title": "$person_title",
+          "person_dept": "$person_dept",
+          "office_member_name": "$office_member_name",
+          "email": "$email",
+          "cc_emails": "$cc_emails",
+          "peppol_id": "$peppol_id"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_update_partner_department",
+      "description": "Change the address, contact or email of a partner department.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "partner_id": {
+            "type": "string",
+            "description": "Partner id."
+          },
+          "department_id": {
+            "type": "string",
+            "description": "Department id."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code, e.g. 100-0001."
+          },
+          "tel": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "prefecture": {
+            "type": "string",
+            "description": "Prefecture name, e.g. 東京都."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Address line 1 (city and street)."
+          },
+          "address2": {
+            "type": "string",
+            "description": "Address line 2 (building)."
+          },
+          "person_name": {
+            "type": "string",
+            "description": "Contact person (担当者名)."
+          },
+          "person_title": {
+            "type": "string",
+            "description": "Contact title (役職)."
+          },
+          "person_dept": {
+            "type": "string",
+            "description": "Contact department (部署名)."
+          },
+          "office_member_name": {
+            "type": "string",
+            "description": "Your own staff member in charge (自社担当者)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email the invoices go to."
+          },
+          "cc_emails": {
+            "type": "string",
+            "description": "CC emails, comma separated."
+          },
+          "peppol_id": {
+            "type": "string",
+            "description": "Peppol ID for e-invoices, if any."
+          }
+        },
+        "required": [
+          "partner_id",
+          "department_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/partners/{partner_id}/departments/{department_id}",
+        "bodyMapping": {
+          "zip": "$zip",
+          "tel": "$tel",
+          "prefecture": "$prefecture",
+          "address1": "$address1",
+          "address2": "$address2",
+          "person_name": "$person_name",
+          "person_title": "$person_title",
+          "person_dept": "$person_dept",
+          "office_member_name": "$office_member_name",
+          "email": "$email",
+          "cc_emails": "$cc_emails",
+          "peppol_id": "$peppol_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "money_forward_invoice_list_items",
+      "description": "List items (品目) with id, name, code, detail, unit, price, quantity and tax category. Filter by name or code; several values comma separated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Item name(s), comma separated."
+          },
+          "code": {
+            "type": "string",
+            "description": "Item code(s), comma separated."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). pagination.total_pages says how many there are.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page (default 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "name": "$name",
+          "code": "$code",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_get_item",
+      "description": "Read one item (品目) with its code, detail, unit price, unit, quantity and tax category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{item_id}"
+      }
+    },
+    {
+      "name": "money_forward_invoice_create_item",
+      "description": "Create an item (品目) with price, unit and tax category, for reuse in billings and quotes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Item code."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Detail."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit."
+          },
+          "price": {
+            "type": "number",
+            "description": "Unit price in JPY."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Default quantity."
+          },
+          "is_deduct_withholding_tax": {
+            "type": "boolean",
+            "description": "Withholding tax (源泉徴収) applies to the line. Only for sole proprietors (個人事業主); leave out for corporations."
+          },
+          "excise": {
+            "type": "string",
+            "description": "Tax category (税率): ten_percent (10%), eight_percent_as_reduced_tax_rate (reduced 8%), eight_percent, five_percent, tax_exemption (免税), non_taxable (非課税) or untaxable (不課税).",
+            "enum": [
+              "untaxable",
+              "non_taxable",
+              "tax_exemption",
+              "five_percent",
+              "eight_percent",
+              "eight_percent_as_reduced_tax_rate",
+              "ten_percent"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "excise"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "detail": "$detail",
+          "unit": "$unit",
+          "price": "$price",
+          "quantity": "$quantity",
+          "is_deduct_withholding_tax": "$is_deduct_withholding_tax",
+          "excise": "$excise"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_update_item",
+      "description": "Change an item (品目): name, code, detail, unit, price, quantity or tax category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Item code."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Detail."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit."
+          },
+          "price": {
+            "type": "number",
+            "description": "Unit price in JPY."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Default quantity."
+          },
+          "is_deduct_withholding_tax": {
+            "type": "boolean",
+            "description": "Withholding tax (源泉徴収) applies to the line. Only for sole proprietors (個人事業主); leave out for corporations."
+          },
+          "excise": {
+            "type": "string",
+            "description": "Tax category (税率): ten_percent (10%), eight_percent_as_reduced_tax_rate (reduced 8%), eight_percent, five_percent, tax_exemption (免税), non_taxable (非課税) or untaxable (不課税).",
+            "enum": [
+              "untaxable",
+              "non_taxable",
+              "tax_exemption",
+              "five_percent",
+              "eight_percent",
+              "eight_percent_as_reduced_tax_rate",
+              "ten_percent"
+            ]
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{item_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "detail": "$detail",
+          "unit": "$unit",
+          "price": "$price",
+          "quantity": "$quantity",
+          "is_deduct_withholding_tax": "$is_deduct_withholding_tax",
+          "excise": "$excise"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "money_forward_invoice_list_billings",
+      "description": "List billings (請求書) with number, title, partner, dates, subtotal, tax, total and payment, email and posting status. Filter a date range (range_key with from and to), or search with q; up to 100 per page. Line items are left out: use money_forward_invoice_get_billing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "range_key": {
+            "type": "string",
+            "description": "Which date from and to apply to: billing_date, due_date, sales_date, created_at or updated_at.",
+            "enum": [
+              "billing_date",
+              "due_date",
+              "sales_date",
+              "created_at",
+              "updated_at"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Range start, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Range end, YYYY-MM-DD."
+          },
+          "q": {
+            "type": "string",
+            "description": "Free text over partner (exact), status, title and more; when set, the filters below are ignored."
+          },
+          "partner_id": {
+            "type": "string",
+            "description": "Partner id."
+          },
+          "document_number": {
+            "type": "string",
+            "description": "Billing number (請求書番号)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status, e.g. 下書き, ロック中, 未ロック."
+          },
+          "partner_name": {
+            "type": "string",
+            "description": "Partner name."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Tags, comma separated."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). pagination.total_pages says how many there are.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page (default 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/billings",
+        "queryParams": {
+          "range_key": "$range_key",
+          "from": "$from",
+          "to": "$to",
+          "q": "$q",
+          "partner_id": "$partner_id",
+          "document_number": "$document_number",
+          "status": "$status",
+          "partner_name": "$partner_name",
+          "tags": "$tags",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "pagination": "$.pagination",
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "billing_number": "billing_number",
+                "title": "title",
+                "partner_id": "partner_id",
+                "partner_name": "partner_name",
+                "department_id": "department_id",
+                "billing_date": "billing_date",
+                "due_date": "due_date",
+                "sales_date": "sales_date",
+                "subtotal_price": "subtotal_price",
+                "excise_price": "excise_price",
+                "total_price": "total_price",
+                "payment_status": "payment_status",
+                "email_status": "email_status",
+                "posting_status": "posting_status",
+                "is_locked": "is_locked",
+                "tag_names": "tag_names",
+                "memo": "memo",
+                "pdf_url": "pdf_url",
+                "updated_at": "updated_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_get_billing",
+      "description": "Read one billing (請求書) with its lines, tax breakdown per rate, totals, statuses, partner and your own registration number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_id": {
+            "type": "string",
+            "description": "Billing id."
+          }
+        },
+        "required": [
+          "billing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/billings/{billing_id}"
+      }
+    },
+    {
+      "name": "money_forward_invoice_create_billing",
+      "description": "Create a billing (請求書) in the qualified invoice format (インボイス制度対応) for a partner department, with its lines. It is created as a draft and not sent; sending by email happens in Money Forward. Returns the billing with id, number and totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department_id": {
+            "type": "string",
+            "description": "Partner department id (請求先) from money_forward_invoice_list_partner_departments or the departments of a partner."
+          },
+          "billing_date": {
+            "type": "string",
+            "description": "Billing date (請求日), YYYY-MM-DD."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Payment due date (お支払期限), YYYY-MM-DD; from the partner setting when omitted."
+          },
+          "sales_date": {
+            "type": "string",
+            "description": "Sales date (売上計上日), YYYY-MM-DD."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title (件名)."
+          },
+          "billing_number": {
+            "type": "string",
+            "description": "Billing number; numbered automatically when omitted."
+          },
+          "payment_condition": {
+            "type": "string",
+            "description": "Payment terms text printed on the invoice (振込先 etc.)."
+          },
+          "note": {
+            "type": "string",
+            "description": "Remarks (備考) printed on the invoice."
+          },
+          "memo": {
+            "type": "string",
+            "description": "Internal memo, not printed."
+          },
+          "document_name": {
+            "type": "string",
+            "description": "Document title, default 請求書."
+          },
+          "tag_names": {
+            "type": "array",
+            "description": "Tags.",
+            "items": {
+              "type": "string",
+              "description": "A tag."
+            }
+          },
+          "items": {
+            "type": "array",
+            "description": "Lines (明細): [{\"name\": \"Consulting\", \"price\": 100000, \"quantity\": 1, \"unit\": \"式\", \"excise\": \"ten_percent\"}] or [{\"item_id\": \"...\", \"quantity\": 2}]. excise is required when no item_id is given.",
+            "items": {
+              "type": "object",
+              "description": "One line.",
+              "properties": {
+                "item_id": {
+                  "type": "string",
+                  "description": "Item id from money_forward_invoice_list_items; its name is then used."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Line name (品目名), when no item_id is given."
+                },
+                "detail": {
+                  "type": "string",
+                  "description": "Line detail (詳細)."
+                },
+                "unit": {
+                  "type": "string",
+                  "description": "Unit, e.g. 個, 時間, 式."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Unit price in JPY."
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "is_deduct_withholding_tax": {
+                  "type": "boolean",
+                  "description": "Withholding tax (源泉徴収) applies to the line. Only for sole proprietors (個人事業主); leave out for corporations."
+                },
+                "excise": {
+                  "type": "string",
+                  "description": "Tax category (税率): ten_percent (10%), eight_percent_as_reduced_tax_rate (reduced 8%), eight_percent, five_percent, tax_exemption (免税), non_taxable (非課税) or untaxable (不課税).",
+                  "enum": [
+                    "untaxable",
+                    "non_taxable",
+                    "tax_exemption",
+                    "five_percent",
+                    "eight_percent",
+                    "eight_percent_as_reduced_tax_rate",
+                    "ten_percent"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "department_id",
+          "billing_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice_template_billings",
+        "bodyMapping": {
+          "department_id": "$department_id",
+          "billing_date": "$billing_date",
+          "due_date": "$due_date",
+          "sales_date": "$sales_date",
+          "title": "$title",
+          "billing_number": "$billing_number",
+          "payment_condition": "$payment_condition",
+          "note": "$note",
+          "memo": "$memo",
+          "document_name": "$document_name",
+          "tag_names": "$tag_names",
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_update_billing",
+      "description": "Change the header of a billing: department, dates, title, number, payment terms, remarks, memo or tags. Lines change with money_forward_invoice_add_billing_item and money_forward_invoice_remove_billing_item. A locked billing (is_locked) cannot be changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_id": {
+            "type": "string",
+            "description": "Billing id."
+          },
+          "department_id": {
+            "type": "string",
+            "description": "Partner department id."
+          },
+          "billing_date": {
+            "type": "string",
+            "description": "Billing date, YYYY-MM-DD."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "sales_date": {
+            "type": "string",
+            "description": "Sales date, YYYY-MM-DD."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title."
+          },
+          "billing_number": {
+            "type": "string",
+            "description": "Billing number."
+          },
+          "payment_condition": {
+            "type": "string",
+            "description": "Payment terms text."
+          },
+          "note": {
+            "type": "string",
+            "description": "Remarks."
+          },
+          "memo": {
+            "type": "string",
+            "description": "Internal memo."
+          },
+          "document_name": {
+            "type": "string",
+            "description": "Document title."
+          },
+          "tag_names": {
+            "type": "array",
+            "description": "Tags; replaces the current ones.",
+            "items": {
+              "type": "string",
+              "description": "A tag."
+            }
+          }
+        },
+        "required": [
+          "billing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/billings/{billing_id}",
+        "bodyMapping": {
+          "department_id": "$department_id",
+          "billing_date": "$billing_date",
+          "due_date": "$due_date",
+          "sales_date": "$sales_date",
+          "title": "$title",
+          "billing_number": "$billing_number",
+          "payment_condition": "$payment_condition",
+          "note": "$note",
+          "memo": "$memo",
+          "document_name": "$document_name",
+          "tag_names": "$tag_names"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "money_forward_invoice_list_billing_items",
+      "description": "List the lines of a billing with their id, name, quantity, price and tax category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_id": {
+            "type": "string",
+            "description": "Billing id."
+          }
+        },
+        "required": [
+          "billing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/billings/{billing_id}/items"
+      }
+    },
+    {
+      "name": "money_forward_invoice_add_billing_item",
+      "description": "Add a line to a billing, from an item (item_id) or written out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_id": {
+            "type": "string",
+            "description": "Billing id."
+          },
+          "delivery_number": {
+            "type": "string",
+            "description": "Delivery note number (納品書番号)."
+          },
+          "delivery_date": {
+            "type": "string",
+            "description": "Delivery date, YYYY-MM-DD."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id from money_forward_invoice_list_items; its name is then used."
+          },
+          "name": {
+            "type": "string",
+            "description": "Line name (品目名), when no item_id is given."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Line detail (詳細)."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit, e.g. 個, 時間, 式."
+          },
+          "price": {
+            "type": "number",
+            "description": "Unit price in JPY."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity."
+          },
+          "is_deduct_withholding_tax": {
+            "type": "boolean",
+            "description": "Withholding tax (源泉徴収) applies to the line. Only for sole proprietors (個人事業主); leave out for corporations."
+          },
+          "excise": {
+            "type": "string",
+            "description": "Tax category (税率): ten_percent (10%), eight_percent_as_reduced_tax_rate (reduced 8%), eight_percent, five_percent, tax_exemption (免税), non_taxable (非課税) or untaxable (不課税).",
+            "enum": [
+              "untaxable",
+              "non_taxable",
+              "tax_exemption",
+              "five_percent",
+              "eight_percent",
+              "eight_percent_as_reduced_tax_rate",
+              "ten_percent"
+            ]
+          }
+        },
+        "required": [
+          "billing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/billings/{billing_id}/items",
+        "bodyMapping": {
+          "delivery_number": "$delivery_number",
+          "delivery_date": "$delivery_date",
+          "item_id": "$item_id",
+          "name": "$name",
+          "detail": "$detail",
+          "unit": "$unit",
+          "price": "$price",
+          "quantity": "$quantity",
+          "is_deduct_withholding_tax": "$is_deduct_withholding_tax",
+          "excise": "$excise"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_remove_billing_item",
+      "description": "Remove one line from a billing (the item master stays). Use the line id from money_forward_invoice_list_billing_items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_id": {
+            "type": "string",
+            "description": "Billing id."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Line id (billing item id) from money_forward_invoice_list_billing_items."
+          }
+        },
+        "required": [
+          "billing_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/billings/{billing_id}/items/{item_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "money_forward_invoice_update_billing_payment_status",
+      "description": "Set the payment status (入金ステータス) of a billing: 0 not set, 1 unpaid (未入金), 2 paid (入金済み).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_id": {
+            "type": "string",
+            "description": "Billing id."
+          },
+          "payment_status": {
+            "type": "string",
+            "description": "0 未設定, 1 未入金, 2 入金済み.",
+            "enum": [
+              "0",
+              "1",
+              "2"
+            ]
+          }
+        },
+        "required": [
+          "billing_id",
+          "payment_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/billings/{billing_id}/payment_status",
+        "bodyMapping": {
+          "payment_status": "$payment_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "money_forward_invoice_post_billing",
+      "description": "Order postal mailing (郵送) of a billing by Money Forward. It is a paid service and sends paper to the partner. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_id": {
+            "type": "string",
+            "description": "Billing id."
+          },
+          "upload_to_cloud_box": {
+            "type": "boolean",
+            "description": "true also stores the document in Money Forward クラウドBox."
+          }
+        },
+        "required": [
+          "billing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/billings/{billing_id}/posting",
+        "bodyMapping": {
+          "upload_to_cloud_box": "$upload_to_cloud_box"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "money_forward_invoice_delete_billing",
+      "description": "Delete a billing (請求書) with its lines for good; it cannot be restored. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_id": {
+            "type": "string",
+            "description": "Billing id."
+          }
+        },
+        "required": [
+          "billing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/billings/{billing_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "money_forward_invoice_list_quotes",
+      "description": "List quotes (見積書) with number, title, partner, quote and expiry dates, totals and order status. Filter a date range (range_key with from and to) or search with q.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "range_key": {
+            "type": "string",
+            "description": "Which date from and to apply to: quote_date, expired_date, created_at or updated_at.",
+            "enum": [
+              "quote_date",
+              "expired_date",
+              "created_at",
+              "updated_at"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Range start, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Range end, YYYY-MM-DD."
+          },
+          "q": {
+            "type": "string",
+            "description": "Free text; when set, the filters below are ignored."
+          },
+          "partner_id": {
+            "type": "string",
+            "description": "Partner id."
+          },
+          "document_number": {
+            "type": "string",
+            "description": "Quote number."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status, e.g. 下書き."
+          },
+          "partner_name": {
+            "type": "string",
+            "description": "Partner name."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Tags, comma separated."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). pagination.total_pages says how many there are.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page (default 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quotes",
+        "queryParams": {
+          "range_key": "$range_key",
+          "from": "$from",
+          "to": "$to",
+          "q": "$q",
+          "partner_id": "$partner_id",
+          "document_number": "$document_number",
+          "status": "$status",
+          "partner_name": "$partner_name",
+          "tags": "$tags",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_get_quote",
+      "description": "Read one quote (見積書) with its lines, totals and order status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "string",
+            "description": "Quote id."
+          }
+        },
+        "required": [
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quotes/{quote_id}"
+      }
+    },
+    {
+      "name": "money_forward_invoice_create_quote",
+      "description": "Create a quote (見積書) for a partner department, with its lines. Created as a draft, not sent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department_id": {
+            "type": "string",
+            "description": "Partner department id."
+          },
+          "quote_date": {
+            "type": "string",
+            "description": "Quote date (見積日), YYYY-MM-DD."
+          },
+          "expired_date": {
+            "type": "string",
+            "description": "Valid until (有効期限), YYYY-MM-DD."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title (件名)."
+          },
+          "quote_number": {
+            "type": "string",
+            "description": "Quote number; numbered automatically when omitted."
+          },
+          "note": {
+            "type": "string",
+            "description": "Remarks printed on the quote."
+          },
+          "memo": {
+            "type": "string",
+            "description": "Internal memo."
+          },
+          "document_name": {
+            "type": "string",
+            "description": "Document title, default 見積書."
+          },
+          "tag_names": {
+            "type": "array",
+            "description": "Tags.",
+            "items": {
+              "type": "string",
+              "description": "A tag."
+            }
+          },
+          "items": {
+            "type": "array",
+            "description": "Lines (明細): [{\"name\": \"Consulting\", \"price\": 100000, \"quantity\": 1, \"unit\": \"式\", \"excise\": \"ten_percent\"}] or [{\"item_id\": \"...\", \"quantity\": 2}]. excise is required when no item_id is given.",
+            "items": {
+              "type": "object",
+              "description": "One line.",
+              "properties": {
+                "item_id": {
+                  "type": "string",
+                  "description": "Item id from money_forward_invoice_list_items; its name is then used."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Line name (品目名), when no item_id is given."
+                },
+                "detail": {
+                  "type": "string",
+                  "description": "Line detail (詳細)."
+                },
+                "unit": {
+                  "type": "string",
+                  "description": "Unit, e.g. 個, 時間, 式."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Unit price in JPY."
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "is_deduct_withholding_tax": {
+                  "type": "boolean",
+                  "description": "Withholding tax (源泉徴収) applies to the line. Only for sole proprietors (個人事業主); leave out for corporations."
+                },
+                "excise": {
+                  "type": "string",
+                  "description": "Tax category (税率): ten_percent (10%), eight_percent_as_reduced_tax_rate (reduced 8%), eight_percent, five_percent, tax_exemption (免税), non_taxable (非課税) or untaxable (不課税).",
+                  "enum": [
+                    "untaxable",
+                    "non_taxable",
+                    "tax_exemption",
+                    "five_percent",
+                    "eight_percent",
+                    "eight_percent_as_reduced_tax_rate",
+                    "ten_percent"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "department_id",
+          "quote_date",
+          "expired_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/quotes",
+        "bodyMapping": {
+          "department_id": "$department_id",
+          "quote_date": "$quote_date",
+          "expired_date": "$expired_date",
+          "title": "$title",
+          "quote_number": "$quote_number",
+          "note": "$note",
+          "memo": "$memo",
+          "document_name": "$document_name",
+          "tag_names": "$tag_names",
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_update_quote",
+      "description": "Change the header of a quote: department, dates, title, number, remarks, memo or tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "string",
+            "description": "Quote id."
+          },
+          "department_id": {
+            "type": "string",
+            "description": "Partner department id."
+          },
+          "quote_date": {
+            "type": "string",
+            "description": "Quote date, YYYY-MM-DD."
+          },
+          "expired_date": {
+            "type": "string",
+            "description": "Valid until, YYYY-MM-DD."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title."
+          },
+          "quote_number": {
+            "type": "string",
+            "description": "Quote number."
+          },
+          "note": {
+            "type": "string",
+            "description": "Remarks."
+          },
+          "memo": {
+            "type": "string",
+            "description": "Internal memo."
+          },
+          "document_name": {
+            "type": "string",
+            "description": "Document title."
+          },
+          "tag_names": {
+            "type": "array",
+            "description": "Tags; replaces the current ones.",
+            "items": {
+              "type": "string",
+              "description": "A tag."
+            }
+          }
+        },
+        "required": [
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/quotes/{quote_id}",
+        "bodyMapping": {
+          "department_id": "$department_id",
+          "quote_date": "$quote_date",
+          "expired_date": "$expired_date",
+          "title": "$title",
+          "quote_number": "$quote_number",
+          "note": "$note",
+          "memo": "$memo",
+          "document_name": "$document_name",
+          "tag_names": "$tag_names"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "money_forward_invoice_add_quote_item",
+      "description": "Add a line to a quote, from an item (item_id) or written out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "string",
+            "description": "Quote id."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id from money_forward_invoice_list_items; its name is then used."
+          },
+          "name": {
+            "type": "string",
+            "description": "Line name (品目名), when no item_id is given."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Line detail (詳細)."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit, e.g. 個, 時間, 式."
+          },
+          "price": {
+            "type": "number",
+            "description": "Unit price in JPY."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity."
+          },
+          "is_deduct_withholding_tax": {
+            "type": "boolean",
+            "description": "Withholding tax (源泉徴収) applies to the line. Only for sole proprietors (個人事業主); leave out for corporations."
+          },
+          "excise": {
+            "type": "string",
+            "description": "Tax category (税率): ten_percent (10%), eight_percent_as_reduced_tax_rate (reduced 8%), eight_percent, five_percent, tax_exemption (免税), non_taxable (非課税) or untaxable (不課税).",
+            "enum": [
+              "untaxable",
+              "non_taxable",
+              "tax_exemption",
+              "five_percent",
+              "eight_percent",
+              "eight_percent_as_reduced_tax_rate",
+              "ten_percent"
+            ]
+          }
+        },
+        "required": [
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/quotes/{quote_id}/items",
+        "bodyMapping": {
+          "item_id": "$item_id",
+          "name": "$name",
+          "detail": "$detail",
+          "unit": "$unit",
+          "price": "$price",
+          "quantity": "$quantity",
+          "is_deduct_withholding_tax": "$is_deduct_withholding_tax",
+          "excise": "$excise"
+        }
+      }
+    },
+    {
+      "name": "money_forward_invoice_update_quote_order_status",
+      "description": "Set the order status (受注ステータス) of a quote: -1 lost (失注), 0 not set, 1 not ordered yet (未受注), 2 ordered (受注済み).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "string",
+            "description": "Quote id."
+          },
+          "order_status": {
+            "type": "string",
+            "description": "-1 失注, 0 未設定, 1 未受注, 2 受注済み.",
+            "enum": [
+              "-1",
+              "0",
+              "1",
+              "2"
+            ]
+          }
+        },
+        "required": [
+          "quote_id",
+          "order_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/quotes/{quote_id}/order_status",
+        "bodyMapping": {
+          "order_status": "$order_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "money_forward_invoice_convert_quote_to_billing",
+      "description": "Create a billing (請求書) from a quote, with the same partner and lines. Returns the new billing; check its dates before sending.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "string",
+            "description": "Quote id."
+          }
+        },
+        "required": [
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/quotes/{quote_id}/convert_to_billing"
+      }
+    },
+    {
+      "name": "money_forward_invoice_delete_quote",
+      "description": "Delete a quote (見積書) with its lines for good; it cannot be restored. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "string",
+            "description": "Quote id."
+          }
+        },
+        "required": [
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/quotes/{quote_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "money_forward_invoice_list_sent_histories",
+      "description": "List the sending history (送付履歴) of billings and quotes: document type and id, from, to, cc, sender and sent time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based (default 1). pagination.total_pages says how many there are.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page (default 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sent_histories",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    }
+  ]
+}

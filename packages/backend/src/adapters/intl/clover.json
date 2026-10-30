@@ -1,0 +1,1890 @@
+{
+  "slug": "clover",
+  "name": "Clover",
+  "aliases": [
+    "Clover POS",
+    "Clover Network",
+    "Fiserv Clover"
+  ],
+  "description": "Clover point of sale (Fiserv): merchant details and settings, inventory items with stock, categories, tax rates, discounts and modifiers, orders with line items, payments, refunds and tenders, customers, employees, roles and shifts. North America, Europe, Latin America or sandbox.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "clover",
+  "docsUrl": "https://docs.clover.com/dev/reference/api-reference-overview",
+  "instructions": "## Clover\nThis connector uses the **Clover Platform REST API v3** for one merchant: business details and settings, inventory items with stock, categories, tax rates, discounts and modifier groups, orders with line items and discounts, payments, refunds and tenders, customers, employees, roles and shifts. It can create and update items, stock, categories, orders and customers. It does not take card payments or issue refunds: those happen on the Clover device or through the Ecommerce API.\n\n**Setup (5 minutes)**\n1. Sign in to the Clover Merchant Dashboard as an admin and open **Settings**, **View all settings**, **API tokens** (Account and setup, Business operations). Create a token and tick the permissions the tools need: Merchant read, Inventory read and write, Orders read and write, Payments read, Customers read and write, Employees read. For a test merchant, do the same from the Global Developer Dashboard (Test merchants, Launch dashboard).\n2. Paste the token into `CLOVER_API_TOKEN`. It is sent as `Authorization: Bearer <token>`.\n3. Set `CLOVER_MERCHANT_ID` to the 13-character merchant id (mId), shown in the dashboard address `.../merchants/<mId>/...` and under Account and setup, Merchants.\n4. Set `CLOVER_API_URL` to the region of the merchant: `https://api.clover.com` (North America), `https://api.eu.clover.com` (Europe), `https://api.la.clover.com` (Latin America) or `https://apisandbox.dev.clover.com` (sandbox).\n5. Run `clover_get_merchant` to check the setup.\n\n**Workflow**\n- Merchant: `clover_get_merchant`, `clover_get_merchant_address`, `clover_get_merchant_properties` (currency, time zone), `clover_list_order_types`, `clover_list_roles`.\n- Inventory: `clover_list_items`, `clover_get_item`, `clover_create_item`, `clover_update_item`; stock with `clover_list_item_stocks`, `clover_get_item_stock`, `clover_update_item_stock`; categories with `clover_list_categories`, `clover_get_category`, `clover_list_category_items`, `clover_create_category`, `clover_update_category`; `clover_list_tax_rates`, `clover_list_discounts`, `clover_list_modifier_groups`.\n- Orders: `clover_list_orders` (filter by time, expand lineItems and payments), `clover_get_order`, `clover_list_order_line_items`, `clover_get_order_line_item`, `clover_list_order_discounts`. To build an order in one call use `clover_calculate_order` to show the total, then `clover_create_atomic_order`. Step by step: `clover_create_order`, `clover_add_line_item`, `clover_add_order_discount`, `clover_update_order`. `clover_void_line_item` and `clover_delete_order` remove lines and orders.\n- Payments: `clover_list_payments`, `clover_get_payment`, `clover_list_order_payments`, `clover_list_employee_payments`; refunds with `clover_list_refunds`, `clover_get_refund`; payment methods with `clover_list_tenders`, `clover_get_tender`.\n- Customers: `clover_list_customers` (expand emailAddresses and phoneNumbers), `clover_get_customer`, `clover_create_customer`, `clover_update_customer`, `clover_delete_customer`.\n- Staff: `clover_list_employees`, `clover_get_employee`, `clover_list_shifts`, `clover_list_employee_shifts`.\n\n**Switched off at install**: `clover_void_line_item`, `clover_delete_order` and `clover_delete_customer`; they cannot be undone, so an admin switches them on when the team needs them.\n\n**Before writing**: orders and stock changes show up on the merchant's devices and reports at once. Clover updates records with POST to the record's address. `clover_update_item_stock` sets an absolute quantity, not a difference.\n\n**Filters**: `filter` takes a list of conditions, each `field operator value`, e.g. `[\"createdTime>=1767225600000\", \"createdTime<1767830400000\"]`; they are combined with AND. Time filters on orders, payments and refunds cover at most 90 days per request: split longer periods into 90-day windows. `expand` adds related records in the same call (comma-separated).\n\n**Reading the answers**: lists come as `{elements: [...], href}`. Money is an integer in cents of the merchant currency (`1999` = 19.99); discounts are negative amounts. Quantities on line items (`unitQty`) are x 1000. Tax rates are x 100000 (`825000` = 8.25%). Times are Unix epoch milliseconds in UTC; convert with the time zone from `clover_get_merchant_properties`. Ids are 13-character strings.\n\n**Paging**: `limit` (default 100, at most 1000) and `offset`. When a page has `limit` elements, ask again with `offset` + `limit`. Nested expanded lists stop at 100 entries.\n\n**Limits and errors**: 16 requests per second and 5 concurrent requests per token (429 with `retry-after`). 401 means a wrong or revoked token or the wrong region in `CLOVER_API_URL`; 403 a token without the permission for that data; 404 a wrong merchant id or record id; 400 an invalid filter field.",
+  "prerequisites": "A Clover merchant account (or a test merchant in the Global Developer Dashboard), an admin user who can create API tokens, and the merchant id.",
+  "requiredEnvVars": [
+    "CLOVER_API_TOKEN",
+    "CLOVER_MERCHANT_ID",
+    "CLOVER_API_URL"
+  ],
+  "envVarMeta": {
+    "CLOVER_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Clover Merchant Dashboard, Settings, API tokens: create a token with the permissions you need (Merchant, Inventory, Orders, Payments, Customers, Employees).",
+      "link": "https://docs.clover.com/dev/docs/gdp-create-merchant-specific-api-token",
+      "pattern": "^[A-Za-z0-9._-]{20,}$",
+      "patternMessage": "Paste only the API token, without spaces, quotes or a Bearer prefix."
+    },
+    "CLOVER_MERCHANT_ID": {
+      "label": "Merchant ID",
+      "kind": "setting",
+      "help": "The 13-character merchant id (mId), visible in the dashboard address .../merchants/<mId>/... and under Account and setup.",
+      "link": "https://docs.clover.com/dev/docs/locating-merchant-id",
+      "example": "ABCDEFGHJKMNP",
+      "pattern": "^[A-Z0-9]{13}$",
+      "patternMessage": "Use the 13-character merchant id in capital letters and digits."
+    },
+    "CLOVER_API_URL": {
+      "label": "Region",
+      "kind": "address",
+      "help": "https://api.clover.com (North America), https://api.eu.clover.com (Europe), https://api.la.clover.com (Latin America) or https://apisandbox.dev.clover.com (sandbox).",
+      "example": "https://api.clover.com",
+      "link": "https://docs.clover.com/dev/docs/making-rest-api-calls",
+      "pattern": "^https://(api\\.clover\\.com|api\\.eu\\.clover\\.com|api\\.la\\.clover\\.com|apisandbox\\.dev\\.clover\\.com)$",
+      "patternMessage": "Use https://api.clover.com, https://api.eu.clover.com, https://api.la.clover.com or https://apisandbox.dev.clover.com, without a trailing slash."
+    }
+  },
+  "verifyHints": {
+    "401": "Clover refused the token. Check that it was copied whole, that it was not deleted in Settings, API tokens, and that CLOVER_API_URL is the region of the merchant (a sandbox token only works on apisandbox.dev.clover.com).",
+    "403": "The token works but lacks a permission. Edit the API token in the Merchant Dashboard and tick the read permission for this data.",
+    "404": "Clover found no merchant with this id. Check CLOVER_MERCHANT_ID (13 characters) and the region in CLOVER_API_URL.",
+    "429": "Clover allows 16 requests per second per token. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "clover_get_merchant"
+  },
+  "connector": {
+    "name": "Clover Platform REST API",
+    "type": "REST",
+    "baseUrl": "{{CLOVER_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{CLOVER_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/v3/merchants/{{CLOVER_MERCHANT_ID}}"
+  },
+  "tools": [
+    {
+      "name": "clover_get_merchant",
+      "description": "Get the merchant behind the token: business name, address, phone, website, owner and default currency. Expand employees or bank processing for more. Use it to check the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: owner, address, properties, employees, tenders, openingHours, gateway, logos."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_get_merchant_address",
+      "description": "Get the business address of the merchant: street lines, city, state, zip and country, as stored in Clover.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/address"
+      }
+    },
+    {
+      "name": "clover_get_merchant_properties",
+      "description": "Get merchant settings: default currency, time zone, locale, tips and tax settings, receipt and order options.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/properties"
+      }
+    },
+    {
+      "name": "clover_list_order_types",
+      "description": "List order types of the merchant (dine in, take out, delivery and custom ones) with label, taxable flag, fee and hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, deletedTime.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: hours, attributes, categories."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/order_types",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_list_roles",
+      "description": "List the employee roles of the merchant (admin, manager, employee and custom roles) with their system role and employees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: modifiedTime, systemRole, name, id, deletedTime.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: employees."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/roles",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_list_items",
+      "description": "List inventory items with name, price, price type, SKU, code, cost, stock tracking and visibility. Filter by name, SKU, price or modifiedTime; expand categories, taxRates or itemStock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: name, sku, itemCode, price, hidden, available, modifiedTime, id, tags.id, tags.name, itemStock.quantity, itemGroup.id, deleted.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: tags, categories, taxRates, modifierGroups, itemStock, options."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/items",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_get_item",
+      "description": "Get one inventory item by id with price, price type, SKU, code, cost and, when expanded, categories, tax rates, modifier groups and stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id (13 characters)."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: tags, categories, taxRates, modifierGroups, itemStock, options."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/items/{item_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_create_item",
+      "description": "Create an inventory item. price is in cents (1999 = 19.99) and required; priceType FIXED, VARIABLE (entered at sale) or PER_UNIT. Add categories with clover_update_item or in the body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "price": {
+            "type": "integer",
+            "description": "Price in cents of the merchant currency, e.g. 1999 for 19.99."
+          },
+          "priceType": {
+            "type": "string",
+            "description": "FIXED (default), VARIABLE or PER_UNIT.",
+            "enum": [
+              "FIXED",
+              "VARIABLE",
+              "PER_UNIT"
+            ]
+          },
+          "unitName": {
+            "type": "string",
+            "description": "Unit for PER_UNIT items, e.g. kg."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU."
+          },
+          "code": {
+            "type": "string",
+            "description": "Product code or barcode (UPC/EAN)."
+          },
+          "alternateName": {
+            "type": "string",
+            "description": "Alternate name, e.g. for kitchen tickets."
+          },
+          "cost": {
+            "type": "integer",
+            "description": "Cost in cents."
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Hide the item on the register."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Available for sale."
+          },
+          "defaultTaxRates": {
+            "type": "boolean",
+            "description": "Apply the default tax rates (default true)."
+          },
+          "isRevenue": {
+            "type": "boolean",
+            "description": "Counts as revenue (false for gift cards or deposits)."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Categories: [{id}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Labels: [{id}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "colorCode": {
+            "type": "string",
+            "description": "Button colour on the register, hex e.g. #FF0000."
+          }
+        },
+        "required": [
+          "name",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/items",
+        "bodyMapping": {
+          "name": "$name",
+          "price": "$price",
+          "priceType": "$priceType",
+          "unitName": "$unitName",
+          "sku": "$sku",
+          "code": "$code",
+          "alternateName": "$alternateName",
+          "cost": "$cost",
+          "hidden": "$hidden",
+          "available": "$available",
+          "defaultTaxRates": "$defaultTaxRates",
+          "isRevenue": "$isRevenue",
+          "categories": "$categories",
+          "tags": "$tags",
+          "colorCode": "$colorCode"
+        }
+      }
+    },
+    {
+      "name": "clover_update_item",
+      "description": "Update an inventory item (Clover updates with POST): name, price in cents, SKU, code, cost, visibility or categories. Stock is changed with clover_update_item_stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "price": {
+            "type": "integer",
+            "description": "Price in cents."
+          },
+          "priceType": {
+            "type": "string",
+            "description": "FIXED, VARIABLE or PER_UNIT.",
+            "enum": [
+              "FIXED",
+              "VARIABLE",
+              "PER_UNIT"
+            ]
+          },
+          "unitName": {
+            "type": "string",
+            "description": "Unit for PER_UNIT items."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU."
+          },
+          "code": {
+            "type": "string",
+            "description": "Product code or barcode."
+          },
+          "alternateName": {
+            "type": "string",
+            "description": "Alternate name."
+          },
+          "cost": {
+            "type": "integer",
+            "description": "Cost in cents."
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Hide the item on the register."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Available for sale."
+          },
+          "defaultTaxRates": {
+            "type": "boolean",
+            "description": "Apply the default tax rates."
+          },
+          "isRevenue": {
+            "type": "boolean",
+            "description": "Counts as revenue."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Categories: [{id}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "colorCode": {
+            "type": "string",
+            "description": "Button colour, hex."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/items/{item_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "price": "$price",
+          "priceType": "$priceType",
+          "unitName": "$unitName",
+          "sku": "$sku",
+          "code": "$code",
+          "alternateName": "$alternateName",
+          "cost": "$cost",
+          "hidden": "$hidden",
+          "available": "$available",
+          "defaultTaxRates": "$defaultTaxRates",
+          "isRevenue": "$isRevenue",
+          "categories": "$categories",
+          "colorCode": "$colorCode"
+        }
+      }
+    },
+    {
+      "name": "clover_list_item_stocks",
+      "description": "List the stock of all inventory items: item id, quantity on hand (decimal) and the low-stock alert threshold.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/item_stocks",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_get_item_stock",
+      "description": "Get the stock of one inventory item: quantity on hand, stock alert threshold and when it last changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/item_stocks/{item_id}"
+      }
+    },
+    {
+      "name": "clover_update_item_stock",
+      "description": "Set the stock of an inventory item to a new absolute quantity (not a change). Read the current stock first and confirm the new value with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "New quantity on hand, decimals allowed, e.g. 12 or 3.5."
+          },
+          "stockAlertThreshold": {
+            "type": "number",
+            "description": "Quantity at which the item counts as low stock."
+          }
+        },
+        "required": [
+          "item_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/item_stocks/{item_id}",
+        "bodyMapping": {
+          "quantity": "$quantity",
+          "stockAlertThreshold": "$stockAlertThreshold"
+        }
+      }
+    },
+    {
+      "name": "clover_list_categories",
+      "description": "List item categories with name, sort order and colour; expand items to get the items in each category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: modifiedTime, deleted, sortOrder, name, colorCode, id.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: items."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/categories",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_get_category",
+      "description": "Get one item category by id with name, sort order and colour; expand items to list its items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: items."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/categories/{category_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_list_category_items",
+      "description": "List the items in one category with price, SKU and, when expanded, stock, tax rates and modifier groups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: modifiedTime, deleted, sortOrder, name, colorCode, id.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: categories, itemStock, options, tags, taxRates."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/categories/{category_id}/items",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_create_category",
+      "description": "Create an item category shown on the register, with a name, sort order and colour. Items are added to it with clover_update_item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Category name."
+          },
+          "sortOrder": {
+            "type": "integer",
+            "description": "Position on the register."
+          },
+          "colorCode": {
+            "type": "string",
+            "description": "Colour, hex e.g. #00AA00."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/categories",
+        "bodyMapping": {
+          "name": "$name",
+          "sortOrder": "$sortOrder",
+          "colorCode": "$colorCode"
+        }
+      }
+    },
+    {
+      "name": "clover_update_category",
+      "description": "Rename a category or change its sort order or colour (Clover updates with POST). name is required by the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Category name."
+          },
+          "sortOrder": {
+            "type": "integer",
+            "description": "Position on the register."
+          },
+          "colorCode": {
+            "type": "string",
+            "description": "Colour, hex."
+          }
+        },
+        "required": [
+          "category_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/categories/{category_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "sortOrder": "$sortOrder",
+          "colorCode": "$colorCode"
+        }
+      }
+    },
+    {
+      "name": "clover_list_tax_rates",
+      "description": "List tax rates with name, rate (in units of 1/100000, so 825000 = 8.25%), flat amount, type and whether it is the default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: isDefault, rate, items.id, name, id, taxAmount, taxType.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: items."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/tax_rates",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_list_discounts",
+      "description": "List the predefined discounts of the merchant: name, amount in cents (negative) or percentage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: amount, modifiedtime, percentage, id.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/discounts",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_list_modifier_groups",
+      "description": "List modifier groups (e.g. Toppings) with min and max selections and, when expanded, their modifiers with prices in cents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: modifiedTime, item.id, sortOrder, name, id, showByDefault.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: modifiers, items."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/modifier_groups",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_list_orders",
+      "description": "List orders with state, total in cents, payment state, employee, order type and times. Filter by createdTime or modifiedTime (ms) and expand lineItems or payments. Time filters cover at most 90 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, state, total, payType, title, note, employee.id, employee.name, orderType, device.id, externalReferenceId, clientCreatedTime, createdTime, modifiedTime, deletedTime, testMode, manualTransaction.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: lineItems, payments, refunds, credits, voids, customers, discounts, serviceCharge, employee, orderType, lineItems.discounts, lineItems.modifications."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_get_order",
+      "description": "Get one order by id with total, state, payment state and, when expanded, line items, discounts, payments, refunds and customers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: lineItems, serviceCharge, discounts, credits, payments, customers, refunds."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_create_atomic_order",
+      "description": "Create a complete order in one call from an order cart: line items (inventory items or ad hoc), modifiers, discounts and service charge, with totals and taxes calculated by Clover.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderCart": {
+            "type": "object",
+            "description": "The cart: {currency?, title?, note?, orderType?: {id}, lineItems: [{item?: {id}, name?, price?, unitQty?, note?, modifications?: [{modifier: {id}}], discounts?: [{name, percentage|amount}]}], discounts?: [{name, percentage|amount}], serviceCharge?: {id}}. Prices in cents; unitQty is quantity x 1000."
+          }
+        },
+        "required": [
+          "orderCart"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/atomic_order/orders",
+        "bodyMapping": {
+          "orderCart": "$orderCart"
+        }
+      }
+    },
+    {
+      "name": "clover_calculate_order",
+      "description": "Calculate an order cart without saving it: totals, taxes, discounts and service charges for the same cart as clover_create_atomic_order. Use it to quote a total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderCart": {
+            "type": "object",
+            "description": "The cart, same shape as for clover_create_atomic_order."
+          }
+        },
+        "required": [
+          "orderCart"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/atomic_order/checkouts",
+        "bodyMapping": {
+          "orderCart": "$orderCart"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "clover_create_order",
+      "description": "Create an empty custom order (title, note, state, order type), then add lines with clover_add_line_item. For a full order in one call use clover_create_atomic_order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Order title, e.g. table or pickup name."
+          },
+          "note": {
+            "type": "string",
+            "description": "Order note."
+          },
+          "state": {
+            "type": "string",
+            "description": "Order state, e.g. open."
+          },
+          "orderType": {
+            "type": "object",
+            "description": "Order type: {id}."
+          },
+          "taxRemoved": {
+            "type": "boolean",
+            "description": "Remove tax from the order."
+          },
+          "manualTransaction": {
+            "type": "boolean",
+            "description": "Manual transaction flag."
+          },
+          "groupLineItems": {
+            "type": "boolean",
+            "description": "Group identical line items."
+          },
+          "testMode": {
+            "type": "boolean",
+            "description": "Test order."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders",
+        "bodyMapping": {
+          "title": "$title",
+          "note": "$note",
+          "state": "$state",
+          "orderType": "$orderType",
+          "taxRemoved": "$taxRemoved",
+          "manualTransaction": "$manualTransaction",
+          "groupLineItems": "$groupLineItems",
+          "testMode": "$testMode"
+        }
+      }
+    },
+    {
+      "name": "clover_update_order",
+      "description": "Update an order (Clover updates with POST): title, note, state, order type or tax removal. Lines are changed with the line item tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Order title."
+          },
+          "note": {
+            "type": "string",
+            "description": "Order note."
+          },
+          "state": {
+            "type": "string",
+            "description": "Order state, e.g. open or locked."
+          },
+          "orderType": {
+            "type": "object",
+            "description": "Order type: {id}."
+          },
+          "taxRemoved": {
+            "type": "boolean",
+            "description": "Remove tax from the order."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "note": "$note",
+          "state": "$state",
+          "orderType": "$orderType",
+          "taxRemoved": "$taxRemoved"
+        }
+      }
+    },
+    {
+      "name": "clover_list_order_line_items",
+      "description": "List the line items of an order with name, price in cents, quantity, discounts, modifications and refund state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: discounts, modifications, taxRates, payments."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}/line_items",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_get_order_line_item",
+      "description": "Get one line item of an order with name, price in cents, unit quantity, note, discounts and modifications.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "line_item_id": {
+            "type": "string",
+            "description": "Line item id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: discounts, modifications, taxRates, payments."
+          }
+        },
+        "required": [
+          "order_id",
+          "line_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}/line_items/{line_item_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_add_line_item",
+      "description": "Add a line item to an order: an inventory item by id, or an ad hoc line with name and price in cents. unitQty is quantity x 1000 for per-unit items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "item": {
+            "type": "object",
+            "description": "Inventory item: {id}."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of an ad hoc line."
+          },
+          "price": {
+            "type": "integer",
+            "description": "Price in cents (for an ad hoc line or to override)."
+          },
+          "unitQty": {
+            "type": "integer",
+            "description": "Quantity x 1000 for PER_UNIT items, e.g. 1500 for 1.5 kg."
+          },
+          "note": {
+            "type": "string",
+            "description": "Line note."
+          },
+          "printed": {
+            "type": "boolean",
+            "description": "Already sent to the kitchen printer."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}/line_items",
+        "bodyMapping": {
+          "item": "$item",
+          "name": "$name",
+          "price": "$price",
+          "unitQty": "$unitQty",
+          "note": "$note",
+          "printed": "$printed"
+        }
+      }
+    },
+    {
+      "name": "clover_void_line_item",
+      "description": "Remove (void) a line item from an order. Voided lines stay in reports as voids and cannot be restored, so confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "line_item_id": {
+            "type": "string",
+            "description": "Line item id."
+          }
+        },
+        "required": [
+          "order_id",
+          "line_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}/line_items/{line_item_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "clover_list_order_discounts",
+      "description": "List the order-level discounts applied to an order with name, amount in cents or percentage and approver.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}/discounts"
+      }
+    },
+    {
+      "name": "clover_add_order_discount",
+      "description": "Apply a discount to a whole order: a name plus an amount in cents (negative, e.g. -500) or a percentage, or a predefined discount by id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Discount name shown on the receipt."
+          },
+          "amount": {
+            "type": "integer",
+            "description": "Amount off in cents, negative, e.g. -500 for 5.00 off."
+          },
+          "percentage": {
+            "type": "integer",
+            "description": "Percent off, e.g. 10."
+          },
+          "discount": {
+            "type": "object",
+            "description": "Predefined discount: {id}."
+          }
+        },
+        "required": [
+          "order_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}/discounts",
+        "bodyMapping": {
+          "name": "$name",
+          "amount": "$amount",
+          "percentage": "$percentage",
+          "discount": "$discount"
+        }
+      }
+    },
+    {
+      "name": "clover_delete_order",
+      "description": "Delete an order. It cannot be undone and the order disappears from the merchant reports, so confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "clover_list_payments",
+      "description": "List payments with amount, tip and tax in cents, result (SUCCESS, FAIL and so on), tender, card type, order and employee. Filter by createdTime (ms); at most 90 days per request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, result, amount, cardType, tender.id, employee.id, device.id, externalPaymentId, externalReferenceId, offline, voided, createdTime, clientCreatedTime, modifiedTime, order.modifiedTime.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: tender, cardTransaction, refunds, lineItemPayments, taxRates, additionalCharges, order."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/payments",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_get_payment",
+      "description": "Get one payment by id with amount, tip, tax, cash back in cents, result, tender, card transaction details and refunds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Payment id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: tender, cardTransaction, refunds, lineItemPayments, taxRates, additionalCharges, order."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/payments/{payment_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_list_order_payments",
+      "description": "List the payments made on one order with amount, tip and tax in cents, result, tender and card details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, result, amount, cardType, tender.id, employee.id, createdTime, voided.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: tender, cardTransaction, refunds, lineItemPayments, taxRates, additionalCharges, order."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/orders/{order_id}/payments",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_list_employee_payments",
+      "description": "List the payments taken by one employee, with amount, tip and tax in cents, result and tender. Useful for tips and sales per employee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, result, amount, cardType, tender.id, createdTime, voided.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: tender, cardTransaction, refunds, lineItemPayments, taxRates, additionalCharges, order."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/employees/{employee_id}/payments",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_list_refunds",
+      "description": "List refunds with amount and tax in cents, the payment and order they belong to, employee and time. Filter by createdTime (ms), at most 90 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, voided, createdTime, clientCreatedTime, orderRef.id, payment.id, employee.id, device.id.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: payment, employee, lineItems, serviceCharge, overrideMerchantTender, transactionInfo."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/refunds",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_get_refund",
+      "description": "Get one refund by id with amount, tax and tip in cents, the refunded payment, line items and employee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_id": {
+            "type": "string",
+            "description": "Refund id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: payment, employee, lineItems, serviceCharge, overrideMerchantTender, transactionInfo."
+          }
+        },
+        "required": [
+          "refund_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/refunds/{refund_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_list_tenders",
+      "description": "List tenders (payment methods such as cash, credit card, debit card, check, gift card, external) with label, label key and whether enabled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, label, labelKey, enabled, visible, opensCashDrawer, modifiedTime, deletedTime.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/tenders",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_get_tender",
+      "description": "Get one tender (payment method) by id with label, label key, instructions and whether it opens the cash drawer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_id": {
+            "type": "string",
+            "description": "Tender id."
+          }
+        },
+        "required": [
+          "tender_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/tenders/{tender_id}"
+      }
+    },
+    {
+      "name": "clover_list_customers",
+      "description": "List customers with name, customer since and marketing consent; expand emailAddresses, phoneNumbers and addresses for contact data. Filter by name, email or phone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, firstName, lastName, fullName, emailAddress, phoneNumber, marketingAllowed, customerSince, deletedTime.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: addresses, emailAddresses, phoneNumbers, cards, metadata."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/customers",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_get_customer",
+      "description": "Get one customer by id with name, customer since, marketing consent and, when expanded, emails, phone numbers, addresses and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: addresses, emailAddresses, phoneNumbers, cards, metadata."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/customers/{customer_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_create_customer",
+      "description": "Create a customer with name, email addresses, phone numbers, addresses and marketing consent. Contact lists take objects, e.g. emailAddresses: [{emailAddress}].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "marketingAllowed": {
+            "type": "boolean",
+            "description": "The customer agreed to marketing."
+          },
+          "emailAddresses": {
+            "type": "array",
+            "description": "Emails: [{emailAddress}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "phoneNumbers": {
+            "type": "array",
+            "description": "Phones: [{phoneNumber}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "addresses": {
+            "type": "array",
+            "description": "Addresses: [{address1, address2, city, state, zip, country}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Extra data: {businessName, note, dobYear, dobMonth, dobDay}."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/customers",
+        "bodyMapping": {
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "marketingAllowed": "$marketingAllowed",
+          "emailAddresses": "$emailAddresses",
+          "phoneNumbers": "$phoneNumbers",
+          "addresses": "$addresses",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "clover_update_customer",
+      "description": "Update a customer (Clover updates with POST): name, marketing consent or metadata such as business name and note.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id."
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "marketingAllowed": {
+            "type": "boolean",
+            "description": "The customer agreed to marketing."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Extra data: {businessName, note, dobYear, dobMonth, dobDay}."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/customers/{customer_id}",
+        "bodyMapping": {
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "marketingAllowed": "$marketingAllowed",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "clover_delete_customer",
+      "description": "Delete a customer with their contact data. It cannot be undone, so confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/customers/{customer_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "clover_list_employees",
+      "description": "List employees with name, nickname, email, role, PIN-protected flags and custom id; expand roles or shifts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, name, nickname, email, role, role.id, customId, modifiedTime, deletedTime.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: roles, shifts."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/employees",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_get_employee",
+      "description": "Get one employee by id with name, nickname, email, role and, when expanded, roles and shifts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: roles, shifts."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/employees/{employee_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "clover_list_shifts",
+      "description": "List clock-in and clock-out shifts of all employees with in time, out time and overrides. Filter by employee.id or in_time (ms).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, employee.id, employee.name, in_time, out_time, has_in_time, deletedTime.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: employee, overrideInEmployee, overrideOutEmployee."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/shifts",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "clover_list_employee_shifts",
+      "description": "List the clock-in and clock-out shifts of one employee with in time, out time and overrides, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Filters, each \"field operator value\", e.g. \"modifiedTime>=1767225600000\". Several filters are combined with AND. Operators: =, !=, >, >=, <, <=. Fields: id, in_time, out_time, has_in_time, deletedTime.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated related data to include: employee, overrideInEmployee, overrideOutEmployee."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 1000 (default 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for the next page: offset + limit."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/merchants/{{CLOVER_MERCHANT_ID}}/employees/{employee_id}/shifts",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}
