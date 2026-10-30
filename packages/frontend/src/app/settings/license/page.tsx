@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { license, type LicenseBilling } from '@/lib/api';
 import { usePricingUrl } from '@/lib/use-pricing-url';
@@ -28,6 +29,10 @@ interface LicenseStatus {
 }
 
 export default function LicenseSettingsPage() {
+  const t = useTranslations('settingsLicense');
+  const locale = useLocale();
+  // English keeps the en-GB day-month order formatTrialEnd has always used.
+  const dateLocale = locale === 'en' ? 'en-GB' : locale;
   const { token, user, deploymentMode } = useAuth();
   const [status, setStatus] = useState<LicenseStatus | null>(null);
   const [licenseKey, setLicenseKey] = useState('');
@@ -59,7 +64,7 @@ export default function LicenseSettingsPage() {
   const cardTrialKind = useCardTrialKind(token, cardTrialOffer);
   const billingSummary = isCloud ? describeBilling(status?.billing) : null;
   const cardTrialDate = cardTrialOffer
-    ? formatTrialEnd(cardTrialDisplayEnd(status?.expiresAt), 'long')
+    ? formatTrialEnd(cardTrialDisplayEnd(status?.expiresAt), 'long', undefined, dateLocale)
     : null;
 
   const loadStatus = async () => {
@@ -97,7 +102,7 @@ export default function LicenseSettingsPage() {
       await loadStatus();
       notifyEditionChanged();
     } catch (err: any) {
-      setError(err.message || 'Failed to activate license');
+      setError(err.message || t('errors.activate'));
     } finally {
       setLoading(false);
     }
@@ -111,14 +116,14 @@ export default function LicenseSettingsPage() {
     try {
       const result = await license.verify(token);
       if (result.valid) {
-        setMessage('License verified successfully');
+        setMessage(t('verified'));
       } else {
-        setError(result.error || 'License is invalid');
+        setError(result.error || t('errors.invalid'));
       }
       await loadStatus();
       notifyEditionChanged();
     } catch (err: any) {
-      setError(err.message || 'Verification failed');
+      setError(err.message || t('errors.verify'));
     } finally {
       setVerifying(false);
     }
@@ -134,7 +139,7 @@ export default function LicenseSettingsPage() {
       setMessage(result.message);
       await loadStatus();
     } catch (err: any) {
-      setError(err.message || 'Failed to register community license');
+      setError(err.message || t('errors.register'));
     } finally {
       setLoading(false);
     }
@@ -153,7 +158,7 @@ export default function LicenseSettingsPage() {
       );
       window.location.href = url;
     } catch (err: any) {
-      setError(err.message || 'Failed to open the billing portal');
+      setError(err.message || t('errors.portal'));
       setOpeningPortal(false);
     }
   };
@@ -168,7 +173,7 @@ export default function LicenseSettingsPage() {
       setMessage(result.message);
       await loadStatus();
     } catch (err: any) {
-      setError(err.message || 'Failed to activate trial');
+      setError(err.message || t('errors.trial'));
     } finally {
       setLoading(false);
     }
@@ -176,7 +181,7 @@ export default function LicenseSettingsPage() {
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleDateString(undefined, {
+    return new Date(dateStr).toLocaleDateString(locale, {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -186,9 +191,12 @@ export default function LicenseSettingsPage() {
   };
 
   const planLabel = (plan: string | null) => {
-    if (!plan) return 'None';
+    if (!plan) return t('none');
     return plan.charAt(0).toUpperCase() + plan.slice(1);
   };
+
+  // Unknown statuses from the server are shown as they come.
+  const statusLabel = (s: string) => (t.has(`statuses.${s}`) ? t(`statuses.${s}`) : s);
 
   const statusColor = (s: string) => {
     switch (s) {
@@ -203,7 +211,7 @@ export default function LicenseSettingsPage() {
   if (user?.role !== 'ADMIN') {
     return (
       <div className="text-center py-12 text-[var(--text-3)]">
-        Only administrators can manage the license.
+        {t('adminOnly')}
       </div>
     );
   }
@@ -211,9 +219,9 @@ export default function LicenseSettingsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-base font-semibold text-[var(--text)]">License & Plan</h1>
+        <h1 className="text-base font-semibold text-[var(--text)]">{t('title')}</h1>
         <p className="text-sm text-[var(--text-2)] mt-1">
-          Manage your Anything MCP license
+          {t('intro')}
         </p>
       </div>
 
@@ -233,24 +241,24 @@ export default function LicenseSettingsPage() {
 
       {/* Current Plan */}
       <Card className="p-5">
-        <h2 className="text-sm font-semibold text-[var(--text)] mb-4">{isCloud ? 'Current Plan' : 'License key'}</h2>
+        <h2 className="text-sm font-semibold text-[var(--text)] mb-4">{isCloud ? t('currentPlan') : t('licenseKey')}</h2>
 
         {!status || !status.plan ? (
           <div className="space-y-3">
             <p className="text-sm text-[var(--text-2)]">
-              No license registered yet.
+              {t('noLicense')}
             </p>
             {isCloud ? (
               <Button onClick={handleActivateTrial} disabled={loading}>
-                {loading ? 'Activating...' : 'Start 7-Day Free Trial'}
+                {loading ? t('activating') : t('startTrial')}
               </Button>
             ) : (
               <>
                 <p className="text-xs text-[var(--text-3)]">
-                  Optional for Community: a free key by email gets you security and release notices.
+                  {t('communityHint')}
                 </p>
                 <Button variant="secondary" onClick={handleRegisterCommunity} disabled={loading}>
-                  {loading ? 'Registering...' : 'Register Free Community License'}
+                  {loading ? t('registering') : t('registerCommunity')}
                 </Button>
               </>
             )}
@@ -258,34 +266,34 @@ export default function LicenseSettingsPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
-              <div className="text-[var(--text-3)] text-xs mb-0.5">Plan</div>
+              <div className="text-[var(--text-3)] text-xs mb-0.5">{t('fields.plan')}</div>
               <div className="font-medium text-[var(--text)]">{planLabel(status.plan)}</div>
             </div>
             <div>
-              <div className="text-[var(--text-3)] text-xs mb-0.5">Status</div>
+              <div className="text-[var(--text-3)] text-xs mb-0.5">{t('fields.status')}</div>
               <div className={`font-medium capitalize ${statusColor(status.status)}`}>
-                {status.status}
+                {statusLabel(status.status)}
               </div>
             </div>
             <div>
-              <div className="text-[var(--text-3)] text-xs mb-0.5">Expires</div>
+              <div className="text-[var(--text-3)] text-xs mb-0.5">{t('fields.expires')}</div>
               <div className="text-[var(--text)]">{formatDate(status.expiresAt)}</div>
             </div>
             <div>
-              <div className="text-[var(--text-3)] text-xs mb-0.5">Last Verified</div>
+              <div className="text-[var(--text-3)] text-xs mb-0.5">{t('fields.lastVerified')}</div>
               <div className="text-[var(--text)]">{formatDate(status.lastVerifiedAt)}</div>
             </div>
             {status.trialDaysLeft !== undefined && (
               <div>
-                <div className="text-[var(--text-3)] text-xs mb-0.5">Trial Days Left</div>
+                <div className="text-[var(--text-3)] text-xs mb-0.5">{t('fields.trialDaysLeft')}</div>
                 <div className={`font-medium ${status.trialDaysLeft <= 2 ? 'text-[var(--warn)]' : 'text-[var(--ok)]'}`}>
-                  {status.trialDaysLeft} days
+                  {t('fields.days', { count: status.trialDaysLeft })}
                 </div>
               </div>
             )}
             {!isCloud && (
               <div className="sm:col-span-2">
-                <div className="text-[var(--text-3)] text-xs mb-0.5">Instance ID</div>
+                <div className="text-[var(--text-3)] text-xs mb-0.5">{t('fields.instanceId')}</div>
                 <div className="font-mono text-xs break-all text-[var(--text)]">{status.instanceId || '—'}</div>
               </div>
             )}
@@ -322,7 +330,7 @@ export default function LicenseSettingsPage() {
         {status?.plan && (
           <div className="mt-4 pt-4 border-t border-[var(--border)] flex flex-wrap items-center gap-3">
             <Button variant="secondary" onClick={handleVerify} disabled={verifying}>
-              {verifying ? 'Verifying...' : 'Verify Now'}
+              {verifying ? t('verifying') : t('verify')}
             </Button>
             {hasBillableSubscription && (
               <Button
@@ -332,12 +340,12 @@ export default function LicenseSettingsPage() {
                 disabled={openingPortal}
               >
                 {openingPortal
-                  ? 'Opening…'
+                  ? t('billing.opening')
                   : billingSummary?.paymentIssue
-                    ? 'Update payment method'
+                    ? t('billing.updatePayment')
                     : billingSummary?.cancelling
-                      ? 'Keep my plan'
-                      : 'Manage subscription & billing'}
+                      ? t('billing.keepPlan')
+                      : t('billing.manage')}
               </Button>
             )}
             {/* A clearly labelled way out, in the app itself: opens Stripe's
@@ -350,7 +358,7 @@ export default function LicenseSettingsPage() {
                 disabled={openingPortal}
                 className="text-sm text-[var(--text-3)] underline underline-offset-2 hover:text-[var(--text-2)] disabled:opacity-50"
               >
-                Cancel subscription
+                {t('billing.cancel')}
               </button>
             )}
           </div>
@@ -360,7 +368,7 @@ export default function LicenseSettingsPage() {
       {/* Features */}
       {isCloud && status?.features && Object.keys(status.features).length > 0 && (
         <Card className="p-5">
-          <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Features</h2>
+          <h2 className="text-sm font-semibold text-[var(--text)] mb-4">{t('features.title')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             {Object.entries(status.features).map(([key, value]) => (
               <div key={key} className="flex justify-between py-1">
@@ -368,7 +376,7 @@ export default function LicenseSettingsPage() {
                   {key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
                 </span>
                 <span className="font-medium text-[var(--text)]">
-                  {value === true ? 'Yes' : value === false ? 'No' : value === null ? 'Unlimited' : String(value)}
+                  {value === true ? t('features.yes') : value === false ? t('features.no') : value === null ? t('features.unlimited') : String(value)}
                 </span>
               </div>
             ))}
@@ -379,35 +387,40 @@ export default function LicenseSettingsPage() {
       {/* Change License Key — always available so admins can activate a purchased key any time */}
       <Card className="p-5">
           <h2 className="text-sm font-semibold text-[var(--text)] mb-4">
-            {status?.plan && status.plan !== 'trial' ? 'Change License Key' : 'Activate License Key'}
+            {status?.plan && status.plan !== 'trial' ? t('key.change') : t('key.activate')}
           </h2>
           {status?.plan && status.plan !== 'trial' ? (
             // A paying customer who buys again gets a second subscription beside
             // the first, not a new plan. Send them to the plan switch instead.
             <p className="text-sm text-[var(--text-2)] mb-4">
-              To move to another plan,{' '}
-              <a
-                href={managePlan.href}
-                onClick={managePlan.onClick}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[var(--brand)] hover:underline font-medium"
-              >
-                change it in the billing portal
-              </a>{' '}
-              — your current subscription is switched and prorated, not duplicated.
+              {t.rich('key.changePlan', {
+                link: (chunks) => (
+                  <a
+                    href={managePlan.href}
+                    onClick={managePlan.onClick}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[var(--brand)] hover:underline font-medium"
+                  >
+                    {chunks}
+                  </a>
+                ),
+              })}
             </p>
           ) : (
             <p className="text-sm text-[var(--text-2)] mb-4">
-              Purchase a license at{' '}
-              <a
-                href={pricingUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[var(--brand)] hover:underline font-medium"
-              >
-                anythingmcp.com
-              </a>
+              {t.rich('key.purchase', {
+                link: (chunks) => (
+                  <a
+                    href={pricingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[var(--brand)] hover:underline font-medium"
+                  >
+                    {chunks}
+                  </a>
+                ),
+              })}
             </p>
           )}
 
@@ -420,7 +433,7 @@ export default function LicenseSettingsPage() {
               className="flex-1 h-9 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] font-mono tracking-wider outline-none focus:border-[var(--brand)]"
             />
             <Button onClick={handleActivate} disabled={loading || !licenseKey}>
-              {loading ? 'Activating...' : 'Activate'}
+              {loading ? t('activating') : t('key.submit')}
             </Button>
           </div>
         </Card>
@@ -428,23 +441,21 @@ export default function LicenseSettingsPage() {
       {/* Upgrade Plan (Cloud mode) */}
       {isCloud && status?.plan === 'trial' && (
         <Card className="p-5">
-          <h2 className="text-sm font-semibold text-[var(--text)] mb-4">Upgrade Plan</h2>
+          <h2 className="text-sm font-semibold text-[var(--text)] mb-4">{t('upgrade.title')}</h2>
           {cardTrialOffer ? (
             <>
               {cardTrialKind === 'pay' ? (
                 <p className="text-sm text-[var(--text-2)] mb-4">
-                  Choose a plan to keep AnythingMCP Cloud running after your trial. This address has had
-                  a subscription before, so the plan starts and is billed when you check out.
+                  {t('upgrade.payBody')}
                 </p>
               ) : (
                 <p className="text-sm text-[var(--text-2)] mb-4">
-                  Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is
-                  charged before {cardTrialDate ?? 'your trial ends'}, and you can cancel anytime.
+                  {cardTrialDate ? t('upgrade.cardBody', { date: cardTrialDate }) : t('upgrade.cardBodyNoDate')}
                 </p>
               )}
               <div className="flex flex-wrap gap-3">
                 <Link href={startTrialPath(source)} className={cn(buttonVariants({ variant: 'primary' }))}>
-                  {cardTrialKind === 'pay' ? 'Choose a plan' : 'Add payment method'}
+                  {cardTrialKind === 'pay' ? t('upgrade.choosePlan') : t('upgrade.addPayment')}
                 </Link>
                 <a
                   href={pricingUrl}
@@ -452,14 +463,14 @@ export default function LicenseSettingsPage() {
                   rel="noopener noreferrer"
                   className={cn(buttonVariants({ variant: 'secondary' }))}
                 >
-                  Compare plans
+                  {t('upgrade.compare')}
                 </a>
               </div>
             </>
           ) : (
             <>
               <p className="text-sm text-[var(--text-2)] mb-4">
-                Upgrade to a paid plan to continue using AnythingMCP Cloud after your trial ends.
+                {t('upgrade.body')}
               </p>
               <a
                 href={pricingUrl}
@@ -467,7 +478,7 @@ export default function LicenseSettingsPage() {
                 rel="noopener noreferrer"
                 className={cn(buttonVariants({ variant: 'primary' }))}
               >
-                View Plans
+                {t('upgrade.viewPlans')}
               </a>
             </>
           )}

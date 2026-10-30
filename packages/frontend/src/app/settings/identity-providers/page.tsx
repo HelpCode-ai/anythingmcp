@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { useEdition } from '@/lib/use-edition';
 import { EnterpriseNotice } from '@/components/enterprise-notice';
@@ -27,88 +28,45 @@ import { ScimPanel } from './scim-panel';
  * `issuer: true` means the type has no derivable issuer, so the admin must
  * supply one — for the others the server builds it and ignores anything sent,
  * which is what keeps a hostile URL out of the discovery fetch.
+ *
+ * The type names, hints and field labels are in messages/*.json under
+ * `settingsSso.types.<TYPE>`; `hint` and `help` say whether there is one.
  */
 const PROVIDER_TYPES: Record<
   string,
   {
-    label: string;
     issuer: boolean;
-    hint?: string;
-    fields: { key: string; label: string; placeholder: string; help?: string }[];
+    hint?: boolean;
+    fields: { key: string; placeholder: string; help?: boolean }[];
   }
 > = {
   ENTRA: {
-    label: 'Microsoft Entra ID',
     issuer: false,
-    fields: [
-      {
-        key: 'tenantId',
-        label: 'Directory (tenant) ID',
-        placeholder: '00000000-0000-0000-0000-000000000000',
-        help: 'The tenant GUID from your app registration overview. A directory name such as contoso.onmicrosoft.com is not accepted.',
-      },
-    ],
+    fields: [{ key: 'tenantId', placeholder: '00000000-0000-0000-0000-000000000000', help: true }],
   },
   GOOGLE: {
-    label: 'Google Workspace',
     issuer: false,
-    fields: [
-      {
-        key: 'hostedDomain',
-        label: 'Workspace domain',
-        placeholder: 'example.com',
-        help: 'Strongly recommended. Without it Google is not authoritative for a non-gmail.com address, so any Google account could sign in.',
-      },
-    ],
+    fields: [{ key: 'hostedDomain', placeholder: 'example.com', help: true }],
   },
   OKTA: {
-    label: 'Okta',
     issuer: true,
-    hint: 'Use your Okta domain, e.g. https://acme.okta.com. Custom domains are not yet supported.',
-    fields: [
-      {
-        key: 'authorizationServerId',
-        label: 'Authorization server ID (optional)',
-        placeholder: 'default',
-      },
-    ],
+    hint: true,
+    fields: [{ key: 'authorizationServerId', placeholder: 'default' }],
   },
   AUTH0: {
-    label: 'Auth0',
     issuer: true,
-    hint: 'Self-hosted deployments only.',
-    fields: [
-      {
-        key: 'rolesClaimNamespace',
-        label: 'Roles claim namespace',
-        placeholder: 'https://your-app.example.com/roles',
-        help: 'Auth0 silently drops custom claims that are not namespaced — the sign-in succeeds and the roles are simply missing.',
-      },
-    ],
+    hint: true,
+    fields: [{ key: 'rolesClaimNamespace', placeholder: 'https://your-app.example.com/roles', help: true }],
   },
   GITHUB: {
-    label: 'GitHub',
     issuer: false,
-    hint: 'GitHub is not an OpenID Connect provider, so there is no discovery document to test.',
-    fields: [
-      {
-        key: 'organization',
-        label: 'Restrict to organization (optional)',
-        placeholder: 'my-org',
-      },
-    ],
+    hint: true,
+    fields: [{ key: 'organization', placeholder: 'my-org' }],
   },
   OIDC: {
-    label: 'Generic OpenID Connect',
     issuer: true,
-    hint: 'Self-hosted deployments only.',
-    fields: [
-      {
-        key: 'groupsClaimName',
-        label: 'Groups claim name (optional)',
-        placeholder: 'groups',
-      },
-    ],
+    hint: true,
+    fields: [{ key: 'groupsClaimName', placeholder: 'groups' }],
   },
 };
 
@@ -136,6 +94,7 @@ function expiringSoon(p: IdentityProvider): boolean {
 }
 
 export default function IdentityProvidersPage() {
+  const t = useTranslations('settingsSso');
   const { token, user: currentUser, deploymentMode, deploymentModeLoaded } = useAuth();
   const toast = useToast();
   // Identity providers are a self-hosted feature: in cloud the API answers
@@ -177,7 +136,7 @@ export default function IdentityProvidersPage() {
       setProviders(list);
       setMcpRoles(roleList);
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not load providers', description: err.message });
+      toast.show({ tone: 'error', title: t('toast.loadFailed'), description: err.message });
     } finally {
       setLoading(false);
     }
@@ -224,7 +183,7 @@ export default function IdentityProvidersPage() {
     if (
       enforce &&
       !confirm(
-        'Require single sign-on for this workspace?\n\nPassword sign-in stops working for every member. Your recovery codes become the only way in if the identity provider becomes unreachable.',
+        t('confirmEnforce'),
       )
     ) {
       return;
@@ -234,11 +193,11 @@ export default function IdentityProvidersPage() {
       await identityProviders.setEnforceSso(p.id, enforce, token);
       toast.show({
         tone: 'success',
-        title: enforce ? 'Single sign-on required' : 'Password sign-in re-enabled',
+        title: enforce ? t('toast.enforced') : t('toast.passwordReenabled'),
       });
       await loadData();
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not change enforcement', description: err.message });
+      toast.show({ tone: 'error', title: t('toast.enforceFailed'), description: err.message });
     } finally {
       setEnforcing(null);
     }
@@ -264,16 +223,16 @@ export default function IdentityProvidersPage() {
 
       if (editingId) {
         await identityProviders.update(editingId, payload, token);
-        toast.show({ tone: 'success', title: 'Provider updated' });
+        toast.show({ tone: 'success', title: t('toast.updated') });
       } else {
         await identityProviders.create(payload, token);
-        toast.show({ tone: 'success', title: 'Provider created' });
+        toast.show({ tone: 'success', title: t('toast.created') });
       }
       setShowForm(false);
       setEditingId(null);
       await loadData();
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not save', description: err.message });
+      toast.show({ tone: 'error', title: t('toast.saveFailed'), description: err.message });
     } finally {
       setSaving(false);
     }
@@ -283,16 +242,16 @@ export default function IdentityProvidersPage() {
     if (
       !token ||
       !confirm(
-        `Delete "${p.name}"? Anyone who signs in through it will lose access, and members with password sign-in disabled will be locked out.`,
+        t('confirmDelete', { name: p.name }),
       )
     )
       return;
     try {
       await identityProviders.delete(p.id, token);
-      toast.show({ tone: 'success', title: 'Provider deleted' });
+      toast.show({ tone: 'success', title: t('toast.deleted') });
       await loadData();
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not delete', description: err.message });
+      toast.show({ tone: 'error', title: t('toast.deleteFailed'), description: err.message });
     }
   };
 
@@ -307,7 +266,7 @@ export default function IdentityProvidersPage() {
       // to a toast keeps the link reachable instead of failing silently.
       toast.show({
         tone: 'error',
-        title: 'Could not copy',
+        title: t('toast.copyFailed'),
         description: signInUrl(p),
       });
     }
@@ -320,11 +279,11 @@ export default function IdentityProvidersPage() {
       const result = await identityProviders.test(p.id, token);
       toast.show({
         tone: result.ok ? 'success' : 'error',
-        title: result.ok ? 'Connection OK' : 'Connection failed',
+        title: result.ok ? t('toast.testOk') : t('toast.testFailed'),
         description: result.message,
       });
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Test failed', description: err.message });
+      toast.show({ tone: 'error', title: t('toast.testError'), description: err.message });
     } finally {
       setTesting(null);
     }
@@ -334,9 +293,9 @@ export default function IdentityProvidersPage() {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="text-center">
-          <h2 className="text-xl font-bold text-[var(--text)] mb-2">Access Denied</h2>
-          <p className="text-[var(--text-2)] mb-4">Only administrators can access this page.</p>
-          <Link href="/settings" className="text-[var(--brand)] hover:underline">Back to Settings</Link>
+          <h2 className="text-xl font-bold text-[var(--text)] mb-2">{t('accessDenied.title')}</h2>
+          <p className="text-[var(--text-2)] mb-4">{t('accessDenied.body')}</p>
+          <Link href="/settings" className="text-[var(--brand)] hover:underline">{t('accessDenied.back')}</Link>
         </div>
       </div>
     );
@@ -346,13 +305,11 @@ export default function IdentityProvidersPage() {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="text-center max-w-md">
-          <h2 className="text-xl font-bold text-[var(--text)] mb-2">Not available on AnythingMCP Cloud</h2>
+          <h2 className="text-xl font-bold text-[var(--text)] mb-2">{t('cloud.title')}</h2>
           <p className="text-[var(--text-2)] mb-4">
-            Single sign-on, SCIM provisioning and role sync are part of the self-hosted edition,
-            where the instance belongs to one company. On Cloud, members sign in with their
-            email and password.
+            {t('cloud.body')}
           </p>
-          <Link href="/settings" className="text-[var(--brand)] hover:underline">Back to Settings</Link>
+          <Link href="/settings" className="text-[var(--brand)] hover:underline">{t('accessDenied.back')}</Link>
         </div>
       </div>
     );
@@ -392,27 +349,25 @@ export default function IdentityProvidersPage() {
         />
       )}
       {loading ? (
-        <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
+        <p className="text-center text-[var(--text-3)] py-16">{t('loading')}</p>
       ) : (
         <Card className="p-[22px]">
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h3 className="text-base font-semibold text-[var(--text)]">Single sign-on</h3>
+              <h3 className="text-base font-semibold text-[var(--text)]">{t('title')}</h3>
               <p className="text-[13px] text-[var(--text-2)] mt-1 max-w-2xl">
-                Let members sign in with your organization&apos;s identity provider instead of
-                a password. Share the sign-in link below with them — it is the entry point
-                for this workspace.
+                {t('intro')}
               </p>
             </div>
             <Button size="sm" onClick={showForm ? () => setShowForm(false) : openCreate} disabled={locked && !showForm}>
-              {showForm ? 'Cancel' : 'Add provider'}
+              {showForm ? t('cancel') : t('add')}
             </Button>
           </div>
 
           {showForm && (
             <div className="mb-5 p-4 rounded-[9px] bg-[var(--surface-2)] space-y-3">
               <div>
-                <label className={labelClass}>Provider</label>
+                <label className={labelClass}>{t('form.provider')}</label>
                 <div className="max-w-sm">
                   <AppSelect
                     value={form.type}
@@ -421,36 +376,35 @@ export default function IdentityProvidersPage() {
                       // would fail validation against the new one.
                       setForm({ ...form, type: v, config: {}, issuer: '' })
                     }
-                    options={Object.entries(PROVIDER_TYPES).map(([value, t]) => ({
+                    options={Object.keys(PROVIDER_TYPES).map((value) => ({
                       value,
-                      label: t.label,
+                      label: t(`types.${value}.label`),
                     }))}
                     disabled={Boolean(editingId)}
                   />
                 </div>
                 {editingId && (
                   <p className={helpClass}>
-                    The provider type cannot be changed after creation — the stored settings
-                    were validated against it. Create a new provider instead.
+                    {t('form.typeLocked')}
                   </p>
                 )}
-                {spec.hint && <p className={helpClass}>{spec.hint}</p>}
+                {spec.hint && <p className={helpClass}>{t(`types.${form.type}.hint`)}</p>}
               </div>
 
               <div>
-                <label className={labelClass}>Display name</label>
+                <label className={labelClass}>{t('form.name')}</label>
                 <input
                   className={inputClass}
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Sign in with Microsoft"
+                  placeholder={t('form.namePlaceholder')}
                 />
-                <p className={helpClass}>Shown on the sign-in button.</p>
+                <p className={helpClass}>{t('form.nameHelp')}</p>
               </div>
 
               {spec.issuer && (
                 <div>
-                  <label className={labelClass}>Issuer URL</label>
+                  <label className={labelClass}>{t('form.issuer')}</label>
                   <input
                     className={inputClass}
                     value={form.issuer ?? ''}
@@ -462,7 +416,7 @@ export default function IdentityProvidersPage() {
 
               {spec.fields.map((f) => (
                 <div key={f.key}>
-                  <label className={labelClass}>{f.label}</label>
+                  <label className={labelClass}>{t(`types.${form.type}.fields.${f.key}.label`)}</label>
                   <input
                     className={inputClass}
                     value={form.config[f.key] ?? ''}
@@ -474,12 +428,12 @@ export default function IdentityProvidersPage() {
                     }
                     placeholder={f.placeholder}
                   />
-                  {f.help && <p className={helpClass}>{f.help}</p>}
+                  {f.help && <p className={helpClass}>{t(`types.${form.type}.fields.${f.key}.help`)}</p>}
                 </div>
               ))}
 
               <div>
-                <label className={labelClass}>Client ID</label>
+                <label className={labelClass}>{t('form.clientId')}</label>
                 <input
                   className={inputClass}
                   value={form.clientId}
@@ -489,7 +443,7 @@ export default function IdentityProvidersPage() {
 
               <div>
                 <label className={labelClass}>
-                  Client secret {editingId && <span className="font-normal">(leave blank to keep)</span>}
+                  {t('form.clientSecret')} {editingId && <span className="font-normal">{t('form.keepBlank')}</span>}
                 </label>
                 <input
                   type="password"
@@ -501,13 +455,13 @@ export default function IdentityProvidersPage() {
                 />
                 {editingId && (
                   <p className={helpClass}>
-                    The secret is never sent back to the browser, so it cannot be shown here.
+                    {t('form.secretHidden')}
                   </p>
                 )}
               </div>
 
               <div>
-                <label className={labelClass}>Secret expires on (optional)</label>
+                <label className={labelClass}>{t('form.secretExpires')}</label>
                 <input
                   type="date"
                   className={inputClass}
@@ -517,8 +471,7 @@ export default function IdentityProvidersPage() {
                   }
                 />
                 <p className={helpClass}>
-                  Microsoft caps client secrets at 24 months. Recording the date here turns a
-                  silent expiry into a warning.
+                  {t('form.secretExpiresHelp')}
                 </p>
               </div>
 
@@ -532,11 +485,9 @@ export default function IdentityProvidersPage() {
                   }
                 />
                 <span>
-                  Create accounts on first sign-in
+                  {t('form.jit')}
                   <span className="block text-[11.5px] text-[var(--text-3)]">
-                    Off by default. With this on, anyone who can authenticate at your identity
-                    provider joins this workspace as a Viewer — including guests you may have
-                    invited there for other reasons.
+                    {t('form.jitHelp')}
                   </span>
                 </span>
               </label>
@@ -550,10 +501,9 @@ export default function IdentityProvidersPage() {
                     onChange={(e) => setForm({ ...form, roleSyncEnabled: e.target.checked })}
                   />
                   <span>
-                    Sync roles from the directory on every sign-in
+                    {t('form.roleSync')}
                     <span className="block text-[11.5px] text-[var(--text-3)]">
-                      Rights are then maintained where joiners and leavers are already
-                      handled. Roles an admin assigned by hand are never removed by a sync.
+                      {t('form.roleSyncHelp')}
                     </span>
                   </span>
                 </label>
@@ -561,52 +511,47 @@ export default function IdentityProvidersPage() {
                 {form.roleSyncEnabled && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-6">
                     <div>
-                      <label className={labelClass}>Read roles from</label>
+                      <label className={labelClass}>{t('form.source')}</label>
                       <AppSelect
                         value={form.roleSyncSource ?? 'GROUPS'}
                         onValueChange={(v) => setForm({ ...form, roleSyncSource: v })}
                         options={[
-                          { value: 'GROUPS', label: 'Security / Microsoft 365 groups' },
-                          { value: 'APP_ROLES', label: 'Application roles' },
+                          { value: 'GROUPS', label: t('form.sources.GROUPS') },
+                          { value: 'APP_ROLES', label: t('form.sources.APP_ROLES') },
                         ]}
                       />
                       <p className={helpClass}>
-                        Groups reuse what the directory already maintains, at the cost of
-                        matching on object IDs rather than readable names. Application roles
-                        read better but have to be declared in the app manifest first.
+                        {t('form.sourceHelp')}
                       </p>
                     </div>
                     <div>
-                      <label className={labelClass}>When nothing matches</label>
+                      <label className={labelClass}>{t('form.fallback')}</label>
                       <AppSelect
                         value={form.roleSyncFallback ?? 'DENY_ALL'}
                         onValueChange={(v) => setForm({ ...form, roleSyncFallback: v })}
                         options={[
-                          { value: 'DENY_ALL', label: 'Grant no tools' },
-                          { value: 'KEEP_EXISTING', label: 'Leave existing roles alone' },
-                          { value: 'DEFAULT_ROLE', label: 'Grant a default role' },
+                          { value: 'DENY_ALL', label: t('form.fallbacks.DENY_ALL') },
+                          { value: 'KEEP_EXISTING', label: t('form.fallbacks.KEEP_EXISTING') },
+                          { value: 'DEFAULT_ROLE', label: t('form.fallbacks.DEFAULT_ROLE') },
                         ]}
                       />
                       <p className={helpClass}>
-                        &ldquo;Grant no tools&rdquo; is the default deliberately: it assigns an
-                        explicit no-tools role, so the outcome does not depend on whether this
-                        workspace has set up tool whitelists yet.
+                        {t('form.fallbackHelp')}
                       </p>
                     </div>
                     {form.roleSyncFallback === 'DEFAULT_ROLE' && (
                       <div className="md:col-span-2">
-                        <label className={labelClass}>Default MCP roles</label>
+                        <label className={labelClass}>{t('form.defaultRoles')}</label>
                         <MultiSelect
                           value={form.roleSyncDefaultRoleIds ?? []}
                           onValueChange={(ids) => setForm({ ...form, roleSyncDefaultRoleIds: ids })}
                           options={mcpRoles.map((r) => ({ value: r.id, label: r.name }))}
-                          placeholder="Pick at least one role"
-                          emptyMessage="No MCP roles exist yet — create one under Roles"
+                          placeholder={t('form.defaultRolesPlaceholder')}
+                          emptyMessage={t('form.noRoles')}
                           className="max-w-sm"
                         />
                         <p className={helpClass}>
-                          Granted to anyone whose groups match no mapping. Leave it empty and
-                          the fallback behaves exactly like &ldquo;Grant no tools&rdquo;.
+                          {t('form.defaultRolesHelp')}
                         </p>
                       </div>
                     )}
@@ -621,13 +566,12 @@ export default function IdentityProvidersPage() {
                   checked={form.isActive ?? true}
                   onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
                 />
-                Active
+                {t('form.active')}
               </label>
 
               {defaultRoleMissing && (
                 <p className="text-[12.5px] text-[var(--danger)]">
-                  &ldquo;Grant a default role&rdquo; needs at least one default MCP role. Pick one
-                  above, or choose a different fallback.
+                  {t('form.defaultRoleMissing')}
                 </p>
               )}
               <div className="flex gap-2 pt-1">
@@ -636,10 +580,10 @@ export default function IdentityProvidersPage() {
                   onClick={handleSave}
                   disabled={saving || !form.name.trim() || !form.clientId.trim() || defaultRoleMissing}
                 >
-                  {saving ? 'Saving...' : editingId ? 'Save changes' : 'Create provider'}
+                  {saving ? t('form.saving') : editingId ? t('form.saveChanges') : t('form.create')}
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => setShowForm(false)}>
-                  Cancel
+                  {t('cancel')}
                 </Button>
               </div>
             </div>
@@ -647,7 +591,7 @@ export default function IdentityProvidersPage() {
 
           {providers.length === 0 && !showForm ? (
             <p className="text-[13px] text-[var(--text-3)] py-6 text-center">
-              No identity providers configured. Members sign in with a password.
+              {t('empty')}
             </p>
           ) : (
             <div className="space-y-2">
@@ -660,16 +604,16 @@ export default function IdentityProvidersPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-[var(--text)]">{p.name}</span>
-                      <Badge tone="neutral">{PROVIDER_TYPES[p.type]?.label ?? p.type}</Badge>
-                      {!p.isActive && <Badge tone="warn">Inactive</Badge>}
-                      {p.enforceSso && <Badge tone="danger">SSO required</Badge>}
+                      <Badge tone="neutral">{PROVIDER_TYPES[p.type] ? t(`types.${p.type}.label`) : p.type}</Badge>
+                      {!p.isActive && <Badge tone="warn">{t('list.inactive')}</Badge>}
+                      {p.enforceSso && <Badge tone="danger">{t('list.ssoRequired')}</Badge>}
                       {p.scimEnabled && <Badge tone="neutral">SCIM</Badge>}
-                      {expiringSoon(p) && <Badge tone="danger">Secret expiring</Badge>}
+                      {expiringSoon(p) && <Badge tone="danger">{t('list.secretExpiring')}</Badge>}
                     </div>
                     <p className="text-[12px] text-[var(--text-3)] mt-1 truncate">{p.issuer}</p>
                     {p.jitProvisioning && (
                       <p className="text-[11.5px] text-[var(--text-3)] mt-0.5">
-                        Creates accounts on first sign-in
+                        {t('list.jit')}
                       </p>
                     )}
                     {/*
@@ -688,7 +632,7 @@ export default function IdentityProvidersPage() {
                         className="text-[11.5px] text-[var(--brand)] hover:underline shrink-0"
                         onClick={() => handleCopyLink(p)}
                       >
-                        {copiedId === p.id ? 'Copied' : 'Copy'}
+                        {copiedId === p.id ? t('copied') : t('copy')}
                       </button>
                     </div>
                   </div>
@@ -699,13 +643,13 @@ export default function IdentityProvidersPage() {
                       onClick={() => handleTest(p)}
                       disabled={testing === p.id}
                     >
-                      {testing === p.id ? 'Testing...' : 'Test'}
+                      {testing === p.id ? t('list.testing') : t('list.test')}
                     </Button>
                     <Button size="sm" variant="secondary" onClick={() => openEdit(p)}>
-                      Edit
+                      {t('list.edit')}
                     </Button>
                     <Button size="sm" variant="danger" onClick={() => handleDelete(p)}>
-                      Delete
+                      {t('list.delete')}
                     </Button>
                   </div>
                  </div>
@@ -720,7 +664,7 @@ export default function IdentityProvidersPage() {
                      className="text-[11.5px] text-[var(--brand)] hover:underline"
                      onClick={() => setMappingsFor(mappingsFor === p.id ? null : p.id)}
                    >
-                     {mappingsFor === p.id ? 'Hide role mappings' : 'Role mappings'}
+                     {mappingsFor === p.id ? t('list.hideMappings') : t('list.mappings')}
                    </button>
                    {p.type === 'ENTRA' && (
                      <button
@@ -728,7 +672,7 @@ export default function IdentityProvidersPage() {
                        className="text-[11.5px] text-[var(--brand)] hover:underline"
                        onClick={() => setScimFor(scimFor === p.id ? null : p.id)}
                      >
-                       {scimFor === p.id ? 'Hide provisioning' : 'Provisioning (SCIM)'}
+                       {scimFor === p.id ? t('list.hideScim') : t('list.scim')}
                      </button>
                    )}
                    <label className="flex items-center gap-2 text-[11.5px] text-[var(--text-2)]">
@@ -739,7 +683,7 @@ export default function IdentityProvidersPage() {
                        disabled={enforcing === p.id}
                        onChange={(e) => handleEnforceSso(p, e.target.checked)}
                      />
-                     Require single sign-on
+                     {t('list.enforce')}
                    </label>
                  </div>
                  {mappingsFor === p.id && token && (
