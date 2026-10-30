@@ -977,8 +977,10 @@ export class ConnectorsController {
    */
   private mergeEmailAuthConfig(
     stored: string | null,
-    incoming: Record<string, unknown>,
-  ): Record<string, unknown> {
+    incoming: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    // Nothing sent: the stored login stays as it is.
+    if (!incoming || typeof incoming !== 'object') return undefined;
     let current: Record<string, unknown> = {};
     if (stored) {
       try {
@@ -1186,7 +1188,7 @@ export class ConnectorsController {
     // means "unchanged", not "erase".
     const ctx = secretContext(connector);
     const data = { ...dto };
-    if ((connector.type as string) === 'EMAIL' && dto.authConfig) {
+    if ((connector.type as string) === 'EMAIL') {
       data.authConfig = this.mergeEmailAuthConfig(connector.authConfig, dto.authConfig);
     }
     if (dto.envVars) {

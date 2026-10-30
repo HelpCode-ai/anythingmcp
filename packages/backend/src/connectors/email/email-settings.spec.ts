@@ -85,6 +85,16 @@ describe('resolveEmailSettings', () => {
     });
   });
 
+  it('checks the from address without a backtracking pattern', () => {
+    expect(resolveEmailSettings({ ...base, fromAddress: 'info@example.co.uk' }, { cloud: true }).fromAddress).toBe('info@example.co.uk');
+    for (const bad of ['a@b', 'a@.b', 'a@b.', '@b.c', 'a@b@c.d', 'a b@c.d', 'a@b.c>']) {
+      expect(() => resolveEmailSettings({ ...base, fromAddress: bad }, { cloud: true })).toThrow(/fromAddress/);
+    }
+    const started = Date.now();
+    expect(() => resolveEmailSettings({ ...base, fromAddress: `!@!.${'!.'.repeat(50_000)}!` }, { cloud: true })).toThrow();
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
   it('checks the from address', () => {
     expect(() => resolveEmailSettings({ ...base, fromAddress: 'not-an-address' }, { cloud: true })).toThrow(/fromAddress/);
     expect(() => resolveEmailSettings({ ...base, fromName: 'Anna\r\nBcc: x@y.z' }, { cloud: true })).toThrow(/single line/);

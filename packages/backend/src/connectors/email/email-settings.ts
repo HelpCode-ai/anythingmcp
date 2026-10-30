@@ -132,7 +132,23 @@ export function cloudSmtpBlockedMessage(port: number): string {
 
 const HOST_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*\.?$/;
 const IPV6_RE = /^[0-9A-Fa-f:.]+$/;
-const ADDRESS_RE = /^[^\s@<>()[\]",;:\\]+@[^\s@<>()[\]",;:\\]+\.[^\s@<>()[\]",;:\\]+$/;
+// Characters that end or restructure an address in a header.
+const ADDRESS_FORBIDDEN = /[\s<>()[\]",;:\\]/;
+
+/**
+ * One @, a local part, and a domain with a dot that neither starts nor ends
+ * it. Checked by splitting rather than with one regular expression: the
+ * pattern `x+@x+\.x+` backtracks polynomially on a long run of dots
+ * (CodeQL js/polynomial-redos), and this value comes from a request body.
+ */
+export function isEmailAddress(value: string): boolean {
+  if (value.length > 320 || ADDRESS_FORBIDDEN.test(value)) return false;
+  const at = value.indexOf('@');
+  if (at < 1 || at !== value.lastIndexOf('@')) return false;
+  const domain = value.slice(at + 1);
+  const dot = domain.indexOf('.');
+  return dot > 0 && !domain.endsWith('.');
+}
 const VARIABLE_RE = /\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/;
 
 function text(value: unknown): string | undefined {
@@ -300,7 +316,7 @@ export function resolveEmailSettings(
 
   const fromAddress = singleLine('fromAddress', text(input.fromAddress));
   assertResolved('fromAddress', fromAddress);
-  if (fromAddress && !ADDRESS_RE.test(fromAddress)) {
+  if (fromAddress && !isEmailAddress(fromAddress)) {
     throw new EmailConnectorError('The email setting fromAddress must be an e-mail address.', 'config');
   }
   const fromName = singleLine('fromName', text(input.fromName));
