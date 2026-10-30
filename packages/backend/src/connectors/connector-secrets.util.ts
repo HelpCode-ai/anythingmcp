@@ -1,4 +1,5 @@
 import { getAdapter } from '../adapters/catalog';
+import { maskUrlPassword } from './database-url-credentials.util';
 
 /**
  * Which connector environment variables and headers hold credentials, and how
@@ -263,6 +264,9 @@ export function maskHeaders(
  * headers come back empty and are named in `maskedEnvVars` / `maskedHeaders`.
  * authConfig is never included, in any form: the UI does not need it, and the
  * non-secret OAuth settings have their own endpoint (`GET :id/oauth-config`).
+ * A DATABASE connection string comes back with its password masked; new
+ * connectors no longer store one there (database-url-credentials.util.ts),
+ * this covers the ones saved before.
  */
 export function toPublicConnector<
   T extends ConnectorLike & { envVars?: unknown; authConfig?: unknown },
@@ -278,8 +282,12 @@ export function toPublicConnector<
     authStatusRef: _authStatusRef,
     ...rest
   } = connector as T & { authStatusRef?: unknown };
+  const { type, baseUrl } = connector as { type?: unknown; baseUrl?: unknown };
   return {
     ...rest,
+    ...(type === 'DATABASE' && typeof baseUrl === 'string'
+      ? { baseUrl: maskUrlPassword(baseUrl) }
+      : {}),
     envVars: env.envVars,
     headers: hdr.headers,
     maskedEnvVars: env.maskedEnvVars,

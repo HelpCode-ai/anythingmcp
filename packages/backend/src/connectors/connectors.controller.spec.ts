@@ -1434,6 +1434,34 @@ describe('Connector secrets are never returned', () => {
       const result: any = await controller.update(req('ADMIN'), 'c1', { name: 'x' });
       expect(JSON.stringify(result)).not.toContain(TOKEN);
     });
+
+    describe('DATABASE connection string with a password (#1245)', () => {
+      const STORED = 'postgresql://app:s3cret@db.example.com:5432/shop';
+      const MASKED = 'postgresql://app:********@db.example.com:5432/shop';
+      const dbConnector = () =>
+        catalogConnector({ userId: 'u1', type: 'DATABASE', baseUrl: STORED, headers: null, config: null, envVars: null });
+
+      it('GET :id masks the password', async () => {
+        const { controller } = build(dbConnector());
+        const result: any = await controller.findOne(req('VIEWER'), 'c1');
+        expect(result.baseUrl).toBe(MASKED);
+        expect(JSON.stringify(result)).not.toContain('s3cret');
+      });
+
+      it('keeps the stored URL when the masked one is sent back', async () => {
+        const { controller, connectorsService } = build(dbConnector());
+        const result: any = await controller.update(req('EDITOR'), 'c1', { name: 'x', baseUrl: MASKED });
+        expect(connectorsService.update).toHaveBeenCalledWith('c1', { name: 'x', baseUrl: STORED });
+        expect(JSON.stringify(result)).not.toContain('s3cret');
+      });
+
+      it('takes an edited URL as sent', async () => {
+        const { controller, connectorsService } = build(dbConnector());
+        const edited = 'postgresql://app:********@db2.example.com:5432/shop';
+        await controller.update(req('EDITOR'), 'c1', { baseUrl: edited });
+        expect(connectorsService.update).toHaveBeenCalledWith('c1', { baseUrl: edited });
+      });
+    });
   });
 
   it('create returns the new connector masked', async () => {
