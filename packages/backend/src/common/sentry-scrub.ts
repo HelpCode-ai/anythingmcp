@@ -133,6 +133,17 @@ export function scrubSpan(span: StreamedSpan): StreamedSpan {
 }
 
 /**
+ * Messages of errors raw-body raises while reading a request body, which
+ * Express answers with a 4xx. Nothing failed on our side:
+ * - "request aborted": the client hung up first; a client looping on
+ *   /mcp/:id sent 1,388 in one burst on 4 Oct 2026
+ *   (ANYTHINGMCP-CLOUD-BACKEND-6).
+ * - "request entity too large": a body over the 10 MB limit in main.ts,
+ *   answered with 413 (ANYTHINGMCP-CLOUD-BACKEND-B, 29 Oct 2026).
+ */
+export const IGNORED_ERRORS: RegExp[] = [/^request aborted$/, /^request entity too large$/];
+
+/**
  * SDK v11's MCP server integration reports every error the MCP transport
  * raises as an unhandled exception. Those errors are the SDK refusing a
  * client's request (wrong Accept header, unknown session, malformed JSON),
