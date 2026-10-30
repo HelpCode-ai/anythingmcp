@@ -92,6 +92,8 @@ import * as ahrefs from './intl/ahrefs.json';
 import * as aircall from './intl/aircall.json';
 import * as airtable from './intl/airtable.json';
 import * as algolia from './intl/algolia.json';
+import * as aliexpressAffiliate from './intl/aliexpress-affiliate.json';
+import * as aliexpressDropshipping from './intl/aliexpress-dropshipping.json';
 import * as amazonAds from './intl/amazon-ads.json';
 import * as amazonSeller from './intl/amazon-seller.json';
 import * as amocrm from './intl/amocrm.json';
@@ -909,6 +911,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   aircall as unknown as AdapterDefinition,
   airtable as unknown as AdapterDefinition,
   algolia as unknown as AdapterDefinition,
+  aliexpressAffiliate as unknown as AdapterDefinition,
+  aliexpressDropshipping as unknown as AdapterDefinition,
   amazonAds as unknown as AdapterDefinition,
   amazonSeller as unknown as AdapterDefinition,
   amocrm as unknown as AdapterDefinition,
