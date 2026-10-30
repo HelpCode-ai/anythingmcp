@@ -58,6 +58,15 @@ describe('ConnectorsController: EMAIL connectors', () => {
       'office_mail_send_message',
     ]);
     expect(mcpServer.reloadConnectorTools).toHaveBeenCalledWith('c1');
+    const off = prisma.mcpTool.create.mock.calls.filter((c: any[]) => c[0].data.isEnabled === false).map((c: any[]) => c[0].data.name);
+    expect(off).toEqual(['office_mail_delete_messages', 'office_mail_send_message']);
+  });
+
+  it('refuses SMTP port 25 on Cloud', async () => {
+    const { controller } = build({ cloud: true });
+    await expect(controller.create(req, dto({ imapHost: 'imap.ionos.de', smtpHost: 'mx.example.com', smtpPort: 25 }))).rejects.toThrow(
+      /port 25/,
+    );
   });
 
   it('refuses plaintext and odd ports on Cloud before saving anything', async () => {

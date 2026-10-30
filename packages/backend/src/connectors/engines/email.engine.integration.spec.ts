@@ -315,3 +315,70 @@ describe('EmailEngine over TLS with a self-signed certificate (ImapKit)', () => 
     expect(out.folders.map((f) => f.path)).toContain('INBOX');
   });
 });
+
+describe('EmailEngine SMTP authentication on Cloud (smtp-server without AUTH)', () => {
+  let smtp: SMTPServer;
+  let port: number;
+  let delivered: number;
+  const env = process.env.DEPLOYMENT_MODE;
+
+  beforeAll(async () => {
+    jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    delivered = 0;
+    // An open relay: accepts mail from anyone and does not offer AUTH.
+    smtp = new SMTPServer({
+      disabledCommands: ['STARTTLS', 'AUTH'],
+      authOptional: true,
+      logger: false,
+      onData(stream, _session, cb) {
+        stream.on('data', () => undefined);
+        stream.on('end', () => {
+          delivered++;
+          cb();
+        });
+      },
+    });
+    await new Promise<void>((resolve) => smtp.listen(0, '127.0.0.1', resolve));
+    port = (smtp.server.address() as AddressInfo).port;
+  });
+  afterAll(async () => {
+    await new Promise<void>((resolve) => smtp.close(() => resolve()));
+    if (env === undefined) delete process.env.DEPLOYMENT_MODE;
+    else process.env.DEPLOYMENT_MODE = env;
+    jest.restoreAllMocks();
+  });
+
+  it('refuses to send through a server that does not authenticate', async () => {
+    process.env.DEPLOYMENT_MODE = 'cloud';
+    const engine = new EmailEngine();
+    // Cloud only accepts standard ports and TLS; the local relay listens on a
+    // random plaintext port, so the transport is pointed at it underneath.
+    const real = engine.smtpFactory;
+    engine.smtpFactory = (options) =>
+      real({ ...options, host: '127.0.0.1', port, secure: false, requireTLS: false, ignoreTLS: true, servername: undefined, tls: {} });
+    const err = (await engine
+      .execute(
+        { authConfig: { username: USER, password: PASSWORD } },
+        { method: 'email_send' },
+        { to: 'bob@example.org', text: 'x' },
+        { imapHost: 'imap.example.com', smtpHost: 'smtp.example.com', smtpPort: 2525, saveSent: 'never' },
+      )
+      .catch((e) => e)) as EmailConnectorError;
+    expect(err).toBeInstanceOf(EmailConnectorError);
+    expect(delivered).toBe(0);
+  });
+
+  it('(control) the same relay accepts the message when the login is not forced', async () => {
+    delete process.env.DEPLOYMENT_MODE;
+    const engine = new EmailEngine();
+    const out = (await engine.execute(
+      { authConfig: { username: USER, password: PASSWORD } },
+      { method: 'email_send' },
+      { to: 'bob@example.org', text: 'x' },
+      { imapHost: '127.0.0.1', smtpHost: '127.0.0.1', smtpPort: port, smtpSecurity: 'none', saveSent: 'never' },
+    )) as { sent: boolean };
+    expect(out.sent).toBe(true);
+    expect(delivered).toBe(1);
+  });
+});

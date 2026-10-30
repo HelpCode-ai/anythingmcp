@@ -535,5 +535,10 @@ describe('EMAIL adapters', () => {
     expect(adapter!.tools[0].name).toBe('imap_smtp_guide');
     expect(adapter!.probe?.tool).toBe('imap_smtp_list_folders');
     expect(adapter!.tools.some((t) => t.name === adapter!.probe?.tool)).toBe(true);
+    // Sending and deleting install switched off; drafts are the way to answer.
+    expect(adapter!.tools.filter((t) => t.enabled === false).map((t) => t.name).sort()).toEqual([
+      'imap_smtp_delete_messages',
+      'imap_smtp_send_message',
+    ]);
   });
 });

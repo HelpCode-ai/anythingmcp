@@ -504,7 +504,11 @@ export class ConnectorsService {
               kind: 'ok',
               message:
                 `Connection successful — IMAP login accepted, ${out.folders} folders` +
-                (out.smtp === 'ok' ? '; SMTP login accepted' : '; no SMTP server set, so sending is off'),
+                (out.smtp === 'ok'
+                  ? '; SMTP login accepted'
+                  : out.smtp === 'blocked'
+                    ? `; SMTP not reachable: ${out.smtpMessage}`
+                    : '; no SMTP server set, so sending is off'),
             };
           } catch (err) {
             if (!(err instanceof EmailConnectorError)) throw err;

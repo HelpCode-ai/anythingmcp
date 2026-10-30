@@ -86,6 +86,8 @@ export type EmailErrorKind =
   | 'tls'
   | 'not_found'
   | 'invalid_input'
+  /** Cloud only: the hosting network blocks outgoing SMTP on this port. */
+  | 'smtp_blocked'
   | 'error';
 
 /**
@@ -103,9 +105,30 @@ export class EmailConnectorError extends Error {
   }
 }
 
-/** Standard ports, the only ones a Cloud connector may use. */
+/**
+ * Standard ports, the only ones a Cloud connector may use. Port 25 is left
+ * out on purpose: it is server-to-server delivery, and mail sent straight to
+ * recipients' MX hosts from the Cloud's address would put that address on
+ * blocklists. Self-hosted, any port is allowed.
+ */
 export const CLOUD_IMAP_PORTS: ReadonlySet<number> = new Set([993, 143]);
-export const CLOUD_SMTP_PORTS: ReadonlySet<number> = new Set([465, 587, 25, 2525]);
+export const CLOUD_SMTP_PORTS: ReadonlySet<number> = new Set([465, 587, 2525]);
+
+/**
+ * Submission ports the Cloud's hosting provider blocks for outgoing traffic
+ * (measured on the Cloud droplet, October 2026: 25, 465 and 587 time out,
+ * 2525 passes). A connection on one of them fails fast on Cloud and is
+ * reported as such rather than as an unreachable server.
+ */
+export const CLOUD_BLOCKED_SMTP_PORTS: ReadonlySet<number> = new Set([25, 465, 587]);
+
+export function cloudSmtpBlockedMessage(port: number): string {
+  return (
+    `AnythingMCP Cloud cannot send through SMTP port ${port}: the Cloud's hosting provider blocks outgoing SMTP on ports 25, 465 and 587. ` +
+    'Nothing was sent. Save the message with save_draft and send it from your mail client, or use a mail provider that accepts SMTP on port 2525. ' +
+    'Reading and organising mail over IMAP is not affected.'
+  );
+}
 
 const HOST_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*\.?$/;
 const IPV6_RE = /^[0-9A-Fa-f:.]+$/;

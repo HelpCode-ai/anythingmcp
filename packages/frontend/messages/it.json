@@ -1260,8 +1260,8 @@
     "saveSentNever": "Non salvare copie",
     "allowSelfSigned": "Accetta un certificato autofirmato",
     "allowSelfSignedHint": "Solo per un server di posta nella tua rete con un certificato non emesso da un'autorità pubblica.",
-    "cloudNote": "AnythingMCP Cloud si collega solo in modo cifrato, a server di posta pubblici sulle porte standard (993/143, 465/587).",
-    "selfHostedNote": "Un server di posta nella tua rete deve essere nella allowlist delle connessioni in uscita (Admin > Impostazioni).",
+    "cloudNote": "AnythingMCP Cloud si collega solo in modo cifrato, a server di posta pubblici sulle porte standard (IMAP 993/143, SMTP 465/587/2525). Il provider di hosting blocca l'SMTP in uscita su 465 e 587, quindi l'invio di solito non funziona: rispondi con le bozze o usa un provider con SMTP sulla porta 2525. Invio ed eliminazione partono disattivati.",
+    "selfHostedNote": "Un server di posta nella tua rete deve essere nella allowlist delle connessioni in uscita (Admin > Impostazioni). Invio ed eliminazione partono disattivati: attivali nell'elenco degli strumenti.",
     "catalogManaged": "Questo connettore viene dal catalogo: server e login vengono dalle sue variabili. Modificale in Variabili d'ambiente.",
     "summary": "IMAP {imap} · SMTP {smtp}",
     "noSmtp": "non impostato (solo lettura)"

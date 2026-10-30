@@ -893,6 +893,8 @@ export class ConnectorsController {
               description: tool.description,
               parameters: tool.parameters as any,
               endpointMapping: tool.endpointMapping as any,
+              // send and delete start switched off (email-builtins.ts).
+              isEnabled: tool.enabled !== false,
             },
           });
         } catch (err: any) {

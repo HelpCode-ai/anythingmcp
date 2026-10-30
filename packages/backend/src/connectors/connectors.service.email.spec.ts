@@ -67,6 +67,13 @@ describe('ConnectorsService with EMAIL connectors', () => {
     expect(emailEngine.testConnection.mock.calls[0][1]).toEqual({ imapHost: 'imap.ionos.de', imapPort: '993', toolPrefix: 'imap_smtp' });
   });
 
+  it('reports SMTP blocked on Cloud without failing the IMAP part', async () => {
+    emailEngine.testConnection.mockResolvedValue({ folders: 3, smtp: 'blocked', smtpMessage: 'the hosting provider blocks port 587' });
+    const out = await service.testConnection('c1');
+    expect(out).toMatchObject({ ok: true, kind: 'ok' });
+    expect(out.message).toMatch(/IMAP login accepted, 3 folders; SMTP not reachable: the hosting provider blocks port 587/);
+  });
+
   it('maps a refused login to auth_failed', async () => {
     emailEngine.testConnection.mockRejectedValue(new EmailConnectorError('The mail server refused the login.', 'auth_failed'));
     await expect(service.testConnection('c1')).resolves.toEqual({

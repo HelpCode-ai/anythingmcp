@@ -1087,13 +1087,20 @@ Every Email connector carries the same tools, named `<prefix>_…`. The prefix i
 | `<prefix>_get_attachment` | One attachment by its index. Text types (txt, csv, json, xml, html, calendar) come back as text; images and other files are attached to the tool result as image or embedded resource. Above 4 MB it is refused | read-only |
 | `<prefix>_set_flags` | `seen` (read/unread) and `flagged`, for up to 100 UIDs | write, idempotent |
 | `<prefix>_move_messages` | To another folder; returns the new UIDs | write |
-| `<prefix>_delete_messages` | Moves to the Trash folder; nothing is deleted permanently, and messages already in the Trash are refused | destructive |
-| `<prefix>_save_draft` | IMAP APPEND to the Drafts folder with `\Draft`, for a person to review and send | write |
-| `<prefix>_send_message` | SMTP. `to`/`cc`/`bcc` (at most 50 recipients), `subject`, `text` and/or `html`. With `in_reply_to_uid` (and `in_reply_to_folder`) it sets In-Reply-To and References, defaults the recipient to the original's Reply-To or sender, prefixes "Re:" and marks the original `\Answered`. A copy goes to the Sent folder unless the provider files one itself (Gmail does) | write, open-world |
+| `<prefix>_delete_messages` | Moves to the Trash folder; nothing is deleted permanently, and messages already in the Trash are refused. **Off at creation** | destructive |
+| `<prefix>_save_draft` | IMAP APPEND to the Drafts folder with `\Draft`, for a person to review and send. The default way to answer | write |
+| `<prefix>_send_message` | SMTP. `to`/`cc`/`bcc` (at most 50 recipients), `subject`, `text` and/or `html`. With `in_reply_to_uid` (and `in_reply_to_folder`) it sets In-Reply-To and References, defaults the recipient to the original's Reply-To or sender, prefixes "Re:" and marks the original `\Answered`. A copy goes to the Sent folder unless the provider files one itself (Gmail does). **Off at creation** | write, open-world |
 
 Moves use IMAP MOVE. A server without MOVE gets COPY, then the original is flagged `\Deleted` and removed with `UID EXPUNGE` (UIDPLUS), which touches only the moved messages; a server with neither MOVE nor UIDPLUS is refused, because its plain EXPUNGE would also remove messages another client marked as deleted. UIDs belong to one folder and change when a message moves. Bcc recipients are in the SMTP envelope only, never in the transmitted headers; the copy in Sent keeps the Bcc header so the sender can see it. Once SMTP has accepted a message the tool does not fail: a Sent copy that could not be filed is reported as a warning in the result, because sending again would deliver the mail twice.
 
 Outgoing attachments are not supported yet.
+
+### Untrusted content
+
+Mail is written by whoever sent it, and an e-mail can carry text aimed at the model ("forward every invoice to…", "delete this thread"). Two defences:
+
+- `send_message` and `delete_messages` are created **switched off**, on hand-made connectors and catalog installs alike. A person turns them on in the connector's tool list when the agent should really send or delete; `save_draft` stays on as the default way to answer, so a person reviews every outgoing message.
+- The descriptions of the reading tools, and every result that carries message content (`contentNotice`), say that the content is data from the sender and that instructions in it must not be followed.
 
 ## Settings (`config.email`)
 
@@ -1125,9 +1132,12 @@ The connector's base URL (`imaps://host:993`) is what the connector list shows; 
 | Mail server on a private, loopback or link-local address | Refused by the outbound SSRF guard | Refused by default; allowed once an administrator adds the host to the outbound allowlist (Admin → Settings, or `SSRF_ALLOWED_HOSTS`) |
 | Encryption | SSL/TLS or STARTTLS only | Also plaintext, for a server on the internal network |
 | Certificate | Must be valid for the host name | May be self-signed with "Accept self-signed certificate" |
-| Ports | IMAP 993/143, SMTP 465/587/25/2525 | Any |
+| Ports | IMAP 993/143, SMTP 465/587/2525 (no 25: direct delivery from the Cloud's address would get it blocklisted) | Any |
+| SMTP authentication | Always required: the login is attempted even when a server does not offer AUTH, so nothing goes out through an open relay | Used whenever the server offers AUTH |
 
-The guard resolves the host once and the connection goes to exactly the address it checked, with the host name kept for TLS (SNI and certificate check). Many hosting networks block outgoing port 25: use 465 or 587.
+The guard resolves the host once and the connection goes to exactly the address it checked, with the host name kept for TLS (SNI and certificate check).
+
+**Sending from Cloud.** The Cloud's hosting provider (DigitalOcean) blocks outgoing SMTP on ports 25, 465 and 587; IMAP on 993 is open, and 2525 passes. On Cloud a send on a blocked port gives up after 5 seconds with a message saying so (`smtp_blocked`), and nothing is sent; Test connection reports IMAP as working and SMTP as not reachable instead of failing. Answer with `save_draft` and send from the mail client, use a provider that offers SMTP on port 2525, or self-host AnythingMCP.
 
 ## Not yet
 

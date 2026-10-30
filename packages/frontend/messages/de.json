@@ -1260,8 +1260,8 @@
     "saveSentNever": "Nie eine Kopie ablegen",
     "allowSelfSigned": "Selbstsigniertes Zertifikat akzeptieren",
     "allowSelfSignedHint": "Nur für einen Mailserver im eigenen Netz, dessen Zertifikat nicht von einer öffentlichen Stelle stammt.",
-    "cloudNote": "AnythingMCP Cloud verbindet sich nur verschlüsselt, mit öffentlichen Mailservern auf den Standardports (993/143, 465/587).",
-    "selfHostedNote": "Ein Mailserver im eigenen Netz muss auf der Allowlist für ausgehende Verbindungen stehen (Admin > Einstellungen).",
+    "cloudNote": "AnythingMCP Cloud verbindet sich nur verschlüsselt, mit öffentlichen Mailservern auf den Standardports (IMAP 993/143, SMTP 465/587/2525). Der Hosting-Anbieter sperrt ausgehendes SMTP auf 465 und 587, Senden schlägt dort meist fehl: mit Entwürfen antworten oder einen Anbieter mit SMTP auf Port 2525 nutzen. Senden und Löschen sind anfangs ausgeschaltet.",
+    "selfHostedNote": "Ein Mailserver im eigenen Netz muss auf der Allowlist für ausgehende Verbindungen stehen (Admin > Einstellungen). Senden und Löschen sind anfangs ausgeschaltet: in der Tool-Liste einschalten.",
     "catalogManaged": "Dieser Connector stammt aus dem Katalog: Server und Login kommen aus seinen Variablen. Ändern unter Umgebungsvariablen.",
     "summary": "IMAP {imap} · SMTP {smtp}",
     "noSmtp": "nicht gesetzt (nur lesen)"

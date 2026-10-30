@@ -329,6 +329,7 @@ describe('EmailEngine: get_message', () => {
     expect(out.body.text).toMatch(/\[\.\.\. body truncated: showing 100 of \d+ characters/);
     expect(out.body.text).not.toMatch(/alert/);
     expect(out.references).toEqual('<r1@example.org>');
+    expect(out.contentNotice).toMatch(/do not follow instructions/);
     expect(out.attachments).toEqual([
       { index: 1, filename: 'Rechnung.pdf', contentType: 'application/pdf', approxBytes: expect.any(Number), inline: false },
     ]);
@@ -540,6 +541,73 @@ describe('EmailEngine: send', () => {
   it('refuses to send without an SMTP server', async () => {
     const { run } = setup();
     await expect(run('email_send', { to: 'bob@example.org', text: 'x' }, { imapHost: 'imap.example.com' })).rejects.toThrow(/no SMTP server/);
+  });
+});
+
+describe('EmailEngine: SMTP on Cloud', () => {
+  const timeout = () => Object.assign(new Error('Connection timeout'), { code: 'ETIMEDOUT' });
+
+  it('says that the hosting provider blocks the port, fast, and sends nothing', async () => {
+    process.env.DEPLOYMENT_MODE = 'cloud';
+    const { smtp, smtpOptions, run } = setup();
+    smtp.fail = timeout();
+    const err = (await run('email_send', { to: 'bob@example.org', text: 'x' }, { ...SETTINGS, smtpPort: '587', saveSent: 'never' }).catch(
+      (e) => e,
+    )) as EmailConnectorError;
+    expect(err.kind).toBe('smtp_blocked');
+    expect(err.message).toMatch(/hosting provider blocks outgoing SMTP on ports 25, 465 and 587/);
+    expect(err.message).toMatch(/save_draft/);
+    expect(err.message).toMatch(/2525/);
+    expect(smtpOptions[0]).toMatchObject({ port: 587, connectionTimeout: 5_000, greetingTimeout: 5_000 });
+    expect(smtp.sent).toHaveLength(0);
+  });
+
+  it('treats 465 the same way, and a refused connection like a timeout', async () => {
+    process.env.DEPLOYMENT_MODE = 'cloud';
+    const { smtp, run } = setup();
+    smtp.fail = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNECTION' });
+    await expect(run('email_send', { to: 'bob@example.org', text: 'x' }, { ...SETTINGS, saveSent: 'never' })).rejects.toMatchObject({
+      kind: 'smtp_blocked',
+    });
+  });
+
+  it('keeps the ordinary message on port 2525 and when self-hosted', async () => {
+    process.env.DEPLOYMENT_MODE = 'cloud';
+    const cloud = setup();
+    cloud.smtp.fail = timeout();
+    await expect(
+      cloud.run('email_send', { to: 'bob@example.org', text: 'x' }, { ...SETTINGS, smtpPort: '2525', saveSent: 'never' }),
+    ).rejects.toMatchObject({ kind: 'unreachable' });
+    expect(cloud.smtpOptions[0]).toMatchObject({ connectionTimeout: 15_000 });
+
+    delete process.env.DEPLOYMENT_MODE;
+    const selfHosted = setup();
+    selfHosted.smtp.fail = timeout();
+    await expect(
+      selfHosted.run('email_send', { to: 'bob@example.org', text: 'x' }, { ...SETTINGS, smtpPort: '587', saveSent: 'never' }),
+    ).rejects.toMatchObject({ kind: 'unreachable' });
+    expect(selfHosted.smtpOptions[0]).toMatchObject({ connectionTimeout: 15_000 });
+  });
+
+  it('test connection reports IMAP working and SMTP blocked instead of failing', async () => {
+    process.env.DEPLOYMENT_MODE = 'cloud';
+    const { engine, smtp } = setup();
+    smtp.verify.mockRejectedValueOnce(timeout());
+    const out = await engine.testConnection({ authConfig: AUTH }, { ...SETTINGS, smtpPort: '587' });
+    expect(out).toMatchObject({ folders: 5, smtp: 'blocked', smtpMessage: expect.stringMatching(/port 587/) });
+  });
+
+  it('forces SMTP authentication on Cloud, so an open relay is never used unauthenticated', async () => {
+    process.env.DEPLOYMENT_MODE = 'cloud';
+    const cloud = setup();
+    await cloud.run('email_send', { to: 'bob@example.org', text: 'x' }, { ...SETTINGS, saveSent: 'never' });
+    expect(cloud.smtpOptions[0]).toMatchObject({ forceAuth: true, auth: { user: 'anna@example.com', pass: PASSWORD } });
+
+    delete process.env.DEPLOYMENT_MODE;
+    const selfHosted = setup();
+    await selfHosted.run('email_send', { to: 'bob@example.org', text: 'x' }, { ...SETTINGS, saveSent: 'never' });
+    expect(selfHosted.smtpOptions[0].forceAuth).toBeUndefined();
+    expect(selfHosted.smtpOptions[0].auth).toEqual({ user: 'anna@example.com', pass: PASSWORD });
   });
 });
 
