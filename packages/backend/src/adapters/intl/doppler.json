@@ -1,0 +1,1080 @@
+{
+  "slug": "doppler",
+  "name": "Doppler",
+  "aliases": [
+    "Doppler SecretOps",
+    "Doppler secrets manager"
+  ],
+  "description": "Doppler secrets manager: projects, environments and configs, secret names and values (read, update, download), config change logs and rollback, workplace activity log, members, groups, service accounts, integrations and service tokens.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "doppler",
+  "docsUrl": "https://docs.doppler.com/reference/api",
+  "instructions": "## Doppler\nThis connector uses the **Doppler API v3** (`https://api.doppler.com/v3`) of Doppler, the secrets manager: workplace, members, groups and service accounts, projects and their members, environments, configs, secrets (names, values, updates, download), config change logs and rollback, the workplace activity log, integrations and service tokens.\n\n**Secrets are visible to the AI.** `doppler_list_secrets`, `doppler_get_secret` and `doppler_download_secrets` return secret VALUES in clear text: they enter the conversation, the AI provider's context and the client's history. Masked and restricted visibility only hide values in the Doppler dashboard; the API returns them to any token with read access. Use `doppler_list_secret_names` to see what a config holds, read values only when the user asks for them, and never repeat a value back unless asked. Switch the three value-reading tools off if the AI should only see names and metadata.\n\n**Setup (2 minutes)**\n1. Pick a token at https://dashboard.doppler.com:\n   - **Service account token** (`dp.sa.`, Team and Enterprise plans): Team, Service Accounts, create one with a workplace role and project access limited to what the AI needs, then create an API token. Best choice.\n   - **Service token** (`dp.st.`): in a project, open a config, Access, Generate. Choose **read** access unless the AI should write. It reaches only that one config: workplace, projects, activity log and integrations answer 403.\n   - **Personal token** (`dp.pt.`): your account settings, Tokens. It can do everything you can, in every project.\n2. Paste the token into `DOPPLER_TOKEN`. It is sent as `Authorization: Bearer <token>`.\n3. Run `doppler_get_me` to check it; it shows the token type and workplace.\n\n**Workflow**\n- Who and where: `doppler_get_me`, `doppler_get_workplace`, `doppler_list_workplace_users`, `doppler_list_groups`, `doppler_list_service_accounts`.\n- Structure: `doppler_list_projects`, `doppler_get_project`, `doppler_list_project_members`, `doppler_list_environments`, `doppler_get_environment`, `doppler_list_configs`, `doppler_get_config`.\n- Secrets: `doppler_list_secret_names` first. Values only on request: `doppler_get_secret` for one, `doppler_list_secrets` for several (narrow it with `secrets`), `doppler_download_secrets` for a .env, JSON or YAML file.\n- Changes: `doppler_update_secrets` creates or overwrites values, `doppler_update_secret_note` sets a note, `doppler_create_project`, `doppler_update_project`, `doppler_create_environment`, `doppler_create_config` and `doppler_clone_config` shape the structure. Confirm with the user before writing, above all to `prd` configs.\n- History and audit: `doppler_list_config_logs` and `doppler_get_config_log` show what changed in a config; `doppler_rollback_config_log` restores the state before a change; `doppler_list_activity_logs` and `doppler_get_activity_log` are the workplace audit trail.\n- Delivery: `doppler_list_integrations`, `doppler_get_integration` (syncs to AWS, GitHub, Vercel and others), `doppler_list_service_tokens` (metadata only, never token values).\n\n**Switched off at install**: `doppler_delete_secret`; it cannot be undone, so an admin switches it on when the team needs it.\n\n**Identifiers**: `project` is the project slug, `environment` the environment slug (dev, stg, prd), `config` the config name (a root config has the environment slug as name, a branch config starts with it, e.g. `dev_feature_x`). Secret names are case-sensitive, upper case by convention. Times are ISO 8601 in UTC.\n\n**Reading the answers**: secret entries carry `raw` (as typed, with `${OTHER}` references) and `computed` (references resolved). `doppler_download_secrets` with `format: json` returns a flat NAME to value object. Answers carry `success: true`; failures carry `messages`.\n\n**Paging**: list tools take `page` (from 1) and `per_page` (default 20). Ask for the next page while a full page comes back.\n\n**Limits**: per minute, Developer plan 240 reads, 120 secret reads and 60 writes; Team 480, 240 and 120; Enterprise 480, 480 and 240. Over the limit Doppler answers 429.\n\n**Errors**: 401 means a wrong or revoked token, 403 a token without access to that project, config or workplace endpoint (a service token reaches only its config), 404 an unknown project, config, secret or log id, 400 an invalid name or body, 429 the rate limit.",
+  "prerequisites": "A Doppler account and a token: a service account token (Team and Enterprise plans), a config's service token or a personal token.",
+  "requiredEnvVars": [
+    "DOPPLER_TOKEN"
+  ],
+  "envVarMeta": {
+    "DOPPLER_TOKEN": {
+      "label": "Doppler token",
+      "kind": "credential",
+      "secret": true,
+      "help": "dashboard.doppler.com: a service account token (Team, Service Accounts), a service token (config, Access) or a personal token (account settings, Tokens). Any secret the token can read becomes visible to the AI through the value-reading tools.",
+      "link": "https://dashboard.doppler.com",
+      "example": "dp.sa.xxxxxxxx",
+      "pattern": "^dp\\.[a-z]+\\.\\S{10,}$",
+      "patternMessage": "Paste the token as Doppler shows it, starting with dp.sa., dp.st. or dp.pt., without Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Doppler refused the token: it is wrong, expired or revoked. Create a new one at dashboard.doppler.com.",
+    "403": "The token is valid but may not do this. A service token only reaches its own config; use a service account or personal token for workplace and project lists.",
+    "429": "The Doppler rate limit of your plan is reached. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "doppler_get_me"
+  },
+  "connector": {
+    "name": "Doppler API",
+    "type": "REST",
+    "baseUrl": "https://api.doppler.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{DOPPLER_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/v3/me"
+  },
+  "tools": [
+    {
+      "name": "doppler_get_me",
+      "description": "Who the token belongs to: token type (personal, service, service_account, cli), name, token preview, creation and last-seen time, and the workplace slug and name. Works with every token type; use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/me"
+      }
+    },
+    {
+      "name": "doppler_get_workplace",
+      "description": "The workplace (organisation) the token belongs to: slug, name, billing and security email. Needs a personal or service account token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/workplace"
+      }
+    },
+    {
+      "name": "doppler_list_workplace_users",
+      "description": "Members of the workplace with their user id, email, name, workplace role and access level. 20 per page; filter by `email` to find one person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "email": {
+            "type": "string",
+            "description": "Only the member with this email address."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/workplace/users",
+        "queryParams": {
+          "page": "$page",
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_groups",
+      "description": "Groups of the workplace with their slug, name, default project role and members.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/workplace/groups",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_service_accounts",
+      "description": "Service accounts of the workplace: slug, name, workplace role and creation time. Lists metadata only, never tokens.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/workplace/service_accounts",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_projects",
+      "description": "Projects the token can see: slug (used as `project` everywhere else), name, description and creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "tags": {
+            "type": "string",
+            "description": "Comma-separated tag slugs, e.g. backend,pci: only projects carrying every listed tag."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/projects",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "doppler_get_project",
+      "description": "One project by its slug: slug, name, description and creation time, without its configs or secrets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/projects/project",
+        "queryParams": {
+          "project": "$project"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_project_members",
+      "description": "Who has access to a project: members of type workplace_user, group, service_account or invite, with their project role and the environments they can reach.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/projects/project/members",
+        "queryParams": {
+          "project": "$project",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_environments",
+      "description": "Environments of a project (e.g. dev, stg, prd): slug, name, whether personal configs are on, and creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/environments",
+        "queryParams": {
+          "project": "$project"
+        }
+      }
+    },
+    {
+      "name": "doppler_get_environment",
+      "description": "One environment of a project by its slug: name, slug, whether personal configs are on, and creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug, e.g. dev, stg or prd."
+          }
+        },
+        "required": [
+          "project",
+          "environment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/environments/environment",
+        "queryParams": {
+          "project": "$project",
+          "environment": "$environment"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_configs",
+      "description": "Configs of a project, optionally of one environment: name, environment, whether it is a root config, locked, inheritable, and when its secrets were last fetched. Metadata only, no secret values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Only configs of this environment slug."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/configs",
+        "queryParams": {
+          "project": "$project",
+          "environment": "$environment",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "doppler_get_config",
+      "description": "One config: name, environment, root or branch, locked, inheritable, the configs it inherits from, creation time and last fetch. No secret values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          }
+        },
+        "required": [
+          "project",
+          "config"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/configs/config",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_secret_names",
+      "description": "The NAMES of the secrets in a config, without any value. Prefer this tool to see what a config contains.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          },
+          "include_managed_secrets": {
+            "type": "boolean",
+            "description": "Include Doppler's generated DOPPLER_PROJECT, DOPPLER_ENVIRONMENT and DOPPLER_CONFIG (default true)."
+          }
+        },
+        "required": [
+          "project",
+          "config"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/configs/config/secrets/names",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config",
+          "include_managed_secrets": "$include_managed_secrets"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_secrets",
+      "description": "READS SECRET VALUES: every secret of a config (or the ones named in `secrets`) with its raw value, computed value (references resolved), note and visibility. The values enter the conversation; call it only when the user asked for the values, and prefer doppler_list_secret_names otherwise.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          },
+          "secrets": {
+            "type": "string",
+            "description": "Comma-separated secret names to return, e.g. STRIPE_KEY,DATABASE_URL. Leave empty for all."
+          },
+          "include_managed_secrets": {
+            "type": "boolean",
+            "description": "Include Doppler's generated DOPPLER_* secrets (default true)."
+          }
+        },
+        "required": [
+          "project",
+          "config"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/configs/config/secrets",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config",
+          "secrets": "$secrets",
+          "include_managed_secrets": "$include_managed_secrets"
+        }
+      }
+    },
+    {
+      "name": "doppler_get_secret",
+      "description": "READS A SECRET VALUE: one secret of a config with its raw value, computed value, note, visibility and value type. The value enters the conversation; call it only when the user asked for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Secret name, e.g. DATABASE_URL (case-sensitive, from doppler_list_secret_names)."
+          }
+        },
+        "required": [
+          "project",
+          "config",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/configs/config/secret",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "doppler_download_secrets",
+      "description": "READS SECRET VALUES: the computed values of a config as one file, in JSON (default, a NAME to value object), .env, YAML, Docker or .NET format. The values enter the conversation; call it only when the user asked for the file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          },
+          "format": {
+            "type": "string",
+            "description": "Output format (default json).",
+            "enum": [
+              "json",
+              "dotnet-json",
+              "env",
+              "yaml",
+              "docker",
+              "env-no-quotes"
+            ]
+          },
+          "name_transformer": {
+            "type": "string",
+            "description": "Rename the keys, e.g. lower-snake or camel.",
+            "enum": [
+              "camel",
+              "upper-camel",
+              "lower-snake",
+              "tf-var",
+              "dotnet",
+              "dotnet-env",
+              "lower-kebab"
+            ]
+          },
+          "secrets": {
+            "type": "string",
+            "description": "Comma-separated secret names to include. Leave empty for all."
+          }
+        },
+        "required": [
+          "project",
+          "config"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/configs/config/secrets/download",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config",
+          "format": "$format",
+          "name_transformer": "$name_transformer",
+          "secrets": "$secrets"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_config_logs",
+      "description": "Change history of a config, newest first: log id, text, who made the change, when, and whether it was a rollback. Values are not included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "project",
+          "config"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/configs/config/logs",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "doppler_get_config_log",
+      "description": "One entry of a config's change history, with the list of secret names added, changed and removed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          },
+          "log": {
+            "type": "string",
+            "description": "Log id from doppler_list_config_logs."
+          }
+        },
+        "required": [
+          "project",
+          "config",
+          "log"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/configs/config/logs/log",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config",
+          "log": "$log"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_activity_logs",
+      "description": "Workplace audit trail, newest first: who did what to which project, environment or config, and when. Needs a personal or service account token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/logs",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "doppler_get_activity_log",
+      "description": "One workplace activity log entry by id: text, user, project, environment, config and time of the action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "log": {
+            "type": "string",
+            "description": "Log id from doppler_list_activity_logs."
+          }
+        },
+        "required": [
+          "log"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/logs/log",
+        "queryParams": {
+          "log": "$log"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_integrations",
+      "description": "Integrations of the workplace (AWS Secrets Manager, GitHub, Vercel, Kubernetes and others): slug, name, type, kind and whether it is enabled, with its syncs.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/integrations"
+      }
+    },
+    {
+      "name": "doppler_get_integration",
+      "description": "One integration with its syncs (which config is pushed where).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "integration": {
+            "type": "string",
+            "description": "Integration slug from doppler_list_integrations."
+          }
+        },
+        "required": [
+          "integration"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/integrations/integration",
+        "queryParams": {
+          "integration": "$integration"
+        }
+      }
+    },
+    {
+      "name": "doppler_list_service_tokens",
+      "description": "Service tokens of a config: name, slug, access (read or read/write), creation and expiry time. The token values are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          }
+        },
+        "required": [
+          "project",
+          "config"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/configs/config/tokens",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config"
+        }
+      }
+    },
+    {
+      "name": "doppler_create_project",
+      "description": "Create a project. Doppler adds the default environments (dev, stg, prd) with their root configs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Project name, e.g. backend. Doppler derives the slug from it."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the project."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/projects",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "doppler_update_project",
+      "description": "Rename a project or change its description. Check the slug afterwards with doppler_get_project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name of the project (send the current name to keep it)."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          }
+        },
+        "required": [
+          "project",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/projects/project",
+        "bodyMapping": {
+          "project": "$project",
+          "name": "$name",
+          "description": "$description"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "doppler_create_environment",
+      "description": "Add an environment to a project, e.g. qa. Doppler creates its root config with the same slug.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name, e.g. QA."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Slug, e.g. qa; becomes the root config name."
+          },
+          "personal_configs": {
+            "type": "boolean",
+            "description": "Allow personal branch configs for each member."
+          }
+        },
+        "required": [
+          "project",
+          "name",
+          "slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/environments",
+        "queryParams": {
+          "project": "$project"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "slug": "$slug",
+          "personal_configs": "$personal_configs"
+        }
+      }
+    },
+    {
+      "name": "doppler_create_config",
+      "description": "Create an empty branch config in an environment. The name must start with the environment slug and an underscore, e.g. dev_feature_x.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug, e.g. dev."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new branch config, e.g. dev_feature_x."
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/configs",
+        "bodyMapping": {
+          "project": "$project",
+          "environment": "$environment",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "doppler_clone_config",
+      "description": "Create a branch config as a copy of another config, secrets included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config to copy."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new branch config, starting with the environment slug and an underscore."
+          }
+        },
+        "required": [
+          "project",
+          "config",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/configs/config/clone",
+        "bodyMapping": {
+          "project": "$project",
+          "config": "$config",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "doppler_update_secrets",
+      "description": "Create or overwrite secrets in a config. `secrets` maps each NAME to its new value as a string; secrets left out stay as they are. Overwritten values can be restored with doppler_rollback_config_log. Confirm names, values and the config with the user first, above all for production configs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          },
+          "secrets": {
+            "type": "object",
+            "description": "Secrets to save, as NAME to value, e.g. {\"STRIPE_KEY\": \"sk_test_123\"}. Names are upper case letters, digits and underscores.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "project",
+          "config",
+          "secrets"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/configs/config/secrets",
+        "bodyMapping": {
+          "project": "$project",
+          "config": "$config",
+          "secrets": "$secrets"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "doppler_update_secret_note",
+      "description": "Set the note on a secret. The note applies to that secret name in every environment of the project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "secret": {
+            "type": "string",
+            "description": "Secret name."
+          },
+          "note": {
+            "type": "string",
+            "description": "The note text."
+          }
+        },
+        "required": [
+          "project",
+          "secret",
+          "note"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/projects/project/note",
+        "queryParams": {
+          "project": "$project"
+        },
+        "bodyMapping": {
+          "secret": "$secret",
+          "note": "$note"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "doppler_rollback_config_log",
+      "description": "Restore a config's secrets to the state before the change of one log entry. The rollback itself becomes a new log entry, so it can be undone the same way.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          },
+          "log": {
+            "type": "string",
+            "description": "Log id from doppler_list_config_logs."
+          }
+        },
+        "required": [
+          "project",
+          "config",
+          "log"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/configs/config/logs/log/rollback",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config",
+          "log": "$log"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "doppler_delete_secret",
+      "description": "Delete one secret from a config. Applications reading the config lose the value at their next fetch.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project slug (the `slug` from doppler_list_projects, e.g. backend)."
+          },
+          "config": {
+            "type": "string",
+            "description": "Config name, e.g. dev, stg, prd or a branch config such as dev_personal (from doppler_list_configs)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Secret name to delete."
+          }
+        },
+        "required": [
+          "project",
+          "config",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v3/configs/config/secret",
+        "queryParams": {
+          "project": "$project",
+          "config": "$config",
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

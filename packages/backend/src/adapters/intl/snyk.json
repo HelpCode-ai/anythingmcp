@@ -1,0 +1,1340 @@
+{
+  "slug": "snyk",
+  "name": "Snyk",
+  "description": "Let your AI check Snyk: organizations, targets and projects, vulnerabilities and other issues with fix paths, SBOMs, dependencies, package checks by purl, members, ignores and policies, and tag projects, set attributes and ignore issues after you confirm.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "snyk",
+  "docsUrl": "https://docs.snyk.io/developer-tools/snyk-api",
+  "instructions": "## Snyk\nThis connector reads and manages Snyk through the **REST API** (`<region>/rest`, version 2026-03-25) and, where REST has no equivalent, the **v1 API** (`<region>/v1`): organizations, projects, targets, issues across all products, SBOMs, package checks, dependencies, members, ignores and policies. 25 tools: the AI reads all of these, and can tag projects, set their attributes and ignore issues after you confirm.\n\n**Setup (about 3 minutes)**\n1. API access needs a Snyk **Enterprise** plan. Free and Team tokens only work for the CLI and IDE and answer 401 or 403 here.\n2. Create a token: a **service account** (Organization or Group settings > **Service accounts**, role Org Collaborator for reads, Org Admin for ignores and attributes) is best for a shared connector. For yourself, a **personal access token** from Account settings > **Personal access tokens** (it expires after at most 90 days) or the API token under Account settings. Paste it into `SNYK_TOKEN`; it is sent as `Authorization: token <key>`.\n3. Set `SNYK_API_URL` to the API of your region: `https://api.snyk.io` (app.snyk.io, SNYK-US-01), `https://api.us.snyk.io` (app.us.snyk.io, SNYK-US-02), `https://api.eu.snyk.io` (app.eu.snyk.io, SNYK-EU-01), `https://api.au.snyk.io` (app.au.snyk.io, SNYK-AU-01) or `https://api.snykgov.io` (Snyk for Government). Look at the address of your Snyk app if unsure.\n4. Check the setup with `snyk_get_self`, then `snyk_list_orgs`.\n\n**Ids**: every tool takes the organization **id** (a UUID from `snyk_list_orgs`), not its slug. REST issue ids from `snyk_list_issues` are UUIDs; the v1 tools (`snyk_list_issue_paths`, `snyk_create_ignore`, `snyk_delete_ignore`) take the v1 issue id such as `SNYK-JS-LODASH-567746`, which is the `id` in `snyk_list_aggregated_issues` and `attributes.problems[].id` in REST issues.\n\n**How to work**\n- Inventory: `snyk_get_self`, `snyk_list_orgs`, `snyk_get_org`, `snyk_list_targets` and `snyk_get_target` (repositories, images), `snyk_list_projects` and `snyk_get_project` (with latest issue counts), `snyk_list_integrations`, `snyk_list_org_members`.\n- What is wrong: `snyk_list_issues` across the organization or `snyk_list_project_issues` for one project (filter by type, effective_severity_level, status=open, ignored=false), then `snyk_get_issue`. For open source and container fixes use `snyk_list_aggregated_issues` (upgradable, fixed-in versions, priority score) and `snyk_list_issue_paths` (which dependency pulls it in).\n- Supply chain: `snyk_get_project_sbom` (CycloneDX or SPDX), `snyk_list_dependencies` (where a package is used), `snyk_list_package_issues` (check a package version by purl before adding it).\n- Ignores: `snyk_list_project_ignores` (v1, open source and container projects) and `snyk_list_policies` with `snyk_get_policy` (organization-level consistent ignores, used by Snyk Code).\n\n**Writes need the user's confirmation**: `snyk_add_project_tag`, `snyk_remove_project_tag`, `snyk_set_project_attributes` and `snyk_create_ignore`. An ignore hides a vulnerability from tests, reports and pull request checks: say which issue, project, reason and expiry, prefer temporary-ignore with an expiry, and call only after the user agrees. `snyk_set_project_attributes` replaces the lists it is given.\n\n**Switched off at install**: `snyk_delete_ignore`; it cannot be undone, so an admin switches it on when the team needs it.\n\n**Reading answers**: REST answers are JSON:API: the fields are under `data[].attributes`, related ids under `relationships`. Severities are critical, high, medium, low (and info for some products); `effective_severity_level` includes any severity change your organization made. Dates are ISO 8601 in UTC.\n\n**Paging**: REST lists return `links.next`; call again with `starting_after` set to the `starting_after` value in that link until `links.next` is missing. The v1 tools page with `page` and `perPage`.\n\n**Limits**: Snyk allows about 1,620 REST requests per minute per token and 2,000 v1 requests per minute per user; 429 means wait a minute.\n\n**Errors**: 401 means the token is wrong, expired or revoked, belongs to another region (check `SNYK_API_URL`), or the plan has no API access. 403 means the token's role does not allow the call in that organization. 404 means a wrong id, or an organization slug where the id is needed. 400 or 422 name the parameter that is wrong.\n\n**Official MCP server**: Snyk's own MCP server runs locally through the Snyk CLI (`npx -y snyk@latest mcp -t stdio`) and scans local code; it is not a hosted server for this API.\n\n**Out of scope here**: starting tests or scans and importing repositories, deleting or deactivating projects and targets, moving projects, creating organization-level policies, group-level reports, audit logs, settings, integrations setup, members and invites, service accounts, Snyk Apps, cloud and AI-BOM endpoints.",
+  "prerequisites": "A Snyk Enterprise plan (API access) and a service account token or personal access token. About 3 minutes.",
+  "requiredEnvVars": [
+    "SNYK_API_URL",
+    "SNYK_TOKEN"
+  ],
+  "envVarMeta": {
+    "SNYK_API_URL": {
+      "label": "Region (API address)",
+      "kind": "address",
+      "help": "https://api.snyk.io (app.snyk.io), https://api.us.snyk.io (app.us.snyk.io), https://api.eu.snyk.io (app.eu.snyk.io), https://api.au.snyk.io (app.au.snyk.io) or https://api.snykgov.io. Without /rest or /v1.",
+      "example": "https://api.snyk.io",
+      "pattern": "^https://api\\.(?:(?:us|eu|au)\\.snyk\\.io|snyk\\.io|snykgov\\.io)$",
+      "patternMessage": "Use the API address of your region, e.g. https://api.snyk.io or https://api.eu.snyk.io, without /rest, /v1 or a trailing slash."
+    },
+    "SNYK_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "A service account token (Organization or Group settings > Service accounts) or your personal access token (Account settings > Personal access tokens). API access needs an Enterprise plan.",
+      "link": "https://docs.snyk.io/developer-tools/snyk-api/authentication-for-api",
+      "pattern": "^(?!(?:token|Bearer)\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without spaces or a prefix such as token or Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Snyk refused the token: it is wrong, expired or revoked, it belongs to another region (check SNYK_API_URL), or your plan has no API access (Enterprise only).",
+    "403": "The token works, but its role does not allow this call in that organization.",
+    "404": "Snyk found nothing here. Check SNYK_API_URL and that you passed the organization id (a UUID), not its slug.",
+    "rate_limited": "Snyk is rate limiting this token. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "snyk_get_self"
+  },
+  "connector": {
+    "name": "Snyk API",
+    "type": "REST",
+    "baseUrl": "{{SNYK_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "token {{SNYK_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/rest/self?version=2026-03-25"
+  },
+  "tools": [
+    {
+      "name": "snyk_get_self",
+      "description": "Read the Snyk user or service account the token belongs to: id, name, username, email and default organization. A quick check that the token and region work. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/self",
+        "queryParams": {
+          "version": "2026-03-25"
+        }
+      }
+    },
+    {
+      "name": "snyk_list_orgs",
+      "description": "List the organizations the token can access: id, name, slug, group id and whether it is personal. Most tools need the organization id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only organizations whose name contains this text."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Only the organization with this exact slug."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Only organizations of this group id."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the starting_after value in links.next of the previous answer. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs",
+        "queryParams": {
+          "version": "2026-03-25",
+          "name": "$name",
+          "slug": "$slug",
+          "group_id": "$group_id",
+          "starting_after": "$starting_after",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "snyk_get_org",
+      "description": "Read one organization: name, slug, group id and dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}",
+        "queryParams": {
+          "version": "2026-03-25"
+        }
+      }
+    },
+    {
+      "name": "snyk_list_projects",
+      "description": "List the projects of an organization (one per scanned manifest, container image, Code or IaC target): id, name, type, origin, target reference, status, tags, attributes and, with latest_issue_counts, the open issues by severity. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "names": {
+            "type": "string",
+            "description": "Only projects with these exact names, comma-separated."
+          },
+          "names_start_with": {
+            "type": "string",
+            "description": "Only projects whose name starts with this text."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "Only projects of these target ids, comma-separated."
+          },
+          "types": {
+            "type": "string",
+            "description": "Only these project types, comma-separated, e.g. npm,maven,pip,sast,dockerfile,deb."
+          },
+          "origins": {
+            "type": "string",
+            "description": "Only these origins, comma-separated, e.g. github,gitlab,cli,docker-hub."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Only projects with all these tags, comma-separated key:value pairs, e.g. team:payments."
+          },
+          "lifecycle": {
+            "type": "string",
+            "description": "Only these lifecycle values, comma-separated: production, development, sandbox."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Only these environment values, comma-separated, e.g. backend,external."
+          },
+          "business_criticality": {
+            "type": "string",
+            "description": "Only these criticality values, comma-separated: critical, high, medium, low."
+          },
+          "latest_issue_counts": {
+            "type": "boolean",
+            "description": "true to add the issue counts of the latest scan per project.",
+            "default": true
+          },
+          "expand": {
+            "type": "string",
+            "description": "target to include the target details.",
+            "enum": [
+              "target"
+            ]
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the starting_after value in links.next of the previous answer. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/projects",
+        "queryParams": {
+          "version": "2026-03-25",
+          "names": "$names",
+          "names_start_with": "$names_start_with",
+          "target_id": "$target_id",
+          "types": "$types",
+          "origins": "$origins",
+          "tags": "$tags",
+          "lifecycle": "$lifecycle",
+          "environment": "$environment",
+          "business_criticality": "$business_criticality",
+          "meta.latest_issue_counts": "$latest_issue_counts",
+          "expand": "$expand",
+          "starting_after": "$starting_after",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "snyk_get_project",
+      "description": "Read one project: name, type, origin, target file and reference, status, test frequency, tags, attributes and the latest issue counts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "latest_issue_counts": {
+            "type": "boolean",
+            "description": "true to add the issue counts of the latest scan.",
+            "default": true
+          },
+          "expand": {
+            "type": "string",
+            "description": "target to include the target details.",
+            "enum": [
+              "target"
+            ]
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/projects/{project_id}",
+        "queryParams": {
+          "version": "2026-03-25",
+          "meta.latest_issue_counts": "$latest_issue_counts",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "snyk_list_issues",
+      "description": "List the issues of a whole organization across all products (open source vulnerabilities and licenses, Code, IaC, container, secrets): id, title, type, effective severity, status, ignored, problems (CVE, CWE, Snyk ids), affected package and the project it was found in. Filter by type, severity, status or dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only one issue type.",
+            "enum": [
+              "package_vulnerability",
+              "license",
+              "code",
+              "config",
+              "cloud",
+              "secrets",
+              "custom"
+            ]
+          },
+          "effective_severity_level": {
+            "type": "string",
+            "description": "Only these severities, comma-separated: critical, high, medium, low, info."
+          },
+          "status": {
+            "type": "string",
+            "description": "open or resolved; comma-separated for both."
+          },
+          "ignored": {
+            "type": "boolean",
+            "description": "true for ignored issues only, false for issues that are not ignored."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only issues created after this time, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only issues created before this time, ISO 8601."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only issues updated after this time, ISO 8601."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Only issues updated before this time, ISO 8601."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the starting_after value in links.next of the previous answer. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/issues",
+        "queryParams": {
+          "version": "2026-03-25",
+          "type": "$type",
+          "effective_severity_level": "$effective_severity_level",
+          "status": "$status",
+          "ignored": "$ignored",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before",
+          "starting_after": "$starting_after",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "snyk_list_project_issues",
+      "description": "List the issues of one project, with the same fields and filters as snyk_list_issues. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only one issue type.",
+            "enum": [
+              "package_vulnerability",
+              "license",
+              "code",
+              "config",
+              "cloud",
+              "secrets",
+              "custom"
+            ]
+          },
+          "effective_severity_level": {
+            "type": "string",
+            "description": "Only these severities, comma-separated: critical, high, medium, low, info."
+          },
+          "status": {
+            "type": "string",
+            "description": "open or resolved; comma-separated for both."
+          },
+          "ignored": {
+            "type": "boolean",
+            "description": "true for ignored issues only, false for issues that are not ignored."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only issues created after this time, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only issues created before this time, ISO 8601."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only issues updated after this time, ISO 8601."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Only issues updated before this time, ISO 8601."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the starting_after value in links.next of the previous answer. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/issues",
+        "queryParams": {
+          "version": "2026-03-25",
+          "scan_item.id": "$project_id",
+          "scan_item.type": "project",
+          "type": "$type",
+          "effective_severity_level": "$effective_severity_level",
+          "status": "$status",
+          "ignored": "$ignored",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before",
+          "starting_after": "$starting_after",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "snyk_get_issue",
+      "description": "Read one issue by its id from snyk_list_issues: title, severity, status, problems, coordinates with the affected package versions and remedies, and the project. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "issue_id": {
+            "type": "string",
+            "description": "Issue id (a UUID) from snyk_list_issues."
+          }
+        },
+        "required": [
+          "org_id",
+          "issue_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/issues/{issue_id}",
+        "queryParams": {
+          "version": "2026-03-25"
+        }
+      }
+    },
+    {
+      "name": "snyk_list_targets",
+      "description": "List the targets of an organization (a repository, container image or CLI upload that holds projects): id, display name, URL, private flag and source type. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Only targets whose display name starts with this text, e.g. acme/web."
+          },
+          "url": {
+            "type": "string",
+            "description": "Only the target with this remote URL."
+          },
+          "source_types": {
+            "type": "string",
+            "description": "Only these source types, comma-separated, e.g. github,gitlab,cli,docker-hub."
+          },
+          "is_private": {
+            "type": "boolean",
+            "description": "true for private targets only, false for public ones."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the starting_after value in links.next of the previous answer. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/targets",
+        "queryParams": {
+          "version": "2026-03-25",
+          "display_name": "$display_name",
+          "url": "$url",
+          "source_types": "$source_types",
+          "is_private": "$is_private",
+          "starting_after": "$starting_after",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "snyk_get_target",
+      "description": "Read one target: display name, URL, private flag, source type and dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "Target id (a UUID) from snyk_list_targets."
+          }
+        },
+        "required": [
+          "org_id",
+          "target_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/targets/{target_id}",
+        "queryParams": {
+          "version": "2026-03-25"
+        }
+      }
+    },
+    {
+      "name": "snyk_get_project_sbom",
+      "description": "Export the software bill of materials (SBOM) of a project from its latest scan, in CycloneDX or SPDX: every component with version, purl and, unless excluded, licenses. Works for open source and container projects. Large for big projects. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "format": {
+            "type": "string",
+            "description": "SBOM format; default CycloneDX 1.6 JSON.",
+            "enum": [
+              "cyclonedx1.6+json",
+              "cyclonedx1.6+xml",
+              "cyclonedx1.5+json",
+              "cyclonedx1.5+xml",
+              "cyclonedx1.4+json",
+              "cyclonedx1.4+xml",
+              "spdx2.3+json"
+            ],
+            "default": "cyclonedx1.6+json"
+          },
+          "exclude": {
+            "type": "string",
+            "description": "licenses to leave the license data out.",
+            "enum": [
+              "licenses"
+            ]
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/projects/{project_id}/sbom",
+        "queryParams": {
+          "version": "2026-03-25",
+          "format": "$format",
+          "exclude": "$exclude"
+        }
+      }
+    },
+    {
+      "name": "snyk_list_package_issues",
+      "description": "Check one open source package version for known vulnerabilities before using it, by its package URL (purl), e.g. pkg:npm/lodash@4.17.20 or pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1: each issue with severity, CVE and the versions that fix it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "purl": {
+            "type": "string",
+            "description": "Package URL with a version, e.g. pkg:npm/lodash@4.17.20, pkg:pypi/django@3.2.0, pkg:golang/github.com/gin-gonic/gin@v1.6.0. Pass it as is; it is encoded for you."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of issues to skip.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Issues to return, up to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        },
+        "required": [
+          "org_id",
+          "purl"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/packages/{purl}/issues",
+        "queryParams": {
+          "version": "2026-03-25",
+          "offset": "$offset",
+          "limit": "$limit"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "snyk_list_org_members",
+      "description": "List the members of an organization: user id, name, username, email, login method and role. Filter by email, username or role. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only the member with this email."
+          },
+          "username": {
+            "type": "string",
+            "description": "Only the member with this username."
+          },
+          "role_name": {
+            "type": "string",
+            "description": "Only members with this role, e.g. Org Admin or Org Collaborator."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "username",
+              "user_display_name",
+              "email",
+              "login_method",
+              "role"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ASC (default) or DESC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the starting_after value in links.next of the previous answer. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/memberships",
+        "queryParams": {
+          "version": "2026-03-25",
+          "email": "$email",
+          "username": "$username",
+          "role_name": "$role_name",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order",
+          "starting_after": "$starting_after",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "snyk_list_policies",
+      "description": "List the organization-level ignore policies (the consistent ignores used by Snyk Code and newer products): id, name, ignore type, reason, expiry, review state and who created them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search in the ignored-by name or email and the ignore type."
+          },
+          "review": {
+            "type": "string",
+            "description": "Only these review states, comma-separated: pending, approved, rejected, not-required."
+          },
+          "expires_before": {
+            "type": "string",
+            "description": "Only policies expiring before this time, ISO 8601."
+          },
+          "expires_never": {
+            "type": "boolean",
+            "description": "true for policies that never expire."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "created",
+              "expires",
+              "ignore-type",
+              "requested-by"
+            ]
+          },
+          "order_direction": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the starting_after value in links.next of the previous answer. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/policies",
+        "queryParams": {
+          "version": "2026-03-25",
+          "search": "$search",
+          "review": "$review",
+          "expires_before": "$expires_before",
+          "expires_never": "$expires_never",
+          "order_by": "$order_by",
+          "order_direction": "$order_direction",
+          "starting_after": "$starting_after",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "snyk_get_policy",
+      "description": "Read one organization-level policy: its condition (the finding it matches), ignore type, reason, expiry and review state. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "policy_id": {
+            "type": "string",
+            "description": "Policy id (a UUID) from snyk_list_policies."
+          }
+        },
+        "required": [
+          "org_id",
+          "policy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/orgs/{org_id}/policies/{policy_id}",
+        "queryParams": {
+          "version": "2026-03-25"
+        }
+      }
+    },
+    {
+      "name": "snyk_list_aggregated_issues",
+      "description": "List the open source or container issues of one project with fix details from the v1 API: package and version, severity, CVSS and priority score, exploit maturity, whether it is upgradable or patchable, the fixed-in versions and whether it is ignored. The id is the v1 issue id that ignores use. Sent as POST but changes nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "severities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these severities, e.g. [\"critical\", \"high\"]."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these types: vuln, license."
+          },
+          "exploitMaturity": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these exploit maturities, e.g. [\"mature\", \"proof-of-concept\"]."
+          },
+          "ignored": {
+            "type": "boolean",
+            "description": "true for ignored issues only, false for issues that are not ignored."
+          },
+          "includeDescription": {
+            "type": "boolean",
+            "description": "true to include each issue's long description."
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/org/{org_id}/project/{project_id}/aggregated-issues",
+        "bodyMapping": {
+          "includeDescription": "$includeDescription",
+          "filters": {
+            "severities": "$severities",
+            "types": "$types",
+            "exploitMaturity": "$exploitMaturity",
+            "ignored": "$ignored"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "snyk_list_issue_paths",
+      "description": "Show how a vulnerable package gets into a project: every dependency path from the project to the issue, with the package versions along the way. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "issue_id": {
+            "type": "string",
+            "description": "Snyk issue id as used by the v1 API, e.g. SNYK-JS-LODASH-567746 (the vulnerability id) or a license id like snyk:lic:npm:gpl-3.0. In REST issues it is attributes.problems[].id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Paths per page, up to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id",
+          "issue_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/org/{org_id}/project/{project_id}/issue/{issue_id}/paths",
+        "queryParams": {
+          "page": "$page",
+          "perPage": "$perPage"
+        }
+      }
+    },
+    {
+      "name": "snyk_list_dependencies",
+      "description": "List the open source dependencies used across an organization's projects: package name and version, type, licenses, how many issues by severity, the projects that use it and whether it is deprecated. Filter by project, language, severity or dependency. Sent as POST but changes nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only dependencies of these project ids."
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these languages, e.g. [\"javascript\", \"python\"]."
+          },
+          "severity": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only dependencies with issues of these severities, e.g. [\"critical\", \"high\"]."
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these dependencies, e.g. [\"lodash@4.17.20\"]."
+          },
+          "sortBy": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "projects",
+              "dependency",
+              "severity",
+              "dependenciesWithIssues"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "description": "Dependencies per page, up to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/org/{org_id}/dependencies",
+        "queryParams": {
+          "sortBy": "$sortBy",
+          "order": "$order",
+          "page": "$page",
+          "perPage": "$perPage"
+        },
+        "bodyMapping": {
+          "filters": {
+            "projects": "$projects",
+            "languages": "$languages",
+            "severity": "$severity",
+            "dependencies": "$dependencies"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "snyk_list_project_ignores",
+      "description": "List the ignores of one project (v1): for each issue id the ignore rules with reason, reason type, expiry, path and who created them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/org/{org_id}/project/{project_id}/ignores"
+      }
+    },
+    {
+      "name": "snyk_list_integrations",
+      "description": "List the SCM and registry integrations of an organization (github, gitlab, bitbucket-cloud, azure-repos, docker-hub, ecr ...) with their integration ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/org/{org_id}/integrations"
+      }
+    },
+    {
+      "name": "snyk_add_project_tag",
+      "description": "Add a tag (key and value) to a project, e.g. team:payments, to group and filter projects. Call after the user agrees. Returns the project's tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "key": {
+            "type": "string",
+            "description": "Tag key: letters, digits, - and _, up to 30 characters."
+          },
+          "value": {
+            "type": "string",
+            "description": "Tag value: letters, digits, - and _, up to 50 characters."
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id",
+          "key",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/org/{org_id}/project/{project_id}/tags",
+        "bodyMapping": {
+          "key": "$key",
+          "value": "$value"
+        }
+      }
+    },
+    {
+      "name": "snyk_remove_project_tag",
+      "description": "Remove a tag (key and value) from a project. It can be added again with snyk_add_project_tag. Call after the user agrees. Returns the remaining tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "key": {
+            "type": "string",
+            "description": "Tag key to remove."
+          },
+          "value": {
+            "type": "string",
+            "description": "Tag value to remove."
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id",
+          "key",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/org/{org_id}/project/{project_id}/tags/remove",
+        "bodyMapping": {
+          "key": "$key",
+          "value": "$value"
+        }
+      }
+    },
+    {
+      "name": "snyk_set_project_attributes",
+      "description": "Set a project's business criticality, environment and lifecycle attributes, which feed prioritisation and reports. The lists you pass replace the old ones. Show the change and call after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "criticality": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            "description": "Business criticality values: critical, high, medium, low."
+          },
+          "environment": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "frontend",
+                "backend",
+                "internal",
+                "external",
+                "mobile",
+                "saas",
+                "onprem",
+                "hosted",
+                "distributed"
+              ]
+            },
+            "description": "Environment values: frontend, backend, internal, external, mobile, saas, onprem, hosted, distributed."
+          },
+          "lifecycle": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "production",
+                "development",
+                "sandbox"
+              ]
+            },
+            "description": "Lifecycle values: production, development, sandbox."
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/org/{org_id}/project/{project_id}/attributes",
+        "bodyMapping": {
+          "criticality": "$criticality",
+          "environment": "$environment",
+          "lifecycle": "$lifecycle"
+        }
+      }
+    },
+    {
+      "name": "snyk_create_ignore",
+      "description": "Ignore an issue in a project (v1, open source and container projects), so it no longer counts in tests, reports and pull request checks. Needs a reason; prefer a temporary ignore with an expiry. Tell the user the issue, project, reason and expiry and call only after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "issue_id": {
+            "type": "string",
+            "description": "Snyk issue id as used by the v1 API, e.g. SNYK-JS-LODASH-567746 (the vulnerability id) or a license id like snyk:lic:npm:gpl-3.0. In REST issues it is attributes.problems[].id."
+          },
+          "reasonType": {
+            "type": "string",
+            "description": "Why: not-vulnerable (does not apply here), wont-fix (accepted risk) or temporary-ignore.",
+            "enum": [
+              "not-vulnerable",
+              "wont-fix",
+              "temporary-ignore"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "The reason in words, e.g. Not reachable: the vulnerable function is never called."
+          },
+          "expires": {
+            "type": "string",
+            "description": "When the ignore ends, ISO 8601, e.g. 2026-12-31T00:00:00Z. Leave empty to ignore without an end date."
+          },
+          "disregardIfFixable": {
+            "type": "boolean",
+            "description": "true to ignore only while no upgrade or patch is available. Default false.",
+            "default": false
+          },
+          "ignorePath": {
+            "type": "string",
+            "description": "Dependency path to ignore, default * (all paths)."
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id",
+          "issue_id",
+          "reasonType",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/org/{org_id}/project/{project_id}/ignore/{issue_id}",
+        "bodyMapping": {
+          "reasonType": "$reasonType",
+          "reason": "$reason",
+          "expires": "$expires",
+          "disregardIfFixable": "$disregardIfFixable",
+          "ignorePath": "$ignorePath"
+        }
+      }
+    },
+    {
+      "name": "snyk_delete_ignore",
+      "description": "Delete all ignore rules of an issue in a project (v1), so it counts again in tests and reports. The ignore's reason and history are lost. Tell the user which issue and project and call only after the user agrees.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id (a UUID) from snyk_list_orgs, not the slug."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (a UUID) from snyk_list_projects."
+          },
+          "issue_id": {
+            "type": "string",
+            "description": "Snyk issue id as used by the v1 API, e.g. SNYK-JS-LODASH-567746 (the vulnerability id) or a license id like snyk:lic:npm:gpl-3.0. In REST issues it is attributes.problems[].id."
+          }
+        },
+        "required": [
+          "org_id",
+          "project_id",
+          "issue_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/org/{org_id}/project/{project_id}/ignore/{issue_id}"
+      }
+    }
+  ]
+}
