@@ -133,7 +133,10 @@ describe('constant-contact adapter: static spec conformance', () => {
     expect(a.tools.filter((t) => t.enabled === false).map((t) => t.name).sort()).toEqual(
       ['constant_contact_delete_contact', 'constant_contact_delete_contact_list', 'constant_contact_schedule_email_campaign_activity'],
     );
-    for (const t of a.tools) expect(t.endpointMapping.path).not.toMatch(/^\/(events|social|partner)|sms/);
+    for (const t of a.tools) {
+      expect(t.endpointMapping.path).not.toMatch(/^\/(events|social|partner)/);
+      expect(t.endpointMapping.path).not.toContain('sms');
+    }
   });
 
   it('every tool is prefixed, every declared parameter reaches the request and path parameters are required', () => {
