@@ -1,0 +1,1187 @@
+{
+  "slug": "infisical",
+  "name": "Infisical",
+  "aliases": [
+    "Infisical Secrets Manager",
+    "Infisical API"
+  ],
+  "description": "Infisical secrets management (Cloud US, Cloud EU or self-hosted) as a machine identity: projects, environments, folders and imports, secret names and metadata, single secret values on request, tags, members, identities and the audit log. Can create and update secrets, folders, environments and tags; deleting a secret is switched off at install.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "infisical",
+  "docsUrl": "https://infisical.com/docs/api-reference/overview/introduction",
+  "instructions": "## Infisical\nThis connector uses the **Infisical API** (Infisical Cloud US `https://app.infisical.com`, Cloud EU `https://eu.infisical.com`, or a self-hosted or dedicated instance) as a **machine identity**: projects and environments, folders and secret imports, secret names and metadata, single secret values on request, tags, project members and identities, organization identities and the audit log. It can create and update secrets, folders, environments and tags.\n\n**Secret values reach the AI.** Infisical returns a secret's value in plain text to anyone allowed to read it. Every value this connector reads or writes passes through the conversation and the AI provider. The connector therefore lists names and metadata only (`infisical_list_secrets` and `infisical_get_secret` ask Infisical not to send values) and reads a value only with `infisical_read_secret_value`, one secret at a time. Use that tool only when the user asks for that value, never repeat a value unless asked, and do not copy values into other tools. An admin who wants no values in the conversation at all switches `infisical_read_secret_value` off, or gives the identity a role without the permission to read values.\n\n**Setup (about 5 minutes, Infisical organization admin)**\n1. In Infisical open **Organization**, **Access Control**, **Machine Identities** (older versions: Organization Settings, Identities), click **Create Identity**, name it e.g. AnythingMCP, organization role **Member** (or a custom role; reading the audit log needs a role with audit log access).\n2. On the identity, add the auth method **Universal Auth**. Keep the access token TTL (default 30 days) or shorten it; the connector logs in again by itself. Under **Client Secrets** create a secret with **usage limit 0** (unlimited), because every new login uses it once. If you set **Trusted IPs**, include the outbound address of this AnythingMCP server.\n3. Copy the **Client ID** into `INFISICAL_CLIENT_ID` and the **Client Secret** (shown once) into `INFISICAL_CLIENT_SECRET`.\n4. Add the identity to each project it should reach: open the project, **Access Control**, **Machine Identities**, **Add Identity**, role **Viewer** to read only, **Developer** or a custom role to write. Restrict the role to the environments and paths it needs.\n5. Set `INFISICAL_URL` to `https://app.infisical.com` (US), `https://eu.infisical.com` (EU) or your instance address, without `/api` and without a trailing slash. Install; `infisical_list_projects` checks the login.\n\nThe connector logs in at `/api/v1/auth/universal-auth/login` and sends the access token as `Authorization: Bearer`.\n\n**Workflow**\n- Orientation: `infisical_get_identity_details` (organization of this identity), `infisical_list_projects`, then `infisical_get_project` or `infisical_get_project_by_slug` for the environments (name, slug, id) and `infisical_get_environment` for one environment.\n- Structure: `infisical_list_folders` (path `/` for the root, `recursive` for the tree), `infisical_get_folder`, `infisical_list_secret_imports` for folders that inherit secrets from another environment or path.\n- Secrets without values: `infisical_list_secrets` for a folder (`recursive` for all subfolders, `tag_slugs` or `metadata_filter` to narrow), `infisical_get_secret` for one secret's metadata or an older `version`.\n- One value, on request: `infisical_read_secret_value`. References like `${DB_HOST}` are resolved unless `expand_secret_references` is false.\n- Changes: `infisical_create_secret`, `infisical_update_secret` (new value, rename with `new_secret_name`, comment, tags), `infisical_create_folder`, `infisical_create_environment`, `infisical_list_tags` and `infisical_create_tag`. Confirm the environment with the user before writing to production.\n- Access review: `infisical_list_project_members` (users and roles), `infisical_list_project_identities`, `infisical_list_org_identities` (organization id from `infisical_get_identity_details`), `infisical_get_identity`.\n- Audit: `infisical_list_audit_logs` with `project_id`, `secret_key`, `event_type` (e.g. `get-secret`, `update-secret`, `delete-secret`), `actor` and dates, for questions like who read or changed a secret.\n\n**Switched off at install**: `infisical_delete_secret`; it cannot be undone from this connector and breaks every app that reads the secret, so an admin switches it on when the team needs it.\n\n**Reading the answers**: ids are UUIDs; environments are addressed by slug (`dev`, `staging`, `prod`), projects by id. Paths start with `/`. `version` counts the changes of a secret. `secretValueHidden: true` means the value was not sent. Times are ISO 8601 in UTC. When an environment has a change approval policy, a create or update returns an approval request instead of the secret: tell the user it waits for approval in Infisical.\n\n**Paging**: `infisical_list_audit_logs`, `infisical_list_project_identities` and `infisical_list_org_identities` page with `offset` and `limit`; ask again with a higher `offset` while a page comes back full. The other lists return everything at once.\n\n**Limits**: Infisical Cloud allows per minute and client IP, depending on the plan, 200 to 600 reads, 90 to 300 writes and 120 to 500 secret operations (600 requests in total). A 429 says how many seconds to wait. Audit log retention depends on the plan.\n\n**Errors**: 401 or 403 with `TokenError` means the login failed (wrong Client ID or Secret, used-up or expired client secret, IP not trusted). 403 `PermissionDenied` means the identity's role does not allow this project, environment, path or action. 404 means a wrong id, slug, path or secret name (names are case-sensitive). Self-hosted Infisical needs version 0.150 or later for the v4 secrets API that this connector uses.",
+  "prerequisites": "An Infisical organization where you can create a machine identity with Universal Auth (Client ID and Client Secret) and add it to the projects it should reach.",
+  "requiredEnvVars": [
+    "INFISICAL_URL",
+    "INFISICAL_CLIENT_ID",
+    "INFISICAL_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "INFISICAL_URL": {
+      "label": "Infisical address",
+      "kind": "address",
+      "help": "https://app.infisical.com for Infisical Cloud US, https://eu.infisical.com for Cloud EU, or the address of your own instance. Without /api and without a trailing slash.",
+      "example": "https://app.infisical.com",
+      "pattern": "^https://[^\\s/?#]+(/[^\\s?#]*[^/\\s?#])?$",
+      "patternMessage": "The https:// address of Infisical, without /api and without a trailing slash."
+    },
+    "INFISICAL_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Organization, Access Control, Machine Identities, your identity, Universal Auth: the Client ID (a UUID).",
+      "link": "https://infisical.com/docs/documentation/platform/identities/universal-auth",
+      "pattern": "^[0-9a-fA-F-]{36}$",
+      "patternMessage": "The Client ID is a UUID like 1b2c3d4e-0000-1111-2222-333344445555."
+    },
+    "INFISICAL_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Created under Client Secrets of the identity's Universal Auth and shown once. Give it usage limit 0 (unlimited), because every login uses it.",
+      "link": "https://infisical.com/docs/documentation/platform/identities/universal-auth",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the client secret without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Infisical refused the login. Check INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET, that the client secret is not revoked, expired or used up (set its usage limit to 0), and that INFISICAL_URL is the right region.",
+    "403": "Infisical refused the token or the action. A TokenError means the login did not work (check the trusted IPs of Universal Auth); PermissionDenied means the identity is not a member of the project or its role does not allow this.",
+    "429": "Infisical's rate limit for this plan is reached. Wait the number of seconds in the message and try again."
+  },
+  "probe": {
+    "tool": "infisical_list_projects"
+  },
+  "connector": {
+    "name": "Infisical API",
+    "type": "REST",
+    "baseUrl": "{{INFISICAL_URL}}/api",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{INFISICAL_URL}}/api/v1/auth/universal-auth/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "clientId": "${username}",
+        "clientSecret": "${password}"
+      },
+      "username": "{{INFISICAL_CLIENT_ID}}",
+      "password": "{{INFISICAL_CLIENT_SECRET}}",
+      "tokenJsonPath": "accessToken",
+      "expiryJsonPath": "expiresIn",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v1/projects"
+  },
+  "tools": [
+    {
+      "name": "infisical_get_identity_details",
+      "description": "Who the connector is signed in as: the organization (id, name, slug) of the machine identity. Use the organization id with infisical_list_org_identities. No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/identities/details"
+      }
+    },
+    {
+      "name": "infisical_list_projects",
+      "description": "Projects the machine identity is a member of: id, name, slug, type (secret-manager, cert-manager, kms, ...), organization id and the environments (name, slug, id) of each. Start here; every other tool needs a project id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Only projects of this product type.",
+            "enum": [
+              "secret-manager",
+              "cert-manager",
+              "kms",
+              "secret-scanning",
+              "pam",
+              "agent-vault"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects",
+        "queryParams": {
+          "type": "$type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "projects": {
+              "$from": "$.projects[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "slug": "slug",
+                "type": "type",
+                "description": "description",
+                "orgId": "orgId",
+                "environments": "environments",
+                "auditLogsRetentionDays": "auditLogsRetentionDays",
+                "hasDeleteProtection": "hasDeleteProtection",
+                "createdAt": "createdAt",
+                "updatedAt": "updatedAt"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "infisical_get_project",
+      "description": "One project by id: name, slug, type, environments (name, slug, id), audit log retention and delete protection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "project": {
+              "id": "$.project.id",
+              "name": "$.project.name",
+              "slug": "$.project.slug",
+              "type": "$.project.type",
+              "description": "$.project.description",
+              "orgId": "$.project.orgId",
+              "environments": "$.project.environments",
+              "auditLogsRetentionDays": "$.project.auditLogsRetentionDays",
+              "hasDeleteProtection": "$.project.hasDeleteProtection",
+              "createdAt": "$.project.createdAt",
+              "updatedAt": "$.project.updatedAt"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "infisical_get_project_by_slug",
+      "description": "One project by its slug (the short name in the project URL and settings), to find its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_slug": {
+            "type": "string",
+            "description": "Project slug, e.g. backend-api-x1y2."
+          }
+        },
+        "required": [
+          "project_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/slug/{project_slug}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "id",
+            "name": "name",
+            "slug": "slug",
+            "type": "type",
+            "description": "description",
+            "orgId": "orgId",
+            "environments": "environments",
+            "auditLogsRetentionDays": "auditLogsRetentionDays",
+            "hasDeleteProtection": "hasDeleteProtection",
+            "createdAt": "createdAt",
+            "updatedAt": "updatedAt"
+          }
+        }
+      }
+    },
+    {
+      "name": "infisical_get_environment",
+      "description": "One environment of a project by its slug: id, name, slug and position.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          }
+        },
+        "required": [
+          "project_id",
+          "environment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/environments/slug/{environment}"
+      }
+    },
+    {
+      "name": "infisical_list_folders",
+      "description": "Folders below a path in one environment of a project: id, name, description, relative path and when a secret in it last changed. Set recursive to walk all subfolders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          },
+          "path": {
+            "type": "string",
+            "description": "Folder path to list, starting with /, e.g. / for the root.",
+            "default": "/"
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "Also list every subfolder below the path (default false)."
+          },
+          "last_secret_modified": {
+            "type": "string",
+            "description": "Only folders with a secret changed after this time, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          }
+        },
+        "required": [
+          "project_id",
+          "environment",
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/folders",
+        "queryParams": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "path": "$path",
+          "recursive": "$recursive",
+          "lastSecretModified": "$last_secret_modified"
+        }
+      }
+    },
+    {
+      "name": "infisical_get_folder",
+      "description": "One folder by id: name, description, full path, environment and project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id from infisical_list_folders."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/folders/{folder_id}"
+      }
+    },
+    {
+      "name": "infisical_list_secret_imports",
+      "description": "Secret imports of a folder: other environments or paths whose secrets this folder inherits (importPath, importEnv, position, replication status). Imported secrets show up in infisical_list_secrets under `imports`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          },
+          "path": {
+            "type": "string",
+            "description": "Folder path, starting with /, e.g. / (root, the default) or /backend/api."
+          }
+        },
+        "required": [
+          "project_id",
+          "environment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/secret-imports",
+        "queryParams": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "path": "$path"
+        }
+      }
+    },
+    {
+      "name": "infisical_list_secrets",
+      "description": "Names and metadata of the secrets in one folder of an environment, WITHOUT their values: the connector asks Infisical not to send values (viewSecretValue=false). Returns secretKey, path, version, comment, tags, metadata, timestamps, plus the names of imported secrets under `imports`. Use infisical_read_secret_value to read one value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          },
+          "secret_path": {
+            "type": "string",
+            "description": "Folder path, starting with /, e.g. / (root, the default) or /backend/api."
+          },
+          "recursive": {
+            "type": "string",
+            "description": "true: also list secrets in all subfolders (Infisical caps the depth at 20). Default false.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "include_imports": {
+            "type": "string",
+            "description": "true (default): also list the names of secrets imported into this folder.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "tag_slugs": {
+            "type": "string",
+            "description": "Only secrets with these tags, comma-separated tag slugs from infisical_list_tags."
+          },
+          "metadata_filter": {
+            "type": "string",
+            "description": "Only secrets with this unencrypted metadata, e.g. key=owner,value=payments."
+          }
+        },
+        "required": [
+          "project_id",
+          "environment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v4/secrets",
+        "queryParams": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "secretPath": "$secret_path",
+          "recursive": "$recursive",
+          "includeImports": "$include_imports",
+          "tagSlugs": "$tag_slugs",
+          "metadataFilter": "$metadata_filter",
+          "viewSecretValue": "false",
+          "expandSecretReferences": "false"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "secrets": {
+              "$from": "$.secrets[*]",
+              "$select": {
+                "id": "id",
+                "secretKey": "secretKey",
+                "secretPath": "secretPath",
+                "environment": "environment",
+                "version": "version",
+                "type": "type",
+                "secretComment": "secretComment",
+                "secretValueHidden": "secretValueHidden",
+                "isRotatedSecret": "isRotatedSecret",
+                "tags": {
+                  "$from": "tags[*]",
+                  "$select": {
+                    "id": "id",
+                    "slug": "slug"
+                  }
+                },
+                "secretMetadata": "secretMetadata",
+                "secretReminderRepeatDays": "secretReminderRepeatDays",
+                "createdAt": "createdAt",
+                "updatedAt": "updatedAt",
+                "actor": "actor"
+              }
+            },
+            "imports": {
+              "$from": "$.imports[*]",
+              "$select": {
+                "secretPath": "secretPath",
+                "environment": "environment",
+                "folderId": "folderId",
+                "secrets": {
+                  "$from": "secrets[*]",
+                  "$select": {
+                    "secretKey": "secretKey",
+                    "version": "version",
+                    "secretComment": "secretComment"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "infisical_get_secret",
+      "description": "Metadata of one secret WITHOUT its value: version, comment, tags, metadata, reminder, who changed it last and when. Use it to check that a secret exists or which version is current.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "secret_name": {
+            "type": "string",
+            "description": "Secret name (key), exactly as stored, e.g. DATABASE_URL. Names are case-sensitive."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          },
+          "secret_path": {
+            "type": "string",
+            "description": "Folder path, starting with /, e.g. / (root, the default) or /backend/api."
+          },
+          "version": {
+            "type": "integer",
+            "description": "A specific older version instead of the current one."
+          }
+        },
+        "required": [
+          "secret_name",
+          "project_id",
+          "environment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v4/secrets/{secret_name}",
+        "queryParams": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "secretPath": "$secret_path",
+          "version": "$version",
+          "viewSecretValue": "false",
+          "includeImports": "true"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "secret": {
+              "id": "$.secret.id",
+              "secretKey": "$.secret.secretKey",
+              "secretPath": "$.secret.secretPath",
+              "environment": "$.secret.environment",
+              "version": "$.secret.version",
+              "type": "$.secret.type",
+              "secretComment": "$.secret.secretComment",
+              "secretValueHidden": "$.secret.secretValueHidden",
+              "isRotatedSecret": "$.secret.isRotatedSecret",
+              "secretMetadata": "$.secret.secretMetadata",
+              "secretReminderRepeatDays": "$.secret.secretReminderRepeatDays",
+              "createdAt": "$.secret.createdAt",
+              "updatedAt": "$.secret.updatedAt",
+              "actor": "$.secret.actor",
+              "tags": {
+                "$from": "$.secret.tags[*]",
+                "$select": {
+                  "id": "id",
+                  "slug": "slug"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "infisical_read_secret_value",
+      "description": "READS THE SECRET VALUE in plain text: returns `secret.secretValue` of one secret (current or a given version), with its metadata. The value enters the conversation and the AI provider sees it. Call it only when the user asked for this secret's value; never for browsing (use infisical_list_secrets or infisical_get_secret). Infisical records the read in its audit log.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "secret_name": {
+            "type": "string",
+            "description": "Secret name (key), exactly as stored, e.g. DATABASE_URL. Names are case-sensitive."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          },
+          "secret_path": {
+            "type": "string",
+            "description": "Folder path, starting with /, e.g. / (root, the default) or /backend/api."
+          },
+          "version": {
+            "type": "integer",
+            "description": "A specific older version instead of the current one."
+          },
+          "expand_secret_references": {
+            "type": "string",
+            "description": "true (default): resolve references such as ${DB_HOST} or ${prod.DB_HOST} inside the value; false: return the raw value with the references.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [
+          "secret_name",
+          "project_id",
+          "environment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v4/secrets/{secret_name}",
+        "queryParams": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "secretPath": "$secret_path",
+          "version": "$version",
+          "expandSecretReferences": "$expand_secret_references",
+          "viewSecretValue": "true",
+          "includeImports": "true"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "infisical_list_tags",
+      "description": "Secret tags of a project: id, slug and color. Tag ids go into tag_ids of infisical_create_secret and infisical_update_secret; slugs into tag_slugs of infisical_list_secrets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/tags"
+      }
+    },
+    {
+      "name": "infisical_list_project_members",
+      "description": "Users who are members of a project, with their roles: membership id, user id, email, first and last name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/memberships"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "memberships": {
+              "$from": "$.memberships[*]",
+              "$select": {
+                "id": "id",
+                "userId": "userId",
+                "createdAt": "createdAt",
+                "email": "user.email",
+                "username": "user.username",
+                "firstName": "user.firstName",
+                "lastName": "user.lastName",
+                "roles": "roles"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "infisical_list_project_identities",
+      "description": "Machine identities with access to a project, with their roles and auth methods. Paged with offset and limit; totalCount is the full number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "identity_name": {
+            "type": "string",
+            "description": "Only identities whose name contains this text."
+          },
+          "roles": {
+            "type": "string",
+            "description": "Only identities with these project role slugs, comma-separated, e.g. admin,viewer."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page (default 20)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/memberships/identities",
+        "queryParams": {
+          "identityName": "$identity_name",
+          "roles": "$roles",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "infisical_list_org_identities",
+      "description": "Machine identities of the organization with their organization role, auth methods and last login. Paged with offset and limit (default 100); totalCount is the full number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id, from infisical_get_identity_details or a project's orgId."
+          },
+          "search": {
+            "type": "string",
+            "description": "Only identities whose name contains this text."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort column (default name).",
+            "enum": [
+              "name",
+              "role"
+            ]
+          },
+          "order_direction": {
+            "type": "string",
+            "description": "Sort direction (default asc).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page (default 100)."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org_id}/identity-memberships",
+        "queryParams": {
+          "search": "$search",
+          "orderBy": "$order_by",
+          "orderDirection": "$order_direction",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "infisical_get_identity",
+      "description": "One machine identity by id: name, organization role, auth methods, locked-out auth methods, metadata and last login.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identity_id": {
+            "type": "string",
+            "description": "Machine identity id (identity.id or identityId from the identity lists)."
+          }
+        },
+        "required": [
+          "identity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/identities/{identity_id}"
+      }
+    },
+    {
+      "name": "infisical_list_audit_logs",
+      "description": "Audit log of the organization, newest first: event type and class, actor (user, identity, service), IP address, user agent, project and time. Filter by project, environment, secret, actor, event type and dates. Paged with offset and limit (default 20). Needs an organization role that may read audit logs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Only events of this project id."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Only events in this environment slug (needs project_id)."
+          },
+          "secret_path": {
+            "type": "string",
+            "description": "Only events on secrets in this folder path (needs project_id)."
+          },
+          "secret_key": {
+            "type": "string",
+            "description": "Only events on this secret name (needs project_id)."
+          },
+          "event_type": {
+            "type": "string",
+            "description": "Only this event type, e.g. get-secret, get-secrets, create-secret, update-secret, delete-secret, login-identity-universal-auth; comma-separated for several."
+          },
+          "event_class": {
+            "type": "string",
+            "description": "Only these event classes, comma-separated, e.g. data-access, management, authentication."
+          },
+          "actor_type": {
+            "type": "string",
+            "description": "Only this actor type (required when actor is not a user).",
+            "enum": [
+              "platform",
+              "user",
+              "service",
+              "identity",
+              "scimClient",
+              "unknownUser",
+              "gateway",
+              "kmipClient"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "description": "Only this actor id: the userId of a user or the identityId of a machine identity."
+          },
+          "user_agent_type": {
+            "type": "string",
+            "description": "Only calls from this client.",
+            "enum": [
+              "web",
+              "cli",
+              "k8-operator",
+              "terraform",
+              "other",
+              "InfisicalPythonSDK",
+              "InfisicalNodeSDK"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period, ISO 8601."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page (default 20)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organization/audit-logs",
+        "queryParams": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "secretPath": "$secret_path",
+          "secretKey": "$secret_key",
+          "eventType": "$event_type",
+          "eventClass": "$event_class",
+          "actorType": "$actor_type",
+          "actor": "$actor",
+          "userAgentType": "$user_agent_type",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "auditLogs": {
+              "$from": "$.auditLogs[*]",
+              "$select": {
+                "id": "id",
+                "createdAt": "createdAt",
+                "projectId": "projectId",
+                "projectName": "projectName",
+                "event": "event",
+                "actor": "actor",
+                "ipAddress": "ipAddress",
+                "userAgentType": "userAgentType"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "infisical_create_secret",
+      "description": "Create a secret in one folder of an environment. The value you pass is stored encrypted; it still travels through this conversation. If the environment has a change approval policy, Infisical opens an approval request instead of creating it at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "secret_name": {
+            "type": "string",
+            "description": "Name (key) of the new secret, e.g. STRIPE_WEBHOOK_SECRET. Projects with auto-capitalization store it in upper case."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          },
+          "secret_path": {
+            "type": "string",
+            "description": "Folder path, starting with /, e.g. / (root, the default) or /backend/api."
+          },
+          "secret_value": {
+            "type": "string",
+            "description": "The value to store. References such as ${OTHER_KEY} are allowed."
+          },
+          "secret_comment": {
+            "type": "string",
+            "description": "Optional comment shown next to the secret."
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag ids from infisical_list_tags to attach."
+          },
+          "skip_multiline_encoding": {
+            "type": "boolean",
+            "description": "Store line breaks as they are instead of encoding them (default false)."
+          }
+        },
+        "required": [
+          "secret_name",
+          "project_id",
+          "environment",
+          "secret_value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v4/secrets/{secret_name}",
+        "bodyMapping": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "secretPath": "$secret_path",
+          "secretValue": "$secret_value",
+          "secretComment": "$secret_comment",
+          "tagIds": "$tag_ids",
+          "skipMultilineEncoding": "$skip_multiline_encoding"
+        }
+      }
+    },
+    {
+      "name": "infisical_update_secret",
+      "description": "Change an existing secret: a new value, a new name, comment or tags. Infisical keeps the previous version, so a value change can be rolled back in the dashboard. tag_ids replaces the whole tag list. Apps that read the secret get the new value on their next fetch. Subject to change approval policies like infisical_create_secret.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "secret_name": {
+            "type": "string",
+            "description": "Secret name (key), exactly as stored, e.g. DATABASE_URL. Names are case-sensitive."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          },
+          "secret_path": {
+            "type": "string",
+            "description": "Folder path, starting with /, e.g. / (root, the default) or /backend/api."
+          },
+          "secret_value": {
+            "type": "string",
+            "description": "The new value. Leave out to keep the value."
+          },
+          "new_secret_name": {
+            "type": "string",
+            "description": "Rename the secret to this name."
+          },
+          "secret_comment": {
+            "type": "string",
+            "description": "New comment."
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag ids from infisical_list_tags; replaces the current tags."
+          },
+          "skip_multiline_encoding": {
+            "type": "boolean",
+            "description": "Store line breaks as they are instead of encoding them."
+          }
+        },
+        "required": [
+          "secret_name",
+          "project_id",
+          "environment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v4/secrets/{secret_name}",
+        "bodyMapping": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "secretPath": "$secret_path",
+          "secretValue": "$secret_value",
+          "newSecretName": "$new_secret_name",
+          "secretComment": "$secret_comment",
+          "tagIds": "$tag_ids",
+          "skipMultilineEncoding": "$skip_multiline_encoding"
+        }
+      }
+    },
+    {
+      "name": "infisical_delete_secret",
+      "description": "Delete a secret from one folder of an environment. Apps and pipelines that read it fail from the next fetch on. Switched off at install.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "secret_name": {
+            "type": "string",
+            "description": "Secret name (key), exactly as stored, e.g. DATABASE_URL. Names are case-sensitive."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          },
+          "secret_path": {
+            "type": "string",
+            "description": "Folder path, starting with /, e.g. / (root, the default) or /backend/api."
+          }
+        },
+        "required": [
+          "secret_name",
+          "project_id",
+          "environment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v4/secrets/{secret_name}",
+        "bodyMapping": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "secretPath": "$secret_path"
+        }
+      }
+    },
+    {
+      "name": "infisical_create_folder",
+      "description": "Create a folder in one environment of a project, below an existing path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment slug as shown in the project, e.g. dev, staging, prod (see `environments` in infisical_get_project)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Folder name, letters, digits, dashes and underscores, e.g. payments."
+          },
+          "path": {
+            "type": "string",
+            "description": "Parent path, starting with /, e.g. / (default) or /backend."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description."
+          }
+        },
+        "required": [
+          "project_id",
+          "environment",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/folders",
+        "bodyMapping": {
+          "projectId": "$project_id",
+          "environment": "$environment",
+          "name": "$name",
+          "path": "$path",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "infisical_create_environment",
+      "description": "Add an environment (e.g. qa or preview) to a project, with its name, slug and position.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name, e.g. QA."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Slug used in API calls, e.g. qa."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Display position; the lowest number is shown first."
+          }
+        },
+        "required": [
+          "project_id",
+          "name",
+          "slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/environments",
+        "bodyMapping": {
+          "name": "$name",
+          "slug": "$slug",
+          "position": "$position"
+        }
+      }
+    },
+    {
+      "name": "infisical_create_tag",
+      "description": "Create a secret tag (slug and color) in a project, to group and filter secrets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (the `id` from infisical_list_projects), not the slug."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Tag slug, e.g. payments."
+          },
+          "color": {
+            "type": "string",
+            "description": "Tag color as a hex code, e.g. #3b82f6."
+          }
+        },
+        "required": [
+          "project_id",
+          "slug",
+          "color"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/tags",
+        "bodyMapping": {
+          "slug": "$slug",
+          "color": "$color"
+        }
+      }
+    }
+  ]
+}

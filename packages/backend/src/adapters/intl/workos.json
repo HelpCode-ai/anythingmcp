@@ -1,0 +1,1879 @@
+{
+  "slug": "workos",
+  "name": "WorkOS",
+  "aliases": [
+    "WorkOS AuthKit",
+    "AuthKit",
+    "WorkOS Directory Sync"
+  ],
+  "description": "WorkOS API for B2B identity: organizations and their domains, AuthKit users, memberships, invitations and sessions, SSO connections, Directory Sync directories, users and groups, Audit Logs exports, the event stream, and RBAC roles and permissions. Can create and update organizations, users, memberships and invitations; deletes and revokes install switched off.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "workos",
+  "docsUrl": "https://workos.com/docs/reference",
+  "instructions": "## WorkOS\nThis connector uses the **WorkOS API** (`https://api.workos.com`) of one WorkOS environment: organizations and their domains, AuthKit (User Management) users, organization memberships, invitations and sessions, SSO connections, Directory Sync directories with their users and groups, Audit Logs, the event stream, and RBAC roles and permissions. It can create and update organizations, domains, users, memberships and invitations and trigger a directory sync. It does not configure SSO connections, AuthKit branding, redirect URIs, Vault, Pipes or API keys, and it never signs anyone in.\n\n**Setup (2 minutes)**\n1. Open https://dashboard.workos.com, pick the environment (Sandbox or Production) in the top bar and open **API Keys**.\n2. Create a secret key (`sk_...`) and paste it into `WORKOS_API_KEY`. The key is shown once.\n3. Run `workos_list_organizations` to check it.\nA key belongs to one environment and has full access to that environment's API: there are no scopes. Start with a Sandbox key; use a Production key only when the AI should work on real data.\n\n**What the AI sees: personal and sensitive data**\nThis key reaches the identity data of every customer organization in the environment, and the AI reads whatever a tool returns: user names and email addresses, sign-in identities, session IP addresses and user agents, directory users with job titles and the provider's raw attributes (`workos_get_directory_user` and `workos_get_directory_group` return them in full; they can hold phone numbers, manager, department and employee ids), organization metadata and Stripe customer ids, and audit log content. Share only what the task needs.\n- **Secret values**: the connector never returns the API key. Invitation answers have their `token` and `accept_invitation_url` removed, because that link lets anyone who has it join the organization. `workos_get_audit_log_export` returns a short-lived download link (`url`) to the CSV; treat it like a password and do not paste it into other places.\n- WorkOS also runs an official MCP server (`https://mcp.workos.com/mcp`, OAuth as your dashboard user); this connector instead uses an API key and needs no dashboard login.\n\n**Workflow**\n- Organizations: `workos_list_organizations` (filter `search` or `domains`), `workos_get_organization`, `workos_get_organization_by_external_id`, `workos_create_organization`, `workos_update_organization`.\n- Domains: `workos_create_organization_domain` adds one as pending with a DNS TXT record (`verification_prefix`, `verification_token`) for the domain owner to publish; then `workos_verify_organization_domain` and `workos_get_organization_domain` for the state. Domain ids are in the `domains` array of an organization.\n- Users: `workos_list_users` (by `email` or `organization_id`), `workos_get_user`, `workos_get_user_by_external_id`, `workos_create_user`, `workos_update_user`; sign-in providers with `workos_list_user_identities`; devices with `workos_list_user_sessions`.\n- Memberships and roles: `workos_list_organization_memberships` (by `organization_id` and/or `user_id`, `statuses`), `workos_get_organization_membership`, `workos_create_organization_membership`, `workos_update_organization_membership` to change the role, `workos_deactivate_organization_membership` and `workos_reactivate_organization_membership` to block and restore access. Role slugs come from `workos_list_roles`, `workos_get_role` and `workos_list_organization_roles` (custom roles start with `org-`); permissions from `workos_list_permissions`.\n- Invitations: `workos_list_invitations`, `workos_get_invitation`, `workos_send_invitation` (WorkOS sends the email), `workos_resend_invitation`.\n- SSO: `workos_list_connections` and `workos_get_connection` show type and `state` (`active` means users can sign in).\n- Directory Sync: `workos_list_directories`, `workos_get_directory`, `workos_list_directory_users` (needs `directory` or `group`), `workos_get_directory_user`, `workos_list_directory_groups` (needs `directory` or `user`), `workos_get_directory_group`; `workos_sync_directory` queues a sync now.\n- Audit Logs: `workos_list_audit_log_actions` and `workos_list_audit_log_schemas` for what is logged; `workos_create_audit_log_export` for a range, then `workos_get_audit_log_export` until `state` is `ready`; `workos_get_audit_log_retention` for how long events are kept. `workos_create_audit_log_event` writes an event.\n- What changed: `workos_list_events` with `events` (comma-separated types such as `user.created`, `organization_membership.updated`, `dsync.user.created`, `connection.activated`) and `range_start` / `range_end`, `order: asc` to replay them in sequence. The API keeps 90 days of events; one call covers at most 30 days.\n\n**Switched off at install**: `workos_delete_organization`, `workos_delete_organization_domain`, `workos_delete_user`, `workos_delete_organization_membership`, `workos_revoke_invitation`, `workos_revoke_session` and `workos_create_audit_log_event`; they cannot be undone (audit log events cannot be removed once written), so an admin switches them on when the team needs them.\n\n**Reading the answers**: ids carry a type prefix (`org_`, `org_domain_`, `user_`, `om_`, `invitation_`, `session_`, `conn_`, `directory_`, `directory_user_`, `directory_group_`, `audit_log_export_`, `event_`). Timestamps are ISO 8601 in UTC. Lists come as `{\"object\": \"list\", \"data\": [...], \"list_metadata\": {\"before\": ..., \"after\": ...}}`. `metadata` values are strings.\n\n**Paging**: lists return 10 items by default, up to 100 with `limit`, newest first. For the next page pass `list_metadata.after` as `after`; stop when it is null. `workos_list_events` pages the same way.\n\n**Updates**: `workos_update_organization` and `workos_update_user` change only the fields you pass; `domain_data` and `metadata` replace the stored value, so send the full list or object.\n\n**Limits**: 6,000 requests a minute per key; AuthKit 1,000 reads and 500 writes per 10 seconds; directory users 4 requests a second per directory; organization deletes 50 a minute. Invitation emails count toward WorkOS's email sending limits.\n\n**Errors**: 401 wrong or revoked key, 403 the key may not do this or the feature is not enabled, 404 unknown id (or an id from another environment), 400 or 422 an invalid field (the body names it), 429 rate limit: wait and retry once.",
+  "prerequisites": "A WorkOS account with access to the dashboard to create a secret API key (sk_...) for the environment (Sandbox or Production) the AI should work in.",
+  "requiredEnvVars": [
+    "WORKOS_API_KEY"
+  ],
+  "envVarMeta": {
+    "WORKOS_API_KEY": {
+      "label": "Secret API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "dashboard.workos.com, API Keys: create a secret key (sk_...) in the environment the AI should use. A key belongs to one environment and can do everything the API allows there; use a Sandbox key to try the connector.",
+      "link": "https://dashboard.workos.com/api-keys",
+      "example": "sk_test_...",
+      "pattern": "^sk_[A-Za-z0-9_]{10,}$",
+      "patternMessage": "Paste the secret key as WorkOS shows it, starting with sk_, without spaces or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "WorkOS refused the API key: it is wrong, revoked or incomplete. Copy it again from dashboard.workos.com, API Keys.",
+    "403": "The key is valid but may not do this, or the feature is not enabled for the environment.",
+    "429": "WorkOS is rate limiting this key (6,000 requests a minute in general, less for some endpoints). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "workos_list_organizations",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "WorkOS API",
+    "type": "REST",
+    "baseUrl": "https://api.workos.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WORKOS_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/organizations?limit=1"
+  },
+  "tools": [
+    {
+      "name": "workos_list_organizations",
+      "description": "List organizations (the customer companies of this WorkOS environment), newest first: id, name, external_id, domains with their verification state, metadata, timestamps. Filter by name text or by domain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text matched against the organization name."
+          },
+          "domains": {
+            "type": "string",
+            "description": "Only organizations with one of these domains, comma-separated, e.g. acme.com,acme.io."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations",
+        "queryParams": {
+          "search": "$search",
+          "domains": "$domains",
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "workos_get_organization",
+      "description": "One organization by id: name, domains (each with id, state and verification strategy), external_id, stripe_customer_id, metadata and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (org_...), from workos_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id}"
+      }
+    },
+    {
+      "name": "workos_get_organization_by_external_id",
+      "description": "One organization by the external_id your own application stored on it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "The external id set on the organization."
+          }
+        },
+        "required": [
+          "external_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/external_id/{external_id}"
+      }
+    },
+    {
+      "name": "workos_create_organization",
+      "description": "Create an organization. Only name is required; add domains, an external_id from your own system and metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the organization; does not need to be unique."
+          },
+          "domain_data": {
+            "type": "array",
+            "description": "Domains of the organization, each {\"domain\": \"example.com\", \"state\": \"pending\" or \"verified\"}. pending domains need DNS verification; mark a domain verified only when you already own it. Replaces the whole list on update.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "domain": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "verified"
+                  ]
+                }
+              },
+              "required": [
+                "domain"
+              ]
+            }
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own unique identifier for the organization."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Up to 10 key/value pairs of your own (ASCII string values, keys up to 40 characters, values up to 600 characters; never secrets). On update the object replaces the stored metadata; set a key to null to remove it."
+          },
+          "allow_profiles_outside_organization": {
+            "type": "boolean",
+            "description": "true lets SSO profiles whose email domain is not one of the organization's domains sign in."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/organizations",
+        "bodyMapping": {
+          "name": "$name",
+          "domain_data": "$domain_data",
+          "external_id": "$external_id",
+          "metadata": "$metadata",
+          "allow_profiles_outside_organization": "$allow_profiles_outside_organization"
+        }
+      }
+    },
+    {
+      "name": "workos_update_organization",
+      "description": "Update an organization: name, domains (domain_data replaces the whole list), external_id, Stripe customer id, metadata or the outside-profiles setting. Fields left out stay as they are.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (org_...), from workos_list_organizations."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "domain_data": {
+            "type": "array",
+            "description": "Domains of the organization, each {\"domain\": \"example.com\", \"state\": \"pending\" or \"verified\"}. pending domains need DNS verification; mark a domain verified only when you already own it. Replaces the whole list on update.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "domain": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "verified"
+                  ]
+                }
+              },
+              "required": [
+                "domain"
+              ]
+            }
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own unique identifier for the organization."
+          },
+          "stripe_customer_id": {
+            "type": "string",
+            "description": "Stripe customer id (cus_...) linked to the organization."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Up to 10 key/value pairs of your own (ASCII string values, keys up to 40 characters, values up to 600 characters; never secrets). On update the object replaces the stored metadata; set a key to null to remove it."
+          },
+          "allow_profiles_outside_organization": {
+            "type": "boolean",
+            "description": "true lets SSO profiles whose email domain is not one of the organization's domains sign in."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/organizations/{organization_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "domain_data": "$domain_data",
+          "external_id": "$external_id",
+          "stripe_customer_id": "$stripe_customer_id",
+          "metadata": "$metadata",
+          "allow_profiles_outside_organization": "$allow_profiles_outside_organization"
+        }
+      }
+    },
+    {
+      "name": "workos_delete_organization",
+      "description": "Permanently delete an organization together with its SSO connections and directories. Users stay, their memberships in it are removed. Cannot be undone.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (org_...), from workos_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/organizations/{organization_id}"
+      }
+    },
+    {
+      "name": "workos_get_organization_domain",
+      "description": "One organization domain: domain name, state (pending, verified, failed, legacy_verified), verification strategy (dns or manual), the DNS TXT record to publish (verification_prefix and verification_token) and the reason a verification failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_id": {
+            "type": "string",
+            "description": "Organization domain id (org_domain_...), from the domains array of workos_get_organization."
+          }
+        },
+        "required": [
+          "domain_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organization_domains/{domain_id}"
+      }
+    },
+    {
+      "name": "workos_create_organization_domain",
+      "description": "Add a domain to an organization. It starts as pending with a DNS TXT record (verification_prefix and verification_token) that the domain owner publishes; then call workos_verify_organization_domain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (org_...), from workos_list_organizations."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. acme.com."
+          }
+        },
+        "required": [
+          "organization_id",
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/organization_domains",
+        "bodyMapping": {
+          "organization_id": "$organization_id",
+          "domain": "$domain"
+        }
+      }
+    },
+    {
+      "name": "workos_verify_organization_domain",
+      "description": "Start DNS verification of a pending organization domain after its TXT record was published. The answer shows the new state; check again later with workos_get_organization_domain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_id": {
+            "type": "string",
+            "description": "Organization domain id (org_domain_...), from the domains array of workos_get_organization."
+          }
+        },
+        "required": [
+          "domain_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/organization_domains/{domain_id}/verify"
+      }
+    },
+    {
+      "name": "workos_delete_organization_domain",
+      "description": "Remove a domain from its organization. SSO and automatic organization joining by that domain stop. Cannot be undone; add it again to start verification anew.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_id": {
+            "type": "string",
+            "description": "Organization domain id (org_domain_...), from the domains array of workos_get_organization."
+          }
+        },
+        "required": [
+          "domain_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/organization_domains/{domain_id}"
+      }
+    },
+    {
+      "name": "workos_list_users",
+      "description": "List AuthKit users of the environment, newest first: id, email, email_verified, first and last name, profile picture URL, external_id, metadata, last_sign_in_at, locale. Filter by email or by organization membership.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact email address."
+          },
+          "organization_id": {
+            "type": "string",
+            "description": "Only users who are members of this organization (org_...)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user_management/users",
+        "queryParams": {
+          "email": "$email",
+          "organization_id": "$organization_id",
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "workos_get_user",
+      "description": "One AuthKit user by id: email, verification state, names, external_id, metadata, locale and last sign-in time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id (user_...), from workos_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user_management/users/{user_id}"
+      }
+    },
+    {
+      "name": "workos_get_user_by_external_id",
+      "description": "One AuthKit user by the external_id your own application stored on it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "The external id set on the user."
+          }
+        },
+        "required": [
+          "external_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user_management/users/external_id/{external_id}"
+      }
+    },
+    {
+      "name": "workos_create_user",
+      "description": "Create an AuthKit user without a password; the person signs in with a method enabled in the environment (Magic Auth, social or SSO) or through an invitation. Email is stored lower-case.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "email_verified": {
+            "type": "boolean",
+            "description": "true only when the address was already verified elsewhere; normally leave it out."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own unique identifier for the user."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Up to 10 key/value pairs of your own (ASCII string values, keys up to 40 characters, values up to 600 characters; never secrets). On update the object replaces the stored metadata; set a key to null to remove it."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/user_management/users",
+        "bodyMapping": {
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email_verified": "$email_verified",
+          "external_id": "$external_id",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "workos_update_user",
+      "description": "Update an AuthKit user: name, email (resets email_verified to false), email_verified, external_id, metadata or locale. Fields left out stay as they are. Passwords cannot be set here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id (user_...), from workos_list_users."
+          },
+          "email": {
+            "type": "string",
+            "description": "New email address."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "email_verified": {
+            "type": "boolean",
+            "description": "Mark the email as verified or not."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own unique identifier for the user."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Up to 10 key/value pairs of your own (ASCII string values, keys up to 40 characters, values up to 600 characters; never secrets). On update the object replaces the stored metadata; set a key to null to remove it."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Preferred locale, e.g. en, de, fr-CA."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/user_management/users/{user_id}",
+        "bodyMapping": {
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email_verified": "$email_verified",
+          "external_id": "$external_id",
+          "metadata": "$metadata",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "workos_delete_user",
+      "description": "Permanently delete an AuthKit user with their memberships, identities and sessions. Cannot be undone.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id (user_...), from workos_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/user_management/users/{user_id}"
+      }
+    },
+    {
+      "name": "workos_list_user_identities",
+      "description": "The sign-in identities linked to a user: provider (e.g. GoogleOAuth, MicrosoftOAuth, GitHubOAuth) and the user's id at that provider.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id (user_...), from workos_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user_management/users/{user_id}/identities"
+      }
+    },
+    {
+      "name": "workos_list_user_sessions",
+      "description": "A user's AuthKit sessions, newest first: id, status, auth_method, organization_id, ip_address, user_agent, impersonator, expires_at and ended_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id (user_...), from workos_list_users."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user_management/users/{user_id}/sessions",
+        "queryParams": {
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "workos_revoke_session",
+      "description": "End one AuthKit session (sign the user out of that device). Cannot be undone; the user has to sign in again.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session id (session_...), from workos_list_user_sessions."
+          }
+        },
+        "required": [
+          "session_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/user_management/sessions/revoke",
+        "bodyMapping": {
+          "session_id": "$session_id"
+        }
+      }
+    },
+    {
+      "name": "workos_list_organization_memberships",
+      "description": "List organization memberships (which user belongs to which organization, with role(s) and status active, inactive or pending). Give organization_id, user_id or both.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Only memberships in this organization (org_...)."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Only memberships of this user (user_...)."
+          },
+          "statuses": {
+            "type": "string",
+            "description": "Only these statuses, comma-separated: active, inactive, pending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user_management/organization_memberships",
+        "queryParams": {
+          "organization_id": "$organization_id",
+          "user_id": "$user_id",
+          "statuses": "$statuses",
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "workos_get_organization_membership",
+      "description": "One organization membership: user, organization, role(s), status, whether a directory manages it, and IdP custom attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "membership_id": {
+            "type": "string",
+            "description": "Organization membership id (om_...), from workos_list_organization_memberships."
+          }
+        },
+        "required": [
+          "membership_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user_management/organization_memberships/{membership_id}"
+      }
+    },
+    {
+      "name": "workos_create_organization_membership",
+      "description": "Add an existing AuthKit user to an organization with one role (role_slug) or several (role_slugs).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id (user_...), from workos_list_users."
+          },
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (org_...), from workos_list_organizations."
+          },
+          "role_slug": {
+            "type": "string",
+            "description": "Role slug from workos_list_roles or workos_list_organization_roles, e.g. member or admin. Defaults to the environment's default role."
+          },
+          "role_slugs": {
+            "type": "array",
+            "description": "Several role slugs, when Multiple Roles is enabled in the environment. Use either role_slug or role_slugs.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "user_id",
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/user_management/organization_memberships",
+        "bodyMapping": {
+          "user_id": "$user_id",
+          "organization_id": "$organization_id",
+          "role_slug": "$role_slug",
+          "role_slugs": "$role_slugs"
+        }
+      }
+    },
+    {
+      "name": "workos_update_organization_membership",
+      "description": "Change the role(s) of an organization membership; the new role replaces the current one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "membership_id": {
+            "type": "string",
+            "description": "Organization membership id (om_...), from workos_list_organization_memberships."
+          },
+          "role_slug": {
+            "type": "string",
+            "description": "Role slug from workos_list_roles or workos_list_organization_roles, e.g. member or admin. Defaults to the environment's default role."
+          },
+          "role_slugs": {
+            "type": "array",
+            "description": "Several role slugs, when Multiple Roles is enabled in the environment. Use either role_slug or role_slugs.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "membership_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/user_management/organization_memberships/{membership_id}",
+        "bodyMapping": {
+          "role_slug": "$role_slug",
+          "role_slugs": "$role_slugs"
+        }
+      }
+    },
+    {
+      "name": "workos_deactivate_organization_membership",
+      "description": "Deactivate a membership: the user keeps the account and the membership record but can no longer sign in to that organization. Undo with workos_reactivate_organization_membership.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "membership_id": {
+            "type": "string",
+            "description": "Organization membership id (om_...), from workos_list_organization_memberships."
+          }
+        },
+        "required": [
+          "membership_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/user_management/organization_memberships/{membership_id}/deactivate"
+      }
+    },
+    {
+      "name": "workos_reactivate_organization_membership",
+      "description": "Reactivate an inactive membership, with its previous role(s).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "membership_id": {
+            "type": "string",
+            "description": "Organization membership id (om_...), from workos_list_organization_memberships."
+          }
+        },
+        "required": [
+          "membership_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/user_management/organization_memberships/{membership_id}/reactivate"
+      }
+    },
+    {
+      "name": "workos_delete_organization_membership",
+      "description": "Permanently remove a user from an organization. Cannot be undone; prefer workos_deactivate_organization_membership.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "membership_id": {
+            "type": "string",
+            "description": "Organization membership id (om_...), from workos_list_organization_memberships."
+          }
+        },
+        "required": [
+          "membership_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/user_management/organization_memberships/{membership_id}"
+      }
+    },
+    {
+      "name": "workos_list_invitations",
+      "description": "List invitations, newest first: email, state (pending, accepted, expired, revoked), organization, role, inviter, expires_at. The invitation token and accept link are removed from the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Only invitations to this organization (org_...)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only invitations sent to this email address."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user_management/invitations",
+        "queryParams": {
+          "organization_id": "$organization_id",
+          "email": "$email",
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "data[*].token",
+            "data[*].accept_invitation_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "workos_get_invitation",
+      "description": "One invitation by id with its state and expiry, without the token and accept link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invitation_id": {
+            "type": "string",
+            "description": "Invitation id (invitation_...), from workos_list_invitations."
+          }
+        },
+        "required": [
+          "invitation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user_management/invitations/{invitation_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "token",
+            "accept_invitation_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "workos_send_invitation",
+      "description": "Invite someone by email, optionally into an organization with a role. WorkOS sends the email itself (counts toward its email sending limits). The answer leaves out the token and accept link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Recipient email address."
+          },
+          "organization_id": {
+            "type": "string",
+            "description": "Organization the person joins (org_...). Leave out for an environment-level invitation."
+          },
+          "role_slug": {
+            "type": "string",
+            "description": "Role slug from workos_list_roles or workos_list_organization_roles, e.g. member or admin. Defaults to the environment's default role."
+          },
+          "expires_in_days": {
+            "type": "integer",
+            "description": "Days the invitation stays valid, 1 to 30 (default 7).",
+            "minimum": 1,
+            "maximum": 30
+          },
+          "inviter_user_id": {
+            "type": "string",
+            "description": "User id (user_...) named as the inviter in the email."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the invitation email, e.g. en, de, fr. Defaults to the environment's locale."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/user_management/invitations",
+        "bodyMapping": {
+          "email": "$email",
+          "organization_id": "$organization_id",
+          "role_slug": "$role_slug",
+          "expires_in_days": "$expires_in_days",
+          "inviter_user_id": "$inviter_user_id",
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "token",
+            "accept_invitation_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "workos_resend_invitation",
+      "description": "Send the email of a pending invitation again, optionally in another language.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invitation_id": {
+            "type": "string",
+            "description": "Invitation id (invitation_...), from workos_list_invitations."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the invitation email, e.g. en, de, fr. Defaults to the environment's locale."
+          }
+        },
+        "required": [
+          "invitation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/user_management/invitations/{invitation_id}/resend",
+        "bodyMapping": {
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "token",
+            "accept_invitation_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "workos_revoke_invitation",
+      "description": "Revoke a pending invitation so its link stops working. Cannot be undone; send a new invitation instead.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invitation_id": {
+            "type": "string",
+            "description": "Invitation id (invitation_...), from workos_list_invitations."
+          }
+        },
+        "required": [
+          "invitation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/user_management/invitations/{invitation_id}/revoke"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "token",
+            "accept_invitation_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "workos_list_connections",
+      "description": "List SSO connections, newest first: id, name, organization_id, connection_type (OktaSAML, AzureSAML, GoogleOAuth, GenericOIDC, ...), state (draft, active, inactive, validating) and domains.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Only connections of this organization (org_...)."
+          },
+          "connection_type": {
+            "type": "string",
+            "description": "Only this connection type, e.g. OktaSAML, AzureSAML, GenericOIDC, GoogleOAuth."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Only connections with this domain."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against connection names."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/connections",
+        "queryParams": {
+          "organization_id": "$organization_id",
+          "connection_type": "$connection_type",
+          "domain": "$domain",
+          "search": "$search",
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "workos_get_connection",
+      "description": "One SSO connection by id: connection type, state, organization and domains.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "connection_id": {
+            "type": "string",
+            "description": "SSO connection id (conn_...), from workos_list_connections."
+          }
+        },
+        "required": [
+          "connection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/connections/{connection_id}"
+      }
+    },
+    {
+      "name": "workos_list_directories",
+      "description": "List Directory Sync directories (SCIM, Entra ID, Google Workspace, Okta, BambooHR, ...), newest first: id, name, type, state (linked, validating, invalid_credentials, unlinked), organization, domain and user and group counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Only directories of this organization (org_...)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text matched against directory names."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Only directories with this domain."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directories",
+        "queryParams": {
+          "organization_id": "$organization_id",
+          "search": "$search",
+          "domain": "$domain",
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "workos_get_directory",
+      "description": "One directory: type, state, organization, domain and user and group counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory_id": {
+            "type": "string",
+            "description": "Directory id (directory_...), from workos_list_directories."
+          }
+        },
+        "required": [
+          "directory_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directories/{directory_id}"
+      }
+    },
+    {
+      "name": "workos_sync_directory",
+      "description": "Ask WorkOS to sync a directory from its provider now. The answer only says the sync was queued; read the directory again later for its state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory_id": {
+            "type": "string",
+            "description": "Directory id (directory_...), from workos_list_directories."
+          }
+        },
+        "required": [
+          "directory_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/directories/{directory_id}/sync"
+      }
+    },
+    {
+      "name": "workos_list_directory_users",
+      "description": "List users synced from a directory or a directory group: name, emails, username, job title, state (active, suspended, inactive), role(s) and mapped custom_attributes. The provider's raw_attributes are left out here (see workos_get_directory_user). Needs directory or group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory": {
+            "type": "string",
+            "description": "Directory id (directory_...)."
+          },
+          "group": {
+            "type": "string",
+            "description": "Directory group id (directory_group_...); lists that group's members."
+          },
+          "email": {
+            "type": "string",
+            "description": "Primary email; needs directory too."
+          },
+          "idp_id": {
+            "type": "string",
+            "description": "The user's id at the identity provider; needs directory too."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directory_users",
+        "queryParams": {
+          "directory": "$directory",
+          "group": "$group",
+          "email": "$email",
+          "idp_id": "$idp_id",
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "data[*].raw_attributes"
+          ]
+        }
+      }
+    },
+    {
+      "name": "workos_get_directory_user",
+      "description": "One directory user with everything the provider sent, including raw_attributes (can hold phone numbers, manager, department, employee ids).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory_user_id": {
+            "type": "string",
+            "description": "Directory user id (directory_user_...), from workos_list_directory_users."
+          }
+        },
+        "required": [
+          "directory_user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directory_users/{directory_user_id}"
+      }
+    },
+    {
+      "name": "workos_list_directory_groups",
+      "description": "List groups synced from a directory, or the groups of one directory user: id, name, idp_id. raw_attributes are left out. Needs directory or user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory": {
+            "type": "string",
+            "description": "Directory id (directory_...)."
+          },
+          "user": {
+            "type": "string",
+            "description": "Directory user id (directory_user_...); lists that user's groups."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directory_groups",
+        "queryParams": {
+          "directory": "$directory",
+          "user": "$user",
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "data[*].raw_attributes"
+          ]
+        }
+      }
+    },
+    {
+      "name": "workos_get_directory_group",
+      "description": "One directory group by id: name, idp_id, directory, organization and the provider's raw_attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory_group_id": {
+            "type": "string",
+            "description": "Directory group id (directory_group_...), from workos_list_directory_groups."
+          }
+        },
+        "required": [
+          "directory_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/directory_groups/{directory_group_id}"
+      }
+    },
+    {
+      "name": "workos_list_audit_log_actions",
+      "description": "List the Audit Logs actions configured in the environment (e.g. user.signed_in, document.updated) with their latest schema.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/audit_logs/actions",
+        "queryParams": {
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "workos_list_audit_log_schemas",
+      "description": "List the schema versions of one Audit Logs action: allowed target types and the actor, target and metadata JSON schemas.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action_name": {
+            "type": "string",
+            "description": "Action name from workos_list_audit_log_actions, e.g. user.signed_in."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        },
+        "required": [
+          "action_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/audit_logs/actions/{action_name}/schemas",
+        "queryParams": {
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "workos_create_audit_log_event",
+      "description": "Write an event into an organization's audit log. Audit log events cannot be edited or deleted, so this cannot be undone. The event must match a configured action schema.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (org_...), from workos_list_organizations."
+          },
+          "event": {
+            "type": "object",
+            "description": "The event: {\"action\": \"user.signed_in\", \"occurred_at\": \"2026-10-30T09:00:00.000Z\", \"version\": 1, \"actor\": {\"type\": \"user\", \"id\": \"user_123\", \"name\": \"...\"}, \"targets\": [{\"type\": \"team\", \"id\": \"team_1\"}], \"context\": {\"location\": \"203.0.113.7\", \"user_agent\": \"...\"}, \"metadata\": {}}. action, occurred_at, actor, targets and context are required."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique string (a UUID) so that retrying the same call does not write the event twice."
+          }
+        },
+        "required": [
+          "organization_id",
+          "event"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/audit_logs/events",
+        "bodyMapping": {
+          "organization_id": "$organization_id",
+          "event": "$event"
+        },
+        "headers": {
+          "Idempotency-Key": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "workos_create_audit_log_export",
+      "description": "Start a CSV export of an organization's audit log events for a time range, optionally filtered by actions, actors and target types. Read-only: it creates an export job, not events. Poll workos_get_audit_log_export until state is ready.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (org_...), from workos_list_organizations."
+          },
+          "range_start": {
+            "type": "string",
+            "description": "Start of the range, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "range_end": {
+            "type": "string",
+            "description": "End of the range, ISO 8601."
+          },
+          "actions": {
+            "type": "array",
+            "description": "Only these action names, e.g. [\"user.signed_in\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actor_names": {
+            "type": "array",
+            "description": "Only events by actors with these names.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actor_ids": {
+            "type": "array",
+            "description": "Only events by these actor ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targets": {
+            "type": "array",
+            "description": "Only events with these target types, e.g. [\"team\"].",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "organization_id",
+          "range_start",
+          "range_end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/audit_logs/exports",
+        "bodyMapping": {
+          "organization_id": "$organization_id",
+          "range_start": "$range_start",
+          "range_end": "$range_end",
+          "actions": "$actions",
+          "actor_names": "$actor_names",
+          "actor_ids": "$actor_ids",
+          "targets": "$targets"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "workos_get_audit_log_export",
+      "description": "State of an audit log export (pending, ready, error). When ready, url is a short-lived download link of the CSV file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "description": "Export id (audit_log_export_...), from workos_create_audit_log_export."
+          }
+        },
+        "required": [
+          "export_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/audit_logs/exports/{export_id}"
+      }
+    },
+    {
+      "name": "workos_get_audit_log_retention",
+      "description": "How many days an organization's audit log events are kept (retention_period_in_days).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (org_...), from workos_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations/{organization_id}/audit_logs_retention"
+      }
+    },
+    {
+      "name": "workos_list_events",
+      "description": "Read the environment's event stream (what happened in WorkOS and at the connected identity and directory providers): id, event type, created_at and the changed object in data. Events up to 90 days old; one call covers at most 30 days. Pass order asc to read them in the order they happened.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "string",
+            "description": "Event types to return, comma-separated, e.g. user.created,organization_membership.updated,dsync.user.created,connection.activated,session.created,invitation.accepted."
+          },
+          "organization_id": {
+            "type": "string",
+            "description": "Only events of this organization (org_...). Environment-wide user events are not tied to an organization."
+          },
+          "range_start": {
+            "type": "string",
+            "description": "Start of the time range, ISO 8601 UTC with Z, e.g. 2026-10-01T00:00:00Z. Cannot be combined with after."
+          },
+          "range_end": {
+            "type": "string",
+            "description": "End of the time range, ISO 8601 UTC with Z."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer (an event id). Cannot be combined with range_start."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Events per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events",
+        "queryParams": {
+          "events": "$events",
+          "organization_id": "$organization_id",
+          "range_start": "$range_start",
+          "range_end": "$range_end",
+          "after": "$after",
+          "before": "$before",
+          "limit": "$limit",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "workos_list_roles",
+      "description": "List the environment roles (RBAC) with slug, name, description, permissions and type, the roles every organization starts with.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/authorization/roles"
+      }
+    },
+    {
+      "name": "workos_get_role",
+      "description": "One environment role by slug: name, description, type and its permission slugs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "role_slug": {
+            "type": "string",
+            "description": "Role slug, e.g. admin or member."
+          }
+        },
+        "required": [
+          "role_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/authorization/roles/{role_slug}"
+      }
+    },
+    {
+      "name": "workos_list_organization_roles",
+      "description": "All roles available in one organization: the environment roles plus its own custom roles (slugs starting with org-), with permissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (org_...), from workos_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/authorization/organizations/{organization_id}/roles"
+      }
+    },
+    {
+      "name": "workos_list_permissions",
+      "description": "List the RBAC permissions defined in the environment: slug, name, description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor: list_metadata.before of the previous answer, to page back."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor: list_metadata.after of the previous answer, to fetch the next page. Missing or null there means the last page."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by creation time: desc (newest first), asc, or normal (default: newest first with before/after reversed).",
+            "enum": [
+              "normal",
+              "desc",
+              "asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/authorization/permissions",
+        "queryParams": {
+          "limit": "$limit",
+          "before": "$before",
+          "after": "$after",
+          "order": "$order"
+        }
+      }
+    }
+  ]
+}

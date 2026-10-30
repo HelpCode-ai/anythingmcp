@@ -1,0 +1,1416 @@
+{
+  "slug": "tailscale",
+  "name": "Tailscale",
+  "aliases": [
+    "Tailscale API",
+    "tailnet"
+  ],
+  "description": "Tailscale tailnet administration through the API v2: devices with routes, tags, approval and posture attributes, users and roles, auth keys, the policy file (read, validate, preview, replace), DNS and MagicDNS, tailnet settings, configuration audit logs and network flow logs, log streaming, webhooks, Services and posture integrations. Signs in with an OAuth client.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "tailscale",
+  "docsUrl": "https://tailscale.com/api",
+  "instructions": "## Tailscale\nThis connector manages a Tailscale network (tailnet) through the **Tailscale API v2** (`https://api.tailscale.com/api/v2`): devices and their routes, tags and approval, users, auth keys, the policy file (access rules), DNS, tailnet settings, configuration audit logs and network flow logs, log streaming, webhooks, Tailscale Services and posture integrations. Every call goes to the tailnet that owns the OAuth client (`-` in the path).\n\n**Setup (5 minutes, tailnet Owner, Admin, Network admin or IT admin)**\n1. Open https://login.tailscale.com/admin/settings/trust-credentials (Settings, Trust credentials; older consoles: Settings, OAuth clients) and click **Credential**, then **OAuth**.\n2. Pick the scopes. For reading only, `all:read` is enough. For the write tools add the matching write scopes: `devices:core` (needs one or more tags, e.g. `tag:server`), `devices:routes`, `users`, `auth_keys` (also needs tags), `policy_file`, `dns`, `feature_settings`, `webhooks`. `all` grants everything.\n3. Copy the **Client ID** into `TAILSCALE_OAUTH_CLIENT_ID` and the **Client secret** (`tskey-client-...`, shown once) into `TAILSCALE_OAUTH_CLIENT_SECRET`.\n4. Install. The connector exchanges the client for a one-hour access token at `/api/v2/oauth/token` and renews it by itself. Unlike API access tokens (at most 90 days), an OAuth client does not expire, so the connector keeps working. A write the client has no scope for answers 403.\n\n**Secrets: read this before using the keys and webhook tools.** The AI sees whatever a tool returns. `tailscale_create_auth_key` returns a new auth key (`tskey-auth-...`) and `tailscale_create_webhook` a webhook signing secret, each shown only once; both end up in the conversation and in the AI provider's context. Pass them only to the person who asked, never into other tools, files or messages. `tailscale_list_user_invites` shows invite links that let anyone join. `tailscale_list_keys` and `tailscale_get_key` never return key values, and `tailscale_list_webhooks`, `tailscale_get_webhook` and `tailscale_get_log_streaming_configuration` have secrets, tokens and cloud credentials removed. The connector cannot create OAuth clients or API tokens.\n\n**Workflow**\n- Devices: `tailscale_list_devices` (filter with `filter`, e.g. `hostname=web-1`, `tags=tag:prod`, `authorized=false`; `fields=all` adds routes and connectivity), `tailscale_get_device`, `tailscale_get_device_routes`, `tailscale_get_device_posture_attributes`. Changes: `tailscale_authorize_device` (device approval), `tailscale_set_device_routes` (approve subnet routes and exit nodes), `tailscale_set_device_tags`, `tailscale_set_device_name`, `tailscale_set_device_key_expiry`, `tailscale_expire_device_key`, `tailscale_delete_device`.\n- Users: `tailscale_list_users` (by role or type), `tailscale_get_user`, `tailscale_list_user_invites`; `tailscale_update_user_role`, `tailscale_approve_user`, `tailscale_suspend_user` and `tailscale_restore_user` (a suspension is undone by restoring), `tailscale_delete_user`.\n- Keys: `tailscale_list_keys` (`all=true` for auth keys and API tokens too), `tailscale_get_key`, `tailscale_create_auth_key` to add servers, containers or CI runners, `tailscale_delete_key` to revoke one.\n- Access rules: `tailscale_get_policy_file` to read, `tailscale_preview_policy_rules` to see which rules hit a user or an IP:port, `tailscale_validate_policy_file` to check a draft and run its tests (both change nothing), then `tailscale_set_policy_file` with the `etag` from the read.\n- DNS: `tailscale_get_dns_configuration` shows everything; change it with `tailscale_set_dns_nameservers`, `tailscale_set_dns_preferences` (MagicDNS), `tailscale_set_dns_search_paths` and `tailscale_update_split_dns`.\n- Tailnet: `tailscale_get_tailnet_settings`, `tailscale_update_tailnet_settings`, `tailscale_get_contacts`.\n- Logs and audit: `tailscale_list_configuration_audit_logs` (who changed what), `tailscale_list_network_flow_logs` (traffic, Premium and Enterprise), `tailscale_get_log_streaming_status` and `tailscale_get_log_streaming_configuration` for SIEM streaming.\n- Webhooks, Services, posture: `tailscale_list_webhooks`, `tailscale_get_webhook`, `tailscale_create_webhook`; `tailscale_list_services`, `tailscale_get_service`, `tailscale_list_service_hosts`; `tailscale_list_posture_integrations`.\n\n**Switched off at install**: `tailscale_expire_device_key`, `tailscale_delete_device`, `tailscale_delete_user`, `tailscale_delete_key`; they cannot be undone, so an admin switches them on when the team needs them. `tailscale_set_policy_file` is switched off as well: it replaces the whole access policy of the tailnet in one call, and a wrong rule cuts users and devices off, so an admin switches it on deliberately.\n\n**Reading the answers**: device `nodeId` (e.g. `nAbCdEf1CNTRL`) is the preferred device id, the numeric `id` also works. `name` is the MagicDNS name (`web-1.tailnet-name.ts.net`), `addresses` the Tailscale IPs (100.x.y.z and fd7a:115c:a1e0::/48). Times are RFC 3339 in UTC; `lastSeen` is empty while a device is connected (`connectedToControl: true`). `expires` of 0001-01-01 means key expiry is off. Tags look like `tag:name`. Lists come in one answer without paging.\n\n**Changes replace lists**: routes, tags, nameservers and search paths are sent as the complete list. Read the current value first, then send old plus new.\n\n**Errors**: 401 the OAuth client was deleted or the secret is wrong; 403 the client lacks the scope (or the tags) for this call, or the plan lacks the feature; 404 the id does not exist in this tailnet; 400 with `message` for invalid input, policy files with failing tests included; 412 the policy changed since your `etag`; 429 rate limited, wait and retry.",
+  "prerequisites": "A Tailscale tailnet and a user with the Owner, Admin, Network admin or IT admin role to create an OAuth client under Settings, Trust credentials.",
+  "requiredEnvVars": [
+    "TAILSCALE_OAUTH_CLIENT_ID",
+    "TAILSCALE_OAUTH_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "TAILSCALE_OAUTH_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Tailscale admin console, Settings, Trust credentials: the Client ID of the OAuth client, e.g. kAbCdEf1CNTRL.",
+      "link": "https://login.tailscale.com/admin/settings/trust-credentials",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste only the client ID, without spaces."
+    },
+    "TAILSCALE_OAUTH_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the OAuth client is created, starting with tskey-client-. Create a new client if it is lost. An API access token (tskey-api-) does not work here.",
+      "link": "https://login.tailscale.com/admin/settings/trust-credentials",
+      "example": "tskey-client-...",
+      "pattern": "^tskey-client-\\S+$",
+      "patternMessage": "The client secret starts with tskey-client-."
+    }
+  },
+  "verifyHints": {
+    "401": "Tailscale did not accept the OAuth client. Check the client ID and the tskey-client- secret, and that the client was not deleted under Settings, Trust credentials.",
+    "403": "The OAuth client works but lacks the scope for this call. Give it all:read (and write scopes for the write tools) under Settings, Trust credentials.",
+    "429": "Tailscale is rate limiting this client. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "tailscale_list_devices"
+  },
+  "connector": {
+    "name": "Tailscale API v2",
+    "type": "REST",
+    "baseUrl": "https://api.tailscale.com/api/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{TAILSCALE_OAUTH_CLIENT_ID}}",
+      "clientSecret": "{{TAILSCALE_OAUTH_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.tailscale.com/api/v2/oauth/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/tailnet/-/devices"
+  },
+  "tools": [
+    {
+      "name": "tailscale_list_devices",
+      "description": "List the devices (machines) of the tailnet: nodeId, numeric id, name (MagicDNS name), hostname, user, OS, client version, Tailscale IP addresses, tags, authorized, created, lastSeen, key expiry and whether the device is connected now. Optional exact-match filters on top-level device fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "default (a fixed subset of fields) or all (adds advertised and enabled routes, client connectivity, posture identity and more).",
+            "enum": [
+              "default",
+              "all"
+            ]
+          },
+          "filter": {
+            "type": "string",
+            "description": "Exact-match filters on top-level device fields, written as a query string: hostname=web-1, os=linux, isEphemeral=true, authorized=false or tags=tag:prod (devices that carry this tag). Join several fields with & (combined with AND), e.g. os=linux&tags=tag:prod; give each field once."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/devices",
+        "queryParams": {
+          "fields": "$fields",
+          "__rawquery": "$filter"
+        }
+      }
+    },
+    {
+      "name": "tailscale_get_device",
+      "description": "One device with its details: name, hostname, user, OS, addresses, tags, authorized, key expiry, lastSeen, connectedToControl and, with fields=all, its routes and client connectivity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          },
+          "fields": {
+            "type": "string",
+            "description": "default or all (adds routes, client connectivity and posture identity).",
+            "enum": [
+              "default",
+              "all"
+            ]
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/device/{device_id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "tailscale_get_device_routes",
+      "description": "The subnet routes a device advertises (`advertisedRoutes`) and the ones that are approved for it (`enabledRoutes`). A route works only when it is both advertised and enabled; 0.0.0.0/0 and ::/0 together make the device an exit node.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/device/{device_id}/routes"
+      }
+    },
+    {
+      "name": "tailscale_set_device_routes",
+      "description": "Replace the list of approved (enabled) subnet routes of a device. Send the complete list: routes left out are disabled. Only routes the device advertises take effect; advertising itself happens on the device. Pass [] to disable all.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The complete list of enabled routes in CIDR notation, e.g. [\"10.0.0.0/16\", \"0.0.0.0/0\", \"::/0\"]."
+          }
+        },
+        "required": [
+          "device_id",
+          "routes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/device/{device_id}/routes",
+        "bodyMapping": {
+          "routes": "$routes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_authorize_device",
+      "description": "Approve a device that waits for device approval (authorized=true), or take the approval back (authorized=false), which cuts it off from the tailnet until approved again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          },
+          "authorized": {
+            "type": "boolean",
+            "description": "true approves the device, false revokes its approval."
+          }
+        },
+        "required": [
+          "device_id",
+          "authorized"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/device/{device_id}/authorized",
+        "bodyMapping": {
+          "authorized": "$authorized"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_set_device_name",
+      "description": "Rename a device: the new name becomes its MagicDNS name at once, so links and scripts that use the old name stop working.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          },
+          "name": {
+            "type": "string",
+            "description": "New device name, e.g. web-1. A full MagicDNS name (web-1.tailnet-name.ts.net) is also accepted. Empty resets it to the OS hostname."
+          }
+        },
+        "required": [
+          "device_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/device/{device_id}/name",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_set_device_tags",
+      "description": "Replace the tags of a device. Tags must be defined under tagOwners in the policy file. Once tagged, the device belongs to its tags instead of a user; sending an empty list is refused for a tagged device.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The complete list of tags, each starting with tag:, e.g. [\"tag:server\", \"tag:prod\"]."
+          }
+        },
+        "required": [
+          "device_id",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/device/{device_id}/tags",
+        "bodyMapping": {
+          "tags": "$tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_set_device_key_expiry",
+      "description": "Switch key expiry off (key_expiry_disabled=true) or back on for a device. With expiry off, the device never has to sign in again; use it for servers, not for laptops.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          },
+          "key_expiry_disabled": {
+            "type": "boolean",
+            "description": "true disables key expiry for this device, false enables it again."
+          }
+        },
+        "required": [
+          "device_id",
+          "key_expiry_disabled"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/device/{device_id}/key",
+        "bodyMapping": {
+          "keyExpiryDisabled": "$key_expiry_disabled"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_expire_device_key",
+      "description": "Expire the node key of a device now. The device drops off the tailnet until someone signs it in again on the device itself; this cannot be undone through the API.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/device/{device_id}/expire"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_delete_device",
+      "description": "Remove a device from the tailnet. It has to be added again with a new sign-in or auth key. Devices shared into the tailnet from elsewhere cannot be deleted.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/device/{device_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_get_device_posture_attributes",
+      "description": "The posture attributes of a device as key-value pairs: those Tailscale collects (node:os, node:tsVersion, ...), those from posture integrations (falcon:, intune:, ...) and custom ones (custom:...), each with its value and, if set, expiry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id: the `nodeId` from tailscale_list_devices (preferred, e.g. nodeAbCdEf1CNTRL) or the numeric `id`."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/device/{device_id}/attributes"
+      }
+    },
+    {
+      "name": "tailscale_list_users",
+      "description": "List the users of the tailnet: id, displayName, loginName (e-mail), role, status (active, idle, suspended, needs-approval, over-billing-limit), type (member or shared), created, lastSeen, deviceCount and currentlyConnected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "member (default): users of this tailnet; shared: users who have devices shared with them; all.",
+            "enum": [
+              "member",
+              "shared",
+              "all"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "description": "Only users with this role; all (default) for every role.",
+            "enum": [
+              "owner",
+              "member",
+              "admin",
+              "it-admin",
+              "network-admin",
+              "billing-admin",
+              "auditor",
+              "all"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/users",
+        "queryParams": {
+          "type": "$type",
+          "role": "$role"
+        }
+      }
+    },
+    {
+      "name": "tailscale_get_user",
+      "description": "One user: displayName, loginName, role, status, type, created, lastSeen, deviceCount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id: the `id` from tailscale_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "tailscale_update_user_role",
+      "description": "Change the role of a user. A user's own API access token cannot change that user's role.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id: the `id` from tailscale_list_users."
+          },
+          "role": {
+            "type": "string",
+            "description": "New role. owner can only be passed by the current owner.",
+            "enum": [
+              "owner",
+              "member",
+              "admin",
+              "it-admin",
+              "network-admin",
+              "billing-admin",
+              "auditor"
+            ]
+          }
+        },
+        "required": [
+          "user_id",
+          "role"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/role",
+        "bodyMapping": {
+          "role": "$role"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_approve_user",
+      "description": "Approve a user whose status is needs-approval (when user approval is on in the tailnet settings). Does nothing for users already approved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id: the `id` from tailscale_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/approve"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_suspend_user",
+      "description": "Suspend a user: their devices lose access to the tailnet until the user is restored with tailscale_restore_user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id: the `id` from tailscale_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/suspend"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_restore_user",
+      "description": "Restore a suspended user, giving their devices access to the tailnet again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id: the `id` from tailscale_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/restore"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_delete_user",
+      "description": "Delete a user from the tailnet, together with their devices. It cannot be undone; the person has to be invited again.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id: the `id` from tailscale_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/{user_id}/delete"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_list_user_invites",
+      "description": "Open (not yet accepted) invitations to join the tailnet: id, e-mail, role, inviter and when the e-mail was last sent. `inviteUrl` lets anyone who has it join with that role, so do not repeat it outside this conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/user-invites"
+      }
+    },
+    {
+      "name": "tailscale_list_keys",
+      "description": "List the keys of the tailnet: auth keys, API access tokens, OAuth clients and federated identities, with id, keyType, description, created, expires, revoked, capabilities, scopes and tags. Never returns the secret key values. Without all=true an OAuth client sees the trust credentials of the tailnet; all=true also returns the auth keys and the API access tokens.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "boolean",
+            "description": "true returns every auth key, API access token and trust credential of the tailnet."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/keys",
+        "queryParams": {
+          "all": "$all"
+        }
+      }
+    },
+    {
+      "name": "tailscale_get_key",
+      "description": "One key by id: keyType, description, created, expires, revoked, invalid, capabilities (reusable, ephemeral, preauthorized, tags for auth keys), scopes and tags. The secret value is not included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "description": "Key id from tailscale_list_keys, e.g. kAbCdEf1CNTRL."
+          }
+        },
+        "required": [
+          "key_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/keys/{key_id}"
+      }
+    },
+    {
+      "name": "tailscale_create_auth_key",
+      "description": "Create an auth key to add devices to the tailnet. SECRET: the answer's `key` field (tskey-auth-...) is the secret, shown this one time only; whoever has it can add devices. Give it only to the person or script that needs it and never repeat it elsewhere. With the OAuth client of this connector the key must carry tags, the same as the client's or tags owned by them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Short purpose, up to 50 letters, digits, spaces or hyphens, e.g. ci runners."
+          },
+          "reusable": {
+            "type": "boolean",
+            "description": "true lets the key add several devices; false (default) makes it single-use."
+          },
+          "ephemeral": {
+            "type": "boolean",
+            "description": "true: devices added with it are removed automatically soon after they go offline (for containers and CI)."
+          },
+          "preauthorized": {
+            "type": "boolean",
+            "description": "true: devices added with it skip device approval."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags set on the devices added with this key, e.g. [\"tag:ci\"]. Required when the key is created through an OAuth client."
+          },
+          "expiry_seconds": {
+            "type": "integer",
+            "description": "Lifetime of the key in seconds, at most 7776000 (90 days, the default).",
+            "minimum": 1,
+            "maximum": 7776000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tailnet/-/keys",
+        "bodyMapping": {
+          "keyType": "auth",
+          "description": "$description",
+          "expirySeconds": "$expiry_seconds",
+          "capabilities": {
+            "devices": {
+              "create": {
+                "reusable": "$reusable",
+                "ephemeral": "$ephemeral",
+                "preauthorized": "$preauthorized",
+                "tags": "$tags"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "tailscale_delete_key",
+      "description": "Revoke a key by id: an auth key, an API access token or a trust credential. Revoking cannot be undone; scripts and devices that still use the key stop working.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "description": "Key id from tailscale_list_keys."
+          }
+        },
+        "required": [
+          "key_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/tailnet/-/keys/{key_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_get_policy_file",
+      "description": "The tailnet policy file (access rules) as JSON: grants and acls, groups, hosts, tagOwners, autoApprovers, ssh, nodeAttrs, postures and tests. `_headers.etag` is the version; pass it to tailscale_set_policy_file to avoid overwriting someone else's change. details=true also returns warnings and errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "details": {
+            "type": "boolean",
+            "description": "true returns the policy with its warnings and errors instead of the plain policy."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/acl",
+        "queryParams": {
+          "details": "$details"
+        },
+        "headers": {
+          "Accept": "application/json"
+        },
+        "exposeHeaders": [
+          "etag"
+        ]
+      }
+    },
+    {
+      "name": "tailscale_validate_policy_file",
+      "description": "Check a policy file without saving it: Tailscale parses it and runs its `tests` (and `sshTests`). Changes nothing. An empty answer means it is valid and every test passed; otherwise `message` and `data` explain what failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "policy": {
+            "type": "object",
+            "description": "The whole tailnet policy file as a JSON object, e.g. {\"grants\": [...], \"groups\": {...}, \"tagOwners\": {...}, \"tests\": [...]}. HuJSON comments are not accepted here: send plain JSON."
+          }
+        },
+        "required": [
+          "policy"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tailnet/-/acl/validate",
+        "bodyMapping": {
+          "__merge": "$policy"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tailscale_preview_policy_rules",
+      "description": "Which rules of a policy file would apply to one user or one IP:port, without saving it. Changes nothing. Pass the current policy from tailscale_get_policy_file or a draft.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "user: rules for a user; ipport: rules that reach an IP and port.",
+            "enum": [
+              "user",
+              "ipport"
+            ]
+          },
+          "preview_for": {
+            "type": "string",
+            "description": "With type user, the e-mail of a user who has devices; with type ipport, an address and port such as 100.101.102.103:443."
+          },
+          "policy": {
+            "type": "object",
+            "description": "The whole tailnet policy file as a JSON object, e.g. {\"grants\": [...], \"groups\": {...}, \"tagOwners\": {...}, \"tests\": [...]}. HuJSON comments are not accepted here: send plain JSON."
+          }
+        },
+        "required": [
+          "type",
+          "preview_for",
+          "policy"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tailnet/-/acl/preview",
+        "queryParams": {
+          "type": "$type",
+          "previewFor": "$preview_for"
+        },
+        "bodyMapping": {
+          "__merge": "$policy"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tailscale_set_policy_file",
+      "description": "Replace the whole tailnet policy file. Validate it with tailscale_validate_policy_file first: a wrong rule can cut every user and device off. Pass the etag from tailscale_get_policy_file so a change made in the meantime is not overwritten (the call then fails with 412). Comments of a HuJSON policy are lost.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "policy": {
+            "type": "object",
+            "description": "The whole tailnet policy file as a JSON object, e.g. {\"grants\": [...], \"groups\": {...}, \"tagOwners\": {...}, \"tests\": [...]}. HuJSON comments are not accepted here: send plain JSON."
+          },
+          "etag": {
+            "type": "string",
+            "description": "The `_headers.etag` value from tailscale_get_policy_file, quotes included."
+          }
+        },
+        "required": [
+          "policy"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tailnet/-/acl",
+        "bodyMapping": {
+          "__merge": "$policy"
+        },
+        "headers": {
+          "If-Match": "$etag",
+          "Accept": "application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_get_dns_configuration",
+      "description": "The full DNS setup of the tailnet in one call: global nameservers, split DNS routes (domain to nameservers), search paths and preferences (magicDNS, overrideLocalDNS).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/dns/configuration"
+      }
+    },
+    {
+      "name": "tailscale_set_dns_nameservers",
+      "description": "Replace the global DNS nameservers of the tailnet. Send the complete list; [] removes them all, which also switches MagicDNS off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The complete list of nameserver IP addresses, e.g. [\"1.1.1.1\", \"2606:4700:4700::1111\"]."
+          }
+        },
+        "required": [
+          "dns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tailnet/-/dns/nameservers",
+        "bodyMapping": {
+          "dns": "$dns"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_set_dns_preferences",
+      "description": "Switch MagicDNS on or off for the tailnet. Turning it on needs at least one global nameserver.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "magic_dns": {
+            "type": "boolean",
+            "description": "true turns MagicDNS on, false off."
+          }
+        },
+        "required": [
+          "magic_dns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tailnet/-/dns/preferences",
+        "bodyMapping": {
+          "magicDNS": "$magic_dns"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_set_dns_search_paths",
+      "description": "Replace the DNS search domains of the tailnet. Send the complete list; [] removes them all.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The complete list of search domains, e.g. [\"corp.example.com\"]."
+          }
+        },
+        "required": [
+          "search_paths"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tailnet/-/dns/searchpaths",
+        "bodyMapping": {
+          "searchPaths": "$search_paths"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_update_split_dns",
+      "description": "Change split DNS for some domains: only the domains you pass are changed, the others stay. A domain set to null loses its nameservers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domains": {
+            "type": "object",
+            "description": "Map of domain to nameserver list, e.g. {\"corp.example.com\": [\"10.0.0.53\"], \"old.example.com\": null}."
+          }
+        },
+        "required": [
+          "domains"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/tailnet/-/dns/split-dns",
+        "bodyMapping": {
+          "__merge": "$domains"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_get_tailnet_settings",
+      "description": "The tailnet settings: device approval, device auto-updates, key expiry in days, user approval, who may join external tailnets, network flow logging, regional routing and route selection, posture identity collection, HTTPS certificates, ACLs managed externally (GitOps) and the admin console session timeout.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/settings"
+      }
+    },
+    {
+      "name": "tailscale_update_tailnet_settings",
+      "description": "Change one or more tailnet settings; fields you leave out keep their value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "devices_approval_on": {
+            "type": "boolean",
+            "description": "Require an admin to approve new devices."
+          },
+          "devices_auto_updates_on": {
+            "type": "boolean",
+            "description": "Let clients update Tailscale automatically."
+          },
+          "devices_key_duration_days": {
+            "type": "integer",
+            "description": "Days until a device key expires, 1 to 180.",
+            "minimum": 1,
+            "maximum": 180
+          },
+          "users_approval_on": {
+            "type": "boolean",
+            "description": "Require an admin to approve new users."
+          },
+          "users_role_allowed_to_join_external_tailnets": {
+            "type": "string",
+            "description": "Which users may join other tailnets.",
+            "enum": [
+              "none",
+              "admin",
+              "member"
+            ]
+          },
+          "network_flow_logging_on": {
+            "type": "boolean",
+            "description": "Record network flow logs (Premium and Enterprise plans)."
+          },
+          "regional_routing_on": {
+            "type": "boolean",
+            "description": "Prefer subnet routers and exit nodes in the nearest region."
+          },
+          "route_selection": {
+            "type": "string",
+            "description": "How overlapping subnet routes are chosen.",
+            "enum": [
+              "active-passive-failover",
+              "regional-routing",
+              "regional-routing-failover",
+              "magicroute"
+            ]
+          },
+          "posture_identity_collection_on": {
+            "type": "boolean",
+            "description": "Collect serial numbers and other identifiers for device posture."
+          },
+          "https_enabled": {
+            "type": "boolean",
+            "description": "Allow HTTPS certificates for ts.net names."
+          },
+          "acls_externally_managed_on": {
+            "type": "boolean",
+            "description": "Mark the policy file as managed outside the admin console (GitOps)."
+          },
+          "acls_external_link": {
+            "type": "string",
+            "description": "Link to the place where the policy file is managed, shown in the admin console."
+          },
+          "admin_console_session_timeout_minutes": {
+            "type": "integer",
+            "description": "Admin console session timeout in minutes.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/tailnet/-/settings",
+        "bodyMapping": {
+          "devicesApprovalOn": "$devices_approval_on",
+          "devicesAutoUpdatesOn": "$devices_auto_updates_on",
+          "devicesKeyDurationDays": "$devices_key_duration_days",
+          "usersApprovalOn": "$users_approval_on",
+          "usersRoleAllowedToJoinExternalTailnets": "$users_role_allowed_to_join_external_tailnets",
+          "networkFlowLoggingOn": "$network_flow_logging_on",
+          "regionalRoutingOn": "$regional_routing_on",
+          "routeSelection": "$route_selection",
+          "postureIdentityCollectionOn": "$posture_identity_collection_on",
+          "httpsEnabled": "$https_enabled",
+          "aclsExternallyManagedOn": "$acls_externally_managed_on",
+          "aclsExternalLink": "$acls_external_link",
+          "adminConsoleSessionTimeoutMinutes": "$admin_console_session_timeout_minutes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tailscale_get_contacts",
+      "description": "The account, support and security contact e-mails of the tailnet, each with its fallback and whether it still needs verification.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/contacts"
+      }
+    },
+    {
+      "name": "tailscale_list_configuration_audit_logs",
+      "description": "Configuration audit log: who changed what in the tailnet (devices, users, keys, policy file, DNS, settings) between start and end, in time order. Each entry has eventTime, origin (ADMIN_CONSOLE, CONFIG_API, NODE, ...), actor, target, action, old and new values. Kept for 90 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start of the window, RFC 3339, e.g. 2026-10-01T00:00:00Z."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the window, RFC 3339."
+          },
+          "actor": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these actors: actor ids, or ~text to search login and display names, e.g. [\"~alice\"]."
+          },
+          "target": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only entries whose target matches any of these strings (a device name, a user, a key id ...)."
+          },
+          "event": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these event actions, e.g. [\"CREATE\", \"UPDATE\", \"DELETE\"]."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/logging/configuration",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "actor": "$actor",
+          "target": "$target",
+          "event": "$event"
+        }
+      }
+    },
+    {
+      "name": "tailscale_list_network_flow_logs",
+      "description": "Network flow logs between start and end: which devices talked to which addresses and ports, with packet and byte counts per sample period (Premium and Enterprise plans, with network flow logging on). Answers grow fast: ask for minutes, not days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start of the window, RFC 3339, e.g. 2026-10-30T09:00:00Z."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the window, RFC 3339. Keep the window short, e.g. 15 minutes."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/logging/network",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      }
+    },
+    {
+      "name": "tailscale_get_log_streaming_status",
+      "description": "Whether streaming of a log type to a SIEM works: last activity, last error, bytes and entries sent, rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "log_type": {
+            "type": "string",
+            "description": "Which log stream: configuration (audit logs) or network (network flow logs).",
+            "enum": [
+              "configuration",
+              "network"
+            ]
+          }
+        },
+        "required": [
+          "log_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/logging/{log_type}/stream/status"
+      }
+    },
+    {
+      "name": "tailscale_get_log_streaming_configuration",
+      "description": "Where a log type is streamed: destination type (splunk, elastic, datadog, s3, ...), URL, upload period, compression, S3 bucket and region. Tokens, secret access keys and credentials are removed from the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "log_type": {
+            "type": "string",
+            "description": "Which log stream: configuration (audit logs) or network (network flow logs).",
+            "enum": [
+              "configuration",
+              "network"
+            ]
+          }
+        },
+        "required": [
+          "log_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/logging/{log_type}/stream"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "token",
+            "s3SecretAccessKey",
+            "gcsCredentials"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tailscale_list_webhooks",
+      "description": "The webhook endpoints of the tailnet: endpointId, URL, provider type, the events they receive and who created them. Signing secrets are removed from the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/webhooks"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "webhooks[*].secret"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tailscale_get_webhook",
+      "description": "One webhook endpoint by id: URL, provider type, subscribed events, creator, created and lastModified. The signing secret is removed from the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint_id": {
+            "type": "string",
+            "description": "Webhook endpointId from tailscale_list_webhooks."
+          }
+        },
+        "required": [
+          "endpoint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks/{endpoint_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "secret"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tailscale_create_webhook",
+      "description": "Create a webhook that sends tailnet events to a URL. SECRET: the answer's `secret` is the signing secret, shown this one time only; hand it to whoever runs the receiving endpoint and never repeat it elsewhere.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint_url": {
+            "type": "string",
+            "description": "HTTPS URL that receives the events."
+          },
+          "provider_type": {
+            "type": "string",
+            "description": "Format the events in for slack, mattermost, googlechat or discord; leave out for plain JSON.",
+            "enum": [
+              "slack",
+              "mattermost",
+              "googlechat",
+              "discord"
+            ]
+          },
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Events to send, e.g. [\"nodeCreated\", \"nodeNeedsApproval\", \"nodeKeyExpiringInOneDay\", \"policyUpdate\", \"userNeedsApproval\", \"subnetIPForwardingNotEnabled\"]."
+          }
+        },
+        "required": [
+          "endpoint_url",
+          "subscriptions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tailnet/-/webhooks",
+        "bodyMapping": {
+          "endpointUrl": "$endpoint_url",
+          "providerType": "$provider_type",
+          "subscriptions": "$subscriptions"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "tailscale_list_services",
+      "description": "Tailscale Services of the tailnet (virtual services hosted by one or more devices): name (svc:...), addresses, ports, tags and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/services"
+      }
+    },
+    {
+      "name": "tailscale_get_service",
+      "description": "One Tailscale Service by name: its addresses, ports, tags and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_name": {
+            "type": "string",
+            "description": "Service name from tailscale_list_services, starting with svc:, e.g. svc:web."
+          }
+        },
+        "required": [
+          "service_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/services/{service_name}"
+      }
+    },
+    {
+      "name": "tailscale_list_service_hosts",
+      "description": "The devices that host a Tailscale Service, with whether each one is approved to serve it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_name": {
+            "type": "string",
+            "description": "Service name, starting with svc:."
+          }
+        },
+        "required": [
+          "service_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/services/{service_name}/devices"
+      }
+    },
+    {
+      "name": "tailscale_list_posture_integrations",
+      "description": "The device posture integrations of the tailnet (CrowdStrike Falcon, Intune, Jamf Pro, Kandji, Kolide, SentinelOne): provider, cloud id, client id and status of the last sync.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tailnet/-/posture/integrations"
+      }
+    }
+  ]
+}
