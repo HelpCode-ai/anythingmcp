@@ -38,6 +38,8 @@ import { mcpPathOf } from './mcp-connector-config.util';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
+import { EmailEngine } from './engines/email.engine';
+import { EmailConnectorError } from './email/email-settings';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
 import { ConnectorAuthStatusService, authCredentialRef } from './engines/connector-auth-status.service';
 import { BearerTokenRenewalService, withTokenRenewal } from './engines/bearer-token-renewal.service';
@@ -71,6 +73,7 @@ export class ConnectorsService {
     @Optional() private readonly authStatus?: ConnectorAuthStatusService,
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
     @Optional() private readonly userCredentials?: UserCredentialsService,
+    @Optional() private readonly emailEngine?: EmailEngine,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -489,6 +492,29 @@ export class ConnectorsService {
               : `Connection successful — the service has ${out.entitySets?.length ?? 0} entity sets`,
           };
         }
+        case 'EMAIL': {
+          if (!this.emailEngine) throw new Error('The email engine is not available.');
+          try {
+            const out = await this.emailEngine.testConnection(
+              { authConfig, baseUrl },
+              interpolateDeep((connector.config as { email?: unknown } | null)?.email, envVars),
+            );
+            return {
+              ok: true,
+              kind: 'ok',
+              message:
+                `Connection successful — IMAP login accepted, ${out.folders} folders` +
+                (out.smtp === 'ok' ? '; SMTP login accepted' : '; no SMTP server set, so sending is off'),
+            };
+          } catch (err) {
+            if (!(err instanceof EmailConnectorError)) throw err;
+            const kind =
+              err.kind === 'auth_failed' || err.kind === 'unreachable' || err.kind === 'not_found'
+                ? err.kind
+                : 'error';
+            return { ok: false, kind, message: err.message };
+          }
+        }
         case 'SOAP':
           // specUrl is used as stored, as the engine uses it.
           return await this.testSoapConnection(connector.specUrl || undefined, baseUrl);
@@ -904,6 +930,17 @@ export class ConnectorsService {
         endpointMapping,
         mergedParams,
         interpolateDeep((connector.config as any)?.odata, envVars ?? {}),
+      );
+    }
+
+    if ((connector.type as string) === 'EMAIL') {
+      if (!this.emailEngine) throw new Error('The email engine is not available.');
+      return this.emailEngine.execute(
+        { authConfig: config.authConfig, baseUrl: config.baseUrl },
+        endpointMapping,
+        mergedParams,
+        // Catalog installs keep {{VAR}} in config.email, resolved per call.
+        interpolateDeep((connector.config as { email?: unknown } | null)?.email, envVars ?? {}),
       );
     }
 
