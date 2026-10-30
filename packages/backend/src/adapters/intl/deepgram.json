@@ -1,0 +1,976 @@
+{
+  "slug": "deepgram",
+  "name": "Deepgram",
+  "aliases": [
+    "Deepgram Nova",
+    "Deepgram Aura"
+  ],
+  "description": "Deepgram speech AI with your own API key: transcribe recordings from a URL with speaker labels, summaries, topics and sentiment, analyze text, turn text into speech with Aura voices, and check models, keys, usage, requests and credit balances.",
+  "region": "intl",
+  "category": "data",
+  "icon": "deepgram",
+  "docsUrl": "https://developers.deepgram.com/reference/deepgram-api-overview",
+  "instructions": "## Deepgram\nThis connector works with **Deepgram** (speech AI) through its REST API at `https://api.deepgram.com/v1` with the user's own API key: transcription of pre-recorded audio and video from a URL (speech to text with speaker labels, summaries, topics, intents, sentiment and redaction), text intelligence on plain text, text to speech with the Aura voices, the model and voice list, and the account side of a project: API keys (read only), members, the request log, usage, balances, spend and purchases. Live streaming, the voice agent API and key or member management are not part of this connector.\n\n**Spending**: `deepgram_transcribe_url` (per audio minute, more with summaries and other intelligence features), `deepgram_analyze_text` (per token) and `deepgram_text_to_speech` (per character) are billed to the project of the key; new accounts start with free credit. Everything else is free. For a long recording or a large batch, say roughly what it will cost before running it; `deepgram_list_balances` shows the credit left.\n\n**Setup (about 3 minutes)**\n1. Sign in at https://console.deepgram.com (a new account gets free credit) and open the project you want to use.\n2. Open **API Keys**, click **Create a New API Key**, give it a name, and pick the role: **Member** is enough for transcription, text to speech, text intelligence, keys and usage; **Admin** or **Owner** is needed for members, balances, spend and purchases (billing:read). Leave the expiration empty or set one you will remember.\n3. Copy the key (it is shown only once) into `DEEPGRAM_API_KEY`. Paste the key itself: the connector sends it as `Authorization: Token <key>`.\n4. Run `deepgram_list_projects` to check it.\n\n**Workflow**\n- Transcribe a recording: `deepgram_transcribe_url` with a public `url` (a presigned S3, GCS or Drive link works; a page that needs a sign-in does not). Good defaults: `model: nova-3`, `smart_format: true`. Add `diarize` and `utterances` or `paragraphs` for who said what, `detect_language` when the language is unknown (or `language: multi` on nova-3 for mixed languages), `keyterm` for names and jargon, `summarize: v2`, `topics`, `intents`, `sentiment` for call analysis (English only), and `redact` to hide card numbers or personal data.\n- Analyze text you already have (a transcript, an email, notes): `deepgram_analyze_text` with `summarize`, `topics`, `intents` or `sentiment` (English).\n- Make audio: `deepgram_text_to_speech` with the text and an Aura voice in `model`; find voices with `deepgram_list_models` (the tts list, with language, accent and a sample link).\n- Models: `deepgram_list_models` and `deepgram_get_model` for the public models; `deepgram_list_project_models` for what one project can use, including custom models.\n- Account: `deepgram_list_projects` for the `project_id`, then `deepgram_get_project`, `deepgram_list_keys`, `deepgram_list_members`.\n- Usage and cost: `deepgram_get_usage_breakdown` for hours, requests, tokens and characters (totals per period, or grouped by endpoint, model, key or tag), `deepgram_list_usage_fields` for the values that can be filtered on, `deepgram_list_requests` and `deepgram_get_request` for single calls with their cost, `deepgram_get_billing_breakdown` for spend in USD, `deepgram_list_balances`, `deepgram_get_balance` and `deepgram_list_purchases` for credit.\n\n**Reading the answers**\n- Transcription: the text is in `results.channels[0].alternatives[0].transcript` (one channel per audio channel with `multichannel`), with a `confidence` from 0 to 1. With `paragraphs` the formatted text with speaker labels is in `alternatives[0].paragraphs.transcript`. `results.utterances` lists turns with `start` and `end` in seconds and `speaker` (0, 1, ...). Summaries are in `results.summary.short`; topics, intents and sentiments in `results.topics`, `results.intents`, `results.sentiments` as segments. Per-word timings are removed from the answer to keep it small: use utterances or paragraphs for timing. `metadata.duration` is the audio length in seconds and `metadata.request_id` identifies the call in the request log.\n- Text intelligence: `results.summary.text`, and segments with `start_word` and `end_word` indexes into the text.\n- Text to speech: the audio is attached to the result as a file (audio/mpeg for MP3); the text of the result gives its type and size. It is not saved anywhere at Deepgram, so keep the file if it is needed later.\n- Usage figures are hours of audio as decimal strings, tokens and characters as numbers; billing amounts and balances are in `units` (usually usd). Dates are YYYY-MM-DD in UTC; request times are ISO 8601.\n\n**Paging**: `deepgram_list_requests` pages with `page` (from 0) and `limit` (up to 1000); keep going while a page comes back full. The other lists return everything at once.\n\n**Limits**: text to speech takes at most 2,000 characters per call (413 above); split longer text at sentence boundaries. Transcription answers in one call, which the connector waits for up to 30 seconds: nova-3 usually transcribes an hour of audio well within that, but very long files with many intelligence features can take longer; transcribe them in parts. Pay-as-you-go and Growth projects run up to 50 concurrent transcriptions, 15 text-to-speech and about 10 text intelligence requests at once; more return 429. Text intelligence takes up to 150K tokens of input (400 TOKEN_LIMIT_EXCEEDED above).\n\n**Errors**: 400 with `err_code` and `err_msg` for an option the model does not support (for example `keyterm` on nova-2, or intelligence features on non-English audio) or a URL Deepgram cannot download; 401 for a wrong or expired key; 402 when the project has no credit left; 403 when the key's role lacks the scope (members and billing need Admin or Owner); 404 for an unknown project, request or balance id; 413 for text over 2,000 characters; 429 for too many requests at once.",
+  "prerequisites": "A Deepgram account (new accounts get free credit) and an API key from the Deepgram Console. Transcription, text intelligence and text to speech use the project's credit. About 3 minutes.",
+  "requiredEnvVars": [
+    "DEEPGRAM_API_KEY"
+  ],
+  "envVarMeta": {
+    "DEEPGRAM_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "console.deepgram.com, your project, API Keys, Create a New API Key. Member role for transcription and usage; Admin or Owner also for members, balances and spend. Calls are billed to that project.",
+      "link": "https://console.deepgram.com",
+      "pattern": "^[A-Za-z0-9]{32,64}$",
+      "patternMessage": "Paste only the API key as the Console shows it, letters and digits, without the word Token and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Deepgram refused the API key. Check that it is complete and has not expired or been deleted in the Deepgram Console under API Keys; paste the key without the word Token.",
+    "403": "The key works but its role lacks a permission for this request. Create a key with the Admin or Owner role for members, balances and spend.",
+    "429": "Deepgram is rate limiting this project. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "deepgram_list_projects"
+  },
+  "connector": {
+    "name": "Deepgram API",
+    "type": "REST",
+    "baseUrl": "https://api.deepgram.com/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Token {{DEEPGRAM_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/projects"
+  },
+  "tools": [
+    {
+      "name": "deepgram_transcribe_url",
+      "description": "Transcribe a pre-recorded audio or video file from a public URL with Deepgram speech to text (POST /v1/listen). Options add speaker labels, utterances, paragraphs, smart formatting, language detection, a summary, topics, intents, sentiment, entities, key terms and redaction. Returns the transcript with confidence; per-word timings are left out to keep the answer small. Billed per audio minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public URL of the audio or video file (mp3, wav, m4a, mp4, ogg, flac, webm and most other formats). Deepgram downloads it itself, so the link must be reachable without sign-in; a presigned storage link works.",
+            "format": "uri"
+          },
+          "model": {
+            "type": "string",
+            "description": "Speech model: nova-3 (default choice, best accuracy, many languages; use language multi for mixed languages), nova-3-medical, nova-2 and its variants (nova-2-meeting, nova-2-phonecall, nova-2-finance, ...) for languages nova-3 does not cover, or a custom model id. deepgram_list_models lists them with their languages. Deepgram uses its default model when omitted."
+          },
+          "language": {
+            "type": "string",
+            "description": "BCP-47 language of the audio, such as en, en-US, de, fr, es, it, pt-BR, ja, hi; multi for multilingual code-switching on nova-3. Default en. Leave it out and set detect_language when the language is unknown."
+          },
+          "detect_language": {
+            "type": "boolean",
+            "description": "Detect the dominant language and return it as detected_language with a confidence. Use instead of language when the language is unknown."
+          },
+          "smart_format": {
+            "type": "boolean",
+            "description": "Readable formatting: punctuation, paragraphs, numbers, dates, currency, emails and URLs written out properly. Recommended for transcripts read by people."
+          },
+          "punctuate": {
+            "type": "boolean",
+            "description": "Add punctuation and capitalization (already included in smart_format)."
+          },
+          "diarize": {
+            "type": "boolean",
+            "description": "Tell speakers apart: every utterance and paragraph gets a speaker number starting at 0."
+          },
+          "utterances": {
+            "type": "boolean",
+            "description": "Split the transcript into utterances (a speaker turn or phrase) with start and end times in seconds and, with diarize, the speaker."
+          },
+          "utt_split": {
+            "type": "number",
+            "description": "Seconds of silence that end an utterance (default 0.8). Only with utterances."
+          },
+          "paragraphs": {
+            "type": "boolean",
+            "description": "Group the transcript into paragraphs (with diarize, by speaker) and return a formatted paragraphs.transcript."
+          },
+          "summarize": {
+            "type": "string",
+            "description": "Set to v2 for a short summary of the audio in results.summary.short (English audio only).",
+            "enum": [
+              "v2"
+            ]
+          },
+          "topics": {
+            "type": "boolean",
+            "description": "Detect topics per segment of the transcript (English only)."
+          },
+          "intents": {
+            "type": "boolean",
+            "description": "Detect speaker intents per segment of the transcript (English only)."
+          },
+          "sentiment": {
+            "type": "boolean",
+            "description": "Sentiment (positive, neutral, negative with a score) per segment and on average (English only)."
+          },
+          "custom_topic": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Topics to look for in addition to the detected ones (up to 100). Only with topics."
+          },
+          "custom_intent": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Intents to look for in addition to the detected ones (up to 100). Only with intents."
+          },
+          "detect_entities": {
+            "type": "boolean",
+            "description": "Find entities such as names, organizations, locations, dates and amounts in the transcript."
+          },
+          "keyterm": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Terms to recognize better: product names, brands, jargon, names (nova-3 only, up to about 100 terms). Example: [\"AnythingMCP\", \"Kubernetes\"]."
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Older keyword boosting for nova-2 and earlier models, each as word:intensifier, e.g. \"Deepgram:2\". Not supported on nova-3; use keyterm there."
+          },
+          "search": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Words or phrases to search for in the audio; the hits with their times are returned under results.channels[].search."
+          },
+          "replace": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Find-and-replace on the transcript, each as find:replacement, e.g. \"acme:ACME\"."
+          },
+          "redact": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pci",
+                "pii",
+                "numbers"
+              ]
+            },
+            "description": "Redact sensitive content from the transcript: pci (card numbers), pii (personal data), numbers."
+          },
+          "numerals": {
+            "type": "boolean",
+            "description": "Write spoken numbers as digits (\"nine hundred\" becomes \"900\")."
+          },
+          "measurements": {
+            "type": "boolean",
+            "description": "Write spoken measurements as abbreviations (\"ten kilograms\" becomes \"10 kg\")."
+          },
+          "filler_words": {
+            "type": "boolean",
+            "description": "Keep filler words such as uh and um in the transcript."
+          },
+          "profanity_filter": {
+            "type": "boolean",
+            "description": "Replace recognized profanity in the transcript."
+          },
+          "dictation": {
+            "type": "boolean",
+            "description": "Dictation mode: spoken punctuation commands (\"comma\", \"period\") become punctuation. Needs punctuate."
+          },
+          "multichannel": {
+            "type": "boolean",
+            "description": "Transcribe each audio channel separately (for example agent and caller on a stereo call recording)."
+          },
+          "tag": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Labels attached to this request for usage reporting (they show in deepgram_list_requests and usage filters)."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listen",
+        "queryParams": {
+          "model": "$model",
+          "language": "$language",
+          "detect_language": "$detect_language",
+          "smart_format": "$smart_format",
+          "punctuate": "$punctuate",
+          "diarize": "$diarize",
+          "utterances": "$utterances",
+          "utt_split": "$utt_split",
+          "paragraphs": "$paragraphs",
+          "summarize": "$summarize",
+          "topics": "$topics",
+          "intents": "$intents",
+          "sentiment": "$sentiment",
+          "custom_topic": "$custom_topic",
+          "custom_intent": "$custom_intent",
+          "detect_entities": "$detect_entities",
+          "keyterm": "$keyterm",
+          "keywords": "$keywords",
+          "search": "$search",
+          "replace": "$replace",
+          "redact": "$redact",
+          "numerals": "$numerals",
+          "measurements": "$measurements",
+          "filler_words": "$filler_words",
+          "profanity_filter": "$profanity_filter",
+          "dictation": "$dictation",
+          "multichannel": "$multichannel",
+          "tag": "$tag"
+        },
+        "bodyMapping": {
+          "url": "$url"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "results.channels[*].alternatives[*].words",
+            "results.utterances[*].words",
+            "metadata.transaction_key"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "deepgram_analyze_text",
+      "description": "Analyze English text with Deepgram text intelligence (POST /v1/read): a summary, topics, intents and sentiment per segment, without audio. Turn on at least one of summarize, topics, intents or sentiment. Billed per token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text to analyze, in English. Up to 150K tokens of input; longer text fails with TOKEN_LIMIT_EXCEEDED."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the text. Text intelligence currently supports English only: en.",
+            "enum": [
+              "en"
+            ]
+          },
+          "summarize": {
+            "type": "boolean",
+            "description": "Return a summary of the text in results.summary.text."
+          },
+          "topics": {
+            "type": "boolean",
+            "description": "Detect topics per text segment."
+          },
+          "intents": {
+            "type": "boolean",
+            "description": "Detect intents per text segment."
+          },
+          "sentiment": {
+            "type": "boolean",
+            "description": "Sentiment per segment and on average."
+          },
+          "custom_topic": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Topics to look for in addition to the detected ones (up to 100). Only with topics."
+          },
+          "custom_intent": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Intents to look for in addition to the detected ones (up to 100). Only with intents."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/read",
+        "queryParams": {
+          "language": "$language",
+          "summarize": "$summarize",
+          "topics": "$topics",
+          "intents": "$intents",
+          "sentiment": "$sentiment",
+          "custom_topic": "$custom_topic",
+          "custom_intent": "$custom_intent"
+        },
+        "bodyMapping": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "deepgram_text_to_speech",
+      "description": "Turn up to 2,000 characters of text into speech with a Deepgram Aura voice (POST /v1/speak). The audio file (MP3 by default) is attached to the result as an embedded audio resource, up to 8 MiB. Billed per character.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text to speak, at most 2,000 characters per call (longer text is refused with 413). Split longer text into several calls at sentence boundaries.",
+            "maxLength": 2000
+          },
+          "model": {
+            "type": "string",
+            "description": "Voice model, as aura-2-<voice>-<language>: for example aura-2-thalia-en, aura-2-andromeda-en, aura-2-apollo-en (English), aura-2-celeste-es (Spanish), aura-2-julius-de (German), aura-2-agathe-fr (French), aura-2-livia-it (Italian), aura-2-rhea-nl (Dutch), aura-2-fujin-ja (Japanese). deepgram_list_models lists every voice under tts with its language, accent and a sample. Default aura-asteria-en."
+          },
+          "encoding": {
+            "type": "string",
+            "description": "Audio encoding: mp3 (default, smallest file), linear16 (PCM, with container wav), flac, opus, aac, mulaw or alaw (telephony).",
+            "enum": [
+              "mp3",
+              "linear16",
+              "flac",
+              "opus",
+              "aac",
+              "mulaw",
+              "alaw"
+            ]
+          },
+          "container": {
+            "type": "string",
+            "description": "File wrapper: wav for linear16, mulaw and alaw; ogg for opus; none for raw audio. Leave empty for the default of the encoding.",
+            "enum": [
+              "none",
+              "wav",
+              "ogg"
+            ]
+          },
+          "sample_rate": {
+            "type": "string",
+            "description": "Sample rate in Hz: 8000, 16000, 24000, 32000 or 48000 for linear16 (default 24000); 8000 or 16000 for mulaw and alaw; fixed for mp3, opus and aac.",
+            "enum": [
+              "8000",
+              "16000",
+              "22050",
+              "24000",
+              "32000",
+              "48000"
+            ]
+          },
+          "bit_rate": {
+            "type": "integer",
+            "description": "Bit rate in bits per second: 32000 or 48000 for mp3 (default 48000), 4000-650000 for opus, 4000-192000 for aac. Ignored for the other encodings."
+          },
+          "speed": {
+            "type": "number",
+            "description": "Speaking rate multiplier, 0.7 to 1.5 (default 1). Not available for every voice and language."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/speak",
+        "headers": {
+          "Accept": "*/*"
+        },
+        "queryParams": {
+          "model": "$model",
+          "encoding": "$encoding",
+          "container": "$container",
+          "sample_rate": "$sample_rate",
+          "bit_rate": "$bit_rate",
+          "speed": "$speed"
+        },
+        "bodyMapping": {
+          "text": "$text"
+        }
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 8388608
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "deepgram_list_models",
+      "description": "List the public Deepgram models: speech-to-text models under stt (name, version, uuid, languages, batch and streaming support) and text-to-speech voices under tts (name, language, accent, age, use cases and a sample link).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_outdated": {
+            "type": "boolean",
+            "description": "Also list older versions of each model."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models",
+        "queryParams": {
+          "include_outdated": "$include_outdated"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "tts[*].metadata.image",
+            "tts[*].metadata.color"
+          ]
+        }
+      }
+    },
+    {
+      "name": "deepgram_get_model",
+      "description": "Get one public Deepgram model or voice by its uuid: name, canonical name, architecture, languages, version and capabilities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "description": "Model uuid, from deepgram_list_models."
+          }
+        },
+        "required": [
+          "model_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/models/{model_id}"
+      }
+    },
+    {
+      "name": "deepgram_list_projects",
+      "description": "List the Deepgram projects the API key can reach, with their project_id and name. Start here: every account, usage and billing tool needs a project_id.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects"
+      }
+    },
+    {
+      "name": "deepgram_get_project",
+      "description": "Get one Deepgram project: its name and whether it opted out of the Model Improvement Program (mip_opt_out).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}"
+      }
+    },
+    {
+      "name": "deepgram_list_project_models",
+      "description": "List the models a Deepgram project can use, including custom or early-access models it has been given, split into stt and tts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          },
+          "include_outdated": {
+            "type": "boolean",
+            "description": "Also list older versions of each model."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/models",
+        "queryParams": {
+          "include_outdated": "$include_outdated"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "tts[*].metadata.image",
+            "tts[*].metadata.color"
+          ]
+        }
+      }
+    },
+    {
+      "name": "deepgram_list_keys",
+      "description": "List the API keys of a Deepgram project: api_key_id, comment, scopes, creation date and the member who owns each key. The secret itself is never returned. Owners see all keys, other roles only their own.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only active or only expired keys.",
+            "enum": [
+              "active",
+              "expired"
+            ]
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/keys",
+        "queryParams": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "deepgram_list_members",
+      "description": "List the members of a Deepgram project with member_id, email, first and last name and their scopes (role). Needs an Admin or Owner key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/members"
+      }
+    },
+    {
+      "name": "deepgram_list_requests",
+      "description": "List the API requests of a Deepgram project, newest first: request_id, time, endpoint path, API key id, HTTP status code, deployment and the request details (duration, cost, models, features used). Filter by date range, endpoint, method, status or key. Transcripts are not stored by Deepgram and are not part of the log.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the range: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS or with an offset (+HH:MM). Defaults to the start of the current billing period."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the range, same formats as start. Defaults to now."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Requests per page, 1-1000 (default 10)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, starting at 0."
+          },
+          "accessor": {
+            "type": "string",
+            "description": "Only requests made with this API key id (api_key_id from deepgram_list_keys)."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Only this request id."
+          },
+          "deployment": {
+            "type": "string",
+            "description": "Only requests on this deployment.",
+            "enum": [
+              "hosted",
+              "beta",
+              "self-hosted"
+            ]
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Only requests to this endpoint: listen (speech to text), speak (text to speech), read (text intelligence) or agent (voice agent).",
+            "enum": [
+              "listen",
+              "read",
+              "speak",
+              "agent"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "description": "Only requests of this kind: sync (pre-recorded), async (with callback) or streaming.",
+            "enum": [
+              "sync",
+              "async",
+              "streaming"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Only succeeded (HTTP status below 300) or failed (400 and above) requests.",
+            "enum": [
+              "succeeded",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/requests",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "limit": "$limit",
+          "page": "$page",
+          "accessor": "$accessor",
+          "request_id": "$request_id",
+          "deployment": "$deployment",
+          "endpoint": "$endpoint",
+          "method": "$method",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "deepgram_get_request",
+      "description": "Get one logged Deepgram API request by id: when it ran, the endpoint, the key used, the status code, and the details Deepgram keeps (audio duration, cost in USD, models, options and features).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Request id, from deepgram_list_requests or from metadata.request_id of a transcription."
+          }
+        },
+        "required": [
+          "project_id",
+          "request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/requests/{request_id}"
+      }
+    },
+    {
+      "name": "deepgram_get_usage_breakdown",
+      "description": "Usage of a Deepgram project for a date range: hours of audio, total hours, agent hours, tokens in and out, TTS characters and request count. Without grouping one row per period; with grouping one row per endpoint, model, API key, method, feature set, tag or deployment. Filters narrow it to one endpoint, method, model, key, deployment or tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the range, YYYY-MM-DD (UTC). Defaults to the start of the current billing period."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the range, YYYY-MM-DD (UTC). Defaults to today."
+          },
+          "grouping": {
+            "type": "string",
+            "description": "Dimension to group by. Without it the result has one row per period of the range.",
+            "enum": [
+              "accessor",
+              "endpoint",
+              "feature_set",
+              "models",
+              "method",
+              "tags",
+              "deployment"
+            ]
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Only requests to this endpoint: listen (speech to text), speak (text to speech), read (text intelligence) or agent (voice agent).",
+            "enum": [
+              "listen",
+              "read",
+              "speak",
+              "agent"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "description": "Only requests of this kind: sync (pre-recorded), async (with callback) or streaming.",
+            "enum": [
+              "sync",
+              "async",
+              "streaming"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "description": "Only requests that used this model, by its uuid (from deepgram_list_models)."
+          },
+          "accessor": {
+            "type": "string",
+            "description": "Only requests made with this API key id (api_key_id from deepgram_list_keys)."
+          },
+          "deployment": {
+            "type": "string",
+            "description": "Only requests on this deployment.",
+            "enum": [
+              "hosted",
+              "beta",
+              "self-hosted"
+            ]
+          },
+          "tag": {
+            "type": "string",
+            "description": "Only requests labelled with this tag (the tag parameter sent with the request)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/usage/breakdown",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "grouping": "$grouping",
+          "endpoint": "$endpoint",
+          "method": "$method",
+          "model": "$model",
+          "accessor": "$accessor",
+          "deployment": "$deployment",
+          "tag": "$tag"
+        }
+      }
+    },
+    {
+      "name": "deepgram_list_usage_fields",
+      "description": "List the values that occur in a Deepgram project's usage for a date range: the models (with name and uuid), tags, features and processing methods. Use it to find the model uuid and tag values for the usage filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the range, YYYY-MM-DD (UTC). Defaults to the start of the current billing period."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the range, YYYY-MM-DD (UTC). Defaults to today."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/usage/fields",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      }
+    },
+    {
+      "name": "deepgram_list_balances",
+      "description": "List the credit balances of a Deepgram project: balance_id, remaining amount, units (usually usd) and the purchase order it came from. Needs an Admin or Owner key (billing:read).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/balances"
+      }
+    },
+    {
+      "name": "deepgram_get_balance",
+      "description": "Get one credit balance of a Deepgram project: remaining amount, units and purchase order id. Needs billing:read (Admin or Owner).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          },
+          "balance_id": {
+            "type": "string",
+            "description": "Balance id, from deepgram_list_balances."
+          }
+        },
+        "required": [
+          "project_id",
+          "balance_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/balances/{balance_id}"
+      }
+    },
+    {
+      "name": "deepgram_get_billing_breakdown",
+      "description": "Spend of a Deepgram project in US dollars for a date range, optionally grouped by API key, deployment, line item (such as streaming::nova-3) or tag. Needs billing:read (Admin or Owner).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the range, YYYY-MM-DD (UTC). Defaults to the start of the current billing period."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the range, YYYY-MM-DD (UTC). Defaults to today."
+          },
+          "grouping": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "accessor",
+                "deployment",
+                "line_item",
+                "tags"
+              ]
+            },
+            "description": "Dimensions to group by, one or more."
+          },
+          "accessor": {
+            "type": "string",
+            "description": "Only requests made with this API key id (api_key_id from deepgram_list_keys)."
+          },
+          "deployment": {
+            "type": "string",
+            "description": "Only requests on this deployment.",
+            "enum": [
+              "hosted",
+              "beta",
+              "self-hosted"
+            ]
+          },
+          "tag": {
+            "type": "string",
+            "description": "Only requests labelled with this tag (the tag parameter sent with the request)."
+          },
+          "line_item": {
+            "type": "string",
+            "description": "Only this line item, for example streaming::nova-3 or batch::nova-3."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/billing/breakdown",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "grouping": "$grouping",
+          "accessor": "$accessor",
+          "deployment": "$deployment",
+          "tag": "$tag",
+          "line_item": "$line_item"
+        }
+      }
+    },
+    {
+      "name": "deepgram_list_purchases",
+      "description": "List the purchases (credit top-ups and orders) of a Deepgram project with amount, units and date. Needs billing:read (Admin or Owner).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id (UUID), from deepgram_list_projects."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Purchases to return, 1-1000 (default 10)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/purchases",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}
