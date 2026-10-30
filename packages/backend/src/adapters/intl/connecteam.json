@@ -1,0 +1,2337 @@
+{
+  "slug": "connecteam",
+  "name": "Connecteam",
+  "aliases": [
+    "Connecteam app"
+  ],
+  "description": "Connecteam workforce app for deskless teams: users and custom fields, time clock (time activities, clock in and out, timesheet totals), scheduler shifts, jobs, forms and submissions, quick tasks, time off and chat messages. Connecteam API with an API key.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "connecteam",
+  "docsUrl": "https://developer.connecteam.com/reference",
+  "prerequisites": "A Connecteam owner or admin on the Expert plan or higher, to create an API key.",
+  "requiredEnvVars": [
+    "CONNECTEAM_API_HOST",
+    "CONNECTEAM_API_KEY"
+  ],
+  "envVarMeta": {
+    "CONNECTEAM_API_HOST": {
+      "label": "API address",
+      "kind": "address",
+      "help": "https://api.connecteam.com for accounts that sign in at app.connecteam.com; https://api-au.connecteam.com for Australian accounts that sign in at app-au.connecteam.com.",
+      "example": "https://api.connecteam.com",
+      "link": "https://developer.connecteam.com/docs/australian-clients",
+      "pattern": "^https://api(-au)?\\.connecteam\\.com$",
+      "patternMessage": "Use https://api.connecteam.com or https://api-au.connecteam.com, without a path or trailing slash."
+    },
+    "CONNECTEAM_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Connecteam, Settings > API Keys > Add API key.",
+      "link": "https://developer.connecteam.com/docs/authentication-1",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Connecteam refused the API key. Copy it again from Settings > API Keys, and check that the API address matches where you sign in (app or app-au).",
+    "403": "Connecteam refused the request: an invalid or deleted API key, a key used on the wrong API address (global versus api-au), or a plan or hub without API access (Expert plan or higher per hub).",
+    "429": "Connecteam's rate limit for the plan was reached (per minute and per day, per account). Wait and try again."
+  },
+  "probe": {
+    "tool": "connecteam_get_account"
+  },
+  "connector": {
+    "name": "Connecteam API",
+    "type": "REST",
+    "baseUrl": "{{CONNECTEAM_API_HOST}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{CONNECTEAM_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me"
+  },
+  "instructions": "## Connecteam\nThis connector reads and updates **Connecteam**, the app for deskless teams, through its REST API: users and their custom fields, the time clock (clocked shifts, breaks, timesheet totals, clock in and out), the job scheduler (shifts), jobs, forms and submissions, quick tasks, time off and chat messages.\n\n**Personal data**: users carry names, phone numbers, emails and custom profile fields (birthday, address, IDs); time activities can carry GPS positions. Read only what the task needs.\n\n**Setup (2 minutes, needs an owner or admin)**\n1. In Connecteam open **Settings > API Keys** and click **Add API key**. Copy the key into `CONNECTEAM_API_KEY`; it gives access to the whole account, treat it like a password.\n2. Set `CONNECTEAM_API_HOST` to `https://api.connecteam.com`, or to `https://api-au.connecteam.com` if you sign in at app-au.connecteam.com (Australian accounts).\n3. API access needs the **Expert plan or higher**, per hub: Operations (time clock, scheduler, jobs, tasks), Communications (chat), HR & Skills (time off). Users, account and publishers work with any eligible hub. `connecteam_get_account` is the install check.\n\n**Ids first**: every time clock, scheduler and task board is its own app instance. Get their ids with `connecteam_list_time_clocks`, `connecteam_list_schedulers` and `connecteam_list_task_boards` before calling the tools that need `timeClockId`, `schedulerId` or `taskBoardId`.\n\n**Workflow**\n- Account and people: `connecteam_get_account`, `connecteam_list_users` (filter by ids, names, emails, phones, status, change time), `connecteam_list_custom_fields`, `connecteam_list_custom_field_categories`, `connecteam_list_smart_groups`.\n- Time clock: `connecteam_list_time_activities` (clocked shifts, manual breaks and time off per user, at most 92 days per call) and `connecteam_get_timesheet_totals` (hours per user and day with approval state). Live punching: `connecteam_clock_in`, `connecteam_clock_out`. Corrections: `connecteam_create_time_activities`, `connecteam_update_time_activities`.\n- Scheduling: `connecteam_list_shifts` (time range in Unix seconds), `connecteam_get_shift`, `connecteam_list_shift_custom_fields`, `connecteam_list_user_unavailabilities`. Plan with `connecteam_create_shifts` and `connecteam_update_shifts`; set `isPublished` true and `notifyUsers` true to tell the staff.\n- Jobs: `connecteam_list_jobs`, `connecteam_get_job`, `connecteam_list_job_custom_fields`, `connecteam_create_jobs`, `connecteam_update_job`.\n- Forms: `connecteam_list_forms`, `connecteam_get_form` (questions), `connecteam_list_form_submissions`, `connecteam_get_form_submission`.\n- Tasks: `connecteam_list_tasks`, `connecteam_list_task_labels`, `connecteam_create_task`, `connecteam_update_task` (send userIds, status and title every time; status completed closes it).\n- Time off: `connecteam_list_time_off_policy_types`, `connecteam_list_time_off_balances`, `connecteam_list_time_off_requests` (approved only unless you pass `statuses`), `connecteam_create_time_off_request`, `connecteam_update_time_off_request` (approve or deny with `status`).\n- Users: `connecteam_create_users`, `connecteam_update_users`, `connecteam_archive_users` (reversible: update with `isArchived` false), `connecteam_create_user_note`.\n- Chat: `connecteam_list_conversations` and `connecteam_list_publishers`, then `connecteam_send_message` to a conversation or `connecteam_send_private_message` to one user, with a publisher id as `senderId`. Messages are delivered at once.\n\n**Switched off at install**: `connecteam_delete_user`, `connecteam_delete_shift` and `connecteam_delete_task`; they cannot be undone, so an admin switches them on when the team needs them.\n\n**Reading the answers**\n- Answers are `{ \"requestId\": \"...\", \"data\": {...}, \"paging\": { \"offset\": n } }`.\n- Shift, clock and task times are **Unix timestamps in seconds** with a separate IANA `timezone`; dates in filters are `YYYY-MM-DD`. User ids are integers; shift, job, task and request ids are strings.\n- Batch writes (`connecteam_create_users`, `connecteam_create_shifts`, `connecteam_create_jobs` and the updates) take a list and answer per item.\n\n**Paging**: `limit` (default 10; the maximum is in each tool, up to 500) and `offset`. Raise `offset` by `limit` until a page returns fewer items than `limit`.\n\n**Limits and errors**: rate limits are per account and plan (Expert 100 per minute and 10,000 per day) and answer 429. 401 or 403 means a wrong key, the wrong API address (global versus Australian) or a plan or hub without API access, 404 an unknown id, 422 a validation error (the body names the field); locked or approved timesheet days refuse time activity changes.\n",
+  "tools": [
+    {
+      "name": "connecteam_get_account",
+      "description": "Account of the API key: company id, name and time zone. The install check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      }
+    },
+    {
+      "name": "connecteam_list_users",
+      "description": "List users (employees, managers, owners): id, name, phone, email, user type, archived flag, custom field values and smart groups. Contains personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these user ids."
+          },
+          "userStatus": {
+            "type": "string",
+            "description": "active (default), archived or all.",
+            "enum": [
+              "active",
+              "archived",
+              "all"
+            ]
+          },
+          "fullNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact full names (first and last name with a space, any case)."
+          },
+          "emailAddresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Email addresses."
+          },
+          "phoneNumbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Phone numbers in +<country code><number> format."
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Only users created after this Unix time (seconds)."
+          },
+          "modifiedAt": {
+            "type": "integer",
+            "description": "Only users changed after this Unix time (seconds)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key.",
+            "enum": [
+              "created_at"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc, with sort.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 500 (default 10).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/v1/users",
+        "queryParams": {
+          "userIds": "$userIds",
+          "userStatus": "$userStatus",
+          "fullNames": "$fullNames",
+          "emailAddresses": "$emailAddresses",
+          "phoneNumbers": "$phoneNumbers",
+          "createdAt": "$createdAt",
+          "modifiedAt": "$modifiedAt",
+          "sort": "$sort",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_custom_fields",
+      "description": "List the user custom fields (profile fields such as employee number, department, birthday) with id, name, type and dropdown options.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customFieldIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these custom field ids."
+          },
+          "categoryIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only fields in these category ids."
+          },
+          "customFieldNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field names."
+          },
+          "customFieldTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field types: email, date, phone, number, str, dropdown, file, directManager, birthday, link, location."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key.",
+            "enum": [
+              "id",
+              "name",
+              "type"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc, with sort.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 500 (default 10).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/v1/custom-fields",
+        "queryParams": {
+          "customFieldIds": "$customFieldIds",
+          "categoryIds": "$categoryIds",
+          "customFieldNames": "$customFieldNames",
+          "customFieldTypes": "$customFieldTypes",
+          "sort": "$sort",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_custom_field_categories",
+      "description": "List the categories that group user custom fields, with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "categoryIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these category ids."
+          },
+          "categoryNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category names."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key.",
+            "enum": [
+              "id",
+              "name"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc, with sort.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 500 (default 10).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/v1/custom-field-categories",
+        "queryParams": {
+          "categoryIds": "$categoryIds",
+          "categoryNames": "$categoryNames",
+          "sort": "$sort",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_smart_groups",
+      "description": "List smart groups (user groups built from rules, used to assign jobs, forms and chats) with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Only this smart group id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only smart groups with this name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/v1/smart-groups",
+        "queryParams": {
+          "id": "$id",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_time_clocks",
+      "description": "List the time clocks of the account (one per time clock app or location) with id and name; the id is needed by every time activity tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time-clock/v1/time-clocks"
+      }
+    },
+    {
+      "name": "connecteam_list_time_activities",
+      "description": "Clocked work per user in a date range: shifts with start and end (Unix seconds and time zone), job, notes and GPS, manual breaks and time off entries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timeClockId": {
+            "type": "integer",
+            "description": "Time clock id from connecteam_list_time_clocks."
+          },
+          "startDate": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD (at most 92 days after startDate)."
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these user ids."
+          },
+          "jobIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only shifts on these job ids."
+          },
+          "activityTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "shift, manual_break or time_off."
+          },
+          "manualBreakIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these manual break type ids."
+          },
+          "policyTypeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only time off of these policy type ids."
+          }
+        },
+        "required": [
+          "timeClockId",
+          "startDate",
+          "endDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time-clock/v1/time-clocks/{timeClockId}/time-activities",
+        "queryParams": {
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "userIds": "$userIds",
+          "jobIds": "$jobIds",
+          "activityTypes": "$activityTypes",
+          "manualBreakIds": "$manualBreakIds",
+          "policyTypeIds": "$policyTypeIds"
+        }
+      }
+    },
+    {
+      "name": "connecteam_get_timesheet_totals",
+      "description": "Timesheet totals per user and day for a period: worked hours, breaks, overtime, pay, approval, submission and lock state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timeClockId": {
+            "type": "integer",
+            "description": "Time clock id."
+          },
+          "startDate": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these user ids."
+          },
+          "groupIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only users in these group ids."
+          },
+          "jobIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these job ids."
+          },
+          "isApproved": {
+            "type": "boolean",
+            "description": "true approved days only, false unapproved only."
+          },
+          "isSubmitted": {
+            "type": "boolean",
+            "description": "true submitted days only, false unsubmitted only."
+          },
+          "isLocked": {
+            "type": "boolean",
+            "description": "true locked days only, false unlocked only."
+          },
+          "includePlanVsActual": {
+            "type": "boolean",
+            "description": "true adds scheduled versus actual hours per day."
+          }
+        },
+        "required": [
+          "timeClockId",
+          "startDate",
+          "endDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time-clock/v1/time-clocks/{timeClockId}/timesheet",
+        "queryParams": {
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "userIds": "$userIds",
+          "groupIds": "$groupIds",
+          "jobIds": "$jobIds",
+          "isApproved": "$isApproved",
+          "isSubmitted": "$isSubmitted",
+          "isLocked": "$isLocked",
+          "includePlanVsActual": "$includePlanVsActual"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_schedulers",
+      "description": "List the job schedulers (schedule apps) with id and name; the id is needed by every shift tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scheduler/v1/schedulers"
+      }
+    },
+    {
+      "name": "connecteam_list_shifts",
+      "description": "Scheduled shifts in a time range: id, start and end (Unix seconds), title, job, assigned users, open spots, published flag, notes, tasks, breaks and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedulerId": {
+            "type": "integer",
+            "description": "Scheduler id from connecteam_list_schedulers."
+          },
+          "startTime": {
+            "type": "integer",
+            "description": "Range start, Unix time in seconds."
+          },
+          "endTime": {
+            "type": "integer",
+            "description": "Range end, Unix time in seconds."
+          },
+          "assignedUserIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only shifts of these user ids."
+          },
+          "jobId": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only shifts on these job ids."
+          },
+          "shiftId": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these shift ids."
+          },
+          "isOpenShift": {
+            "type": "boolean",
+            "description": "true open shifts only."
+          },
+          "isPublished": {
+            "type": "boolean",
+            "description": "true published only, false drafts only."
+          },
+          "isRequireAdminApproval": {
+            "type": "boolean",
+            "description": "true shifts needing admin approval only."
+          },
+          "title": {
+            "type": "string",
+            "description": "Only shifts with this title."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key.",
+            "enum": [
+              "created_at",
+              "updated_at"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc, with sort.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 500 (default 10).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "schedulerId",
+          "startTime",
+          "endTime"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scheduler/v1/schedulers/{schedulerId}/shifts",
+        "queryParams": {
+          "startTime": "$startTime",
+          "endTime": "$endTime",
+          "assignedUserIds": "$assignedUserIds",
+          "jobId": "$jobId",
+          "shiftId": "$shiftId",
+          "isOpenShift": "$isOpenShift",
+          "isPublished": "$isPublished",
+          "isRequireAdminApproval": "$isRequireAdminApproval",
+          "title": "$title",
+          "sort": "$sort",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_get_shift",
+      "description": "One scheduled shift by id with assignments, job, notes, tasks, breaks and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedulerId": {
+            "type": "integer",
+            "description": "Scheduler id."
+          },
+          "shiftId": {
+            "type": "string",
+            "description": "Shift id."
+          }
+        },
+        "required": [
+          "schedulerId",
+          "shiftId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scheduler/v1/schedulers/{schedulerId}/shifts/{shiftId}"
+      }
+    },
+    {
+      "name": "connecteam_list_shift_custom_fields",
+      "description": "Custom fields defined on the shifts of a scheduler, with id, name and type, for use in shift customFields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedulerId": {
+            "type": "integer",
+            "description": "Scheduler id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "schedulerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scheduler/v1/schedulers/{schedulerId}/custom-fields",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_user_unavailabilities",
+      "description": "Times a user marked as unavailable (and available) for scheduling in a range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "description": "User id."
+          },
+          "startTime": {
+            "type": "integer",
+            "description": "Range start, Unix time in seconds."
+          },
+          "endTime": {
+            "type": "integer",
+            "description": "Range end, Unix time in seconds."
+          }
+        },
+        "required": [
+          "userId",
+          "startTime",
+          "endTime"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scheduler/v1/schedulers/user-unavailability",
+        "queryParams": {
+          "userId": "$userId",
+          "startTime": "$startTime",
+          "endTime": "$endTime"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_jobs",
+      "description": "List jobs (clients, sites or projects that shifts and clocked time are tracked against): id, title, code, description, GPS address, assigned users or groups and sub-jobs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instanceIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only jobs of these scheduler or time clock ids."
+          },
+          "jobIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these job ids (with their sub-jobs)."
+          },
+          "jobNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Job names."
+          },
+          "jobCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Job codes."
+          },
+          "includeDeleted": {
+            "type": "boolean",
+            "description": "Include deleted jobs (default true)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key.",
+            "enum": [
+              "title"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc, with sort.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 500 (default 10).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/v1/jobs",
+        "queryParams": {
+          "instanceIds": "$instanceIds",
+          "jobIds": "$jobIds",
+          "jobNames": "$jobNames",
+          "jobCodes": "$jobCodes",
+          "includeDeleted": "$includeDeleted",
+          "sort": "$sort",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_get_job",
+      "description": "One job by id with code, description, location, assignment, custom fields and sub-jobs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "Job id."
+          }
+        },
+        "required": [
+          "jobId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/v1/jobs/{jobId}"
+      }
+    },
+    {
+      "name": "connecteam_list_job_custom_fields",
+      "description": "Custom fields defined on jobs, with id, name, type and options, for use in job customFields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customFieldIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these custom field ids."
+          },
+          "categoryIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these category ids."
+          },
+          "customFieldNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field names."
+          },
+          "customFieldTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "str, phone or dropdown."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort key.",
+            "enum": [
+              "name",
+              "type"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc, with sort.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 500 (default 10).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/v1/custom-fields",
+        "queryParams": {
+          "customFieldIds": "$customFieldIds",
+          "categoryIds": "$categoryIds",
+          "customFieldNames": "$customFieldNames",
+          "customFieldTypes": "$customFieldTypes",
+          "sort": "$sort",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_forms",
+      "description": "List forms (checklists, reports, inspections) with id, name and creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Part of the form name (case-insensitive)."
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Forms created on or after, YYYY-MM-DD."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Forms created on or before, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 300 (default 10).",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/v1/forms",
+        "queryParams": {
+          "name": "$name",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_get_form",
+      "description": "One form by id with its questions (id, type, title and options).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": {
+            "type": "integer",
+            "description": "Form id."
+          }
+        },
+        "required": [
+          "formId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/v1/forms/{formId}"
+      }
+    },
+    {
+      "name": "connecteam_list_form_submissions",
+      "description": "Submissions of a form: submitter, time, and the answer to each question (text, choices, images and file links).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": {
+            "type": "integer",
+            "description": "Form id."
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only submissions by these user ids."
+          },
+          "submittingStartTimestamp": {
+            "type": "integer",
+            "description": "Submitted from this Unix time (seconds)."
+          },
+          "submittingEndTime": {
+            "type": "integer",
+            "description": "Submitted until this Unix time (seconds)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "formId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/v1/forms/{formId}/form-submissions",
+        "queryParams": {
+          "userIds": "$userIds",
+          "submittingStartTimestamp": "$submittingStartTimestamp",
+          "submittingEndTime": "$submittingEndTime",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_get_form_submission",
+      "description": "One form submission with the submitter, submission time and the answer to every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": {
+            "type": "integer",
+            "description": "Form id."
+          },
+          "formSubmissionId": {
+            "type": "string",
+            "description": "Submission id."
+          }
+        },
+        "required": [
+          "formId",
+          "formSubmissionId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/v1/forms/{formId}/form-submissions/{formSubmissionId}"
+      }
+    },
+    {
+      "name": "connecteam_list_task_boards",
+      "description": "List quick task boards with id and name; the id is needed by every task tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/v1/taskboards"
+      }
+    },
+    {
+      "name": "connecteam_list_tasks",
+      "description": "Tasks of a board: title, description, assignees, status, start and due time (Unix seconds), labels and sub-tasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskBoardId": {
+            "type": "string",
+            "description": "Task board id."
+          },
+          "status": {
+            "type": "string",
+            "description": "draft, published, completed or all (default).",
+            "enum": [
+              "draft",
+              "published",
+              "completed",
+              "all"
+            ]
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only tasks assigned to these user ids (group tasks included)."
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only tasks with these label ids."
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these task ids."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "taskBoardId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/v1/taskboards/{taskBoardId}/tasks",
+        "queryParams": {
+          "status": "$status",
+          "userIds": "$userIds",
+          "labelIds": "$labelIds",
+          "taskIds": "$taskIds",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_task_labels",
+      "description": "Labels of a task board with id, title and colour, to filter or tag tasks by label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskBoardId": {
+            "type": "string",
+            "description": "Task board id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Only the label with this title."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "taskBoardId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/v1/taskboards/{taskBoardId}/labels",
+        "queryParams": {
+          "title": "$title",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_time_off_policy_types",
+      "description": "Time off policy types (vacation, sick and others) with id and name; needed for balances and requests.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time-off/v1/policy-types"
+      }
+    },
+    {
+      "name": "connecteam_list_time_off_balances",
+      "description": "Time off balances of users for one policy type (days or hours left).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "policyTypeId": {
+            "type": "string",
+            "description": "Policy type id."
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these user ids."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "policyTypeId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time-off/v1/policy-types/{policyTypeId}/balances",
+        "queryParams": {
+          "userIds": "$userIds",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_time_off_requests",
+      "description": "Time off requests overlapping a date range: user, policy type, dates or times, all-day flag, status and notes. Default status filter is approved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "startDate": {
+            "type": "string",
+            "description": "Range start, YYYY-MM-DD; requests overlapping the range are returned."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Range end, YYYY-MM-DD; at most 365 days after startDate."
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these user ids."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "approved, pending, denied. Default approved only."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "startDate",
+          "endDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/time-off/v1/requests",
+        "queryParams": {
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "userIds": "$userIds",
+          "statuses": "$statuses",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_conversations",
+      "description": "Chat conversations (channels and groups) the API can post to, with id, title and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chat/v1/conversations",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_list_publishers",
+      "description": "Custom publishers (named senders for API messages) with id and name; a publisher id is the senderId of the chat tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: the previous offset plus limit (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/v1/publishers",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "connecteam_create_users",
+      "description": "Create one or more users. Each needs firstName, lastName, phoneNumber and userType.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Users, e.g. [{\"firstName\":\"Ana\",\"lastName\":\"Diaz\",\"phoneNumber\":\"+15555550123\",\"userType\":\"user\",\"email\":\"ana@example.com\",\"customFields\":[{\"customFieldId\":123,\"value\":\"E-42\"}]}]. userType is user, manager or owner."
+          },
+          "sendActivation": {
+            "type": "boolean",
+            "description": "true sends the activation SMS to the new users."
+          }
+        },
+        "required": [
+          "users"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/v1/users",
+        "queryParams": {
+          "sendActivation": "$sendActivation"
+        },
+        "bodyMapping": {
+          "__raw": "$users"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_update_users",
+      "description": "Update one or more users by userId (or by phone with editUsersByPhone): name, phone, email, user type, custom field values, archived flag. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Changes, e.g. [{\"userId\":9170357,\"email\":\"ana@example.com\",\"customFields\":[{\"customFieldId\":123,\"value\":\"E-43\"}]}]."
+          },
+          "editUsersByPhone": {
+            "type": "boolean",
+            "description": "true matches users by phoneNumber instead of userId."
+          }
+        },
+        "required": [
+          "users"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/users/v1/users",
+        "queryParams": {
+          "editUsersByPhone": "$editUsersByPhone"
+        },
+        "bodyMapping": {
+          "__raw": "$users"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "connecteam_archive_users",
+      "description": "Archive users: they lose access but keep their history and can be restored (update with isArchived false).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User ids to archive."
+          }
+        },
+        "required": [
+          "userIds"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/users/v1/users",
+        "queryParams": {
+          "deletionType": "archive"
+        },
+        "bodyMapping": {
+          "__raw": "$userIds"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "connecteam_delete_user",
+      "description": "Permanently delete a user and their data. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "description": "User id."
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/users/v1/users/{userId}",
+        "queryParams": {
+          "deletionType": "delete"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "connecteam_create_user_note",
+      "description": "Add a note (title and text) to a user's profile in Connecteam, e.g. a manager remark.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "description": "User id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          },
+          "text": {
+            "type": "string",
+            "description": "Note text."
+          }
+        },
+        "required": [
+          "userId",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/v1/users/{userId}/notes",
+        "bodyMapping": {
+          "title": "$title",
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_create_shifts",
+      "description": "Create shifts in a scheduler. Each needs startTime and endTime (Unix seconds); assign users or make it open, set title, job, notes, tasks and breaks; publish to show it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedulerId": {
+            "type": "integer",
+            "description": "Scheduler id."
+          },
+          "shifts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Shifts, e.g. [{\"startTime\":1767258000,\"endTime\":1767286800,\"timezone\":\"America/New_York\",\"title\":\"Morning\",\"jobId\":\"...\",\"assignedUserIds\":[9170357],\"isPublished\":true,\"notes\":[{\"html\":\"Bring keys\"}]}]. Open shift: isOpenShift true with openSpots."
+          },
+          "notifyUsers": {
+            "type": "boolean",
+            "description": "true notifies assigned users of published shifts."
+          }
+        },
+        "required": [
+          "schedulerId",
+          "shifts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/scheduler/v1/schedulers/{schedulerId}/shifts",
+        "queryParams": {
+          "notifyUsers": "$notifyUsers"
+        },
+        "bodyMapping": {
+          "__raw": "$shifts"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_update_shifts",
+      "description": "Update shifts by shiftId: times, title, job, assignees, publish state, notes, tasks or breaks. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedulerId": {
+            "type": "integer",
+            "description": "Scheduler id."
+          },
+          "shifts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Changes, e.g. [{\"shiftId\":\"...\",\"startTime\":1767261600,\"isPublished\":true}]."
+          },
+          "notifyUsers": {
+            "type": "boolean",
+            "description": "true notifies assigned users of published shifts."
+          }
+        },
+        "required": [
+          "schedulerId",
+          "shifts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/scheduler/v1/schedulers/{schedulerId}/shifts",
+        "queryParams": {
+          "notifyUsers": "$notifyUsers"
+        },
+        "bodyMapping": {
+          "__raw": "$shifts"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "connecteam_delete_shift",
+      "description": "Delete a scheduled shift. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedulerId": {
+            "type": "integer",
+            "description": "Scheduler id."
+          },
+          "shiftId": {
+            "type": "string",
+            "description": "Shift id."
+          },
+          "notifyUsers": {
+            "type": "boolean",
+            "description": "true notifies the assigned users."
+          }
+        },
+        "required": [
+          "schedulerId",
+          "shiftId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/scheduler/v1/schedulers/{schedulerId}/shifts/{shiftId}",
+        "queryParams": {
+          "notifyUsers": "$notifyUsers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "connecteam_clock_in",
+      "description": "Clock a user in on a time clock now (or at timestamp), optionally on a job or a scheduled shift.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timeClockId": {
+            "type": "integer",
+            "description": "Time clock id."
+          },
+          "userId": {
+            "type": "integer",
+            "description": "User id."
+          },
+          "jobId": {
+            "type": "string",
+            "description": "Job id, when the clock tracks jobs."
+          },
+          "schedulerShiftId": {
+            "type": "string",
+            "description": "Scheduled shift id to clock in to."
+          },
+          "timestamp": {
+            "type": "integer",
+            "description": "Clock-in time, Unix seconds; omit for now."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone, e.g. Europe/Berlin."
+          },
+          "locationData": {
+            "type": "object",
+            "description": "Optional location: {\"address\":\"...\",\"latitude\":40.7,\"longitude\":-74.0}."
+          }
+        },
+        "required": [
+          "timeClockId",
+          "userId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/time-clock/v1/time-clocks/{timeClockId}/clock-in",
+        "bodyMapping": {
+          "userId": "$userId",
+          "jobId": "$jobId",
+          "schedulerShiftId": "$schedulerShiftId",
+          "timestamp": "$timestamp",
+          "timezone": "$timezone",
+          "locationData": "$locationData"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_clock_out",
+      "description": "Clock a user out of the running shift on a time clock now (or at timestamp).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timeClockId": {
+            "type": "integer",
+            "description": "Time clock id."
+          },
+          "userId": {
+            "type": "integer",
+            "description": "User id."
+          },
+          "timestamp": {
+            "type": "integer",
+            "description": "Clock-out time, Unix seconds; omit for now."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone."
+          },
+          "locationData": {
+            "type": "object",
+            "description": "Optional location: {\"address\":\"...\",\"latitude\":40.7,\"longitude\":-74.0}."
+          }
+        },
+        "required": [
+          "timeClockId",
+          "userId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/time-clock/v1/time-clocks/{timeClockId}/clock-out",
+        "bodyMapping": {
+          "userId": "$userId",
+          "timestamp": "$timestamp",
+          "timezone": "$timezone",
+          "locationData": "$locationData"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_create_time_activities",
+      "description": "Add past clocked shifts or manual breaks for users (e.g. a forgotten clock-in). Locked or approved days are refused.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timeClockId": {
+            "type": "integer",
+            "description": "Time clock id."
+          },
+          "timeActivities": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Per user, e.g. [{\"userId\":9170357,\"shifts\":[{\"start\":{\"timestamp\":1704110400,\"timezone\":\"America/New_York\"},\"end\":{\"timestamp\":1704139200,\"timezone\":\"America/New_York\"},\"jobId\":\"...\",\"managerNote\":\"Imported\"}],\"manualbreaks\":[]}]."
+          },
+          "isSplitShiftOnManualBreak": {
+            "type": "boolean",
+            "description": "true splits an existing completed shift around a new manual break."
+          }
+        },
+        "required": [
+          "timeClockId",
+          "timeActivities"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/time-clock/v1/time-clocks/{timeClockId}/time-activities",
+        "bodyMapping": {
+          "timeActivities": "$timeActivities",
+          "isSplitShiftOnManualBreak": "$isSplitShiftOnManualBreak"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_update_time_activities",
+      "description": "Correct clocked shifts or manual breaks by their id (start, end, job, notes). Locked or approved days are refused.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timeClockId": {
+            "type": "integer",
+            "description": "Time clock id."
+          },
+          "timeActivities": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Per user, with the ids of the shifts to change, e.g. [{\"userId\":9170357,\"shifts\":[{\"id\":\"...\",\"end\":{\"timestamp\":1704139200,\"timezone\":\"America/New_York\"}}]}]."
+          }
+        },
+        "required": [
+          "timeClockId",
+          "timeActivities"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/time-clock/v1/time-clocks/{timeClockId}/time-activities",
+        "bodyMapping": {
+          "timeActivities": "$timeActivities"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "connecteam_create_jobs",
+      "description": "Create jobs (or sub-jobs with parentId) and attach them to schedulers or time clocks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Jobs, e.g. [{\"title\":\"Main St site\",\"code\":\"MS-01\",\"instanceIds\":[12345],\"gps\":{\"address\":\"1 Main St, Springfield\"},\"assign\":{\"type\":\"users\",\"userIds\":[9170357]}}]. Sub-job: {\"title\":\"Floor 2\",\"parentId\":\"...\"}."
+          }
+        },
+        "required": [
+          "jobs"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobs/v1/jobs",
+        "bodyMapping": {
+          "__raw": "$jobs"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_update_job",
+      "description": "Update a job: title, code, description, location, assignment, custom fields or the schedulers and time clocks it belongs to. title is required by the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "Job id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Job fields, e.g. {\"title\":\"Main St site\",\"code\":\"MS-01\",\"description\":\"Night access via gate B\"}. For a sub-job include parentId and useParentData."
+          }
+        },
+        "required": [
+          "jobId",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/jobs/v1/jobs/{jobId}",
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "connecteam_create_task",
+      "description": "Create a task on a board and assign it to users; publish it to notify them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskBoardId": {
+            "type": "string",
+            "description": "Task board id."
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Assignee user ids."
+          },
+          "status": {
+            "type": "string",
+            "description": "draft, published or completed.",
+            "enum": [
+              "draft",
+              "published",
+              "completed"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "startTime": {
+            "type": "integer",
+            "description": "Start, Unix seconds."
+          },
+          "dueDate": {
+            "type": "integer",
+            "description": "Due, Unix seconds."
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label ids from connecteam_list_task_labels."
+          },
+          "type": {
+            "type": "string",
+            "description": "oneTime or recurring.",
+            "enum": [
+              "oneTime",
+              "recurring"
+            ]
+          },
+          "isArchived": {
+            "type": "boolean",
+            "description": "true archives the task."
+          },
+          "subTasks": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sub-tasks, e.g. [{\"title\":\"Photo of the meter\",\"isCompleted\":false}]."
+          },
+          "description": {
+            "type": "object",
+            "description": "Description, e.g. {\"content\":\"Check the fire exits\"}."
+          }
+        },
+        "required": [
+          "taskBoardId",
+          "userIds",
+          "status",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks/v1/taskboards/{taskBoardId}/tasks",
+        "bodyMapping": {
+          "userIds": "$userIds",
+          "status": "$status",
+          "title": "$title",
+          "startTime": "$startTime",
+          "dueDate": "$dueDate",
+          "labelIds": "$labelIds",
+          "type": "$type",
+          "isArchived": "$isArchived",
+          "subTasks": "$subTasks",
+          "description": "$description"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_update_task",
+      "description": "Update a task, e.g. mark it completed. The API replaces the task: send userIds, status and title every time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskBoardId": {
+            "type": "string",
+            "description": "Task board id."
+          },
+          "taskId": {
+            "type": "string",
+            "description": "Task id."
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Assignee user ids."
+          },
+          "status": {
+            "type": "string",
+            "description": "draft, published or completed.",
+            "enum": [
+              "draft",
+              "published",
+              "completed"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "startTime": {
+            "type": "integer",
+            "description": "Start, Unix seconds."
+          },
+          "dueDate": {
+            "type": "integer",
+            "description": "Due, Unix seconds."
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label ids from connecteam_list_task_labels."
+          },
+          "type": {
+            "type": "string",
+            "description": "oneTime or recurring.",
+            "enum": [
+              "oneTime",
+              "recurring"
+            ]
+          },
+          "isArchived": {
+            "type": "boolean",
+            "description": "true archives the task."
+          },
+          "subTasks": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sub-tasks, e.g. [{\"title\":\"Photo of the meter\",\"isCompleted\":false}]."
+          },
+          "description": {
+            "type": "object",
+            "description": "Description, e.g. {\"content\":\"Check the fire exits\"}."
+          }
+        },
+        "required": [
+          "taskBoardId",
+          "taskId",
+          "userIds",
+          "status",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tasks/v1/taskboards/{taskBoardId}/tasks/{taskId}",
+        "bodyMapping": {
+          "userIds": "$userIds",
+          "status": "$status",
+          "title": "$title",
+          "startTime": "$startTime",
+          "dueDate": "$dueDate",
+          "labelIds": "$labelIds",
+          "type": "$type",
+          "isArchived": "$isArchived",
+          "subTasks": "$subTasks",
+          "description": "$description"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "connecteam_delete_task",
+      "description": "Delete a task from a board. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskBoardId": {
+            "type": "string",
+            "description": "Task board id."
+          },
+          "taskId": {
+            "type": "string",
+            "description": "Task id."
+          }
+        },
+        "required": [
+          "taskBoardId",
+          "taskId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/tasks/v1/taskboards/{taskBoardId}/tasks/{taskId}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "connecteam_create_time_off_request",
+      "description": "Create a time off request for a user, pending for approval or already approved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "description": "User id."
+          },
+          "policyTypeId": {
+            "type": "string",
+            "description": "Policy type id from connecteam_list_time_off_policy_types."
+          },
+          "employeeNote": {
+            "type": "string",
+            "description": "Employee note."
+          },
+          "isAllDay": {
+            "type": "boolean",
+            "description": "true for whole days."
+          },
+          "startDate": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "startTime": {
+            "type": "string",
+            "description": "Start time for a partial day, HH:MM."
+          },
+          "endTime": {
+            "type": "string",
+            "description": "End time for a partial day, HH:MM."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone, e.g. America/Chicago."
+          },
+          "status": {
+            "type": "string",
+            "description": "approved, pending or denied.",
+            "enum": [
+              "approved",
+              "pending",
+              "denied"
+            ]
+          },
+          "managerNote": {
+            "type": "string",
+            "description": "Manager note."
+          },
+          "timeClockId": {
+            "type": "integer",
+            "description": "Time clock id the time off is recorded on."
+          },
+          "isAdjustForDayLightSaving": {
+            "type": "boolean",
+            "description": "true adjusts hours across a daylight saving change."
+          }
+        },
+        "required": [
+          "userId",
+          "policyTypeId",
+          "isAllDay",
+          "startDate",
+          "endDate",
+          "timezone",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/time-off/v1/requests",
+        "bodyMapping": {
+          "userId": "$userId",
+          "policyTypeId": "$policyTypeId",
+          "employeeNote": "$employeeNote",
+          "isAllDay": "$isAllDay",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "startTime": "$startTime",
+          "endTime": "$endTime",
+          "timezone": "$timezone",
+          "status": "$status",
+          "managerNote": "$managerNote",
+          "timeClockId": "$timeClockId",
+          "isAdjustForDayLightSaving": "$isAdjustForDayLightSaving"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_update_time_off_request",
+      "description": "Approve or deny a time off request (status), or change its dates and notes. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "description": "Time off request id."
+          },
+          "isAllDay": {
+            "type": "boolean",
+            "description": "true for whole days."
+          },
+          "startDate": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "startTime": {
+            "type": "string",
+            "description": "Start time for a partial day, HH:MM."
+          },
+          "endTime": {
+            "type": "string",
+            "description": "End time for a partial day, HH:MM."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone, e.g. America/Chicago."
+          },
+          "status": {
+            "type": "string",
+            "description": "approved, pending or denied.",
+            "enum": [
+              "approved",
+              "pending",
+              "denied"
+            ]
+          },
+          "managerNote": {
+            "type": "string",
+            "description": "Manager note."
+          },
+          "timeClockId": {
+            "type": "integer",
+            "description": "Time clock id the time off is recorded on."
+          },
+          "isAdjustForDayLightSaving": {
+            "type": "boolean",
+            "description": "true adjusts hours across a daylight saving change."
+          }
+        },
+        "required": [
+          "requestId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/time-off/v1/requests/{requestId}",
+        "bodyMapping": {
+          "isAllDay": "$isAllDay",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "startTime": "$startTime",
+          "endTime": "$endTime",
+          "timezone": "$timezone",
+          "status": "$status",
+          "managerNote": "$managerNote",
+          "timeClockId": "$timeClockId",
+          "isAdjustForDayLightSaving": "$isAdjustForDayLightSaving"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "connecteam_send_message",
+      "description": "Post a message to a chat conversation (channel or group) as a custom publisher.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "description": "Conversation id from connecteam_list_conversations."
+          },
+          "senderId": {
+            "type": "integer",
+            "description": "Publisher id from connecteam_list_publishers."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text."
+          }
+        },
+        "required": [
+          "conversationId",
+          "senderId",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/v1/conversations/{conversationId}/message",
+        "bodyMapping": {
+          "senderId": "$senderId",
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "connecteam_send_private_message",
+      "description": "Send a private chat message to one user as a custom publisher.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "description": "Recipient user id."
+          },
+          "senderId": {
+            "type": "integer",
+            "description": "Publisher id from connecteam_list_publishers."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text."
+          }
+        },
+        "required": [
+          "userId",
+          "senderId",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/v1/conversations/privateMessage/{userId}",
+        "bodyMapping": {
+          "senderId": "$senderId",
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    }
+  ]
+}
