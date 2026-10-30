@@ -429,9 +429,12 @@ export class McpEndpointController {
     // setup link sends the user back to. API keys have none.
     const redirectUris = await this.grants.clientRedirectUris(oauthClientId(user));
     const assistant = assistantForRedirectUris(redirectUris);
+    // Which assistant's tool set this connection gets. API keys and anything
+    // unidentified get the default set, the one the Claude directory reviewed.
+    const profile = profileForRedirectUris(redirectUris);
     const setupProvider = this.sharedSetup?.get() ?? null;
     const setupCtx = setupOrg
-      ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase, assistant }
+      ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase, assistant, profile }
       : null;
     // The plugin endpoint has no setup tools: don't resolve the permission.
     const canSetUp =
@@ -534,11 +537,6 @@ export class McpEndpointController {
       );
       return;
     }
-
-    // Which assistant this connection belongs to, from the OAuth client the
-    // token was issued to. API keys and anything unidentified get the default
-    // set, the one the Claude directory reviewed.
-    const profile = profileForRedirectUris(redirectUris);
 
     await this.serveStateless(
       req,

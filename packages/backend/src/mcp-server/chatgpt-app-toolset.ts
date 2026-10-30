@@ -161,7 +161,7 @@ export function registerChatgptAppToolset(
   scopeTools: RegisteredTool[],
   deps: ChatgptAppDeps,
 ): void {
-  const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t));
+  const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t, 'chatgpt'));
   const ready = served.filter(isListable);
   const pending = served.filter((t) => !isListable(t));
   const connectorIds = [...new Set(ready.map((t) => t.connectorId))];
