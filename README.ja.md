@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。572 のコネクター、うち 27 は API キー不要。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。573 のコネクター、うち 27 は API キー不要。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：セルフホスト型 MCP ゲートウェイ</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、REST/OpenAPI、SOAP、GraphQL、OData、SQL のあらゆるシステムを Claude、ChatGPT、Copilot 用の MCP ツールに変換します。</strong><br/>
-  SAP、Etsy、weclapp、Amazon Seller などを含む 572 種類の既製アダプターを同梱しており、うち 27 は API キー不要です。
+  SAP、Etsy、weclapp、Amazon Seller などを含む 573 種類の既製アダプターを同梱しており、うち 27 は API キー不要です。
 </p>
 
 <p align="center">
@@ -101,6 +101,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 | **GraphQL** | イントロスペクションでクエリとミューテーションをツールにするか、操作を自分で定義します | [GraphQL](docs/connectors/graphql.md) · [ガイド](https://anythingmcp.com/ja/guides/graphql-to-mcp) |
 | **OData**（SAP Gateway を含む） | 各サービスの `$metadata` を読み取り、エンティティセット、キー、SAP の業務ラベルをモデルに見せます。V2 と V4 に対応 | [OData](docs/connectors/odata.md) · [ガイド](https://anythingmcp.com/ja/guides/odata-to-mcp) |
 | **SQL と MongoDB** | PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SAP HANA、SQLite、MongoDB：スキーマ、サンプル、クエリの各ツール。既定で読み取り専用 | [データベース](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp) · [デモ：sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **メール（IMAP/SMTP）** | あらゆるメールボックス（IONOS、Strato、GMX、T-Online、アプリパスワードを使う Gmail、自社のメールサーバー）：フォルダー一覧、検索、添付ファイル付きの閲覧、フラグ、移動、下書きの保存、送信 | [メール](docs/connectors/email.md) |
 | **別の MCP サーバー** | そのツールを検出し、同じ認証と監査のもとで自社のツールと並べて提供します | [MCP ブリッジ](docs/connectors/mcp-bridge.md) |
 
 ツールは実行時に登録され、再起動は不要です。コネクターごとの `{{VAR}}` の値はサーバー側で埋め込まれ、AI には見えません。
@@ -111,7 +112,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 ## コネクターカタログ
 
-572 個のアダプターで 2,400 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
+573 個のアダプターで 2,400 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
 
 | カテゴリー | 例 |
 |---|---|

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：572 个连接器，其中 27 个无需 API 密钥。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：573 个连接器，其中 27 个无需 API 密钥。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：自行托管的 MCP 网关</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将任意 REST/OpenAPI、SOAP、GraphQL、OData 或 SQL 系统转化为 Claude、ChatGPT 和 Copilot 可用的 MCP 工具。</strong><br/>
-  它自带 572 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 27 个无需 API 密钥。
+  它自带 573 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 27 个无需 API 密钥。
 </p>
 
 <p align="center">
@@ -101,6 +101,7 @@ docker compose up -d
 | **GraphQL** | 通过内省把查询和变更转化为工具，也可以自行定义操作 | [GraphQL](docs/connectors/graphql.md) · [指南](https://anythingmcp.com/zh/guides/graphql-to-mcp) |
 | **OData**（包括 SAP Gateway） | 读取每个服务的 `$metadata`，让模型看到实体集、键和 SAP 的业务标签；支持 V2 和 V4 | [OData](docs/connectors/odata.md) · [指南](https://anythingmcp.com/zh/guides/odata-to-mcp) |
 | **SQL 和 MongoDB** | PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SAP HANA、SQLite 和 MongoDB：结构、示例和查询工具，默认只读 | [数据库](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp) · [演示：sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **电子邮件（IMAP/SMTP）** | 任意邮箱（IONOS、Strato、GMX、T-Online、使用应用专用密码的 Gmail、自建邮件服务器）：列出文件夹、搜索、阅读邮件及附件、标记、移动、保存草稿和发送 | [电子邮件](docs/connectors/email.md) |
 | **另一个 MCP 服务器** | 发现它的工具，并与你自己的工具一起提供，共用同一套认证和审计 | [MCP 桥接](docs/connectors/mcp-bridge.md) |
 
 工具在运行时注册，无需重启。每个连接器的 `{{VAR}}` 值在服务器端替换，不会展示给 AI。
@@ -111,7 +112,7 @@ docker compose up -d
 
 ## 连接器目录
 
-共 572 个适配器，提供 2,400 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
+共 573 个适配器，提供 2,400 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
 
 | 类别 | 示例 |
 |---|---|
