@@ -989,7 +989,7 @@
     },
     {
       "name": "podium_cancel_invoice",
-      "description": "Cancel an unpaid invoice so it can no longer be paid, with an internal note.",
+      "description": "Cancel an unpaid invoice so it can no longer be paid, with an internal note. It cannot be undone: show the user the invoice and wait for a yes. Installed switched off.",
       "parameters": {
         "type": "object",
         "properties": {

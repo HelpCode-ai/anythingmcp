@@ -61,7 +61,7 @@
   "tools": [
     {
       "name": "conductor_monitoring_list_websites",
-      "description": "All websites monitored in the account: id (the website_id every other tool needs), name, domain, page capacity and the link to the website in the app.",
+      "description": "All websites monitored in the account: id (the website_id the other tools need, except inspect_url and trigger_page_crawl), name, domain, page capacity and the link to the website in the app.",
       "parameters": {
         "type": "object",
         "properties": {}
