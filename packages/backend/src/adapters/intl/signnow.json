@@ -1,0 +1,1406 @@
+{
+  "slug": "signnow",
+  "name": "signNow",
+  "aliases": [
+    "CudaSign"
+  ],
+  "description": "Let your AI work with signNow e-signatures: browse folders, documents and templates, check invite status and history, download signed PDFs, create documents from templates or files, prefill fields, send role-based, free form and document group invites, remind and cancel.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "signnow",
+  "docsUrl": "https://docs.signnow.com/docs/signnow/welcome",
+  "prerequisites": "A signNow account with API access (a free developer account works for testing) and an API key from API Dashboard, Apps and Keys, API Keys.",
+  "instructions": "## signNow\nThis connector works with **signNow** (by airSlate) through its REST API at `https://api.signnow.com`: folders, documents and templates, fields, role-based and free form invites, signing links, document groups and document group templates, history and downloads. It acts as the signNow user who owns the API key.\n\n**Authentication: API key.** signNow offers an API key (sent as `Authorization: Bearer <key>`, never expires), the password grant (account email, password and the app's Basic authorization token at `/oauth2/token`, only for the owner of the API app) and the OAuth 2.0 authorization code flow (for acting on behalf of other signNow users). signNow recommends the API key for server-to-server automation of one account, and it is the simplest and most robust here: no token renewal, no password stored. The connector therefore uses the API key.\n\n**Setup (3 minutes)**\n1. Sign in to signNow and open the **API Dashboard** (`https://app.signnow.com/webapp/api-dashboard`). A free developer account works for testing (`https://www.signnow.com/developers`).\n2. Open **Apps and Keys**, select your application (or create one), and copy the key from the **API Keys** tab.\n3. Paste it into `SIGNNOW_API_KEY`. Deleting the key in the dashboard revokes the connector's access.\n4. Run `signnow_get_user` to check.\n\n**Workflow**\n- Account and folders: `signnow_get_user`, `signnow_list_folders` (root, Documents, Templates, Archive, Trash Bin and your folders), `signnow_get_folder` to list what a folder holds (filter `signing-status` pending, signed, waiting-for-others; `entity_type` template for templates).\n- Read a document: `signnow_get_document` (roles, field_invites with status), `signnow_get_document_fields` (filled-in values), `signnow_get_document_history`, `signnow_list_free_form_invites`, `signnow_get_routing_details` (template roles).\n- Files: `signnow_download_document` (the PDF), `signnow_get_download_link` (a temporary public link), `signnow_download_document_group`.\n- Send from a template: `signnow_create_document_from_template`, optionally `signnow_prefill_text_fields`, then `signnow_send_invite` with one `to` entry per role (role names from `signnow_get_document`), or `signnow_create_signing_link` for a direct link.\n- Send a new file: `signnow_upload_document_from_url` (text tags become fields with `check_fields`), add fields with `signnow_update_document` if needed, then `signnow_send_invite`; for a file without fields use `signnow_send_free_form_invite`. `signnow_create_template` turns a document into a template.\n- Follow up: `signnow_resend_field_invite` (reminder to one signer), `signnow_cancel_invite`, `signnow_cancel_free_form_invite`, `signnow_move_document`, `signnow_delete_document`.\n- Document groups: `signnow_list_document_groups`, `signnow_get_document_group`, `signnow_get_document_group_recipients`, `signnow_create_document_group`, `signnow_list_template_groups`, `signnow_get_template_group`, `signnow_create_group_from_template`, `signnow_send_group_invite`, `signnow_get_group_invite`, `signnow_resend_group_invite`, `signnow_cancel_group_invite`, `signnow_delete_document_group`.\n- Folders: `signnow_create_folder`.\n\n**Sending is real: confirm first.** Invites, reminders and group invites email real people and the signed documents are legally binding. Show the user the document, the signers with their roles and the message, and send only after a clear yes. `from` must be the email of the signNow account the key belongs to (see `signnow_get_user`). `signnow_update_document` with `fields` replaces every field of the document. Cancel and delete cannot be undone.\n\n**Reading the answers**: ids are 40-character hex strings. `created` and `updated` are Unix timestamps in seconds (often as strings). A document is a template when `template` is true. Field invite `status`: created (waiting for an earlier signer), pending (out for signing), fulfilled (signed), and declined when a signer declines; free form invites: pending, fulfilled, cancelled. Roles (`roles[].name`, e.g. \"Signer 1\") are what invites refer to. Field coordinates are pixels from the top left of the page, pages start at 0.\n\n**Paging**: `signnow_get_folder` takes `limit` (up to 100) and `offset` and returns `total_documents`; document groups and template groups take `limit` and `offset`; free form invites take `page` and `per_page`.\n\n**Errors**: a wrong, deleted or missing API key answers **400** `{\"error\": \"invalid_token\", \"code\": 1537}` (signNow does not use 401 here). 403 when the key's user may not see the item; 404 `Unable to find a route` for an unknown or malformed id; 400 with an `errors` list for invalid input (unknown role, `from` not your account email, document without fields for a role-based invite). On 429 wait and retry. Accounts on the signNow EU server or older evaluation (`api-eval.signnow.com`) accounts use another API host: change the connector's base URL to it.\n\n\n**Switched off at install**: `signnow_delete_document` and `signnow_delete_document_group`; they cannot be undone, so an admin switches them on when the team needs them.",
+  "requiredEnvVars": [
+    "SIGNNOW_API_KEY"
+  ],
+  "envVarMeta": {
+    "SIGNNOW_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "signNow API Dashboard, Apps and Keys, your application, API Keys tab. Sent as a Bearer token.",
+      "link": "https://app.signnow.com/webapp/api-dashboard",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste only the API key, without \"Bearer\" or spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "signNow answers invalid_token (code 1537) with status 400 when the API key is wrong or deleted. Copy the key again from API Dashboard, Apps and Keys, API Keys.",
+    "403": "The key works but its user may not do this. Check the account role and the application in the API Dashboard."
+  },
+  "probe": {
+    "tool": "signnow_get_user"
+  },
+  "connector": {
+    "name": "signNow API",
+    "type": "REST",
+    "baseUrl": "https://api.signnow.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SIGNNOW_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/user"
+  },
+  "tools": [
+    {
+      "name": "signnow_get_user",
+      "description": "Who the API key belongs to: user id, name, email, active state, organization and team memberships, subscription and document counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "googleapps",
+            "facebookapps",
+            "microsoftapps",
+            "merchant_accounts",
+            "issue_notifications"
+          ]
+        }
+      }
+    },
+    {
+      "name": "signnow_list_folders",
+      "description": "List the folder tree: the root folder with its system folders (Documents, Templates, Archive, Trash Bin) and your own folders, each with id, name and document_count. Use a folder id with signnow_get_folder to list what is inside.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "description": "Which entities the counts cover.",
+            "enum": [
+              "document-all",
+              "all",
+              "document",
+              "document-group",
+              "dgt",
+              "template"
+            ]
+          },
+          "with_team_documents": {
+            "type": "boolean",
+            "description": "true also shows the Team Documents folders."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/folder",
+        "queryParams": {
+          "entity_type": "$entity_type",
+          "with_team_documents": "$with_team_documents"
+        }
+      }
+    },
+    {
+      "name": "signnow_get_folder",
+      "description": "List the documents, templates and document groups in one folder, with paging, sorting and filters: id, document_name, created and updated (Unix seconds), owner, template flag, roles, field invites and their status. Filter documents by signing status or date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "Folder id, from signnow_list_folders."
+          },
+          "entity_type": {
+            "type": "string",
+            "description": "What to list: document-all (default: documents and document groups), document, document-group, template, dgt (document group templates) or all.",
+            "enum": [
+              "document-all",
+              "all",
+              "document",
+              "document-group",
+              "dgt",
+              "template"
+            ]
+          },
+          "filters": {
+            "type": "string",
+            "description": "What filter_values applies to.",
+            "enum": [
+              "signing-status",
+              "documents-created",
+              "documents-updated"
+            ]
+          },
+          "filter_values": {
+            "type": "string",
+            "description": "For signing-status: signed, pending, waiting-for-me, waiting-for-others, unsent or expired. For the date filters: a Unix timestamp (documents since then)."
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Sort by.",
+            "enum": [
+              "updated",
+              "created",
+              "document-name"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "desc (default) or asc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of items, up to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Skip this many items (paging).",
+            "minimum": 0
+          },
+          "include_documents_subfolders": {
+            "type": "integer",
+            "description": "1 also lists documents in subfolders.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "with_team_documents": {
+            "type": "boolean",
+            "description": "true includes team documents."
+          }
+        },
+        "required": [
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/folder/{folder_id}",
+        "queryParams": {
+          "entity_type": "$entity_type",
+          "filters": "$filters",
+          "filter-values": "$filter_values",
+          "sortby": "$sortby",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "include_documents_subfolders": "$include_documents_subfolders",
+          "with_team_documents": "$with_team_documents"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "documents[*].thumbnail",
+            "documents[*].signatures",
+            "documents[*].seals",
+            "documents[*].integrations"
+          ]
+        }
+      }
+    },
+    {
+      "name": "signnow_get_document",
+      "description": "Read one document or template: name, owner, page count, template flag, roles (unique_id, name, signing_order), fields with their role and values (texts, checks, signatures), field_invites (id, email, role, status, created and updated) and requests (free form invites).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document/{document_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "thumbnail",
+            "pages",
+            "originator_logo",
+            "signatures[*].data"
+          ]
+        }
+      }
+    },
+    {
+      "name": "signnow_get_document_fields",
+      "description": "List the fields of a document with their name, type, role and current value (the filled-in data once signed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/documents/{document_id}/fields"
+      }
+    },
+    {
+      "name": "signnow_get_document_history",
+      "description": "Full history of a document: every event (viewed, signed, field added, invite sent, emailed, downloaded) with time, email, IP address and client app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document/{document_id}/historyfull"
+      }
+    },
+    {
+      "name": "signnow_list_free_form_invites",
+      "description": "List the free form invites of a document (signature requests without fields): id, recipient email, status (pending, fulfilled, cancelled) and created time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, from 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, up to 100 (default 15).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/documents/{document_id}/free-form-invites",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "signnow_get_routing_details",
+      "description": "Read the routing details of a template: its signer roles in signing order with their default email, name and settings. Use the role names with signnow_send_invite after creating a document from the template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "Template id (a document with template true)."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document/{template_id}/template/routing/detail"
+      }
+    },
+    {
+      "name": "signnow_download_document",
+      "description": "Download a document as a PDF: type collapsed (default) flattens the fields and signatures into one PDF; with_history 1 appends the signing history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "type": {
+            "type": "string",
+            "description": "collapsed (one flattened PDF) or zip.",
+            "enum": [
+              "collapsed",
+              "zip"
+            ]
+          },
+          "with_history": {
+            "type": "string",
+            "description": "1 appends the document history to the PDF.",
+            "enum": [
+              "0",
+              "1"
+            ]
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document/{document_id}/download",
+        "queryParams": {
+          "type": "$type",
+          "with_history": "$with_history"
+        }
+      }
+    },
+    {
+      "name": "signnow_get_download_link",
+      "description": "Create a temporary public link to download the document PDF (valid for a short time, no sign-in needed). Nothing changes in the document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/document/{document_id}/download/link"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "signnow_list_document_groups",
+      "description": "List document groups (several documents signed together): id, group_name, documents, invite id and status, created and updated time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of groups, up to 50.",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Skip this many groups (paging).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/documentgroups",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "signnow_get_document_group",
+      "description": "Read one document group: name, owner, its documents with their roles, the group invite id and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_group_id": {
+            "type": "string",
+            "description": "Document group id, from signnow_list_document_groups."
+          }
+        },
+        "required": [
+          "document_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documentgroup/{document_group_id}"
+      }
+    },
+    {
+      "name": "signnow_get_document_group_recipients",
+      "description": "List the recipients of a document group: name, email, signing order, which documents each one gets, and the cc list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_group_id": {
+            "type": "string",
+            "description": "Document group id, from signnow_list_document_groups."
+          }
+        },
+        "required": [
+          "document_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/document-groups/{document_group_id}/recipients"
+      }
+    },
+    {
+      "name": "signnow_get_group_invite",
+      "description": "Status of a document group invite: overall status (created, pending, fulfilled) and each step with its actions (email, role, action sign or view, document, status).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_group_id": {
+            "type": "string",
+            "description": "Document group id, from signnow_list_document_groups."
+          },
+          "invite_id": {
+            "type": "string",
+            "description": "Group invite id, from signnow_get_document_group or the answer of signnow_send_group_invite."
+          }
+        },
+        "required": [
+          "document_group_id",
+          "invite_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documentgroup/{document_group_id}/groupinvite/{invite_id}"
+      }
+    },
+    {
+      "name": "signnow_list_template_groups",
+      "description": "List document group templates (sets of templates sent together): id, template_group_name, templates with their roles, routing details, folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of template groups, up to 50.",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Skip this many (paging).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/documentgroup/templates",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "signnow_get_template_group",
+      "description": "Read one document group template: name, its templates with their roles, routing details (signing steps), owner and folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_group_id": {
+            "type": "string",
+            "description": "Document group template id, from signnow_list_template_groups."
+          }
+        },
+        "required": [
+          "template_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documentgroup/template/{template_group_id}"
+      }
+    },
+    {
+      "name": "signnow_download_document_group",
+      "description": "Download all documents of a group: one merged PDF or a ZIP, optionally with the history. Nothing changes in the group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_group_id": {
+            "type": "string",
+            "description": "Document group id, from signnow_list_document_groups."
+          },
+          "type": {
+            "type": "string",
+            "description": "merged (one PDF) or zip.",
+            "enum": [
+              "merged",
+              "zip"
+            ]
+          },
+          "with_history": {
+            "type": "string",
+            "description": "no (default), after_each_document or after_merged_pdf.",
+            "enum": [
+              "no",
+              "after_each_document",
+              "after_merged_pdf"
+            ]
+          },
+          "document_order": {
+            "type": "array",
+            "description": "Document ids in the order to merge them.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "document_group_id",
+          "type",
+          "with_history"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documentgroup/{document_group_id}/downloadall",
+        "bodyMapping": {
+          "type": "$type",
+          "with_history": "$with_history",
+          "document_order": "$document_order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "signnow_upload_document_from_url",
+      "description": "Create a document (or with make_template a template) from a file at a public URL (PDF, Word and other formats). With check_fields true, text tags in the file become fields. Returns the new document id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public URL of the file.",
+            "format": "uri"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name for the document (default: from the URL)."
+          },
+          "check_fields": {
+            "type": "boolean",
+            "description": "true turns text tags in the file into fields."
+          },
+          "make_template": {
+            "type": "boolean",
+            "description": "true stores it as a template instead of a document."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/documents/url",
+        "bodyMapping": {
+          "url": "$url",
+          "name": "$name",
+          "check_fields": "$check_fields",
+          "make_template": "$make_template"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_update_document",
+      "description": "Rename a document or set its fields. Sending fields replaces all existing fields of the document, so include the ones to keep.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "document_name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "fields": {
+            "type": "array",
+            "description": "Fields: [{\"type\": \"signature\", \"role\": \"Signer 1\", \"page_number\": 0, \"x\": 305, \"y\": 18, \"width\": 122, \"height\": 34, \"required\": true, \"label\"?, \"name\"?}]. Types: signature, initials, text, checkbox, dropdown, radiobutton, attachment, date. page_number starts at 0; x, y, width and height are in pixels from the top left.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/document/{document_id}",
+        "bodyMapping": {
+          "document_name": "$document_name",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "signnow_create_template",
+      "description": "Make a template from a document (the document is kept). Returns the template id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "document_name": {
+            "type": "string",
+            "description": "Name of the new template."
+          }
+        },
+        "required": [
+          "document_id",
+          "document_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/template",
+        "bodyMapping": {
+          "document_id": "$document_id",
+          "document_name": "$document_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_create_document_from_template",
+      "description": "Create a new document from a template, ready to be sent with signnow_send_invite. Returns the new document id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "Template id, from signnow_get_folder with entity_type template."
+          },
+          "document_name": {
+            "type": "string",
+            "description": "Name of the new document (default: the template name)."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Folder for the new document."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/template/{template_id}/copy",
+        "bodyMapping": {
+          "document_name": "$document_name",
+          "folder_id": "$folder_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_send_invite",
+      "description": "Send a document with fields for signature (role-based invite): each role gets its own email with a signing link, in signing order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "to": {
+            "type": "array",
+            "description": "One entry per role: [{\"email\", \"role\": \"Signer 1\", \"role_id\"?, \"order\": 1, \"subject\"?, \"message\"?, \"expiration_days\"?, \"reminder\"?, \"authentication_type\"?, \"password\"?, \"phone\"?, \"redirect_uri\"?, \"decline_by_signature\"?, \"reassign\"?}]. Role names come from signnow_get_document (roles[].name).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "role_id": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "email",
+                "role",
+                "order"
+              ]
+            }
+          },
+          "from": {
+            "type": "string",
+            "description": "Sender email: must be the email of the signNow account the key belongs to."
+          },
+          "cc": {
+            "type": "array",
+            "description": "Email addresses that get a copy when the document is signed.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject for all signers."
+          },
+          "message": {
+            "type": "string",
+            "description": "Email message for all signers."
+          },
+          "cc_subject": {
+            "type": "string",
+            "description": "Email subject for the cc recipients."
+          },
+          "cc_message": {
+            "type": "string",
+            "description": "Email message for the cc recipients."
+          }
+        },
+        "required": [
+          "document_id",
+          "to",
+          "from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/document/{document_id}/invite",
+        "bodyMapping": {
+          "document_id": "$document_id",
+          "to": "$to",
+          "from": "$from",
+          "cc": "$cc",
+          "subject": "$subject",
+          "message": "$message",
+          "cc_subject": "$cc_subject",
+          "cc_message": "$cc_message"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_send_free_form_invite",
+      "description": "Send a document without fields for signature (free form invite): the signer places the signature anywhere. One signer per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "to": {
+            "type": "string",
+            "description": "Signer email."
+          },
+          "from": {
+            "type": "string",
+            "description": "Sender email: must be the email of the signNow account the key belongs to."
+          },
+          "cc": {
+            "type": "array",
+            "description": "Email addresses that get a copy.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject."
+          },
+          "message": {
+            "type": "string",
+            "description": "Email message."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the signing session and emails.",
+            "enum": [
+              "en",
+              "es",
+              "fr"
+            ]
+          },
+          "redirect_uri": {
+            "type": "string",
+            "description": "Address opened after signing."
+          }
+        },
+        "required": [
+          "document_id",
+          "to",
+          "from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/document/{document_id}/invite",
+        "bodyMapping": {
+          "document_id": "$document_id",
+          "to": "$to",
+          "from": "$from",
+          "cc": "$cc",
+          "subject": "$subject",
+          "message": "$message",
+          "language": "$language",
+          "redirect_uri": "$redirect_uri"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_cancel_invite",
+      "description": "Cancel all pending role-based invites of a document: signing links stop working.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the cancellation."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/document/{document_id}/fieldinvitecancel",
+        "bodyMapping": {
+          "reason": "$reason"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "signnow_cancel_free_form_invite",
+      "description": "Cancel one pending free form invite (id from signnow_list_free_form_invites).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invite_id": {
+            "type": "string",
+            "description": "Free form invite id."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the cancellation."
+          }
+        },
+        "required": [
+          "invite_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/invite/{invite_id}/cancel",
+        "bodyMapping": {
+          "reason": "$reason"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "signnow_resend_field_invite",
+      "description": "Send the invite email again (a reminder) to one pending signer of a role-based invite. The id is field_invites[].id from signnow_get_document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_invite_id": {
+            "type": "string",
+            "description": "Field invite id, from field_invites[].id of signnow_get_document."
+          }
+        },
+        "required": [
+          "field_invite_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/fieldinvite/{field_invite_id}/resend",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_prefill_text_fields",
+      "description": "Fill text fields of a document before sending it, by field name (names from signnow_get_document_fields).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "fields": {
+            "type": "array",
+            "description": "[{\"field_name\": \"Name\", \"prefilled_text\": \"Jane Doe\"}]",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field_name": {
+                  "type": "string"
+                },
+                "prefilled_text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field_name",
+                "prefilled_text"
+              ]
+            }
+          }
+        },
+        "required": [
+          "document_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/documents/{document_id}/prefill-texts",
+        "bodyMapping": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "signnow_create_signing_link",
+      "description": "Create a signing link for a document with fields and one signer role, to open the signing page directly without email. Returns url (sign in to sign) and url_no_signup.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "redirect_uri": {
+            "type": "string",
+            "description": "Address opened after signing."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/link",
+        "bodyMapping": {
+          "document_id": "$document_id",
+          "redirect_uri": "$redirect_uri"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_move_document",
+      "description": "Move a document to another folder (folder ids from signnow_list_folders).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Target folder id."
+          }
+        },
+        "required": [
+          "document_id",
+          "folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/document/{document_id}/move",
+        "bodyMapping": {
+          "folder_id": "$folder_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "signnow_delete_document",
+      "description": "Delete a document or template. Pending invites of the document stop working.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id (40 hex characters), from signnow_get_folder."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/document/{document_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "signnow_create_folder",
+      "description": "Create a folder inside another folder (the root folder id from signnow_list_folders for a top-level folder).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Folder name."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Parent folder id."
+          }
+        },
+        "required": [
+          "name",
+          "parent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/user/folder",
+        "bodyMapping": {
+          "name": "$name",
+          "parent_id": "$parent_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_create_document_group",
+      "description": "Bundle several documents (with fields) into a document group, to send them in one invite. Returns the group id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_ids": {
+            "type": "array",
+            "description": "Ids of the documents to bundle.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "group_name": {
+            "type": "string",
+            "description": "Name of the group."
+          }
+        },
+        "required": [
+          "document_ids",
+          "group_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documentgroup",
+        "bodyMapping": {
+          "document_ids": "$document_ids",
+          "group_name": "$group_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_create_group_from_template",
+      "description": "Create a document group from a document group template. Returns the new group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_group_id": {
+            "type": "string",
+            "description": "Document group template id, from signnow_list_template_groups."
+          },
+          "group_name": {
+            "type": "string",
+            "description": "Name of the new document group."
+          },
+          "folder_id": {
+            "type": "string",
+            "description": "Folder for the new group."
+          }
+        },
+        "required": [
+          "template_group_id",
+          "group_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/document-group-templates/{template_group_id}/document-group",
+        "bodyMapping": {
+          "group_name": "$group_name",
+          "folder_id": "$folder_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_send_group_invite",
+      "description": "Send a document group for signature in steps: each step lists the emails to notify and the actions (sign or view a document as a role). Returns the invite id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_group_id": {
+            "type": "string",
+            "description": "Document group id, from signnow_list_document_groups."
+          },
+          "invite_steps": {
+            "type": "array",
+            "description": "[{\"order\": 1, \"invite_emails\": [{\"email\", \"subject\"?, \"message\"?, \"expiration_days\"?}], \"invite_actions\": [{\"email\", \"role_name\": \"Signer 1\", \"action\": \"sign\", \"document_id\"}]}]. action is sign, view or approve.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "integer"
+                },
+                "invite_emails": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "invite_actions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "required": [
+                "order",
+                "invite_emails",
+                "invite_actions"
+              ]
+            }
+          },
+          "completion_emails": {
+            "type": "array",
+            "description": "Who gets the completed documents: [{\"email\", \"disable_document_attachment\"?: 0 or 1}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "description": "Email addresses that get a copy.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sign_as_merged": {
+            "type": "boolean",
+            "description": "true (default) shows the group as one merged document to the signers."
+          }
+        },
+        "required": [
+          "document_group_id",
+          "invite_steps"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documentgroup/{document_group_id}/groupinvite",
+        "bodyMapping": {
+          "invite_steps": "$invite_steps",
+          "completion_emails": "$completion_emails",
+          "cc": "$cc",
+          "sign_as_merged": "$sign_as_merged"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_resend_group_invite",
+      "description": "Send the invite email of a document group again to the signers of the current step, or to one email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_group_id": {
+            "type": "string",
+            "description": "Document group id, from signnow_list_document_groups."
+          },
+          "invite_id": {
+            "type": "string",
+            "description": "Group invite id."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only remind this email."
+          }
+        },
+        "required": [
+          "document_group_id",
+          "invite_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documentgroup/{document_group_id}/groupinvite/{invite_id}/resendinvites",
+        "bodyMapping": {
+          "email": "$email"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "signnow_cancel_group_invite",
+      "description": "Cancel the invite of a document group: signing stops for every step.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_group_id": {
+            "type": "string",
+            "description": "Document group id, from signnow_list_document_groups."
+          },
+          "invite_id": {
+            "type": "string",
+            "description": "Group invite id."
+          }
+        },
+        "required": [
+          "document_group_id",
+          "invite_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documentgroup/{document_group_id}/groupinvite/{invite_id}/cancelinvite",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "signnow_delete_document_group",
+      "description": "Delete a document group (the documents themselves are kept). A group with a pending invite must be cancelled first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_group_id": {
+            "type": "string",
+            "description": "Document group id, from signnow_list_document_groups."
+          }
+        },
+        "required": [
+          "document_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/documentgroup/{document_group_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

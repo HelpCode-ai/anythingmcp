@@ -1,0 +1,536 @@
+{
+  "slug": "eurostat",
+  "name": "Eurostat",
+  "aliases": [
+    "European statistics",
+    "EU statistics",
+    "Statistical Office of the European Union",
+    "Comext"
+  ],
+  "description": "Official statistics of the European Union from Eurostat: read any of about 8,000 datasets (GDP, inflation, unemployment, population, energy, environment, regional NUTS data) with country, period and dimension filters, inspect a dataset's dimensions, codes and availability through SDMX, look up code lists, follow the daily update feed and query detailed Comext trade data. Free, no API key.",
+  "instructions": "## Eurostat\nThis connector reads the public dissemination APIs of **Eurostat**, the statistical office of the European Union (`https://ec.europa.eu/eurostat/api/dissemination`): about 8,000 datasets on the economy, prices, labour market, population, health, education, energy, environment, agriculture, transport and regions (NUTS 1 to 3), plus the detailed Comext trade and PRODCOM production databases. Everything is read-only.\n\n**Setup**: nothing to configure. The APIs are free and need no account or key. Data is reusable under the Eurostat copyright notice (cite \"Source: Eurostat\" and the dataset code).\n\n**Finding a dataset**\n- The model has to know or guess the dataset code; there is no keyword search endpoint small enough to return here. Well known codes: nama_10_gdp (annual GDP and components), namq_10_gdp (quarterly GDP), nama_10_pc (GDP per capita), prc_hicp_manr (HICP inflation, annual rate, monthly), prc_hicp_midx (HICP index), une_rt_m (unemployment rate, monthly), une_rt_a (annual), lfsi_emp_a (employment rate), demo_pjan (population on 1 January), demo_gind (population change), tps00001 (population, short table), gov_10dd_edpt1 (government deficit and debt), ei_bssi_m_r2 (economic sentiment), sts_inpr_m (industrial production), sts_trtu_m (retail trade), nrg_bal_c (energy balances), nrg_pc_204 (household electricity prices), env_air_gge (greenhouse gas emissions), tour_occ_nim (tourism nights), ilc_li02 (at-risk-of-poverty rate), earn_nt_net (net earnings), irt_lt_mcby_m (long-term interest rates), ert_bil_eur_m (euro exchange rates), nama_10r_2gdp (regional GDP by NUTS 2), demo_r_pjangrp3 (regional population).\n- Eurostat's Data Browser (https://ec.europa.eu/eurostat/databrowser) shows the code of every dataset in its URL and title; the user can look one up there.\n- `eurostat_list_recent_updates` lists new, deleted and updated datasets of the last 7 days with their codes.\n- `eurostat_list_comext_datasets` lists the Comext and PRODCOM datasets.\n\n**Workflow**\n1. `eurostat_get_dataset_info`: title, observation count, oldest and latest period (OBS_PERIOD_OVERALL_OLDEST / _LATEST), last update (UPDATE_DATA) and the methodology link (ESMS_HTML).\n2. `eurostat_get_dataset_codes`: the dimensions in key order and the codes used in the dataset, with labels. Pick filter values here. `eurostat_get_dataset_availability` gives the same codes without labels plus the periods with data; `eurostat_get_dataset_structure` gives the dimension order, code list ids and attributes; `eurostat_get_codelist` returns a full code list with labels (GEO is large).\n3. `eurostat_get_data`: values with filters. `geo`, `time`, `unit` and `freq` take lists; any other dimension goes in `filters` as `dim=value&dim2=value` (one value per dimension; dimension names in lower case as in step 2). Use `lastTimePeriod` 1 for the latest value or `sinceTimePeriod`/`untilTimePeriod` for a range; only these two time parameters can be combined. `geoLevel` (country, nuts2 ...) replaces `geo`.\n4. `eurostat_get_series`: the same data by SDMX key, when a dimension other than geo, time, unit or freq needs several values (`A.CP_MEUR.B1GQ+P3.DE+FR`), with `startPeriod`, `endPeriod` and `lastNObservations` per series.\n5. Trade and production: `eurostat_list_comext_datasets`, then `eurostat_get_comext_data`, e.g. DS-045409 with reporter DE, partner US, product 87 (HS chapter vehicles), flow 2 (exports), indicators VALUE_IN_EUROS, freq A, sinceTimePeriod 2022. In Comext `lastTimePeriod` counts empty future months too: prefer `sinceTimePeriod`.\n\n**Reading JSON-stat 2.0** (`eurostat_get_data`, `eurostat_get_series`, `eurostat_get_comext_data`)\n- `id` lists the dimensions in order and `size` the number of codes returned per dimension. `dimension.<id>.category.index` maps each code to its position and `.label` gives its name.\n- `value` is an object keyed by the flat index of the cell: index = sum over dimensions of position x (product of the sizes of the dimensions after it), row-major in the order of `id` (time is usually last). With one value per dimension except time, the key is simply the position of the period. Missing cells are absent from `value`.\n- `status` holds flags for the same keys: p provisional, e estimated, b break in time series, c confidential, u low reliability, d definition differs, s Eurostat estimate, f forecast, n not significant, r revised, z not applicable, : not available.\n- `updated` is the last data update. Units come from the unit dimension label: check it before comparing (million euro vs percent vs index). Periods: 2024, 2024-Q3, 2024-09, 2024-09-30; Eurostat publishes with a lag, so quote the latest period returned, not today.\n- Labels come in English by default; set `lang` to FR or DE (fr, de for the SDMX tools).\n\n**Limits and errors**\n- Requests estimated above 500,000 cells are not answered at once and above 5,000,000 cells are refused (HTTP 413 \"EXTRACTION_TOO_BIG\"). A JSON answer with `warning.status` 413 \"ASYNCHRONOUS_RESPONSE\" means Eurostat is preparing the extract: narrow the filters or call again a little later. Filter by geo, unit and time to keep answers small.\n- HTTP 400 with `error[0].label` names the problem, e.g. \"Dimension \\\"FOO\\\" is not defined\" (a filter for a dimension the dataset does not have), or geo and geoLevel sent together. HTTP 404 \"is not available for dissemination\" means an unknown or removed dataset code. An answer with an empty `value` means no data for that combination: check the codes with `eurostat_get_dataset_availability`.\n- Codes are case-insensitive in the statistics API; dataset codes in the SDMX tools work in lower or upper case.\n\n**Out of scope**: the bulk TSV/SDMX download files, the full table of contents (several megabytes) and the asynchronous extraction API are not part of this connector.",
+  "region": "intl",
+  "category": "data",
+  "icon": "eurostat",
+  "docsUrl": "https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-detailed-guidelines",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "eurostat_list_comext_datasets"
+  },
+  "connector": {
+    "name": "Eurostat",
+    "type": "REST",
+    "baseUrl": "https://ec.europa.eu",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json, application/xml;q=0.9, */*;q=0.8",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "eurostat_get_data",
+      "description": "Read Eurostat statistics (JSON-stat 2.0) from any dataset, filtered by country or region, period and dimension values: GDP, inflation, unemployment, population, energy, trade, regional NUTS data and more. Returns the values with labelled dimensions; filter tightly, an unfiltered dataset can have millions of cells. Free, no key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "description": "Dataset code, e.g. nama_10_gdp (GDP), une_rt_m (monthly unemployment), prc_hicp_manr (HICP inflation), demo_pjan (population). Case-insensitive."
+          },
+          "geo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Country or region codes (one value per element), e.g. [\"DE\", \"FR\", \"EU27_2020\"]. NUTS codes for regional datasets (DE1, DE11, DE111). Cannot be combined with geoLevel."
+          },
+          "time": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact periods to return, in the dataset's format: 2024 (annual), 2024-Q3 (quarterly), 2024-09 (monthly), 2024-09-30 (daily). Do not combine with the other time parameters."
+          },
+          "sinceTimePeriod": {
+            "type": "string",
+            "description": "First period to return, e.g. 2015 or 2020-01. Can be combined with untilTimePeriod only."
+          },
+          "untilTimePeriod": {
+            "type": "string",
+            "description": "Last period to return. Can be combined with sinceTimePeriod only."
+          },
+          "lastTimePeriod": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only the N most recent periods, e.g. 1 for the latest value. Not combinable with the other time parameters."
+          },
+          "geoLevel": {
+            "type": "string",
+            "enum": [
+              "aggregate",
+              "country",
+              "nuts1",
+              "nuts2",
+              "nuts3",
+              "city"
+            ],
+            "description": "Return every geo code of one level instead of listing them: aggregate (EU27_2020, EA20 ...), country, nuts1, nuts2, nuts3 or city. Cannot be combined with geo."
+          },
+          "unit": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Values of the unit dimension, e.g. [\"CP_MEUR\"] (current prices, million euro) or [\"PC\"] (percent). Only for datasets that have a unit dimension."
+          },
+          "freq": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Values of the freq dimension: A annual, Q quarterly, M monthly, D daily. Only for datasets that have it."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Any other dimension filters as a query string, one value per dimension, e.g. \"na_item=B1GQ&s_adj=SA&sex=T&age=Y15-74\". Dimension codes come from eurostat_get_dataset_codes. A dimension that the dataset does not have is refused with 400. For several values of such a dimension use eurostat_get_series."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "EN",
+              "FR",
+              "DE"
+            ],
+            "description": "Language of the labels: EN (default), FR or DE."
+          }
+        },
+        "required": [
+          "dataset"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/dissemination/statistics/1.0/data/{dataset}",
+        "queryParams": {
+          "format": "JSON",
+          "lang": "$lang",
+          "geo": "$geo",
+          "time": "$time",
+          "sinceTimePeriod": "$sinceTimePeriod",
+          "untilTimePeriod": "$untilTimePeriod",
+          "lastTimePeriod": "$lastTimePeriod",
+          "geoLevel": "$geoLevel",
+          "unit": "$unit",
+          "freq": "$freq",
+          "__rawquery": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "extension.annotation"
+          ]
+        }
+      }
+    },
+    {
+      "name": "eurostat_get_series",
+      "description": "Read Eurostat data by SDMX series key: dimension values in the dataset's dimension order, joined by dots, several values joined by + and an empty position for all values (A.CP_MEUR.B1GQ.DE+FR, M.SA.TOTAL.PC_ACT.T.). Returns JSON-stat 2.0 like eurostat_get_data. Use it when several values are needed for a dimension other than geo, time, unit or freq. Free, no key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "description": "Dataset code, e.g. nama_10_gdp (GDP), une_rt_m (monthly unemployment), prc_hicp_manr (HICP inflation), demo_pjan (population). Case-insensitive."
+          },
+          "key": {
+            "type": "string",
+            "description": "Series key in the order of eurostat_get_dataset_structure (time is not part of it), e.g. A.CP_MEUR.B1GQ.DE+FR+IT for nama_10_gdp (freq.unit.na_item.geo). Leave a position empty for every value, e.g. A.CP_MEUR..LU."
+          },
+          "startPeriod": {
+            "type": "string",
+            "description": "First period, e.g. 2015, 2020-Q1, 2024-01."
+          },
+          "endPeriod": {
+            "type": "string",
+            "description": "Last period."
+          },
+          "lastNObservations": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only the N most recent observations of each series."
+          },
+          "firstNObservations": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only the N oldest observations of each series."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "en",
+              "fr",
+              "de"
+            ],
+            "description": "Language of the labels: en (default), fr or de."
+          }
+        },
+        "required": [
+          "dataset",
+          "key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/dissemination/sdmx/2.1/data/{dataset}/{key}",
+        "queryParams": {
+          "format": "JSON",
+          "startPeriod": "$startPeriod",
+          "endPeriod": "$endPeriod",
+          "lastNObservations": "$lastNObservations",
+          "firstNObservations": "$firstNObservations",
+          "lang": "$lang"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "extension.annotation"
+          ]
+        }
+      }
+    },
+    {
+      "name": "eurostat_get_dataset_info",
+      "description": "Metadata of one Eurostat dataset: title, data structure id, number of observations, oldest and latest period, last data and structure update, planned next update, source institutions and links to the methodology (ESMS) page. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "description": "Dataset code, e.g. nama_10_gdp (GDP), une_rt_m (monthly unemployment), prc_hicp_manr (HICP inflation), demo_pjan (population). Case-insensitive."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "en",
+              "fr",
+              "de"
+            ],
+            "description": "Language of the labels: en (default), fr or de."
+          }
+        },
+        "required": [
+          "dataset"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/dissemination/sdmx/2.1/dataflow/ESTAT/{dataset}/latest",
+        "queryParams": {
+          "format": "JSON",
+          "lang": "$lang"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{id: extension.id, label: label, datastructure: extension.datastructure.id, annotations: extension.annotation[?type!='DISSEMINATION_DOI_XML'].{type: type, title: title, date: date, href: href, text: text}}"
+        }
+      }
+    },
+    {
+      "name": "eurostat_get_dataset_codes",
+      "description": "The dimensions of a Eurostat dataset in key order, with every code actually used in the dataset and its English label (e.g. unit CP_MEUR = Current prices, million euro; geo DE = Germany). Call it before eurostat_get_data to pick valid filter values. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "description": "Dataset code, e.g. nama_10_gdp (GDP), une_rt_m (monthly unemployment), prc_hicp_manr (HICP inflation), demo_pjan (population). Case-insensitive."
+          }
+        },
+        "required": [
+          "dataset"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/dissemination/sdmx/2.1/dataflow/ESTAT/{dataset}/latest",
+        "queryParams": {
+          "references": "descendants",
+          "detail": "referencepartial"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "Structure.Structures.{dataset: Dataflows.Dataflow.id, title: to_array(Dataflows.Dataflow.Name)[?lang=='en'] | [0].\"#text\", dimensions: to_array(DataStructures.DataStructure.DataStructureComponents.DimensionList.Dimension)[].{id: id, position: position, codelist: LocalRepresentation.Enumeration.Ref.id}, codelists: to_array(Codelists.Codelist)[].{id: id, name: to_array(Name)[?lang=='en'] | [0].\"#text\", codes: to_array(Code)[].{id: id, label: to_array(Name)[?lang=='en'] | [0].\"#text\"}}}"
+        }
+      }
+    },
+    {
+      "name": "eurostat_get_dataset_structure",
+      "description": "The SDMX data structure definition (DSD) of a Eurostat dataset: its dimensions with their position (the order of an SDMX series key), the code list of each dimension, the time dimension and the attributes (observation flags). The DSD id is the dataset code in upper case. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "datastructure": {
+            "type": "string",
+            "description": "Data structure id, normally the dataset code in upper case, e.g. NAMA_10_GDP (the datastructure field of eurostat_get_dataset_info)."
+          }
+        },
+        "required": [
+          "datastructure"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/dissemination/sdmx/2.1/datastructure/ESTAT/{datastructure}/latest"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "Structure.Structures.DataStructures.DataStructure.{id: id, version: version, dimensions: to_array(DataStructureComponents.DimensionList.Dimension)[].{id: id, position: position, codelist: LocalRepresentation.Enumeration.Ref.id}, time_dimension: DataStructureComponents.DimensionList.TimeDimension.id, attributes: to_array(DataStructureComponents.AttributeList.Attribute)[].{id: id, codelist: LocalRepresentation.Enumeration.Ref.id, status: assignmentStatus}}"
+        }
+      }
+    },
+    {
+      "name": "eurostat_get_dataset_availability",
+      "description": "Which codes have data in a Eurostat dataset, per dimension, with their count (the SDMX content constraint), including the list of available periods. Use it to check that a country, unit or year exists before querying, and to estimate the size of a request (the product of the counts). Codes only, no labels. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "description": "Dataset code, e.g. nama_10_gdp (GDP), une_rt_m (monthly unemployment), prc_hicp_manr (HICP inflation), demo_pjan (population). Case-insensitive."
+          }
+        },
+        "required": [
+          "dataset"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/dissemination/sdmx/2.1/contentconstraint/ESTAT/{dataset}/latest"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "Structure.Structures.Constraints.ContentConstraint.{dataset: ConstraintAttachment.Dataflow.Ref.id, dimensions: to_array(CubeRegion.KeyValue)[].{id: id, count: length(to_array(Value)), values: to_array(Value)}}"
+        }
+      }
+    },
+    {
+      "name": "eurostat_get_codelist",
+      "description": "A whole Eurostat code list with the label of every code, e.g. GEO (countries and regions), UNIT, NA_ITEM, NACE_R2, COICOP, SEX, AGE, FREQ, OBS_FLAG. Large lists (GEO has more than 3,000 codes) are big; prefer eurostat_get_dataset_codes for the codes of one dataset. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "codelist": {
+            "type": "string",
+            "description": "Code list id, e.g. GEO, UNIT, NA_ITEM, NACE_R2, OBS_STATUS (from eurostat_get_dataset_structure)."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "en",
+              "fr",
+              "de"
+            ],
+            "description": "Language of the labels: en (default), fr or de."
+          }
+        },
+        "required": [
+          "codelist"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/{codelist}/latest",
+        "queryParams": {
+          "format": "JSON",
+          "lang": "$lang"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "id": "$.extension.id",
+            "version": "$.extension.version",
+            "label": "$.label",
+            "codes": "$.category.label"
+          }
+        }
+      }
+    },
+    {
+      "name": "eurostat_list_recent_updates",
+      "description": "What changed at Eurostat in the last 7 days (the official update feed, rebuilt at 11:00 and 23:00 CET): new and deleted datasets with titles, datasets whose structure changed, datasets with new data, and code list changes. Takes no parameters. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/dissemination/catalogue/rss/en/statistics-update.rss"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "rss.channel.{published: pubDate, new_datasets: to_array(item)[?category=='NEW_DATASET'].{id: split(title, ' - ')[0], title: description, date: pubDate}, deleted_datasets: to_array(item)[?category=='DELETED_DATASET'].{id: split(title, ' - ')[0], title: description, date: pubDate}, structure_changes: to_array(item)[?category=='UPDATED_DATASET_STRUCTURE' || category=='UPDATED_DATASET_STRUCTURE_DATA'].split(title, ' - ')[0], data_updates: to_array(item)[?category=='UPDATED_DATASET_DATA'].split(title, ' - ')[0], code_list_changes: to_array(item)[?contains(category, 'CODE_LIST')].{id: split(title, ' - ')[0], change: category, date: pubDate}}"
+        }
+      }
+    },
+    {
+      "name": "eurostat_list_comext_datasets",
+      "description": "List the Comext and PRODCOM datasets (detailed international trade in goods by HS, CN8, SITC, BEC and CPA, and industrial production), with code and title, for use with eurostat_get_comext_data. Takes no parameters. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/comext/dissemination/sdmx/2.1/dataflow/ESTAT/all",
+        "queryParams": {
+          "detail": "allstubs",
+          "format": "JSON",
+          "lang": "en"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "link.item[].{id: extension.id, label: label}"
+        }
+      }
+    },
+    {
+      "name": "eurostat_get_comext_data",
+      "description": "Read detailed EU trade in goods (Comext) or PRODCOM production data (JSON-stat 2.0) by reporter, partner, product, flow and indicator, e.g. German exports to the US of HS chapter 87 in euro. Always set reporter, product, flow and indicators: the product dimension has tens of thousands of codes. Free, no key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "description": "Comext or PRODCOM dataset code from eurostat_list_comext_datasets, e.g. DS-045409 (EU trade by HS2-4-6 and CN8), DS-059341 (trade of EU and non-EU countries by HS), DS-059358 (PRODCOM sold production, exports and imports)."
+          },
+          "geo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Not used by most Comext datasets; leave empty and use reporter and partner instead."
+          },
+          "time": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact periods to return, in the dataset's format: 2024 (annual), 2024-Q3 (quarterly), 2024-09 (monthly), 2024-09-30 (daily). Do not combine with the other time parameters."
+          },
+          "sinceTimePeriod": {
+            "type": "string",
+            "description": "First period to return, e.g. 2015 or 2020-01. Can be combined with untilTimePeriod only."
+          },
+          "untilTimePeriod": {
+            "type": "string",
+            "description": "Last period to return. Can be combined with sinceTimePeriod only."
+          },
+          "lastTimePeriod": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only the N most recent periods, e.g. 1 for the latest value. Not combinable with the other time parameters."
+          },
+          "reporter": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Reporting countries, e.g. [\"DE\"], [\"IT\", \"FR\"], or EU aggregate [\"EU\"] where the dataset has it."
+          },
+          "partner": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Partner countries or zones, e.g. [\"US\", \"CN\"], EXT_EU27_2020 (extra-EU), INT_EU27_2020 (intra-EU), WORLD."
+          },
+          "product": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Product codes of the dataset's classification: TOTAL, HS2 chapters (\"27\"), HS4 (\"8703\"), HS6 (\"870380\") or CN8 (\"87038010\") in DS-045409."
+          },
+          "flow": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Trade flow: \"1\" imports, \"2\" exports. Leave empty for both."
+          },
+          "indicators": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Measures, e.g. [\"VALUE_IN_EUROS\"], [\"QUANTITY_IN_100KG\"], [\"SUPPLEMENTARY_QUANTITY\"] in the trade datasets."
+          },
+          "freq": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A annual or M monthly."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Other dimension filters as a query string with one value per dimension, e.g. \"transport_mode=1\" or \"prccode=10511133\"."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "EN",
+              "FR",
+              "DE"
+            ],
+            "description": "Language of the labels: EN (default), FR or DE."
+          }
+        },
+        "required": [
+          "dataset"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eurostat/api/comext/dissemination/statistics/1.0/data/{dataset}",
+        "queryParams": {
+          "format": "JSON",
+          "lang": "$lang",
+          "geo": "$geo",
+          "time": "$time",
+          "sinceTimePeriod": "$sinceTimePeriod",
+          "untilTimePeriod": "$untilTimePeriod",
+          "lastTimePeriod": "$lastTimePeriod",
+          "reporter": "$reporter",
+          "partner": "$partner",
+          "product": "$product",
+          "flow": "$flow",
+          "indicators": "$indicators",
+          "freq": "$freq",
+          "__rawquery": "$filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "extension.annotation"
+          ]
+        }
+      }
+    }
+  ]
+}

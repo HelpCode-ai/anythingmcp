@@ -1,0 +1,2758 @@
+{
+  "slug": "getresponse",
+  "name": "GetResponse",
+  "aliases": [
+    "GetResponse MAX",
+    "GetResponse API"
+  ],
+  "description": "GetResponse email marketing: contact lists (campaigns), contacts with tags and custom fields, segments and ad-hoc contact search, newsletters (drafts, sending, statistics), autoresponders and their statistics, sender addresses and list growth reports. API v3, API key, GetResponse MAX supported.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "getresponse",
+  "docsUrl": "https://apireference.getresponse.com/",
+  "instructions": "## GetResponse\nThis connector uses the **GetResponse API v3** (`https://api.getresponse.com/v3`, or the GetResponse MAX hosts) for email marketing: campaigns (GetResponse's name for contact lists), contacts with tags and custom fields, saved segments and ad-hoc contact search, newsletters from draft to sending with their statistics, autoresponders, sender addresses and list growth reports. Landing pages, webinars, forms, ecommerce, SMS, workflows and transactional emails are not part of it.\n\n**Setup (2 minutes)**\n1. In GetResponse open **Tools**, **Integrations and API**, **API** (https://app.getresponse.com/api) and generate an API key. It acts with the full rights of the account; an unused key expires after 90 days.\n2. Paste the key into `GETRESPONSE_API_KEY` (only the key; the connector sends `X-Auth-Token: api-key <key>`).\n3. `GETRESPONSE_API_URL`: `https://api.getresponse.com/v3` for a standard GetResponse account.\n4. **GetResponse MAX**: set `GETRESPONSE_API_URL` to `https://api3.getresponse360.com/v3` (or `https://api3.getresponse360.pl/v3` for the Polish data centre) and `GETRESPONSE_DOMAIN` to your MAX domain (only the name, e.g. `example.com`); it is sent as the `X-Domain` header. Leave `GETRESPONSE_DOMAIN` empty otherwise.\n5. Run `getresponse_get_account` to check.\n\n**Workflow**\n- Account: `getresponse_get_account`, `getresponse_get_sending_limits`, `getresponse_list_timezones` (time zone ids for scheduled sends).\n- Lists: `getresponse_list_campaigns`, `getresponse_get_campaign`, `getresponse_list_campaign_contacts`, `getresponse_create_campaign`. Growth and churn: `getresponse_get_campaigns_summary`, `getresponse_get_campaign_list_size`, `getresponse_get_campaign_subscriptions`, `getresponse_get_campaign_removals`.\n- Contacts: find with `getresponse_list_contacts` (by email, name, list, origin, dates), read with `getresponse_get_contact` and `getresponse_list_contact_activities` (sends, opens, clicks). Write with `getresponse_create_contact`, `getresponse_update_contact`, `getresponse_upsert_contact_tags`, `getresponse_upsert_contact_custom_fields`. `getresponse_delete_contact` is installed switched off.\n- Tags and fields: `getresponse_list_tags`, `getresponse_get_tag`, `getresponse_create_tag`; `getresponse_list_custom_fields`, `getresponse_get_custom_field`, `getresponse_create_custom_field`.\n- Segments: `getresponse_list_segments`, `getresponse_get_segment`, `getresponse_list_segment_contacts`; ad-hoc filters with `getresponse_search_contacts`.\n- Senders: `getresponse_list_from_fields`, `getresponse_get_from_field` (a newsletter needs a `from_field_id`).\n- Newsletters: `getresponse_list_newsletters`, `getresponse_get_newsletter`, results with `getresponse_get_newsletter_statistics` and `getresponse_get_newsletters_statistics`. Create with `getresponse_create_newsletter`, send a draft with `getresponse_send_newsletter_draft`, stop a scheduled one with `getresponse_cancel_newsletter`.\n- Autoresponders: `getresponse_list_autoresponders`, `getresponse_get_autoresponder`, `getresponse_get_autoresponder_statistics`, `getresponse_get_autoresponders_statistics`.\n\n**Sending is real: confirm first.** `getresponse_create_newsletter` with type `broadcast` and `getresponse_send_newsletter_draft` email real people. Prefer type `draft`, show the user the subject, sender, content and the recipients in `send_settings` (lists, segments, exclusions, time), and send only after a clear yes. `send_settings` uses GetResponse's keys, e.g. `{\"selectedCampaigns\": [\"V\"], \"excludedSegments\": [\"R\"], \"sendOn\": {\"date\": \"2026-11-14T07:00:00\", \"timeZone\": {\"timeZoneId\": 282}}}`; without `sendOn` the send starts at once. Creating newsletters is limited to 256 calls a day.\n\n**Contacts**\n- `getresponse_create_contact` answers **202 Accepted with an empty body**: the contact is queued, not yet visible. Look it up a little later with `getresponse_list_contacts` (`email`, `exact_match: exactMatch`). 409 means the email is already on that list. If the list uses double opt-in for the API channel, the contact first gets a confirmation email; unconfirmed contacts are not returned by the list tools, only by `getresponse_search_contacts` with `subscribers_type: [\"unconfirmed\"]`. A contact can also be rejected later in the queue, so a missing contact after a few minutes means it was not added.\n- Tags are `[{\"tagId\": \"...\"}]`, custom field values `[{\"customFieldId\": \"...\", \"value\": [\"...\"]}]` (value is always a list of strings).\n- In `getresponse_update_contact`, `tags` and `custom_field_values` replace what the contact has; use the upsert tools to add.\n- `getresponse_list_contacts` matches email and name partially; add `exact_match: exactMatch` for an exact email.\n\n**Ad-hoc search (`getresponse_search_contacts`)**: `subscribers_type` (e.g. `[\"subscribed\"]`), `section_logic_operator` (`or`/`and`) and `section`, a list of `{\"campaignIdsList\": [\"V\"], \"logicOperator\": \"and\", \"subscriberCycle\": [\"receiving_autoresponder\", \"not_receiving_autoresponder\"], \"subscriptionDate\": \"all_time\", \"conditions\": [...]}`. Conditions: a tag `{\"conditionType\": \"tag\", \"operatorType\": \"exists\", \"operator\": \"exists\", \"value\": \"<tagId>\"}`, an email `{\"conditionType\": \"email\", \"operatorType\": \"string_operator\", \"operator\": \"contains\", \"value\": \"@example.com\"}`, a custom field `{\"conditionType\": \"custom\", \"scope\": \"<customFieldId>\", \"operatorType\": \"string_operator\", \"operator\": \"is\", \"value\": \"...\"}`. Reference: https://apidocs.getresponse.com/v3/case-study/segments-manual\n\n**Reading the answers**\n- Ids are short strings (`V`, `pV3r`). Campaign means contact list throughout the API.\n- Times are ISO 8601 in **UTC**. Date filters (`created_from`, `created_to`, ...) take `YYYY-MM-DD` or ISO 8601.\n- Statistics tools return figures keyed by period start (or `total`), per `group_by` (hour, day, month, total). Open and click counts depend on the account's open-tracking consent settings.\n- Use `fields` (comma-separated) to get smaller answers, e.g. `fields: name,email` on contacts. `getresponse_list_autoresponders` leaves the HTML content out; `getresponse_get_newsletter` and `getresponse_get_autoresponder` include it.\n- `getresponse_get_autoresponders_statistics` sends the filter as `query[autoreponderId]`, the spelling the API documents.\n\n**Paging**: lists return 100 items per page by default; `per_page` goes up to 1000 and `page` starts at 1. The answer carries `_headers` with `totalcount`, `totalpages` and `currentpage`; stop when `currentpage` equals `totalpages` or a page comes back empty (`[]`).\n\n**Limits**: 30,000 calls per 10 minutes, 80 per second and at most 10 parallel requests per account. The answer to 429 says in `context.timeToReset` how many seconds to wait.\n\n**Errors**: errors are JSON with `httpStatus`, `code`, `message` and `context`. 401 code 1014 means a wrong, expired or missing key (on GetResponse MAX also a missing `GETRESPONSE_DOMAIN` or the wrong API address); 400 names the invalid field in `context`; 404 an unknown id; 409 a duplicate (contact already on the list, existing name); 429 the rate limit.",
+  "prerequisites": "A GetResponse account and its API key (Tools, Integrations and API, API).",
+  "requiredEnvVars": [
+    "GETRESPONSE_API_URL",
+    "GETRESPONSE_API_KEY"
+  ],
+  "optionalEnvVars": [
+    "GETRESPONSE_DOMAIN"
+  ],
+  "envVarMeta": {
+    "GETRESPONSE_API_URL": {
+      "label": "API address",
+      "kind": "address",
+      "help": "https://api.getresponse.com/v3 for GetResponse (Free, Starter, Marketer, Creator, Ecommerce). GetResponse MAX: https://api3.getresponse360.com/v3, or https://api3.getresponse360.pl/v3 for accounts in the Polish data centre.",
+      "example": "https://api.getresponse.com/v3",
+      "pattern": "^https://(api\\.getresponse\\.com|api3\\.getresponse360\\.(com|pl))/v3$",
+      "patternMessage": "Use https://api.getresponse.com/v3, https://api3.getresponse360.com/v3 or https://api3.getresponse360.pl/v3, without a trailing slash."
+    },
+    "GETRESPONSE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "GetResponse, Tools, Integrations and API, API: generate a key and copy it. Paste only the key; the connector adds the api-key prefix. Unused keys expire after 90 days.",
+      "link": "https://app.getresponse.com/api",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "Paste only the key itself, without the api-key prefix, spaces or quotes."
+    },
+    "GETRESPONSE_DOMAIN": {
+      "label": "GetResponse MAX domain",
+      "kind": "setting",
+      "help": "GetResponse MAX only: your account's domain, sent as the X-Domain header on every call. Domain name only, without https://. Leave empty for standard GetResponse accounts.",
+      "example": "example.com",
+      "pattern": "^[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$",
+      "patternMessage": "Enter only the domain name, e.g. example.com, without https:// or a path.",
+      "advanced": true
+    }
+  },
+  "verifyHints": {
+    "401": "GetResponse refused the API key (code 1014). Copy it again from Tools, Integrations and API, API; keys unused for 90 days expire. GetResponse MAX accounts also need GETRESPONSE_DOMAIN and the MAX API address.",
+    "403": "The key's user lacks permission for this area, or the API is not part of the account's plan.",
+    "429": "GetResponse allows 30,000 calls per 10 minutes, 80 per second and 10 at a time. Wait for the X-RateLimit-Reset seconds and try again."
+  },
+  "probe": {
+    "tool": "getresponse_get_account"
+  },
+  "connector": {
+    "name": "GetResponse API v3",
+    "type": "REST",
+    "baseUrl": "{{GETRESPONSE_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Auth-Token",
+      "apiKey": "api-key {{GETRESPONSE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/accounts"
+  },
+  "tools": [
+    {
+      "name": "getresponse_get_account",
+      "description": "The GetResponse account the API key belongs to: login, name, email, company, country, time zone and language. Needs no ids; use it to check the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_get_sending_limits",
+      "description": "The account's email sending limits: how many messages it may still send in the current period and the period's limits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/sending-limits",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_list_timezones",
+      "description": "Time zones GetResponse knows, with the numeric timeZoneId that a scheduled newsletter (send_on_timezone_id) needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/timezones",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_list_campaigns",
+      "description": "List the campaigns, which GetResponse also calls contact lists: id, name, whether it is the default list, language and creation date. Paged; filter by name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only campaigns whose name contains this text."
+          },
+          "is_default": {
+            "type": "boolean",
+            "description": "true: only the default campaign; false: all the others."
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_created_on": {
+            "type": "string",
+            "description": "Sort by creation date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": {
+          "query[name]": "$name",
+          "query[isDefault]": "$is_default",
+          "sort[name]": "$sort_name",
+          "sort[createdOn]": "$sort_created_on",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_campaign",
+      "description": "One campaign (contact list) with its settings: opt-in types, confirmation message, postal address, subscription notifications and profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign id from getresponse_list_campaigns, e.g. V."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_list_campaign_contacts",
+      "description": "Contacts of one campaign (contact list), with email, name, origin and subscription date. Paged; filter by email, name or creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign id from getresponse_list_campaigns."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only contacts whose email contains this text."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only contacts whose name contains this text."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only contacts created on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only contacts created on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "sort_email": {
+            "type": "string",
+            "description": "Sort by email.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_created_on": {
+            "type": "string",
+            "description": "Sort by subscription date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/contacts",
+        "queryParams": {
+          "query[email]": "$email",
+          "query[name]": "$name",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "sort[email]": "$sort_email",
+          "sort[name]": "$sort_name",
+          "sort[createdOn]": "$sort_created_on",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_campaigns_summary",
+      "description": "Statistics summary per campaign (contact list): total subscribers, number of autoresponders, newsletters and landing pages, keyed by campaign id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "string",
+            "description": "One or more campaign ids, comma-separated (e.g. V,O). Required by the API."
+          }
+        },
+        "required": [
+          "campaign_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/statistics/summary",
+        "queryParams": {
+          "query[campaignId]": "$campaign_ids"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_get_campaign_list_size",
+      "description": "How many subscribers one or more campaigns had over time: the list size per period, keyed by date. Moves between lists are not counted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "string",
+            "description": "One or more campaign ids, comma-separated (e.g. V,O)."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Group the figures by hour, day, month or total (one sum).",
+            "enum": [
+              "total",
+              "hour",
+              "day",
+              "month"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only changes on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only changes on or before this date (YYYY-MM-DD or ISO 8601)."
+          }
+        },
+        "required": [
+          "campaign_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/statistics/list-size",
+        "queryParams": {
+          "query[campaignId]": "$campaign_ids",
+          "query[groupBy]": "$group_by",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_get_campaign_subscriptions",
+      "description": "New subscriptions to one or more campaigns per period and their origin (api, import, webform, landing page, ...), keyed by date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "string",
+            "description": "One or more campaign ids, comma-separated (e.g. V,O)."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Group the figures by hour, day, month or total (one sum).",
+            "enum": [
+              "total",
+              "hour",
+              "day",
+              "month"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only changes on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only changes on or before this date (YYYY-MM-DD or ISO 8601)."
+          }
+        },
+        "required": [
+          "campaign_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/statistics/subscriptions",
+        "queryParams": {
+          "query[campaignId]": "$campaign_ids",
+          "query[groupBy]": "$group_by",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_get_campaign_removals",
+      "description": "Contacts removed from one or more campaigns per period and why (unsubscribed, bounced, complaint, removed by user or API), keyed by date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "string",
+            "description": "One or more campaign ids, comma-separated (e.g. V,O)."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Group the figures by hour, day, month or total (one sum).",
+            "enum": [
+              "total",
+              "hour",
+              "day",
+              "month"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only changes on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only changes on or before this date (YYYY-MM-DD or ISO 8601)."
+          }
+        },
+        "required": [
+          "campaign_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/statistics/removals",
+        "queryParams": {
+          "query[campaignId]": "$campaign_ids",
+          "query[groupBy]": "$group_by",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_create_campaign",
+      "description": "Create a campaign (contact list), up to 1000 per account. The name must be unique, 3-64 characters, without emojis, /, \\\\, @, [ or ].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "List name, e.g. Webinar signups."
+          },
+          "language_code": {
+            "type": "string",
+            "description": "ISO 639-1 language code of the list, e.g. EN, DE."
+          },
+          "is_default": {
+            "type": "string",
+            "description": "true to make it the default list.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "optin_types": {
+            "type": "object",
+            "description": "Opt-in per channel, single or double (confirmation email): {\"api\": \"double\", \"email\": \"single\", \"import\": \"single\", \"webform\": \"double\"}. Leave out for the account defaults.",
+            "properties": {
+              "api": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "double"
+                ],
+                "description": "Contacts added through the API."
+              },
+              "email": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "double"
+                ],
+                "description": "Contacts subscribing by email."
+              },
+              "import": {
+                "type": "string",
+                "enum": [
+                  "single"
+                ],
+                "description": "Imported contacts (single only)."
+              },
+              "webform": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "double"
+                ],
+                "description": "Contacts from forms."
+              }
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns",
+        "bodyMapping": {
+          "name": "$name",
+          "languageCode": "$language_code",
+          "isDefault": "$is_default",
+          "optinTypes": "$optin_types"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_list_contacts",
+      "description": "Search the contacts of the whole account: by email or name (partial match unless exact_match), campaign, origin, creation or change date. Paged, 100 per page by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only contacts whose email contains this text (set exact_match for an exact email)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only contacts whose name contains this text."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Only contacts of this campaign (contact list)."
+          },
+          "origin": {
+            "type": "string",
+            "description": "Only contacts that subscribed this way.",
+            "enum": [
+              "import",
+              "email",
+              "www",
+              "panel",
+              "leads",
+              "sale",
+              "api",
+              "survey",
+              "iphone",
+              "copy",
+              "landing_page",
+              "webinar",
+              "website_builder_elegant",
+              "chat",
+              "course",
+              "premium_newsletter"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only contacts created on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only contacts created on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "changed_from": {
+            "type": "string",
+            "description": "Only contacts changed on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "changed_to": {
+            "type": "string",
+            "description": "Only contacts changed on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "exact_match": {
+            "type": "string",
+            "description": "exactMatch: email and name must match exactly instead of partially.",
+            "enum": [
+              "exactMatch"
+            ]
+          },
+          "sort_email": {
+            "type": "string",
+            "description": "Sort by email.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_created_on": {
+            "type": "string",
+            "description": "Sort by subscription date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_changed_on": {
+            "type": "string",
+            "description": "Sort by change date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "query[email]": "$email",
+          "query[name]": "$name",
+          "query[campaignId]": "$campaign_id",
+          "query[origin]": "$origin",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "query[changedOn][from]": "$changed_from",
+          "query[changedOn][to]": "$changed_to",
+          "additionalFlags": "$exact_match",
+          "sort[email]": "$sort_email",
+          "sort[name]": "$sort_name",
+          "sort[createdOn]": "$sort_created_on",
+          "sort[changedOn]": "$sort_changed_on",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_contact",
+      "description": "One contact with its campaign, tags, custom field values, scoring, engagement score and autoresponder day of cycle.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from getresponse_list_contacts, e.g. pV3r."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_list_contact_activities",
+      "description": "What a contact did: sends, opens and clicks of newsletters and autoresponders, with dates. Only the last 14 days unless created_from is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from getresponse_list_contacts."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only activities on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only activities on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/activities",
+        "queryParams": {
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_create_contact",
+      "description": "Add a contact to a campaign (contact list). GetResponse queues it and answers 202 with an empty body; the contact appears after a short while (look it up with getresponse_list_contacts). With double opt-in on the list's API channel the contact first gets a confirmation email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address of the new contact."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign (contact list) id from getresponse_list_campaigns."
+          },
+          "name": {
+            "type": "string",
+            "description": "Contact name."
+          },
+          "day_of_cycle": {
+            "type": "integer",
+            "description": "Autoresponder day to start the contact at (0 = first day). Leave empty to keep the contact out of the autoresponder cycle."
+          },
+          "scoring": {
+            "type": "number",
+            "description": "Contact score."
+          },
+          "ip_address": {
+            "type": "string",
+            "description": "IP address the contact subscribed from (IPv4 or IPv6)."
+          },
+          "open_tracking_consent": {
+            "type": "boolean",
+            "description": "Whether the contact agreed that email opens may be tracked."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags as objects with a tagId from getresponse_list_tags, e.g. [{\"tagId\": \"m7E2\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tagId": {
+                  "type": "string",
+                  "description": "Tag id."
+                }
+              },
+              "required": [
+                "tagId"
+              ]
+            }
+          },
+          "custom_field_values": {
+            "type": "array",
+            "description": "Custom field values: [{\"customFieldId\": \"kL6Nh\", \"value\": [\"18-35\"]}]. value is always a list of strings; ids come from getresponse_list_custom_fields.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "customFieldId": {
+                  "type": "string",
+                  "description": "Custom field id."
+                },
+                "value": {
+                  "type": "array",
+                  "description": "One or more values as strings.",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "customFieldId",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "email",
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "email": "$email",
+          "campaign": {
+            "campaignId": "$campaign_id"
+          },
+          "name": "$name",
+          "dayOfCycle": "$day_of_cycle",
+          "scoring": "$scoring",
+          "ipAddress": "$ip_address",
+          "openTrackingConsent": "$open_tracking_consent",
+          "tags": "$tags",
+          "customFieldValues": "$custom_field_values"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_update_contact",
+      "description": "Change a contact. Only the fields you pass change, but tags and custom_field_values REPLACE the contact's current ones (use getresponse_upsert_contact_tags / getresponse_upsert_contact_custom_fields to add). A new campaign moves the contact to that list with its history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from getresponse_list_contacts."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "email": {
+            "type": "string",
+            "description": "New email address."
+          },
+          "campaign": {
+            "type": "object",
+            "description": "Move the contact to another campaign: {\"campaignId\": \"V\"}.",
+            "properties": {
+              "campaignId": {
+                "type": "string",
+                "description": "Target campaign id."
+              }
+            },
+            "required": [
+              "campaignId"
+            ]
+          },
+          "day_of_cycle": {
+            "type": "integer",
+            "description": "Autoresponder day of cycle."
+          },
+          "scoring": {
+            "type": "number",
+            "description": "Contact score."
+          },
+          "note": {
+            "type": "string",
+            "description": "Free-text note on the contact."
+          },
+          "open_tracking_consent": {
+            "type": "boolean",
+            "description": "Whether the contact agreed that email opens may be tracked."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags as objects with a tagId from getresponse_list_tags, e.g. [{\"tagId\": \"m7E2\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tagId": {
+                  "type": "string",
+                  "description": "Tag id."
+                }
+              },
+              "required": [
+                "tagId"
+              ]
+            }
+          },
+          "custom_field_values": {
+            "type": "array",
+            "description": "Custom field values: [{\"customFieldId\": \"kL6Nh\", \"value\": [\"18-35\"]}]. value is always a list of strings; ids come from getresponse_list_custom_fields.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "customFieldId": {
+                  "type": "string",
+                  "description": "Custom field id."
+                },
+                "value": {
+                  "type": "array",
+                  "description": "One or more values as strings.",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "customFieldId",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "campaign": "$campaign",
+          "dayOfCycle": "$day_of_cycle",
+          "scoring": "$scoring",
+          "note": "$note",
+          "openTrackingConsent": "$open_tracking_consent",
+          "tags": "$tags",
+          "customFieldValues": "$custom_field_values"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "getresponse_upsert_contact_tags",
+      "description": "Add tags to a contact without removing the ones it already has.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags as objects with a tagId from getresponse_list_tags, e.g. [{\"tagId\": \"m7E2\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tagId": {
+                  "type": "string",
+                  "description": "Tag id."
+                }
+              },
+              "required": [
+                "tagId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "contact_id",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/tags",
+        "bodyMapping": {
+          "tags": "$tags"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "getresponse_upsert_contact_custom_fields",
+      "description": "Set custom field values on a contact; fields you do not pass keep their values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id."
+          },
+          "custom_field_values": {
+            "type": "array",
+            "description": "Custom field values: [{\"customFieldId\": \"kL6Nh\", \"value\": [\"18-35\"]}]. value is always a list of strings; ids come from getresponse_list_custom_fields.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "customFieldId": {
+                  "type": "string",
+                  "description": "Custom field id."
+                },
+                "value": {
+                  "type": "array",
+                  "description": "One or more values as strings.",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "customFieldId",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "contact_id",
+          "custom_field_values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/custom-fields",
+        "bodyMapping": {
+          "customFieldValues": "$custom_field_values"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "getresponse_delete_contact",
+      "description": "Delete a contact. Passing message_id records it as an unsubscribe from that message instead of a plain removal. Cannot be undone. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the newsletter or autoresponder the contact unsubscribed from (optional)."
+          },
+          "ip_address": {
+            "type": "string",
+            "description": "IP address the contact unsubscribed from; only used together with message_id."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}",
+        "queryParams": {
+          "messageId": "$message_id",
+          "ipAddress": "$ip_address"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "getresponse_list_tags",
+      "description": "List the account's tags with id, name and color. Paged; filter by name or creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only tags whose name contains this text."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only tags created on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only tags created on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_created_at": {
+            "type": "string",
+            "description": "Sort by creation date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": {
+          "query[name]": "$name",
+          "query[createdAt][from]": "$created_from",
+          "query[createdAt][to]": "$created_to",
+          "sort[name]": "$sort_name",
+          "sort[createdAt]": "$sort_created_at",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_tag",
+      "description": "One tag by id: its name, color and creation date. Use it to resolve a tagId seen on a contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id from getresponse_list_tags."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        },
+        "required": [
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags/{tag_id}",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_create_tag",
+      "description": "Create a tag. Names are 1-255 characters: letters, digits, spaces, underscores, dots and hyphens.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tag name, e.g. webinar_2026."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tags",
+        "bodyMapping": {
+          "name": "$name"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_list_custom_fields",
+      "description": "List the custom field definitions (contact attributes): id, name, type, format, whether hidden and the allowed values. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only custom fields whose name contains this text."
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/custom-fields",
+        "queryParams": {
+          "query[name]": "$name",
+          "sort[name]": "$sort_name",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_custom_field",
+      "description": "One custom field definition by id: name, type, format, whether hidden and the allowed values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "custom_field_id": {
+            "type": "string",
+            "description": "Custom field id from getresponse_list_custom_fields."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        },
+        "required": [
+          "custom_field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/custom-fields/{custom_field_id}",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_create_custom_field",
+      "description": "Create a custom field for contacts. The name must be unique, lowercase letters, digits and underscores only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Field name, e.g. office_phone_number."
+          },
+          "type": {
+            "type": "string",
+            "description": "Data type.",
+            "enum": [
+              "string",
+              "number",
+              "date",
+              "datetime",
+              "country",
+              "currency",
+              "phone",
+              "gender",
+              "ip",
+              "url"
+            ]
+          },
+          "format": {
+            "type": "string",
+            "description": "Input format.",
+            "enum": [
+              "text",
+              "textarea",
+              "radio",
+              "checkbox",
+              "single_select",
+              "multi_select"
+            ]
+          },
+          "hidden": {
+            "type": "string",
+            "description": "true: hidden from contacts on forms; false: visible.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Allowed values for radio, checkbox and select formats; [] for free input."
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "format",
+          "hidden",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/custom-fields",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "format": "$format",
+          "hidden": "$hidden",
+          "values": "$values"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_list_segments",
+      "description": "List saved segments (search-contacts, called custom filters in the panel): id, name and creation date. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only segments whose name contains this text."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only segments created on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only segments created on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_created_on": {
+            "type": "string",
+            "description": "Sort by creation date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search-contacts",
+        "queryParams": {
+          "query[name]": "$name",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "sort[name]": "$sort_name",
+          "sort[createdOn]": "$sort_created_on",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_segment",
+      "description": "The conditions of one saved segment: subscriber types, sections, lists and conditions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "string",
+            "description": "Segment (search-contact) id from getresponse_list_segments."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        },
+        "required": [
+          "segment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search-contacts/{segment_id}",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_list_segment_contacts",
+      "description": "Contacts that currently match a saved segment, with email, name and list. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "string",
+            "description": "Segment id from getresponse_list_segments."
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_email": {
+            "type": "string",
+            "description": "Sort by email.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_created_on": {
+            "type": "string",
+            "description": "Sort by subscription date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "segment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search-contacts/{segment_id}/contacts",
+        "queryParams": {
+          "sort[name]": "$sort_name",
+          "sort[email]": "$sort_email",
+          "sort[createdOn]": "$sort_created_on",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_search_contacts",
+      "description": "Find contacts with ad-hoc segment conditions (tags, custom fields, email, opens, clicks, subscription date, ...) without saving a segment. Read-only although it is a POST. See the instructions for the body shape.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscribers_type": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "subscribed",
+                "undelivered",
+                "removed",
+                "unconfirmed"
+              ]
+            },
+            "description": "Which contacts to search, e.g. [\"subscribed\"]."
+          },
+          "section_logic_operator": {
+            "type": "string",
+            "description": "Match any section (or) or all sections (and).",
+            "enum": [
+              "or",
+              "and"
+            ]
+          },
+          "section": {
+            "type": "array",
+            "description": "Sections, each {campaignIdsList: [...], logicOperator: and|or, subscriberCycle: [receiving_autoresponder, not_receiving_autoresponder], subscriptionDate: all_time|last_7_days|..., conditions: [...]}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_email": {
+            "type": "string",
+            "description": "Sort by email.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_created_on": {
+            "type": "string",
+            "description": "Sort by subscription date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "subscribers_type",
+          "section_logic_operator",
+          "section"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search-contacts/contacts",
+        "queryParams": {
+          "sort[name]": "$sort_name",
+          "sort[email]": "$sort_email",
+          "sort[createdOn]": "$sort_created_on",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "bodyMapping": {
+          "subscribersType": "$subscribers_type",
+          "sectionLogicOperator": "$section_logic_operator",
+          "section": "$section"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getresponse_list_from_fields",
+      "description": "List the sender ('From') addresses: id, email, name, whether active and default. The id is needed to create a newsletter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only addresses containing this text."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only sender names containing this text."
+          },
+          "is_default": {
+            "type": "boolean",
+            "description": "true: only the default sender."
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "true: only confirmed, active senders."
+          },
+          "sort_created_on": {
+            "type": "string",
+            "description": "Sort by creation date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/from-fields",
+        "queryParams": {
+          "query[email]": "$email",
+          "query[name]": "$name",
+          "query[isDefault]": "$is_default",
+          "query[isActive]": "$is_active",
+          "sort[createdOn]": "$sort_created_on",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_from_field",
+      "description": "One sender ('From') address by id: email, sender name, whether it is active and the default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_field_id": {
+            "type": "string",
+            "description": "'From' address id from getresponse_list_from_fields."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        },
+        "required": [
+          "from_field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/from-fields/{from_field_id}",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_list_newsletters",
+      "description": "List newsletters (one-off mailings): name, subject, type (draft, broadcast, splittest, automation), campaign and send date. Paged; filter by subject, status, type, campaign or dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Only newsletters whose subject contains this text."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only newsletters whose name contains this text."
+          },
+          "status": {
+            "type": "string",
+            "description": "enabled or disabled.",
+            "enum": [
+              "enabled",
+              "disabled"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Newsletter type.",
+            "enum": [
+              "draft",
+              "broadcast",
+              "splittest",
+              "automation"
+            ]
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Only newsletters of this campaign."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only newsletters created on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only newsletters created on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "send_from": {
+            "type": "string",
+            "description": "Only newsletters sent on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "send_to": {
+            "type": "string",
+            "description": "Only newsletters sent on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "sort_created_on": {
+            "type": "string",
+            "description": "Sort by creation date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_send_on": {
+            "type": "string",
+            "description": "Sort by send date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/newsletters",
+        "queryParams": {
+          "query[subject]": "$subject",
+          "query[name]": "$name",
+          "query[status]": "$status",
+          "query[type]": "$type",
+          "query[campaignId]": "$campaign_id",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "query[sendOn][from]": "$send_from",
+          "query[sendOn][to]": "$send_to",
+          "sort[createdOn]": "$sort_created_on",
+          "sort[sendOn]": "$sort_send_on",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_newsletter",
+      "description": "One newsletter with its subject, sender, send settings (lists, segments, exclusions, time), flags and content (HTML and plain text). Use fields to leave out content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "newsletter_id": {
+            "type": "string",
+            "description": "Newsletter id from getresponse_list_newsletters."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        },
+        "required": [
+          "newsletter_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/newsletters/{newsletter_id}",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_get_newsletter_statistics",
+      "description": "Results of one newsletter: sent, delivered, opened, clicked, bounced, complaints, unsubscribed, per period or in total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "newsletter_id": {
+            "type": "string",
+            "description": "Newsletter id."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Group the figures by hour, day, month or total (one sum).",
+            "enum": [
+              "total",
+              "hour",
+              "day",
+              "month"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only activity on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only activity on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "newsletter_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/newsletters/{newsletter_id}/statistics",
+        "queryParams": {
+          "query[groupBy]": "$group_by",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_newsletters_statistics",
+      "description": "Combined results of several newsletters, chosen by newsletter ids or by campaign ids: sent, opened, clicked, bounced, unsubscribed, per period or in total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "newsletter_ids": {
+            "type": "string",
+            "description": "Newsletter ids, comma-separated."
+          },
+          "campaign_ids": {
+            "type": "string",
+            "description": "Campaign ids, comma-separated: all newsletters of these lists."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Group the figures by hour, day, month or total (one sum).",
+            "enum": [
+              "total",
+              "hour",
+              "day",
+              "month"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only activity on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only activity on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/newsletters/statistics",
+        "queryParams": {
+          "query[newsletterId]": "$newsletter_ids",
+          "query[campaignId]": "$campaign_ids",
+          "query[groupBy]": "$group_by",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_create_newsletter",
+      "description": "Create a newsletter. type draft saves it without sending (send it later with getresponse_send_newsletter_draft); type broadcast queues it for sending to the selected lists, segments or contacts at once or at send_on_date. Limited to 256 calls a day. Confirm recipients and content with the user before a broadcast.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "draft: save only. broadcast: send (now or at send_on_date).",
+            "enum": [
+              "draft",
+              "broadcast"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject line."
+          },
+          "name": {
+            "type": "string",
+            "description": "Internal newsletter name (defaults to the subject)."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign the newsletter belongs to."
+          },
+          "from_field_id": {
+            "type": "string",
+            "description": "Sender ('From' address) id from getresponse_list_from_fields."
+          },
+          "reply_to": {
+            "type": "object",
+            "description": "Reply-to address, optional: {\"fromFieldId\": \"V\"} with an id from getresponse_list_from_fields.",
+            "properties": {
+              "fromFieldId": {
+                "type": "string",
+                "description": "'From' address id."
+              }
+            },
+            "required": [
+              "fromFieldId"
+            ]
+          },
+          "html": {
+            "type": "string",
+            "description": "HTML content of the email."
+          },
+          "plain": {
+            "type": "string",
+            "description": "Plain-text version of the email (optional)."
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "clicktrack",
+                "google_analytics"
+              ]
+            },
+            "description": "Tracking flags: clicktrack, google_analytics."
+          },
+          "track_opens": {
+            "type": "string",
+            "description": "Track opens: true or false.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "send_settings": {
+            "type": "object",
+            "description": "Who gets it and when, in GetResponse's own keys: selectedCampaigns, selectedSegments, selectedContacts, excludedCampaigns, excludedSegments, selectedSuppressions (arrays of ids), timeTravel and perfectTiming (\"true\"/\"false\"), sendOn {date: \"2026-11-14T07:00:00\", timeZone: {timeZoneId: 282}}. Without sendOn it is sent at once. Example: {\"selectedCampaigns\": [\"V\"], \"excludedSegments\": [\"R\"]}.",
+            "properties": {
+              "selectedCampaigns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Campaign (list) ids to send to."
+              },
+              "selectedSegments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Segment ids from getresponse_list_segments to send to."
+              },
+              "selectedContacts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Individual contact ids to send to."
+              },
+              "excludedCampaigns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Campaign ids whose contacts are left out."
+              },
+              "excludedSegments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Segment ids whose contacts are left out."
+              },
+              "selectedSuppressions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Suppression list ids to apply."
+              },
+              "timeTravel": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ],
+                "description": "true: deliver at sendOn in each contact's own time zone."
+              },
+              "perfectTiming": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ],
+                "description": "true: GetResponse picks each contact's best hour."
+              },
+              "sendOn": {
+                "type": "object",
+                "description": "Scheduled send: {date, timeZone: {timeZoneId}}; timeZoneId from getresponse_list_timezones."
+              }
+            }
+          }
+        },
+        "required": [
+          "type",
+          "subject",
+          "campaign_id",
+          "from_field_id",
+          "html",
+          "send_settings"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/newsletters",
+        "bodyMapping": {
+          "type": "$type",
+          "subject": "$subject",
+          "name": "$name",
+          "campaign": {
+            "campaignId": "$campaign_id"
+          },
+          "fromField": {
+            "fromFieldId": "$from_field_id"
+          },
+          "replyTo": "$reply_to",
+          "content": {
+            "html": "$html",
+            "plain": "$plain"
+          },
+          "flags": "$flags",
+          "trackOpens": "$track_opens",
+          "sendSettings": "$send_settings"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_send_newsletter_draft",
+      "description": "Send a draft newsletter to the selected lists, segments or contacts, at once or at send_on_date. This emails real people: confirm the draft and the recipients with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "newsletter_id": {
+            "type": "string",
+            "description": "Id of the draft newsletter (type draft in getresponse_list_newsletters)."
+          },
+          "send_settings": {
+            "type": "object",
+            "description": "Who gets it and when, in GetResponse's own keys: selectedCampaigns, selectedSegments, selectedContacts, excludedCampaigns, excludedSegments, selectedSuppressions (arrays of ids), timeTravel and perfectTiming (\"true\"/\"false\"), sendOn {date: \"2026-11-14T07:00:00\", timeZone: {timeZoneId: 282}}. Without sendOn it is sent at once. Example: {\"selectedCampaigns\": [\"V\"], \"excludedSegments\": [\"R\"]}.",
+            "properties": {
+              "selectedCampaigns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Campaign (list) ids to send to."
+              },
+              "selectedSegments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Segment ids from getresponse_list_segments to send to."
+              },
+              "selectedContacts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Individual contact ids to send to."
+              },
+              "excludedCampaigns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Campaign ids whose contacts are left out."
+              },
+              "excludedSegments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Segment ids whose contacts are left out."
+              },
+              "selectedSuppressions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Suppression list ids to apply."
+              },
+              "timeTravel": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ],
+                "description": "true: deliver at sendOn in each contact's own time zone."
+              },
+              "perfectTiming": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ],
+                "description": "true: GetResponse picks each contact's best hour."
+              },
+              "sendOn": {
+                "type": "object",
+                "description": "Scheduled send: {date, timeZone: {timeZoneId}}; timeZoneId from getresponse_list_timezones."
+              }
+            }
+          }
+        },
+        "required": [
+          "newsletter_id",
+          "send_settings"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/newsletters/send-draft",
+        "bodyMapping": {
+          "messageId": "$newsletter_id",
+          "sendSettings": "$send_settings"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_cancel_newsletter",
+      "description": "Stop a scheduled or sending newsletter; it turns back into a draft. Messages already delivered stay delivered.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "newsletter_id": {
+            "type": "string",
+            "description": "Newsletter id."
+          }
+        },
+        "required": [
+          "newsletter_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/newsletters/{newsletter_id}/cancel",
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "getresponse_list_autoresponders",
+      "description": "List autoresponders (messages sent on a day of the contact's cycle): name, subject, campaign, status, day of cycle and delivery figures. Paged; the HTML content is left out (see getresponse_get_autoresponder).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Only autoresponders whose subject contains this text."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only autoresponders whose name contains this text."
+          },
+          "status": {
+            "type": "string",
+            "description": "enabled or disabled.",
+            "enum": [
+              "enabled",
+              "disabled"
+            ]
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Only autoresponders of this campaign."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only autoresponders created on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only autoresponders created on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_subject": {
+            "type": "string",
+            "description": "Sort by subject.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_day_of_cycle": {
+            "type": "string",
+            "description": "Sort by cycle day.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_delivered": {
+            "type": "string",
+            "description": "Sort by delivered count.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_open_rate": {
+            "type": "string",
+            "description": "Sort by open rate.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_click_rate": {
+            "type": "string",
+            "description": "Sort by click rate.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_created_on": {
+            "type": "string",
+            "description": "Sort by creation date.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoresponders",
+        "queryParams": {
+          "query[subject]": "$subject",
+          "query[name]": "$name",
+          "query[status]": "$status",
+          "query[campaignId]": "$campaign_id",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "sort[name]": "$sort_name",
+          "sort[subject]": "$sort_subject",
+          "sort[dayOfCycle]": "$sort_day_of_cycle",
+          "sort[delivered]": "$sort_delivered",
+          "sort[openRate]": "$sort_open_rate",
+          "sort[clickRate]": "$sort_click_rate",
+          "sort[createdOn]": "$sort_created_on",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].content"
+          ]
+        }
+      }
+    },
+    {
+      "name": "getresponse_get_autoresponder",
+      "description": "One autoresponder with its trigger (day of cycle), send settings, sender, flags and content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "autoresponder_id": {
+            "type": "string",
+            "description": "Autoresponder id from getresponse_list_autoresponders."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          }
+        },
+        "required": [
+          "autoresponder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoresponders/{autoresponder_id}",
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        }
+      }
+    },
+    {
+      "name": "getresponse_get_autoresponder_statistics",
+      "description": "Results of one autoresponder: sent, delivered, opened, clicked, bounced, unsubscribed, per period or in total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "autoresponder_id": {
+            "type": "string",
+            "description": "Autoresponder id."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Group the figures by hour, day, month or total (one sum).",
+            "enum": [
+              "total",
+              "hour",
+              "day",
+              "month"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only activity on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only activity on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "autoresponder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoresponders/{autoresponder_id}/statistics",
+        "queryParams": {
+          "query[groupBy]": "$group_by",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    },
+    {
+      "name": "getresponse_get_autoresponders_statistics",
+      "description": "Combined results of several autoresponders, chosen by autoresponder ids or campaign ids, per period or in total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "autoresponder_ids": {
+            "type": "string",
+            "description": "Autoresponder ids, comma-separated."
+          },
+          "campaign_ids": {
+            "type": "string",
+            "description": "Campaign ids, comma-separated: all autoresponders of these lists."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Group the figures by hour, day, month or total (one sum).",
+            "enum": [
+              "total",
+              "hour",
+              "day",
+              "month"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only activity on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only activity on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated list of fields to return (the id is always returned), e.g. name,email,createdOn. Leave empty for all fields."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, 1-1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autoresponders/statistics",
+        "queryParams": {
+          "query[autoreponderId]": "$autoresponder_ids",
+          "query[campaignId]": "$campaign_ids",
+          "query[groupBy]": "$group_by",
+          "query[createdOn][from]": "$created_from",
+          "query[createdOn][to]": "$created_to",
+          "fields": "$fields",
+          "page": "$page",
+          "perPage": "$per_page"
+        },
+        "headers": {
+          "X-Domain": "${GETRESPONSE_DOMAIN}"
+        },
+        "exposeHeaders": [
+          "totalcount",
+          "totalpages",
+          "currentpage"
+        ]
+      }
+    }
+  ]
+}
