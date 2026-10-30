@@ -5,12 +5,12 @@
     "noon Partners",
     "noon.com"
   ],
-  "description": "Sell on noon.com (UAE, Saudi Arabia, Egypt) from an AI agent through the noon Partner API: warehouses, catalog content and product groups, offers, prices, stock, FBPI orders and shipments, purchase orders, return lookups and bulk exports. Service account login with a signed JWT; price, stock, product and order writes install switched off.",
+  "description": "Sell on noon.com (UAE, Saudi Arabia, Egypt) from an AI agent through the noon Partner API: warehouses, catalog content, product groups and barcodes, offers, prices, stock, FBPI orders and shipments, purchase orders, return lookups and bulk exports. Service account login with a signed JWT; price, stock, product and order writes install switched off.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "noon-marketplace",
   "docsUrl": "https://noon-docs.noonpartners.dev/docs/getting-started/intro",
-  "instructions": "## noon Marketplace\nThis connector uses the **noon Partner API** on `https://noon-api-gateway.noon.partners`, the API noon offers sellers on noon.com in the UAE (`ae`), Saudi Arabia (`sa`) and Egypt (`eg`): warehouses, catalog content, offers, prices, stock, FBPI orders and shipments, purchase orders, returns and bulk exports.\n\n**Setup (about 5 minutes)**\n1. Sign in to the noon Partner portal and open the **Access App** (or **User & Access** > **User access**), then **API Users** in the left sidebar.\n2. Click **Add Service Account**, enter a display name and username, and pick a role. **Project Viewer** is enough for the read tools; the write tools need a role that may change catalog, prices, stock or orders (**Project Owner** grants everything). You can restrict the key to IP addresses and give it an expiry; without them it works from any IP and never expires. Each partner can create one service account with up to five keys.\n3. When you click **Add**, a `.json` key file downloads. It is shown only once; if you lose it, create a new key.\n4. Copy three fields of that file: `key_id` into `NOON_KEY_ID`, `private_key` into `NOON_PRIVATE_KEY` (the whole PEM; pasting it on one line with the `\\n` sequences from the file is fine) and `project_code` into `NOON_PROJECT_CODE`.\n5. Install and run `noon_marketplace_whoami`.\n\n**How login works.** There is no static API key. For every login the connector signs a fresh RS256 JWT with the private key (`sub` = key id, `iat` = now in seconds, a random `jti`) and posts it, with the project code as `default_project_code`, to `/identity/public/v1/api/login`. noon answers with session cookies, which are sent on every call. A session lasts 30 days; the connector signs in again before it ends and whenever a call returns 401. noon rejects a token whose `iat` is more than five minutes off its clock, so a 401 on login with the right key usually means the server clock is wrong. Every request carries a `User-Agent` (noon may reject requests without one) and the `X-Project` header with the project code, which the content API requires.\n\n**Identifiers**\n- `partner_sku`: your own SKU, unique across all your products. Prices, stock and offers are keyed by it.\n- `sku_parent` (starts with `Z`): noon's id of a product with all its variants, returned by `noon_marketplace_upsert_product`. `noon_marketplace_get_content` and product groups use it.\n- `sku` (noon SKU, the nsku, starts with `N`) and `psku_code` (starts with `P`): noon's ids of one variant.\n- `warehouse_code`: from `noon_marketplace_list_warehouses`. FBPI orders and shipments belong to an integration warehouse.\n- `country_code`: `ae`, `sa` or `eg`, lower case. Prices are per SKU and country, in AED, SAR or EGP.\n- `fbpi_order_nr`, `mp_item_nr` (one item of an order) and your own `integration_shipment_nr` identify orders and shipments. `merchant_code` starts with `STR`.\n\n**Tools**\n- Account: `noon_marketplace_whoami`, `noon_marketplace_list_warehouses`.\n- Catalog content: `noon_marketplace_list_categories` (all category codes), `noon_marketplace_list_category_attributes` (what a category requires and how values are validated), `noon_marketplace_get_content` (completeness, QC status and why a product is not live), `noon_marketplace_upsert_product`, `noon_marketplace_get_product_group`, `noon_marketplace_upsert_product_group`, `noon_marketplace_get_import_status`.\n- Offers, prices and stock: `noon_marketplace_get_product_offers` (price, stock, live status and offer issues per country), `noon_marketplace_get_prices`, `noon_marketplace_upsert_prices`, `noon_marketplace_get_stock`, `noon_marketplace_update_stock`.\n- FBPI orders (fulfilled from your own warehouse): `noon_marketplace_list_orders`, `noon_marketplace_get_order`, `noon_marketplace_get_order_customer`, `noon_marketplace_mark_items_unavailable`, `noon_marketplace_generate_awbs`, `noon_marketplace_create_shipment`, `noon_marketplace_get_shipment`, `noon_marketplace_cancel_shipment`. After a shipment is created, the manifest for noon's pickup is completed in Seller Lab.\n- Purchase orders and returns: `noon_marketplace_get_purchase_order`, `noon_marketplace_list_return_references`.\n- Bulk exports: `noon_marketplace_list_export_categories`, then `noon_marketplace_create_export`, then poll `noon_marketplace_get_export_status` until it has a `download_url`.\n\nSeveral reads are POST requests with a JSON body (noon's API style); they change nothing.\n\n**Switched off at install.** `noon_marketplace_upsert_product`, `noon_marketplace_upsert_product_group`, `noon_marketplace_upsert_prices`, `noon_marketplace_update_stock`, `noon_marketplace_mark_items_unavailable`, `noon_marketplace_create_shipment` and `noon_marketplace_cancel_shipment` change what customers see and buy (live prices, sellable quantity, published content) or act on real orders, and some cannot be undone. Turn on the ones a workspace needs in the connector's tool settings. `noon_marketplace_generate_awbs` and `noon_marketplace_create_export` stay on: they change no data.\n\n**Batch results.** Price, stock and product calls answer 200 even when some items failed. Check `status.status_code` (`OK`, `status_id` 0) on every returned item and resend only the failed ones. `noon_marketplace_update_stock` sets an absolute quantity, it does not add. In `noon_marketplace_upsert_prices`, a field left out or sent as null keeps its value. `noon_marketplace_upsert_product` returning `status_id` 3 means the product was stored with content problems: read them with `noon_marketplace_get_content`.\n\n**Paging.** List tools return `next_token`; call again with it, and with the same filters, until it is empty.\n\n**Rate limits.** Limits apply per project and endpoint, with a main window and a shorter burst window checked together. Most endpoints allow 1500 requests per 60 seconds; `noon_marketplace_list_warehouses` allows 30 per 60 seconds with a burst of 15 per 30 seconds. A 429 says to wait; the `X-Ratelimit-Retry-After` header gives the seconds. Prefer one batch call over many single-item calls.\n\n**Errors.** Errors come as `{\"error\": {\"code\", \"message\", \"fields\": [{\"name\", \"descriptions\"}]}}`. `PERMISSION_DENIED` (403): the service account lacks a role for that call; add one under User Access > Manage Role in the Partner portal. `INVALID_ARGUMENT` (400): read `fields` for the field and the reason. `NOT_FOUND` on a price item: the SKU has no pricing record in that country yet, so set a price first. A 401 means the login or session failed (wrong or deactivated key, wrong clock).",
+  "instructions": "## noon Marketplace\nThis connector uses the **noon Partner API** on `https://noon-api-gateway.noon.partners`, the API noon offers sellers on noon.com in the UAE (`ae`), Saudi Arabia (`sa`) and Egypt (`eg`): warehouses, catalog content, offers, prices, stock, FBPI orders and shipments, purchase orders, returns and bulk exports.\n\n**Setup (about 5 minutes)**\n1. Sign in to the noon Partner portal and open the **Access App** (or **User & Access** > **User access**), then **API Users** in the left sidebar.\n2. Click **Add Service Account**, enter a display name and username, and pick a role. **Project Viewer** is enough for the read tools; the write tools need a role that may change catalog, prices, stock or orders (**Project Owner** grants everything). You can restrict the key to IP addresses and give it an expiry; without them it works from any IP and never expires. Each partner can create one service account with up to five keys.\n3. When you click **Add**, a `.json` key file downloads. It is shown only once; if you lose it, create a new key.\n4. Copy three fields of that file: `key_id` into `NOON_KEY_ID`, `private_key` into `NOON_PRIVATE_KEY` (the whole PEM; pasting it on one line with the `\\n` sequences from the file is fine) and `project_code` into `NOON_PROJECT_CODE`.\n5. Install and run `noon_marketplace_whoami`.\n\n**How login works.** There is no static API key. For every login the connector signs a fresh RS256 JWT with the private key (`sub` = key id, `iat` = now in seconds, a random `jti`) and posts it, with the project code as `default_project_code`, to `/identity/public/v1/api/login`. noon answers with session cookies, which are sent on every call. A session lasts 30 days; the connector signs in again before it ends and whenever a call returns 401. noon rejects a token whose `iat` is more than five minutes off its clock, so a 401 on login with the right key usually means the server clock is wrong. Every request carries a `User-Agent` (noon may reject requests without one) and the `X-Project` header with the project code, which the content API requires.\n\n**Identifiers**\n- `partner_sku`: your own SKU, unique across all your products. Prices, stock and offers are keyed by it.\n- `sku_parent` (starts with `Z`): noon's id of a product with all its variants, returned by `noon_marketplace_upsert_product`. `noon_marketplace_get_content` and product groups use it.\n- `sku` (noon SKU, the nsku, starts with `N`) and `psku_code` (starts with `P`): noon's ids of one variant.\n- `warehouse_code`: from `noon_marketplace_list_warehouses`. FBPI orders and shipments belong to an integration warehouse.\n- `country_code`: `ae`, `sa` or `eg`, lower case. Prices are per SKU and country, in AED, SAR or EGP.\n- `fbpi_order_nr`, `mp_item_nr` (one item of an order) and your own `integration_shipment_nr` identify orders and shipments. `merchant_code` starts with `STR`.\n\n**Tools**\n- Account: `noon_marketplace_whoami`, `noon_marketplace_list_warehouses`.\n- Catalog content: `noon_marketplace_list_categories` (all category codes), `noon_marketplace_list_category_attributes` (what a category requires and how values are validated), `noon_marketplace_get_content` (completeness, QC status and why a product is not live), `noon_marketplace_upsert_product`, `noon_marketplace_get_product_group`, `noon_marketplace_upsert_product_group`, `noon_marketplace_map_barcodes`, `noon_marketplace_create_barcode_import`, `noon_marketplace_get_import_status`.\n- Offers, prices and stock: `noon_marketplace_get_product_offers` (price, stock, live status and offer issues per country), `noon_marketplace_get_prices`, `noon_marketplace_upsert_prices`, `noon_marketplace_get_stock`, `noon_marketplace_update_stock`.\n- FBPI orders (fulfilled from your own warehouse): `noon_marketplace_list_orders`, `noon_marketplace_get_order`, `noon_marketplace_get_order_customer`, `noon_marketplace_mark_items_unavailable`, `noon_marketplace_generate_awbs`, `noon_marketplace_create_shipment`, `noon_marketplace_get_shipment`, `noon_marketplace_cancel_shipment`. After a shipment is created, the manifest for noon's pickup is completed in Seller Lab.\n- Purchase orders and returns: `noon_marketplace_get_purchase_order`, `noon_marketplace_list_return_references`.\n- Bulk exports: `noon_marketplace_list_export_categories`, then `noon_marketplace_create_export`, then poll `noon_marketplace_get_export_status` until it has a `download_url`.\n\nSeveral reads are POST requests with a JSON body (noon's API style); they change nothing.\n\n**Switched off at install.** `noon_marketplace_upsert_product`, `noon_marketplace_upsert_product_group`, `noon_marketplace_map_barcodes`, `noon_marketplace_create_barcode_import`, `noon_marketplace_upsert_prices`, `noon_marketplace_update_stock`, `noon_marketplace_mark_items_unavailable`, `noon_marketplace_create_shipment` and `noon_marketplace_cancel_shipment` change what customers see and buy (live prices, sellable quantity, published content) or act on real orders, and some cannot be undone. Turn on the ones a workspace needs in the connector's tool settings. `noon_marketplace_generate_awbs` and `noon_marketplace_create_export` stay on: they change no data.\n\n**Batch results.** Price, stock and product calls answer 200 even when some items failed. Check `status.status_code` (`OK`, `status_id` 0) on every returned item and resend only the failed ones. `noon_marketplace_update_stock` sets an absolute quantity, it does not add. In `noon_marketplace_upsert_prices`, a field left out or sent as null keeps its value. `noon_marketplace_upsert_product` returning `status_id` 3 means the product was stored with content problems: read them with `noon_marketplace_get_content`.\n\n**Barcodes.** `noon_marketplace_map_barcodes` links barcodes to partner SKUs that already exist, so call it after `noon_marketplace_upsert_product` has created them; noon creates a barcode it does not know yet. It answers per item, like price and stock calls. For large lists, `noon_marketplace_create_barcode_import` takes up to 10,000 mappings inline, or a file URL, and runs in the background: poll `noon_marketplace_get_import_status` with the returned `import_reference`.\n\n**Paging.** List tools return `next_token`; call again with it, and with the same filters, until it is empty.\n\n**Rate limits.** Limits apply per project and endpoint, with a main window and a shorter burst window checked together. Most endpoints allow 1500 requests per 60 seconds; `noon_marketplace_list_warehouses` allows 30 per 60 seconds with a burst of 15 per 30 seconds. A 429 says to wait; the `X-Ratelimit-Retry-After` header gives the seconds. Prefer one batch call over many single-item calls.\n\n**Errors.** Errors come as `{\"error\": {\"code\", \"message\", \"fields\": [{\"name\", \"descriptions\"}]}}`. `PERMISSION_DENIED` (403): the service account lacks a role for that call; add one under User Access > Manage Role in the Partner portal. `INVALID_ARGUMENT` (400): read `fields` for the field and the reason. `NOT_FOUND` on a price item: the SKU has no pricing record in that country yet, so set a price first. A 401 means the login or session failed (wrong or deactivated key, wrong clock).",
   "requiredEnvVars": [
     "NOON_KEY_ID",
     "NOON_PRIVATE_KEY",
@@ -1114,6 +1114,136 @@
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_map_barcodes",
+      "description": "Link barcodes (EAN, UPC or ISBN) to partner SKUs that already exist in your noon catalog, so noon's warehouse systems know which product a barcode stands for. noon creates a barcode it does not know yet. A 200 can still contain failed items: check status on each and resend only those. For thousands of barcodes use noon_marketplace_create_barcode_import. Changes catalog data: installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Mappings, one per barcode and partner SKU.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "barcode": {
+                  "type": "string",
+                  "description": "The barcode, UPC or ISBN number of the product."
+                },
+                "partner_sku": {
+                  "type": "string",
+                  "description": "Your partner SKU. It must already exist in your noon catalog, e.g. created with noon_marketplace_upsert_product."
+                },
+                "force_map": {
+                  "type": "boolean",
+                  "description": "Override an existing mapping of this barcode. Leave it out unless noon refused the mapping because one already exists."
+                }
+              },
+              "required": [
+                "barcode",
+                "partner_sku"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/catplat/v1/barcode/map",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "noon_marketplace_create_barcode_import",
+      "description": "Start a bulk import that links barcodes to partner SKUs already in your noon catalog: up to 10,000 mappings inline in items, or a file at file_url. Give exactly one of the two. Returns an import_reference; poll noon_marketplace_get_import_status with it until the status is completed, failed or partial, and read the failure count in the report. For a few barcodes, noon_marketplace_map_barcodes answers right away. Changes catalog data: installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_reference": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Your own reference for this import, unique across your imports, at most 100 characters. noon_marketplace_get_import_status also accepts it."
+          },
+          "items": {
+            "type": "object",
+            "description": "Inline mappings, as {\"data\": [...]}. Leave it out when you give file_url.",
+            "properties": {
+              "data": {
+                "type": "array",
+                "description": "Up to 10,000 mappings.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "partner_sku": {
+                      "type": "string",
+                      "description": "Your partner SKU. It must already exist in your noon catalog."
+                    },
+                    "barcode": {
+                      "type": "string",
+                      "description": "The barcode, UPC or ISBN number of the product."
+                    },
+                    "force_sync": {
+                      "type": "boolean",
+                      "description": "Override an existing mapping between this barcode and SKU."
+                    }
+                  },
+                  "required": [
+                    "partner_sku",
+                    "barcode"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 10000
+              }
+            },
+            "required": [
+              "data"
+            ]
+          },
+          "file_url": {
+            "type": "string",
+            "description": "HTTP(S) or GCS URL of a CSV, TSV, XLSX, JSON or Parquet file with the mappings. Leave it out when you give items."
+          },
+          "force_sync": {
+            "type": "boolean",
+            "description": "Overwrite existing mappings for the whole import. Default false."
+          }
+        },
+        "required": [
+          "client_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/catplat/v1/import/barcode",
+        "bodyMapping": {
+          "client_reference": "$client_reference",
+          "items": "$items",
+          "file_url": "$file_url",
+          "config": {
+            "force_sync": "$force_sync"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
       }
     },
     {
