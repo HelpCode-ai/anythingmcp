@@ -1,0 +1,1701 @@
+{
+  "slug": "emag-marketplace",
+  "name": "eMAG Marketplace",
+  "description": "Sell on eMAG Romania, Bulgaria and Hungary from an AI agent: products and offers, prices and stock, orders with acknowledge and status changes, AWB shipping labels, returns (RMA), categories and characteristics, VAT and handling times, campaigns and invoices. Basic auth with an API user; eMAG whitelists the calling IP.",
+  "aliases": [
+    "eMAG",
+    "eMAG Marketplace API",
+    "Fashion Days Marketplace"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "emag",
+  "docsUrl": "https://marketplace.emag.ro/documentation/api/external",
+  "instructions": "## eMAG Marketplace\nThis connector uses the **eMAG Marketplace API** (API 3, documentation v4.5.2) for sellers on eMAG Romania, Bulgaria and Hungary (and the Fashion Days marketplaces on the same API): products and offers, prices and stock, orders, AWBs (shipping labels), return requests (RMA), categories and characteristics, VAT and handling time values, campaigns and invoices.\n\n**Setup (about 10 minutes, plus eMAG's IP check)**\n1. In the eMAG Marketplace seller area, use (or have the account owner create) a user with **API rights**.\n2. **IP whitelisting**: eMAG only accepts API calls from IP addresses you registered with them. Send eMAG Marketplace support the public IP address this connector calls from (on a self-hosted installation the address of your server; on AnythingMCP Cloud the fixed IPv4 address `104.248.242.235`, from which Cloud makes every call). Until then every call answers `You are not allowed to use this API.`\n3. Set `EMAG_API_HOST` to the host of your platform, without a path: `https://marketplace-api.emag.ro` (Romania), `https://marketplace-api.emag.bg` (Bulgaria), `https://marketplace-api.emag.hu` (Hungary), `https://marketplace-ro-api.fashiondays.com` or `https://marketplace-bg-api.fashiondays.com` (Fashion Days). Each platform is a separate account: one connector per country.\n4. Put the API user in `EMAG_USERNAME` and its password in `EMAG_PASSWORD` (HTTP Basic auth).\n5. Install and run `emag_marketplace_list_vat_rates`.\n\n**How the API works**: every resource is called as `POST <resource>/read`, `count` or `save`. Reads take their filters and paging as top-level fields (`currentPage`, `itemsPerPage` at most 100); saves take a list of objects that the connector wraps in `data`. All reads here are marked read-only even though they are POST. Every answer is `{\"isError\": false, \"messages\": [], \"results\": [...]}`; `isError: true` is reported as a failed call with the messages. Exception: saving a new product with a documentation problem answers `isError: true` but the offer is still saved, so read it back with `emag_marketplace_list_product_offers`.\n\n**Products and offers**: `emag_marketplace_list_product_offers` and `emag_marketplace_count_product_offers` (filter by `status`, `validation_status`, `offer_validation_status`, part number or PNK). An offer is on sale only with stock > 0, status 1, offer_validation_status 1 and validation_status 3, 9, 11 or 12. `emag_marketplace_find_products_by_ean` tells whether a product already exists, so you attach your offer to it. To create a product read the category with `emag_marketplace_list_categories` (with `id` for its characteristics; `emag_marketplace_count_categories` for the number of pages), the VAT ids with `emag_marketplace_list_vat_rates` and handling times with `emag_marketplace_list_handling_times`, then call `emag_marketplace_save_product_offers`. Price and stock changes of existing offers: `emag_marketplace_update_offers` (light offer API) or `emag_marketplace_update_offer_stock` for stock only. `emag_marketplace_save_measurements` stores dimensions and weight.\n\n**Orders**: `emag_marketplace_list_orders` and `emag_marketplace_count_orders` (status 1 new, 2 in progress, 3 prepared, 4 finalized, 0 canceled, 5 returned). The flow: new order > `emag_marketplace_acknowledge_order` (status 2) > `emag_marketplace_save_order` with status 3 (prepared) > AWB with `emag_marketplace_create_awb` > status 4 (finalized). `emag_marketplace_save_order` needs the whole order as read, with only the changed fields different. Vouchers applied to an order are part of the order data (`vouchers`, `product_voucher_split`); there is no separate voucher resource. Documents: `emag_marketplace_list_order_attachments` and `emag_marketplace_save_order_attachments` (invoice type 1, warranty type 3).\n\n**Shipping (AWB)**: `emag_marketplace_list_courier_accounts`, `emag_marketplace_list_addresses` (pickup and return addresses), `emag_marketplace_list_localities` (locality ids for sender and receiver), `emag_marketplace_list_awb_packages` and `emag_marketplace_get_order_volumetry` (package sizes), then `emag_marketplace_create_awb`. Read it back with `emag_marketplace_get_awb` and print it with `emag_marketplace_get_awb_pdf` (A4, A5, A6) or `emag_marketplace_get_awb_zpl`. `emag_marketplace_unlock_courier` frees the courier choice of an order.\n\n**Returns (RMA)**: `emag_marketplace_list_returns` and `emag_marketplace_count_returns` (request_status 2 new, 3 acknowledged, 6 received, 7 finalized, 4 refused, 5 canceled); `emag_marketplace_save_return` moves a return to its next status (2 > 3 or 5, 3 > 6 or 5, 6 > 4 or 7).\n\n**Campaigns**: `emag_marketplace_list_campaigns` (rules and deadlines), `emag_marketplace_list_campaign_categories` (when the categories are restricted), `emag_marketplace_list_campaign_eligible_offers` (your offers with the maximum campaign price), `emag_marketplace_propose_campaign_offers`, `emag_marketplace_get_offer_campaign_badges` and `emag_marketplace_check_smart_deals_price`.\n\n**Invoices**: `emag_marketplace_list_invoice_categories`, `emag_marketplace_list_invoices` (what eMAG bills you) and `emag_marketplace_list_customer_invoices` (invoices on your orders).\n\n**Writes: confirm first.** Prices, stock, order status, AWBs, returns and campaign proposals act on the live store and on real couriers. Before each write show the user what changes (offer ids with old and new price or stock, order and new status, AWB data) and wait for a yes. Save calls take at most 50 entities (10 to 50 recommended).\n\n**Reading the data**: `id` on offers is your own seller product id (ext_id); `part_number_key` (PNK) is eMAG's product key. Prices are **without VAT** in the platform currency (RON in Romania, EUR in Bulgaria since 1 January 2026, HUF in Hungary). Dates are `YYYY-mm-dd HH:ii:ss` in local time of the platform. Order date filters on count need both ends, at most one month apart.\n\n**Limits**: 12 requests per second for orders, 3 per second for all other resources together; beyond that eMAG answers 429. At most 4000 input fields per request. Do not loop faster than needed.\n",
+  "requiredEnvVars": [
+    "EMAG_API_HOST",
+    "EMAG_USERNAME",
+    "EMAG_PASSWORD"
+  ],
+  "prerequisites": "An eMAG Marketplace seller account with a user that has API rights, and the public IP address of this connector whitelisted by eMAG.",
+  "envVarMeta": {
+    "EMAG_API_HOST": {
+      "label": "API host (platform)",
+      "kind": "address",
+      "help": "https://marketplace-api.emag.ro for Romania, https://marketplace-api.emag.bg for Bulgaria, https://marketplace-api.emag.hu for Hungary; the Fashion Days hosts work the same way.",
+      "example": "https://marketplace-api.emag.ro",
+      "pattern": "^https://(marketplace-api\\.emag\\.(ro|bg|hu)|marketplace-(ro|bg)-api\\.fashiondays\\.com)$",
+      "patternMessage": "Use the platform host without a path, e.g. https://marketplace-api.emag.ro."
+    },
+    "EMAG_USERNAME": {
+      "label": "API user name",
+      "kind": "credential",
+      "help": "The seller area user that has API rights.",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the user name alone, without spaces."
+    },
+    "EMAG_PASSWORD": {
+      "label": "API password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that user."
+    }
+  },
+  "verifyHints": {
+    "401": "eMAG refused the credentials. Check EMAG_USERNAME and EMAG_PASSWORD, that the user has API rights and that EMAG_API_HOST is the platform of that account.",
+    "403": "eMAG only accepts calls from whitelisted IP addresses. Send eMAG Marketplace support the public IP this connector calls from.",
+    "rate_limited": "eMAG allows 12 requests per second for orders and 3 per second for everything else. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "emag_marketplace_list_vat_rates"
+  },
+  "connector": {
+    "name": "eMAG Marketplace API",
+    "type": "REST",
+    "baseUrl": "{{EMAG_API_HOST}}/api-3",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{EMAG_USERNAME}}",
+      "password": "{{EMAG_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "isError",
+          "equals": true,
+          "messagePath": "messages",
+          "messageMatches": "not allowed to use this API|authenticat|credentials|Invalid user",
+          "status": 403
+        },
+        {
+          "path": "isError",
+          "equals": true,
+          "messagePath": "messages",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "emag_marketplace_list_vat_rates",
+      "description": "List the VAT rates of the platform with their vat_id, which every offer you save must carry. Cheap call; also the install check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vat/read",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_handling_times",
+      "description": "List the handling time values (days until you hand an order to the courier) the platform accepts for the handling_time of an offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/handling_time/read",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_categories",
+      "description": "Read eMAG categories. Without an id: the first 100 categories (page through with currentPage). With an id: that category with its characteristics (ids, allowed values, mandatory flags) and family types, which a new product needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "eMAG category id to read with its characteristics."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Entries per page, at most 100 (default 100)."
+          },
+          "valuesCurrentPage": {
+            "type": "integer",
+            "description": "Page of the characteristic values, starting at 1."
+          },
+          "valuesPerPage": {
+            "type": "integer",
+            "description": "Characteristic values per page."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the names.",
+            "enum": [
+              "EN",
+              "RO",
+              "HU",
+              "BG",
+              "PL",
+              "GR",
+              "DE"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/category/read",
+        "bodyMapping": {
+          "id": "$id",
+          "currentPage": "$currentPage",
+          "itemsPerPage": "$itemsPerPage",
+          "valuesCurrentPage": "$valuesCurrentPage",
+          "valuesPerPage": "$valuesPerPage"
+        },
+        "queryParams": {
+          "language": "$language"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_count_categories",
+      "description": "Count the eMAG categories you may read, to know how many pages emag_marketplace_list_categories has.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/category/count",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_product_offers",
+      "description": "Read your products and offers: price, stock per warehouse, handling time, status (1 active, 0 inactive, 2 end of life), documentation and offer validation status, doc_errors, buy button rank and the campaign the offer is in. Filter by your id, part number, PNK, status or validation status; 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Your seller product id (ext_id) of one offer."
+          },
+          "status": {
+            "type": "integer",
+            "description": "1 active, 0 inactive.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "part_number": {
+            "type": "string",
+            "description": "Your part number (product code)."
+          },
+          "part_number_key": {
+            "type": "string",
+            "description": "eMAG product key (PNK), e.g. D5DD9BBBM."
+          },
+          "general_stock": {
+            "type": "integer",
+            "description": "Only offers whose general stock is between 0 and this number."
+          },
+          "estimated_stock": {
+            "type": "integer",
+            "description": "Only offers whose estimated stock is between 0 and this number."
+          },
+          "offer_validation_status": {
+            "type": "integer",
+            "description": "1 saleable, 2 invalid price.",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "validation_status": {
+            "type": "integer",
+            "description": "Documentation validation: 1 awaiting marketplace validation, 2 awaiting brand validation, 3 awaiting EAN validation, 4 awaiting documentation validation, 5 brand rejected, 6 EAN rejected, 8 documentation rejected, 9 documentation approved, 10 blocked, 11 update awaiting approval, 12 update rejected.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
+          },
+          "translation_validation_status": {
+            "type": "integer",
+            "description": "Translation validation status (same codes as validation_status, plus 13 waiting for salable offer, 14 translation failed, 15 in progress, 16 pending, 17 partial).",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ]
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Entries per page, at most 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product_offer/read",
+        "bodyMapping": {
+          "id": "$id",
+          "status": "$status",
+          "part_number": "$part_number",
+          "part_number_key": "$part_number_key",
+          "general_stock": "$general_stock",
+          "estimated_stock": "$estimated_stock",
+          "offer_validation_status": "$offer_validation_status",
+          "validation_status": "$validation_status",
+          "translation_validation_status": "$translation_validation_status",
+          "currentPage": "$currentPage",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "results[*].description",
+            "results[*].safety_information"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_count_product_offers",
+      "description": "Count your products and offers with the same filters as emag_marketplace_list_product_offers, e.g. how many are inactive or have an invalid price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Your seller product id (ext_id) of one offer."
+          },
+          "status": {
+            "type": "integer",
+            "description": "1 active, 0 inactive.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "part_number": {
+            "type": "string",
+            "description": "Your part number (product code)."
+          },
+          "part_number_key": {
+            "type": "string",
+            "description": "eMAG product key (PNK), e.g. D5DD9BBBM."
+          },
+          "general_stock": {
+            "type": "integer",
+            "description": "Only offers whose general stock is between 0 and this number."
+          },
+          "estimated_stock": {
+            "type": "integer",
+            "description": "Only offers whose estimated stock is between 0 and this number."
+          },
+          "offer_validation_status": {
+            "type": "integer",
+            "description": "1 saleable, 2 invalid price.",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "validation_status": {
+            "type": "integer",
+            "description": "Documentation validation: 1 awaiting marketplace validation, 2 awaiting brand validation, 3 awaiting EAN validation, 4 awaiting documentation validation, 5 brand rejected, 6 EAN rejected, 8 documentation rejected, 9 documentation approved, 10 blocked, 11 update awaiting approval, 12 update rejected.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
+          },
+          "translation_validation_status": {
+            "type": "integer",
+            "description": "Translation validation status (same codes as validation_status, plus 13 waiting for salable offer, 14 translation failed, 15 in progress, 16 pending, 17 partial).",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product_offer/count",
+        "bodyMapping": {
+          "id": "$id",
+          "status": "$status",
+          "part_number": "$part_number",
+          "part_number_key": "$part_number_key",
+          "general_stock": "$general_stock",
+          "estimated_stock": "$estimated_stock",
+          "offer_validation_status": "$offer_validation_status",
+          "validation_status": "$validation_status",
+          "translation_validation_status": "$translation_validation_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_find_products_by_ean",
+      "description": "Check whether products already exist on eMAG by EAN (up to 100 at once): part_number_key, name, brand, category, whether you may add an offer and whether you already have one. Use it before creating a product, to attach your offer to the existing one instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eans": {
+            "type": "array",
+            "description": "EAN codes, at most 100.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "eans"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documentation/find_by_eans",
+        "queryParams": {
+          "eans[]": "$eans"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_orders",
+      "description": "Read orders with customer, delivery address, products (price, quantity, status, campaign), vouchers, payment method, shipping tax and attachments. Without filters the last 100 orders; filter by status, created or modified dates, payment method or type and page with currentPage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "One eMAG order id."
+          },
+          "status": {
+            "type": "array",
+            "description": "Order statuses: 1 new, 2 in progress, 3 prepared, 4 finalized, 0 canceled, 5 returned. One or more.",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            }
+          },
+          "createdAfter": {
+            "type": "string",
+            "description": "Orders created after this moment, format YYYY-mm-dd HH:ii:ss (platform local time), e.g. 2026-10-01 00:00:00."
+          },
+          "createdBefore": {
+            "type": "string",
+            "description": "Orders created before this moment, same format; only together with createdAfter, at most 1 month apart."
+          },
+          "modifiedAfter": {
+            "type": "string",
+            "description": "Orders changed after this moment, format YYYY-mm-dd HH:ii:ss."
+          },
+          "modifiedBefore": {
+            "type": "string",
+            "description": "Orders changed before this moment; only together with modifiedAfter, at most 1 month apart."
+          },
+          "payment_mode_id": {
+            "type": "array",
+            "description": "Payment methods: 1 cash on delivery, 2 bank transfer, 3 online card. One or more.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "is_complete": {
+            "type": "integer",
+            "description": "1 complete orders only, 0 incomplete only.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "type": {
+            "type": "integer",
+            "description": "2 fulfilled by eMAG (FBE), 3 fulfilled by you (default).",
+            "enum": [
+              2,
+              3
+            ]
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Entries per page, at most 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/read",
+        "bodyMapping": {
+          "id": "$id",
+          "status": "$status",
+          "createdAfter": "$createdAfter",
+          "createdBefore": "$createdBefore",
+          "modifiedAfter": "$modifiedAfter",
+          "modifiedBefore": "$modifiedBefore",
+          "payment_mode_id": "$payment_mode_id",
+          "is_complete": "$is_complete",
+          "type": "$type",
+          "currentPage": "$currentPage",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_count_orders",
+      "description": "Count orders with the same filters as emag_marketplace_list_orders, e.g. how many new (status 1) orders wait. Date filters here need both ends, at most 1 month apart.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "One eMAG order id."
+          },
+          "status": {
+            "type": "array",
+            "description": "Order statuses: 1 new, 2 in progress, 3 prepared, 4 finalized, 0 canceled, 5 returned. One or more.",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            }
+          },
+          "createdAfter": {
+            "type": "string",
+            "description": "Orders created after this moment, format YYYY-mm-dd HH:ii:ss (platform local time), e.g. 2026-10-01 00:00:00."
+          },
+          "createdBefore": {
+            "type": "string",
+            "description": "Orders created before this moment, same format; only together with createdAfter, at most 1 month apart."
+          },
+          "modifiedAfter": {
+            "type": "string",
+            "description": "Orders changed after this moment, format YYYY-mm-dd HH:ii:ss."
+          },
+          "modifiedBefore": {
+            "type": "string",
+            "description": "Orders changed before this moment; only together with modifiedAfter, at most 1 month apart."
+          },
+          "payment_mode_id": {
+            "type": "array",
+            "description": "Payment methods: 1 cash on delivery, 2 bank transfer, 3 online card. One or more.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "is_complete": {
+            "type": "integer",
+            "description": "1 complete orders only, 0 incomplete only.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "type": {
+            "type": "integer",
+            "description": "2 fulfilled by eMAG (FBE), 3 fulfilled by you (default).",
+            "enum": [
+              2,
+              3
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/count",
+        "bodyMapping": {
+          "id": "$id",
+          "status": "$status",
+          "createdAfter": "$createdAfter",
+          "createdBefore": "$createdBefore",
+          "modifiedAfter": "$modifiedAfter",
+          "modifiedBefore": "$modifiedBefore",
+          "payment_mode_id": "$payment_mode_id",
+          "is_complete": "$is_complete",
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_order_attachments",
+      "description": "Read the attachments of an order (invoices, warranties, manuals, AWBs) with their type and URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "eMAG order id."
+          },
+          "order_type": {
+            "type": "integer",
+            "description": "2 fulfilled by eMAG, 3 fulfilled by you.",
+            "enum": [
+              2,
+              3
+            ]
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/attachments/read",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "order_type": "$order_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_get_order_volumetry",
+      "description": "Read the weight and dimensions eMAG knows for each product of an order, to fill the packages of an AWB. Only for orders with quantity 1 per product and one parcel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "eMAG order id."
+          },
+          "type": {
+            "type": "integer",
+            "description": "2 fulfilled by eMAG, 3 fulfilled by you.",
+            "enum": [
+              2,
+              3
+            ]
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Only this product."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/volumetry/read",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "type": "$type",
+          "product_id": "$product_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_get_awb",
+      "description": "Read an AWB (shipping label) issued through the API: order or return id, AWB number and barcode, courier, status history, weight and cash on delivery amount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "emag_id": {
+            "type": "integer",
+            "description": "eMAG id of the AWB, from emag_marketplace_create_awb."
+          },
+          "reservation_id": {
+            "type": "integer",
+            "description": "eMAG AWB reservation id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/awb/read",
+        "bodyMapping": {
+          "emag_id": "$emag_id",
+          "reservation_id": "$reservation_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_get_awb_pdf",
+      "description": "Download an AWB issued through the API as a PDF in A4, A5 or A6 (or as ZPL), to print the shipping label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "emag_id": {
+            "type": "integer",
+            "description": "eMAG id of the AWB."
+          },
+          "awb_format": {
+            "type": "string",
+            "description": "Paper format.",
+            "enum": [
+              "A4",
+              "A5",
+              "A6",
+              "ZPL"
+            ]
+          }
+        },
+        "required": [
+          "emag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/awb/read_pdf",
+        "queryParams": {
+          "emag_id": "$emag_id",
+          "awb_format": "$awb_format"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_get_awb_zpl",
+      "description": "Read an AWB issued through the API in ZPL (base64), for thermal label printers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "emag_id": {
+            "type": "integer",
+            "description": "eMAG id of the AWB."
+          }
+        },
+        "required": [
+          "emag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/awb/read_zpl",
+        "queryParams": {
+          "emag_id": "$emag_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_returns",
+      "description": "Read return requests (RMA) with order, products, return reason, pickup address, AWBs and status (1 incomplete, 2 new, 3 acknowledged, 4 refused, 5 canceled, 6 received, 7 finalized). Filter by id, order, product, status or dates; 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Your internal return request id."
+          },
+          "emag_id": {
+            "type": "integer",
+            "description": "eMAG return request id."
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "Order the returned product was on."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Your internal id of the returned product."
+          },
+          "product_emag_id": {
+            "type": "integer",
+            "description": "eMAG id of the returned product."
+          },
+          "request_status": {
+            "type": "integer",
+            "description": "1 incomplete, 2 new, 3 acknowledged, 4 refused, 5 canceled, 6 received, 7 finalized.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Returns placed from this moment, format YYYY-mm-dd HH:ii:ss."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Returns placed before this moment, format YYYY-mm-dd HH:ii:ss."
+          },
+          "type": {
+            "type": "integer",
+            "description": "2 fulfilled by eMAG, 3 fulfilled by you.",
+            "enum": [
+              2,
+              3
+            ]
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Entries per page, at most 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rma/read",
+        "bodyMapping": {
+          "id": "$id",
+          "emag_id": "$emag_id",
+          "order_id": "$order_id",
+          "product_id": "$product_id",
+          "product_emag_id": "$product_emag_id",
+          "request_status": "$request_status",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "type": "$type",
+          "currentPage": "$currentPage",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_count_returns",
+      "description": "Count return requests with the same filters as emag_marketplace_list_returns, e.g. how many new (2) returns wait.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Your internal return request id."
+          },
+          "emag_id": {
+            "type": "integer",
+            "description": "eMAG return request id."
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "Order the returned product was on."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Your internal id of the returned product."
+          },
+          "product_emag_id": {
+            "type": "integer",
+            "description": "eMAG id of the returned product."
+          },
+          "request_status": {
+            "type": "integer",
+            "description": "1 incomplete, 2 new, 3 acknowledged, 4 refused, 5 canceled, 6 received, 7 finalized.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Returns placed from this moment, format YYYY-mm-dd HH:ii:ss."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Returns placed before this moment, format YYYY-mm-dd HH:ii:ss."
+          },
+          "type": {
+            "type": "integer",
+            "description": "2 fulfilled by eMAG, 3 fulfilled by you.",
+            "enum": [
+              2,
+              3
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rma/count",
+        "bodyMapping": {
+          "id": "$id",
+          "emag_id": "$emag_id",
+          "order_id": "$order_id",
+          "product_id": "$product_id",
+          "product_emag_id": "$product_emag_id",
+          "request_status": "$request_status",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_localities",
+      "description": "Read localities (cities with their region, zip code and emag_id) for the sender and receiver of an AWB. Search by name, region or country; 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Locality name, e.g. Bucuresti."
+          },
+          "region2": {
+            "type": "string",
+            "description": "County or region name."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Country; without it only localities of the platform country.",
+            "enum": [
+              "RO",
+              "BG",
+              "HU",
+              "PL",
+              "EL",
+              "DE"
+            ]
+          },
+          "emag_id": {
+            "type": "integer",
+            "description": "One locality id."
+          },
+          "modified": {
+            "type": "string",
+            "description": "Only localities changed since this moment, YYYY-mm-dd HH:ii:ss."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Entries per page, at most 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/locality/read",
+        "bodyMapping": {
+          "name": "$name",
+          "region2": "$region2",
+          "country_code": "$country_code",
+          "emag_id": "$emag_id",
+          "modified": "$modified",
+          "currentPage": "$currentPage",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_courier_accounts",
+      "description": "List your courier accounts (id, courier name, type order or return, lockers or offices, status) to choose the courier_account_id of an AWB.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/courier_accounts/read",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_addresses",
+      "description": "List your pickup, return and invoice addresses (address_id, type, locality, street) to use as sender or return address of an AWB or return.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addresses/read",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_awb_packages",
+      "description": "List your predefined AWB packages (label, length, width, height, weight, default), used when issuing AWBs without explicit packages.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/awb/package/read",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_campaigns",
+      "description": "Read the eMAG campaigns (Black Friday, discount, voucher, multi deals) with start, end and offer deadline and their participation rules (minimum discount, stock, handling time, price range, restricted categories).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "array",
+            "description": "Campaign ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "name": {
+            "type": "string",
+            "description": "Part of the campaign name, e.g. Genius."
+          },
+          "status": {
+            "type": "integer",
+            "description": "1 active, 0 inactive.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "campaignType": {
+            "type": "integer",
+            "description": "1 Black Friday, 2 discount, 3 voucher, 4 multi deals.",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Campaigns starting on this date, YYYY-MM-DD."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Campaigns ending on this date, YYYY-MM-DD."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Entries per page, at most 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns/read",
+        "bodyMapping": {
+          "id": "$id",
+          "name": "$name",
+          "status": "$status",
+          "campaignType": "$campaignType",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "currentPage": "$currentPage",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_campaign_categories",
+      "description": "Read the categories eligible for campaigns with restricted categories (participationRules.restrictedCategories true): id, name and parent. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Entries per page, at most 100 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign_categories/read",
+        "bodyMapping": {
+          "currentPage": "$currentPage",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_campaign_eligible_offers",
+      "description": "Read your offers that may join a campaign: current price, lowest price of the last 30 days (cmmp), maximum campaign price, stock, commission and the eMAG support tiers. Cursor paging: pass the ext_id of the last offer as lastId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from emag_marketplace_list_campaigns."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Offers per page."
+          },
+          "lastId": {
+            "type": "integer",
+            "description": "ext_id of the last offer of the previous page."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/eligible-offers",
+        "queryParams": {
+          "pageSize": "$pageSize",
+          "lastId": "$lastId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_get_offer_campaign_badges",
+      "description": "Read the campaign badges (Black Friday, Genius Days and others) active or planned for one of your offers, with label text and dates. eMAG platforms only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ext_id": {
+            "type": "integer",
+            "description": "Your seller product id of the offer."
+          }
+        },
+        "required": [
+          "ext_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/{ext_id}/campaign_product_badge_timeline"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_check_smart_deals_price",
+      "description": "Get the price an offer must reach to qualify for the Smart Deals badge.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "integer",
+            "description": "Your seller product id of the offer."
+          }
+        },
+        "required": [
+          "productId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/smart-deals-price-check",
+        "queryParams": {
+          "productId": "$productId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_invoice_categories",
+      "description": "List the categories of the invoices eMAG issues to you (e.g. FC commission) to filter emag_marketplace_list_invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice/categories",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_invoices",
+      "description": "Read the invoices eMAG issued to you (commission, services and others): number, date, lines, totals with and without VAT and currency. Without filters the last 100.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Invoice category from emag_marketplace_list_invoice_categories, e.g. FC."
+          },
+          "number": {
+            "type": "string",
+            "description": "Invoice number."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Until this date, YYYY-MM-DD."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Invoices per page, at most 1000."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice/read",
+        "bodyMapping": {
+          "category": "$category",
+          "number": "$number",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "currentPage": "$currentPage",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_list_customer_invoices",
+      "description": "Read the invoices issued to your customers on eMAG orders (normal or storno): order id, number, date, lines and totals. Without filters the last 100.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "normal or storno.",
+            "enum": [
+              "normal",
+              "storno"
+            ]
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "eMAG order id."
+          },
+          "number": {
+            "type": "string",
+            "description": "Invoice number."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Until this date, YYYY-MM-DD."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Invoices per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customer-invoice/read",
+        "bodyMapping": {
+          "category": "$category",
+          "order_id": "$order_id",
+          "number": "$number",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "currentPage": "$currentPage",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_update_offers",
+      "description": "Update existing offers only (light offer API, up to 50 per call): price, recommended, minimum and maximum price, stock and handling time per warehouse, VAT id and status (1 active, 0 inactive, 2 end of life). Changes what buyers see at once: list each offer with old and new values and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offers": {
+            "type": "array",
+            "description": "[{\"id\": 123, \"sale_price\": 99.99, \"stock\": [{\"warehouse_id\": 1, \"value\": 10}], \"handling_time\": [{\"warehouse_id\": 1, \"value\": 1}], \"status\": 1}]. id is your seller product id; prices without VAT.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "offers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offer/save",
+        "bodyMapping": {
+          "data": "$offers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_update_offer_stock",
+      "description": "Set the stock of one offer per warehouse (PATCH, stock only). Confirm the new quantities with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_id": {
+            "type": "integer",
+            "description": "Your seller product id (ext_id) of the offer."
+          },
+          "stock": {
+            "type": "array",
+            "description": "[{\"warehouse_id\": 1, \"value\": 25}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "resource_id",
+          "stock"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/offer_stock/{resource_id}",
+        "bodyMapping": {
+          "data": {
+            "stock": "$stock"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_save_product_offers",
+      "description": "Create new products with their offer, or update offers, up to 50 per call. A new product needs category_id, name, part_number, brand, description, images, characteristics and ean plus the offer data (status, sale_price, vat_id, stock, handling_time); an update needs only the offer data. eMAG validates new documentation before it goes live. Confirm the data with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "description": "Product and offer objects as documented by eMAG, e.g. [{\"id\": 123, \"category_id\": 506, \"name\": \"...\", \"part_number\": \"...\", \"brand\": \"...\", \"ean\": [\"5940000000000\"], \"status\": 1, \"sale_price\": 99.99, \"vat_id\": 1, \"stock\": [{\"warehouse_id\": 1, \"value\": 10}], \"handling_time\": [{\"warehouse_id\": 1, \"value\": 1}]}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product_offer/save",
+        "bodyMapping": {
+          "data": "$products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_save_measurements",
+      "description": "Save the volume measurements of products (length, width, height in millimetres, weight in grams). Confirm the values with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "measurements": {
+            "type": "array",
+            "description": "[{\"id\": 123, \"length\": 200, \"width\": 100, \"height\": 50, \"weight\": 450}]. id is your seller product id.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "measurements"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/measurements/save",
+        "bodyMapping": {
+          "data": "$measurements"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_acknowledge_order",
+      "description": "Acknowledge a new order: moves it from 1 (new) to 2 (in progress) and stops eMAG notifying you about it. Seller-fulfilled orders only. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "eMAG order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/acknowledge/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_save_order",
+      "description": "Update an order: set status 3 (prepared), 4 (finalized) or 0 (canceled with reason_cancellation), remove or add products, or storno a finalized order. Send ALL fields read with emag_marketplace_list_orders and change only what is needed; orders can be edited only in status 2 or 3. Acts on the live order: show the change and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "description": "Full order objects as read, with the changed fields, e.g. [{\"id\": 123, \"status\": 3, \"type\": 3, \"payment_mode_id\": 1, \"products\": [...], \"customer\": {...}, ...}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "orders"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/save",
+        "bodyMapping": {
+          "data": "$orders"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_unlock_courier",
+      "description": "Unlock the courier selection of an order so a different courier account can be used for its AWB. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "eMAG order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/{order_id}/unlock-courier"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_save_order_attachments",
+      "description": "Attach documents to orders by URL: invoice (type 1), warranty (type 3, with order_product_id) and other types. The customer sees them in the order. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "description": "[{\"order_id\": 123, \"order_type\": 3, \"name\": \"Invoice 1001\", \"url\": \"https://.../invoice.pdf\", \"type\": 1}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "attachments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/attachments/save",
+        "bodyMapping": {
+          "data": "$attachments"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "emag_marketplace_create_awb",
+      "description": "Issue an AWB (shipping label) with your eMAG courier account for an order or a return: sender, receiver (with locality_id), parcels or envelopes, weight, cash on delivery and options. Books a real courier pickup: show the data and get a yes first. Then read the label with emag_marketplace_get_awb_pdf.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "awbs": {
+            "type": "array",
+            "description": "[{\"order_id\": 123, \"sender\": {\"name\": \"...\", \"contact\": \"...\", \"phone1\": \"...\", \"locality_id\": 8801, \"street\": \"...\"}, \"receiver\": {...}, \"envelope_number\": 0, \"parcel_number\": 1, \"is_oversize\": 0, \"cod\": 0, \"weight\": 1.2}]. Add rma_id for a return.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "awbs"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/awb/save",
+        "bodyMapping": {
+          "data": "$awbs"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "emag_marketplace_save_return",
+      "description": "Update a return request (RMA), mainly its request_status: 2 new to 3 acknowledged or 5 canceled, 3 to 6 received, 6 to 4 refused or 7 finalized. Send the full return as read with emag_marketplace_list_returns. Confirm the change with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "returns": {
+            "type": "array",
+            "description": "Full return request objects as read, with the changed request_status, e.g. [{\"emag_id\": 1, \"order_id\": 123, \"type\": 3, \"request_status\": 3, ...}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "returns"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rma/save",
+        "bodyMapping": {
+          "data": "$returns"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "emag_marketplace_propose_campaign_offers",
+      "description": "Propose your offers in a campaign with the campaign price (and voucher discount, maximum quantity per order or date intervals where the campaign type needs them). Commits you to the campaign price: show offers and prices and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "proposals": {
+            "type": "array",
+            "description": "[{\"id\": 123, \"campaign_id\": 456, \"sale_price\": 79.99, \"stock\": 20, \"max_qty_per_order\": 2}]. id is your seller product id; prices without VAT.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "proposals"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign_proposals/save",
+        "bodyMapping": {
+          "data": "$proposals"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}
