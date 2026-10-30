@@ -680,7 +680,7 @@
             "items": {
               "type": "integer"
             },
-            "description": "Item ids of the project to get metrics for, e.g. [277, 278]."
+            "description": "Item counters of the project (the `counter` field of an item, shown as #277 in Rollbar, not its id), e.g. [277, 278]."
           },
           "project_id": {
             "type": "integer",
