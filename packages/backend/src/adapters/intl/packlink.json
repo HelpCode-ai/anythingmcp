@@ -1,0 +1,509 @@
+{
+  "slug": "packlink",
+  "name": "Packlink PRO",
+  "aliases": [
+    "Packlink API",
+    "Packlink Pro shipping"
+  ],
+  "description": "Packlink PRO multi-carrier shipping: quote parcels across carriers, look up services and drop-off points, read sender addresses and parcel presets, create shipment drafts, and read shipments, labels and tracking with the Packlink PRO API key.",
+  "region": "intl",
+  "category": "logistics",
+  "icon": "packlink",
+  "docsUrl": "https://support-pro.packlink.com/hc/en-gb/articles/213431749-How-do-I-generate-an-API-key-on-Packlink-PRO",
+  "instructions": "## Packlink PRO\nThis connector works with a **Packlink PRO** business account through the Packlink API (`https://api.packlink.com/v1`), the API Packlink's own shop plugins (WooCommerce, PrestaShop, Magento, Shopware) use: shipping quotes across carriers, carrier service details, drop-off points, postal code checks, sender addresses and parcel presets, shipment drafts, shipment details, labels and tracking. Packlink PRO is available in Spain, Germany, France, Italy, Austria, the Netherlands, Belgium, Portugal, the United Kingdom, Ireland and other countries.\n\n**Setup (2 minutes)**\n1. Sign in at https://pro.packlink.com, open **Settings** (top right) and choose **Packlink PRO API key** in the left menu.\n2. Click **Generate API key** (or copy the existing one) and paste it into `PACKLINK_API_KEY`. The key stays valid until it is regenerated; the shop plugins of the same account can share it.\n3. Run `packlink_get_account` to check the key.\n\n**Workflow**\n- Account and defaults: `packlink_get_account`, `packlink_list_warehouses` (sender addresses; `default_selection: true` is the default) and `packlink_list_parcel_presets` (saved box sizes).\n- Quote a parcel: `packlink_search_services` with the sender country and postal code (from a warehouse), the recipient country and postal code and the parcel's weight and size. Compare `price.total_price` (tax included), `transit_time` and `first_estimated_delivery_date`. `packlink_get_service` gives the carrier's details for one service id. If no service comes back, check the codes with `packlink_get_postal_codes`.\n- Drop-off services: when a service has `dropoff: true` the sender hands the parcel in at a shop instead of a pickup; when it has `delivery_to_parcelshop: true` the recipient collects it at one. `packlink_list_dropoffs` lists the closest points; pass the chosen `id` as `dropoff_point_id`.\n- Prepare a shipment: `packlink_create_draft_shipment` with sender, recipient, parcels, contents and, ideally, the chosen `service_id`. It returns the shipment `reference`. The draft is not paid and not booked: the user completes and pays it in Packlink PRO (Shipments, pending), which also asks for customs data for shipments outside the EU customs union.\n- After payment: `packlink_get_shipment` for the state, carrier tracking numbers and costs, `packlink_get_shipment_labels` for the PDF label links (from state READY_TO_PRINT on), `packlink_get_shipment_tracking` for the carrier's events.\n\n**Reading the answers**: weights are kilograms, dimensions centimetres (whole numbers), prices in the account currency (`currency`, usually EUR or GBP) with `total_price` including tax. Country codes are two-letter ISO codes in requests; addresses inside a shipment may show the country name in the account language. Quotes are a snapshot: the price charged is the one shown in Packlink PRO at payment.\n\n**Not available here**: the Packlink API used by the plugins has no documented call to list all shipments or carriers, so this connector reads shipments by reference only (keep the reference returned by the draft, or copy it from Packlink PRO), and carriers appear through the quotes. Paying, cancelling and booking pickups happen in Packlink PRO.\n\n**Errors**: 401 or 403 means the API key is wrong or was regenerated; 400 and 422 return `messages` with the fields Packlink rejected (for example a postal code that does not match the country); 404 an unknown shipment reference or service id.",
+  "prerequisites": "A Packlink PRO business account and its API key from Settings, Packlink PRO API key.",
+  "requiredEnvVars": [
+    "PACKLINK_API_KEY"
+  ],
+  "envVarMeta": {
+    "PACKLINK_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Packlink PRO, Settings (top right), Packlink PRO API key: Generate API key, then Copy. It is sent as the Authorization header without a prefix.",
+      "link": "https://pro.packlink.com",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Packlink refused the API key. Copy it again from Packlink PRO, Settings, Packlink PRO API key; a regenerated key replaces the old one.",
+    "403": "Packlink refused the API key. Copy it again from Packlink PRO, Settings, Packlink PRO API key; a regenerated key replaces the old one."
+  },
+  "probe": {
+    "tool": "packlink_get_account"
+  },
+  "connector": {
+    "name": "Packlink PRO API",
+    "type": "REST",
+    "baseUrl": "https://api.packlink.com/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{PACKLINK_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/clients"
+  },
+  "tools": [
+    {
+      "name": "packlink_get_account",
+      "description": "The Packlink PRO account the API key belongs to: name, company, email, phone, platform_country, customer_type and whether it is active. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients"
+      }
+    },
+    {
+      "name": "packlink_list_warehouses",
+      "description": "The sender (pickup) addresses saved in Packlink PRO: id, alias, contact name, company, address, postal_code, city, country, phone, email, and default_selection for the default one. Use them as the sender of quotes and drafts.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/warehouses"
+      }
+    },
+    {
+      "name": "packlink_list_parcel_presets",
+      "description": "The parcel presets saved in Packlink PRO: id, name, weight (kg), length, width and height (cm), and default for the default parcel.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/parcels"
+      }
+    },
+    {
+      "name": "packlink_search_services",
+      "description": "Shipping quotes: every carrier service Packlink PRO offers for one parcel from a sender postal code to a recipient postal code, with id, carrier_name, name, category, price (base_price, tax_price, total_price) and currency, transit_time and transit_hours, first_estimated_delivery_date, dropoff (the parcel is handed in at a drop-off point) and delivery_to_parcelshop, labels_required, customs_required, insurance and cash on delivery conditions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_country": {
+            "type": "string",
+            "description": "Two-letter ISO country code of the sender, e.g. ES, FR, DE, IT, GB."
+          },
+          "from_zip": {
+            "type": "string",
+            "description": "Postal code of the sender."
+          },
+          "to_country": {
+            "type": "string",
+            "description": "Two-letter ISO country code of the recipient, e.g. ES, FR, DE, IT, GB."
+          },
+          "to_zip": {
+            "type": "string",
+            "description": "Postal code of the recipient."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Parcel weight in kilograms, e.g. 1.5."
+          },
+          "length": {
+            "type": "integer",
+            "description": "Parcel length in centimetres (whole number)."
+          },
+          "width": {
+            "type": "integer",
+            "description": "Parcel width in centimetres (whole number)."
+          },
+          "height": {
+            "type": "integer",
+            "description": "Parcel height in centimetres (whole number)."
+          }
+        },
+        "required": [
+          "from_country",
+          "from_zip",
+          "to_country",
+          "to_zip",
+          "weight",
+          "length",
+          "width",
+          "height"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services",
+        "queryParams": {
+          "from[country]": "$from_country",
+          "from[zip]": "$from_zip",
+          "to[country]": "$to_country",
+          "to[zip]": "$to_zip",
+          "packages[0][weight]": "$weight",
+          "packages[0][length]": "$length",
+          "packages[0][width]": "$width",
+          "packages[0][height]": "$height",
+          "source": "PRO"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].available_dates",
+            "[*].url_terms_and_conditions",
+            "[*].translation_transit_key"
+          ]
+        }
+      }
+    },
+    {
+      "name": "packlink_get_service",
+      "description": "Details of one shipping service by id: carrier_name, service_name, service_type, departure_type and destination_type (home or drop-off), and the carrier's notes in service_details and packlink_info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "integer",
+            "description": "Service id from packlink_search_services."
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/services/available/{service_id}/details"
+      }
+    },
+    {
+      "name": "packlink_list_dropoffs",
+      "description": "The ten closest drop-off points (parcel shops, lockers) of a service around a postal code: id, commerce_name, address, zip, city, lat, long, phone and opening_times per weekday. Pass the id as dropoff_point_id when the service has destination drop-off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "integer",
+            "description": "Service id from packlink_search_services (one with dropoff or delivery_to_parcelshop)."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter ISO country code of the search area, e.g. ES, FR, DE, IT, GB."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code of the search area."
+          }
+        },
+        "required": [
+          "service_id",
+          "country",
+          "zip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dropoffs/{service_id}/{country}/{zip}"
+      }
+    },
+    {
+      "name": "packlink_get_postal_codes",
+      "description": "Checks a postal code against Packlink's location data: the matching places with zipcode, city, province, state, country, postal zone, time zone and coordinates. An empty list means Packlink does not know the code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "Two-letter ISO country code of the postal code, e.g. ES, FR, DE, IT, GB."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code to look up."
+          }
+        },
+        "required": [
+          "country",
+          "zip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations/postalcodes/{country}/{zip}"
+      }
+    },
+    {
+      "name": "packlink_create_draft_shipment",
+      "description": "Creates a shipment draft in Packlink PRO and returns its reference. Nothing is paid or booked: the draft appears in Packlink PRO, where the user reviews it and pays to get the label. Confirm the addresses, parcels and service with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "object",
+            "description": "Sender address. Take the sender from packlink_list_warehouses (address goes into street1, postal_code into zip_code).",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "First name."
+              },
+              "surname": {
+                "type": "string",
+                "description": "Last name."
+              },
+              "company": {
+                "type": "string",
+                "description": "Company name, if any."
+              },
+              "street1": {
+                "type": "string",
+                "description": "Street and house number."
+              },
+              "street2": {
+                "type": "string",
+                "description": "Second address line, if any."
+              },
+              "zip_code": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "country": {
+                "type": "string",
+                "description": "Two-letter ISO country code, e.g. ES, FR, DE, IT."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number; carriers use it for delivery notices."
+              },
+              "email": {
+                "type": "string",
+                "description": "Email address."
+              }
+            },
+            "required": [
+              "name",
+              "surname",
+              "street1",
+              "zip_code",
+              "city",
+              "country",
+              "phone",
+              "email"
+            ]
+          },
+          "to": {
+            "type": "object",
+            "description": "Recipient address.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "First name."
+              },
+              "surname": {
+                "type": "string",
+                "description": "Last name."
+              },
+              "company": {
+                "type": "string",
+                "description": "Company name, if any."
+              },
+              "street1": {
+                "type": "string",
+                "description": "Street and house number."
+              },
+              "street2": {
+                "type": "string",
+                "description": "Second address line, if any."
+              },
+              "zip_code": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "country": {
+                "type": "string",
+                "description": "Two-letter ISO country code, e.g. ES, FR, DE, IT."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number; carriers use it for delivery notices."
+              },
+              "email": {
+                "type": "string",
+                "description": "Email address."
+              }
+            },
+            "required": [
+              "name",
+              "surname",
+              "street1",
+              "zip_code",
+              "city",
+              "country",
+              "phone",
+              "email"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "description": "The parcels, one entry per box.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "weight": {
+                  "type": "number",
+                  "description": "Weight in kilograms."
+                },
+                "length": {
+                  "type": "integer",
+                  "description": "Length in centimetres."
+                },
+                "width": {
+                  "type": "integer",
+                  "description": "Width in centimetres."
+                },
+                "height": {
+                  "type": "integer",
+                  "description": "Height in centimetres."
+                }
+              },
+              "required": [
+                "weight",
+                "length",
+                "width",
+                "height"
+              ]
+            }
+          },
+          "service_id": {
+            "type": "integer",
+            "description": "Chosen service id from packlink_search_services. Without it the user picks the service in Packlink PRO."
+          },
+          "dropoff_point_id": {
+            "type": "string",
+            "description": "Drop-off point id from packlink_list_dropoffs, for services delivered to a parcel shop."
+          },
+          "content": {
+            "type": "string",
+            "description": "Short description of the contents, e.g. \"2 T-shirts\". Avoid special characters such as ; : % & / # ( ) = ?."
+          },
+          "content_value": {
+            "type": "number",
+            "description": "Declared value of the contents, used for insurance and customs."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of content_value, e.g. EUR or GBP."
+          },
+          "second_hand": {
+            "type": "boolean",
+            "description": "True when the contents are second-hand goods."
+          },
+          "custom_reference": {
+            "type": "string",
+            "description": "Your own reference, e.g. the shop order number; shown in Packlink PRO as shipment_custom_reference."
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "packages",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments",
+        "bodyMapping": {
+          "from": "$from",
+          "to": "$to",
+          "packages": "$packages",
+          "service_id": "$service_id",
+          "dropoff_point_id": "$dropoff_point_id",
+          "content": "$content",
+          "contentvalue": "$content_value",
+          "contentValue_currency": "$currency",
+          "content_second_hand": "$second_hand",
+          "shipment_custom_reference": "$custom_reference"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "packlink_get_shipment",
+      "description": "One shipment by its Packlink reference: state (e.g. AWAITING_COMPLETION, READY_TO_PURCHASE, READY_TO_PRINT, READY_FOR_COLLECTION, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, INCIDENT, CANCELED), carrier, service, collection and delivery addresses, collection date and hours, parcels, content and value, price, insurance, trackings (carrier tracking numbers) and tracking_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "Packlink shipment reference, e.g. ES2026PRO0001234567 (returned by packlink_create_draft_shipment and shown in Packlink PRO)."
+          }
+        },
+        "required": [
+          "reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{reference}"
+      }
+    },
+    {
+      "name": "packlink_get_shipment_labels",
+      "description": "Download links (PDF) of the shipping labels of a paid shipment. Empty or an error while the shipment is still a draft or not yet READY_TO_PRINT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "Packlink shipment reference, e.g. ES2026PRO0001234567 (returned by packlink_create_draft_shipment and shown in Packlink PRO)."
+          }
+        },
+        "required": [
+          "reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{reference}/labels"
+      }
+    },
+    {
+      "name": "packlink_get_shipment_tracking",
+      "description": "Tracking history of a shipment: history entries with timestamp, description (the carrier's event, e.g. DELIVERED) and city.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "Packlink shipment reference, e.g. ES2026PRO0001234567 (returned by packlink_create_draft_shipment and shown in Packlink PRO)."
+          }
+        },
+        "required": [
+          "reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{reference}/track"
+      }
+    }
+  ]
+}

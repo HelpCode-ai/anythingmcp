@@ -232,6 +232,7 @@ import * as glpi from './intl/glpi.json';
 import * as gmail from './intl/gmail.json';
 import * as goaffpro from './intl/goaffpro.json';
 import * as gocardless from './intl/gocardless.json';
+import * as godaddy from './intl/godaddy.json';
 import * as gong from './intl/gong.json';
 import * as googleAds from './intl/google-ads.json';
 import * as googleAnalytics4 from './intl/google-analytics-4.json';
@@ -264,6 +265,7 @@ import * as hetznerCloud from './intl/hetzner-cloud.json';
 import * as heygen from './intl/heygen.json';
 import * as higgsfield from './intl/higgsfield.json';
 import * as homeAssistant from './intl/home-assistant.json';
+import * as hostinger from './intl/hostinger.json';
 import * as hubspot from './intl/hubspot.json';
 import * as huggingface from './intl/huggingface.json';
 import * as hunter from './intl/hunter.json';
@@ -340,6 +342,7 @@ import * as moz from './intl/moz.json';
 import * as mpstats from './intl/mpstats.json';
 import * as mssql from './intl/mssql.json';
 import * as mysql from './intl/mysql.json';
+import * as n8n from './intl/n8n.json';
 import * as neon from './intl/neon.json';
 import * as netlify from './intl/netlify.json';
 import * as netskope from './intl/netskope.json';
@@ -375,6 +378,7 @@ import * as orderful from './intl/orderful.json';
 import * as otter from './intl/otter.json';
 import * as outreach from './intl/outreach.json';
 import * as ozon from './intl/ozon.json';
+import * as packlink from './intl/packlink.json';
 import * as pagerduty from './intl/pagerduty.json';
 import * as pancake from './intl/pancake.json';
 import * as pandadoc from './intl/pandadoc.json';
@@ -501,6 +505,7 @@ import * as untappd from './intl/untappd.json';
 import * as uptimeRobot from './intl/uptime-robot.json';
 import * as uzumMarket from './intl/uzum-market.json';
 import * as vercelAnalytics from './intl/vercel-analytics.json';
+import * as viber from './intl/viber.json';
 import * as vimeo from './intl/vimeo.json';
 import * as vinted from './intl/vinted.json';
 import * as vk from './intl/vk.json';
@@ -512,6 +517,7 @@ import * as webex from './intl/webex.json';
 import * as webflow from './intl/webflow.json';
 import * as weeek from './intl/weeek.json';
 import * as whatsappBusiness from './intl/whatsapp-business.json';
+import * as whoop from './intl/whoop.json';
 import * as whop from './intl/whop.json';
 import * as wildberries from './intl/wildberries.json';
 import * as wix from './intl/wix.json';
@@ -531,6 +537,7 @@ import * as youcom from './intl/youcom.json';
 import * as youtrack from './intl/youtrack.json';
 import * as youtubeData from './intl/youtube-data.json';
 import * as zabbix from './intl/zabbix.json';
+import * as zaloOa from './intl/zalo-oa.json';
 import * as zendesk from './intl/zendesk.json';
 import * as zenhub from './intl/zenhub.json';
 import * as zenkit from './intl/zenkit.json';
@@ -546,6 +553,7 @@ import * as mercadoPago from './br/mercado-pago.json';
 import * as tiendanube from './br/tiendanube.json';
 import * as zApi from './br/z-api.json';
 import * as doubletick from './in/doubletick.json';
+import * as flipkartSeller from './in/flipkart-seller.json';
 import * as interakt from './in/interakt.json';
 import * as razorpay from './in/razorpay.json';
 import * as tallyprime from './in/tallyprime.json';
@@ -1041,6 +1049,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   gmail as unknown as AdapterDefinition,
   goaffpro as unknown as AdapterDefinition,
   gocardless as unknown as AdapterDefinition,
+  godaddy as unknown as AdapterDefinition,
   gong as unknown as AdapterDefinition,
   googleAds as unknown as AdapterDefinition,
   googleAnalytics4 as unknown as AdapterDefinition,
@@ -1073,6 +1082,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   heygen as unknown as AdapterDefinition,
   higgsfield as unknown as AdapterDefinition,
   homeAssistant as unknown as AdapterDefinition,
+  hostinger as unknown as AdapterDefinition,
   hubspot as unknown as AdapterDefinition,
   huggingface as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
@@ -1149,6 +1159,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   mpstats as unknown as AdapterDefinition,
   mssql as unknown as AdapterDefinition,
   mysql as unknown as AdapterDefinition,
+  n8n as unknown as AdapterDefinition,
   neon as unknown as AdapterDefinition,
   netlify as unknown as AdapterDefinition,
   netskope as unknown as AdapterDefinition,
@@ -1184,6 +1195,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   otter as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
   ozon as unknown as AdapterDefinition,
+  packlink as unknown as AdapterDefinition,
   pagerduty as unknown as AdapterDefinition,
   pancake as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
@@ -1310,6 +1322,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   uptimeRobot as unknown as AdapterDefinition,
   uzumMarket as unknown as AdapterDefinition,
   vercelAnalytics as unknown as AdapterDefinition,
+  viber as unknown as AdapterDefinition,
   vimeo as unknown as AdapterDefinition,
   vinted as unknown as AdapterDefinition,
   vk as unknown as AdapterDefinition,
@@ -1321,6 +1334,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   webflow as unknown as AdapterDefinition,
   weeek as unknown as AdapterDefinition,
   whatsappBusiness as unknown as AdapterDefinition,
+  whoop as unknown as AdapterDefinition,
   whop as unknown as AdapterDefinition,
   wildberries as unknown as AdapterDefinition,
   wix as unknown as AdapterDefinition,
@@ -1340,6 +1354,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   youtrack as unknown as AdapterDefinition,
   youtubeData as unknown as AdapterDefinition,
   zabbix as unknown as AdapterDefinition,
+  zaloOa as unknown as AdapterDefinition,
   zendesk as unknown as AdapterDefinition,
   zenhub as unknown as AdapterDefinition,
   zenkit as unknown as AdapterDefinition,
@@ -1355,6 +1370,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   tiendanube as unknown as AdapterDefinition,
   zApi as unknown as AdapterDefinition,
   doubletick as unknown as AdapterDefinition,
+  flipkartSeller as unknown as AdapterDefinition,
   interakt as unknown as AdapterDefinition,
   razorpay as unknown as AdapterDefinition,
   tallyprime as unknown as AdapterDefinition,
