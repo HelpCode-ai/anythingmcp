@@ -8,6 +8,7 @@ import {
   SharedToolsetDeps,
   SharedToolsetProfile,
   excludedOnSharedEndpoint,
+  sharedEndpointAccess,
   assistantForRedirectUris,
   profileForRedirectUris,
   registerSharedToolset,
@@ -57,6 +58,21 @@ const WISE_PAY = tool({
     baseUrl: 'https://api.wise.com',
     authType: 'BEARER_TOKEN',
     config: { adapterSlug: 'wise' },
+  },
+});
+
+const WISE_READ = tool({
+  name: 'wise_list_transfers',
+  connectorId: 'c-wise',
+  connectorConfig: WISE_PAY.connectorConfig,
+});
+const BINANCE_READ = tool({
+  name: 'binance_get_ticker',
+  connectorId: 'c-binance',
+  connectorConfig: {
+    baseUrl: 'https://api.binance.com',
+    authType: 'NONE',
+    config: { adapterSlug: 'binance' },
   },
 });
 
@@ -274,30 +290,67 @@ describe('shared /mcp tool set', () => {
     expect((deps.execute as jest.Mock).mock.calls[0][0]).toBe(second);
   });
 
-  it('does not serve payment, banking or trading connectors', async () => {
-    expect(excludedOnSharedEndpoint(WISE_PAY)).toBe(true);
-    expect(excludedOnSharedEndpoint(CRM_WRITE)).toBe(false);
-    expect(
-      excludedOnSharedEndpoint(
-        tool({ name: 'x', connectorId: 'c', connectorConfig: { baseUrl: '', authType: 'NONE', config: { adapterSlug: 'sorare' } } }),
-      ),
-    ).toBe(true);
+  it('serves only the read tools of payment and banking connectors, and no cryptocurrency ones', async () => {
+    expect(excludedOnSharedEndpoint(WISE_PAY, 'default')).toBe(true);
+    expect(excludedOnSharedEndpoint(WISE_READ, 'default')).toBe(false);
+    expect(excludedOnSharedEndpoint(CRM_WRITE, 'default')).toBe(false);
+    expect(excludedOnSharedEndpoint(BINANCE_READ, 'default')).toBe(true);
+    expect(sharedEndpointAccess('stripe', 'default')).toBe('read');
+    expect(sharedEndpointAccess('payone', 'default')).toBe('read');
+    expect(sharedEndpointAccess('sorare', 'default')).toBe('none');
+    expect(sharedEndpointAccess('etsy', 'default')).toBe('all');
 
-    const { client, deps } = await connect([CRM_READ, WISE_PAY]);
+    const { client, deps } = await connect([CRM_READ, WISE_PAY, WISE_READ, BINANCE_READ]);
     const search = await call(client, 'anythingmcp_search_tools', {});
-    expect(search.body.tools.map((t: any) => t.name)).not.toContain('wise_create_transfer');
+    const names = search.body.tools.map((t: any) => t.name);
+    expect(names).toContain('wise_list_transfers');
+    expect(names).not.toContain('wise_create_transfer');
+    expect(names).not.toContain('binance_get_ticker');
 
-    const run = await call(client, 'anythingmcp_run_write_tool', {
+    const pay = await call(client, 'anythingmcp_run_write_tool', {
       tool: 'wise_create_transfer',
       arguments: {},
     });
+    expect(pay.isError).toBe(true);
+    expect(pay.body.error).toMatch(/payment or banking connector/);
+    const crypto = await call(client, 'anythingmcp_run_read_tool', { tool: 'binance_get_ticker', arguments: {} });
+    expect(crypto.isError).toBe(true);
+    expect(crypto.body.error).toMatch(/cryptocurrency connector/);
+    expect(deps.execute).not.toHaveBeenCalled();
+
+    const read = await call(client, 'anythingmcp_run_read_tool', { tool: 'wise_list_transfers', arguments: {} });
+    expect(read.isError).toBeFalsy();
+    expect((deps.execute as jest.Mock).mock.calls[0][0]).toBe(WISE_READ);
+
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.connectors.map((c: any) => c.id).sort()).toEqual(['c-crm', 'c-wise']);
+    expect(list.body.notServedHere).toEqual(['c-binance']);
+    expect(list.body.readToolsOnlyHere).toEqual(['c-wise']);
+  });
+
+  it('keeps payment and banking connectors out of the ChatGPT profile whole', async () => {
+    expect(excludedOnSharedEndpoint(WISE_READ, 'chatgpt')).toBe(true);
+    expect(excludedOnSharedEndpoint(WISE_PAY, 'chatgpt')).toBe(true);
+    expect(excludedOnSharedEndpoint(BINANCE_READ, 'chatgpt')).toBe(false);
+    expect(
+      excludedOnSharedEndpoint(
+        tool({ name: 'x', connectorId: 'c', connectorConfig: { baseUrl: '', authType: 'NONE', config: { adapterSlug: 'sorare' } } }),
+        'chatgpt',
+      ),
+    ).toBe(true);
+
+    const { client, deps } = await connect([CRM_READ, WISE_PAY, WISE_READ], makeDeps(), 'chatgpt');
+    const search = await call(client, 'anythingmcp_search_tools', {});
+    expect(search.body.tools.map((t: any) => t.name)).toEqual(['crm_find_customer']);
+
+    const run = await call(client, 'anythingmcp_run_read_tool', { tool: 'wise_list_transfers', arguments: {} });
     expect(run.isError).toBe(true);
-    expect(run.body.error).toMatch(/payment, banking or trading/);
     expect(deps.execute).not.toHaveBeenCalled();
 
     const list = await call(client, 'anythingmcp_list_connectors');
     expect(list.body.connectors.map((c: any) => c.id)).toEqual(['c-crm']);
     expect(list.body.notServedHere).toEqual(['c-wise']);
+    expect(list.body.readToolsOnlyHere).toBeUndefined();
   });
 
   it('keeps kg_how_to_obtain listed and says so when the graph is off', async () => {

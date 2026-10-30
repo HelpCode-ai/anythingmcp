@@ -160,34 +160,79 @@ export function sharedEndpointMode(): 'fixed' | 'direct' {
   return process.env.DEPLOYMENT_MODE === 'cloud' ? 'fixed' : 'direct';
 }
 
-// Connectors that can move money or trade assets. They stay available on a
-// server's own URL, where the workspace chose them; the shared endpoint, which
-// anyone can add from a directory, does not serve them.
-const EXCLUDED_CATEGORIES = new Set(['payments', 'banking']);
-const EXCLUDED_ADAPTERS = ['payone', 'sorare'];
+// The shared endpoint is added from assistant directories, so it serves only
+// what their policies allow. Everything stays available on a server's own URL,
+// where the workspace chose it.
+//
+// Payment and banking connectors can move money. The Claude directory policy
+// rules out software that transfers money or executes financial transactions
+// autonomously, not reading payment data, so the default profile serves their
+// read tools and withholds every write tool. The ChatGPT profile still
+// withholds them whole.
+//
+// Cryptocurrency connectors: the Claude directory "does not generally allow
+// cryptocurrency software", so the default profile does not serve them. The
+// ChatGPT profile keeps what it served before (all of them but Sorare).
+const MONEY_CATEGORIES = new Set(['payments', 'banking']);
+const MONEY_ADAPTERS = ['payone'];
+const CRYPTO_ADAPTERS = [
+  'sorare',
+  'binance',
+  'coinbase',
+  'deribit',
+  'coinglass',
+  'coingecko',
+  'zerion',
+  'helius',
+  'blockcypher',
+];
 
-let excludedSlugs: Set<string> | null = null;
-function excludedAdapterSlugs(): Set<string> {
-  if (!excludedSlugs) {
-    excludedSlugs = new Set([
-      ...EXCLUDED_ADAPTERS,
-      ...listAdapters()
-        .filter((a) => EXCLUDED_CATEGORIES.has(a.category))
-        .map((a) => a.slug),
-    ]);
-  }
-  return excludedSlugs;
+/** How much of a catalog connector the shared endpoint serves. */
+export type SharedEndpointAccess = 'all' | 'read' | 'none';
+
+let moneySlugs: Set<string> | null = null;
+function moneyAdapterSlugs(): Set<string> {
+  moneySlugs ??= new Set([
+    ...MONEY_ADAPTERS,
+    ...listAdapters()
+      .filter((a) => MONEY_CATEGORIES.has(a.category))
+      .map((a) => a.slug),
+  ]);
+  return moneySlugs;
 }
 
-/** True for a catalog adapter the shared endpoint does not serve (payments, banking, trading). */
-export function isExcludedAdapterSlug(slug: string): boolean {
-  return excludedAdapterSlugs().has(slug);
+/** Why a connector is (partly) withheld, for the answers that name it. */
+function withheldKind(slug: string): 'money' | 'crypto' | null {
+  if (CRYPTO_ADAPTERS.includes(slug)) return 'crypto';
+  return moneyAdapterSlugs().has(slug) ? 'money' : null;
 }
 
-/** True for a tool of a catalog connector the shared endpoint does not serve. */
-export function excludedOnSharedEndpoint(tool: RegisteredTool): boolean {
+/** What the shared endpoint serves of the catalog adapter `slug` in `profile`. */
+export function sharedEndpointAccess(slug: string, profile: SharedToolsetProfile): SharedEndpointAccess {
+  const kind = withheldKind(slug);
+  if (!kind) return 'all';
+  if (profile === 'chatgpt') return kind === 'money' || slug === 'sorare' ? 'none' : 'all';
+  return kind === 'money' ? 'read' : 'none';
+}
+
+/** True for a catalog adapter the shared endpoint does not serve at all in `profile`. */
+export function isExcludedAdapterSlug(slug: string, profile: SharedToolsetProfile): boolean {
+  return sharedEndpointAccess(slug, profile) === 'none';
+}
+
+/** True for a tool of a catalog connector the shared endpoint does not serve in `profile`. */
+export function excludedOnSharedEndpoint(tool: RegisteredTool, profile: SharedToolsetProfile): boolean {
   const slug = tool.connectorConfig?.config?.adapterSlug;
-  return typeof slug === 'string' && excludedAdapterSlugs().has(slug);
+  if (typeof slug !== 'string') return false;
+  const served = sharedEndpointAccess(slug, profile);
+  return served === 'none' || (served === 'read' && access(tool) === 'write');
+}
+
+function withheldReason(tool: RegisteredTool): string {
+  const slug = String(tool.connectorConfig?.config?.adapterSlug ?? '');
+  return withheldKind(slug) === 'crypto'
+    ? `'${tool.name}' belongs to a cryptocurrency connector. Those are not served on this shared connection`
+    : `'${tool.name}' belongs to a payment or banking connector and can move money or change payment data. On this shared connection those connectors serve at most their read tools`;
 }
 
 function describeSetupStatus(status: RegisteredTool['setupStatus']): string {
@@ -414,8 +459,8 @@ export function registerSharedToolset(
   // the Claude directory reviewed.
   const hints = (a: Annotations): Annotations =>
     profile === 'chatgpt' ? explicitHints(a) : a;
-  const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t));
-  const withheld = scopeTools.filter((t) => excludedOnSharedEndpoint(t));
+  const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t, profile));
+  const withheld = scopeTools.filter((t) => excludedOnSharedEndpoint(t, profile));
   // Connectors still missing a credential or an authorization: not offered to
   // the model, but named in list_connectors with where to finish them.
   const tools = [
@@ -497,11 +542,12 @@ export function registerSharedToolset(
         ),
       };
     }
-    if (withheld.some((t) => t.name === name)) {
+    const held = withheld.find((t) => t.name === name);
+    if (held) {
       return {
         error: json(
           {
-            error: `'${name}' belongs to a payment, banking or trading connector. Those are not served on this shared connection; use the connector's own server URL (see anythingmcp_get_configuration_url).`,
+            error: `${withheldReason(held)}; use the connector's own server URL (see anythingmcp_get_configuration_url).`,
           },
           true,
         ),
@@ -589,9 +635,12 @@ export function registerSharedToolset(
           };
         })
         .sort((a, b) => a.name.localeCompare(b.name));
-      const notServedHere = [...new Set(withheld.map((t) => t.connectorId))].map(
-        (id) => connectorName(byId, id),
-      );
+      // Withheld whole, or only their write tools (payment and banking
+      // connectors on the default profile).
+      const servedIds = new Set(served.map((t) => t.connectorId));
+      const heldIds = [...new Set(withheld.map((t) => t.connectorId))];
+      const notServedHere = heldIds.filter((id) => !servedIds.has(id)).map((id) => connectorName(byId, id));
+      const readToolsOnlyHere = heldIds.filter((id) => servedIds.has(id)).map((id) => connectorName(byId, id));
       const needsSetup = [...new Map(pending.map((t) => [t.connectorId, t])).values()]
         .map((t) => ({
           name: connectorName(byId, t.connectorId),
@@ -613,7 +662,16 @@ export function registerSharedToolset(
           ? {
               notServedHere,
               notServedHereReason:
-                'Payment, banking and trading connectors are only served on their server\'s own URL.',
+                profile === 'chatgpt'
+                  ? 'Payment, banking and trading connectors are only served on their server\'s own URL.'
+                  : 'Cryptocurrency connectors are only served on their server\'s own URL.',
+            }
+          : {}),
+        ...(readToolsOnlyHere.length
+          ? {
+              readToolsOnlyHere,
+              readToolsOnlyHereReason:
+                'Payment and banking connectors serve only their read tools here; tools that move money or change payment data run on the server\'s own URL.',
             }
           : {}),
         ...(connectors.every((c) => c.id === SETUP_CONNECTOR_ID) && needsSetup.length === 0
