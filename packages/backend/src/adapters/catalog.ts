@@ -16,6 +16,7 @@ import * as datevSandbox from './de/datev-sandbox.json';
 import * as destatisGenesis from './de/destatis-genesis.json';
 import * as deutscheBahn from './de/deutsche-bahn.json';
 import * as deutscheBahnTimetables from './de/deutsche-bahn-timetables.json';
+import * as dhlParcelDe from './de/dhl-parcel-de.json';
 import * as dhlTracking from './de/dhl-tracking.json';
 import * as docuware from './de/docuware.json';
 import * as dpdGermany from './de/dpd-germany.json';
@@ -960,6 +961,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   destatisGenesis as unknown as AdapterDefinition,
   deutscheBahn as unknown as AdapterDefinition,
   deutscheBahnTimetables as unknown as AdapterDefinition,
+  dhlParcelDe as unknown as AdapterDefinition,
   dhlTracking as unknown as AdapterDefinition,
   docuware as unknown as AdapterDefinition,
   dpdGermany as unknown as AdapterDefinition,

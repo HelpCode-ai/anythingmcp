@@ -1,0 +1,356 @@
+{
+  "slug": "dhl-parcel-de",
+  "name": "DHL Paket Versand (Geschäftskunden)",
+  "aliases": [
+    "DHL Parcel DE Shipping",
+    "DHL Geschäftskunden Versand",
+    "DHL Paket API",
+    "DHL Labels"
+  ],
+  "description": "Create DHL Paket shipping labels on your own DHL business customer contract (Geschäftskundenkonto) with the official Parcel DE Shipping API of Deutsche Post DHL: validate and book shipments, download labels, cancel shipments and run the daily close-out (Tagesabschluss).",
+  "region": "de",
+  "category": "logistics",
+  "icon": "dhl",
+  "docsUrl": "https://developer.dhl.com/api-reference/parcel-de-shipping-post-parcel-germany-v2",
+  "instructions": "Books DHL Paket shipments in Germany and abroad on the customer's own DHL business contract, through the Parcel DE Shipping API v2 (`api-eu.dhl.com/parcel/de/shipping/v2`). Every booked shipment is billed by DHL, so ask the user before calling `dhl_parcel_de_create_shipments` and run `dhl_parcel_de_validate_shipments` first when the data is new.\n\n## Credentials (four values)\n1. `DHL_API_KEY` and `DHL_API_SECRET`: at developer.dhl.com, **My Apps → Create App**, add the API **Parcel DE Shipping (Post & Parcel Germany)**, and copy the app's API Key and API Secret once DHL has approved it.\n2. `DHL_GKP_USERNAME` and `DHL_GKP_PASSWORD`: a user of the DHL Geschäftskundenportal (GKP) with the right to create shipments. A dedicated system user is best: in the GKP, **Benutzerverwaltung → Systembenutzer anlegen**. A personal GKP user also works, but its password expires regularly.\nAnythingMCP exchanges these for an access token (OAuth2 password grant at `/parcel/de/account/auth/ropc/v1/token`) and renews it by itself.\n\n## Billing number (Abrechnungsnummer)\nEach shipment needs `billingNumber`, 14 characters: the 10-digit customer number (EKP) + the 2-digit procedure of the product + the 2-digit participation (Teilnahme, usually `01`). Procedures: V01PAK DHL Paket → `01`, V53WPAK DHL Paket International → `53`, V54EPAK DHL Europaket → `54`, V62KP DHL Kleinpaket → `62`, V66WPI Warenpost International → `66`. The billing numbers of the contract are listed in the GKP under **Vertragsdaten**. Ask the user for the EKP once and build the number from it.\n\n## Products\n`V01PAK` DHL Paket (national), `V62KP` DHL Kleinpaket (small parcels, replaces Warenpost V62WP), `V53WPAK` DHL Paket International, `V54EPAK` DHL Europaket (B2B Europe), `V66WPI` Warenpost International. Services (`services`) depend on the product and the contract: `preferredNeighbour`, `preferredLocation`, `preferredDay`, `namedPersonOnly`, `noNeighbourDelivery`, `visualCheckOfAge` (A16/A18), `signedForByRecipient`, `additionalInsurance` ({\"currency\": \"EUR\", \"value\": 1000}), `cashOnDelivery`, `bulkyGoods`, `premium`, `goGreenPlus`, `dhlRetoure`, `parcelOutletRouting`.\n\n## Reading the response\nThe response has `status` and `items[]`, one per shipment in request order. A booked shipment has `shipmentNo` (the tracking number) and `label.url` (or `label.b64` with `includeDocs: include`). HTTP 207 means some shipments failed: check `sstatus` and `validationMessages` of each item. Weak address warnings (`Die Adresse konnte nicht geprüft werden`) still book the shipment; set `mustEncode: true` to refuse addresses DHL cannot encode.\n\n## After booking\n- `dhl_parcel_de_get_labels` downloads the labels again for up to 30 shipment numbers.\n- `dhl_parcel_de_cancel_shipments` cancels shipments that have not been closed out yet (usually until the end of the day); nothing is billed for a cancelled shipment.\n- Shipments are closed out automatically every evening. `dhl_parcel_de_close_out` does it earlier for some or all shipments, and `dhl_parcel_de_get_manifest` returns the day's manifest.\n- Track booked shipments with the DHL Shipment Tracking connector (`dhl-tracking`).\n\n## Limits\nUp to 30 shipments per request. DHL answers HTTP 429 when calls come too fast: wait and retry. HTTP 401 means the API key, secret or GKP login is wrong, or the app is not yet approved for this API.",
+  "requiredEnvVars": [
+    "DHL_API_KEY",
+    "DHL_API_SECRET",
+    "DHL_GKP_USERNAME",
+    "DHL_GKP_PASSWORD"
+  ],
+  "envVarMeta": {
+    "DHL_API_KEY": {
+      "label": "API Key",
+      "kind": "credential",
+      "help": "developer.dhl.com → My Apps → your app with the Parcel DE Shipping API → API Key.",
+      "link": "https://developer.dhl.com/user/apps"
+    },
+    "DHL_API_SECRET": {
+      "label": "API Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API Secret of the same app.",
+      "link": "https://developer.dhl.com/user/apps"
+    },
+    "DHL_GKP_USERNAME": {
+      "label": "Geschäftskundenportal user",
+      "kind": "credential",
+      "help": "User name of a DHL Geschäftskundenportal (GKP) user allowed to create shipments; a system user is best.",
+      "link": "https://geschaeftskunden.dhl.de"
+    },
+    "DHL_GKP_PASSWORD": {
+      "label": "Geschäftskundenportal password",
+      "kind": "credential",
+      "secret": true,
+      "help": "Password of that GKP user.",
+      "link": "https://geschaeftskunden.dhl.de"
+    }
+  },
+  "verifyHints": {
+    "401": "DHL refused the login. Check that DHL_API_KEY and DHL_API_SECRET belong to an app that has the Parcel DE Shipping API and is approved, and that the Geschäftskundenportal user name and password are right (a personal GKP password expires and must be renewed in the portal)."
+  },
+  "connector": {
+    "name": "DHL Parcel DE Shipping",
+    "type": "REST",
+    "baseUrl": "https://api-eu.dhl.com/parcel/de/shipping/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "password",
+      "tokenUrl": "https://api-eu.dhl.com/parcel/de/account/auth/ropc/v1/token",
+      "clientId": "{{DHL_API_KEY}}",
+      "clientSecret": "{{DHL_API_SECRET}}",
+      "username": "{{DHL_GKP_USERNAME}}",
+      "password": "{{DHL_GKP_PASSWORD}}",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Accept-Language": "de-DE"
+    }
+  },
+  "tools": [
+    {
+      "name": "dhl_parcel_de_validate_shipments",
+      "description": "Check shipments without booking them: DHL validates addresses, product, services and billing number and returns the same messages a real booking would. Nothing is created or billed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "default": "STANDARD_GRUPPENPROFIL",
+            "description": "User group profile in the Geschäftskundenportal that may use the billing numbers. STANDARD_GRUPPENPROFIL unless your account uses another one."
+          },
+          "shipments": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Up to 30 shipments. Each one: {\"product\": \"V01PAK\", \"billingNumber\": \"33333333330102\", \"refNo\": \"Order 1234\", \"shipper\": {\"name1\": \"My Shop GmbH\", \"addressStreet\": \"Sträßchensweg 10\", \"postalCode\": \"53113\", \"city\": \"Bonn\", \"country\": \"DEU\", \"email\": \"shop@example.com\"}, \"consignee\": {\"name1\": \"Maria Musterfrau\", \"addressStreet\": \"Kurt-Schumacher-Str. 20\", \"postalCode\": \"53113\", \"city\": \"Bonn\", \"country\": \"DEU\", \"email\": \"maria@example.com\"}, \"details\": {\"weight\": {\"uom\": \"g\", \"value\": 500}, \"dim\": {\"uom\": \"cm\", \"length\": 30, \"width\": 20, \"height\": 10}}, \"services\": {\"preferredNeighbour\": \"Nachbar Nr. 5\"}}. Countries are ISO 3166-1 alpha-3 (DEU, AUT, FRA). Instead of shipper, {\"shipperRef\": \"...\"} uses a sender address saved in the Geschäftskundenportal. A Packstation consignee is {\"name\": \"...\", \"lockerID\": 123, \"postNumber\": \"12345678\", \"postalCode\": \"53113\", \"city\": \"Bonn\", \"country\": \"DEU\"}. International shipments outside the EU need \"customs\"."
+          }
+        },
+        "required": [
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "queryParams": {
+          "validate": "true"
+        },
+        "bodyMapping": {
+          "profile": "$profile",
+          "shipments": "$shipments"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "dhl_parcel_de_create_shipments",
+      "description": "Book up to 30 DHL shipments on the business contract and get their shipment numbers (tracking numbers) and labels. Each booked shipment is billed by DHL unless it is cancelled the same day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "default": "STANDARD_GRUPPENPROFIL",
+            "description": "User group profile in the Geschäftskundenportal that may use the billing numbers. STANDARD_GRUPPENPROFIL unless your account uses another one."
+          },
+          "shipments": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Up to 30 shipments. Each one: {\"product\": \"V01PAK\", \"billingNumber\": \"33333333330102\", \"refNo\": \"Order 1234\", \"shipper\": {\"name1\": \"My Shop GmbH\", \"addressStreet\": \"Sträßchensweg 10\", \"postalCode\": \"53113\", \"city\": \"Bonn\", \"country\": \"DEU\", \"email\": \"shop@example.com\"}, \"consignee\": {\"name1\": \"Maria Musterfrau\", \"addressStreet\": \"Kurt-Schumacher-Str. 20\", \"postalCode\": \"53113\", \"city\": \"Bonn\", \"country\": \"DEU\", \"email\": \"maria@example.com\"}, \"details\": {\"weight\": {\"uom\": \"g\", \"value\": 500}, \"dim\": {\"uom\": \"cm\", \"length\": 30, \"width\": 20, \"height\": 10}}, \"services\": {\"preferredNeighbour\": \"Nachbar Nr. 5\"}}. Countries are ISO 3166-1 alpha-3 (DEU, AUT, FRA). Instead of shipper, {\"shipperRef\": \"...\"} uses a sender address saved in the Geschäftskundenportal. A Packstation consignee is {\"name\": \"...\", \"lockerID\": 123, \"postNumber\": \"12345678\", \"postalCode\": \"53113\", \"city\": \"Bonn\", \"country\": \"DEU\"}. International shipments outside the EU need \"customs\"."
+          },
+          "mustEncode": {
+            "type": "boolean",
+            "description": "Only create labels for addresses DHL can encode (Leitcodierung); refuse the others instead of booking them with a warning"
+          },
+          "docFormat": {
+            "type": "string",
+            "enum": [
+              "PDF",
+              "ZPL2"
+            ],
+            "description": "Label format: PDF (default) or ZPL2 for thermal printers"
+          },
+          "printFormat": {
+            "type": "string",
+            "description": "Label size: A4 (default from the account), 910-300-600, 910-300-610, 910-300-700, 910-300-700-oz, 910-300-710, 910-300-300, 910-300-300-oz, 910-300-400, 910-300-410, 100x70mm"
+          },
+          "includeDocs": {
+            "type": "string",
+            "enum": [
+              "URL",
+              "include"
+            ],
+            "description": "URL (default here) returns a download link for each label; include returns the PDF as base64 inside the response, which is large",
+            "default": "URL"
+          },
+          "combine": {
+            "type": "boolean",
+            "description": "Print a shipment's label and its return label as one document (default true)"
+          }
+        },
+        "required": [
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "queryParams": {
+          "mustEncode": "$mustEncode",
+          "docFormat": "$docFormat",
+          "printFormat": "$printFormat",
+          "includeDocs": "$includeDocs",
+          "combine": "$combine"
+        },
+        "bodyMapping": {
+          "profile": "$profile",
+          "shipments": "$shipments"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "dhl_parcel_de_get_labels",
+      "description": "Download the labels (and customs documents) of shipments already booked, for up to 30 shipment numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Shipment numbers, up to 30"
+          },
+          "docFormat": {
+            "type": "string",
+            "enum": [
+              "PDF",
+              "ZPL2"
+            ],
+            "description": "Label format: PDF (default) or ZPL2 for thermal printers"
+          },
+          "printFormat": {
+            "type": "string",
+            "description": "Label size: A4 (default from the account), 910-300-600, 910-300-610, 910-300-700, 910-300-700-oz, 910-300-710, 910-300-300, 910-300-300-oz, 910-300-400, 910-300-410, 100x70mm"
+          },
+          "includeDocs": {
+            "type": "string",
+            "enum": [
+              "URL",
+              "include"
+            ],
+            "description": "URL (default here) returns a download link for each label; include returns the PDF as base64 inside the response, which is large",
+            "default": "URL"
+          }
+        },
+        "required": [
+          "shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "shipment": "$shipment",
+          "docFormat": "$docFormat",
+          "printFormat": "$printFormat",
+          "includeDocs": "$includeDocs"
+        }
+      }
+    },
+    {
+      "name": "dhl_parcel_de_cancel_shipments",
+      "description": "Cancel (storno) booked shipments that have not been closed out yet, so they are not billed. Their labels become invalid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "default": "STANDARD_GRUPPENPROFIL",
+            "description": "User group profile in the Geschäftskundenportal that may use the billing numbers. STANDARD_GRUPPENPROFIL unless your account uses another one."
+          },
+          "shipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Shipment numbers to cancel, up to 30"
+          }
+        },
+        "required": [
+          "shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/orders",
+        "queryParams": {
+          "profile": "$profile",
+          "shipment": "$shipment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "dhl_parcel_de_close_out",
+      "description": "Close out (Tagesabschluss) shipments now instead of waiting for the automatic close-out in the evening. Closed-out shipments can no longer be cancelled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "default": "STANDARD_GRUPPENPROFIL",
+            "description": "User group profile in the Geschäftskundenportal that may use the billing numbers. STANDARD_GRUPPENPROFIL unless your account uses another one."
+          },
+          "shipmentNumbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Shipment numbers to close out, up to 30. Leave out together with all=true to close out every open shipment."
+          },
+          "billingNumber": {
+            "type": "string",
+            "description": "Only close out shipments of this billing number"
+          },
+          "all": {
+            "type": "boolean",
+            "description": "Close out all open shipments of the profile"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/manifests",
+        "queryParams": {
+          "all": "$all"
+        },
+        "bodyMapping": {
+          "profile": "$profile",
+          "shipmentNumbers": "$shipmentNumbers",
+          "billingNumber": "$billingNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "dhl_parcel_de_get_manifest",
+      "description": "Get the manifest (Einlieferungsliste) of a day: the PDF listing the closed-out shipments by billing number, plus which shipment is on which sheet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Day of the manifest, YYYY-MM-DD. Defaults to today."
+          },
+          "billingNumber": {
+            "type": "string",
+            "description": "Only this billing number"
+          },
+          "includeDocs": {
+            "type": "string",
+            "enum": [
+              "URL",
+              "include"
+            ],
+            "description": "URL (default here) returns a download link for each label; include returns the PDF as base64 inside the response, which is large",
+            "default": "URL"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/manifests",
+        "queryParams": {
+          "date": "$date",
+          "billingNumber": "$billingNumber",
+          "includeDocs": "$includeDocs"
+        }
+      }
+    }
+  ]
+}
