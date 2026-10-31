@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { EmailService, systemSmtpFrom } from './email.service';
 import { verifyUnsubscribe } from './unsubscribe-token';
@@ -171,6 +172,26 @@ describe('EmailService', () => {
     expect(mail.html).toContain('41');
     expect(mail.text).toContain('2 connectors set up, 41 successful tool calls');
     expect(mail.headers).toBeUndefined();
+  });
+
+  it('logs the recipient masked, never the full address', async () => {
+    const lines: string[] = [];
+    const spies = (['log', 'warn', 'error'] as const).map((level) =>
+      jest.spyOn(Logger.prototype, level).mockImplementation((message: unknown) => {
+        lines.push(String(message));
+      }),
+    );
+    try {
+      const { service } = make();
+      await service.sendTrialLifecycleEmail('ada.lovelace@example.com', 'Ada', 'warn3', { connectors: 2, successfulCalls: 41, daysLeft: 3 });
+      sendMail.mockRejectedValueOnce(new Error('boom'));
+      await service.sendWelcomeEmail('ada.lovelace@example.com', 'Ada', 'LICENSE-KEY').catch(() => undefined);
+      expect(lines.length).toBeGreaterThanOrEqual(2);
+      for (const line of lines) expect(line).not.toContain('ada.lovelace@');
+      expect(lines.some((line) => line.includes('ad***@example.com'))).toBe(true);
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
   });
 
   describe('pricing links carry the recipient as an address token', () => {
