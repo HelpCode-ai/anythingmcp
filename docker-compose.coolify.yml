@@ -1,0 +1,144 @@
+# =============================================================================
+# AnythingMCP — Coolify deployment
+# =============================================================================
+# For a Coolify v4 "Docker Compose" resource. Either point the resource at
+# this repository with this file as the compose location, or paste the file
+# into an empty Docker Compose resource. It pulls the published image, so
+# nothing is built on your server.
+#
+# What Coolify does for you here:
+#   - One public domain, routed to port 3000. Next.js on 3000 proxies /api,
+#     /mcp, /health, /.well-known, OAuth and SSO to the backend on 4000 (see
+#     packages/frontend/next.config.ts), so there is no second domain and no
+#     path routing to set up. Coolify's proxy terminates TLS.
+#   - Secrets are generated on first deploy and kept by Coolify
+#     (SERVICE_PASSWORD_* / SERVICE_HEX_* magic variables). Back up
+#     ENCRYPTION_KEY: it decrypts every stored connector credential, and a
+#     new value means re-entering all of them.
+#   - No host ports are published and no container_name is set, so several
+#     AnythingMCP resources can run on the same server.
+#
+# After the first deploy:
+#   1. Under Domains, give the "app" service your domain WITH the :3000
+#      suffix (e.g. https://mcp.example.com:3000). The suffix only tells
+#      Coolify's proxy which container port to use; visitors use 443.
+#      Redeploy after changing the domain so the app URLs follow it.
+#   2. Open the domain and register. The first account becomes admin.
+#
+# Required before the first deploy (Coolify blocks the deploy while empty):
+#   SMTP_HOST, SMTP_USER, SMTP_PASS and SMTP_FROM.
+#
+# Public URL: filled in automatically from the domain, without the port.
+# Coolify sets SERVICE_URL_APP to https://mcp.example.com (no port) next to
+# SERVICE_URL_APP_3000 (https://mcp.example.com:3000). The app must get the
+# one without the port: OAuth metadata, the sign-in redirect and emailed
+# links are built from it, and :3000 is not reachable from outside.
+# Set PUBLIC_URL only to override it (e.g. a domain Coolify doesn't manage).
+#
+# Moving an existing instance onto Coolify: set JWT_SECRET, ENCRYPTION_KEY
+# and the database to your old values before the first deploy, or stored
+# credentials will not decrypt.
+#
+# The published image is linux/amd64 only (see docker-compose.quickstart.yml).
+# =============================================================================
+
+services:
+
+  # NestJS backend + Next.js frontend in one container (./start.sh)
+  app:
+    image: helpcodeai/anythingmcp:${AMCP_IMAGE_TAG:-latest}
+    platform: linux/amd64
+    environment:
+      # Tells Coolify to route the domain to container port 3000. Its value
+      # keeps the :3000 suffix, so the app URLs below never use it.
+      - SERVICE_URL_APP_3000
+      - NODE_ENV=production
+      - PORT=4000
+      - DATABASE_URL=postgresql://${SERVICE_USER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/${POSTGRES_DB:-anythingmcp}
+      # Generated once by Coolify and reused on every redeploy.
+      - JWT_SECRET=${SERVICE_PASSWORD_64_JWT}
+      - COOKIE_SECRET=${SERVICE_PASSWORD_64_COOKIE}
+      - ENCRYPTION_KEY=${SERVICE_HEX_64_ENCRYPTION}
+      # Everything is served from the one public domain, without a port.
+      # SERVER_URL drives the OAuth endpoints (issuer, /authorize, /token,
+      # /register) that MCP clients redirect through. PUBLIC_URL, when set,
+      # overrides the domain Coolify assigned.
+      - FRONTEND_URL=${PUBLIC_URL:-${SERVICE_URL_APP}}
+      - SERVER_URL=${PUBLIC_URL:-${SERVICE_URL_APP}}
+      - CORS_ORIGIN=${PUBLIC_URL:-${SERVICE_URL_APP}}
+      # MCP authentication: oauth2 | legacy | both | none. `both` lets
+      # browser-based clients (e.g. Claude.ai connectors) sign in with OAuth2
+      # and other clients use a per-user API key (mcp_..., created in the UI
+      # under API keys). Each of those belongs to one user and only reaches
+      # that user's workspaces.
+      - MCP_AUTH_MODE=${MCP_AUTH_MODE:-both}
+      # Optional instance-wide master credentials. Leave both empty unless
+      # you need them. Anyone holding either one reaches EVERY MCP server in
+      # EVERY workspace (no workspace check), and calls are not tied to a user.
+      #   MCP_API_KEY       sent as the `X-API-Key: <value>` header
+      #   MCP_BEARER_TOKEN  sent as `Authorization: Bearer <value>`
+      # If you set one, use a long random value (openssl rand -hex 32).
+      - MCP_API_KEY=${MCP_API_KEY:-}
+      - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN:-}
+      - MCP_ALLOW_ANONYMOUS=false
+      # false = invite-only after the first admin registers.
+      - ALLOW_OPEN_REGISTRATION=${ALLOW_OPEN_REGISTRATION:-false}
+      # Email (SMTP). Required: Coolify will not deploy until these are
+      # filled in. Without SMTP, password resets are never sent and
+      # invitations and verification codes go through an external relay at
+      # anythingmcp.com (docs/deployment.md, "Email Fallback").
+      # Port 587 uses STARTTLS; for port 465 set SMTP_SECURE=true.
+      - SMTP_HOST=${SMTP_HOST:?}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:?}
+      - SMTP_PASS=${SMTP_PASS:?}
+      - SMTP_FROM=${SMTP_FROM:?}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-AnythingMCP}
+      - SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      # Hosts the SSRF guard may reach although they resolve to a private
+      # address, e.g. another service on this Coolify server.
+      - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-}
+      # Largest upstream response one tool call reads, in bytes. Empty = 10 MB.
+      - TOOL_MAX_RESPONSE_BYTES=${TOOL_MAX_RESPONSE_BYTES:-}
+      # V8 heap cap for the backend, in MB. 2048 suits a ~4 GB server.
+      - NODE_MAX_OLD_SPACE_MB=${NODE_MAX_OLD_SPACE_MB:-2048}
+      # Knowledge Graph LLM (optional), see docs/knowledge-graph.md.
+      - KG_LLM_ENABLED=${KG_LLM_ENABLED:-}
+      - KG_LLM_PROVIDER=${KG_LLM_PROVIDER:-}
+      - KG_LLM_MODEL=${KG_LLM_MODEL:-}
+      - KG_LLM_BASE_URL=${KG_LLM_BASE_URL:-}
+      - KG_LLM_API_KEY=${KG_LLM_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Coolify's proxy only sends traffic to the container once this passes.
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  # PostgreSQL. Only reachable on the resource's internal network.
+  postgres:
+    image: postgres:17-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${SERVICE_USER_POSTGRES}
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=${POSTGRES_DB:-anythingmcp}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
