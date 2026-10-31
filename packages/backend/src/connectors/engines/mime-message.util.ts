@@ -205,7 +205,10 @@ const ADDRESS_RE = /^[^\s@<>()[\]",;:\\]+@[^\s@<>()[\]",;:\\]+$/;
 function parseAddress(field: string, item: string): ParsedAddress {
   let name: string | undefined;
   let address = item;
-  const angled = /^(.*?)\s*<([^<>]*)>$/.exec(item);
+  // No \s* before the '<': the lazy group and the whitespace class overlap,
+  // which is quadratic on a long run of spaces (CodeQL js/polynomial-redos).
+  // The trim below removes the same whitespace.
+  const angled = /^(.*?)<([^<>]*)>$/.exec(item);
   if (angled) {
     name = angled[1].trim();
     address = angled[2].trim();
