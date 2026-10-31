@@ -20,6 +20,7 @@ function build(tool: RegisteredTool, result: unknown) {
     reject as any,
     reject as any,
     { scheduleObservationalIngest: jest.fn() } as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any,
     reject as any,
     undefined,
     emailEngine as any,

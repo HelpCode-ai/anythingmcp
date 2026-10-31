@@ -18,6 +18,7 @@ import { EmailEngine } from '../connectors/engines/email.engine';
 import { OAuth2TokenService } from '../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../connectors/engines/login-token.service';
 import { ConnectorAuthStatusService } from '../connectors/engines/connector-auth-status.service';
+import { WebhookEventsService } from '../connectors/webhook-events.service';
 import { BearerTokenRenewalService } from '../connectors/engines/bearer-token-renewal.service';
 import { ShopeeTokenService } from '../connectors/engines/shopee-token.service';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
@@ -40,7 +41,7 @@ const ENGINES = [
 @Module({
   imports: [McpServersModule, LicenseModule, SettingsModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
-  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, GraphqlSchemaService, ...ENGINES],
-  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService],
+  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, GraphqlSchemaService, WebhookEventsService, ...ENGINES],
+  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, WebhookEventsService],
 })
 export class McpServerModule {}

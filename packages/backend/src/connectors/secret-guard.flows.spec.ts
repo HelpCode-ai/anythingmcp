@@ -586,6 +586,7 @@ describe('logs', () => {
       {} as any,
       {} as any,
       { scheduleObservationalIngest: jest.fn() } as any,
+      { recentEvents: jest.fn().mockResolvedValue([]) } as any,
     );
     return { executor, audit };
   }

@@ -199,6 +199,14 @@ function derive(tool: AnnotationSource): ToolAnnotations {
     return { ...annotations, ...EMAIL_METHOD_ANNOTATIONS[method] };
   }
 
+  // Webhook built-in: reads our own storage, never the upstream connector.
+  if (method === 'webhook_recent_events') {
+    annotations.readOnlyHint = true;
+    annotations.destructiveHint = false;
+    annotations.idempotentHint = true;
+    return annotations;
+  }
+
   // OData built-ins (list, describe, query, get) only ever read, on ODATA and
   // REST connectors alike.
   if (method.startsWith('odata_')) {

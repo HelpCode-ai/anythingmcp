@@ -94,6 +94,7 @@ import {
 import { parseODataTools } from './parsers/odata.parser';
 import { normalizeSettings } from './engines/odata.engine';
 import { buildEmailBuiltinTools } from './email/email-builtins';
+import { buildWebhookBuiltinTools, wantsWebhookBuiltins, webhookToolPrefix } from './webhook-builtins';
 import { EmailConnectorError, emailToolPrefix, resolveEmailSettings } from './email/email-settings';
 import { computeSetupState } from './connector-setup-status.util';
 import { EditionService } from '../ee/licensing/edition.service';
@@ -219,6 +220,30 @@ class CreateConnectorDto {
   @IsOptional()
   @IsString()
   instructions?: string;
+
+  @ApiPropertyOptional({
+    description: 'Opt this connector into inbound webhook ingestion, regardless of its type.',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  webhookEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Which signature scheme verifies inbound deliveries. Only "stripe" is supported today.',
+    enum: ['stripe'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['stripe'])
+  webhookProvider?: string;
+
+  @ApiPropertyOptional({
+    description: 'The signing secret for the chosen webhookProvider. Encrypted at rest; never returned by any API.',
+  })
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string;
 }
 
 class UpdateConnectorDto {
@@ -292,6 +317,28 @@ class UpdateConnectorDto {
   @IsOptional()
   @IsString()
   instructions?: string;
+
+  @ApiPropertyOptional({ description: 'Opt this connector into inbound webhook ingestion, regardless of its type.' })
+  @IsOptional()
+  @IsBoolean()
+  webhookEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Which signature scheme verifies inbound deliveries. Only "stripe" is supported today.',
+    enum: ['stripe'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['stripe'])
+  webhookProvider?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The signing secret for the chosen webhookProvider. Write-only like authConfig: never returned by any API, and omitting it (or sending empty) leaves the stored secret unchanged.',
+  })
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string;
 }
 
 class UpdateOAuthConfigDto {
@@ -903,6 +950,36 @@ export class ConnectorsController {
       }
       await this.mcpServer.reloadConnectorTools(connector.id);
       this.logger.log(`Auto-created ${builtinTools.length} email tools for connector ${connector.id}`);
+    }
+
+    // Webhook-enabled connectors get the one builtin tool that reads back
+    // what webhook-ingest.controller.ts stored for them. Any connector type
+    // may opt in (dto.webhookEnabled), not just a dedicated connector type.
+    if (wantsWebhookBuiltins(dto.webhookEnabled)) {
+      const builtinTools = buildWebhookBuiltinTools({
+        prefix: webhookToolPrefix({
+          toolPrefix: (dto.config as { webhook?: { toolPrefix?: unknown } } | undefined)?.webhook?.toolPrefix,
+          name: dto.name,
+        }),
+        displayName: dto.name,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: connector.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // skip duplicates
+        }
+      }
+      await this.mcpServer.reloadConnectorTools(connector.id);
+      this.logger.log(`Auto-created ${builtinTools.length} webhook tool(s) for connector ${connector.id}`);
     }
 
     // Put the connector on a server straight away. Assigning it was a separate

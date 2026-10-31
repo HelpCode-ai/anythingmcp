@@ -78,6 +78,7 @@ const baseTool = (over: Partial<RegisteredTool> & { id: string; name: string; en
       stub as any,
       stub as any,
       { scheduleObservationalIngest: jest.fn() } as any,
+      { recentEvents: jest.fn().mockResolvedValue([]) } as any,
       stub as any,
       undefined,
       undefined,

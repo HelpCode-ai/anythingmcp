@@ -37,6 +37,7 @@ import {
   type ResponseMeta,
 } from '../connectors/engines/response-headers.util';
 import { KgService } from '../knowledge-graph/kg.service';
+import { WebhookEventsService } from '../connectors/webhook-events.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
@@ -120,6 +121,7 @@ export class DynamicMcpTools {
     private readonly mcpClientEngine: McpClientEngine,
     private readonly databaseEngine: DatabaseEngine,
     private readonly kgService: KgService,
+    private readonly webhookEvents: WebhookEventsService,
     @Optional() private readonly odataEngine?: ODataEngine,
     @Optional() private readonly userCredentials?: UserCredentialsService,
     @Optional() private readonly emailEngine?: EmailEngine,
@@ -575,6 +577,8 @@ export class DynamicMcpTools {
               (tool.connectorConfig.config as { email?: unknown } | undefined)?.email,
               envVars,
             ),
+            connectorId: tool.connectorId,
+            organizationId: tool.organizationId,
           },
         );
       } finally {
@@ -1337,8 +1341,28 @@ export class DynamicMcpTools {
     config: any,
     endpointMapping: any,
     params: Record<string, unknown>,
-    extra?: { connectorConfig?: Record<string, unknown>; odataSettings?: unknown; emailSettings?: unknown },
+    extra?: {
+      connectorConfig?: Record<string, unknown>;
+      odataSettings?: unknown;
+      emailSettings?: unknown;
+      connectorId?: string;
+      organizationId?: string;
+    },
   ): Promise<{ body: unknown; meta?: ResponseMeta }> {
+    // Recent webhook events — a read of our own storage, never an outbound
+    // call, so it bypasses every engine (same shape as the static branch
+    // below).
+    if (endpointMapping.method === 'webhook_recent_events') {
+      if (!extra?.connectorId || !extra?.organizationId) {
+        throw new Error('webhook_recent_events requires connectorId and organizationId');
+      }
+      const events = await this.webhookEvents.recentEvents(extra.connectorId, extra.organizationId, {
+        limit: params.limit as number | undefined,
+        since: params.since as string | undefined,
+      });
+      return { body: { events } };
+    }
+
     // Static response tools — return text immediately without engine dispatch.
     //
     // The `method` alone decides this, not `method && staticResponse`. With the

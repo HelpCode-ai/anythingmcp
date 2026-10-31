@@ -5369,6 +5369,19 @@ scrape_configs:
 
 On Cloud, metrics are instance-wide only: no series may carry an organization id, connector name, tool name or user, which is why `METRICS_TOOL_LABELS` has no effect there. Per-organization usage already exists in the database (`AuditService.getBreakdowns`) and is unaffected by this endpoint. On self-hosted, the operator who sets `METRICS_TOOL_LABELS=true` is the only consumer of their own instance's metrics, so per-connector/per-tool labels are allowed. `METRICS_TOKEN` is required on both: the listener's default bind host is `0.0.0.0`.
 
+## 7. Inbound webhook ingestion (opt-in per connector)
+
+Any connector may opt in (`webhookEnabled`, regardless of its type) to receive inbound webhook deliveries at `POST /api/webhooks/:connectorId`. Stripe is the only verified provider today (`Stripe-Signature`: HMAC-SHA256 over `timestamp.body`, with a 300 s replay tolerance); other providers each need their own verification scheme and are a follow-up. Nothing is stored before the signature checks out. An unknown connector id, a disabled hook, and a bad signature all answer identically, so the endpoint cannot be used to probe which connector ids exist.
+
+| Env | Default | |
+|---|---|---|
+| `WEBHOOK_EVENT_RETENTION_DAYS` | `7` | A periodic sweep (hourly, like the connector-auth-status sweep) deletes received events older than this. |
+| `WEBHOOK_EVENT_MAX_PER_CONNECTOR` | `500` | Enforced on every insert, deleting the oldest rows first — bounds storage for one connector even between sweeps, during a burst of deliveries. |
+
+### Cloud vs self-hosted
+
+Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch.
+
 ## Fatal crash reports (always on in the Docker image)
 
 A fatal V8 error, such as an out-of-memory abort, ends the backend before any JavaScript handler runs, so the log has no stack. `start.sh` therefore starts the backend with `--report-on-fatalerror`: on such a crash Node writes a diagnostic report (`report.<date>.<time>.<pid>...json`) with the native stack, heap spaces and resource usage, plus the JavaScript stack when V8 can still produce one. It goes to `HEAP_SNAPSHOT_DIR` (`/app/diagnostics` in the image, a volume on AnythingMCP Cloud), next to the heap snapshots. Environment variables are left out of the report (`--report-exclude-env`); a Node older than 22.13 cannot do that, so on such a build the report stays off. Self-hosted and Cloud behave the same; to keep the reports across container recreation on a self-hosted install, mount a volume at `/app/diagnostics`.
