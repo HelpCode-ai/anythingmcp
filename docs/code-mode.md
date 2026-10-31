@@ -57,6 +57,20 @@ permissions, over the connectors they can reach on that server. It appears only
 when the server's `codeMode` is `inline` and the caller's role carries the
 `inlineCode` capability.
 
+## Proposing a tool (`code_propose_tool`)
+
+When an agent finds a multi-step pattern worth keeping, it can **propose** a
+saved code tool instead of an admin writing one by hand. `code_propose_tool`
+appears under the same gate as inline code (`codeMode` `inline` + the
+`inlineCode` capability + a configured runner). It **does not run code and does
+not create a tool** — it records an inert proposal that shows up for admins
+under **Knowledge → Skills**. A proposal is always `invoker` and read-only and
+can only reference the proposer's own connectors, so an agent can never raise
+its own authority. An admin reviews the program and clicks **Create tool**,
+which runs the normal tool-creation checks (same-workspace connectors, plan
+cap); writes or `definer` rights are added only afterwards by editing the tool,
+where Enterprise and admin gating apply again.
+
 ## Governance
 
 - **Per server:** `codeMode` is `off` (default), `tools` (saved code tools
