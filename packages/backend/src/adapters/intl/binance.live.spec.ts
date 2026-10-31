@@ -313,6 +313,12 @@ describe('binance adapter: static spec conformance', () => {
       { symbol: 'ETHUSDT', quoteVolume: '30000000', lastPrice: '2345' },
     ];
     expect(shape('binance_futures_get_24h_ticker', tickers).value.map((t: any) => t.symbol)).toEqual(['BTCUSDT', 'ETHUSDT', 'AAAUSDT']);
+    // A contract with no trades yet answers quoteVolume null (seen in production on 31 Oct 2026):
+    // it sorts last instead of failing the whole mapping and returning the raw response.
+    const withNull = [...tickers, { symbol: 'NEWUSDT', quoteVolume: null, lastPrice: '0.5' }];
+    const sorted = shape('binance_futures_get_24h_ticker', withNull).value;
+    expect(sorted.map((t: any) => t.symbol)).toEqual(['BTCUSDT', 'ETHUSDT', 'AAAUSDT', 'NEWUSDT']);
+    expect(sorted[3]).toMatchObject({ symbol: 'NEWUSDT', quoteVolume: null, lastPrice: '0.5' });
     const marks = [
       { symbol: 'BTCUSDT', markPrice: '80891.8', indexPrice: '80925.1', estimatedSettlePrice: '81099.7', lastFundingRate: '-0.00000484', interestRate: '0.0001', nextFundingTime: 1792368000000, time: 1792352216000 },
       { symbol: 'XUSDT', markPrice: '1', indexPrice: '1', lastFundingRate: '-0.0150', interestRate: '0.0001', nextFundingTime: 1, time: 1 },
