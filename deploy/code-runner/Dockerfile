@@ -13,6 +13,14 @@
 # bytes are fixed and upgraded deliberately. Digest is the multi-arch index for
 # denoland/deno:debian-2.9.8 (2026-10-21), verified with
 # `docker buildx imagetools inspect`.
+#
+# No `USER` instruction on purpose (Trivy AVD-DS-0002 is waived in .trivyignore):
+# PID 1 (the supervisor) must run as root so
+# it can `setpriv` DOWN to the unprivileged `sandbox` uid for each run — a
+# non-root PID 1 could not change the child's uid. The container is run with
+# `cap_drop: ALL` (only SETUID/SETGID kept), `read_only`, `no-new-privileges`
+# and no egress (see docker-compose.yml and README.md), and the untrusted code
+# itself always runs as uid 10001, never root.
 FROM denoland/deno:debian-2.9.8@sha256:a0d88a7fcbd44f062cba2748e19df67d30290ad12aa203c7c1e0b12462c483f0
 
 # setpriv (util-linux) drops privileges per run; coreutils provides `env -i`.
