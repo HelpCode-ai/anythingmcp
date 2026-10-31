@@ -1259,6 +1259,21 @@ export const knowledgeGraph = {
   },
 };
 
+export interface KgCodeProposalPayload {
+  connectorId: string;
+  name: string;
+  description: string;
+  parameters: unknown;
+  endpointMapping: {
+    method: 'code';
+    path?: string;
+    code: string;
+    uses: Array<{ connectorId: string; tools?: string[] }>;
+    runAs: 'invoker' | 'definer';
+    allowWrites: boolean;
+  };
+}
+
 export interface KgSkill {
   id: string;
   connectorId: string | null;
@@ -1271,7 +1286,11 @@ export interface KgSkill {
   confidence: number;
   evidenceCount: number;
   status: string;
-  /** manual | llm | finder */
+  /** skill (default) | code (a candidate code tool awaiting admin approval). */
+  kind?: string;
+  /** For a `code` proposal: the candidate code tool an admin approves. */
+  payload?: KgCodeProposalPayload | null;
+  /** manual | llm | finder | agent */
   source?: string;
   /** Optional full procedure (markdown), served on demand by skill_get. */
   body?: string | null;

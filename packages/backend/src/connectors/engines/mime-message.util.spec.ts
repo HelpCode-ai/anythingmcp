@@ -5,6 +5,7 @@ import {
   encodeWords,
   expandMimeMarkers,
   MimeBuildError,
+  parseMimeAddresses,
 } from './mime-message.util';
 
 /* ------------------------------------------------------------------ */
@@ -172,6 +173,15 @@ describe('buildMimeMessage', () => {
       expect(() => build({ to })).toThrow(/is not an e-mail address/);
     },
   );
+
+  it('parses a display name followed by many spaces in linear time', () => {
+    const spaces = ' '.repeat(50_000);
+    const started = Date.now();
+    const [parsed] = parseMimeAddresses('to', `Name${spaces}<name@example.com>`);
+    expect(parsed).toEqual({ name: 'Name', address: 'name@example.com' });
+    expect(() => parseMimeAddresses('to', `Name${spaces}<name@example.com`)).toThrow(/is not an e-mail address/);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
 
   it('rejects unknown fields so a typo in an adapter is not silently dropped', () => {
     expect(() => build({ To: 'a@example.com' })).toThrow(/unknown field "To"/);

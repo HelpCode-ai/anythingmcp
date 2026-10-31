@@ -8,6 +8,7 @@ import {
   knowledgeGraph,
   mcpServers as mcpServersApi,
   connectors as connectorsApi,
+  tools as toolsApi,
   type KgSkill,
   type KgSkillVersion,
   type KnowledgeFolder,
@@ -445,6 +446,7 @@ function SkillCard({
   const [instruction, setInstruction] = useState(s.instruction);
   const [procedure, setProcedure] = useState(s.body ?? '');
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
   const [history, setHistory] = useState<KgSkillVersion[] | null>(null);
   const [historyError, setHistoryError] = useState('');
 
@@ -483,6 +485,121 @@ function SkillCard({
       setBusy(false);
     }
   };
+
+  // A code-tool proposal from an agent: not a skill. It is inert until an admin
+  // creates the tool through the normal tool-creation path (which re-checks the
+  // plan cap and, if the admin later elevates it, Enterprise/admin authority).
+  if (s.kind === 'code') {
+    const p = s.payload;
+    const createTool = async () => {
+      if (!p) return;
+      setBusy(true);
+      setErr('');
+      try {
+        await toolsApi.create(
+          p.connectorId,
+          {
+            name: p.name,
+            description: p.description,
+            parameters: p.parameters,
+            endpointMapping: p.endpointMapping,
+          },
+          token,
+        );
+        // Mark the proposal handled so it leaves the pending list. `apply`
+        // refuses a code proposal on purpose, so set the status directly.
+        await knowledgeGraph.skills.update(token, s.id, { status: 'applied' });
+        onChanged();
+      } catch (e: any) {
+        setErr(e?.message || 'Could not create the tool.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <Card className={cn('px-[18px] py-4', s.status === 'dismissed' && 'opacity-60')}>
+        <div className="flex items-start justify-between gap-3 mb-2.5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-0.5">
+              <span className="text-[14px] font-semibold text-[var(--text)]">{s.title}</span>
+              <Badge tone="warn" className="rounded-full px-2 py-[2px]">
+                Code tool proposal
+              </Badge>
+              <Badge tone={statusMeta.tone} className="rounded-full px-2 py-[2px]">
+                {s.status === 'applied' ? 'Created' : statusMeta.label}
+              </Badge>
+            </div>
+            <p className="text-[11.5px] text-[var(--text-3)]">
+              {scope} · proposed by an agent · read-only, runs with the caller&apos;s permissions
+            </p>
+          </div>
+          {isAdmin && (
+            <div className="flex gap-1.5 flex-shrink-0">
+              {s.status !== 'applied' && (
+                <Button
+                  size="sm"
+                  disabled={busy || !p}
+                  onClick={createTool}
+                  className="h-[30px] px-[11px] bg-[var(--ok)] text-[var(--ok-foreground)] hover:opacity-90"
+                >
+                  Create tool
+                </Button>
+              )}
+              {s.status !== 'dismissed' && s.status !== 'applied' && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => run(() => knowledgeGraph.skills.dismiss(token, s.id))}
+                  className="h-[30px] px-[11px]"
+                >
+                  Dismiss
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                title="Delete"
+                aria-label="Delete proposal"
+                onClick={() => run(() => knowledgeGraph.skills.remove(token, s.id))}
+                className="h-[30px] w-[30px] p-0 text-[var(--danger)]"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                </svg>
+              </Button>
+            </div>
+          )}
+        </div>
+        {s.instruction && (
+          <p className="text-[13px] leading-[1.55] mb-1 text-[var(--text)]">
+            <span className="text-[var(--text-3)]">Why:</span> {s.instruction}
+          </p>
+        )}
+        {p && (
+          <>
+            <p className="text-[13px] leading-[1.55] text-[var(--text)]">
+              <span className="text-[var(--text-3)]">Does:</span> {p.description}
+            </p>
+            <details className="mt-2" open>
+              <summary className="cursor-pointer text-[12.5px] text-[var(--text-2)]">
+                Program ({p.endpointMapping.code.length.toLocaleString()} characters)
+              </summary>
+              <pre className="mt-2 overflow-auto rounded-md bg-[var(--surface-2)] p-3 text-[12px] leading-[1.5] text-[var(--text)]">
+                {p.endpointMapping.code}
+              </pre>
+            </details>
+            <p className="mt-2 text-[12px] text-[var(--text-3)]">
+              Creating it adds a read-only code tool on {s.connector?.name ?? 'the connector'}. To let it write
+              data or run with the author&apos;s rights, edit it afterwards on the connector&apos;s tools page.
+            </p>
+          </>
+        )}
+        {err && <p className="mt-2 text-[12px] text-[var(--danger)]">{err}</p>}
+      </Card>
+    );
+  }
 
   if (editing) {
     return (

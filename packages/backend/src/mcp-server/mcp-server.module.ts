@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { McpServerService } from './mcp-server.service';
 import { ToolRegistry } from './tool-registry';
 import { DynamicMcpTools } from './dynamic-mcp-tools';
+import { CodeExecutorService } from './code-executor.service';
 import { McpEndpointController } from './mcp-endpoint.controller';
 import { WellKnownOAuthController } from './well-known-oauth.controller';
 import { RegistryCatchUpController } from './registry-catch-up.controller';
@@ -39,7 +40,7 @@ const ENGINES = [
 @Module({
   imports: [McpServersModule, LicenseModule, SettingsModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
-  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, GraphqlSchemaService, ...ENGINES],
-  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService],
+  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, GraphqlSchemaService, ...ENGINES],
+  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService],
 })
 export class McpServerModule {}

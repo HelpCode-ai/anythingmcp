@@ -1,5 +1,6 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { validateCodeToolMapping } from '../mcp-server/code-tool.util';
 import { KgLlmService } from './kg-llm.service';
 import { chatJson, resolveLlmConfig } from './llm-client';
 import { maybeRedactIntent } from './redact';
@@ -16,7 +17,7 @@ import {
 const MAX_INTENTS = 200;
 
 /** Where a skill came from; generation only ever replaces its own `llm` rows. */
-export type SkillSource = 'manual' | 'llm' | 'finder' | 'consolidation' | 'errors';
+export type SkillSource = 'manual' | 'llm' | 'finder' | 'consolidation' | 'errors' | 'agent';
 
 /** Longest procedure (`body`) a skill can carry. Served by skill_get only. */
 export const SKILL_BODY_MAX = 20_000;
@@ -65,6 +66,9 @@ function visibleWhere(
     // pull another workspace's skills in.
     organizationId,
     status: 'applied',
+    // A `code` proposal is a candidate code tool awaiting admin approval, never
+    // a servable skill: exclude it from every skill-delivery path.
+    kind: { not: 'code' },
     OR: [
       { mcpServerId: { in: serverIds.length ? serverIds : ['__none__'] } },
       { connectorId: { in: connectorIds.length ? connectorIds : ['__none__'] } },
@@ -1012,12 +1016,78 @@ export class KgSkillService {
   }
 
   /**
+   * Record an agent's proposal of a saved code tool. Inert by construction: it
+   * is stored as a `kind = 'code'` suggestion for an admin to review and
+   * approve through the normal tool-creation path (assertValidCodeTool + plan
+   * cap). Nothing runs, and the proposal carries no authority of its own — it
+   * is always `invoker` and read-only; an admin raises it to definer / writes
+   * (when the edition and their role allow) at approval. `connectorId` and
+   * `usesConnectorIds` are set by the caller from the proposer's own visible
+   * connectors, so a proposal can never reference another tenant's connectors.
+   */
+  async proposeCodeTool(
+    organizationId: string,
+    input: {
+      connectorId: string;
+      usesConnectorIds: string[];
+      name: string;
+      description: string;
+      code: string;
+      parameters?: unknown;
+      rationale: string;
+      mcpServerId?: string | null;
+    },
+  ) {
+    const name = (input.name ?? '').trim().slice(0, 160);
+    if (!name) throw new BadRequestException('A tool name is required.');
+    const code = typeof input.code === 'string' ? input.code : '';
+    if (!code.trim()) throw new BadRequestException('A code program is required.');
+    if (!input.connectorId) throw new BadRequestException('A connector is required.');
+    const description = (input.description ?? '').trim().slice(0, 2000) || name;
+    const uses = [...new Set(input.usesConnectorIds)].filter(Boolean).map((connectorId) => ({ connectorId }));
+    if (!uses.length) throw new BadRequestException('At least one connector is required.');
+    // Always invoker + read-only at proposal time; an admin elevates at approval.
+    const endpointMapping = { method: 'code', path: '', code, uses, runAs: 'invoker', allowWrites: false };
+    const shapeError = validateCodeToolMapping(endpointMapping);
+    if (shapeError) throw new BadRequestException(shapeError);
+    const parameters =
+      input.parameters && typeof input.parameters === 'object' && !Array.isArray(input.parameters)
+        ? input.parameters
+        : { type: 'object', properties: {} };
+    // The candidate McpTool the admin approves into existence; the program lives
+    // only here (never in `body`, which is a servable skill field).
+    const payload = { connectorId: input.connectorId, name, description, parameters, endpointMapping };
+    return this.prisma.kgSkillSuggestion.create({
+      data: {
+        organizationId,
+        connectorId: input.connectorId,
+        mcpServerId: input.mcpServerId ?? null,
+        kind: 'code',
+        source: 'agent',
+        status: 'pending',
+        title: name,
+        whenToUse: description.slice(0, 1000),
+        instruction: (input.rationale ?? '').trim().slice(0, 2000) || 'Proposed by an agent.',
+        payload,
+        confidence: 0,
+      },
+    });
+  }
+
+  /**
    * Activate a skill. A consolidation proposal also dismisses the applied
    * skills it replaces (they stay, with their history, and can be activated
    * again).
    */
   async apply(organizationId: string, id: string) {
     const skill = await this.owned(organizationId, id);
+    if (skill.kind === 'code') {
+      // A code proposal is not a skill: it becomes a tool only through the
+      // tool-creation path (full authority checks), which the admin UI drives.
+      throw new BadRequestException(
+        'A code proposal is approved by creating its tool, not by applying it as a skill.',
+      );
+    }
     const replaces = Array.isArray(skill.replaces) ? (skill.replaces as string[]) : [];
     if (!replaces.length) {
       return this.prisma.kgSkillSuggestion.update({ where: { id }, data: { status: 'applied' } });
