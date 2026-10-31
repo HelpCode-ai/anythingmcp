@@ -55,6 +55,7 @@ import * as papershift from './de/papershift.json';
 import * as payone from './de/payone.json';
 import * as personio from './de/personio.json';
 import * as planradar from './de/planradar.json';
+import * as plentymarkets from './de/plentymarkets.json';
 import * as plentyone from './de/plentyone.json';
 import * as propstack from './de/propstack.json';
 import * as ready2order from './de/ready2order.json';
@@ -1000,6 +1001,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   payone as unknown as AdapterDefinition,
   personio as unknown as AdapterDefinition,
   planradar as unknown as AdapterDefinition,
+  plentymarkets as unknown as AdapterDefinition,
   plentyone as unknown as AdapterDefinition,
   propstack as unknown as AdapterDefinition,
   ready2order as unknown as AdapterDefinition,
