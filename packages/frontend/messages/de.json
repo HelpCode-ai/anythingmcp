@@ -1682,7 +1682,17 @@
     "cacheTtl": "Cache-TTL der Antwort",
     "cacheSeconds": "Sekunden (0 = kein Caching)",
     "cacheHint": "Identische Anfragen werden in Redis zwischengespeichert, um API-Aufrufe zu sparen. Übliche Werte: 60 (1 Min.), 300 (5 Min.), 3600 (1 Stunde).",
-    "preview": "Vorschau des erzeugten Mappings (JSON)"
+    "preview": "Vorschau des erzeugten Mappings (JSON)",
+    "codeText": "Code-Tool",
+    "codeProgram": "Programm",
+    "codeProgramHint": "Ein async-JavaScript-Rumpf. Andere Tools mit await amcp.run(name, args), amcp.search(query), amcp.describe(name) aufrufen. Die Tool-Eingaben stehen in args. Gib das Ergebnis zurück.",
+    "codeUses": "Nutzt (Konnektoren)",
+    "codeUsesHint": "JSON: die Konnektoren, die dieses Code-Tool aufrufen darf, z. B. [{\"connectorId\":\"<id>\",\"tools\":[\"tool_name\"]}]. \"tools\" weglassen, um alle Tools eines Konnektors zu erlauben. Nur Konnektoren dieses Workspace.",
+    "codeRunAs": "Ausführen als",
+    "codeRunAsInvoker": "Invoker (Rechte des Aufrufers)",
+    "codeRunAsDefiner": "Definer (admin-kuratiert; nur Admins)",
+    "codeAllowWrites": "Schreib-Tools erlauben",
+    "codeAllowWritesHint": "Aus = das Programm darf nur lesende Tools aufrufen. Schreiben erfordert Enterprise."
   },
   "responseMapping": {
     "title": "Response-Mapping",

@@ -382,6 +382,7 @@ describe('tool editor', () => {
       prisma as any,
       { reloadConnectorTools: jest.fn() } as any,
       connectorsService as any,
+      { assertEnterprise: jest.fn().mockResolvedValue(undefined) } as any,
     );
     return { controller, prisma, connectorsService };
   }

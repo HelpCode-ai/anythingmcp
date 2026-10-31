@@ -1854,7 +1854,10 @@ export class McpEndpointController {
             const result = await this.toolExecutor.executeTool(
               tool.name,
               toolArgs,
-              { ...ctx, connectorIds: [tool.connectorId] },
+              // allowedToolIds lets a code tool in `invoker` mode re-check the
+              // caller's role on every inner call; the role filter above already
+              // gated listing and this top-level call.
+              { ...ctx, connectorIds: [tool.connectorId], allowedToolIds },
             );
             // When an outputSchema is advertised, the SDK requires
             // structuredContent on success. Provide the result object

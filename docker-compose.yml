@@ -92,6 +92,13 @@ services:
       # adapter then fills its MOTIS_URL in automatically at import. Leave
       # unset to be asked for a URL when installing the adapter.
       - MOTIS_INTERNAL_URL=${MOTIS_INTERNAL_URL:-}
+      # Code mode: WebSocket URL of the code-runner service that executes code
+      # runs in isolation (see deploy/code-runner/README.md). Empty = code mode
+      # off, the default. Set together with COMPOSE_PROFILES=code-runner to run
+      # the bundled runner: CODE_RUNNER_URL=ws://code-runner:8777. The backend
+      # never runs code in-process; an unset or unreachable runner means code
+      # runs are refused, not executed locally.
+      - CODE_RUNNER_URL=${CODE_RUNNER_URL:-}
       # Hosts the SSRF guard may reach even though they resolve to a private
       # address. Needed for the bundled MOTIS (`motis`) and any other API you
       # run on the same Docker network.
@@ -174,6 +181,47 @@ services:
       timeout: 5s
       retries: 3
       start_period: 180s
+    restart: unless-stopped
+
+  # Code-runner for code mode (optional). Activated by
+  # COMPOSE_PROFILES=code-runner in .env, together with
+  # CODE_RUNNER_URL=ws://code-runner:8777 on the app. Executes code-mode runs in
+  # isolation: a Deno subprocess per run under an unprivileged uid, every
+  # permission denied, no filesystem, no environment, and no egress — the only
+  # way out is the MCP tools the caller already has. Full model and the
+  # containment test: deploy/code-runner/README.md. No ports are published: the
+  # app reaches it by service name on the internal network only.
+  code-runner:
+    build:
+      context: ./deploy/code-runner
+    image: anythingmcp-code-runner:1
+    profiles: ["code-runner"]
+    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-code-runner
+    # The runner holds no secrets and needs no inbound internet. Bounded so a
+    # runaway run cannot starve the host; a per-run V8 heap cap and wall-clock
+    # deadline are enforced inside the supervisor as well.
+    mem_limit: ${CODE_RUNNER_MEM_LIMIT:-1g}
+    cpus: ${CODE_RUNNER_CPUS:-1.0}
+    pids_limit: 512
+    read_only: true
+    tmpfs:
+      - /tmp/code-runner:mode=1777
+    security_opt:
+      # Dropping privileges with setpriv is always allowed; this only blocks
+      # GAINING them (setuid binaries), which the runner never needs to.
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # setpriv needs these to change the child's uid/gid; nothing else is kept.
+      - SETUID
+      - SETGID
+    healthcheck:
+      test: ["CMD", "deno", "eval", "const r = await fetch('http://127.0.0.1:8777'); Deno.exit(r.ok ? 0 : 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   # Redis Cache (optional — uncomment to enable response caching and rate limiting)

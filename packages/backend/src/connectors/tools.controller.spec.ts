@@ -33,8 +33,16 @@ function buildController(overrides: { prisma?: any; connectorsService?: any; mcp
   const mcpServer = overrides.mcpServer ?? {
     reloadConnectorTools: jest.fn().mockResolvedValue(undefined),
   };
-  const controller = new ToolsController(prisma as any, mcpServer as any, connectorsService as any);
-  return { controller, prisma, connectorsService, mcpServer };
+  const edition = (overrides as { edition?: any }).edition ?? {
+    assertEnterprise: jest.fn().mockResolvedValue(undefined),
+  };
+  const controller = new ToolsController(
+    prisma as any,
+    mcpServer as any,
+    connectorsService as any,
+    edition as any,
+  );
+  return { controller, prisma, connectorsService, mcpServer, edition };
 }
 
 const req = (role = 'ADMIN') => ({ user: { sub: 'u1', organizationId: 'org1', role } });
