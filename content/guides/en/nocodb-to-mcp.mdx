@@ -1,6 +1,6 @@
 ---
 title: "How to Connect NocoDB to MCP for AI Agents"
-description: "Read NocoDB workspaces, bases, tables, and records with AI agents via MCP. NocoDB is an open-source no-code database platform."
+description: "Manage NocoDB workspaces, bases, tables, views, and records with AI agents via MCP. NocoDB is an open-source no-code database platform."
 category: "connectors"
 keyword: "NocoDB MCP Server, NocoDB API AI, NocoDB Airtable alternative MCP, connect NocoDB to Claude, NocoDB ChatGPT"
 publishedAt: "2026-10-25"
@@ -9,7 +9,7 @@ adapterSlug: "nocodb"
 
 ## NocoDB with AI Agents
 
-NocoDB is an open-source Airtable alternative that turns relational databases into smart spreadsheets. By connecting its v3 REST API to AnythingMCP, AI agents can discover workspaces, bases, and tables, inspect column schemas, and query or count records with filtering and sorting.
+NocoDB is an open-source Airtable alternative that turns relational databases into smart spreadsheets. By connecting its v3 REST API to AnythingMCP, AI agents can discover workspaces, bases, and tables, inspect column schemas, view configurations, query and filter records, and create, update, or delete rows.
 
 ## Quick Setup
 
@@ -38,13 +38,19 @@ Open `http://localhost:3000/connectors/store`, import the NocoDB adapter, and co
 | `nocodb_list_bases` | List bases within a workspace (`p_...` IDs) |
 | `nocodb_list_tables` | List tables within a base (`m_...` IDs) |
 | `nocodb_get_table` | Get table schema and field definitions |
+| `nocodb_list_views` | List views (Grid, Kanban, Gallery, Form) in a table |
 | `nocodb_list_records` | Query and paginate records with `where`, `sort`, and `fields` |
-| `nocodb_get_record` | Retrieve a single record by row ID |
-| `nocodb_count_records` | Count records matching a filter condition |
+| `nocodb_get_record` | Retrieve a single record by numeric row ID |
+| `nocodb_count_records` | Count records matching an optional filter condition |
+| `nocodb_create_record` | Insert a new record into a table with custom field values |
+| `nocodb_update_record` | Update existing record fields by numeric row ID |
+| `nocodb_delete_record` | Delete a record from a table by numeric row ID |
 
 ## Use Cases
 
-- **"How many open tickets are in our Support base?"**
-- **"List the newest 10 customer records from the CRM base."**
-- **"What columns and types are defined in the Inventory table?"**
+- **"Inspect the columns and data types in our Leads table."**
+- **"List all active Kanban views configured for the Project Management base."**
 - **"Find customer records where Status is Active and Country is Germany."**
+- **"Create a new ticket in the Support table titled 'Fix login timeout issue'."**
+- **"Update record #42 in the Orders table and set Status to Shipped."**
+- **"Delete the obsolete row #105 from the TempData table."**

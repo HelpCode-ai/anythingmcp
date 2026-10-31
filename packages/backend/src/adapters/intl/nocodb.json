@@ -1,8 +1,8 @@
 {
   "slug": "nocodb",
   "name": "NocoDB",
-  "description": "Read NocoDB workspaces, bases, tables, and records from NocoDB Cloud or a self-hosted instance. 7 read-only tools using xc-token API key authentication against the v3 REST API.",
-  "instructions": "This connector uses the NocoDB v3 API and is read-only.\n\n**Setup**:\n1. In NocoDB, open Team & Settings > API Tokens and create a token. Use a token with read-only access where possible; this adapter never sends write requests.\n2. Set `NOCODB_API_TOKEN` to that token.\n3. Set `NOCODB_URL` to the root NocoDB host, with no trailing slash. For NocoDB Cloud use `https://app.nocodb.com`. For self-hosted NocoDB use your own host, for example `https://nocodb.example.com`.\n\n**Authentication**: NocoDB API tokens use the `xc-token` header. This adapter sends the header correctly. API tokens apply to the entire NocoDB instance; to limit access, create a token from a user account that only has the needed permissions.\n\n**Discovery order**: call `nocodb_list_workspaces` first, then `nocodb_list_bases` for the workspace you want, then `nocodb_list_tables` for the base. IDs follow a chain: workspace IDs start with `w`, base IDs start with `p`, table IDs start with `m` or use a longer alphanumeric string, and record IDs are numeric. Always discover IDs from the parent level before querying the child level.\n\n**Records and filtering**: before filtering or sorting records, call `nocodb_get_table` to learn the exact field names and types. The `where` parameter uses the NocoDB filter syntax: `(field,eq,value)` for a single condition, joined with `~and` or `~or` for multiple conditions, for example `(Status,eq,Open)~and(Priority,eq,High)`. The `sort` parameter is JSON: one object or an array of objects with `field` and `direction` (`asc` or `desc`), for example `[{\"field\":\"CreatedAt\",\"direction\":\"desc\"}]`. Field names must exactly match what `nocodb_get_table` returns.\n\n**Pagination**: `pageSize` is silently capped at 100 on NocoDB Cloud and 1000 on self-hosted instances. Use `nocodb_count_records` to learn the total before paging through large tables.\n\n**Rate limiting**: NocoDB enforces approximately 5 requests per second per user, shared by all of the user's tokens. If the limit is hit, the API returns HTTP 429 with a `Retry-After` header (see https://nocodb.com/docs/apis/errors).\n\n**Self-hosted instances**: if the NocoDB host is private or resolves to private address space, self-host AnythingMCP on the same network and allow the host through `SSRF_ALLOWED_HOSTS`; otherwise the outbound guard blocks the request. On AnythingMCP Cloud, only publicly reachable NocoDB instances work.\n\n**Community Edition note**: unlicensed self-hosted NocoDB may have a single implicit workspace. In that case, `nocodb_list_workspaces` may return one entry or an empty list; proceed directly to `nocodb_list_bases` with the known workspace ID or skip to tables if the base ID is already known.\n\n**Out of scope**: creating, updating, or deleting records, tables, bases, or workspaces; views APIs (plan-gated); attachments; webhooks; and the deprecated v1/v2 APIs.",
+  "description": "Manage NocoDB workspaces, bases, tables, views, and records from NocoDB Cloud or a self-hosted instance. 11 tools using xc-token API key authentication against the v3 REST API.",
+  "instructions": "This connector uses the NocoDB v3 API to manage databases, views, and records.\n\n**Setup**:\n1. In NocoDB, open Team & Settings > API Tokens and create a token. Use a token with the appropriate workspace and table permissions.\n2. Set `NOCODB_API_TOKEN` to that token.\n3. Set `NOCODB_URL` to the root NocoDB host, with no trailing slash. For NocoDB Cloud use `https://app.nocodb.com`. For self-hosted NocoDB use your own host, for example `https://nocodb.example.com`.\n\n**Authentication**: NocoDB API tokens use the `xc-token` header. This adapter sends the header correctly. API tokens apply to the entire NocoDB instance; to limit access, create a token from a user account that only has the needed permissions.\n\n**Discovery order**: call `nocodb_list_workspaces` first, then `nocodb_list_bases` for the workspace you want, then `nocodb_list_tables` for the base. To inspect configured views, call `nocodb_list_views`. IDs follow a chain: workspace IDs start with `w`, base IDs start with `p`, table IDs start with `m` or use a longer alphanumeric string, view IDs start with `v`, and record IDs are numeric. Always discover IDs from the parent level before querying the child level.\n\n**Records and filtering**: before filtering, sorting, or inserting records, call `nocodb_get_table` to learn the exact field names and types. The `where` parameter uses the NocoDB filter syntax: `(field,eq,value)` for a single condition, joined with `~and` or `~or` for multiple conditions, for example `(Status,eq,Open)~and(Priority,eq,High)`. The `sort` parameter is a JSON string of sort descriptors. Field names must exactly match what `nocodb_get_table` returns. Query with `nocodb_list_records`, fetch single rows with `nocodb_get_record`, and count records with `nocodb_count_records`.\n\n**Creating, updating, and deleting**: To create a record, call `nocodb_create_record` with the `fields` object. To update an existing row, call `nocodb_update_record` with the numeric record ID and the updated fields. To delete a record, call `nocodb_delete_record` with the numeric record ID. Always check `nocodb_get_table` first so the field names and data types match the table schema.\n\n**Pagination**: `pageSize` is silently capped at 100 on NocoDB Cloud and 1000 on self-hosted instances. Use `nocodb_count_records` to learn the total before paging through large tables.\n\n**Rate limiting**: NocoDB enforces approximately 5 requests per second per user, shared by all of the user's tokens. If the limit is hit, the API returns HTTP 429 with a `Retry-After` header (see https://nocodb.com/docs/apis/errors).\n\n**Self-hosted instances**: if the NocoDB host is private or resolves to private address space, self-host AnythingMCP on the same network and allow the host through `SSRF_ALLOWED_HOSTS`; otherwise the outbound guard blocks the request. On AnythingMCP Cloud, only publicly reachable NocoDB instances work.\n\n**Community Edition note**: unlicensed self-hosted NocoDB may have a single implicit workspace. In that case, `nocodb_list_workspaces` may return one entry or an empty list; proceed directly to `nocodb_list_bases` with the known workspace ID or skip to tables if the base ID is already known.\n\n**Out of scope**: schema modifications such as creating or deleting tables, bases, or columns; binary file attachment uploads; webhooks; and the deprecated v1/v2 APIs.",
   "region": "intl",
   "category": "data",
   "icon": "nocodb",
@@ -152,8 +152,34 @@
       }
     },
     {
+      "name": "nocodb_list_views",
+      "description": "List all views (Grid, Gallery, Kanban, Form) configured for a NocoDB table. Call nocodb_list_tables first to get table IDs, then call this to discover view IDs (prefixed with v) for filtering records. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "baseId": {
+            "type": "string",
+            "description": "Base ID from nocodb_list_bases, prefixed with p, for example p_abc123def."
+          },
+          "tableId": {
+            "type": "string",
+            "description": "Table ID from nocodb_list_tables, for example m_abc123def."
+          }
+        },
+        "required": [
+          "baseId",
+          "tableId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/meta/bases/{baseId}/tables/{tableId}/views",
+        "encodePathParams": true
+      }
+    },
+    {
       "name": "nocodb_list_records",
-      "description": "List records from a NocoDB table. Call nocodb_get_table first for exact field names, then use them in where, sort and fields. where uses (field,eq,value) joined with ~and or ~or; sort is JSON such as [{\"field\":\"CreatedAt\",\"direction\":\"desc\"}]. Returns records plus pagination links; pageSize is silently capped at 100 on Cloud and 1000 on self-hosted. Read-only.",
+      "description": "List records from a NocoDB table. Call nocodb_get_table first for exact field names, then use them in where, sort and fields. where uses (field,eq,value) joined with ~and or ~or; sort is a JSON string of sort descriptors. Returns records plus pagination links; pageSize is silently capped at 100 on Cloud and 1000 on self-hosted. Read-only.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -171,7 +197,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort as JSON: one object or an array of objects with field and direction (asc or desc), for example [{\"field\":\"CreatedAt\",\"direction\":\"desc\"}]. Use exact field names from nocodb_get_table."
+            "description": "Sort as a JSON string of sort descriptors, for example -CreatedAt for descending or CreatedAt for ascending. Prefix field name with - for descending."
           },
           "fields": {
             "type": "string",
@@ -191,7 +217,7 @@
           },
           "viewId": {
             "type": "string",
-            "description": "Optional view ID to read records through a specific view's filters and sorts."
+            "description": "Optional view ID from nocodb_list_views to read records through a specific view's filters and sorts."
           }
         },
         "required": [
@@ -271,7 +297,7 @@
           },
           "viewId": {
             "type": "string",
-            "description": "Optional view ID to count records through a specific view's filters."
+            "description": "Optional view ID from nocodb_list_views to count records through a specific view's filters."
           }
         },
         "required": [
@@ -285,6 +311,114 @@
         "queryParams": {
           "where": "$where",
           "viewId": "$viewId"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "nocodb_create_record",
+      "description": "Create a new record in a NocoDB table. Call nocodb_get_table first to verify field names and expected column data types. Pass column values as key-value pairs inside the fields object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "baseId": {
+            "type": "string",
+            "description": "Base ID from nocodb_list_bases, prefixed with p, for example p_abc123def."
+          },
+          "tableId": {
+            "type": "string",
+            "description": "Table ID from nocodb_list_tables, for example m_abc123def."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Key-value pairs of field names and their values for the new record, for example {\"Title\": \"New task\", \"Status\": \"Open\"}."
+          }
+        },
+        "required": [
+          "baseId",
+          "tableId",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/data/{baseId}/{tableId}/records",
+        "bodyMapping": {
+          "fields": "$fields"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "nocodb_update_record",
+      "description": "Update an existing record in a NocoDB table by its row ID. Call nocodb_get_table first to verify field names, and nocodb_list_records to discover the numeric record ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "baseId": {
+            "type": "string",
+            "description": "Base ID from nocodb_list_bases, prefixed with p, for example p_abc123def."
+          },
+          "tableId": {
+            "type": "string",
+            "description": "Table ID from nocodb_list_tables, for example m_abc123def."
+          },
+          "recordId": {
+            "type": "integer",
+            "description": "Numeric row ID of the record to update."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Key-value pairs of field names and updated values, for example {\"Status\": \"Completed\"}."
+          }
+        },
+        "required": [
+          "baseId",
+          "tableId",
+          "recordId",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/data/{baseId}/{tableId}/records",
+        "bodyMapping": {
+          "id": "$recordId",
+          "fields": "$fields"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "nocodb_delete_record",
+      "description": "Delete a record from a NocoDB table by its numeric row ID. Use nocodb_list_records first to locate the record ID before deleting. Destructive action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "baseId": {
+            "type": "string",
+            "description": "Base ID from nocodb_list_bases, prefixed with p, for example p_abc123def."
+          },
+          "tableId": {
+            "type": "string",
+            "description": "Table ID from nocodb_list_tables, for example m_abc123def."
+          },
+          "recordId": {
+            "type": "integer",
+            "description": "Numeric row ID of the record to delete."
+          }
+        },
+        "required": [
+          "baseId",
+          "tableId",
+          "recordId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/data/{baseId}/{tableId}/records",
+        "bodyMapping": {
+          "Id": "$recordId"
         },
         "encodePathParams": true
       }
