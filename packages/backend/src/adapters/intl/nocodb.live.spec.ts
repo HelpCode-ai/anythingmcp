@@ -13,17 +13,15 @@ import { getAdapter, listAdapters } from '../catalog';
  * Two layers of verification for the NocoDB adapter:
  *
  *   1. Static: always runs. Pins xc-token API key auth on the instance URL
- *      the user enters, and checks every tool's method is GET, URL paths
- *      are correct, the discovery chain is documented, and descriptions
- *      meet the minimum length.
+ *      the user enters, and checks tool methods, URL paths, bodyMappings,
+ *      discovery documentation, and description minimum lengths.
  *
  *   2. Live: skipped unless RUN_NOCODB_LIVE=1.
  *      With NOCODB_URL and NOCODB_API_TOKEN they run against that instance:
  *      list workspaces, list bases, list tables and read one page of records.
  *
- *        RUN_NOCODB_LIVE=1 npx jest src/adapters/intl/nocodb.live.spec.ts
+ *   RUN_NOCODB_LIVE=1 npx jest src/adapters/intl/nocodb.live.spec.ts
  */
-
 jest.mock('axios', () => {
   const actual = jest.requireActual('axios');
   const mocked = jest.fn();
@@ -33,6 +31,7 @@ jest.mock('axios', () => {
     AxiosError: actual.AxiosError,
   };
 });
+
 const mockedAxios = axios as unknown as jest.Mock & { __actual: typeof axios };
 
 type Tool = {
@@ -44,6 +43,7 @@ type Tool = {
   responseMapping?: Record<string, any>;
   annotations?: Record<string, unknown>;
 };
+
 const a = adapter as unknown as {
   slug: string;
   unlisted?: boolean;
@@ -57,11 +57,13 @@ const a = adapter as unknown as {
   connector: { baseUrl: string; authType: string; authConfig: Record<string, string>; headers: Record<string, string>; healthcheckPath?: string };
   tools: Tool[];
 };
+
 const tool = (name: string) => {
   const t = a.tools.find((x) => x.name === name);
   if (!t) throw new Error(`missing tool ${name}`);
   return t;
 };
+
 const annotationsOf = (t: Tool) =>
   deriveToolAnnotations({ name: t.name, connectorType: 'REST', endpointMapping: t.endpointMapping, annotations: t.annotations });
 
@@ -86,7 +88,9 @@ const call = (name: string, params: Record<string, unknown>, env = ENV) => {
     { ...applySchemaDefaults(tool(name).parameters as any, params), ...env },
   ) as Promise<any>;
 };
+
 const sent = () => mockedAxios.mock.calls[0][0];
+
 const query = () => {
   const req = sent();
   return req.paramsSerializer ? decodeURIComponent(req.paramsSerializer(req.params)) : '';
@@ -136,13 +140,27 @@ describe('nocodb adapter: static spec conformance', () => {
     }
   });
 
-  it('has exactly 7 tools and all are read-only GET methods', () => {
-    expect(a.tools.length).toBe(7);
-    for (const t of a.tools) {
+  it('has exactly 11 tools with read-only and write methods correctly assigned', () => {
+    expect(a.tools.length).toBe(11);
+    const readTools = [
+      'nocodb_list_workspaces',
+      'nocodb_list_bases',
+      'nocodb_list_tables',
+      'nocodb_get_table',
+      'nocodb_list_views',
+      'nocodb_list_records',
+      'nocodb_get_record',
+      'nocodb_count_records',
+    ];
+    for (const name of readTools) {
+      const t = tool(name);
       expect(t.endpointMapping.method).toBe('GET');
       expect(annotationsOf(t).readOnlyHint).toBe(true);
     }
-    expect(a.tools.some((t) => ['DELETE', 'PUT', 'PATCH', 'POST'].includes(t.endpointMapping.method))).toBe(false);
+
+    expect(tool('nocodb_create_record').endpointMapping.method).toBe('POST');
+    expect(tool('nocodb_update_record').endpointMapping.method).toBe('PATCH');
+    expect(tool('nocodb_delete_record').endpointMapping.method).toBe('DELETE');
   });
 
   it('only points the model at tools that exist, and descriptions meet minimum length', () => {
@@ -172,6 +190,10 @@ describe('nocodb adapter: static spec conformance', () => {
     expect(a.instructions).toContain('nocodb_list_workspaces');
     expect(a.instructions).toContain('nocodb_list_bases');
     expect(a.instructions).toContain('nocodb_get_table');
+    expect(a.instructions).toContain('nocodb_list_views');
+    expect(a.instructions).toContain('nocodb_create_record');
+    expect(a.instructions).toContain('nocodb_update_record');
+    expect(a.instructions).toContain('nocodb_delete_record');
   });
 
   const table: Array<[string, Record<string, unknown>, string, string]> = [
@@ -179,9 +201,13 @@ describe('nocodb adapter: static spec conformance', () => {
     ['nocodb_list_bases', { workspaceId: 'w_abc123' }, 'GET', '/meta/workspaces/w_abc123/bases'],
     ['nocodb_list_tables', { baseId: 'p_abc123' }, 'GET', '/meta/bases/p_abc123/tables'],
     ['nocodb_get_table', { baseId: 'p_abc123', tableId: 'm_xyz789' }, 'GET', '/meta/bases/p_abc123/tables/m_xyz789'],
+    ['nocodb_list_views', { baseId: 'p_abc123', tableId: 'm_xyz789' }, 'GET', '/meta/bases/p_abc123/tables/m_xyz789/views'],
     ['nocodb_list_records', { baseId: 'p_abc123', tableId: 'm_xyz789' }, 'GET', '/data/p_abc123/m_xyz789/records'],
     ['nocodb_get_record', { baseId: 'p_abc123', tableId: 'm_xyz789', recordId: 1 }, 'GET', '/data/p_abc123/m_xyz789/records/1'],
     ['nocodb_count_records', { baseId: 'p_abc123', tableId: 'm_xyz789' }, 'GET', '/data/p_abc123/m_xyz789/count'],
+    ['nocodb_create_record', { baseId: 'p_abc123', tableId: 'm_xyz789', fields: { Title: 'Test' } }, 'POST', '/data/p_abc123/m_xyz789/records'],
+    ['nocodb_update_record', { baseId: 'p_abc123', tableId: 'm_xyz789', recordId: 1, fields: { Title: 'Updated' } }, 'PATCH', '/data/p_abc123/m_xyz789/records'],
+    ['nocodb_delete_record', { baseId: 'p_abc123', tableId: 'm_xyz789', recordId: 1 }, 'DELETE', '/data/p_abc123/m_xyz789/records'],
   ];
 
   it('lists every tool in the URL table', () => {
@@ -197,6 +223,39 @@ describe('nocodb adapter: static spec conformance', () => {
     expect(req.url).toBe(`${API}${path}`);
     expect(req.headers['xc-token']).toBe(FAKE_TOKEN);
     expect(JSON.stringify(req)).not.toContain('{{');
+  });
+
+  it('maps request body correctly for create, update and delete record tools', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+
+    // create_record
+    await call('nocodb_create_record', {
+      baseId: 'p_abc123',
+      tableId: 'm_xyz789',
+      fields: { Title: 'Hello' },
+    });
+    expect(sent().data).toEqual({ fields: { Title: 'Hello' } });
+    mockedAxios.mockReset();
+
+    // update_record
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('nocodb_update_record', {
+      baseId: 'p_abc123',
+      tableId: 'm_xyz789',
+      recordId: 42,
+      fields: { Status: 'Done' },
+    });
+    expect(sent().data).toEqual({ id: 42, fields: { Status: 'Done' } });
+    mockedAxios.mockReset();
+
+    // delete_record
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('nocodb_delete_record', {
+      baseId: 'p_abc123',
+      tableId: 'm_xyz789',
+      recordId: 42,
+    });
+    expect(sent().data).toEqual({ Id: 42 });
   });
 
   it('keeps a self-hosted URL path', async () => {
