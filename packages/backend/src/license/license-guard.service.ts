@@ -113,6 +113,43 @@ export class LicenseGuardService {
   }
 
   /**
+   * Saved code tools are capped like connectors/servers: a hard cap on the
+   * Cloud trial (abuse control), soft elsewhere (paid tiers do not block). The
+   * number is a licence feature (`features.maxCodeTools`), set per plan on the
+   * licensing site, so no plan→number mapping is hardcoded here. Self-hosted is
+   * never capped. Counting is by the tool's endpoint method, joined to the
+   * connector for the org scope.
+   */
+  async checkCanCreateCodeTool(organizationId?: string): Promise<void> {
+    if (!this.deployment.isCloud()) return;
+    await this.checkLicenseActive(organizationId);
+
+    const license = await this.licenseService.getCurrentLicense(organizationId);
+    if (license?.plan !== 'trial') return;
+
+    const maxCodeTools = (license?.features as any)?.maxCodeTools;
+    if (maxCodeTools == null || !organizationId) return;
+
+    const count = await this.countCodeTools(organizationId);
+    if (count >= maxCodeTools) {
+      throw new ForbiddenException(
+        `Trial limit reached (${maxCodeTools} code tools). A workspace administrator can activate a license to add more.`,
+      );
+    }
+  }
+
+  /** How many saved code tools an organization has (endpoint method 'code'). */
+  private async countCodeTools(organizationId: string): Promise<number> {
+    const rows = await this.prisma.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(*)::int AS count
+      FROM mcp_tools t
+      JOIN connectors c ON c.id = t.connector_id
+      WHERE c.organization_id = ${organizationId}
+        AND t.endpoint_mapping->>'method' = 'code'`;
+    return rows[0]?.count ?? 0;
+  }
+
+  /**
    * Report current usage and caps so the frontend can render an upgrade
    * nudge. Used by GET /license/usage.
    */

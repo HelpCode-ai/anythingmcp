@@ -62,6 +62,7 @@ import {
   validateCodeToolMapping,
 } from '../mcp-server/code-tool.util';
 import { EditionService } from '../ee/licensing/edition.service';
+import { LicenseGuardService } from '../license/license-guard.service';
 
 const RESPONSE_MAPPING_DESC =
   'Optional response handling for this tool. Keys: `cacheTtl` (seconds), ' +
@@ -310,6 +311,7 @@ export class ToolsController {
     private readonly mcpServer: McpServerService,
     private readonly connectorsService: ConnectorsService,
     private readonly edition: EditionService,
+    private readonly licenseGuard: LicenseGuardService,
   ) {}
 
   /**
@@ -522,7 +524,10 @@ export class ToolsController {
     this.assertKnownCallerContextVars(dto.endpointMapping);
     this.assertValidResponseMapping(dto.responseMapping);
     const isCode = isCodeMethod(dto.endpointMapping);
-    if (isCode) await this.assertValidCodeTool(dto.endpointMapping, connector, req);
+    if (isCode) {
+      await this.assertValidCodeTool(dto.endpointMapping, connector, req);
+      await this.licenseGuard.checkCanCreateCodeTool(connector.organizationId);
+    }
     // A code tool's program is not an upstream request, so the secret-extraction
     // pass (which rewrites paths/headers) must not touch it.
     const {

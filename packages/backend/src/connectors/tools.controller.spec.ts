@@ -15,7 +15,9 @@ const TRANSFORM = {
 
 const MAPPED = { total: 812, devices: [{ hostname: 'PC-01' }] };
 
-function buildController(overrides: { prisma?: any; connectorsService?: any; mcpServer?: any } = {}) {
+function buildController(
+  overrides: { prisma?: any; connectorsService?: any; mcpServer?: any; edition?: any; licenseGuard?: any } = {},
+) {
   const prisma = overrides.prisma ?? {
     mcpTool: {
       create: jest.fn().mockResolvedValue({ id: 't1' }),
@@ -36,13 +38,17 @@ function buildController(overrides: { prisma?: any; connectorsService?: any; mcp
   const edition = (overrides as { edition?: any }).edition ?? {
     assertEnterprise: jest.fn().mockResolvedValue(undefined),
   };
+  const licenseGuard = (overrides as { licenseGuard?: any }).licenseGuard ?? {
+    checkCanCreateCodeTool: jest.fn().mockResolvedValue(undefined),
+  };
   const controller = new ToolsController(
     prisma as any,
     mcpServer as any,
     connectorsService as any,
     edition as any,
+    licenseGuard as any,
   );
-  return { controller, prisma, connectorsService, mcpServer, edition };
+  return { controller, prisma, connectorsService, mcpServer, edition, licenseGuard };
 }
 
 const req = (role = 'ADMIN') => ({ user: { sub: 'u1', organizationId: 'org1', role } });
@@ -324,5 +330,61 @@ describe('ToolsController — duplicate tool names', () => {
     const { controller, prisma } = buildController();
     prisma.mcpTool.create.mockRejectedValueOnce(new Error('connection lost'));
     await expect(controller.create(req(), 'c1', dto)).rejects.toThrow('connection lost');
+  });
+});
+
+describe('ToolsController — code tools', () => {
+  const codePrisma = () => ({
+    mcpTool: {
+      create: jest.fn().mockResolvedValue({ id: 'code-1' }),
+      update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'code-1', responseMapping: null }),
+      findUnique: jest.fn().mockResolvedValue({ id: 'code-1' }),
+    },
+    connector: { findMany: jest.fn().mockResolvedValue([{ id: 'c1' }]) },
+    toolInvocation: { findMany: jest.fn().mockResolvedValue([]) },
+  });
+  const codeDto = (over: Record<string, unknown> = {}) => ({
+    name: 'summary',
+    description: 'code tool',
+    parameters: { type: 'object', properties: {} },
+    endpointMapping: { method: 'code', code: 'return 1;', uses: [{ connectorId: 'c1' }], runAs: 'invoker', allowWrites: false, ...over },
+  });
+
+  it('creates a valid code tool and enforces the plan cap', async () => {
+    const { controller, prisma, licenseGuard } = buildController({ prisma: codePrisma() });
+    await controller.create(req('ADMIN'), 'c1', codeDto() as any);
+    expect(licenseGuard.checkCanCreateCodeTool).toHaveBeenCalledWith('org1');
+    const data = prisma.mcpTool.create.mock.calls[0][0].data;
+    expect(data.endpointMapping.method).toBe('code');
+  });
+
+  it('rejects definer rights for a non-admin', async () => {
+    const connectorsService = {
+      findById: jest.fn().mockResolvedValue({ id: 'c1', organizationId: 'org1', userId: 'u1', type: 'REST' }),
+      executeConnectorCall: jest.fn(),
+    };
+    const { controller } = buildController({ prisma: codePrisma(), connectorsService });
+    await expect(controller.create(req('EDITOR'), 'c1', codeDto({ runAs: 'definer' }) as any)).rejects.toThrow(/admin/i);
+  });
+
+  it('requires Enterprise for a write-capable code tool', async () => {
+    const edition = { assertEnterprise: jest.fn().mockRejectedValue(new ForbiddenException('nope')) };
+    const { controller } = buildController({ prisma: codePrisma(), edition });
+    await expect(controller.create(req('ADMIN'), 'c1', codeDto({ allowWrites: true }) as any)).rejects.toThrow();
+    expect(edition.assertEnterprise).toHaveBeenCalled();
+  });
+
+  it('rejects a uses connector from another workspace', async () => {
+    const prisma = codePrisma();
+    prisma.connector.findMany = jest.fn().mockResolvedValue([]); // none belong to the org
+    const { controller } = buildController({ prisma });
+    await expect(controller.create(req('ADMIN'), 'c1', codeDto({ uses: [{ connectorId: 'foreign' }] }) as any)).rejects.toThrow(/own workspace/);
+  });
+
+  it('rejects an empty program', async () => {
+    const { controller } = buildController({ prisma: codePrisma() });
+    await expect(controller.create(req('ADMIN'), 'c1', codeDto({ code: '  ' }) as any)).rejects.toThrow(/non-empty/);
   });
 });
