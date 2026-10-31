@@ -176,4 +176,20 @@ describe('validateBaseUrl', () => {
       expect(problem).toContain('…');
     });
   });
+
+  describe('EMAIL', () => {
+    const email = { type: 'EMAIL', requirePublicHost: true };
+    it('accepts an IMAP server address', () => {
+      expect(validateBaseUrl('imaps://imap.ionos.de:993', email)).toBeNull();
+      expect(validateBaseUrl('imap://mail.your-server.de:143', email)).toBeNull();
+      expect(validateBaseUrl('imap://{{EMAIL_IMAP_HOST}}:{{EMAIL_IMAP_PORT}}', email)).toBeNull();
+    });
+
+    it('refuses what is not one', () => {
+      expect(validateBaseUrl('https://imap.ionos.de', email)).toMatch(/not an IMAP server address/);
+      expect(validateBaseUrl('imap.ionos.de', email)).toMatch(/not an IMAP server address/);
+      expect(validateBaseUrl('imaps://dovecot:993', email)).toMatch(/not a mail server name/);
+      expect(validateBaseUrl('imaps://dovecot:993', { type: 'EMAIL', requirePublicHost: false })).toBeNull();
+    });
+  });
 });

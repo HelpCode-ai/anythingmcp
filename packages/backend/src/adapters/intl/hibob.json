@@ -1,0 +1,1606 @@
+{
+  "slug": "hibob",
+  "name": "HiBob",
+  "aliases": [
+    "Bob",
+    "HiBob Bob",
+    "Bob HR"
+  ],
+  "description": "HiBob (Bob) HR platform: employee search and records, work, employment, lifecycle and salary history, custom tables, company lists, time off (who is out, requests, balances, policies, holidays), saved reports, onboarding, tasks and documents. Bob public API with a service user.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "hibob",
+  "docsUrl": "https://apidocs.hibob.com/reference/getting-started-with-bob-api",
+  "instructions": "## HiBob (Bob)\nThis connector reads and updates the **Bob HR platform** by HiBob through its public REST API (`https://api.hibob.com/v1`): employee fields, work, employment, lifecycle and salary history, custom tables, company lists, time off (who is out, requests, balances, policies, holidays), saved reports, onboarding wizards, tasks and employee documents.\n\n**Setup (10 minutes, needs a Bob admin)**\n1. In Bob (as an admin) go to **Settings > Integrations > Automation > Service Users**, click **Manage** and create a service user with a name and display name. Copy its **ID** and **token** at once: the token is shown only when it is generated (a lost token can be regenerated, which invalidates the old one).\n2. Create a dedicated **permission group** for the service user and add it there. A new group has no permissions, so grant only what you use:\n   - **People's data > People's fields**: View on the categories you read (at least root, about, employment and work for `hibob_search_people`), View history on history tables (work, employment, lifecycle, payroll), Edit where you update.\n   - **Access data for**: Everyone, or a condition. By default only employed people are covered; remove the condition *Lifecycle status equals Employed* to read leavers with `show_inactive`.\n   - **People's data > Time off**: view requests and balances, and submit or cancel requests if you use those tools; view private requests for `include_private`.\n   - **Features > Reports**: View reports according to people's data access rights.\n   - **People's data > Tasks and flow > People's tasks**: View and mark selected people's tasks as complete.\n   - **People's data > Docs > [folder]**: View (and Upload for the shared folder) per document folder.\n3. Paste the ID into `HIBOB_SERVICE_USER_ID` and the token into `HIBOB_SERVICE_USER_TOKEN`. They are sent as HTTP Basic auth. `hibob_list_employee_fields` is the install check.\n\n**Workflow**\n- Field ids first: `hibob_list_employee_fields` lists every field with its id in dot notation (`root.displayName`, `work.department`, custom fields such as `work.custom.field_123`) and the list id of list fields. Company lists (`hibob_list_named_lists`, `hibob_get_named_list`) turn list ids into names (departments, sites, titles, calendars).\n- People: `hibob_search_people` for many employees in one call (all, or filtered by `root.id` / `root.email` only; other filters are refused), `hibob_get_employee` for one person by id or email, `hibob_list_profiles` for a quick directory. For a large company, search with `fields: [\"root.id\"]` first and then read 50-200 ids per call.\n- History tables: `hibob_list_work_history` (title, department, manager over time), `hibob_list_employment_history`, `hibob_list_lifecycle_history`, `hibob_list_salary_history` for one person; `hibob_bulk_list_work_history`, `hibob_bulk_list_lifecycle_history` and `hibob_bulk_list_salary_history` (payroll history) for many at once.\n- Custom tables: `hibob_list_custom_tables`, `hibob_get_custom_table_metadata`, `hibob_list_custom_table_entries`.\n- Time off: `hibob_list_whos_out` for a date range, `hibob_list_out_today` for one day, `hibob_list_time_off_changes` for what changed since a time, `hibob_get_time_off_request` for one request, `hibob_get_time_off_balance` for an employee's balance. Policies: `hibob_list_policy_types`, `hibob_get_policy_type`, `hibob_list_policy_type_reason_codes`, `hibob_list_policy_names`, `hibob_get_policy`. Holidays: `hibob_search_calendar_events` (an employee's calendar is `payroll.employment.calendarId`, or the default of the site in `work.siteId`).\n- Booking time off: check `hibob_get_policy_type` for the unit, then `hibob_submit_time_off_request`; `hibob_cancel_time_off_request` cancels one.\n- Reports: `hibob_list_reports`, then `hibob_download_report` (format json for readable rows). For large reports use `hibob_request_report_download` and fetch the file with `hibob_download_report_by_name`.\n- Onboarding and tasks: `hibob_list_onboarding_wizards`, `hibob_list_open_tasks`, `hibob_list_employee_tasks`, `hibob_complete_task`.\n- Documents: `hibob_list_document_folders`, `hibob_list_employee_documents` (download links), `hibob_upload_shared_document`.\n- Writes to master data install switched off; turn them on deliberately in the connector: `hibob_update_employee` (fields only, not table rows), `hibob_create_work_entry` (promotion, transfer, new manager), `hibob_create_custom_table_entry`, `hibob_add_named_list_item` and `hibob_upload_shared_document`.\n\n**Reading the answers**\n- Employee ids are long numbers sent as strings (`3332883884017713238`). Requests use dot notation (`work.department`); responses use slash keys (`/work/department`) and may also nest the same value by category (`work: {department: ...}`).\n- List fields hold item ids by default; pass `human_readable: APPEND` (or `REPLACE`) to also get the names.\n- **Silent omission**: a field without permission or with a wrong id is simply missing from the answer (no error). When something is missing, check the permission group before concluding the value is empty.\n- Dates are `YYYY-MM-DD`; `hibob_list_time_off_changes` takes ISO 8601 date-times. Balances are in the unit of the policy type (days or hours). Salaries carry their own currency.\n- After an update Bob may return the old value for up to 20 seconds.\n\n**Paging**: people search, profiles, history for one employee, open tasks (max 5,000) and who's out return everything at once. The bulk history tools and `hibob_search_calendar_events` page with `cursor` = `response_metadata.next_cursor`; stop when it is null.\n\n**Limits and errors**: rate limits apply per endpoint (people search allows 50 requests per minute) and answer 429. 401 means a wrong ID or token, 403 a missing permission in the service user's group, 400 an invalid filter, field or date range (whos out and calendar ranges have maximum spans; time off changes reach back 6 months). Repeated 401 or 403 answers can be blocked for a while by Bob's firewall, so fix permissions before retrying.\n",
+  "prerequisites": "A Bob admin who can create a service user and its permission group.",
+  "requiredEnvVars": [
+    "HIBOB_SERVICE_USER_ID",
+    "HIBOB_SERVICE_USER_TOKEN"
+  ],
+  "envVarMeta": {
+    "HIBOB_SERVICE_USER_ID": {
+      "label": "Service user ID",
+      "kind": "credential",
+      "secret": false,
+      "help": "Bob, Settings > Integrations > Automation > Service Users: the ID of the service user. Sent as the Basic auth user name.",
+      "link": "https://apidocs.hibob.com/docs/api-service-users",
+      "patternMessage": "Paste only the service user ID, without spaces or quotes.",
+      "pattern": "^\\S+$"
+    },
+    "HIBOB_SERVICE_USER_TOKEN": {
+      "label": "Service user token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The token shown when the service user was created or its token was regenerated. Sent as the Basic auth password.",
+      "link": "https://apidocs.hibob.com/docs/api-service-users",
+      "patternMessage": "Paste only the token, without spaces, quotes or a Basic prefix.",
+      "pattern": "^\\S+$"
+    }
+  },
+  "verifyHints": {
+    "401": "Bob refused the service user ID or token. Copy both again from Settings > Integrations > Automation > Service Users, or regenerate the token.",
+    "403": "The service user lacks a permission. Add it to a permission group with View on the employee field categories (and the other areas you use).",
+    "429": "Bob's rate limit for this endpoint was reached. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "hibob_list_employee_fields"
+  },
+  "connector": {
+    "name": "HiBob API",
+    "type": "REST",
+    "baseUrl": "https://api.hibob.com/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{HIBOB_SERVICE_USER_ID}}",
+      "password": "{{HIBOB_SERVICE_USER_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/company/people/fields"
+  },
+  "tools": [
+    {
+      "name": "hibob_search_people",
+      "description": "Read employee fields for many employees in one call: everyone the service user can access, or only the employees whose id or email is given in filters. Returns all matches at once (no paging) under employees; request only the field ids you need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field ids in dot notation from hibob_list_employee_fields, e.g. [\"root.id\",\"root.displayName\",\"root.email\",\"work.department\",\"work.title\",\"work.reportsTo.id\"]. At most 400. Omit for the default set (root, about, employment and work categories). Custom fields are only returned when listed here."
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fieldPath": {
+                  "type": "string",
+                  "enum": [
+                    "root.id",
+                    "root.email"
+                  ],
+                  "description": "root.id or root.email (no other field can be filtered)."
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "equals"
+                  ],
+                  "description": "Always equals."
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Ids or emails to match; must not be empty."
+                }
+              },
+              "required": [
+                "fieldPath",
+                "operator",
+                "values"
+              ]
+            },
+            "description": "Optional, e.g. [{\"fieldPath\":\"root.email\",\"operator\":\"equals\",\"values\":[\"jane@example.com\"]}]. Omit the parameter entirely when not filtering; an empty list is refused."
+          },
+          "show_inactive": {
+            "type": "boolean",
+            "description": "true also returns inactive employees (terminated, not yet started). Default false: active only. The service user's permission group must also cover them."
+          },
+          "human_readable": {
+            "type": "string",
+            "description": "APPEND adds a humanReadable node with list values, names and dates as shown in Bob next to the machine values; REPLACE returns only the human-readable values. Omit for machine values (ids).",
+            "enum": [
+              "APPEND",
+              "REPLACE"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people/search",
+        "bodyMapping": {
+          "fields": "$fields",
+          "filters": "$filters",
+          "showInactive": "$show_inactive",
+          "humanReadable": "$human_readable"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hibob_get_employee",
+      "description": "Read the fields of one employee, identified by employee id or work email. Same field ids and response shape as hibob_search_people, for a single person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "description": "Employee id (root.id) or the employee's work email."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field ids in dot notation from hibob_list_employee_fields, e.g. [\"root.displayName\",\"work.manager\",\"payroll.employment.calendarId\",\"work.siteId\"]. Omit for the default set."
+          },
+          "human_readable": {
+            "type": "string",
+            "description": "APPEND adds a humanReadable node with list values, names and dates as shown in Bob next to the machine values; REPLACE returns only the human-readable values. Omit for machine values (ids).",
+            "enum": [
+              "APPEND",
+              "REPLACE"
+            ]
+          }
+        },
+        "required": [
+          "identifier"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people/{identifier}",
+        "bodyMapping": {
+          "fields": "$fields",
+          "humanReadable": "$human_readable"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hibob_update_employee",
+      "description": "Update fields of one employee record. Only the fields sent change (it behaves like a patch). Fields only: rows of history tables (work, employment, salaries) and position fields cannot be changed here. A read right after may still show the old value for up to 20 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "description": "Employee id (root.id) or the employee's work email."
+          },
+          "fields": {
+            "type": "object",
+            "description": "The fields to change, nested by category as hibob_search_people returns them (not slash or dot keys), e.g. {\"home\":{\"mobilePhone\":\"+44 7700 900123\"},\"about\":{\"hobbies\":[\"music\"]}} or {\"firstName\":\"Jane\"} for root fields. List fields take the item id from hibob_get_named_list."
+          }
+        },
+        "required": [
+          "identifier",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/people/{identifier}",
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "hibob_list_profiles",
+      "description": "Public profile section of every active employee the service user can access: a fixed set of fields such as name, email, work title, department, site, manager and avatar. A quick directory read without choosing fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/profiles"
+      }
+    },
+    {
+      "name": "hibob_list_employee_fields",
+      "description": "All employee fields defined in the company (built-in and custom) with their field id (the dot-notation id to pass in fields), name, category, type, whether it keeps history, and the list id for list fields. Read this first to know which field ids exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/people/fields"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "fields": {
+              "$from": "$[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "categoryId": "categoryId",
+                "categoryDisplayName": "categoryDisplayName",
+                "type": "type",
+                "historical": "historical",
+                "listId": "typeData.listId",
+                "jsonPath": "jsonPath"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "hibob_list_named_lists",
+      "description": "All company lists (departments, sites, job titles, calendars, custom lists) with their items: each item has an id, the value Bob stores in employee fields, and a name. Use it to turn list ids into names and to find the id to write.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "boolean",
+            "description": "true also returns archived items. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/named-lists",
+        "queryParams": {
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "hibob_get_named_list",
+      "description": "One company list by its internal name (e.g. department, site, title, calendar), with its items, their ids and names, and child items for hierarchy lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_name": {
+            "type": "string",
+            "description": "Internal list name, as returned by hibob_list_named_lists or in typeData.listId of hibob_list_employee_fields."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true also returns archived items. Default false."
+          }
+        },
+        "required": [
+          "list_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/named-lists/{list_name}",
+        "queryParams": {
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "hibob_add_named_list_item",
+      "description": "Add a new item to an existing company list, for example a new department or job title, optionally below a parent item in a hierarchy list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_name": {
+            "type": "string",
+            "description": "Internal list name from hibob_list_named_lists."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new item."
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "Id of the parent item, for hierarchy lists only."
+          }
+        },
+        "required": [
+          "list_name",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/company/named-lists/{list_name}",
+        "bodyMapping": {
+          "name": "$name",
+          "parentId": "$parent_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "hibob_list_work_history",
+      "description": "Work history of one employee: one entry per change with effective date, title, department, site, manager (reportsTo) and reason. The entry with the latest effective date that has passed is the current one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true also returns archived columns. Default false."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/{employee_id}/work",
+        "queryParams": {
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "hibob_list_employment_history",
+      "description": "Employment history of one employee: contract type, weekly hours, working pattern, FTE and similar entries, each with its effective date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true also returns archived columns. Default false."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/{employee_id}/employment",
+        "queryParams": {
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "hibob_list_lifecycle_history",
+      "description": "Lifecycle status history of one employee: hired, employed, on leave, terminated and so on, each with its effective date and reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true also returns archived columns. Default false."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/{employee_id}/lifecycle",
+        "queryParams": {
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "hibob_list_salary_history",
+      "description": "Salary (payroll) history of one employee: base pay amount, currency, pay period and frequency, each entry with its effective date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true also returns archived columns. Default false."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/{employee_id}/salaries",
+        "queryParams": {
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "hibob_bulk_list_work_history",
+      "description": "Work history for many employees at once (one page of employees per call, each with all its work entries). Leave employee_ids empty for everyone the service user may see. Pages with a cursor: call again with cursor = response_metadata.next_cursor until it is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_ids": {
+            "type": "string",
+            "description": "Comma-separated employee ids, at most 200. Omit for all employees the service user can access."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Employees per page (default 50).",
+            "minimum": 1
+          },
+          "cursor": {
+            "type": "string",
+            "description": "response_metadata.next_cursor from the previous page. Omit on the first call."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true also returns archived columns. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bulk/people/work",
+        "queryParams": {
+          "employeeIds": "$employee_ids",
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "hibob_bulk_list_lifecycle_history",
+      "description": "Lifecycle history for many employees at once (one page of employees per call, each with all its lifecycle entries). Leave employee_ids empty for everyone the service user may see. Pages with a cursor: call again with cursor = response_metadata.next_cursor until it is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_ids": {
+            "type": "string",
+            "description": "Comma-separated employee ids, at most 200. Omit for all employees the service user can access."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Employees per page (default 50).",
+            "minimum": 1
+          },
+          "cursor": {
+            "type": "string",
+            "description": "response_metadata.next_cursor from the previous page. Omit on the first call."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true also returns archived columns. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bulk/people/lifecycle",
+        "queryParams": {
+          "employeeIds": "$employee_ids",
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "hibob_bulk_list_salary_history",
+      "description": "Salary history for many employees at once (one page of employees per call, each with all its salary entries). Leave employee_ids empty for everyone the service user may see. Pages with a cursor: call again with cursor = response_metadata.next_cursor until it is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_ids": {
+            "type": "string",
+            "description": "Comma-separated employee ids, at most 200. Omit for all employees the service user can access."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Employees per page (default 50).",
+            "minimum": 1
+          },
+          "cursor": {
+            "type": "string",
+            "description": "response_metadata.next_cursor from the previous page. Omit on the first call."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true also returns archived columns. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bulk/people/salaries",
+        "queryParams": {
+          "employeeIds": "$employee_ids",
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "includeArchived": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "hibob_create_work_entry",
+      "description": "Add a work history entry for an employee (promotion, transfer, new manager, department change) taking effect on a given date. Site (or site id) is required by Bob; title, department and site take ids from the company lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "Date the change takes effect, YYYY-MM-DD."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the change."
+          },
+          "title": {
+            "type": "string",
+            "description": "Job title item id from hibob_get_named_list (list title)."
+          },
+          "department": {
+            "type": "string",
+            "description": "Department item id from hibob_get_named_list (list department)."
+          },
+          "site": {
+            "type": "string",
+            "description": "Site name. Give site or site_id."
+          },
+          "site_id": {
+            "type": "integer",
+            "description": "Site id from hibob_get_named_list (list site). Give site or site_id."
+          },
+          "reports_to": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The manager's employee id."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "The new manager, e.g. {\"id\":\"3332883884017713238\"}."
+          },
+          "custom_columns": {
+            "type": "object",
+            "description": "Values for custom columns of the work table, keyed by column id."
+          }
+        },
+        "required": [
+          "employee_id",
+          "effective_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people/{employee_id}/work",
+        "bodyMapping": {
+          "effectiveDate": "$effective_date",
+          "reason": "$reason",
+          "title": "$title",
+          "department": "$department",
+          "site": "$site",
+          "siteId": "$site_id",
+          "reportsTo": "$reports_to",
+          "customColumns": "$custom_columns"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "hibob_list_custom_tables",
+      "description": "Custom employee tables defined in the company, with their ids, names and column definitions. Needed to read or add custom table entries.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/custom-tables/metadata"
+      }
+    },
+    {
+      "name": "hibob_get_custom_table_metadata",
+      "description": "Definition of one custom employee table: its columns with id, name, type and the list id for list columns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "custom_table_id": {
+            "type": "string",
+            "description": "Custom table id from hibob_list_custom_tables."
+          }
+        },
+        "required": [
+          "custom_table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/custom-tables/metadata/{custom_table_id}"
+      }
+    },
+    {
+      "name": "hibob_list_custom_table_entries",
+      "description": "All entries of one custom table for one employee; values are keyed by column id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "custom_table_id": {
+            "type": "string",
+            "description": "Custom table id from hibob_list_custom_tables."
+          },
+          "include_human_readable": {
+            "type": "boolean",
+            "description": "true adds a humanReadable node with list names next to the ids. Default false."
+          }
+        },
+        "required": [
+          "employee_id",
+          "custom_table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/custom-tables/{employee_id}/{custom_table_id}",
+        "queryParams": {
+          "includeHumanReadable": "$include_human_readable"
+        }
+      }
+    },
+    {
+      "name": "hibob_create_custom_table_entry",
+      "description": "Add one or more entries to an employee's custom table. Each entry is an object of column id to value (dates YYYY-MM-DD, list columns take the item id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "custom_table_id": {
+            "type": "string",
+            "description": "Custom table id from hibob_list_custom_tables."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Entries to add, e.g. [{\"column_1663598024920\":\"2026-09-30\",\"column_1663597992534\":\"Note text\"}]. Column ids come from hibob_get_custom_table_metadata."
+          }
+        },
+        "required": [
+          "employee_id",
+          "custom_table_id",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/people/custom-tables/{employee_id}/{custom_table_id}",
+        "bodyMapping": {
+          "values": "$values"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "hibob_list_whos_out",
+      "description": "Time off requests in a date range, for everyone the service user can access: who is out, which policy, request type, dates and status. Only active employees are included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "First day of the range, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last day of the range, YYYY-MM-DD."
+          },
+          "include_hourly": {
+            "type": "boolean",
+            "description": "Include requests for hours. Default false."
+          },
+          "include_private": {
+            "type": "boolean",
+            "description": "Include requests under private policy types (needs the permission). Default false."
+          },
+          "include_pending": {
+            "type": "boolean",
+            "description": "Include requests still waiting for approval. Default false."
+          },
+          "include_working_requests": {
+            "type": "boolean",
+            "description": "Include requests of working policy types such as work from home or business travel. Default true."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/whosout",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "includeHourly": "$include_hourly",
+          "includePrivate": "$include_private",
+          "includePending": "$include_pending",
+          "includeWorkingRequests": "$include_working_requests"
+        }
+      }
+    },
+    {
+      "name": "hibob_list_out_today",
+      "description": "Who is out of the office today (UTC) or on one given date, optionally only at one site.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Day to check, YYYY-MM-DD. Omit for today (UTC)."
+          },
+          "include_hourly": {
+            "type": "boolean",
+            "description": "Include requests for hours. Default false."
+          },
+          "include_private": {
+            "type": "boolean",
+            "description": "Include requests under private policy types (needs the permission). Default false."
+          },
+          "site_id": {
+            "type": "integer",
+            "description": "Only employees of this site id (from hibob_get_named_list, list site)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/outtoday",
+        "queryParams": {
+          "today": "$date",
+          "includeHourly": "$include_hourly",
+          "includePrivate": "$include_private",
+          "siteId": "$site_id"
+        }
+      }
+    },
+    {
+      "name": "hibob_list_time_off_changes",
+      "description": "Time off requests created, approved, declined, cancelled or deleted since a point in time (at most 6 months back and a 6-month window). Use it to sync or to see what changed recently; each change carries the employee id and request id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601 date-time such as 2026-10-01T00:00:00Z. Not older than 6 months."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the window, ISO 8601 date-time, at most 6 months after since. Omit for now."
+          },
+          "include_pending": {
+            "type": "boolean",
+            "description": "Include pending requests. Default false."
+          }
+        },
+        "required": [
+          "since"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/requests/changes",
+        "queryParams": {
+          "since": "$since",
+          "to": "$to",
+          "includePending": "$include_pending"
+        }
+      }
+    },
+    {
+      "name": "hibob_get_time_off_request",
+      "description": "Details of one time off request of an employee: policy type, dates, portions, status, approver, total cost and (by default) the duration and cost of each day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "request_id": {
+            "type": "integer",
+            "description": "Request id from hibob_list_whos_out or hibob_list_time_off_changes."
+          },
+          "include_daily_durations": {
+            "type": "boolean",
+            "description": "Include the per-day durations and cost. Default true."
+          }
+        },
+        "required": [
+          "employee_id",
+          "request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/employees/{employee_id}/requests/{request_id}",
+        "queryParams": {
+          "includeDailyDurations": "$include_daily_durations"
+        }
+      }
+    },
+    {
+      "name": "hibob_get_time_off_balance",
+      "description": "Time off balance of one employee for one policy type on a given date: the amount available, used, pending and accrued, in the policy's unit (days or hours).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "policy_type": {
+            "type": "string",
+            "description": "Policy type name as returned by hibob_list_policy_types, e.g. Holiday."
+          },
+          "date": {
+            "type": "string",
+            "description": "Date to compute the balance for, YYYY-MM-DD (today for the current balance)."
+          }
+        },
+        "required": [
+          "employee_id",
+          "policy_type",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/employees/{employee_id}/balance",
+        "queryParams": {
+          "policyType": "$policy_type",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "hibob_list_policy_types",
+      "description": "Names of all time off policy types in the company (Holiday, Sick, custom types). These names are what the balance, request and policy tools expect.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/policy-types"
+      }
+    },
+    {
+      "name": "hibob_get_policy_type",
+      "description": "Settings of one time off policy type: unit (days or hours), allowed request types, whether it is a working type, visibility and similar options.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "policy_type": {
+            "type": "string",
+            "description": "Policy type name from hibob_list_policy_types, as returned (spaces allowed)."
+          }
+        },
+        "required": [
+          "policy_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/policy-types/{policy_type}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "hibob_list_policy_type_reason_codes",
+      "description": "Reason codes defined for one time off policy type, with the numeric id to pass as reason_code when submitting a request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "policy_type": {
+            "type": "string",
+            "description": "Policy type name from hibob_list_policy_types, as returned (spaces allowed)."
+          }
+        },
+        "required": [
+          "policy_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/policy-types/{policy_type}/reason-codes",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "hibob_list_policy_names",
+      "description": "Names of the policies (for example per country or contract) that belong to one time off policy type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "policy_type": {
+            "type": "string",
+            "description": "Policy type name from hibob_list_policy_types."
+          }
+        },
+        "required": [
+          "policy_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/policies/names",
+        "queryParams": {
+          "policyTypeName": "$policy_type"
+        }
+      }
+    },
+    {
+      "name": "hibob_get_policy",
+      "description": "Details of one time off policy: its type, allowance, accrual, carry-over and other rules.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "policy_name": {
+            "type": "string",
+            "description": "Policy name from hibob_list_policy_names."
+          }
+        },
+        "required": [
+          "policy_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeoff/policies",
+        "queryParams": {
+          "policyName": "$policy_name"
+        }
+      }
+    },
+    {
+      "name": "hibob_search_calendar_events",
+      "description": "Company holidays and closures (calendar events) in a date range, optionally for one calendar, site or event type. Paged with cursor = response_metadata.next_cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fieldId": {
+                  "type": "string",
+                  "enum": [
+                    "/calendarEvent/startDate",
+                    "/calendarEvent/calendarId",
+                    "/calendarEvent/eventType",
+                    "/calendarEvent/siteId"
+                  ],
+                  "description": "Field to filter on."
+                },
+                "operator": {
+                  "type": "string",
+                  "description": "from or to for /calendarEvent/startDate; equals for the other fields."
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Values as strings: one date YYYY-MM-DD for from and to, ids for the others."
+                }
+              },
+              "required": [
+                "fieldId",
+                "operator",
+                "values"
+              ]
+            },
+            "description": "Must contain exactly one from and one to filter on /calendarEvent/startDate (range of 1 to 366 days), plus optional filters, e.g. [{\"fieldId\":\"/calendarEvent/startDate\",\"operator\":\"from\",\"values\":[\"2026-01-01\"]},{\"fieldId\":\"/calendarEvent/startDate\",\"operator\":\"to\",\"values\":[\"2026-12-31\"]},{\"fieldId\":\"/calendarEvent/siteId\",\"operator\":\"equals\",\"values\":[\"2338392\"]}]."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field ids to return, e.g. [\"/calendarEvent/id\",\"/calendarEvent/name\",\"/calendarEvent/startDate\",\"/calendarEvent/endDate\",\"/calendarEvent/eventType\",\"/calendarEvent/siteId\"]. Omit for all fields."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1-500 (default 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "cursor": {
+            "type": "string",
+            "description": "response_metadata.next_cursor from the previous page. Omit on the first call."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/timeoff/calendars/events/search",
+        "bodyMapping": {
+          "filters": "$filters",
+          "fields": "$fields",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hibob_submit_time_off_request",
+      "description": "Submit a time off request for an employee. It follows the policy's approval flow unless skip_manager_approval is set by an admin. Give request_range_type and the fields that type needs: days (start/end date and portions), hours (one day, hours and minutes), portionOnRange (day_portion), hoursOnRange (daily_hours and daily_minutes), differentDayDurations (durations), specificHoursDayDurations (local start and end time).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "request_range_type": {
+            "type": "string",
+            "description": "days, hours, portionOnRange, hoursOnRange, differentDayDurations or specificHoursDayDurations. Hours types only work for policy types measured in hours.",
+            "enum": [
+              "days",
+              "hours",
+              "portionOnRange",
+              "hoursOnRange",
+              "differentDayDurations",
+              "specificHoursDayDurations"
+            ]
+          },
+          "policy_type": {
+            "type": "string",
+            "description": "Policy type name from hibob_list_policy_types, e.g. Holiday."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD (same as start_date for type hours)."
+          },
+          "start_date_portion": {
+            "type": "string",
+            "description": "Type days: all_day or afternoon (starting at noon).",
+            "enum": [
+              "all_day",
+              "afternoon"
+            ]
+          },
+          "end_date_portion": {
+            "type": "string",
+            "description": "Type days: all_day or morning (ending at noon).",
+            "enum": [
+              "all_day",
+              "morning"
+            ]
+          },
+          "hours": {
+            "type": "integer",
+            "description": "Type hours: number of hours."
+          },
+          "minutes": {
+            "type": "integer",
+            "description": "Type hours: number of minutes."
+          },
+          "day_portion": {
+            "type": "string",
+            "description": "Type portionOnRange: morning or afternoon of every day.",
+            "enum": [
+              "morning",
+              "afternoon"
+            ]
+          },
+          "daily_hours": {
+            "type": "integer",
+            "description": "Type hoursOnRange: hours on each day."
+          },
+          "daily_minutes": {
+            "type": "integer",
+            "description": "Type hoursOnRange: minutes on each day."
+          },
+          "durations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "description": "YYYY-MM-DD"
+                },
+                "hours": {
+                  "type": "integer",
+                  "description": "Hours on that day."
+                },
+                "minutes": {
+                  "type": "integer",
+                  "description": "Minutes on that day."
+                }
+              },
+              "required": [
+                "date",
+                "hours",
+                "minutes"
+              ]
+            },
+            "description": "Type differentDayDurations: one entry per day, e.g. [{\"date\":\"2026-11-02\",\"hours\":4,\"minutes\":0}]."
+          },
+          "local_start_time": {
+            "type": "string",
+            "description": "Type specificHoursDayDurations: start time, HH:mm."
+          },
+          "local_end_time": {
+            "type": "string",
+            "description": "Type specificHoursDayDurations: end time, HH:mm."
+          },
+          "description": {
+            "type": "string",
+            "description": "Reason or note shown on the request."
+          },
+          "reason_code": {
+            "type": "integer",
+            "description": "Reason code id from hibob_list_policy_type_reason_codes."
+          },
+          "skip_manager_approval": {
+            "type": "boolean",
+            "description": "Admins only: true creates the request already approved."
+          },
+          "approver": {
+            "type": "string",
+            "description": "Employee id to record as approver when skip_manager_approval is true."
+          }
+        },
+        "required": [
+          "employee_id",
+          "request_range_type",
+          "policy_type",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/timeoff/employees/{employee_id}/requests",
+        "bodyMapping": {
+          "requestRangeType": "$request_range_type",
+          "policyType": "$policy_type",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "startDatePortion": "$start_date_portion",
+          "endDatePortion": "$end_date_portion",
+          "hours": "$hours",
+          "minutes": "$minutes",
+          "dayPortion": "$day_portion",
+          "dailyHours": "$daily_hours",
+          "dailyMinutes": "$daily_minutes",
+          "durations": "$durations",
+          "localStartTime": "$local_start_time",
+          "localEndTime": "$local_end_time",
+          "description": "$description",
+          "reasonCode": "$reason_code",
+          "skipManagerApproval": "$skip_manager_approval",
+          "approver": "$approver"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "hibob_cancel_time_off_request",
+      "description": "Cancel an existing time off request of an employee. A cancelled request no longer counts against the balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "request_id": {
+            "type": "integer",
+            "description": "Request id from hibob_list_whos_out or hibob_list_time_off_changes."
+          }
+        },
+        "required": [
+          "employee_id",
+          "request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/timeoff/employees/{employee_id}/requests/{request_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "hibob_list_reports",
+      "description": "Company reports saved in Bob that the service user can see, with id, name, description, type, folder and dates (the column configuration is left out). Use the id with hibob_download_report.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/reports"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "views": {
+              "$from": "$.views[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "type": "type",
+                "folderId": "folderId",
+                "isScheduled": "isScheduled",
+                "createdBy": "createdBy",
+                "creationDate": "creationDate",
+                "modificationDate": "modificationDate"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "hibob_download_report",
+      "description": "Run a saved report and return its data. format json gives rows the model can read directly; csv returns text; xlsx returns a file. Large reports can time out: use hibob_request_report_download instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "integer",
+            "description": "Report id from hibob_list_reports."
+          },
+          "format": {
+            "type": "string",
+            "description": "json (default here), csv or xlsx.",
+            "enum": [
+              "json",
+              "csv",
+              "xlsx"
+            ],
+            "default": "json"
+          },
+          "include_info": {
+            "type": "boolean",
+            "description": "Include the report's info header."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the column names, e.g. fr-FR. Omit for the service user's preference."
+          },
+          "human_readable": {
+            "type": "string",
+            "description": "json only: APPEND adds human-readable values next to the machine values, REPLACE returns only human-readable values.",
+            "enum": [
+              "APPEND",
+              "REPLACE"
+            ]
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/reports/{report_id}/download",
+        "queryParams": {
+          "format": "$format",
+          "includeInfo": "$include_info",
+          "locale": "$locale",
+          "humanReadable": "$human_readable"
+        }
+      }
+    },
+    {
+      "name": "hibob_request_report_download",
+      "description": "Start generating a saved report in the background, for reports too large to download at once. Bob answers 202 and puts the file URL in the location header (returned under _headers); pass the part after /download/ to hibob_download_report_by_name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "integer",
+            "description": "Report id from hibob_list_reports."
+          },
+          "format": {
+            "type": "string",
+            "description": "csv (default) or xlsx.",
+            "enum": [
+              "csv",
+              "xlsx"
+            ],
+            "default": "csv"
+          },
+          "include_info": {
+            "type": "boolean",
+            "description": "Include the report's info header."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the column names, e.g. fr-FR."
+          }
+        },
+        "required": [
+          "report_id",
+          "format"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/reports/{report_id}/download-async",
+        "queryParams": {
+          "format": "$format",
+          "includeInfo": "$include_info",
+          "locale": "$locale"
+        },
+        "exposeHeaders": [
+          "location"
+        ]
+      }
+    },
+    {
+      "name": "hibob_download_report_by_name",
+      "description": "Fetch a report file generated by hibob_request_report_download. If it is not ready yet, wait a few seconds and call again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_name": {
+            "type": "string",
+            "description": "The file name after /download/ in the location header returned by hibob_request_report_download."
+          }
+        },
+        "required": [
+          "report_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/reports/download/{report_name}"
+      }
+    },
+    {
+      "name": "hibob_list_onboarding_wizards",
+      "description": "Onboarding wizards configured in Bob (id and name), the flows new hires are invited with.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/onboarding/wizards"
+      }
+    },
+    {
+      "name": "hibob_list_open_tasks",
+      "description": "All open tasks in the company (onboarding, offboarding and other flow tasks) with owner, related employee, due date and status. At most 5,000 tasks, no paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks"
+      }
+    },
+    {
+      "name": "hibob_list_employee_tasks",
+      "description": "Tasks assigned to one employee (onboarding and other flow tasks), open, closed or both.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "task_status": {
+            "type": "string",
+            "description": "open or closed. Omit for both.",
+            "enum": [
+              "open",
+              "closed"
+            ]
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/people/{employee_id}",
+        "queryParams": {
+          "task_status": "$task_status"
+        }
+      }
+    },
+    {
+      "name": "hibob_complete_task",
+      "description": "Mark a task as complete, for example an onboarding step that was done outside Bob.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id from hibob_list_open_tasks or hibob_list_employee_tasks."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks/{task_id}/complete"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "hibob_list_document_folders",
+      "description": "Document folders defined in Bob (shared, confidential and custom folders) with their ids and metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs/folders/metadata"
+      }
+    },
+    {
+      "name": "hibob_list_employee_documents",
+      "description": "Documents of one employee in the folders the service user may view, with name and a download link per document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/docs/people/{employee_id}"
+      }
+    },
+    {
+      "name": "hibob_upload_shared_document",
+      "description": "Add a document to an employee's shared folder by giving a public or pre-signed URL that Bob downloads (max 5 MB). The employee can see shared documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (the backend id, a long number such as 3332883884017713238), from hibob_search_people (root.id) or from the employee's profile URL in Bob."
+          },
+          "document_name": {
+            "type": "string",
+            "description": "File name shown in Bob, e.g. Contract-2026.pdf."
+          },
+          "document_url": {
+            "type": "string",
+            "description": "URL Bob downloads the file from.",
+            "format": "uri"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags to attach to the document."
+          }
+        },
+        "required": [
+          "employee_id",
+          "document_name",
+          "document_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/docs/people/{employee_id}/shared",
+        "bodyMapping": {
+          "documentName": "$document_name",
+          "documentUrl": "$document_url",
+          "tags": "$tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

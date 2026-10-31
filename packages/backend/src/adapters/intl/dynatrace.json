@@ -1,0 +1,1232 @@
+{
+  "slug": "dynatrace",
+  "name": "Dynatrace",
+  "description": "Dynatrace observability through the Environment API v2: Davis problems with root cause and impact, monitored entities and tags, metrics and metric queries, log search, events, security problems, SLOs, settings and the audit log. Comment on problems, send deployment and custom events, tag entities.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "dynatrace",
+  "docsUrl": "https://docs.dynatrace.com/docs/dynatrace-api/environment-api",
+  "instructions": "## Dynatrace\nThis connector works with **Dynatrace** through the **Environment API v2** (`<environment>/api/v2`) and an access token: problems found by Davis AI, monitored entities and tags, metrics and metric queries, log search, events, security problems (vulnerabilities), SLOs, settings (read only) and the audit log. It can comment on problems, send custom events (e.g. deployments) and tag entities.\n\n**Setup (3 minutes)**\n1. `DYNATRACE_ENVIRONMENT_URL`: the classic environment address, `https://<environment-id>.live.dynatrace.com` for SaaS or `https://<your-domain>/e/<environment-id>` for Managed, without `/api` and without a trailing slash. The new platform address (`<environment-id>.apps.dynatrace.com`) does not take this kind of token; use the `live` address of the same environment.\n2. In Dynatrace open **Access tokens** (Manage, Access tokens, Generate new token) and tick the scopes the tools need: `problems.read`, `entities.read`, `metrics.read`, `logs.read`, `events.read`, `securityProblems.read`, `slo.read`, `settings.read`, `auditLogs.read`; for writes `problems.write` (comments, closing), `events.ingest` and `entities.write` (tags). A personal access token (dt0c01) works the same way.\n3. Paste the token into `DYNATRACE_API_TOKEN` and run `dynatrace_list_problems` to check it.\n\n**Workflow**\n- What is broken: `dynatrace_list_problems` with `problem_selector: status(\"OPEN\")`, then `dynatrace_get_problem` with `fields: evidenceDetails,impactAnalysis` for root cause and impact, `dynatrace_list_problem_comments` and `dynatrace_add_problem_comment`. `dynatrace_close_problem` closes a problem by hand.\n- Topology: `dynatrace_list_entity_types`, `dynatrace_get_entity_type`, `dynatrace_list_entities` (e.g. `type(\"SERVICE\"),entityName.contains(\"checkout\")`), `dynatrace_get_entity` for properties and relationships, `dynatrace_list_tags` and `dynatrace_add_tags`.\n- Numbers: `dynatrace_list_metrics` (search with `text`), `dynatrace_get_metric`, then `dynatrace_query_metrics` with a metric selector.\n- Logs: `dynatrace_aggregate_logs` to see where errors cluster, then `dynatrace_search_logs` for the records.\n- Changes and events: `dynatrace_list_events` (e.g. `eventType(\"CUSTOM_DEPLOYMENT\")`), `dynatrace_get_event`, `dynatrace_list_event_types`; record a deployment or change with `dynatrace_ingest_event`. Who changed the configuration: `dynatrace_list_audit_logs`.\n- Security: `dynatrace_list_security_problems` with `status(\"OPEN\"),riskLevel(\"CRITICAL\",\"HIGH\")`, then `dynatrace_get_security_problem`.\n- Objectives: `dynatrace_list_slos` with `evaluate: true`, `dynatrace_get_slo`.\n- Configuration (read only): `dynatrace_list_settings_schemas`, `dynatrace_get_settings_schema`, `dynatrace_list_settings_objects`, `dynatrace_get_settings_object`.\n\n**Switched off at install**: `dynatrace_close_problem`; it cannot be undone, so an admin switches it on when the team needs it.\n\n**Before writing**: an ingested alert, error or availability event can open a problem and notify people; comments and tags are visible to everyone in the environment. Confirm with the user first.\n\n**Selectors**: entity selectors look like `type(\"HOST\"),tag(\"env:prod\"),mzName(\"Production\")` (criteria joined by commas mean AND; values are case-sensitive); problem, event, SLO and security problem selectors work the same way (`status(\"OPEN\")`, `eventType(\"CUSTOM_DEPLOYMENT\")`). Metric selectors chain transformations: `builtin:service.response.time:splitBy(\"dt.entity.service\"):avg:sort(value(avg,descending)):limit(10)`.\n\n**Reading the answers**: times are UTC milliseconds since 1970 (`startTime`, `endTime`, `timestamp`; `-1` means still open). Response times are microseconds, CPU and memory usage percentages, byte counts bytes; `get_metric` gives the unit. Entity ids look like HOST-1234ABCD5678EF90; the problem id differs from its display id (P-2410123).\n\n**Paging**: lists return `nextPageKey`; call again with only `next_page_key` set (every other filter left out) until it is missing. Log search pages with `nextSliceKey` (classic log storage only). Keep timeframes short: the default is often the last 2 hours.\n\n**Not covered**: Grail and DQL queries (`<environment>.apps.dynatrace.com/platform/storage/query/v1`) need a platform token or OAuth client, not an access token. For those use the Dynatrace Remote MCP server (`https://<environment-id>.apps.dynatrace.com/platform-reserved/mcp-gateway/v0.1/servers/dynatrace-mcp/mcp` with a platform token).\n\n**Errors**: 401 means a wrong, expired or revoked token (or a platform token sent here), 403 a token without the scope the call needs (the message names it), 404 an unknown id or a wrong environment address, 400 a malformed selector (the message says where), 429 the rate limit (wait and retry).",
+  "prerequisites": "A Dynatrace SaaS or Managed environment and an access token with the read scopes the tools need.",
+  "requiredEnvVars": [
+    "DYNATRACE_ENVIRONMENT_URL",
+    "DYNATRACE_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "DYNATRACE_ENVIRONMENT_URL": {
+      "label": "Environment address",
+      "kind": "address",
+      "help": "SaaS: https://<environment-id>.live.dynatrace.com. Managed: https://<your-domain>/e/<environment-id>. Without /api and without a trailing slash; not the apps.dynatrace.com address.",
+      "example": "https://abc12345.live.dynatrace.com",
+      "pattern": "^(?!.*\\.apps\\.dynatrace\\.com)https://[^\\s/]+(/e/[A-Za-z0-9-]+)?$",
+      "patternMessage": "Use https://<environment-id>.live.dynatrace.com (SaaS) or https://<domain>/e/<environment-id> (Managed), without /api or a trailing slash."
+    },
+    "DYNATRACE_API_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Dynatrace, Access tokens, Generate new token: tick the read scopes (problems, entities, metrics, logs, events, security problems, SLO, settings, audit logs) and, for writes, problems.write, events.ingest and entities.write.",
+      "link": "https://docs.dynatrace.com/docs/dynatrace-api/basics/dynatrace-api-authentication",
+      "pattern": "^dt0c01\\.[A-Za-z0-9]+\\.[A-Za-z0-9]+$",
+      "patternMessage": "Paste only the token (dt0c01.XXXX.YYYY), without Api-Token in front. Platform tokens (dt0s16) do not work with this API."
+    }
+  },
+  "verifyHints": {
+    "401": "Dynatrace refused the token: it is wrong, expired or revoked, or it is a platform token. Generate an access token (dt0c01) under Access tokens.",
+    "403": "The token is valid but lacks the scope for this call. Edit the token and tick the scope named in the error, e.g. problems.read.",
+    "404": "The environment address looks wrong. Use https://<environment-id>.live.dynatrace.com (SaaS) or https://<domain>/e/<environment-id> (Managed).",
+    "429": "Dynatrace rate-limited the token. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "dynatrace_list_problems"
+  },
+  "connector": {
+    "name": "Dynatrace Environment API v2",
+    "type": "REST",
+    "baseUrl": "{{DYNATRACE_ENVIRONMENT_URL}}/api/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Api-Token {{DYNATRACE_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "healthcheckPath": "/problems?pageSize=1"
+  },
+  "tools": [
+    {
+      "name": "dynatrace_list_problems",
+      "description": "List problems (Davis AI detected incidents), newest first: id, display id (P-2410123), title, impact level (APPLICATION, SERVICE, INFRASTRUCTURE, ENVIRONMENT), severity (AVAILABILITY, ERROR, PERFORMANCE, RESOURCE_CONTENTION, CUSTOM_ALERT), status OPEN or CLOSED, affected and impacted entities, root cause entity, management zones, start and end time. Default timeframe: the last 2 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "problem_selector": {
+            "type": "string",
+            "description": "Problem selector, e.g. `status(\"OPEN\")`, `severityLevel(\"AVAILABILITY\",\"ERROR\")`, `impactLevel(\"SERVICE\")`, `managementZones(\"Production\")`, `text(\"database\")`, `displayId(\"P-2410123\")`. Combine criteria with commas (AND)."
+          },
+          "entity_selector": {
+            "type": "string",
+            "description": "Only problems that affect these entities. Entity selector, e.g. `type(\"HOST\")`, `type(\"SERVICE\"),tag(\"env:prod\")`, `entityId(\"HOST-1234ABCD5678EF90\")`, `type(\"PROCESS_GROUP_INSTANCE\"),entityName.startsWith(\"payment\")`, `type(\"SERVICE\"),mzName(\"Production\")`."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-2h."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Extra properties, comma-separated: `evidenceDetails` (root cause evidence), `impactAnalysis`, `recentComments`. They make the answer much larger."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort, e.g. `-startTime` (newest first, the default), `+status` (open first), `-relevance`."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 50, up to 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/problems",
+        "queryParams": {
+          "problemSelector": "$problem_selector",
+          "entitySelector": "$entity_selector",
+          "from": "$from",
+          "to": "$to",
+          "fields": "$fields",
+          "sort": "$sort",
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_get_problem",
+      "description": "Get one problem with its evidence (the events, metrics and transactions Davis used), impact analysis, root cause, affected entities, linked problem and recent comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "problem_id": {
+            "type": "string",
+            "description": "Problem id (not the P- display id), from `dynatrace_list_problems` (`problems[].problemId`)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Extra properties, comma-separated: `evidenceDetails`, `impactAnalysis`, `recentComments`."
+          }
+        },
+        "required": [
+          "problem_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/problems/{problem_id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_list_problem_comments",
+      "description": "List the comments on a problem: text, context (e.g. the tool that wrote it), author and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "problem_id": {
+            "type": "string",
+            "description": "Problem id, from `dynatrace_list_problems`."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 10, up to 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        },
+        "required": [
+          "problem_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/problems/{problem_id}/comments",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_add_problem_comment",
+      "description": "Add a comment to a problem, e.g. the cause found or the ticket opened. Every user of the environment sees it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "problem_id": {
+            "type": "string",
+            "description": "Problem id, from `dynatrace_list_problems`."
+          },
+          "message": {
+            "type": "string",
+            "description": "The comment text (markdown)."
+          },
+          "context": {
+            "type": "string",
+            "description": "Where the comment comes from, e.g. `AnythingMCP` or a ticket number."
+          }
+        },
+        "required": [
+          "problem_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/problems/{problem_id}/comments",
+        "bodyMapping": {
+          "message": "$message",
+          "context": "$context"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "dynatrace_close_problem",
+      "description": "Close an open problem by hand, with a closing comment. A closed problem cannot be reopened; Dynatrace opens a new one if the issue comes back.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "problem_id": {
+            "type": "string",
+            "description": "Problem id, from `dynatrace_list_problems`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Closing comment: why the problem is closed."
+          }
+        },
+        "required": [
+          "problem_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/problems/{problem_id}/close",
+        "bodyMapping": {
+          "message": "$message"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "dynatrace_list_entities",
+      "description": "List monitored entities (hosts, services, processes, applications, Kubernetes workloads, cloud resources and so on) that match an entity selector: entity id, display name and, with `fields`, properties, tags, management zones and relationships. Default timeframe: the last 3 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_selector": {
+            "type": "string",
+            "description": "Required on the first page. Entity selector, e.g. `type(\"HOST\")`, `type(\"SERVICE\"),tag(\"env:prod\")`, `entityId(\"HOST-1234ABCD5678EF90\")`, `type(\"PROCESS_GROUP_INSTANCE\"),entityName.startsWith(\"payment\")`, `type(\"SERVICE\"),mzName(\"Production\")`. Types come from `dynatrace_list_entity_types`."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-3d."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Extra properties, each with a leading +, comma-separated, e.g. `+tags,+managementZones,+lastSeenTms,+properties.osType,+fromRelationships,+toRelationships`."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort by `name` or `-name`."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 50, up to 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entities",
+        "queryParams": {
+          "entitySelector": "$entity_selector",
+          "from": "$from",
+          "to": "$to",
+          "fields": "$fields",
+          "sort": "$sort",
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_get_entity",
+      "description": "Get one monitored entity with its type, display name, properties, tags, management zones, first and last seen time and its relationships to other entities (runs on, calls, belongs to).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "Entity id, e.g. HOST-1234ABCD5678EF90 or SERVICE-..., from `dynatrace_list_entities` or a problem."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-3d."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Properties to add, each with a leading +, comma-separated."
+          }
+        },
+        "required": [
+          "entity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entities/{entity_id}",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_list_entity_types",
+      "description": "List the entity types of the environment (HOST, SERVICE, PROCESS_GROUP, APPLICATION, KUBERNETES_CLUSTER, CLOUD_APPLICATION and many more) with their properties and relationships.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 50, up to 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entityTypes",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_get_entity_type",
+      "description": "Get one entity type with its properties (usable in `fields` and selectors), the relationships it can have and its tag and management zone support.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Entity type, e.g. HOST or SERVICE."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entityTypes/{type}"
+      }
+    },
+    {
+      "name": "dynatrace_list_tags",
+      "description": "List the custom tags on the entities that match an entity selector, with key, value and how often each is used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_selector": {
+            "type": "string",
+            "description": "Entity selector, e.g. `type(\"HOST\")`, `type(\"SERVICE\"),tag(\"env:prod\")`, `entityId(\"HOST-1234ABCD5678EF90\")`, `type(\"PROCESS_GROUP_INSTANCE\"),entityName.startsWith(\"payment\")`, `type(\"SERVICE\"),mzName(\"Production\")`."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-3d."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          }
+        },
+        "required": [
+          "entity_selector"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": {
+          "entitySelector": "$entity_selector",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_add_tags",
+      "description": "Add custom tags to every entity that matches an entity selector, e.g. owner:team-payments. Existing tags stay.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_selector": {
+            "type": "string",
+            "description": "Which entities get the tags. Entity selector, e.g. `type(\"HOST\")`, `type(\"SERVICE\"),tag(\"env:prod\")`, `entityId(\"HOST-1234ABCD5678EF90\")`, `type(\"PROCESS_GROUP_INSTANCE\"),entityName.startsWith(\"payment\")`, `type(\"SERVICE\"),mzName(\"Production\")`. Check the match with `dynatrace_list_entities` first."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags to add, each `{\"key\": \"owner\", \"value\": \"team-payments\"}`; `value` is optional.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key"
+              ]
+            }
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-3d."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          }
+        },
+        "required": [
+          "entity_selector",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tags",
+        "queryParams": {
+          "entitySelector": "$entity_selector",
+          "from": "$from",
+          "to": "$to"
+        },
+        "bodyMapping": {
+          "tags": "$tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "dynatrace_list_metrics",
+      "description": "List the available metrics with key (e.g. builtin:host.cpu.usage), display name, description, unit, aggregation types and dimensions. Search with `text` or narrow with `metric_selector`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Search text in the key and display name, e.g. `cpu`."
+          },
+          "metric_selector": {
+            "type": "string",
+            "description": "Metric selector, e.g. `builtin:host.*` or `builtin:service.(response.time,errors.total.count)`."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Properties to return, comma-separated, e.g. `displayName,unit,aggregationTypes,dimensionDefinitions,description`. Prefix with + to add to the defaults."
+          },
+          "written_since": {
+            "type": "string",
+            "description": "Only metrics that received data since this time (same formats as from)."
+          },
+          "metadata_selector": {
+            "type": "string",
+            "description": "Metadata selector, e.g. `unit(\"Percent\")`, `tags(\"feature\")`."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 100, up to 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metrics",
+        "queryParams": {
+          "text": "$text",
+          "metricSelector": "$metric_selector",
+          "fields": "$fields",
+          "writtenSince": "$written_since",
+          "metadataSelector": "$metadata_selector",
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_get_metric",
+      "description": "Get the descriptor of one metric: display name, description, unit, dimensions, aggregation types, default aggregation and entity type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric_key": {
+            "type": "string",
+            "description": "Metric key, e.g. builtin:host.cpu.usage, from `dynatrace_list_metrics`."
+          }
+        },
+        "required": [
+          "metric_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metrics/{metric_key}"
+      }
+    },
+    {
+      "name": "dynatrace_query_metrics",
+      "description": "Read metric data points: one or more metrics with transformations (`:avg`, `:splitBy(\"dt.entity.host\")`, `:sort(value(avg,descending))`, `:limit(10)`) for a timeframe and resolution. Default timeframe: the last 2 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric_selector": {
+            "type": "string",
+            "description": "Metric selector with transformations, up to 10 metrics, e.g. `builtin:host.cpu.usage:splitBy(\"dt.entity.host\"):avg:sort(value(avg,descending)):limit(5)`."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-2h."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "resolution": {
+            "type": "string",
+            "description": "Data point spacing: a count of points (`120`), a timespan (`1m`, `5m`, `1h`, `1d`) or `Inf` for one value over the whole timeframe."
+          },
+          "entity_selector": {
+            "type": "string",
+            "description": "Only data from these entities. Entity selector, e.g. `type(\"HOST\")`, `type(\"SERVICE\"),tag(\"env:prod\")`, `entityId(\"HOST-1234ABCD5678EF90\")`, `type(\"PROCESS_GROUP_INSTANCE\"),entityName.startsWith(\"payment\")`, `type(\"SERVICE\"),mzName(\"Production\")`."
+          },
+          "mz_selector": {
+            "type": "string",
+            "description": "Management zone scope, e.g. `mzName(\"Production\")` or `mzId(123)`."
+          }
+        },
+        "required": [
+          "metric_selector"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metrics/query",
+        "queryParams": {
+          "metricSelector": "$metric_selector",
+          "from": "$from",
+          "to": "$to",
+          "resolution": "$resolution",
+          "entitySelector": "$entity_selector",
+          "mzSelector": "$mz_selector"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_search_logs",
+      "description": "Search log records with the Dynatrace log search query language: timestamp, status (ERROR, WARN, INFO, NONE), content and attributes (host, process, log source, Kubernetes and cloud metadata). Default timeframe: the last 2 hours; up to 1000 records per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Log search query, e.g. `status=\"ERROR\"`, `content=\"timeout\" AND dt.entity.host=\"HOST-1234\"`, `log.source=\"/var/log/syslog\"`. Empty matches everything."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-2h."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records to return (default 1000, up to 1000). Ask for fewer first.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "sort": {
+            "type": "string",
+            "description": "`-timestamp` (newest first) or `timestamp` (oldest first).",
+            "enum": [
+              "-timestamp",
+              "timestamp",
+              "+timestamp"
+            ]
+          },
+          "next_slice_key": {
+            "type": "string",
+            "description": "Cursor for the next slice: `nextSliceKey` of the previous answer. Not available on Grail (Log Management and Analytics) environments; narrow the timeframe there instead."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/logs/search",
+        "queryParams": {
+          "query": "$query",
+          "from": "$from",
+          "to": "$to",
+          "limit": "$limit",
+          "sort": "$sort",
+          "nextSliceKey": "$next_slice_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_aggregate_logs",
+      "description": "Count log records over time and by attribute: how many records match a query per time slot and per value of the chosen groupings (e.g. status, log.source, dt.entity.host). Use it to see error spikes before reading single records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Log search query, as in `dynatrace_search_logs`."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-2h."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "time_buckets": {
+            "type": "integer",
+            "description": "Number of equal time slots (default 1).",
+            "minimum": 1
+          },
+          "max_group_values": {
+            "type": "integer",
+            "description": "Values per group (default 10, up to 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Attributes to group by, e.g. [\"status\", \"log.source\"]. Empty returns every possible group."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/logs/aggregate",
+        "queryParams": {
+          "query": "$query",
+          "from": "$from",
+          "to": "$to",
+          "timeBuckets": "$time_buckets",
+          "maxGroupValues": "$max_group_values",
+          "groupBy": "$group_by"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_list_events",
+      "description": "List events (deployments, configuration changes, availability, error, performance and resource events, custom events) with type, title, status, entity, properties and time. Default timeframe: the last 2 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_selector": {
+            "type": "string",
+            "description": "Event selector, e.g. `eventType(\"CUSTOM_DEPLOYMENT\")`, `status(\"OPEN\")`, `property.dt.event.is_rootcause_relevant(true)`, `managementZone(\"Production\")`."
+          },
+          "entity_selector": {
+            "type": "string",
+            "description": "Only events on these entities. Entity selector, e.g. `type(\"HOST\")`, `type(\"SERVICE\"),tag(\"env:prod\")`, `entityId(\"HOST-1234ABCD5678EF90\")`, `type(\"PROCESS_GROUP_INSTANCE\"),entityName.startsWith(\"payment\")`, `type(\"SERVICE\"),mzName(\"Production\")`."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-2h."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 100, up to 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events",
+        "queryParams": {
+          "eventSelector": "$event_selector",
+          "entitySelector": "$entity_selector",
+          "from": "$from",
+          "to": "$to",
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_get_event",
+      "description": "Get one event with all its properties, the entity it belongs to and its management zones.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, from `dynatrace_list_events` (`events[].eventId`)."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{event_id}"
+      }
+    },
+    {
+      "name": "dynatrace_list_event_types",
+      "description": "List the event types with their display name and description, for use in an event selector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 100, up to 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/eventTypes",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_ingest_event",
+      "description": "Send a custom event to Dynatrace and attach it to entities: a deployment, configuration change or annotation shows on the entities and is used by Davis for root cause analysis; an alert, error or availability event can open a problem.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "description": "Type: CUSTOM_DEPLOYMENT, CUSTOM_CONFIGURATION, CUSTOM_ANNOTATION and CUSTOM_INFO only inform; AVAILABILITY_EVENT, ERROR_EVENT, PERFORMANCE_EVENT, RESOURCE_CONTENTION_EVENT and CUSTOM_ALERT can open a problem.",
+            "enum": [
+              "AVAILABILITY_EVENT",
+              "CUSTOM_ALERT",
+              "CUSTOM_ANNOTATION",
+              "CUSTOM_CONFIGURATION",
+              "CUSTOM_DEPLOYMENT",
+              "CUSTOM_INFO",
+              "ERROR_EVENT",
+              "MARKED_FOR_TERMINATION",
+              "PERFORMANCE_EVENT",
+              "RESOURCE_CONTENTION_EVENT",
+              "WARNING"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Event title."
+          },
+          "entity_selector": {
+            "type": "string",
+            "description": "Entities the event belongs to. Entity selector, e.g. `type(\"HOST\")`, `type(\"SERVICE\"),tag(\"env:prod\")`, `entityId(\"HOST-1234ABCD5678EF90\")`, `type(\"PROCESS_GROUP_INSTANCE\"),entityName.startsWith(\"payment\")`, `type(\"SERVICE\"),mzName(\"Production\")`. Without it the event belongs to the environment."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start, UTC milliseconds (default now)."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End, UTC milliseconds."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Minutes until an open event without end time closes by itself (default 15).",
+            "minimum": 1
+          },
+          "properties": {
+            "type": "object",
+            "description": "Extra key and value pairs, e.g. {\"dt.event.deployment.version\": \"1.4.2\", \"dt.event.deployment.name\": \"checkout\"}."
+          }
+        },
+        "required": [
+          "event_type",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/events/ingest",
+        "bodyMapping": {
+          "eventType": "$event_type",
+          "title": "$title",
+          "entitySelector": "$entity_selector",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "timeout": "$timeout",
+          "properties": "$properties"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "dynatrace_list_security_problems",
+      "description": "List security problems (vulnerabilities found by Runtime Vulnerability Analytics): id, display id (S-123), title, status (OPEN, RESOLVED, MUTED), technology, CVE ids, Davis risk level and score, vulnerable component and affected entities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "security_problem_selector": {
+            "type": "string",
+            "description": "Selector, e.g. `status(\"OPEN\")`, `riskLevel(\"CRITICAL\",\"HIGH\")`, `cveId(\"CVE-2021-44228\")`, `technology(\"JAVA\")`, `minRiskScore(\"7\")`, `managementZones(\"Production\")`."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort, e.g. `-riskAssessment.riskScore`, `+status`, `-firstSeenTimestamp`."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Extra properties, comma-separated: riskAssessment, managementZones, codeLevelVulnerabilityDetails, globalCounts."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-30d."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 100, up to 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/securityProblems",
+        "queryParams": {
+          "securityProblemSelector": "$security_problem_selector",
+          "sort": "$sort",
+          "fields": "$fields",
+          "from": "$from",
+          "to": "$to",
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_get_security_problem",
+      "description": "Get one security problem with its description, CVEs, risk assessment (exposure, data assets, public exploit), affected and related entities and remediation status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "security_problem_id": {
+            "type": "string",
+            "description": "Security problem id, from `dynatrace_list_security_problems`."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Extra properties, comma-separated: riskAssessment, managementZones, entryPoints, vulnerableComponents, affectedEntities, exposedEntities, events, description, remediationDescription."
+          },
+          "management_zone_filter": {
+            "type": "string",
+            "description": "Only data from this management zone, e.g. `name(\"Production\")`."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-30d."
+          }
+        },
+        "required": [
+          "security_problem_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/securityProblems/{security_problem_id}",
+        "queryParams": {
+          "fields": "$fields",
+          "managementZoneFilter": "$management_zone_filter",
+          "from": "$from"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_list_slos",
+      "description": "List service-level objectives with name, target and warning thresholds, timeframe and, with `evaluate`, the current status (percentage), error budget and burn rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slo_selector": {
+            "type": "string",
+            "description": "Selector, e.g. `name(\"Checkout availability\")`, `id(\"...\")`, `healthState(\"UNHEALTHY\")`, `text(\"checkout\")`."
+          },
+          "evaluate": {
+            "type": "boolean",
+            "description": "Calculate status and error budget (true; page size then at most 25) or only list the definitions (false, default)."
+          },
+          "time_frame": {
+            "type": "string",
+            "description": "`CURRENT` (each SLO's own timeframe, default) or `GTF` (use from and to).",
+            "enum": [
+              "CURRENT",
+              "GTF"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-2w."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "enabled_slos": {
+            "type": "string",
+            "description": "`true` (enabled only, default), `false` (disabled only) or `all`.",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ]
+          },
+          "show_global_slos": {
+            "type": "boolean",
+            "description": "Include global SLOs (default true)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "`name` or `-name`.",
+            "enum": [
+              "name",
+              "-name"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 10, up to 10000).",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/slo",
+        "queryParams": {
+          "sloSelector": "$slo_selector",
+          "evaluate": "$evaluate",
+          "timeFrame": "$time_frame",
+          "from": "$from",
+          "to": "$to",
+          "enabledSlos": "$enabled_slos",
+          "showGlobalSlos": "$show_global_slos",
+          "sort": "$sort",
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_get_slo",
+      "description": "Get one SLO with its definition and its evaluated status, error budget, burn rate and the metric expression behind it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slo_id": {
+            "type": "string",
+            "description": "SLO id, from `dynatrace_list_slos`."
+          },
+          "time_frame": {
+            "type": "string",
+            "description": "`CURRENT` (default) or `GTF` (use from and to).",
+            "enum": [
+              "CURRENT",
+              "GTF"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: the SLO timeframe."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          }
+        },
+        "required": [
+          "slo_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/slo/{slo_id}",
+        "queryParams": {
+          "timeFrame": "$time_frame",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_list_settings_schemas",
+      "description": "List the settings schemas of the environment (e.g. builtin:alerting.profile, builtin:management-zones, builtin:problem.notifications, builtin:anomaly-detection.services) with display name and latest version.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/schemas"
+      }
+    },
+    {
+      "name": "dynatrace_get_settings_schema",
+      "description": "Get one settings schema: its properties, types, allowed values, scopes and constraints. Read it before reading objects of that schema.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schema_id": {
+            "type": "string",
+            "description": "Schema id, e.g. builtin:alerting.profile, from `dynatrace_list_settings_schemas`."
+          },
+          "schema_version": {
+            "type": "string",
+            "description": "A specific version (default the latest)."
+          }
+        },
+        "required": [
+          "schema_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/schemas/{schema_id}",
+        "queryParams": {
+          "schemaVersion": "$schema_version"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_list_settings_objects",
+      "description": "Read the configured settings objects of one or more schemas (alerting profiles, management zones, anomaly detection, notifications and so on): object id, scope, summary and value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schema_ids": {
+            "type": "string",
+            "description": "Schema ids, comma-separated, e.g. `builtin:alerting.profile`. On the first page this or `scopes` is required."
+          },
+          "scopes": {
+            "type": "string",
+            "description": "Scopes, comma-separated, e.g. `environment` or an entity id such as HOST-1234ABCD5678EF90."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, comma-separated (default objectId,value): objectId, summary, searchSummary, created, modified, createdBy, modifiedBy, schemaId, schemaVersion, scope, value."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression on created, modified, createdBy, modifiedBy or value fields, e.g. `value.enabled = true`."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 100, up to 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/objects",
+        "queryParams": {
+          "schemaIds": "$schema_ids",
+          "scopes": "$scopes",
+          "fields": "$fields",
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    },
+    {
+      "name": "dynatrace_get_settings_object",
+      "description": "Read one settings object with its schema, scope, value and modification details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "description": "Object id, from `dynatrace_list_settings_objects`."
+          }
+        },
+        "required": [
+          "object_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/objects/{object_id}"
+      }
+    },
+    {
+      "name": "dynatrace_list_audit_logs",
+      "description": "List the audit log: who changed what and when (configuration changes, token changes, logins), with user, category, event type, entity and the change itself. Default timeframe: the last 2 weeks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter, e.g. `user(\"jane@example.com\")`, `eventType(\"UPDATE\")`, `category(\"CONFIG\")`, `entityId(\"...\")`, `success(false)`. Combine with commas."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the timeframe: relative (`now-2h`, `now-7d`), a UTC timestamp in milliseconds or ISO 8601 (`2026-10-30T08:00:00Z`). Default: now-2w."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the timeframe, same formats (default now)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "`-timestamp` (newest first, default) or `timestamp`.",
+            "enum": [
+              "-timestamp",
+              "timestamp"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 1000, up to 5000).",
+            "minimum": 1,
+            "maximum": 5000
+          },
+          "next_page_key": {
+            "type": "string",
+            "description": "Cursor for the next page: `nextPageKey` of the previous answer. When it is set, leave every other filter out (the cursor remembers them)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/auditlogs",
+        "queryParams": {
+          "filter": "$filter",
+          "from": "$from",
+          "to": "$to",
+          "sort": "$sort",
+          "pageSize": "$page_size",
+          "nextPageKey": "$next_page_key"
+        }
+      }
+    }
+  ]
+}

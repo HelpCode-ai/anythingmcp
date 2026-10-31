@@ -1,0 +1,1996 @@
+{
+  "slug": "zuora",
+  "name": "Zuora",
+  "aliases": [
+    "Zuora Billing",
+    "Zuora Revenue"
+  ],
+  "description": "Zuora subscription billing: customer accounts, subscriptions and orders (preview, create, renew, suspend, resume, cancel), invoices with items and PDFs, payments, refunds and credit memos, the product catalog with rate plans, usage, and ZOQL, Object Query and Data Query reads. Any Zuora data center or sandbox.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "zuora",
+  "docsUrl": "https://developer.zuora.com/v1-api-reference/api/overview/",
+  "instructions": "## Zuora\nThis connector uses the **Zuora Billing REST API v1** of one tenant: customer accounts, subscriptions and orders, invoices, payments, refunds and credit memos, the product catalog with rate plans, usage, and three query tools (Object Query lists, ZOQL and Data Query SQL). It can create and update accounts, place orders, renew, suspend and resume subscriptions, record usage, email invoices and create credit memos.\n\n**Setup (5 minutes)**\n1. In Zuora open **Settings**, **Administration**, **Manage Users**, pick (or create) an API user with the permissions the tools need, and under **OAuth Clients** create a client. Copy the client id and the client secret (shown once).\n2. Paste them into `ZUORA_CLIENT_ID` and `ZUORA_CLIENT_SECRET`. The connector gets a token from `/oauth/token` with the client credentials grant and renews it before it expires.\n3. Set `ZUORA_API_URL` to the REST host of your tenant, without a path: `https://rest.zuora.com` (US Cloud 2), `https://rest.na.zuora.com` (US Cloud 1), `https://rest.eu.zuora.com` (EU), `https://rest.ap.zuora.com` (APAC), or a sandbox: `https://rest.apisandbox.zuora.com`, `https://rest.sandbox.na.zuora.com`, `https://rest.sandbox.eu.zuora.com`, `https://rest.test.zuora.com`, `https://rest.test.eu.zuora.com`, `https://rest.test.ap.zuora.com`. The host is shown in Zuora under your tenant info and in the address of the API docs for your data center.\n4. Run `zuora_list_products` to check the setup.\n\n**Workflow**\n- Accounts: `zuora_list_accounts` (filter, e.g. `[\"status.EQ:Active\", \"balance.GT:0\"]`), `zuora_get_account`, `zuora_get_account_summary` (everything about one customer), `zuora_list_account_payment_methods`, `zuora_create_account`, `zuora_update_account`.\n- Subscriptions: `zuora_list_subscriptions`, `zuora_list_account_subscriptions`, `zuora_get_subscription`. Changes go through orders: `zuora_preview_order` first to show the user the amounts, then `zuora_create_order`; `zuora_list_orders`, `zuora_get_order`. Lifecycle: `zuora_renew_subscription`, `zuora_suspend_subscription`, `zuora_resume_subscription`, `zuora_cancel_subscription`.\n- Invoices: `zuora_list_invoices` (e.g. `[\"status.EQ:Posted\", \"balance.GT:0\", \"duedate.LT:2026-10-01\"]` for overdue), `zuora_get_invoice`, `zuora_list_invoice_items`, `zuora_list_invoice_files` (PDF links), `zuora_email_invoice`.\n- Money: `zuora_list_payments`, `zuora_get_payment`, `zuora_create_payment`, `zuora_refund_payment`, `zuora_list_refunds`, `zuora_get_refund`; credit memos with `zuora_list_credit_memos`, `zuora_get_credit_memo`, `zuora_list_credit_memo_items`, `zuora_create_credit_memo_from_invoice`.\n- Catalog: `zuora_list_products`, `zuora_get_product`, `zuora_list_product_rate_plans`, `zuora_get_product_rate_plan` (the ids go into orders as `productRatePlanId`).\n- Usage: `zuora_list_usages`, `zuora_create_usage`.\n- Queries: `zuora_query` and `zuora_query_more` for ZOQL on one object; `zuora_create_data_query`, then `zuora_get_data_query` until `queryStatus` is completed, for SQL with joins and totals (`zuora_list_data_queries` shows earlier jobs); `zuora_describe_object` lists the fields of an object.\n\n**Switched off at install**: `zuora_cancel_subscription`, `zuora_create_payment` and `zuora_refund_payment`; they move money or cannot be undone, so an admin switches them on when the team needs them.\n\n**Before writing**: orders, payments, refunds, cancellations and credit memos change what customers are billed. Use `zuora_preview_order` and show the user the amounts, and wait for a yes. `zuora_create_order` with `processingOptions` (`runBilling`, `collectPayment`) also invoices and charges the customer.\n\n**Reading the answers**: most keys (`account_key`, `subscription_key`, `invoice_key`) take either the number (`A00000001`, `A-S00000001`, `INV00000001`) or the 32-character id; filters such as `accountId` need the id. Amounts are decimal numbers in the currency of the account. Dates are `YYYY-MM-DD`, timestamps are in the tenant time zone unless they end with Z. v1 answers carry `success: true` or `success: false` with `reasons: [{code, message}]`; Object Query answers carry `data`.\n\n**Paging**: Object Query lists (`zuora_list_accounts`, `zuora_list_subscriptions`, `zuora_list_invoices`, `zuora_list_usages`) return up to `page_size` records (10 by default, 99 at most) and `nextPage`; pass it as `cursor` until it is missing. Other lists take `page` and `page_size` and return `nextPage` as a link while more exist. ZOQL returns up to 2,000 records and `done: false` with a `queryLocator` for the rest.\n\n**Limits and errors**: Zuora limits concurrent requests per tenant and requests per hour per user; 429 means wait and try again. 401 a wrong client id or secret or the wrong host for the tenant; 403 an API user without the permission; 404 a wrong number or id. Errors in v1 answers come with HTTP 200 or 400 and `success: false`; read `reasons`. For tenants with Multi-entity, the OAuth client must belong to the entity you want to read.",
+  "prerequisites": "A Zuora tenant and an API user with an OAuth client (client id and secret) and the permissions the tools need.",
+  "requiredEnvVars": [
+    "ZUORA_CLIENT_ID",
+    "ZUORA_CLIENT_SECRET",
+    "ZUORA_API_URL"
+  ],
+  "envVarMeta": {
+    "ZUORA_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Zuora, Settings, Administration, Manage Users: open the API user and create an OAuth client under OAuth Clients. Copy the client id.",
+      "link": "https://developer.zuora.com/docs/guides/authentication/",
+      "pattern": "^[A-Za-z0-9-]{20,}$",
+      "patternMessage": "Paste only the client id, without spaces or quotes."
+    },
+    "ZUORA_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The client secret shown once when the OAuth client is created. Create a new client if it was lost.",
+      "link": "https://developer.zuora.com/docs/guides/authentication/",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the client secret, without spaces or quotes."
+    },
+    "ZUORA_API_URL": {
+      "label": "REST host",
+      "kind": "address",
+      "help": "The REST host of your tenant, e.g. https://rest.zuora.com, https://rest.na.zuora.com, https://rest.eu.zuora.com, https://rest.ap.zuora.com, or a sandbox such as https://rest.apisandbox.zuora.com or https://rest.test.eu.zuora.com.",
+      "example": "https://rest.zuora.com",
+      "link": "https://developer.zuora.com/v1-api-reference/api/overview/",
+      "pattern": "^https://rest\\.((apisandbox|test|sandbox)\\.)?((na|eu|ap)\\.)?zuora\\.com$",
+      "patternMessage": "Use the REST host only, e.g. https://rest.zuora.com or https://rest.eu.zuora.com, without a path or trailing slash."
+    }
+  },
+  "verifyHints": {
+    "400": "Zuora did not issue a token. Check ZUORA_CLIENT_ID and ZUORA_CLIENT_SECRET, and that ZUORA_API_URL is the data center of your tenant (a sandbox client only works on the sandbox host).",
+    "401": "Zuora refused the credentials. Check the client id and secret and that ZUORA_API_URL is the REST host of your tenant.",
+    "403": "The API user of this OAuth client lacks a permission. Give its role the API access and the read permissions for Billing and Payments.",
+    "429": "Zuora is rate limiting this tenant. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "zuora_list_products"
+  },
+  "connector": {
+    "name": "Zuora REST API",
+    "type": "REST",
+    "baseUrl": "{{ZUORA_API_URL}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{ZUORA_CLIENT_ID}}",
+      "clientSecret": "{{ZUORA_CLIENT_SECRET}}",
+      "tokenUrl": "{{ZUORA_API_URL}}/oauth/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/v1/catalog/products"
+  },
+  "tools": [
+    {
+      "name": "zuora_list_accounts",
+      "description": "List customer accounts with Object Query: filter (e.g. status.EQ:Active, name.SW:Acme, balance.GT:0), choose fields, expand bill-to contact or subscriptions, sort and page with a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Conditions combined with AND, each field.OPERATOR:value. Operators EQ, NE, LT, LE, GT, GE, SW (starts with), IN (e.g. currency.IN:[USD,EUR]). Dates as 2026-01-31, timestamps as 2026-01-31T00:00:00Z, no quotes. Filterable: id, accountnumber, name, status, currency, balance, billcycleday, batch, crmid, parentid, lastinvoicedate, updateddate, indexed custom fields (name__c).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "One field and direction, e.g. updateddate.DESC. Sortable: id, accountnumber, name, balance, currency, status, lastinvoicedate, updateddate."
+          },
+          "expand": {
+            "type": "array",
+            "description": "Related objects to include: billto, soldto, shipto, defaultpaymentmethod, subscriptions, subscriptions.rateplans, subscriptions.rateplans.rateplancharges, invoices, payments, refunds, creditmemos, debitmemos, usages, paymentmethods.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "description": "Only these fields of the base object, e.g. [\"id\", \"name\", \"accountnumber\", \"balance\"]. Leave out for all fields.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 99 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The nextPage value of the previous response, to get the next page. nextPage is absent on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/object-query/accounts",
+        "queryParams": {
+          "filter[]": "$filter",
+          "sort[]": "$sort",
+          "expand[]": "$expand",
+          "fields[]": "$fields",
+          "pageSize": "$page_size",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "zuora_get_account",
+      "description": "Get one customer account by number or id: basic info, billing and payment settings, bill-to and sold-to contacts, balance and metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_key": {
+            "type": "string",
+            "description": "Account number (e.g. A00000001) or account id."
+          }
+        },
+        "required": [
+          "account_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/accounts/{account_key}"
+      }
+    },
+    {
+      "name": "zuora_get_account_summary",
+      "description": "Get an account summary in one call: basic info, contacts, subscriptions, recent invoices, payments and usage, with balance and last payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_key": {
+            "type": "string",
+            "description": "Account number (e.g. A00000001) or account id."
+          },
+          "exclude_usage": {
+            "type": "boolean",
+            "description": "true to leave usage out of the summary (faster)."
+          }
+        },
+        "required": [
+          "account_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/accounts/{account_key}/summary",
+        "queryParams": {
+          "excludeUsage": "$exclude_usage"
+        }
+      }
+    },
+    {
+      "name": "zuora_list_account_payment_methods",
+      "description": "List the payment methods of an account (cards, bank accounts, PayPal) with type, masked number, expiry, default flag and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_key": {
+            "type": "string",
+            "description": "Account number (e.g. A00000001) or account id."
+          }
+        },
+        "required": [
+          "account_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/accounts/{account_key}/payment-methods"
+      }
+    },
+    {
+      "name": "zuora_create_account",
+      "description": "Create a customer account with name, currency and bill-to contact, plus billing settings (bill cycle day, payment term, batch, auto-pay) and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Account name."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Billing currency, ISO 4217, e.g. USD. Must be enabled in the tenant."
+          },
+          "bill_to_contact": {
+            "type": "object",
+            "description": "Contact: {firstName, lastName, workEmail, workPhone, address1, address2, city, state, zipCode, country}. firstName and lastName are required."
+          },
+          "sold_to_contact": {
+            "type": "object",
+            "description": "Sold-to contact, same shape as the bill-to contact. Leave out with sold_to_same_as_bill_to."
+          },
+          "sold_to_same_as_bill_to": {
+            "type": "boolean",
+            "description": "Use the bill-to contact as sold-to contact."
+          },
+          "account_number": {
+            "type": "string",
+            "description": "Account number; generated when left out."
+          },
+          "bill_cycle_day": {
+            "type": "integer",
+            "description": "Day of the month invoices are generated, 1 to 31 (0 = set by the first subscription)."
+          },
+          "payment_term": {
+            "type": "string",
+            "description": "Payment term name as configured, e.g. Net 30 or Due Upon Receipt."
+          },
+          "auto_pay": {
+            "type": "boolean",
+            "description": "Charge the default payment method automatically when invoices are due."
+          },
+          "batch": {
+            "type": "string",
+            "description": "Billing batch, e.g. Batch1."
+          },
+          "crm_id": {
+            "type": "string",
+            "description": "Id of the account in the CRM."
+          },
+          "invoice_delivery_email": {
+            "type": "boolean",
+            "description": "Email invoices to the bill-to contact."
+          },
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Purchase order number printed on invoices."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom fields of the account, e.g. {\"Segment__c\": \"Enterprise\"}."
+          }
+        },
+        "required": [
+          "name",
+          "currency",
+          "bill_to_contact"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/accounts",
+        "bodyMapping": {
+          "name": "$name",
+          "currency": "$currency",
+          "billToContact": "$bill_to_contact",
+          "soldToContact": "$sold_to_contact",
+          "soldToSameAsBillTo": "$sold_to_same_as_bill_to",
+          "accountNumber": "$account_number",
+          "billCycleDay": "$bill_cycle_day",
+          "paymentTerm": "$payment_term",
+          "autoPay": "$auto_pay",
+          "batch": "$batch",
+          "crmId": "$crm_id",
+          "invoiceDeliveryPrefsEmail": "$invoice_delivery_email",
+          "purchaseOrderNumber": "$purchase_order_number",
+          "notes": "$notes",
+          "__merge": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "zuora_update_account",
+      "description": "Update an account: name, notes, contacts, billing settings, auto-pay, default payment method, CRM id or custom fields. Fields left out keep their value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_key": {
+            "type": "string",
+            "description": "Account number (e.g. A00000001) or account id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Account name."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "bill_to_contact": {
+            "type": "object",
+            "description": "Bill-to contact fields to change: {firstName, lastName, workEmail, address1, city, state, zipCode, country}."
+          },
+          "sold_to_contact": {
+            "type": "object",
+            "description": "Sold-to contact fields to change, same shape."
+          },
+          "bill_cycle_day": {
+            "type": "integer",
+            "description": "Bill cycle day, 1 to 31."
+          },
+          "payment_term": {
+            "type": "string",
+            "description": "Payment term name, e.g. Net 30."
+          },
+          "auto_pay": {
+            "type": "boolean",
+            "description": "Charge automatically when invoices are due."
+          },
+          "default_payment_method_id": {
+            "type": "string",
+            "description": "Id of the payment method to make the default."
+          },
+          "batch": {
+            "type": "string",
+            "description": "Billing batch."
+          },
+          "crm_id": {
+            "type": "string",
+            "description": "CRM account id."
+          },
+          "sales_rep": {
+            "type": "string",
+            "description": "Sales representative."
+          },
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Purchase order number."
+          },
+          "invoice_delivery_email": {
+            "type": "boolean",
+            "description": "Email invoices to the bill-to contact."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom fields of the account, e.g. {\"Segment__c\": \"Enterprise\"}."
+          }
+        },
+        "required": [
+          "account_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/accounts/{account_key}",
+        "bodyMapping": {
+          "name": "$name",
+          "notes": "$notes",
+          "billToContact": "$bill_to_contact",
+          "soldToContact": "$sold_to_contact",
+          "billCycleDay": "$bill_cycle_day",
+          "paymentTerm": "$payment_term",
+          "autoPay": "$auto_pay",
+          "defaultPaymentMethodId": "$default_payment_method_id",
+          "batch": "$batch",
+          "crmId": "$crm_id",
+          "salesRep": "$sales_rep",
+          "purchaseOrderNumber": "$purchase_order_number",
+          "invoiceDeliveryPrefsEmail": "$invoice_delivery_email",
+          "__merge": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "zuora_list_subscriptions",
+      "description": "List subscriptions with Object Query: filter by account, status (Active, Cancelled, Suspended, Expired, Draft), term dates or latest version, expand rate plans and charges, page with a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Conditions combined with AND, each field.OPERATOR:value. Operators EQ, NE, LT, LE, GT, GE, SW (starts with), IN (e.g. currency.IN:[USD,EUR]). Dates as 2026-01-31, timestamps as 2026-01-31T00:00:00Z, no quotes. Filterable: id, name (the subscription number), accountid, invoiceownerid, status, version, islatestversion, termstartdate, termenddate, contracteffectivedate, renewalterm, cmrr, updateddate.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "One field and direction, e.g. updateddate.DESC. Sortable: id, name, status, termstartdate, termenddate, contracteffectivedate, updateddate."
+          },
+          "expand": {
+            "type": "array",
+            "description": "Related objects to include: account, invoiceowner, billtocontact, soldtocontact, rateplans, rateplans.rateplancharges, rateplans.rateplancharges.rateplanchargetiers, invoiceitems, order.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "description": "Only these fields of the base object, e.g. [\"id\", \"name\", \"accountnumber\", \"balance\"]. Leave out for all fields.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 99 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The nextPage value of the previous response, to get the next page. nextPage is absent on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/object-query/subscriptions",
+        "queryParams": {
+          "filter[]": "$filter",
+          "sort[]": "$sort",
+          "expand[]": "$expand",
+          "fields[]": "$fields",
+          "pageSize": "$page_size",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "zuora_list_account_subscriptions",
+      "description": "List the subscriptions of one account with rate plans, charges, prices, quantities, terms and status, as Zuora shows them on the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_key": {
+            "type": "string",
+            "description": "Account number (e.g. A00000001) or account id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          },
+          "charge_detail": {
+            "type": "string",
+            "description": "Charge detail to include: last-segment, current-segment, all-segments or specific-segment&as-of-date=YYYY-MM-DD."
+          },
+          "exclude_empty_rate_plans": {
+            "type": "boolean",
+            "description": "Leave out rate plans that have no charges."
+          }
+        },
+        "required": [
+          "account_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/subscriptions/accounts/{account_key}",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "charge-detail": "$charge_detail",
+          "exclude-rate-plans-with-no-charges": "$exclude_empty_rate_plans"
+        }
+      }
+    },
+    {
+      "name": "zuora_get_subscription",
+      "description": "Get one subscription by number or id with term, renewal settings, status, rate plans, charges (price, quantity, billing period) and owner accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_key": {
+            "type": "string",
+            "description": "Subscription number (e.g. A-S00000001) or subscription id."
+          },
+          "charge_detail": {
+            "type": "string",
+            "description": "last-segment (default), current-segment or all-segments."
+          },
+          "as_of_date": {
+            "type": "string",
+            "description": "Show charges as of this date, YYYY-MM-DD."
+          },
+          "include_owner_details": {
+            "type": "boolean",
+            "description": "Include subscription owner account details."
+          }
+        },
+        "required": [
+          "subscription_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/subscriptions/{subscription_key}",
+        "queryParams": {
+          "charge-detail": "$charge_detail",
+          "as-of-date": "$as_of_date",
+          "getSubscriptionOwnerDetails": "$include_owner_details"
+        }
+      }
+    },
+    {
+      "name": "zuora_list_orders",
+      "description": "List orders (the records of subscription changes: new subscription, add product, update, renew, cancel) by status and date range, with order actions and subscriptions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Order status.",
+            "enum": [
+              "all",
+              "cancelled",
+              "completed",
+              "draft",
+              "executing",
+              "failed",
+              "pending",
+              "scheduled"
+            ]
+          },
+          "date_filter_option": {
+            "type": "string",
+            "description": "Which date start_date and end_date refer to: orderDate (default) or updatedDate."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orders",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "status": "$status",
+          "dateFilterOption": "$date_filter_option",
+          "startDate": "$start_date",
+          "endDate": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "zuora_get_order",
+      "description": "Get one order by order number with its order actions, the subscriptions it created or changed, and the order metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Order number, e.g. O-00000001."
+          },
+          "include_account_details": {
+            "type": "boolean",
+            "description": "Include the account details in the response."
+          }
+        },
+        "required": [
+          "order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orders/{order_number}",
+        "queryParams": {
+          "getAccountDetails": "$include_account_details"
+        }
+      }
+    },
+    {
+      "name": "zuora_preview_order",
+      "description": "Preview an order without saving it: the invoice items, charge metrics and amounts a new subscription or a change would produce. Use it to quote before zuora_create_order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_date": {
+            "type": "string",
+            "description": "Order date, YYYY-MM-DD."
+          },
+          "existing_account_number": {
+            "type": "string",
+            "description": "Account number the order is for."
+          },
+          "preview_account_info": {
+            "type": "object",
+            "description": "For a customer without an account: {currency, billCycleDay, soldToContact: {country, state}}."
+          },
+          "subscriptions": {
+            "type": "array",
+            "description": "Subscriptions and their order actions, same shape as zuora_create_order.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "preview_options": {
+            "type": "object",
+            "description": "{previewThruType: SpecificDate|NumberOfPeriods|TermEnd, previewNumberOfPeriods?, specificPreviewThruDate?, previewTypes: [ChargeMetrics, BillingDocs, OrderDeltaMetrics, OrderMetrics]}."
+          }
+        },
+        "required": [
+          "order_date",
+          "subscriptions",
+          "preview_options"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/orders/preview",
+        "bodyMapping": {
+          "orderDate": "$order_date",
+          "existingAccountNumber": "$existing_account_number",
+          "previewAccountInfo": "$preview_account_info",
+          "subscriptions": "$subscriptions",
+          "previewOptions": "$preview_options"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zuora_create_order",
+      "description": "Create an order: new subscription, add or remove a product, change quantity or price, renew or change terms. With processingOptions it can bill and collect a payment at once, so show the user what will happen and wait for a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_date": {
+            "type": "string",
+            "description": "Order date, YYYY-MM-DD."
+          },
+          "existing_account_number": {
+            "type": "string",
+            "description": "Account number the order is for."
+          },
+          "new_account": {
+            "type": "object",
+            "description": "Create the account in the same call: {name, currency, billCycleDay, billToContact, ...}."
+          },
+          "order_number": {
+            "type": "string",
+            "description": "Your own order number; generated when left out."
+          },
+          "reason_code": {
+            "type": "string",
+            "description": "Reason code for the order, as configured in the tenant."
+          },
+          "subscriptions": {
+            "type": "array",
+            "description": "Per subscription: {subscriptionNumber? (to change an existing one), orderActions: [{type: CreateSubscription|AddProduct|RemoveProduct|UpdateProduct|TermsAndConditions|RenewSubscription|Suspend|Resume, triggerDates: [{name: ContractEffective, triggerDate}], createSubscription?: {terms, subscribeToRatePlans: [{productRatePlanId}]}, addProduct?: {productRatePlanId}, removeProduct?: {ratePlanId}, updateProduct?: {ratePlanId, chargeUpdates}}]}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "processing_options": {
+            "type": "object",
+            "description": "{runBilling: true to invoice now, collectPayment: true to charge the default payment method, billingOptions: {targetDate}}. Leave out to only change the subscription."
+          }
+        },
+        "required": [
+          "order_date",
+          "subscriptions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/orders",
+        "bodyMapping": {
+          "orderDate": "$order_date",
+          "existingAccountNumber": "$existing_account_number",
+          "newAccount": "$new_account",
+          "orderNumber": "$order_number",
+          "reasonCode": "$reason_code",
+          "subscriptions": "$subscriptions",
+          "processingOptions": "$processing_options"
+        }
+      }
+    },
+    {
+      "name": "zuora_renew_subscription",
+      "description": "Renew a termed subscription for another renewal term now, without billing. The new term end date is in the response.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_key": {
+            "type": "string",
+            "description": "Subscription number (e.g. A-S00000001) or subscription id."
+          },
+          "order_date": {
+            "type": "string",
+            "description": "Order date, YYYY-MM-DD (default today)."
+          }
+        },
+        "required": [
+          "subscription_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/subscriptions/{subscription_key}/renew",
+        "bodyMapping": {
+          "orderDate": "$order_date"
+        }
+      }
+    },
+    {
+      "name": "zuora_suspend_subscription",
+      "description": "Suspend an active subscription: billing stops from the suspend date until it is resumed. Can be resumed with zuora_resume_subscription; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_key": {
+            "type": "string",
+            "description": "Subscription number (e.g. A-S00000001) or subscription id."
+          },
+          "suspend_policy": {
+            "type": "string",
+            "description": "When the suspension starts.",
+            "enum": [
+              "Today",
+              "EndOfLastInvoicePeriod",
+              "SpecificDate",
+              "FixedPeriodsFromToday"
+            ]
+          },
+          "suspend_date": {
+            "type": "string",
+            "description": "With SpecificDate: the date, YYYY-MM-DD."
+          },
+          "suspend_periods": {
+            "type": "integer",
+            "description": "With FixedPeriodsFromToday: number of periods."
+          },
+          "suspend_periods_type": {
+            "type": "string",
+            "description": "Unit of suspend_periods.",
+            "enum": [
+              "Day",
+              "Week",
+              "Month",
+              "Year"
+            ]
+          },
+          "auto_resume": {
+            "type": "boolean",
+            "description": "Also schedule the resume."
+          },
+          "resume_policy": {
+            "type": "string",
+            "description": "With auto_resume: when to resume.",
+            "enum": [
+              "SpecificDate",
+              "FixedPeriodsFromSuspendDate"
+            ]
+          },
+          "resume_date": {
+            "type": "string",
+            "description": "With resume_policy SpecificDate: the date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "subscription_key",
+          "suspend_policy"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/subscriptions/{subscription_key}/suspend",
+        "bodyMapping": {
+          "suspendPolicy": "$suspend_policy",
+          "suspendSpecificDate": "$suspend_date",
+          "suspendPeriods": "$suspend_periods",
+          "suspendPeriodsType": "$suspend_periods_type",
+          "resume": "$auto_resume",
+          "resumePolicy": "$resume_policy",
+          "resumeSpecificDate": "$resume_date"
+        }
+      }
+    },
+    {
+      "name": "zuora_resume_subscription",
+      "description": "Resume a suspended subscription today, on a date or after a number of periods; billing restarts from the resume date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_key": {
+            "type": "string",
+            "description": "Subscription number (e.g. A-S00000001) or subscription id."
+          },
+          "resume_policy": {
+            "type": "string",
+            "description": "When to resume.",
+            "enum": [
+              "Today",
+              "SpecificDate",
+              "FixedPeriodsFromSuspendDate",
+              "SuspendDate"
+            ]
+          },
+          "resume_date": {
+            "type": "string",
+            "description": "With SpecificDate: the date, YYYY-MM-DD."
+          },
+          "resume_periods": {
+            "type": "integer",
+            "description": "With FixedPeriodsFromSuspendDate: number of periods."
+          },
+          "resume_periods_type": {
+            "type": "string",
+            "description": "Unit of resume_periods.",
+            "enum": [
+              "Day",
+              "Week",
+              "Month",
+              "Year"
+            ]
+          },
+          "extends_term": {
+            "type": "boolean",
+            "description": "Extend the term by the length of the suspension."
+          }
+        },
+        "required": [
+          "subscription_key",
+          "resume_policy"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/subscriptions/{subscription_key}/resume",
+        "bodyMapping": {
+          "resumePolicy": "$resume_policy",
+          "resumeSpecificDate": "$resume_date",
+          "resumePeriods": "$resume_periods",
+          "resumePeriodsType": "$resume_periods_type",
+          "extendsTerm": "$extends_term"
+        }
+      }
+    },
+    {
+      "name": "zuora_cancel_subscription",
+      "description": "Cancel a subscription at the end of the term, at the end of the last invoiced period or on a date. Credits may be issued; it cannot be undone. Show the subscription first and wait for a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_key": {
+            "type": "string",
+            "description": "Subscription number (e.g. A-S00000001) or subscription id."
+          },
+          "cancellation_policy": {
+            "type": "string",
+            "description": "When the cancellation takes effect.",
+            "enum": [
+              "EndOfCurrentTerm",
+              "EndOfLastInvoicePeriod",
+              "SpecificDate"
+            ]
+          },
+          "cancellation_date": {
+            "type": "string",
+            "description": "With SpecificDate: the date, YYYY-MM-DD."
+          },
+          "run_billing": {
+            "type": "boolean",
+            "description": "Generate the credit or final invoice now."
+          }
+        },
+        "required": [
+          "subscription_key",
+          "cancellation_policy"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/subscriptions/{subscription_key}/cancel",
+        "bodyMapping": {
+          "cancellationPolicy": "$cancellation_policy",
+          "cancellationEffectiveDate": "$cancellation_date",
+          "runBilling": "$run_billing"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "zuora_list_invoices",
+      "description": "List invoices with Object Query: filter by account, status (Draft, Posted, Canceled), balance, invoice or due date, expand invoice items or payments, page with a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Conditions combined with AND, each field.OPERATOR:value. Operators EQ, NE, LT, LE, GT, GE, SW (starts with), IN (e.g. currency.IN:[USD,EUR]). Dates as 2026-01-31, timestamps as 2026-01-31T00:00:00Z, no quotes. Filterable: id, invoicenumber, accountid, status, amount, balance, invoicedate, duedate, reversed, sourcetype, updateddate.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "One field and direction, e.g. updateddate.DESC. Sortable: id, invoicenumber, invoicedate, duedate, amount, balance, updateddate."
+          },
+          "expand": {
+            "type": "array",
+            "description": "Related objects to include: account, billtocontact, invoiceitems, invoiceitems.subscription, paymentapplications, paymentapplications.payment, creditmemoapplications.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "description": "Only these fields of the base object, e.g. [\"id\", \"name\", \"accountnumber\", \"balance\"]. Leave out for all fields.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 99 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The nextPage value of the previous response, to get the next page. nextPage is absent on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/object-query/invoices",
+        "queryParams": {
+          "filter[]": "$filter",
+          "sort[]": "$sort",
+          "expand[]": "$expand",
+          "fields[]": "$fields",
+          "pageSize": "$page_size",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "zuora_get_invoice",
+      "description": "Get one invoice by number or id with account, dates, amounts, tax, balance, status and payment and credit applications.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_key": {
+            "type": "string",
+            "description": "Invoice number (e.g. INV00000001) or invoice id."
+          }
+        },
+        "required": [
+          "invoice_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices/{invoice_key}"
+      }
+    },
+    {
+      "name": "zuora_list_invoice_items",
+      "description": "List the items of an invoice: charge name, subscription, service period, quantity, unit price, amount and tax per line.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_key": {
+            "type": "string",
+            "description": "Invoice number (e.g. INV00000001) or invoice id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          }
+        },
+        "required": [
+          "invoice_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices/{invoice_key}/items",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "zuora_list_invoice_files",
+      "description": "List the PDF files generated for an invoice with their download URLs (the newest first).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_key": {
+            "type": "string",
+            "description": "Invoice number (e.g. INV00000001) or invoice id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          }
+        },
+        "required": [
+          "invoice_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices/{invoice_key}/files",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "zuora_email_invoice",
+      "description": "Email a posted invoice as PDF to the bill-to contact, to the extra addresses of the account or to given addresses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_key": {
+            "type": "string",
+            "description": "Invoice number (e.g. INV00000001) or invoice id."
+          },
+          "email_addresses": {
+            "type": "string",
+            "description": "Comma-separated addresses to send to, instead of the bill-to contact."
+          },
+          "include_additional_emails": {
+            "type": "boolean",
+            "description": "Also send to the additional email addresses of the account."
+          },
+          "use_template_setting": {
+            "type": "boolean",
+            "description": "Send to the recipients set in the email template of the invoice."
+          }
+        },
+        "required": [
+          "invoice_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/invoices/{invoice_key}/emails",
+        "bodyMapping": {
+          "emailAddresses": "$email_addresses",
+          "includeAdditionalEmailAddresses": "$include_additional_emails",
+          "useEmailTemplateSetting": "$use_template_setting"
+        }
+      }
+    },
+    {
+      "name": "zuora_list_payments",
+      "description": "List payments with amount, applied and unapplied amount, status, type, effective date and account. Filter by account id, status, type or number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Only payments of this account id (32-character id, not the number)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Payment status.",
+            "enum": [
+              "Draft",
+              "Processing",
+              "Processed",
+              "Error",
+              "Canceled",
+              "Posted"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "External (recorded) or Electronic (through a gateway).",
+            "enum": [
+              "External",
+              "Electronic"
+            ]
+          },
+          "number": {
+            "type": "string",
+            "description": "Payment number, e.g. P-00000001."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency, ISO 4217."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort, e.g. -effectiveDate for newest first or +number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payments",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "accountId": "$account_id",
+          "status": "$status",
+          "type": "$type",
+          "number": "$number",
+          "currency": "$currency",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "zuora_get_payment",
+      "description": "Get one payment by number or id with amount, applied, unapplied and refunded amounts, gateway state, payment method and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_key": {
+            "type": "string",
+            "description": "Payment number (e.g. P-00000001) or id."
+          }
+        },
+        "required": [
+          "payment_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payments/{payment_key}"
+      }
+    },
+    {
+      "name": "zuora_create_payment",
+      "description": "Create a payment: an External payment records money received, an Electronic one charges the payment method through the gateway. It moves real money, so confirm the amount and invoices with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "Account id the payment belongs to."
+          },
+          "account_number": {
+            "type": "string",
+            "description": "Account number, instead of account_id."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in the currency, e.g. 99.50."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency, ISO 4217."
+          },
+          "type": {
+            "type": "string",
+            "description": "External or Electronic.",
+            "enum": [
+              "External",
+              "Electronic"
+            ]
+          },
+          "payment_method_id": {
+            "type": "string",
+            "description": "Payment method id (required for Electronic)."
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "Payment date, YYYY-MM-DD (default today)."
+          },
+          "invoices": {
+            "type": "array",
+            "description": "Apply to invoices: [{invoiceId, amount}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment."
+          },
+          "reference_id": {
+            "type": "string",
+            "description": "Reference, e.g. a bank transfer number, for External payments."
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/payments",
+        "bodyMapping": {
+          "accountId": "$account_id",
+          "accountNumber": "$account_number",
+          "amount": "$amount",
+          "currency": "$currency",
+          "type": "$type",
+          "paymentMethodId": "$payment_method_id",
+          "effectiveDate": "$effective_date",
+          "invoices": "$invoices",
+          "comment": "$comment",
+          "referenceId": "$reference_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "zuora_refund_payment",
+      "description": "Refund a payment: Electronic sends money back through the gateway, External records a refund made elsewhere. It cannot be undone; confirm the amount with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_key": {
+            "type": "string",
+            "description": "Payment number or id."
+          },
+          "total_amount": {
+            "type": "number",
+            "description": "Amount to refund."
+          },
+          "type": {
+            "type": "string",
+            "description": "External or Electronic.",
+            "enum": [
+              "External",
+              "Electronic"
+            ]
+          },
+          "method_type": {
+            "type": "string",
+            "description": "For External refunds: how the money was returned.",
+            "enum": [
+              "ACH",
+              "Cash",
+              "Check",
+              "CreditCard",
+              "PayPal",
+              "WireTransfer",
+              "DebitCard",
+              "CreditCardReferenceTransaction",
+              "BankTransfer",
+              "Other"
+            ]
+          },
+          "refund_date": {
+            "type": "string",
+            "description": "Refund date, YYYY-MM-DD."
+          },
+          "reason_code": {
+            "type": "string",
+            "description": "Reason code as configured, e.g. Standard Refund."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment."
+          }
+        },
+        "required": [
+          "payment_key",
+          "total_amount",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/payments/{payment_key}/refunds",
+        "bodyMapping": {
+          "totalAmount": "$total_amount",
+          "type": "$type",
+          "methodType": "$method_type",
+          "refundDate": "$refund_date",
+          "reasonCode": "$reason_code",
+          "comment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "zuora_list_refunds",
+      "description": "List refunds with amount, status, type, method, refund date, account and the payment or credit memo they come from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Only refunds of this account id."
+          },
+          "payment_id": {
+            "type": "string",
+            "description": "Only refunds of this payment id."
+          },
+          "status": {
+            "type": "string",
+            "description": "Refund status.",
+            "enum": [
+              "Processed",
+              "Canceled",
+              "Error",
+              "Processing"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "External or Electronic.",
+            "enum": [
+              "External",
+              "Electronic"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort, e.g. -refundDate."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/refunds",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "accountId": "$account_id",
+          "paymentId": "$payment_id",
+          "status": "$status",
+          "type": "$type",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "zuora_get_refund",
+      "description": "Get one refund by number or id with amount, status, method, gateway state, reason code and source payment or credit memo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_key": {
+            "type": "string",
+            "description": "Refund number (e.g. R-00000001) or id."
+          }
+        },
+        "required": [
+          "refund_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/refunds/{refund_key}"
+      }
+    },
+    {
+      "name": "zuora_list_credit_memos",
+      "description": "List credit memos with amount, applied, refunded and unapplied amounts, status, date, account and the invoice they refer to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Only credit memos of this account id."
+          },
+          "account_number": {
+            "type": "string",
+            "description": "Only credit memos of this account number."
+          },
+          "status": {
+            "type": "string",
+            "description": "Credit memo status.",
+            "enum": [
+              "Draft",
+              "Posted",
+              "Canceled",
+              "Error",
+              "PendingForTax",
+              "Generating",
+              "CancelInProgress"
+            ]
+          },
+          "invoice_id": {
+            "type": "string",
+            "description": "Only credit memos created from this invoice id."
+          },
+          "credit_memo_date": {
+            "type": "string",
+            "description": "Only credit memos of this date, YYYY-MM-DD."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort, e.g. -creditMemoDate."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/credit-memos",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "accountId": "$account_id",
+          "accountNumber": "$account_number",
+          "status": "$status",
+          "referredInvoiceId": "$invoice_id",
+          "creditMemoDate": "$credit_memo_date",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "zuora_get_credit_memo",
+      "description": "Get one credit memo by number or id with amounts, status, reason code, dates and the invoice it refers to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "credit_memo_key": {
+            "type": "string",
+            "description": "Credit memo number (e.g. CM00000001) or id."
+          }
+        },
+        "required": [
+          "credit_memo_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/credit-memos/{credit_memo_key}"
+      }
+    },
+    {
+      "name": "zuora_list_credit_memo_items",
+      "description": "List the items of a credit memo: charge, service period, amount, applied and refunded amount and tax per line.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "credit_memo_key": {
+            "type": "string",
+            "description": "Credit memo number or id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          }
+        },
+        "required": [
+          "credit_memo_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/credit-memos/{credit_memo_key}/items",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "zuora_create_credit_memo_from_invoice",
+      "description": "Create a credit memo from a posted invoice, for all or some of its items. It starts as Draft unless auto_post is true; confirm amounts with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_key": {
+            "type": "string",
+            "description": "Invoice number (e.g. INV00000001) or invoice id."
+          },
+          "invoice_id": {
+            "type": "string",
+            "description": "Id of the same invoice (32 characters), required by the API."
+          },
+          "items": {
+            "type": "array",
+            "description": "Items to credit: [{invoiceItemId, amount, skuName?, serviceStartDate?, serviceEndDate?}]. Leave out to credit the whole invoice.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "reason_code": {
+            "type": "string",
+            "description": "Reason code as configured, e.g. Correcting invoice error."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment."
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "Credit memo date, YYYY-MM-DD."
+          },
+          "auto_post": {
+            "type": "boolean",
+            "description": "Post the credit memo immediately."
+          },
+          "auto_apply": {
+            "type": "boolean",
+            "description": "Apply it to the invoice when posted."
+          }
+        },
+        "required": [
+          "invoice_key",
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/credit-memos/invoice/{invoice_key}",
+        "bodyMapping": {
+          "invoiceId": "$invoice_id",
+          "items": "$items",
+          "reasonCode": "$reason_code",
+          "comment": "$comment",
+          "effectiveDate": "$effective_date",
+          "autoPost": "$auto_post",
+          "autoApplyToInvoiceUponPosting": "$auto_apply"
+        }
+      }
+    },
+    {
+      "name": "zuora_list_products",
+      "description": "List the product catalog: products with their rate plans and charges (model, billing period, prices per currency and tiers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/catalog/products",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "zuora_get_product",
+      "description": "Get one catalog product by SKU or id with its rate plans and charges, prices per currency and tiers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_key": {
+            "type": "string",
+            "description": "Product SKU or id."
+          }
+        },
+        "required": [
+          "product_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/catalog/products/{product_key}"
+      }
+    },
+    {
+      "name": "zuora_list_product_rate_plans",
+      "description": "List the rate plans of one product with effective dates, status and, with charge definitions, the charges and prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_key": {
+            "type": "string",
+            "description": "Product SKU or id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (default 20, at most 40 for most lists)."
+          },
+          "show_charge_definitions": {
+            "type": "boolean",
+            "description": "Include the charge definitions of each rate plan."
+          }
+        },
+        "required": [
+          "product_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/products/{product_key}/product-rate-plans",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "show-charge-definitions": "$show_charge_definitions"
+        }
+      }
+    },
+    {
+      "name": "zuora_get_product_rate_plan",
+      "description": "Get one product rate plan by id or number with its charges, prices, billing periods and effective dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rate_plan_id": {
+            "type": "string",
+            "description": "Product rate plan id or number."
+          }
+        },
+        "required": [
+          "rate_plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/product-rate-plans/{rate_plan_id}"
+      }
+    },
+    {
+      "name": "zuora_list_usages",
+      "description": "List usage records with Object Query: filter by account, unit of measure, start date or rating status, page with a cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "description": "Conditions combined with AND, each field.OPERATOR:value. Operators EQ, NE, LT, LE, GT, GE, SW (starts with), IN (e.g. currency.IN:[USD,EUR]). Dates as 2026-01-31, timestamps as 2026-01-31T00:00:00Z, no quotes. Filterable: id, accountid, accountnumber, uom, quantity, startdatetime, enddatetime, rbestatus, updateddate.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "One field and direction, e.g. updateddate.DESC. Sortable: id, startdatetime, quantity, updateddate."
+          },
+          "expand": {
+            "type": "array",
+            "description": "Related objects to include: account.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "description": "Only these fields of the base object, e.g. [\"id\", \"name\", \"accountnumber\", \"balance\"]. Leave out for all fields.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 99 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The nextPage value of the previous response, to get the next page. nextPage is absent on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/object-query/usages",
+        "queryParams": {
+          "filter[]": "$filter",
+          "sort[]": "$sort",
+          "expand[]": "$expand",
+          "fields[]": "$fields",
+          "pageSize": "$page_size",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "zuora_create_usage",
+      "description": "Upload one usage record for usage-based charges: account, unit of measure, quantity and start time, optionally tied to a subscription or charge.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_number": {
+            "type": "string",
+            "description": "Account number, e.g. A00000001 (or give account_id)."
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Account id."
+          },
+          "uom": {
+            "type": "string",
+            "description": "Unit of measure as configured, e.g. Each or GB."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity used."
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Usage start, ISO 8601, e.g. 2026-10-01T00:00:00."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "Usage end, ISO 8601."
+          },
+          "subscription_number": {
+            "type": "string",
+            "description": "Subscription number the usage belongs to."
+          },
+          "charge_number": {
+            "type": "string",
+            "description": "Charge number, e.g. C-00000001."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "unique_key": {
+            "type": "string",
+            "description": "Unique key to avoid duplicates."
+          }
+        },
+        "required": [
+          "uom",
+          "quantity",
+          "start_date_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/object/usage",
+        "bodyMapping": {
+          "AccountNumber": "$account_number",
+          "AccountId": "$account_id",
+          "UOM": "$uom",
+          "Quantity": "$quantity",
+          "StartDateTime": "$start_date_time",
+          "EndDateTime": "$end_date_time",
+          "SubscriptionNumber": "$subscription_number",
+          "ChargeNumber": "$charge_number",
+          "Description": "$description",
+          "UniqueKey": "$unique_key"
+        }
+      }
+    },
+    {
+      "name": "zuora_query",
+      "description": "Run a ZOQL query (SELECT fields FROM object WHERE ...), e.g. SELECT Id, Name, Balance FROM Account WHERE Status = 'Active'. Returns up to 2,000 records and a queryLocator for more. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "ZOQL statement. No joins, no SELECT *, no ORDER BY; values in single quotes."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/action/query",
+        "bodyMapping": {
+          "queryString": "$query"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zuora_query_more",
+      "description": "Get the next batch of a ZOQL query: pass the queryLocator of the previous answer while done is false. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query_locator": {
+            "type": "string",
+            "description": "queryLocator from the previous zuora_query or zuora_query_more answer."
+          }
+        },
+        "required": [
+          "query_locator"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/action/queryMore",
+        "bodyMapping": {
+          "queryLocator": "$query_locator"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zuora_create_data_query",
+      "description": "Start a Data Query job: SQL across objects with joins and aggregates, e.g. SELECT account.name, SUM(invoice.balance) FROM invoice JOIN account ... GROUP BY 1. Read-only; fetch the result with zuora_get_data_query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "SQL (Trino dialect) over the Zuora tables, e.g. SELECT id, name, balance FROM account WHERE status = 'Active' LIMIT 100."
+          },
+          "output_format": {
+            "type": "string",
+            "description": "Result format.",
+            "enum": [
+              "JSON",
+              "CSV",
+              "TSV"
+            ],
+            "default": "JSON"
+          },
+          "read_deleted": {
+            "type": "boolean",
+            "description": "Also read deleted records."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/query/jobs",
+        "bodyMapping": {
+          "query": "$query",
+          "outputFormat": "$output_format",
+          "compression": "NONE",
+          "output": {
+            "target": "S3"
+          },
+          "readDeleted": "$read_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zuora_get_data_query",
+      "description": "Get a Data Query job: queryStatus (accepted, in_progress, completed, failed) and, when completed, dataFile (a temporary download link) and outputRows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id (UUID) from zuora_create_data_query."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query/jobs/{job_id}"
+      }
+    },
+    {
+      "name": "zuora_list_data_queries",
+      "description": "List recent Data Query jobs with their query, status, row count and result link, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only jobs in this status.",
+            "enum": [
+              "accepted",
+              "in_progress",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Jobs per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/query/jobs",
+        "queryParams": {
+          "queryStatus": "$status",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "zuora_describe_object",
+      "description": "Describe a Zuora object for ZOQL and Data Query: its fields with type, label, whether they are filterable, and related objects. Returns XML.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "Object name, e.g. Account, Subscription, Invoice, Payment, Usage, RatePlanCharge."
+          },
+          "show_relationships": {
+            "type": "boolean",
+            "description": "Also list the related objects."
+          }
+        },
+        "required": [
+          "object"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/describe/{object}",
+        "queryParams": {
+          "showRelationships": "$show_relationships"
+        }
+      }
+    }
+  ]
+}

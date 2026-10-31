@@ -153,6 +153,59 @@ The body is signed exactly as it will be sent — signing a different rendering
 of the same object is the usual way an HMAC integration fails with an error
 that blames the key.
 
+#### Query signing (opt-in)
+
+Some platforms put the digest and the timestamp in the query instead of a
+header. These fields switch to that path; a signature without any of them is
+computed exactly as described above.
+
+| Field | Meaning |
+|-------|---------|
+| `placement` | `header` (default) or `query`: the digest goes into the query parameter `paramName`. |
+| `paramName` | Name of that query parameter, default `sign`. |
+| `timestampParam` | Sends the timestamp as this query parameter. |
+| `timestampFormat` | `s` (default, Unix seconds) or `ms` (milliseconds), for `${timestamp}`, `timestampParam` and `timestampHeader` alike. |
+| `queryParams` | Static query parameters added to every call (an app key, a fixed `sign_method`), signed like the others. |
+| `encoding` | Also `hex-upper`: hex in capitals. |
+
+On this path the template may also use:
+
+- `${pathname}`: the URL path without the query.
+- `${apiPath}`: the path below the connector's `baseUrl`, without the query
+  (`/auth/token/create` when `baseUrl` is `https://api-sg.aliexpress.com/rest`).
+- `${query.NAME}`: the value of one query parameter as sent, empty when absent.
+- `${sortedParams}`: every parameter sent, sorted by name (ASCII order) and
+  concatenated as name + value with no separators. It covers the query as sent,
+  including `queryParams`, the timestamp and parameters a token provider adds,
+  and the fields of an `application/x-www-form-urlencoded` body. An array or
+  object contributes the same pairs the query serializer sends for it
+  (`ids=1&ids=2`, `page[size]=20`). The signature parameter itself and empty
+  values are left out.
+
+Variables are replaced in one pass, so a value that contains `${body}` is
+signed as that literal text. Shopee (`intl/shopee.json`) signs
+`${query.partner_id}${pathname}${timestamp}...`. The Alibaba IOP gateways
+(AliExpress, see `intl/aliexpress-affiliate.json`) sign every parameter:
+
+```json
+"signature": {
+  "algorithm": "sha256",
+  "encoding": "hex-upper",
+  "secret": "{{ALIEXPRESS_APP_SECRET}}",
+  "placement": "query",
+  "paramName": "sign",
+  "timestampParam": "timestamp",
+  "timestampFormat": "ms",
+  "queryParams": { "app_key": "{{ALIEXPRESS_APP_KEY}}", "sign_method": "sha256" },
+  "template": "${sortedParams}"
+}
+```
+
+Their `/sync?method=...` business calls sign `${sortedParams}` (the `method`
+parameter is one of them); calls on their `/rest` gateway put the API path in
+front: `${apiPath}${sortedParams}`. JSON-valued parameters go in a form body
+with the `__json` marker, which `${sortedParams}` signs as its JSON text.
+
 ### MCP adapters (a vendor's own MCP server)
 
 When a vendor already runs an official MCP server, the adapter bridges it
@@ -499,6 +552,7 @@ The selected headers are added to the tool result next to the body, and a
 | **SOAP** | SOAP operation name | Port/binding path | — | SOAP parameters | HTTP headers |
 | **Database** | `query` or `static` | SQL/MongoDB query with `$param` | — | — | — |
 | **MCP** | Remote tool name | — | — | Passed through | — |
+| **Email** | `static`, or a built-in `email_list_folders` / `email_search` / `email_get_message` / `email_get_attachment` / `email_set_flags` / `email_move` / `email_delete` / `email_save_draft` / `email_send` (see [Email](connectors/email.md)) | — | — | — (arguments are read directly) | — |
 
 ### Static tools
 

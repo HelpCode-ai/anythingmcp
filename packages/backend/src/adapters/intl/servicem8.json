@@ -1,0 +1,1420 @@
+{
+  "slug": "servicem8",
+  "name": "ServiceM8",
+  "aliases": [
+    "Service M8",
+    "ServiceM8 API"
+  ],
+  "description": "ServiceM8 job management for trades and field service: jobs and statuses, clients and contacts, the schedule (job activities and allocations), staff, price list materials, job line items and payments, notes, attachment metadata and form responses. Can create and update jobs and clients, book and move staff, add line items, record payments and add notes.",
+  "region": "intl",
+  "category": "field-service",
+  "icon": "servicem8",
+  "docsUrl": "https://developer.servicem8.com/docs/rest-overview",
+  "instructions": "## ServiceM8\nThis connector works with the **ServiceM8 REST API** (`https://api.servicem8.com/api_1.0`) of one ServiceM8 account, the job management app for trade and service businesses: jobs and their status, clients (called companies in the API) and contacts, the schedule (job activities and allocations), staff, the price list and job line items, payments, notes, attachments and forms.\n\n**Setup (2 minutes)**\n1. In ServiceM8 open **Settings, API Keys** and create a key (an account admin can do this; no developer account is needed). ServiceM8 recommends this private API key for connecting your own account.\n2. Paste it into `SERVICEM8_API_KEY`. It is sent in the `X-API-Key` header and can read and change everything in the account, so keep it private; delete the key in ServiceM8 to revoke access.\n3. Install. The check runs `servicem8_get_account`.\n\nServiceM8 also runs its own MCP server at `https://api.servicem8.com/mcp` (sign-in with OAuth) for ChatGPT and Claude; this connector uses the REST API with your key instead.\n\n**Workflow**\n- Account and setup: `servicem8_get_account` (time zone, currency), `servicem8_list_staff`, `servicem8_get_staff_member`, `servicem8_list_categories`, `servicem8_list_job_queues`, `servicem8_list_job_templates`, `servicem8_list_tax_rates`, `servicem8_list_forms`.\n- Clients: `servicem8_list_clients` (filter by name), `servicem8_get_client`, `servicem8_list_client_contacts`; change them with `servicem8_create_client`, `servicem8_update_client`, `servicem8_create_client_contact`.\n- Jobs: `servicem8_list_jobs` (filter by status, client or edit_date), `servicem8_get_job`, `servicem8_list_job_contacts`, `servicem8_list_notes`, `servicem8_list_attachments`, `servicem8_get_attachment`, `servicem8_list_form_responses`, `servicem8_get_form_response`. Create with `servicem8_create_job` or `servicem8_create_job_from_template`, change or move status with `servicem8_update_job`, add a note with `servicem8_add_note`.\n- Schedule: `servicem8_list_job_activities` (fixed-time bookings and time recorded on site), `servicem8_list_job_allocations` (flexible bookings), `servicem8_schedule_job_activity`, `servicem8_update_job_activity`, `servicem8_remove_job_activity`.\n- Money: `servicem8_list_materials` (price list), `servicem8_list_job_materials` (line items), `servicem8_add_job_material`, `servicem8_list_job_payments`, `servicem8_record_job_payment`. The job's `total_invoice_amount` is the invoice total; there is no separate invoice object.\n\n**Filtering**: every list takes `filter`, an OData-style `$filter`: `field eq|ne|gt|lt value`, joined with `and` (at most 10 conditions; no `or`, `ge` or `le`). Strings and timestamps go in single quotes: `status eq 'Work Order' and active eq 1`, `company_uuid eq '...'`, `start_date gt '2026-11-02 00:00:00'`. Deleted records stay with `active` 0, so add `active eq 1` to skip them. Always filter large lists (jobs, activities, materials).\n\n**Paging**: lists return a plain array, up to 1,000 records per page when `cursor` is set: pass `-1` for the first page, then the `x-next-cursor` value from `_headers`; the header is missing on the last page.\n\n**Reading the answers**: ids are UUIDs. Timestamps are `YYYY-MM-DD HH:MM:SS` and dates `YYYY-MM-DD`, in the account's time zone (see `servicem8_get_account`); send times in the same form. Flags are 0 or 1. Amounts are decimal strings in the account currency. A job's number is `generated_job_id`; its statuses are Quote, Work Order, Unsuccessful and Completed.\n\n**Writes**: creating a record answers `{\"errorCode\": 0, \"message\": \"OK\"}` and the new UUID in the `x-record-uuid` header (`_headers`). Updates change only the fields passed. Deleting in ServiceM8 sets `active` to 0, so a removed booking, archived job or archived client can be restored by setting `active` to 1. Show the user what will be created or changed and wait for a yes. Sending email or SMS to clients is not part of this connector.\n\n**Limits and errors**: 180 requests a minute and 20,000 a day per account; over that ServiceM8 answers 429 (wait and retry, or filter more). 401 means the API key is wrong or was deleted; 400 a malformed filter or field; 404 an unknown UUID.",
+  "prerequisites": "A ServiceM8 account and an API key created under Settings, API Keys.",
+  "requiredEnvVars": [
+    "SERVICEM8_API_KEY"
+  ],
+  "envVarMeta": {
+    "SERVICEM8_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "ServiceM8, Settings, API Keys: create a key and copy it. It is sent in the X-API-Key header.",
+      "link": "https://developer.servicem8.com/docs/authentication",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "ServiceM8 refused the API key. Create a new one under Settings, API Keys and paste it again.",
+    "429": "ServiceM8 allows 180 requests a minute and 20,000 a day per account. Wait and try again."
+  },
+  "probe": {
+    "tool": "servicem8_get_account"
+  },
+  "connector": {
+    "name": "ServiceM8 REST API",
+    "type": "REST",
+    "baseUrl": "https://api.servicem8.com/api_1.0",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-Key",
+      "apiKey": "{{SERVICEM8_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/vendor.json"
+  },
+  "tools": [
+    {
+      "name": "servicem8_get_account",
+      "description": "The connected ServiceM8 account (vendor): name, business number, email, currency, time zone, opening hours, default job status and whether amounts are shown tax-inclusive.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor.json"
+      }
+    },
+    {
+      "name": "servicem8_list_jobs",
+      "description": "List jobs: uuid, job number (generated_job_id), status (Quote, Work Order, Unsuccessful, Completed), client (company_uuid), address, description, work done, category, queue, total invoice amount, quote, work order, completion and invoice dates, payment received flag, active, last edit. Filter to keep the list small.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: status eq 'Work Order' and active eq 1, or company_uuid eq '<uuid>', or edit_date gt '2026-10-01 00:00:00'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/job.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].payment_date",
+            "[*].payment_actioned_by_uuid",
+            "[*].payment_method",
+            "[*].payment_amount",
+            "[*].payment_note",
+            "[*].ready_to_invoice",
+            "[*].ready_to_invoice_stamp",
+            "[*].active_network_request_uuid",
+            "[*].related_knowledge_articles",
+            "[*].geo_is_valid",
+            "[*].geo_number",
+            "[*].geo_street",
+            "[*].lat",
+            "[*].lng"
+          ]
+        }
+      }
+    },
+    {
+      "name": "servicem8_get_job",
+      "description": "One job by UUID with status, client, addresses, description, work done, totals, dates and badges.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Job UUID."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/job/{uuid}.json"
+      }
+    },
+    {
+      "name": "servicem8_list_clients",
+      "description": "List clients (ServiceM8 calls them companies): uuid, name, address parts, billing address, ABN or business number, website, payment terms, tax rate, parent company (for sites), active, last edit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: name eq 'Smith Plumbing', or active eq 1, or edit_date gt '2026-10-01 00:00:00'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_get_client",
+      "description": "One client (company) by UUID with address, billing address, payment terms and tax rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Client (company) UUID."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{uuid}.json"
+      }
+    },
+    {
+      "name": "servicem8_list_client_contacts",
+      "description": "Contacts of clients: uuid, company_uuid, first and last name, phone, mobile, email, type (BILLING, JOB, ...), primary flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: company_uuid eq '<uuid>'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companycontact.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_job_contacts",
+      "description": "Contacts on jobs (site contact, billing contact): uuid, job_uuid, first and last name, phone, mobile, email, type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: job_uuid eq '<uuid>'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobcontact.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_job_activities",
+      "description": "Job activities, the schedule: uuid, job_uuid, staff_uuid, start_date, end_date, activity_was_scheduled (1 = a booking, 0 = time recorded on site), activity_was_recorded, travel time, active. Filter by job, staff or start date to read a calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: staff_uuid eq '<uuid>' and start_date gt '2026-11-02 00:00:00' and start_date lt '2026-11-09 00:00:00' and activity_was_scheduled eq 1."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobactivity.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_job_allocations",
+      "description": "Job allocations (flexible bookings: a job given to a staff member for a day or allocation window, without a fixed time): uuid, job_uuid, staff_uuid, allocation_date, allocation window, expiry, acceptance status, completion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: staff_uuid eq '<uuid>' and allocation_date gt '2026-11-01'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/joballocation.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_staff",
+      "description": "Staff members: uuid, first and last name, email, mobile, job title, color, last known position and time, status message, hidden from schedule, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: active eq 1."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staff.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_get_staff_member",
+      "description": "One staff member by UUID: name, contact details, job title, last known GPS position and status message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Staff member UUID."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staff/{uuid}.json"
+      }
+    },
+    {
+      "name": "servicem8_list_materials",
+      "description": "Materials and services of the price list: uuid, name, item number, description, price, cost, price includes taxes, tax rate, stock quantity, barcode, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: name eq 'Labour - Standard' or item_number eq 'PL-001'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/material.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_job_materials",
+      "description": "Line items on jobs (what is quoted or invoiced): uuid, job_uuid, material_uuid, name, quantity, unit price ex tax, displayed amount, cost, tax rate, sort order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: job_uuid eq '<uuid>'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobmaterial.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_job_payments",
+      "description": "Payments recorded on jobs: uuid, job_uuid, amount, method, timestamp, note, who recorded it, attachment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: job_uuid eq '<uuid>' or timestamp gt '2026-10-01 00:00:00'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobpayment.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_notes",
+      "description": "Notes on jobs and clients: uuid, related_object (job or company), related_object_uuid, note text, action required, created time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: related_object_uuid eq '<job uuid>'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/note.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_attachments",
+      "description": "Attachment metadata (photos, PDFs, signatures) of jobs and clients: uuid, related_object, related_object_uuid, attachment_name, file_type, source, tags, created by and when. File contents are not returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: related_object_uuid eq '<job uuid>' and active eq 1."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/attachment.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].signature_data",
+            "[*].extracted_info",
+            "[*].metadata"
+          ]
+        }
+      }
+    },
+    {
+      "name": "servicem8_get_attachment",
+      "description": "Metadata of one attachment by UUID: name, file type, related record, tags, size of photos.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Attachment UUID."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dboattachment/{uuid}.json"
+      }
+    },
+    {
+      "name": "servicem8_list_forms",
+      "description": "Forms (checklists, safety and inspection forms) set up in the account: uuid, name, template, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: active eq 1."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/form.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_form_responses",
+      "description": "Completed form responses: uuid, form_uuid, staff_uuid, regarding_object and its uuid (usually a job), field_data (JSON with the answers), timestamp, document attachment, asset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: regarding_object_uuid eq '<job uuid>'."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/formresponse.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_get_form_response",
+      "description": "One completed form response by UUID with its answers in field_data (JSON).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Form response UUID."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/formresponse/{uuid}.json"
+      }
+    },
+    {
+      "name": "servicem8_list_categories",
+      "description": "Job categories (types of work): uuid, name, colour, active. Use category_uuid when creating jobs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: active eq 1."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_job_queues",
+      "description": "Job queues (holding areas for jobs waiting for parts, quotes to follow up, ...): uuid, name, requires assignment, default timeframe, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: active eq 1."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/queue.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_job_templates",
+      "description": "Job templates: uuid, name and the job details and materials they prefill. Use with servicem8_create_job_from_template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: active eq 1."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobtemplate.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_list_tax_rates",
+      "description": "Tax rates: uuid, name, rate, active. Job materials and clients refer to them by tax_rate_uuid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData-style filter: field eq|ne|gt|lt value, joined with and (at most 10 conditions, no or). Strings in single quotes. Example: active eq 1."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: -1 for the first page of up to 1,000 records, then the value of the x-next-cursor header (_headers) from the previous page. Leave empty to get every record at once on small lists."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/taxrate.json",
+        "queryParams": {
+          "$filter": "$filter",
+          "cursor": "$cursor"
+        },
+        "exposeHeaders": [
+          "x-next-cursor"
+        ]
+      }
+    },
+    {
+      "name": "servicem8_create_job",
+      "description": "Create a job. Answers {errorCode, message}; the new job's UUID is in the x-record-uuid header (_headers). Add line items with servicem8_add_job_material and book it with servicem8_schedule_job_activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Job status.",
+            "enum": [
+              "Quote",
+              "Work Order",
+              "Unsuccessful",
+              "Completed"
+            ]
+          },
+          "company_uuid": {
+            "type": "string",
+            "description": "Client (company) UUID."
+          },
+          "job_address": {
+            "type": "string",
+            "description": "Address where the work is done (one line, used for geocoding)."
+          },
+          "billing_address": {
+            "type": "string",
+            "description": "Billing address, if different."
+          },
+          "job_description": {
+            "type": "string",
+            "description": "What needs doing."
+          },
+          "category_uuid": {
+            "type": "string",
+            "description": "Job category UUID."
+          },
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Client purchase order number."
+          },
+          "date": {
+            "type": "string",
+            "description": "Job date, YYYY-MM-DD."
+          },
+          "queue_uuid": {
+            "type": "string",
+            "description": "Job queue to put the job in UUID."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/job.json",
+        "bodyMapping": {
+          "status": "$status",
+          "company_uuid": "$company_uuid",
+          "job_address": "$job_address",
+          "billing_address": "$billing_address",
+          "job_description": "$job_description",
+          "category_uuid": "$category_uuid",
+          "purchase_order_number": "$purchase_order_number",
+          "date": "$date",
+          "queue_uuid": "$queue_uuid"
+        },
+        "exposeHeaders": [
+          "x-record-uuid"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "servicem8_update_job",
+      "description": "Change fields of a job; only the fields you pass change. Use status to move it (for example Quote to Work Order, or Completed). active 0 archives the job, 1 restores it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Job UUID."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "Quote",
+              "Work Order",
+              "Unsuccessful",
+              "Completed"
+            ]
+          },
+          "company_uuid": {
+            "type": "string",
+            "description": "Client (company) UUID."
+          },
+          "job_address": {
+            "type": "string",
+            "description": "Job address."
+          },
+          "billing_address": {
+            "type": "string",
+            "description": "Billing address."
+          },
+          "job_description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "work_done_description": {
+            "type": "string",
+            "description": "Work done (shown on the invoice)."
+          },
+          "category_uuid": {
+            "type": "string",
+            "description": "Category UUID."
+          },
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Purchase order number."
+          },
+          "queue_uuid": {
+            "type": "string",
+            "description": "Job queue UUID."
+          },
+          "active": {
+            "type": "integer",
+            "description": "1 active, 0 archived.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/job/{uuid}.json",
+        "bodyMapping": {
+          "status": "$status",
+          "company_uuid": "$company_uuid",
+          "job_address": "$job_address",
+          "billing_address": "$billing_address",
+          "job_description": "$job_description",
+          "work_done_description": "$work_done_description",
+          "category_uuid": "$category_uuid",
+          "purchase_order_number": "$purchase_order_number",
+          "queue_uuid": "$queue_uuid",
+          "active": "$active"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "servicem8_create_job_from_template",
+      "description": "Create a job from a job template (from servicem8_list_job_templates) with its prefilled description and materials. Pass company_uuid or company_name (an unknown name creates a new client).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Job template UUID."
+          },
+          "company_uuid": {
+            "type": "string",
+            "description": "Client (company); not together with company_name UUID."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Client name; used when company_uuid is not given."
+          },
+          "job_address": {
+            "type": "string",
+            "description": "Job address."
+          },
+          "job_description": {
+            "type": "string",
+            "description": "Job description (replaces the template's)."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobtemplate/{uuid}/job.json",
+        "bodyMapping": {
+          "company_uuid": "$company_uuid",
+          "company_name": "$company_name",
+          "job_address": "$job_address",
+          "job_description": "$job_description"
+        },
+        "exposeHeaders": [
+          "x-record-uuid"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "servicem8_create_client",
+      "description": "Create a client (company or individual). The new UUID is in the x-record-uuid header. Add people with servicem8_create_client_contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Client name (company or person)."
+          },
+          "address": {
+            "type": "string",
+            "description": "Full address in one text."
+          },
+          "address_street": {
+            "type": "string",
+            "description": "Street."
+          },
+          "address_city": {
+            "type": "string",
+            "description": "City."
+          },
+          "address_state": {
+            "type": "string",
+            "description": "State."
+          },
+          "address_postcode": {
+            "type": "string",
+            "description": "Postcode."
+          },
+          "address_country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "billing_address": {
+            "type": "string",
+            "description": "Billing address."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website."
+          },
+          "abn_number": {
+            "type": "string",
+            "description": "ABN or business number."
+          },
+          "payment_terms": {
+            "type": "string",
+            "description": "Payment terms text."
+          },
+          "parent_company_uuid": {
+            "type": "string",
+            "description": "Head office, when this client is a site of another client UUID."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/company.json",
+        "bodyMapping": {
+          "name": "$name",
+          "address": "$address",
+          "address_street": "$address_street",
+          "address_city": "$address_city",
+          "address_state": "$address_state",
+          "address_postcode": "$address_postcode",
+          "address_country": "$address_country",
+          "billing_address": "$billing_address",
+          "website": "$website",
+          "abn_number": "$abn_number",
+          "payment_terms": "$payment_terms",
+          "parent_company_uuid": "$parent_company_uuid"
+        },
+        "exposeHeaders": [
+          "x-record-uuid"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "servicem8_update_client",
+      "description": "Change fields of a client; only the fields you pass change. active 0 archives the client, 1 restores it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Client (company) UUID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name."
+          },
+          "address": {
+            "type": "string",
+            "description": "Full address."
+          },
+          "billing_address": {
+            "type": "string",
+            "description": "Billing address."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website."
+          },
+          "payment_terms": {
+            "type": "string",
+            "description": "Payment terms."
+          },
+          "active": {
+            "type": "integer",
+            "description": "1 active, 0 archived.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/company/{uuid}.json",
+        "bodyMapping": {
+          "name": "$name",
+          "address": "$address",
+          "billing_address": "$billing_address",
+          "website": "$website",
+          "payment_terms": "$payment_terms",
+          "active": "$active"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "servicem8_create_client_contact",
+      "description": "Add a contact person (name, phone, mobile, email, type) to a client.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_uuid": {
+            "type": "string",
+            "description": "Client (company) UUID."
+          },
+          "first": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile (used for SMS)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email."
+          },
+          "type": {
+            "type": "string",
+            "description": "Contact type, e.g. BILLING or JOB."
+          },
+          "is_primary_contact": {
+            "type": "integer",
+            "description": "1 for the primary contact.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "company_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companycontact.json",
+        "bodyMapping": {
+          "company_uuid": "$company_uuid",
+          "first": "$first",
+          "last": "$last",
+          "phone": "$phone",
+          "mobile": "$mobile",
+          "email": "$email",
+          "type": "$type",
+          "is_primary_contact": "$is_primary_contact"
+        },
+        "exposeHeaders": [
+          "x-record-uuid"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "servicem8_schedule_job_activity",
+      "description": "Book a staff member on a job at a fixed time (a scheduled job activity on the dispatch board). Times are YYYY-MM-DD HH:MM:SS in the account's time zone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_uuid": {
+            "type": "string",
+            "description": "Job UUID."
+          },
+          "staff_uuid": {
+            "type": "string",
+            "description": "Staff member UUID."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start, YYYY-MM-DD HH:MM:SS."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End, YYYY-MM-DD HH:MM:SS."
+          },
+          "activity_was_scheduled": {
+            "type": "integer",
+            "description": "1 for a booking (default).",
+            "enum": [
+              1
+            ],
+            "default": 1
+          }
+        },
+        "required": [
+          "job_uuid",
+          "staff_uuid",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobactivity.json",
+        "bodyMapping": {
+          "job_uuid": "$job_uuid",
+          "staff_uuid": "$staff_uuid",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "activity_was_scheduled": "$activity_was_scheduled"
+        },
+        "exposeHeaders": [
+          "x-record-uuid"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "servicem8_update_job_activity",
+      "description": "Move a booking to another time or staff member; only the fields you pass change. active 1 restores a removed booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Job activity UUID."
+          },
+          "staff_uuid": {
+            "type": "string",
+            "description": "Staff member UUID."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "New start, YYYY-MM-DD HH:MM:SS."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "New end, YYYY-MM-DD HH:MM:SS."
+          },
+          "active": {
+            "type": "integer",
+            "description": "1 active, 0 removed.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobactivity/{uuid}.json",
+        "bodyMapping": {
+          "staff_uuid": "$staff_uuid",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "active": "$active"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "servicem8_remove_job_activity",
+      "description": "Remove a booking from the schedule. ServiceM8 only sets active to 0: the booking can be restored with servicem8_update_job_activity (active 1).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Job activity UUID."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/jobactivity/{uuid}.json"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "servicem8_add_job_material",
+      "description": "Add a line item to a job (quote or invoice): from the price list with material_uuid, or free text with name and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_uuid": {
+            "type": "string",
+            "description": "Job UUID."
+          },
+          "material_uuid": {
+            "type": "string",
+            "description": "Price list item, from servicem8_list_materials UUID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Line item name (shown on the invoice)."
+          },
+          "quantity": {
+            "type": "string",
+            "description": "Quantity, e.g. 2 or 1.5."
+          },
+          "price": {
+            "type": "string",
+            "description": "Unit price excluding tax."
+          },
+          "cost": {
+            "type": "string",
+            "description": "Unit cost excluding tax."
+          },
+          "tax_rate_uuid": {
+            "type": "string",
+            "description": "Tax rate UUID."
+          }
+        },
+        "required": [
+          "job_uuid",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobmaterial.json",
+        "bodyMapping": {
+          "job_uuid": "$job_uuid",
+          "material_uuid": "$material_uuid",
+          "name": "$name",
+          "quantity": "$quantity",
+          "price": "$price",
+          "cost": "$cost",
+          "tax_rate_uuid": "$tax_rate_uuid"
+        },
+        "exposeHeaders": [
+          "x-record-uuid"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "servicem8_record_job_payment",
+      "description": "Record a payment received for a job (cash, card, bank transfer). It only records it in ServiceM8; no money is charged or moved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_uuid": {
+            "type": "string",
+            "description": "Job UUID."
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount in the account currency, e.g. 150.00."
+          },
+          "method": {
+            "type": "string",
+            "description": "Payment method, e.g. Cash, Credit Card, Bank Transfer."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "When it was paid, YYYY-MM-DD HH:MM:SS."
+          },
+          "note": {
+            "type": "string",
+            "description": "Reference or note."
+          },
+          "actioned_by_uuid": {
+            "type": "string",
+            "description": "Staff member who recorded it UUID."
+          }
+        },
+        "required": [
+          "job_uuid",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobpayment.json",
+        "bodyMapping": {
+          "job_uuid": "$job_uuid",
+          "amount": "$amount",
+          "method": "$method",
+          "timestamp": "$timestamp",
+          "note": "$note",
+          "actioned_by_uuid": "$actioned_by_uuid"
+        },
+        "exposeHeaders": [
+          "x-record-uuid"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "servicem8_add_note",
+      "description": "Add a note to a job or a client. The note shows in the job diary or client history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "related_object": {
+            "type": "string",
+            "description": "What the note belongs to.",
+            "enum": [
+              "job",
+              "company"
+            ]
+          },
+          "related_object_uuid": {
+            "type": "string",
+            "description": "Job or client UUID."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note text."
+          }
+        },
+        "required": [
+          "related_object",
+          "related_object_uuid",
+          "note"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/note.json",
+        "bodyMapping": {
+          "related_object": "$related_object",
+          "related_object_uuid": "$related_object_uuid",
+          "note": "$note"
+        },
+        "exposeHeaders": [
+          "x-record-uuid"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    }
+  ]
+}

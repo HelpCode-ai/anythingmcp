@@ -665,7 +665,8 @@
     "exportFailed": "Export failed: {error}",
     "healthCheckFailed": "Health check failed: {error}",
     "types": {
-      "database": "Database"
+      "database": "Database",
+      "email": "Email (IMAP/SMTP)"
     },
     "menu": {
       "healthCheck": "Health check",
@@ -1116,6 +1117,10 @@
       "DATABASE": {
         "name": "Database",
         "description": "Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, or SQLite. Supports read-only or read-write mode."
+      },
+      "EMAIL": {
+        "name": "Email (IMAP/SMTP)",
+        "description": "Connect any mailbox: IONOS, Strato, GMX, web.de, T-Online, Gmail with an app password, your own mail server. Read, search, file and send mail."
       }
     },
     "configure": "Configure {type}",
@@ -1219,6 +1224,47 @@
     "creating": "Creating...",
     "create": "Create connector",
     "testConnection": "Test connection"
+  },
+  "emailSettings": {
+    "provider": "Provider",
+    "providerPlaceholder": "Choose to fill in the servers…",
+    "providerHint": "Fills in the servers and ports. Any other provider: copy them from its help pages (incoming/outgoing server).",
+    "imapHost": "IMAP server (incoming)",
+    "smtpHost": "SMTP server (outgoing)",
+    "port": "Port",
+    "securityLabel": "Security",
+    "security": {
+      "tls": "SSL/TLS",
+      "starttls": "STARTTLS",
+      "none": "None (plaintext)"
+    },
+    "smtpHint": "Leave the SMTP server empty for a read-only connector that cannot send.",
+    "username": "Username",
+    "password": "Password or app password",
+    "keepUsername": "Unchanged (type to replace)",
+    "keepPassword": "Unchanged (type to replace)",
+    "passwordHint": "The username is usually the full e-mail address. Gmail, Yahoo, iCloud and Fastmail need an app password. Microsoft 365 and Outlook.com do not accept passwords here: use the Microsoft Outlook connector.",
+    "separateSmtpLogin": "Sending uses a different login",
+    "smtpUsername": "SMTP username",
+    "smtpPassword": "SMTP password",
+    "fromAddress": "From address",
+    "fromAddressPlaceholder": "Default: the username",
+    "fromName": "From name",
+    "advanced": "Folders and certificates",
+    "sentFolder": "Sent folder",
+    "draftsFolder": "Drafts folder",
+    "autoDetected": "Detected automatically",
+    "saveSent": "Copy of sent mail",
+    "saveSentAuto": "Automatic (Gmail files its own copy)",
+    "saveSentAlways": "Always file a copy in Sent",
+    "saveSentNever": "Never file a copy",
+    "allowSelfSigned": "Accept a self-signed certificate",
+    "allowSelfSignedHint": "Only for a mail server on your own network whose certificate is not from a public authority.",
+    "cloudNote": "AnythingMCP Cloud connects only with encryption, to public mail servers on the standard ports (IMAP 993/143, SMTP 465/587/2525). Its hosting provider blocks outgoing SMTP on 465 and 587, so sending usually fails there: answer with drafts, or use a provider with SMTP on port 2525. Sending and deleting start switched off.",
+    "selfHostedNote": "A mail server on your own network needs its host on the outbound allowlist (Admin > Settings). Sending and deleting start switched off: turn them on in the tool list.",
+    "catalogManaged": "This connector was installed from the catalog: its servers and login come from its variables. Change them under Environment variables.",
+    "summary": "IMAP {imap} · SMTP {smtp}",
+    "noSmtp": "not set (read-only)"
   },
   "connectorDetail": {
     "back": "Connectors",

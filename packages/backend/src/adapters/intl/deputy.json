@@ -1,0 +1,1666 @@
+{
+  "slug": "deputy",
+  "name": "Deputy",
+  "aliases": [
+    "Deputy rostering",
+    "Deputy scheduling"
+  ],
+  "description": "Deputy workforce management: employees, locations and areas, rosters (shifts) and publishing, timesheets with clock on and off and approval, leave and unavailability, memos and the resource query API. Per-install Deputy API with a permanent token.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "deputy",
+  "docsUrl": "https://developer.deputy.com/docs/getting-started-with-the-deputy-api",
+  "prerequisites": "A Deputy system administrator who can open the install's OAuth clients page to create a permanent token.",
+  "requiredEnvVars": [
+    "DEPUTY_HOST",
+    "DEPUTY_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "DEPUTY_HOST": {
+      "label": "Install address",
+      "kind": "setting",
+      "help": "The host name of your Deputy install, as shown in the browser when you are logged in: <install>.<region>.deputy.com, e.g. mycompany.au.deputy.com or mycompany.na.deputy.com. Without https:// and without a path.",
+      "example": "mycompany.au.deputy.com",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*(\\.[a-z]{2})?\\.deputy\\.com$",
+      "patternMessage": "Enter only the host, e.g. mycompany.au.deputy.com, without https:// or /api."
+    },
+    "DEPUTY_ACCESS_TOKEN": {
+      "label": "Permanent token",
+      "kind": "credential",
+      "secret": true,
+      "help": "https://<install>.<region>.deputy.com/exec/devapp/oauth_clients: add an OAuth client, then click Get an Access Token. The token is shown only once.",
+      "link": "https://developer.deputy.com/docs/using-a-permanent-token",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the token, without Bearer, spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Deputy refused the token. Check that it belongs to this install (tokens work only on the install that issued them) or create a new one on the install's OAuth clients page.",
+    "403": "The token's user lacks the permission for this call. Use a token of a system administrator or a manager covering the locations you read.",
+    "404": "The install address or the endpoint was not found. Check DEPUTY_HOST, e.g. mycompany.au.deputy.com."
+  },
+  "probe": {
+    "tool": "deputy_get_me"
+  },
+  "connector": {
+    "name": "Deputy API",
+    "type": "REST",
+    "baseUrl": "https://{{DEPUTY_HOST}}/api/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{DEPUTY_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me"
+  },
+  "instructions": "## Deputy\nThis connector reads and updates a **Deputy** install through its API (`https://<install>.<region>.deputy.com/api/v1`): employees, locations and areas, rosters (shifts), timesheets, leave, unavailability, memos and any other record through Deputy's resource query API.\n\n**Personal data**: employee records hold names, dates of birth, contact details, addresses and pay data. Read only what the task needs.\n\n**Setup (5 minutes, needs a Deputy system administrator)**\n1. Note your install address from the browser bar when logged in, e.g. `mycompany.au.deputy.com` (regions: `au`, `eu`, `uk`, `na` for the US). Put it into `DEPUTY_HOST` without `https://`.\n2. Open `https://<your install address>/exec/devapp/oauth_clients`, add an OAuth client (name and any description; the client id itself is not used), then click **Get an Access Token**.\n3. Copy the permanent token at once (it is shown only once) into `DEPUTY_ACCESS_TOKEN`. It works only on this install and acts as the user who created it, with that user's permissions; a system administrator sees every location. `deputy_get_me` is the install check.\n\n**Words**: Deputy calls a location (workplace) a *Company*, an area (department) an *OperationalUnit*, a shift a *Roster* and actual worked time a *Timesheet*. A leave type is a *LeaveRules* record.\n\n**Workflow**\n- Who am I: `deputy_get_me`. The token user's own data: `deputy_get_my_rosters`, `deputy_get_my_timesheets`, `deputy_get_my_leave`, `deputy_get_my_unavailability`, `deputy_get_my_locations`, `deputy_get_my_colleagues`.\n- Structure: `deputy_list_locations` (ids are the location ids), `deputy_list_areas` (each area belongs to a location; shifts and timesheets use area ids).\n- People: `deputy_list_employees`, `deputy_get_employee`, `deputy_query_employees` for filters, `deputy_get_employee_shift_status` for who is working now.\n- Schedule: `deputy_list_rosters` covers 12 hours back to 36 hours ahead; `deputy_query_rosters` for any period (filter on `Date`, `Employee`, `OperationalUnit`). To plan: `deputy_save_shift` (new or, with `roster_id`, update), `deputy_copy_rosters` (repeat last week), `deputy_publish_rosters` (choose the notification).\n- Time: `deputy_query_timesheets`, `deputy_get_timesheet`. Clock on and off: `deputy_start_timesheet`, `deputy_pause_timesheet`, `deputy_end_timesheet`. Fix or add a past timesheet: `deputy_save_timesheet`. Approve for payroll: `deputy_approve_timesheet` (approvals of time).\n- Leave: `deputy_query_leave`, `deputy_get_employee_leave`; leave types with `deputy_query_resource` and `object` `LeaveRules`. Book with `deputy_add_leave`; approve, decline or cancel with `deputy_update_leave` (`status` 1, 2 or 3).\n- Availability: `deputy_get_employee_unavailability`, `deputy_query_availability`, `deputy_add_unavailability`.\n- Employees: `deputy_add_employee`, `deputy_update_employee`, `deputy_invite_employee`, `deputy_terminate_employee` (reversible) and `deputy_reactivate_employee`. Manager notes: `deputy_post_journal`. News feed: `deputy_post_memo`.\n- Anything else (teams, public holidays, events, training, custom fields, sales data, pay periods): `deputy_get_resource_info` lists an object's fields, `deputy_query_resource` searches it, `deputy_get_resource` reads one record.\n\n**Switched off at install**: `deputy_delete_employee`, `deputy_discard_rosters` and `deputy_discard_timesheet`; they cannot be undone, so an admin switches them on when the team needs them.\n\n**Query tools** (`deputy_query_*` and `deputy_query_resource`) send POST but only read. Body: `search` with clauses `{\"s1\":{\"field\":\"Date\",\"type\":\"ge\",\"data\":\"2026-11-01\"},\"s2\":{\"field\":\"Date\",\"type\":\"le\",\"data\":\"2026-11-07\"}}` (all must match; operators eq, ne, gt, ge, lt, le, in, not in, starts, contains, is, is not), `sort` (`{\"Date\":\"asc\"}`), `join` (`[\"EmployeeObject\"]`) and paging.\n\n**Reading the answers**\n- Ids are integers. `StartTime` / `EndTime` and the `start` / `end` inputs are **Unix timestamps in seconds**; `Date` fields are local dates of the location (`2026-11-03T00:00:00+11:00`). Convert with the location's time zone.\n- Roster `Employee` 0 is an open shift; `Published` false is a draft. Timesheet `TimeApproved`, `PayRuleApproved`, `Discarded`, `IsInProgress` give the state; `TotalTime` is hours.\n- Leave `Status`: 0 awaiting approval, 1 approved, 2 declined, 3 cancelled, 4 pay approved.\n- Adding or updating a shift answers 200 with an empty body; check with `deputy_query_rosters`.\n\n**Paging**: an answer holds at most 500 records. Query tools take `max` (up to 500) and `start` (offset); when a page is full, call again with `start` raised by `max`. The list tools without paging return everything Deputy allows in one answer.\n\n**Errors**: 401 means a wrong token or a token of another install, 403 a missing permission of the token's user, 404 a wrong install address or record id, 400 a bad field name in a filter (check `deputy_get_resource_info`).\n",
+  "tools": [
+    {
+      "name": "deputy_get_me",
+      "description": "Who the token belongs to: user and employee id, name, company (location) ids, permissions and the install's settings. The install check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      }
+    },
+    {
+      "name": "deputy_get_my_rosters",
+      "description": "Upcoming shifts of the token's own user (when am I next working), with times, area and location.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/roster"
+      }
+    },
+    {
+      "name": "deputy_get_my_timesheets",
+      "description": "Timesheets of the token's own user, newest first, with start and end times, breaks and approval state.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/timesheets"
+      }
+    },
+    {
+      "name": "deputy_get_my_leave",
+      "description": "Leave requests of the token's own user, with dates, leave type, hours and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/leave"
+      }
+    },
+    {
+      "name": "deputy_get_my_unavailability",
+      "description": "Unavailability periods the token's own user has entered (when am I unavailable).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/unavail"
+      }
+    },
+    {
+      "name": "deputy_get_my_locations",
+      "description": "Locations (workplaces) the token's own user can work in, with their areas.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/location"
+      }
+    },
+    {
+      "name": "deputy_get_my_colleagues",
+      "description": "Colleagues of the token's own user (who do I work with): names, photos and contact details shared in Deputy.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/colleague"
+      }
+    },
+    {
+      "name": "deputy_list_employees",
+      "description": "All employees the token may see, with id, name, main location (Company), role, active flag, start date, contact and payroll id. Contains personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supervise/employee"
+      }
+    },
+    {
+      "name": "deputy_get_employee",
+      "description": "One employee by id: name, locations, role, contact details, start and termination date, payroll id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id (Id from deputy_list_employees, not the user id)."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supervise/employee/{employee_id}"
+      }
+    },
+    {
+      "name": "deputy_query_employees",
+      "description": "Search employees with filters, sorting and paging, e.g. active staff of one location: search {\"s1\":{\"field\":\"Active\",\"type\":\"eq\",\"data\":true},\"s2\":{\"field\":\"Company\",\"type\":\"eq\",\"data\":1}}. A read: it sends POST but changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "object",
+            "description": "Filter clauses keyed by any label: {\"s1\":{\"field\":\"Date\",\"type\":\"ge\",\"data\":\"2026-11-01\"},\"s2\":{\"field\":\"Employee\",\"type\":\"eq\",\"data\":12}}. Operators: eq, ne, gt, ge, lt, le, in, not in, starts, contains, is, is not (for null); field names are the resource's (see deputy_get_resource_info). All clauses must match. Omit for no filter."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Sort, field name to asc or desc, e.g. {\"Date\":\"desc\"}."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Offset of the first record (0 based) for the next page: the previous start plus max.",
+            "minimum": 0
+          },
+          "max": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500 (Deputy's cap).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "join": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to embed, e.g. [\"EmployeeObject\",\"OperationalUnitObject\"]. Names end in Object."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/resource/Employee/QUERY",
+        "bodyMapping": {
+          "search": "$search",
+          "sort": "$sort",
+          "start": "$start",
+          "max": "$max",
+          "join": "$join"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "deputy_get_employee_shift_status",
+      "description": "Whether an employee is working right now: current or next shift, open timesheet and break state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supervise/empshiftinfo/{employee_id}"
+      }
+    },
+    {
+      "name": "deputy_list_locations",
+      "description": "All locations (Deputy calls them Company records: workplaces with name, code, address id, time zone and active flag). The id is the location id used everywhere else.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/resource/Company"
+      }
+    },
+    {
+      "name": "deputy_list_areas",
+      "description": "All areas (operational units / departments) with name, location (Company), colour and active flag. Shifts and timesheets belong to an area.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/resource/OperationalUnit"
+      }
+    },
+    {
+      "name": "deputy_list_rosters",
+      "description": "Shifts (rosters) from 12 hours ago to 36 hours ahead across the install: employee, area, start and end (Unix seconds), published flag. For other ranges use deputy_query_rosters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supervise/roster"
+      }
+    },
+    {
+      "name": "deputy_query_rosters",
+      "description": "Search shifts (rosters) for any period, employee or area, e.g. one day: search {\"s1\":{\"field\":\"Date\",\"type\":\"eq\",\"data\":\"2026-11-03\"}}; a week: Date ge and Date le. Open shifts have Employee 0. A read: POST that changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "object",
+            "description": "Filter clauses keyed by any label: {\"s1\":{\"field\":\"Date\",\"type\":\"ge\",\"data\":\"2026-11-01\"},\"s2\":{\"field\":\"Employee\",\"type\":\"eq\",\"data\":12}}. Operators: eq, ne, gt, ge, lt, le, in, not in, starts, contains, is, is not (for null); field names are the resource's (see deputy_get_resource_info). All clauses must match. Omit for no filter."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Sort, field name to asc or desc, e.g. {\"Date\":\"desc\"}."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Offset of the first record (0 based) for the next page: the previous start plus max.",
+            "minimum": 0
+          },
+          "max": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500 (Deputy's cap).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "join": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to embed, e.g. [\"EmployeeObject\",\"OperationalUnitObject\"]. Names end in Object."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/resource/Roster/QUERY",
+        "bodyMapping": {
+          "search": "$search",
+          "sort": "$sort",
+          "start": "$start",
+          "max": "$max",
+          "join": "$join"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "deputy_query_timesheets",
+      "description": "Search timesheets (actual worked time): employee, area, start and end (Unix seconds), total hours, cost, TimeApproved, PayRuleApproved, Discarded, IsInProgress. Filter e.g. {\"s1\":{\"field\":\"Date\",\"type\":\"ge\",\"data\":\"2026-10-01\"}}. A read: POST that changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "object",
+            "description": "Filter clauses keyed by any label: {\"s1\":{\"field\":\"Date\",\"type\":\"ge\",\"data\":\"2026-11-01\"},\"s2\":{\"field\":\"Employee\",\"type\":\"eq\",\"data\":12}}. Operators: eq, ne, gt, ge, lt, le, in, not in, starts, contains, is, is not (for null); field names are the resource's (see deputy_get_resource_info). All clauses must match. Omit for no filter."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Sort, field name to asc or desc, e.g. {\"Date\":\"desc\"}."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Offset of the first record (0 based) for the next page: the previous start plus max.",
+            "minimum": 0
+          },
+          "max": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500 (Deputy's cap).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "join": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to embed, e.g. [\"EmployeeObject\",\"OperationalUnitObject\"]. Names end in Object."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/resource/Timesheet/QUERY",
+        "bodyMapping": {
+          "search": "$search",
+          "sort": "$sort",
+          "start": "$start",
+          "max": "$max",
+          "join": "$join"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "deputy_get_timesheet",
+      "description": "One timesheet with its full details: slots, breaks, pay lines, comments and approval state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timesheet_id": {
+            "type": "integer",
+            "description": "Timesheet id."
+          }
+        },
+        "required": [
+          "timesheet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supervise/timesheet/{timesheet_id}/details"
+      }
+    },
+    {
+      "name": "deputy_query_leave",
+      "description": "Search leave requests: employee, leave rule (type), location, DateStart, DateEnd, Days, TotalHours, Status (0 awaiting approval, 1 approved, 2 declined, 3 cancelled, 4 pay approved), comments. A read: POST that changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "object",
+            "description": "Filter clauses keyed by any label: {\"s1\":{\"field\":\"Date\",\"type\":\"ge\",\"data\":\"2026-11-01\"},\"s2\":{\"field\":\"Employee\",\"type\":\"eq\",\"data\":12}}. Operators: eq, ne, gt, ge, lt, le, in, not in, starts, contains, is, is not (for null); field names are the resource's (see deputy_get_resource_info). All clauses must match. Omit for no filter."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Sort, field name to asc or desc, e.g. {\"Date\":\"desc\"}."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Offset of the first record (0 based) for the next page: the previous start plus max.",
+            "minimum": 0
+          },
+          "max": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500 (Deputy's cap).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "join": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to embed, e.g. [\"EmployeeObject\",\"OperationalUnitObject\"]. Names end in Object."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/resource/Leave/QUERY",
+        "bodyMapping": {
+          "search": "$search",
+          "sort": "$sort",
+          "start": "$start",
+          "max": "$max",
+          "join": "$join"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "deputy_get_employee_leave",
+      "description": "Leave requests of one employee with dates, type, hours and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supervise/leave/{employee_id}"
+      }
+    },
+    {
+      "name": "deputy_get_employee_unavailability",
+      "description": "Unavailability periods of one employee (one-off and recurring), with start, end and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supervise/unavail/{employee_id}"
+      }
+    },
+    {
+      "name": "deputy_query_availability",
+      "description": "Search availability and unavailability records of employees (EmployeeAvailability): employee, start and end (Unix seconds), type and recurrence. A read: POST that changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "object",
+            "description": "Filter clauses keyed by any label: {\"s1\":{\"field\":\"Date\",\"type\":\"ge\",\"data\":\"2026-11-01\"},\"s2\":{\"field\":\"Employee\",\"type\":\"eq\",\"data\":12}}. Operators: eq, ne, gt, ge, lt, le, in, not in, starts, contains, is, is not (for null); field names are the resource's (see deputy_get_resource_info). All clauses must match. Omit for no filter."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Sort, field name to asc or desc, e.g. {\"Date\":\"desc\"}."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Offset of the first record (0 based) for the next page: the previous start plus max.",
+            "minimum": 0
+          },
+          "max": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500 (Deputy's cap).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "join": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to embed, e.g. [\"EmployeeObject\",\"OperationalUnitObject\"]. Names end in Object."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/resource/EmployeeAvailability/QUERY",
+        "bodyMapping": {
+          "search": "$search",
+          "sort": "$sort",
+          "start": "$start",
+          "max": "$max",
+          "join": "$join"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "deputy_query_resource",
+      "description": "Search any other Deputy resource with the same filter body as the other query tools: leave rules, teams, public holidays, events, memos, training, custom field data, sales data, pay periods and more. A read: POST that changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "Resource name (case sensitive).",
+            "enum": [
+              "Employee",
+              "Company",
+              "OperationalUnit",
+              "Roster",
+              "RosterOpen",
+              "RosterSwap",
+              "Timesheet",
+              "TimesheetPayReturn",
+              "Leave",
+              "LeaveRules",
+              "LeaveAccrual",
+              "EmployeeAvailability",
+              "EmployeeAgreement",
+              "EmploymentContract",
+              "EmployeeRole",
+              "Team",
+              "PublicHoliday",
+              "Event",
+              "Memo",
+              "Journal",
+              "Task",
+              "TrainingModule",
+              "TrainingRecord",
+              "CustomField",
+              "CustomFieldData",
+              "Contact",
+              "Address",
+              "SalesData",
+              "Schedule",
+              "PayRules",
+              "PayPeriod",
+              "Category",
+              "Country"
+            ]
+          },
+          "search": {
+            "type": "object",
+            "description": "Filter clauses keyed by any label: {\"s1\":{\"field\":\"Date\",\"type\":\"ge\",\"data\":\"2026-11-01\"},\"s2\":{\"field\":\"Employee\",\"type\":\"eq\",\"data\":12}}. Operators: eq, ne, gt, ge, lt, le, in, not in, starts, contains, is, is not (for null); field names are the resource's (see deputy_get_resource_info). All clauses must match. Omit for no filter."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Sort, field name to asc or desc, e.g. {\"Date\":\"desc\"}."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Offset of the first record (0 based) for the next page: the previous start plus max.",
+            "minimum": 0
+          },
+          "max": {
+            "type": "integer",
+            "description": "Records per call, 1 to 500 (Deputy's cap).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "join": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to embed, e.g. [\"EmployeeObject\",\"OperationalUnitObject\"]. Names end in Object."
+          }
+        },
+        "required": [
+          "object"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/resource/{object}/QUERY",
+        "bodyMapping": {
+          "search": "$search",
+          "sort": "$sort",
+          "start": "$start",
+          "max": "$max",
+          "join": "$join"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "deputy_get_resource",
+      "description": "Read one record of any Deputy resource by id, e.g. a Roster, Leave, LeaveRules or Company record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "Resource name (case sensitive).",
+            "enum": [
+              "Employee",
+              "Company",
+              "OperationalUnit",
+              "Roster",
+              "RosterOpen",
+              "RosterSwap",
+              "Timesheet",
+              "TimesheetPayReturn",
+              "Leave",
+              "LeaveRules",
+              "LeaveAccrual",
+              "EmployeeAvailability",
+              "EmployeeAgreement",
+              "EmploymentContract",
+              "EmployeeRole",
+              "Team",
+              "PublicHoliday",
+              "Event",
+              "Memo",
+              "Journal",
+              "Task",
+              "TrainingModule",
+              "TrainingRecord",
+              "CustomField",
+              "CustomFieldData",
+              "Contact",
+              "Address",
+              "SalesData",
+              "Schedule",
+              "PayRules",
+              "PayPeriod",
+              "Category",
+              "Country"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "description": "Record id."
+          }
+        },
+        "required": [
+          "object",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/resource/{object}/{id}"
+      }
+    },
+    {
+      "name": "deputy_get_resource_info",
+      "description": "Field list of a Deputy resource: field names and types, and the joinable related objects. Use it to write search filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "Resource name (case sensitive).",
+            "enum": [
+              "Employee",
+              "Company",
+              "OperationalUnit",
+              "Roster",
+              "RosterOpen",
+              "RosterSwap",
+              "Timesheet",
+              "TimesheetPayReturn",
+              "Leave",
+              "LeaveRules",
+              "LeaveAccrual",
+              "EmployeeAvailability",
+              "EmployeeAgreement",
+              "EmploymentContract",
+              "EmployeeRole",
+              "Team",
+              "PublicHoliday",
+              "Event",
+              "Memo",
+              "Journal",
+              "Task",
+              "TrainingModule",
+              "TrainingRecord",
+              "CustomField",
+              "CustomFieldData",
+              "Contact",
+              "Address",
+              "SalesData",
+              "Schedule",
+              "PayRules",
+              "PayPeriod",
+              "Category",
+              "Country"
+            ]
+          }
+        },
+        "required": [
+          "object"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/resource/{object}/INFO"
+      }
+    },
+    {
+      "name": "deputy_add_employee",
+      "description": "Add an employee to a location. Returns the new employee record; invite them with deputy_invite_employee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location (Company) id the employee joins."
+          },
+          "gender": {
+            "type": "integer",
+            "description": "0 prefer not to say, 1 male, 2 female, 3 non-binary.",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Country code for the address, e.g. AU, GB, US."
+          },
+          "date_of_birth": {
+            "type": "string",
+            "description": "Date of birth, YYYY-MM-DD."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "mobile_phone": {
+            "type": "string",
+            "description": "Mobile phone number."
+          },
+          "payroll_id": {
+            "type": "string",
+            "description": "Payroll id."
+          },
+          "weekday_rate": {
+            "type": "number",
+            "description": "Base weekday hourly rate."
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name",
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/employee",
+        "bodyMapping": {
+          "strFirstName": "$first_name",
+          "strLastName": "$last_name",
+          "intCompanyId": "$location_id",
+          "intGender": "$gender",
+          "strCountryCode": "$country_code",
+          "strDob": "$date_of_birth",
+          "strStartDate": "$start_date",
+          "strMobilePhone": "$mobile_phone",
+          "strPayrollId": "$payroll_id",
+          "fltWeekDayRate": "$weekday_rate"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_update_employee",
+      "description": "Change fields of an employee record through the resource API. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Employee fields to set, named as in deputy_get_resource_info for Employee, e.g. {\"FirstName\":\"Ana\",\"DisplayName\":\"Ana P\",\"Company\":2,\"Role\":50,\"StartDate\":\"2026-11-01\"}."
+          }
+        },
+        "required": [
+          "employee_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/resource/Employee/{employee_id}",
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "deputy_invite_employee",
+      "description": "Email the employee an invitation to log in to Deputy and use the app (sends a message).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/employee/{employee_id}/invite"
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_terminate_employee",
+      "description": "Terminate an employee: they can no longer log in or be rostered. Reversible with deputy_reactivate_employee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/employee/{employee_id}/terminate"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "deputy_reactivate_employee",
+      "description": "Re-activate a terminated employee so they can be rostered again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/employee/{employee_id}/activate"
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_delete_employee",
+      "description": "Delete an employee's account and data from Deputy. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/employee/{employee_id}/delete"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "deputy_post_journal",
+      "description": "Add a journal entry (a private manager note) to an employee's profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Text of the journal entry."
+          }
+        },
+        "required": [
+          "employee_id",
+          "comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/journal",
+        "bodyMapping": {
+          "intEmployeeId": "$employee_id",
+          "strComment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_add_leave",
+      "description": "Create a leave request for an employee. Status 0 waits for manager approval; 1 records leave that is already approved and affects timesheets and balances.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          },
+          "leave_rule_id": {
+            "type": "integer",
+            "description": "Leave rule (leave type) id from deputy_query_resource with object LeaveRules."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location (Company) id the leave applies to."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Start as Unix timestamp in seconds."
+          },
+          "end": {
+            "type": "integer",
+            "description": "End as Unix timestamp in seconds."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment from the employee."
+          },
+          "status": {
+            "type": "integer",
+            "description": "0 awaiting approval (default), 1 approved.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "approval_comment": {
+            "type": "string",
+            "description": "Manager comment, for approved leave."
+          }
+        },
+        "required": [
+          "employee_id",
+          "leave_rule_id",
+          "location_id",
+          "date_start",
+          "date_end",
+          "comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/resource/Leave",
+        "bodyMapping": {
+          "Employee": "$employee_id",
+          "LeaveRule": "$leave_rule_id",
+          "Company": "$location_id",
+          "DateStart": "$date_start",
+          "DateEnd": "$date_end",
+          "Start": "$start",
+          "End": "$end",
+          "Comment": "$comment",
+          "Status": "$status",
+          "ApprovalComment": "$approval_comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_update_leave",
+      "description": "Approve, decline or cancel a leave request (Status), or change its dates and comment. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "leave_id": {
+            "type": "integer",
+            "description": "Leave id."
+          },
+          "status": {
+            "type": "integer",
+            "description": "0 awaiting approval, 1 approved, 2 declined, 3 cancelled.",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          "approval_comment": {
+            "type": "string",
+            "description": "Manager comment."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "New first day, YYYY-MM-DD."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "New last day, YYYY-MM-DD."
+          },
+          "comment": {
+            "type": "string",
+            "description": "New employee comment."
+          }
+        },
+        "required": [
+          "leave_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/resource/Leave/{leave_id}",
+        "bodyMapping": {
+          "Status": "$status",
+          "ApprovalComment": "$approval_comment",
+          "DateStart": "$date_start",
+          "DateEnd": "$date_end",
+          "Comment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "deputy_add_unavailability",
+      "description": "Record when an employee cannot work, once or repeating (e.g. every second Monday).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Start as Unix timestamp in seconds."
+          },
+          "end": {
+            "type": "integer",
+            "description": "End as Unix timestamp in seconds."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Note, e.g. the reason."
+          },
+          "recurrence": {
+            "type": "object",
+            "description": "Repeat rule, e.g. {\"FREQ\":\"WEEKLY\",\"INTERVAL\":2,\"BYDAY\":\"MO\"}. Omit for a one-off period."
+          }
+        },
+        "required": [
+          "employee_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/unavail",
+        "bodyMapping": {
+          "employee": "$employee_id",
+          "start": {
+            "timestamp": "$start"
+          },
+          "end": {
+            "timestamp": "$end"
+          },
+          "strComment": "$comment",
+          "recurrence": "$recurrence"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_save_shift",
+      "description": "Add a shift, or update one when roster_id is given. Publishing (publish true) can notify the employee. The answer body is empty on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "roster_id": {
+            "type": "integer",
+            "description": "Roster (shift) id to update; omit to add a new shift."
+          },
+          "area_id": {
+            "type": "integer",
+            "description": "Area (operational unit) id."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Start as Unix timestamp in seconds."
+          },
+          "end": {
+            "type": "integer",
+            "description": "End as Unix timestamp in seconds."
+          },
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id to assign; 0 or omitted with open 1 for an open shift."
+          },
+          "meal_break_minutes": {
+            "type": "integer",
+            "description": "Meal break in minutes."
+          },
+          "publish": {
+            "type": "boolean",
+            "description": "true publishes the shift (may notify the employee)."
+          },
+          "open": {
+            "type": "integer",
+            "description": "1 shows the shift as open for anyone to claim, 0 not.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "force_overwrite": {
+            "type": "integer",
+            "description": "1 overwrites a clashing existing shift, 0 (default) does not.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "confirm_status": {
+            "type": "integer",
+            "description": "1 marks the shift as confirmed, 0 not.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the shift."
+          }
+        },
+        "required": [
+          "area_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/roster",
+        "bodyMapping": {
+          "intRosterId": "$roster_id",
+          "intOpunitId": "$area_id",
+          "intStartTimestamp": "$start",
+          "intEndTimestamp": "$end",
+          "intRosterEmployee": "$employee_id",
+          "intMealbreakMinute": "$meal_break_minutes",
+          "blnPublish": "$publish",
+          "blnOpen": "$open",
+          "blnForceOverwrite": "$force_overwrite",
+          "intConfirmStatus": "$confirm_status",
+          "strComment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_publish_rosters",
+      "description": "Publish shifts so employees see them, with the chosen notification.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "roster_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Roster (shift) ids to publish."
+          },
+          "notify": {
+            "type": "integer",
+            "description": "1 SMS and email, 2 SMS, 3 email, 4 none, 5 ask employees to confirm.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "all_locations": {
+            "type": "integer",
+            "description": "1 publishes across all locations in this request, 0 only the given shifts' location.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "roster_ids",
+          "notify"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/roster/publish",
+        "bodyMapping": {
+          "intRosterArray": "$roster_ids",
+          "intMode": "$notify",
+          "blnAllLocationsMode": "$all_locations"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_copy_rosters",
+      "description": "Copy the shifts of a date range of some areas forward (e.g. last week to this week).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "description": "Start of the source range, YYYY-MM-DD."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "End of the source range, YYYY-MM-DD."
+          },
+          "area_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Area (operational unit) ids whose shifts are copied."
+          },
+          "error_details": {
+            "type": "integer",
+            "description": "1 returns details about shifts that could not be copied.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date",
+          "area_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/roster/copy",
+        "bodyMapping": {
+          "strFromDate": "$from_date",
+          "strToDate": "$to_date",
+          "intOperationalUnitArray": "$area_ids",
+          "blnRequireErrorDetails": "$error_details"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_discard_rosters",
+      "description": "Discard (remove) shifts from the schedule. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "roster_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Roster (shift) ids to discard."
+          }
+        },
+        "required": [
+          "roster_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/roster/discard",
+        "bodyMapping": {
+          "intRosterArray": "$roster_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "deputy_start_timesheet",
+      "description": "Clock an employee on in an area now: starts a running timesheet for them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id."
+          },
+          "area_id": {
+            "type": "integer",
+            "description": "Area (operational unit) id."
+          }
+        },
+        "required": [
+          "employee_id",
+          "area_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/timesheet/start",
+        "bodyMapping": {
+          "intEmployeeId": "$employee_id",
+          "intOpunitId": "$area_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_end_timesheet",
+      "description": "Clock an employee off (ends a running timesheet), with an optional unscheduled meal break.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timesheet_id": {
+            "type": "integer",
+            "description": "Running timesheet id."
+          },
+          "meal_break_minutes": {
+            "type": "integer",
+            "description": "Meal break minutes taken; 0 when none."
+          }
+        },
+        "required": [
+          "timesheet_id",
+          "meal_break_minutes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/timesheet/end",
+        "bodyMapping": {
+          "intTimesheetId": "$timesheet_id",
+          "intMealbreakMinute": "$meal_break_minutes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_pause_timesheet",
+      "description": "Start or end a break on a running timesheet (calling it again ends the break).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timesheet_id": {
+            "type": "integer",
+            "description": "Running timesheet id."
+          }
+        },
+        "required": [
+          "timesheet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/timesheet/pause",
+        "bodyMapping": {
+          "intTimesheetId": "$timesheet_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_save_timesheet",
+      "description": "Create a finished timesheet, or update one when timesheet_id is given: times, area, breaks and comment, optionally approved at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timesheet_id": {
+            "type": "integer",
+            "description": "Timesheet id to update; omit to create."
+          },
+          "employee_id": {
+            "type": "integer",
+            "description": "Employee id (needed to create)."
+          },
+          "area_id": {
+            "type": "integer",
+            "description": "Area (operational unit) id."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Start as Unix timestamp in seconds."
+          },
+          "end": {
+            "type": "integer",
+            "description": "End as Unix timestamp in seconds."
+          },
+          "meal_break_minutes": {
+            "type": "integer",
+            "description": "Unscheduled meal break in minutes."
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Breaks with times, as Deputy's Slots, e.g. [{\"blnEmptySlot\":false,\"strType\":\"B\",\"intUnixStart\":1616367600,\"intUnixEnd\":1616369400,\"mixedActivity\":{\"intState\":2,\"blnCanStartEarly\":1,\"blnCanEndEarly\":1,\"blnIsMandatory\":1,\"strBreakType\":\"M\"}}]."
+          },
+          "roster_id": {
+            "type": "integer",
+            "description": "Shift (roster) id the timesheet belongs to."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the timesheet."
+          },
+          "approve": {
+            "type": "boolean",
+            "description": "true also approves the timesheet."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/timesheet/update",
+        "bodyMapping": {
+          "intTimesheetId": "$timesheet_id",
+          "intEmployeeId": "$employee_id",
+          "intOpunitId": "$area_id",
+          "intStartTimestamp": "$start",
+          "intEndTimestamp": "$end",
+          "intMealbreakMinute": "$meal_break_minutes",
+          "arrSlots": "$slots",
+          "intRosterId": "$roster_id",
+          "strComment": "$comment",
+          "blnApproveTimesheet": "$approve"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_approve_timesheet",
+      "description": "Approve a timesheet (time approval) so it can be exported to payroll.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timesheet_id": {
+            "type": "integer",
+            "description": "Timesheet id."
+          }
+        },
+        "required": [
+          "timesheet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/timesheet/approve",
+        "bodyMapping": {
+          "intTimesheetId": "$timesheet_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "deputy_discard_timesheet",
+      "description": "Discard a timesheet so it is not paid. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timesheet_id": {
+            "type": "integer",
+            "description": "Timesheet id."
+          }
+        },
+        "required": [
+          "timesheet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supervise/timesheet/discard",
+        "bodyMapping": {
+          "intTimesheetId": "$timesheet_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "deputy_post_memo",
+      "description": "Post a memo to the news feed of a location, optionally to selected locations or users, and optionally asking them to confirm they read it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Memo text."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location (Company) id that posts the memo."
+          },
+          "require_confirm": {
+            "type": "integer",
+            "description": "1 asks readers to confirm, 0 not.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Location ids that receive the memo."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User ids (not employee ids) that receive the memo."
+          }
+        },
+        "required": [
+          "content",
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/supervise/memo",
+        "bodyMapping": {
+          "strContent": "$content",
+          "intCompany": "$location_id",
+          "blnRequireConfirm": "$require_confirm",
+          "arrAssignedCompanyIds": "$location_ids",
+          "arrAssignedUserIds": "$user_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    }
+  ]
+}

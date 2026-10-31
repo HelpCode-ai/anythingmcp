@@ -1,0 +1,1964 @@
+{
+  "slug": "postmark",
+  "name": "Postmark",
+  "aliases": [
+    "Postmark email",
+    "Postmarkapp"
+  ],
+  "description": "Postmark transactional and broadcast email: send single, batch and templated emails, manage templates, search sent and inbound messages with opens, clicks and bounces, sending statistics, suppressions, message streams and webhooks; with an account token also servers, domains and sender signatures.",
+  "region": "intl",
+  "category": "email",
+  "icon": "postmark",
+  "docsUrl": "https://postmarkapp.com/developer/api/overview",
+  "instructions": "## Postmark\nThis connector uses the **Postmark API** (`https://api.postmarkapp.com`) for transactional and broadcast email: sending single, batch and templated emails, templates, searching sent and received messages with opens and clicks, bounces, sending statistics, suppressions, message streams and webhooks of one Postmark **server**. With an optional account token it also reads the account's servers, domains and sender signatures.\n\n**Setup (2 minutes)**\n1. In Postmark open the server, then **API Tokens**, and copy a **Server API token** into `POSTMARK_SERVER_TOKEN`. It is sent as the `X-Postmark-Server-Token` header and gives access to that server only.\n2. Optional: for the account tools (`postmark_list_servers`, `postmark_get_server_by_id`, `postmark_list_domains`, `postmark_get_domain`, `postmark_verify_domain_dkim`, `postmark_verify_domain_return_path`, `postmark_list_sender_signatures`, `postmark_get_sender_signature`) an account owner or admin copies the **Account API token** from **Account**, **API Tokens** into `POSTMARK_ACCOUNT_TOKEN`. It is sent as `X-Postmark-Account-Token` on those tools only. Without it they answer 401; the other tools work.\n3. Run `postmark_get_server` to check the token.\n\n**Sending**\n- `postmark_send_email` for one email, `postmark_send_batch` for up to 500 different emails, `postmark_send_email_with_template` and `postmark_send_batch_with_templates` for stored templates with a `TemplateModel`.\n- `From` must be a confirmed sender signature or an address on a verified domain. New accounts are in test mode until Postmark approves them and can only send to addresses on their own domain.\n- Transactional email goes through the `outbound` stream (the default). Bulk or marketing email must use a Broadcasts stream (`MessageStream`), which adds unsubscribe handling.\n- Every send reaches real inboxes: show the user the recipients, subject and content and wait for a yes. Batch calls answer 200 even when single messages fail: check `ErrorCode` (0 = accepted) and `Message` of each result.\n\n**Templates**: `postmark_list_templates`, `postmark_get_template`, `postmark_validate_template` (check syntax and render a preview), `postmark_create_template`, `postmark_update_template`, `postmark_delete_template`. Variables use Mustachio, e.g. `{{name}}`; a Layout wraps standard templates with `{{{@content}}}`.\n\n**Finding what happened to an email**\n1. `postmark_search_outbound_messages` by recipient, tag, subject or date, or `postmark_search_inbound_messages` for received mail; `postmark_retry_inbound_message` reposts a failed inbound message to the webhook.\n2. `postmark_get_outbound_message` (or `postmark_get_inbound_message`) shows the details and the `MessageEvents` timeline (Delivered, Bounced, Opened, LinkClicked, SubscriptionChanged).\n3. Opens and clicks: `postmark_list_message_opens`, `postmark_get_message_opens`, `postmark_list_message_clicks`, `postmark_get_message_clicks`.\n4. Bounces: `postmark_get_delivery_stats`, `postmark_list_bounces`, `postmark_get_bounce`, `postmark_get_bounce_dump` (raw SMTP answer). `postmark_activate_bounce` reactivates an address when `CanActivate` is true.\n5. Suppressions per stream: `postmark_list_suppressions`, `postmark_create_suppressions`, `postmark_delete_suppressions` (spam complaints cannot be removed).\n\n**Statistics**: `postmark_get_outbound_overview` for totals and rates of a period, `postmark_get_outbound_stats` with `metric` for daily counts (sends, bounces, spam, tracked, opens, clicks, platforms, email clients, browsers, locations).\n\n**Server setup**: `postmark_get_server`; streams with `postmark_list_message_streams`, `postmark_get_message_stream`, `postmark_create_message_stream`, `postmark_update_message_stream`, `postmark_archive_message_stream`, `postmark_unarchive_message_stream`; webhooks with `postmark_list_webhooks`, `postmark_get_webhook`, `postmark_create_webhook`, `postmark_update_webhook`, `postmark_delete_webhook`. Domain DNS checks need the account token (see Setup).\n\n**Reading the answers**: field names are PascalCase (`MessageID`, `SubmittedAt`, `TotalCount`). Search dates (`fromdate`, `todate`) are US Eastern Time; returned timestamps carry their offset. Statistics dates are `YYYY-MM-DD`. Messages and their events are kept for the server's retention period (45 days by default).\n\n**Paging**: list and search tools take `count` (default 50, at most 500) and `offset`; `count + offset` may not exceed 10,000. Narrow the date range to go further back. Compare `TotalCount` with what you received to know whether more pages exist.\n\n**Errors**: 401 means a missing or wrong token (or a server token on an account tool), 422 an invalid request: read `ErrorCode` and `Message` (300 send validation such as an invalid address or missing body, 406 inactive or suppressed recipient, 410 more than 500 messages in a batch, 412 recipients outside the From domain while the account awaits approval, 1101 template not found, 1235 unknown message stream). 429 means too many requests; 500 a Postmark problem, retry later.\n\n**Switched off at install**: `postmark_delete_template`, `postmark_delete_suppressions`, `postmark_delete_webhook` and `postmark_archive_message_stream`; an admin switches them on when the team needs them.",
+  "prerequisites": "A Postmark account with a server and its Server API token; the Account API token is optional and only needed for the account tools.",
+  "requiredEnvVars": [
+    "POSTMARK_SERVER_TOKEN"
+  ],
+  "optionalEnvVars": [
+    "POSTMARK_ACCOUNT_TOKEN"
+  ],
+  "envVarMeta": {
+    "POSTMARK_SERVER_TOKEN": {
+      "label": "Server API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Postmark, your server, API Tokens: the Server API token. It reaches that one server.",
+      "link": "https://account.postmarkapp.com/servers",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "A Postmark token looks like a UUID: 8-4-4-4-12 hexadecimal characters."
+    },
+    "POSTMARK_ACCOUNT_TOKEN": {
+      "label": "Account API token (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Postmark, Account, API Tokens (account owners and admins only). Needed only for the server, domain and sender signature tools; leave empty otherwise.",
+      "link": "https://account.postmarkapp.com/api_tokens",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "A Postmark token looks like a UUID: 8-4-4-4-12 hexadecimal characters."
+    }
+  },
+  "verifyHints": {
+    "401": "Postmark refused the token. Copy the Server API token again from your server's API Tokens tab; the account tools need POSTMARK_ACCOUNT_TOKEN instead.",
+    "422": "Postmark rejected the request. Read ErrorCode and Message in the answer: 300 is a send validation error (address, body, limits), 406 an inactive recipient, 412 an account still pending approval."
+  },
+  "probe": {
+    "tool": "postmark_get_server"
+  },
+  "connector": {
+    "name": "Postmark API",
+    "type": "REST",
+    "baseUrl": "https://api.postmarkapp.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Postmark-Server-Token",
+      "apiKey": "{{POSTMARK_SERVER_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/server"
+  },
+  "tools": [
+    {
+      "name": "postmark_send_email",
+      "description": "Send one email through the server: from a confirmed sender, to up to 50 recipients, with subject, HTML and/or text body, tag, metadata, tracking and attachments. Returns the MessageID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "From": {
+            "type": "string",
+            "description": "Sender address of a confirmed sender signature or verified domain; \"Name <sender@example.com>\" adds a display name."
+          },
+          "To": {
+            "type": "string",
+            "description": "Recipient addresses, comma-separated (To, Cc and Bcc together at most 50)."
+          },
+          "Cc": {
+            "type": "string",
+            "description": "Cc addresses, comma-separated."
+          },
+          "Bcc": {
+            "type": "string",
+            "description": "Bcc addresses, comma-separated."
+          },
+          "ReplyTo": {
+            "type": "string",
+            "description": "Reply-To address(es), comma-separated."
+          },
+          "Tag": {
+            "type": "string",
+            "description": "One tag to group the email in statistics and searches, e.g. password-reset."
+          },
+          "Headers": {
+            "type": "array",
+            "description": "Custom headers: [{\"Name\": \"X-Ref\", \"Value\": \"123\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "TrackOpens": {
+            "type": "boolean",
+            "description": "Track opens for this email (needs an HTML body)."
+          },
+          "TrackLinks": {
+            "type": "string",
+            "description": "Link tracking: None, HtmlAndText, HtmlOnly or TextOnly.",
+            "enum": [
+              "None",
+              "HtmlAndText",
+              "HtmlOnly",
+              "TextOnly"
+            ]
+          },
+          "Metadata": {
+            "type": "object",
+            "description": "Your own key-value pairs stored with the message and returned in webhooks, e.g. {\"order_id\": \"123\"}."
+          },
+          "Attachments": {
+            "type": "array",
+            "description": "Attachments: [{\"Name\": \"invoice.pdf\", \"Content\": \"<base64>\", \"ContentType\": \"application/pdf\"}]; ContentID \"cid:logo.png\" for inline images. 10 MB total.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "MessageStream": {
+            "type": "string",
+            "description": "Message stream to send through: outbound (default, transactional) or a broadcast stream id for bulk mail."
+          },
+          "Subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "HtmlBody": {
+            "type": "string",
+            "description": "HTML body; HtmlBody or TextBody is required."
+          },
+          "TextBody": {
+            "type": "string",
+            "description": "Plain text body; HtmlBody or TextBody is required."
+          }
+        },
+        "required": [
+          "From",
+          "To",
+          "Subject"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/email",
+        "bodyMapping": {
+          "From": "$From",
+          "To": "$To",
+          "Cc": "$Cc",
+          "Bcc": "$Bcc",
+          "ReplyTo": "$ReplyTo",
+          "Tag": "$Tag",
+          "Headers": "$Headers",
+          "TrackOpens": "$TrackOpens",
+          "TrackLinks": "$TrackLinks",
+          "Metadata": "$Metadata",
+          "Attachments": "$Attachments",
+          "MessageStream": "$MessageStream",
+          "Subject": "$Subject",
+          "HtmlBody": "$HtmlBody",
+          "TextBody": "$TextBody"
+        }
+      }
+    },
+    {
+      "name": "postmark_send_batch",
+      "description": "Send up to 500 different emails in one call; each message takes the same fields as postmark_send_email. Returns one result per message with its own ErrorCode (0 = accepted).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "description": "Messages: [{\"From\": \"a@example.com\", \"To\": \"b@example.com\", \"Subject\": \"Hi\", \"TextBody\": \"Hello\", \"MessageStream\": \"outbound\"}, ...], at most 500 and 50 MB.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "messages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/email/batch",
+        "bodyMapping": {
+          "__raw": "$messages"
+        }
+      }
+    },
+    {
+      "name": "postmark_send_email_with_template",
+      "description": "Send one email built from a stored template: pass TemplateId or TemplateAlias and the TemplateModel with the variables. Subject and body come from the template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "From": {
+            "type": "string",
+            "description": "Sender address of a confirmed sender signature or verified domain; \"Name <sender@example.com>\" adds a display name."
+          },
+          "To": {
+            "type": "string",
+            "description": "Recipient addresses, comma-separated (To, Cc and Bcc together at most 50)."
+          },
+          "Cc": {
+            "type": "string",
+            "description": "Cc addresses, comma-separated."
+          },
+          "Bcc": {
+            "type": "string",
+            "description": "Bcc addresses, comma-separated."
+          },
+          "ReplyTo": {
+            "type": "string",
+            "description": "Reply-To address(es), comma-separated."
+          },
+          "Tag": {
+            "type": "string",
+            "description": "One tag to group the email in statistics and searches, e.g. password-reset."
+          },
+          "Headers": {
+            "type": "array",
+            "description": "Custom headers: [{\"Name\": \"X-Ref\", \"Value\": \"123\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "TrackOpens": {
+            "type": "boolean",
+            "description": "Track opens for this email (needs an HTML body)."
+          },
+          "TrackLinks": {
+            "type": "string",
+            "description": "Link tracking: None, HtmlAndText, HtmlOnly or TextOnly.",
+            "enum": [
+              "None",
+              "HtmlAndText",
+              "HtmlOnly",
+              "TextOnly"
+            ]
+          },
+          "Metadata": {
+            "type": "object",
+            "description": "Your own key-value pairs stored with the message and returned in webhooks, e.g. {\"order_id\": \"123\"}."
+          },
+          "Attachments": {
+            "type": "array",
+            "description": "Attachments: [{\"Name\": \"invoice.pdf\", \"Content\": \"<base64>\", \"ContentType\": \"application/pdf\"}]; ContentID \"cid:logo.png\" for inline images. 10 MB total.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "MessageStream": {
+            "type": "string",
+            "description": "Message stream to send through: outbound (default, transactional) or a broadcast stream id for bulk mail."
+          },
+          "TemplateId": {
+            "type": "integer",
+            "description": "Template id; give TemplateId or TemplateAlias."
+          },
+          "TemplateAlias": {
+            "type": "string",
+            "description": "Template alias, e.g. welcome; give TemplateId or TemplateAlias."
+          },
+          "TemplateModel": {
+            "type": "object",
+            "description": "Values for the template variables, e.g. {\"name\": \"Ana\", \"action_url\": \"https://...\"}."
+          },
+          "InlineCss": {
+            "type": "boolean",
+            "description": "Inline the template CSS into the HTML (default true)."
+          }
+        },
+        "required": [
+          "From",
+          "To",
+          "TemplateModel"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/email/withTemplate",
+        "bodyMapping": {
+          "From": "$From",
+          "To": "$To",
+          "Cc": "$Cc",
+          "Bcc": "$Bcc",
+          "ReplyTo": "$ReplyTo",
+          "Tag": "$Tag",
+          "Headers": "$Headers",
+          "TrackOpens": "$TrackOpens",
+          "TrackLinks": "$TrackLinks",
+          "Metadata": "$Metadata",
+          "Attachments": "$Attachments",
+          "MessageStream": "$MessageStream",
+          "TemplateId": "$TemplateId",
+          "TemplateAlias": "$TemplateAlias",
+          "TemplateModel": "$TemplateModel",
+          "InlineCss": "$InlineCss"
+        }
+      }
+    },
+    {
+      "name": "postmark_send_batch_with_templates",
+      "description": "Send up to 500 templated emails in one call, each with its own template, recipient and model. Returns one result per message with its own ErrorCode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "description": "Messages: [{\"From\": \"a@example.com\", \"To\": \"b@example.com\", \"TemplateAlias\": \"welcome\", \"TemplateModel\": {\"name\": \"Ana\"}}, ...], at most 500.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "messages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/email/batchWithTemplates",
+        "bodyMapping": {
+          "Messages": "$messages"
+        }
+      }
+    },
+    {
+      "name": "postmark_list_templates",
+      "description": "List the templates of the server with id, alias, name, type (Standard or Layout), active flag and layout. Templates are used with postmark_send_email_with_template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          },
+          "template_type": {
+            "type": "string",
+            "description": "All (default), Standard or Layout.",
+            "enum": [
+              "All",
+              "Standard",
+              "Layout"
+            ]
+          },
+          "layout_template": {
+            "type": "string",
+            "description": "Only standard templates that use this layout alias."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates",
+        "queryParams": {
+          "Count": "$count",
+          "Offset": "$offset",
+          "TemplateType": "$template_type",
+          "LayoutTemplate": "$layout_template"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_template",
+      "description": "Get one template by id or alias: name, subject, HTML and text body with their Mustachio variables, type and layout.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string",
+            "description": "Template id (number) or alias."
+          }
+        },
+        "required": [
+          "template"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates/{template}"
+      }
+    },
+    {
+      "name": "postmark_create_template",
+      "description": "Create a template (Standard, or Layout to wrap other templates) with name, alias, subject and HTML/text bodies using Mustachio variables. Validate first with postmark_validate_template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Name": {
+            "type": "string",
+            "description": "Template name."
+          },
+          "Alias": {
+            "type": "string",
+            "description": "Alias to send by, letters, numbers, dots, dashes and underscores, starting with a letter."
+          },
+          "Subject": {
+            "type": "string",
+            "description": "Subject with optional {{variables}}; required for Standard templates, not allowed for Layouts."
+          },
+          "HtmlBody": {
+            "type": "string",
+            "description": "HTML body; a Layout must contain {{{@content}}}."
+          },
+          "TextBody": {
+            "type": "string",
+            "description": "Plain text body."
+          },
+          "LayoutTemplate": {
+            "type": "string",
+            "description": "Alias of the layout to wrap this standard template in."
+          },
+          "TemplateType": {
+            "type": "string",
+            "description": "Standard (default) or Layout.",
+            "enum": [
+              "Standard",
+              "Layout"
+            ]
+          }
+        },
+        "required": [
+          "Name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/templates",
+        "bodyMapping": {
+          "Name": "$Name",
+          "Alias": "$Alias",
+          "Subject": "$Subject",
+          "HtmlBody": "$HtmlBody",
+          "TextBody": "$TextBody",
+          "LayoutTemplate": "$LayoutTemplate",
+          "TemplateType": "$TemplateType"
+        }
+      }
+    },
+    {
+      "name": "postmark_update_template",
+      "description": "Edit a template by id or alias: name, alias, subject, bodies or layout. Only the fields passed change; the next send uses the new version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string",
+            "description": "Template id (number) or alias."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Template name."
+          },
+          "Alias": {
+            "type": "string",
+            "description": "Alias to send by, letters, numbers, dots, dashes and underscores, starting with a letter."
+          },
+          "Subject": {
+            "type": "string",
+            "description": "Subject with optional {{variables}}; required for Standard templates, not allowed for Layouts."
+          },
+          "HtmlBody": {
+            "type": "string",
+            "description": "HTML body; a Layout must contain {{{@content}}}."
+          },
+          "TextBody": {
+            "type": "string",
+            "description": "Plain text body."
+          },
+          "LayoutTemplate": {
+            "type": "string",
+            "description": "Alias of the layout to wrap this standard template in."
+          }
+        },
+        "required": [
+          "template"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/templates/{template}",
+        "bodyMapping": {
+          "Name": "$Name",
+          "Alias": "$Alias",
+          "Subject": "$Subject",
+          "HtmlBody": "$HtmlBody",
+          "TextBody": "$TextBody",
+          "LayoutTemplate": "$LayoutTemplate"
+        }
+      }
+    },
+    {
+      "name": "postmark_delete_template",
+      "description": "Delete a template for good by id or alias. A layout cannot be deleted while standard templates still use it. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string",
+            "description": "Template id (number) or alias."
+          }
+        },
+        "required": [
+          "template"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/templates/{template}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "postmark_validate_template",
+      "description": "Check template content without saving: Mustachio syntax errors, the variables it uses and a rendered preview with a test model.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Subject": {
+            "type": "string",
+            "description": "Subject to check."
+          },
+          "HtmlBody": {
+            "type": "string",
+            "description": "HTML body to check."
+          },
+          "TextBody": {
+            "type": "string",
+            "description": "Text body to check."
+          },
+          "TestRenderModel": {
+            "type": "object",
+            "description": "Example values to render with, e.g. {\"name\": \"Ana\"}."
+          },
+          "InlineCssForHtmlTestRender": {
+            "type": "boolean",
+            "description": "Inline CSS in the rendered HTML (default true)."
+          },
+          "TemplateType": {
+            "type": "string",
+            "description": "Standard (default) or Layout.",
+            "enum": [
+              "Standard",
+              "Layout"
+            ]
+          },
+          "LayoutTemplate": {
+            "type": "string",
+            "description": "Layout alias to render the standard template in."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/templates/validate",
+        "bodyMapping": {
+          "Subject": "$Subject",
+          "HtmlBody": "$HtmlBody",
+          "TextBody": "$TextBody",
+          "TestRenderModel": "$TestRenderModel",
+          "InlineCssForHtmlTestRender": "$InlineCssForHtmlTestRender",
+          "TemplateType": "$TemplateType",
+          "LayoutTemplate": "$LayoutTemplate"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "postmark_search_outbound_messages",
+      "description": "Search sent messages (last 45 days by default retention) by recipient, sender, tag, subject, status, stream, date range or one metadata field. Returns TotalCount and Messages with MessageID, status and recipients.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          },
+          "recipient": {
+            "type": "string",
+            "description": "Recipient address."
+          },
+          "fromemail": {
+            "type": "string",
+            "description": "Sender address."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag."
+          },
+          "status": {
+            "type": "string",
+            "description": "queued or sent (sent and processed are the same).",
+            "enum": [
+              "queued",
+              "sent",
+              "processed"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject."
+          },
+          "messagestream": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "From this date or date-time, e.g. 2026-10-01 or 2026-10-01T12:00:00 (US Eastern Time)."
+          },
+          "todate": {
+            "type": "string",
+            "description": "Up to this date or date-time, inclusive (US Eastern Time)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/outbound",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset",
+          "recipient": "$recipient",
+          "fromemail": "$fromemail",
+          "tag": "$tag",
+          "status": "$status",
+          "subject": "$subject",
+          "messagestream": "$messagestream",
+          "fromdate": "$fromdate",
+          "todate": "$todate"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_outbound_message",
+      "description": "Details of one sent message by MessageID: recipients, subject, bodies, tag, metadata and the MessageEvents timeline (delivered, bounced, opened, clicked, ...).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "MessageID from a send result or a search."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/outbound/{message_id}/details"
+      }
+    },
+    {
+      "name": "postmark_search_inbound_messages",
+      "description": "Search inbound messages received by the server by recipient, sender, subject, mailbox hash, tag, status or date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          },
+          "recipient": {
+            "type": "string",
+            "description": "Recipient address."
+          },
+          "fromemail": {
+            "type": "string",
+            "description": "Sender address."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject."
+          },
+          "mailboxhash": {
+            "type": "string",
+            "description": "Mailbox hash (the part after + in the inbound address)."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag."
+          },
+          "status": {
+            "type": "string",
+            "description": "blocked, processed (default), queued, failed or scheduled.",
+            "enum": [
+              "blocked",
+              "processed",
+              "queued",
+              "failed",
+              "scheduled"
+            ]
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "From this date or date-time, e.g. 2026-10-01 or 2026-10-01T12:00:00 (US Eastern Time)."
+          },
+          "todate": {
+            "type": "string",
+            "description": "Up to this date or date-time, inclusive (US Eastern Time)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/inbound",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset",
+          "recipient": "$recipient",
+          "fromemail": "$fromemail",
+          "subject": "$subject",
+          "mailboxhash": "$mailboxhash",
+          "tag": "$tag",
+          "status": "$status",
+          "fromdate": "$fromdate",
+          "todate": "$todate"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_inbound_message",
+      "description": "Details of one inbound message: sender, recipients, subject, text and HTML body, headers, attachments list, status and the webhook processing result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "MessageID of the inbound message."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/inbound/{message_id}/details"
+      }
+    },
+    {
+      "name": "postmark_retry_inbound_message",
+      "description": "Retry posting a failed inbound message to the server's inbound webhook, e.g. after fixing the endpoint.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "MessageID of a failed inbound message."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/messages/inbound/{message_id}/retry"
+      }
+    },
+    {
+      "name": "postmark_list_message_opens",
+      "description": "List open events across messages with recipient, time, email client, OS, platform and location. Filter by recipient, tag, stream, client or location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          },
+          "recipient": {
+            "type": "string",
+            "description": "Recipient address."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag."
+          },
+          "messagestream": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          },
+          "client_family": {
+            "type": "string",
+            "description": "Email client family, e.g. Gmail or Outlook."
+          },
+          "os_family": {
+            "type": "string",
+            "description": "Operating system family, e.g. iOS."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Platform: Desktop, Mobile, WebMail or Unknown."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country name."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region name."
+          },
+          "city": {
+            "type": "string",
+            "description": "City name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/outbound/opens",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset",
+          "recipient": "$recipient",
+          "tag": "$tag",
+          "messagestream": "$messagestream",
+          "client_family": "$client_family",
+          "os_family": "$os_family",
+          "platform": "$platform",
+          "country": "$country",
+          "region": "$region",
+          "city": "$city"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_message_opens",
+      "description": "List the open events of one message: each open with time, client, OS, platform and location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "MessageID."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/outbound/opens/{message_id}",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "postmark_list_message_clicks",
+      "description": "List link click events across messages with recipient, clicked URL, time, browser, OS, platform and location. Filter by recipient, tag, stream, client or location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          },
+          "recipient": {
+            "type": "string",
+            "description": "Recipient address."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag."
+          },
+          "messagestream": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          },
+          "client_family": {
+            "type": "string",
+            "description": "Email client family, e.g. Gmail or Outlook."
+          },
+          "os_family": {
+            "type": "string",
+            "description": "Operating system family, e.g. iOS."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Platform: Desktop, Mobile, WebMail or Unknown."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country name."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region name."
+          },
+          "city": {
+            "type": "string",
+            "description": "City name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/outbound/clicks",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset",
+          "recipient": "$recipient",
+          "tag": "$tag",
+          "messagestream": "$messagestream",
+          "client_family": "$client_family",
+          "os_family": "$os_family",
+          "platform": "$platform",
+          "country": "$country",
+          "region": "$region",
+          "city": "$city"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_message_clicks",
+      "description": "List the link click events of one message: each click with the original link, time, browser, OS and location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "MessageID."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/outbound/clicks/{message_id}",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_delivery_stats",
+      "description": "Bounce summary of the server: number of inactive (deactivated) addresses and the count of bounces per bounce type.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deliverystats"
+      }
+    },
+    {
+      "name": "postmark_list_bounces",
+      "description": "List bounces with type, recipient, description, details, whether the address is now inactive and whether it can be activated. Filter by type, address, tag, message, stream or date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          },
+          "type": {
+            "type": "string",
+            "description": "Bounce type.",
+            "enum": [
+              "HardBounce",
+              "Transient",
+              "Unsubscribe",
+              "Subscribe",
+              "AutoResponder",
+              "AddressChange",
+              "DnsError",
+              "SpamNotification",
+              "OpenRelayTest",
+              "Unknown",
+              "SoftBounce",
+              "VirusNotification",
+              "ChallengeVerification",
+              "BadEmailAddress",
+              "SpamComplaint",
+              "ManuallyDeactivated",
+              "Unconfirmed",
+              "Blocked",
+              "SMTPApiError",
+              "InboundError",
+              "DMARCPolicy",
+              "TemplateRenderingFailed"
+            ]
+          },
+          "inactive": {
+            "type": "boolean",
+            "description": "true: only bounces that deactivated the address; false: only those that did not."
+          },
+          "email_filter": {
+            "type": "string",
+            "description": "Recipient address or part of it."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Tag."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "MessageID of the bounced message."
+          },
+          "messagestream": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "From this date or date-time, e.g. 2026-10-01 or 2026-10-01T12:00:00 (US Eastern Time)."
+          },
+          "todate": {
+            "type": "string",
+            "description": "Up to this date or date-time, inclusive (US Eastern Time)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bounces",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset",
+          "type": "$type",
+          "inactive": "$inactive",
+          "emailFilter": "$email_filter",
+          "tag": "$tag",
+          "messageID": "$message_id",
+          "messagestream": "$messagestream",
+          "fromdate": "$fromdate",
+          "todate": "$todate"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_bounce",
+      "description": "Get one bounce by id: type, recipient, description, SMTP details, the related MessageID, Inactive and CanActivate flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bounce_id": {
+            "type": "integer",
+            "description": "Bounce id from postmark_list_bounces."
+          }
+        },
+        "required": [
+          "bounce_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bounces/{bounce_id}"
+      }
+    },
+    {
+      "name": "postmark_get_bounce_dump",
+      "description": "Get the raw SMTP source of a bounce message (kept for 30 days), to read the receiving server's exact answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bounce_id": {
+            "type": "integer",
+            "description": "Bounce id."
+          }
+        },
+        "required": [
+          "bounce_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bounces/{bounce_id}/dump"
+      }
+    },
+    {
+      "name": "postmark_activate_bounce",
+      "description": "Reactivate an address deactivated by a bounce so it can receive email again. Only when CanActivate is true; spam complaints cannot be activated. Confirm the address with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bounce_id": {
+            "type": "integer",
+            "description": "Bounce id."
+          }
+        },
+        "required": [
+          "bounce_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/bounces/{bounce_id}/activate"
+      }
+    },
+    {
+      "name": "postmark_get_outbound_overview",
+      "description": "Sending overview for a period: sent, bounced, spam complaints, bounce and spam rates, opens, unique opens, tracked emails and link clicks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "description": "Only this tag."
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD."
+          },
+          "todate": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          },
+          "messagestream": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stats/outbound",
+        "queryParams": {
+          "tag": "$tag",
+          "fromdate": "$fromdate",
+          "todate": "$todate",
+          "messagestream": "$messagestream"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_outbound_stats",
+      "description": "Daily counts of one metric for a period: sends, bounces (by type), spam, tracked, opens, opens by platform or email client, clicks, clicks by browser, platform or location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "description": "Which statistic.",
+            "enum": [
+              "sends",
+              "bounces",
+              "spam",
+              "tracked",
+              "opens",
+              "opens/platforms",
+              "opens/emailclients",
+              "clicks",
+              "clicks/browserfamilies",
+              "clicks/platforms",
+              "clicks/location"
+            ]
+          },
+          "tag": {
+            "type": "string",
+            "description": "Only this tag."
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD."
+          },
+          "todate": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          },
+          "messagestream": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          }
+        },
+        "required": [
+          "metric"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stats/outbound/{metric}",
+        "queryParams": {
+          "tag": "$tag",
+          "fromdate": "$fromdate",
+          "todate": "$todate",
+          "messagestream": "$messagestream"
+        }
+      }
+    },
+    {
+      "name": "postmark_list_suppressions",
+      "description": "List suppressed addresses of a message stream (no email is sent to them) with the reason (HardBounce, SpamComplaint, ManualSuppression), origin and date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          },
+          "suppression_reason": {
+            "type": "string",
+            "description": "Only this reason.",
+            "enum": [
+              "HardBounce",
+              "SpamComplaint",
+              "ManualSuppression"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "description": "How it was added: Recipient, Customer or Admin.",
+            "enum": [
+              "Recipient",
+              "Customer",
+              "Admin"
+            ]
+          },
+          "fromdate": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD."
+          },
+          "todate": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          },
+          "email_address": {
+            "type": "string",
+            "description": "Only this address."
+          }
+        },
+        "required": [
+          "stream_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/message-streams/{stream_id}/suppressions/dump",
+        "queryParams": {
+          "SuppressionReason": "$suppression_reason",
+          "Origin": "$origin",
+          "fromdate": "$fromdate",
+          "todate": "$todate",
+          "EmailAddress": "$email_address"
+        }
+      }
+    },
+    {
+      "name": "postmark_create_suppressions",
+      "description": "Suppress up to 50 addresses in a message stream so nothing is sent to them any more (ManualSuppression). Returns a status per address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          },
+          "suppressions": {
+            "type": "array",
+            "description": "Addresses, at most 50: [{\"EmailAddress\": \"someone@example.com\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "stream_id",
+          "suppressions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message-streams/{stream_id}/suppressions",
+        "bodyMapping": {
+          "Suppressions": "$suppressions"
+        }
+      }
+    },
+    {
+      "name": "postmark_delete_suppressions",
+      "description": "Remove up to 50 addresses from the suppression list of a stream so they can receive email again. SpamComplaint suppressions cannot be removed. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          },
+          "suppressions": {
+            "type": "array",
+            "description": "Addresses, at most 50: [{\"EmailAddress\": \"someone@example.com\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "stream_id",
+          "suppressions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message-streams/{stream_id}/suppressions/delete",
+        "bodyMapping": {
+          "Suppressions": "$suppressions"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "postmark_list_message_streams",
+      "description": "List the message streams of the server (Transactional, Broadcasts, Inbound) with id, name, description, unsubscribe handling and archive state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_stream_type": {
+            "type": "string",
+            "description": "All (default), Inbound, Transactional or Broadcasts.",
+            "enum": [
+              "All",
+              "Inbound",
+              "Transactional",
+              "Broadcasts"
+            ]
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "Include archived streams (default false)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/message-streams",
+        "queryParams": {
+          "MessageStreamType": "$message_stream_type",
+          "IncludeArchivedStreams": "$include_archived"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_message_stream",
+      "description": "Get one message stream by id: name, type, description, unsubscribe handling, created, updated and archived dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          }
+        },
+        "required": [
+          "stream_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/message-streams/{stream_id}"
+      }
+    },
+    {
+      "name": "postmark_create_message_stream",
+      "description": "Create a message stream: Transactional for app email or Broadcasts for bulk and marketing mail (at most 10 streams per server, one Inbound).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ID": {
+            "type": "string",
+            "description": "Stream id, lower case letters, numbers and dashes, e.g. newsletter."
+          },
+          "Name": {
+            "type": "string",
+            "description": "Display name."
+          },
+          "MessageStreamType": {
+            "type": "string",
+            "description": "Transactional or Broadcasts (Inbound exists once per server).",
+            "enum": [
+              "Transactional",
+              "Broadcasts",
+              "Inbound"
+            ]
+          },
+          "Description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "SubscriptionManagementConfiguration": {
+            "type": "object",
+            "description": "Unsubscribe handling: {\"UnsubscribeHandlingType\": \"Postmark\"}; Postmark (default for Broadcasts), Custom or None (Transactional and Inbound)."
+          }
+        },
+        "required": [
+          "ID",
+          "Name",
+          "MessageStreamType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message-streams",
+        "bodyMapping": {
+          "ID": "$ID",
+          "Name": "$Name",
+          "MessageStreamType": "$MessageStreamType",
+          "Description": "$Description",
+          "SubscriptionManagementConfiguration": "$SubscriptionManagementConfiguration"
+        }
+      }
+    },
+    {
+      "name": "postmark_update_message_stream",
+      "description": "Edit a message stream: name, description or unsubscribe handling. The id and type cannot change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          },
+          "Name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "Description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "SubscriptionManagementConfiguration": {
+            "type": "object",
+            "description": "Unsubscribe handling: {\"UnsubscribeHandlingType\": \"Postmark\"}; Postmark (default for Broadcasts), Custom or None (Transactional and Inbound)."
+          }
+        },
+        "required": [
+          "stream_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/message-streams/{stream_id}",
+        "bodyMapping": {
+          "Name": "$Name",
+          "Description": "$Description",
+          "SubscriptionManagementConfiguration": "$SubscriptionManagementConfiguration"
+        }
+      }
+    },
+    {
+      "name": "postmark_archive_message_stream",
+      "description": "Archive a message stream: it stops sending and is deleted with its data after 45 days unless restored with postmark_unarchive_message_stream. Default streams cannot be archived.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          }
+        },
+        "required": [
+          "stream_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message-streams/{stream_id}/archive"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "postmark_unarchive_message_stream",
+      "description": "Restore an archived message stream within 45 days of archiving so it can send again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stream_id": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          }
+        },
+        "required": [
+          "stream_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message-streams/{stream_id}/unarchive"
+      }
+    },
+    {
+      "name": "postmark_list_webhooks",
+      "description": "List the webhooks of the server with URL, stream, HTTP auth and headers, and which events trigger them (Open, Click, Delivery, Bounce, SpamComplaint, SubscriptionChange).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "messagestream": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks",
+        "queryParams": {
+          "MessageStream": "$messagestream"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_webhook",
+      "description": "Get one webhook by id: URL, message stream, HTTP auth user, custom headers and enabled triggers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_id": {
+            "type": "integer",
+            "description": "Webhook id."
+          }
+        },
+        "required": [
+          "webhook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks/{webhook_id}"
+      }
+    },
+    {
+      "name": "postmark_create_webhook",
+      "description": "Create a webhook for a message stream: the URL and which events (opens, clicks, deliveries, bounces, spam complaints, subscription changes) to post to it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "Url": {
+            "type": "string",
+            "description": "HTTPS URL that receives the POSTs."
+          },
+          "HttpAuth": {
+            "type": "object",
+            "description": "Basic auth for your endpoint: {\"Username\": \"u\", \"Password\": \"p\"}."
+          },
+          "HttpHeaders": {
+            "type": "array",
+            "description": "Custom headers: [{\"Name\": \"X-Key\", \"Value\": \"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "Triggers": {
+            "type": "object",
+            "description": "Events: {\"Open\": {\"Enabled\": true, \"PostFirstOpenOnly\": false}, \"Click\": {\"Enabled\": true}, \"Delivery\": {\"Enabled\": true}, \"Bounce\": {\"Enabled\": true, \"IncludeContent\": false}, \"SpamComplaint\": {\"Enabled\": true, \"IncludeContent\": false}, \"SubscriptionChange\": {\"Enabled\": true}}."
+          },
+          "Verify": {
+            "type": "boolean",
+            "description": "Test the endpoint for each enabled event before saving (default true)."
+          },
+          "MessageStream": {
+            "type": "string",
+            "description": "Message stream id, e.g. outbound (default transactional stream), broadcast or your own stream id from postmark_list_message_streams."
+          }
+        },
+        "required": [
+          "Url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/webhooks",
+        "bodyMapping": {
+          "Url": "$Url",
+          "HttpAuth": "$HttpAuth",
+          "HttpHeaders": "$HttpHeaders",
+          "Triggers": "$Triggers",
+          "Verify": "$Verify",
+          "MessageStream": "$MessageStream"
+        }
+      }
+    },
+    {
+      "name": "postmark_update_webhook",
+      "description": "Edit a webhook: URL, HTTP auth, headers or triggers. Triggers left out keep their setting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_id": {
+            "type": "integer",
+            "description": "Webhook id."
+          },
+          "Url": {
+            "type": "string",
+            "description": "HTTPS URL that receives the POSTs."
+          },
+          "HttpAuth": {
+            "type": "object",
+            "description": "Basic auth for your endpoint: {\"Username\": \"u\", \"Password\": \"p\"}."
+          },
+          "HttpHeaders": {
+            "type": "array",
+            "description": "Custom headers: [{\"Name\": \"X-Key\", \"Value\": \"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "Triggers": {
+            "type": "object",
+            "description": "Events: {\"Open\": {\"Enabled\": true, \"PostFirstOpenOnly\": false}, \"Click\": {\"Enabled\": true}, \"Delivery\": {\"Enabled\": true}, \"Bounce\": {\"Enabled\": true, \"IncludeContent\": false}, \"SpamComplaint\": {\"Enabled\": true, \"IncludeContent\": false}, \"SubscriptionChange\": {\"Enabled\": true}}."
+          },
+          "Verify": {
+            "type": "boolean",
+            "description": "Test the endpoint for each enabled event before saving (default true)."
+          }
+        },
+        "required": [
+          "webhook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/webhooks/{webhook_id}",
+        "bodyMapping": {
+          "Url": "$Url",
+          "HttpAuth": "$HttpAuth",
+          "HttpHeaders": "$HttpHeaders",
+          "Triggers": "$Triggers",
+          "Verify": "$Verify"
+        }
+      }
+    },
+    {
+      "name": "postmark_delete_webhook",
+      "description": "Delete a webhook; Postmark stops posting those events to its URL. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_id": {
+            "type": "integer",
+            "description": "Webhook id."
+          }
+        },
+        "required": [
+          "webhook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/webhooks/{webhook_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "postmark_get_server",
+      "description": "Settings of the server the token belongs to: id, name, color, inbound address and domain, tracking defaults, hook URLs and SMTP API state. Needs no ids; checks the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/server"
+      }
+    },
+    {
+      "name": "postmark_list_servers",
+      "description": "List all servers of the account with id, name, color, API tokens and settings. Needs POSTMARK_ACCOUNT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "Only servers whose name contains this text."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/servers",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset",
+          "name": "$name"
+        },
+        "headers": {
+          "X-Postmark-Account-Token": "${POSTMARK_ACCOUNT_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_server_by_id",
+      "description": "Get one server of the account by id with its settings and API tokens. Needs POSTMARK_ACCOUNT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "integer",
+            "description": "Server id from postmark_list_servers."
+          }
+        },
+        "required": [
+          "server_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/servers/{server_id}",
+        "headers": {
+          "X-Postmark-Account-Token": "${POSTMARK_ACCOUNT_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "postmark_list_domains",
+      "description": "List the sending domains of the account with DKIM, Return-Path and SPF verification state. Needs POSTMARK_ACCOUNT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domains",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset"
+        },
+        "headers": {
+          "X-Postmark-Account-Token": "${POSTMARK_ACCOUNT_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_domain",
+      "description": "Get one domain with the DNS records to set (DKIM host and value, pending DKIM, Return-Path CNAME) and their verification state. Needs POSTMARK_ACCOUNT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_id": {
+            "type": "integer",
+            "description": "Domain id from postmark_list_domains."
+          }
+        },
+        "required": [
+          "domain_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domains/{domain_id}",
+        "headers": {
+          "X-Postmark-Account-Token": "${POSTMARK_ACCOUNT_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "postmark_verify_domain_dkim",
+      "description": "Ask Postmark to check the DKIM DNS record of a domain now, after the user has added it. Returns the domain with DKIMVerified. Needs POSTMARK_ACCOUNT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_id": {
+            "type": "integer",
+            "description": "Domain id."
+          }
+        },
+        "required": [
+          "domain_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/domains/{domain_id}/verifyDkim",
+        "headers": {
+          "X-Postmark-Account-Token": "${POSTMARK_ACCOUNT_TOKEN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "postmark_verify_domain_return_path",
+      "description": "Ask Postmark to check the Return-Path CNAME of a domain now. Returns the domain with ReturnPathDomainVerified. Needs POSTMARK_ACCOUNT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_id": {
+            "type": "integer",
+            "description": "Domain id."
+          }
+        },
+        "required": [
+          "domain_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/domains/{domain_id}/verifyReturnPath",
+        "headers": {
+          "X-Postmark-Account-Token": "${POSTMARK_ACCOUNT_TOKEN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "postmark_list_sender_signatures",
+      "description": "List the sender signatures (single confirmed From addresses) of the account with confirmation and DKIM state. Needs POSTMARK_ACCOUNT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Items per page, 1 to 500.",
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip; count + offset may not exceed 10,000.",
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/senders",
+        "queryParams": {
+          "count": "$count",
+          "offset": "$offset"
+        },
+        "headers": {
+          "X-Postmark-Account-Token": "${POSTMARK_ACCOUNT_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "postmark_get_sender_signature",
+      "description": "Get one sender signature: From address, name, reply-to, confirmed flag, domain and DNS verification details. Needs POSTMARK_ACCOUNT_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signature_id": {
+            "type": "integer",
+            "description": "Sender signature id."
+          }
+        },
+        "required": [
+          "signature_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/senders/{signature_id}",
+        "headers": {
+          "X-Postmark-Account-Token": "${POSTMARK_ACCOUNT_TOKEN}"
+        }
+      }
+    }
+  ]
+}

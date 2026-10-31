@@ -1,0 +1,1140 @@
+{
+  "slug": "vapi",
+  "name": "Vapi",
+  "aliases": [
+    "Vapi AI",
+    "Vapi voice AI"
+  ],
+  "description": "Let your AI work with Vapi voice agents: read and change assistants and squads, review calls with transcripts, recordings, analysis and costs, start outbound phone calls, route phone numbers, test assistants over text chat, manage files and knowledge bases, and query call analytics.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "vapi",
+  "docsUrl": "https://docs.vapi.ai/api-reference",
+  "instructions": "## Vapi\nThis connector works with one **Vapi** organization through the Vapi REST API (`https://api.vapi.ai`): voice assistants and squads, phone calls (list, inspect transcripts, recordings, analysis and costs, start outbound calls), phone numbers and who answers them, the tools assistants call, uploaded files and knowledge bases, text chats with assistants, outbound campaigns and call analytics.\n\n**Setup (2 minutes)**\n1. Sign in at https://dashboard.vapi.ai and open **API Keys** (organization settings).\n2. Copy the **private key** (not the public key, which only starts web calls) into `VAPI_API_KEY`. It is sent as `Authorization: Bearer <key>` and has the full rights of the organization.\n3. Run `vapi_list_assistants` to check the key.\n\n**Calls cost money and reach real people**: `vapi_create_call` dials a real phone number. Vapi bills every minute (platform, model, voice, transcriber and telephony), and calling people who did not agree to it can break telemarketing laws (TCPA in the US, and similar rules elsewhere). Show the user the number called, the number called from, the assistant and the variables, and start the call only after a clear yes. `vapi_create_chat` also bills model usage. Changes made with `vapi_update_assistant` and `vapi_update_phone_number` affect live calls at once; confirm them too.\n\n**Workflow**\n- Assistants: `vapi_list_assistants`, then `vapi_get_assistant` for the prompt (model.messages), voice and settings. Create one with `vapi_create_assistant`, change it with `vapi_update_assistant` (read it first: model, voice and other objects are replaced as a whole). Squads: `vapi_list_squads`, `vapi_get_squad`.\n- Testing a prompt without a phone: `vapi_create_chat` with the assistant id and a message; keep the conversation going with previous_chat_id. Past chats: `vapi_list_chats`, `vapi_get_chat`.\n- Call history: `vapi_list_calls` (filter by assistant, number or time), then `vapi_get_call` for the transcript, the summary in analysis, the recording URL and the cost breakdown. When a call failed without an obvious endedReason, `vapi_get_call_logs` gives the debug log.\n- Outbound calls: pick a number with `vapi_list_phone_numbers` and an assistant, then `vapi_create_call` with customer_number (E.164) and template variables in assistant_overrides.variableValues. Poll `vapi_get_call` until status is ended. Campaigns (batch calls set up in the dashboard): `vapi_list_campaigns`, `vapi_get_campaign`.\n- Inbound routing: `vapi_get_phone_number`, `vapi_update_phone_number` to set the assistant or squad that answers.\n- Tools: `vapi_list_tools`, `vapi_get_tool`.\n- Knowledge: `vapi_list_files`, `vapi_get_file`, `vapi_upload_file` (from a public URL), `vapi_list_knowledge_bases`, `vapi_get_knowledge_base`.\n- Reporting: `vapi_query_analytics` for counts, minutes and spend per day, assistant or ended reason.\n\n**Reading the answers**: ids are UUIDs. Times are ISO 8601 in UTC. `cost` and the costBreakdown are in **USD**. Call `status` runs scheduled, queued, ringing, in-progress, forwarding, ended; `endedReason` says why it ended (customer-ended-call, assistant-ended-call, silence-timed-out, voicemail, or an error code such as pipeline-error-...). Recording URLs in artifact are links to Vapi storage.\n\n**Paging**: the list tools for assistants, calls, squads, tools and files return a plain array, newest first, capped by `limit`. For the next page pass the `createdAt` of the last item as `created_at_lt`. Phone numbers, chats and campaigns return `results` with `metadata` (currentPage, totalPages, hasNextPage); pass `page`.\n\n**Errors**: 401 means a wrong key or the public key; 400 names the field Vapi rejected (for example a number not in E.164 format, or both assistant_id and squad_id); 404 an unknown id; 402 or a billing error means the organization has no credit left; 429 a rate or concurrency limit (concurrent calls are capped per plan).",
+  "prerequisites": "A Vapi account (dashboard.vapi.ai) and its private API key. Outbound calls need a phone number in Vapi and credit on the account. About 2 minutes.",
+  "requiredEnvVars": [
+    "VAPI_API_KEY"
+  ],
+  "appRegistrationUrl": "https://dashboard.vapi.ai",
+  "envVarMeta": {
+    "VAPI_API_KEY": {
+      "label": "Private API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Vapi Dashboard, API Keys: the private key (a UUID). The public key only starts web calls and is refused here. Paste it without the Bearer prefix.",
+      "link": "https://dashboard.vapi.ai",
+      "pattern": "^(?!Bearer )[A-Za-z0-9-]{20,}$",
+      "patternMessage": "Paste the private key as Vapi shows it (a UUID such as 1a2b3c4d-...), without spaces or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Vapi refused the key. Use the private key from Dashboard, API Keys (not the public key), without a Bearer prefix.",
+    "403": "Vapi accepted the key but refused this request for the organization.",
+    "429": "Vapi is rate limiting this organization or the concurrent call limit of the plan is reached. Wait and try again."
+  },
+  "probe": {
+    "tool": "vapi_list_assistants"
+  },
+  "connector": {
+    "name": "Vapi API",
+    "type": "REST",
+    "baseUrl": "https://api.vapi.ai",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{VAPI_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/assistant?limit=1"
+  },
+  "tools": [
+    {
+      "name": "vapi_list_assistants",
+      "description": "List the voice assistants of the Vapi organization, newest first: id, name, firstMessage, model provider and model, voice, transcriber, createdAt. Prompts, tools and plans are left out here; vapi_get_assistant returns the full configuration.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (default 25, at most 1000), newest first.",
+            "default": 25
+          },
+          "created_at_gt": {
+            "type": "string",
+            "description": "Only items created after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_at_lt": {
+            "type": "string",
+            "description": "Only items created before this ISO 8601 time. For the next page pass the createdAt of the last item you got."
+          },
+          "updated_at_gt": {
+            "type": "string",
+            "description": "Only items updated after this ISO 8601 time."
+          },
+          "updated_at_lt": {
+            "type": "string",
+            "description": "Only items updated before this ISO 8601 time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assistant",
+        "queryParams": {
+          "limit": "$limit",
+          "createdAtGt": "$created_at_gt",
+          "createdAtLt": "$created_at_lt",
+          "updatedAtGt": "$updated_at_gt",
+          "updatedAtLt": "$updated_at_lt"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].model.messages",
+            "[*].model.tools",
+            "[*].analysisPlan",
+            "[*].artifactPlan",
+            "[*].startSpeakingPlan",
+            "[*].stopSpeakingPlan",
+            "[*].monitorPlan",
+            "[*].credentials",
+            "[*].hooks",
+            "[*].transportConfigurations",
+            "[*].backgroundSpeechDenoisingPlan",
+            "[*].compliancePlan",
+            "[*].server",
+            "[*].serverMessages",
+            "[*].clientMessages"
+          ]
+        }
+      }
+    },
+    {
+      "name": "vapi_get_assistant",
+      "description": "Full configuration of one assistant: model with the system prompt (model.messages) and tool ids, voice, transcriber, first message, voicemail and end-call settings, analysis and artifact plans, server URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assistant_id": {
+            "type": "string",
+            "description": "The assistant id (a UUID)."
+          }
+        },
+        "required": [
+          "assistant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assistant/{assistant_id}"
+      }
+    },
+    {
+      "name": "vapi_create_assistant",
+      "description": "Create a voice assistant. Usually give name, first_message, model (with the system prompt in model.messages), voice and transcriber; Vapi fills defaults for the rest. Returns the assistant with its id. Ask the user to confirm the configuration first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the assistant (needed to transfer between assistants in a squad)."
+          },
+          "first_message": {
+            "type": "string",
+            "description": "What the assistant says first, e.g. \"Hi, this is Ava from Acme. How can I help?\"."
+          },
+          "first_message_mode": {
+            "type": "string",
+            "description": "Who speaks first.",
+            "enum": [
+              "assistant-speaks-first",
+              "assistant-speaks-first-with-model-generated-message",
+              "assistant-waits-for-user"
+            ]
+          },
+          "model": {
+            "type": "object",
+            "description": "The LLM, e.g. {\"provider\": \"openai\", \"model\": \"gpt-4o\", \"messages\": [{\"role\": \"system\", \"content\": \"You are ...\"}], \"toolIds\": [\"...\"]}. The system prompt lives in model.messages. On update the whole model object is replaced, so send it complete (read it first with vapi_get_assistant)."
+          },
+          "voice": {
+            "type": "object",
+            "description": "The voice, e.g. {\"provider\": \"vapi\", \"voiceId\": \"Elliot\"} or {\"provider\": \"11labs\", \"voiceId\": \"...\"}."
+          },
+          "transcriber": {
+            "type": "object",
+            "description": "Speech to text, e.g. {\"provider\": \"deepgram\", \"model\": \"nova-3\", \"language\": \"en\"}."
+          },
+          "voicemail_message": {
+            "type": "string",
+            "description": "What the assistant says when the call reaches voicemail."
+          },
+          "end_call_message": {
+            "type": "string",
+            "description": "What the assistant says before it hangs up."
+          },
+          "end_call_phrases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Phrases that end the call when the assistant says them."
+          },
+          "max_duration_seconds": {
+            "type": "integer",
+            "description": "Maximum call length in seconds (Vapi default 600)."
+          },
+          "analysis_plan": {
+            "type": "object",
+            "description": "Post-call analysis, stored in call.analysis: e.g. {\"summaryPlan\": {...}, \"successEvaluationPlan\": {...}}."
+          },
+          "server": {
+            "type": "object",
+            "description": "Where Vapi sends webhooks and tool calls: {\"url\": \"https://...\", \"timeoutSeconds\": 20}."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Your own key/value data stored on the assistant."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/assistant",
+        "bodyMapping": {
+          "name": "$name",
+          "firstMessage": "$first_message",
+          "firstMessageMode": "$first_message_mode",
+          "model": "$model",
+          "voice": "$voice",
+          "transcriber": "$transcriber",
+          "voicemailMessage": "$voicemail_message",
+          "endCallMessage": "$end_call_message",
+          "endCallPhrases": "$end_call_phrases",
+          "maxDurationSeconds": "$max_duration_seconds",
+          "analysisPlan": "$analysis_plan",
+          "server": "$server",
+          "metadata": "$metadata"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vapi_update_assistant",
+      "description": "Change an assistant. Only the fields you send change, but an object field (model, voice, transcriber, analysis_plan, server) is replaced as a whole, so read the assistant first and send the complete object. Takes effect on the next call, including live inbound numbers; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assistant_id": {
+            "type": "string",
+            "description": "The assistant id (a UUID)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the assistant (needed to transfer between assistants in a squad)."
+          },
+          "first_message": {
+            "type": "string",
+            "description": "What the assistant says first, e.g. \"Hi, this is Ava from Acme. How can I help?\"."
+          },
+          "first_message_mode": {
+            "type": "string",
+            "description": "Who speaks first.",
+            "enum": [
+              "assistant-speaks-first",
+              "assistant-speaks-first-with-model-generated-message",
+              "assistant-waits-for-user"
+            ]
+          },
+          "model": {
+            "type": "object",
+            "description": "The LLM, e.g. {\"provider\": \"openai\", \"model\": \"gpt-4o\", \"messages\": [{\"role\": \"system\", \"content\": \"You are ...\"}], \"toolIds\": [\"...\"]}. The system prompt lives in model.messages. On update the whole model object is replaced, so send it complete (read it first with vapi_get_assistant)."
+          },
+          "voice": {
+            "type": "object",
+            "description": "The voice, e.g. {\"provider\": \"vapi\", \"voiceId\": \"Elliot\"} or {\"provider\": \"11labs\", \"voiceId\": \"...\"}."
+          },
+          "transcriber": {
+            "type": "object",
+            "description": "Speech to text, e.g. {\"provider\": \"deepgram\", \"model\": \"nova-3\", \"language\": \"en\"}."
+          },
+          "voicemail_message": {
+            "type": "string",
+            "description": "What the assistant says when the call reaches voicemail."
+          },
+          "end_call_message": {
+            "type": "string",
+            "description": "What the assistant says before it hangs up."
+          },
+          "end_call_phrases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Phrases that end the call when the assistant says them."
+          },
+          "max_duration_seconds": {
+            "type": "integer",
+            "description": "Maximum call length in seconds (Vapi default 600)."
+          },
+          "analysis_plan": {
+            "type": "object",
+            "description": "Post-call analysis, stored in call.analysis: e.g. {\"summaryPlan\": {...}, \"successEvaluationPlan\": {...}}."
+          },
+          "server": {
+            "type": "object",
+            "description": "Where Vapi sends webhooks and tool calls: {\"url\": \"https://...\", \"timeoutSeconds\": 20}."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Your own key/value data stored on the assistant."
+          }
+        },
+        "required": [
+          "assistant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/assistant/{assistant_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "firstMessage": "$first_message",
+          "firstMessageMode": "$first_message_mode",
+          "model": "$model",
+          "voice": "$voice",
+          "transcriber": "$transcriber",
+          "voicemailMessage": "$voicemail_message",
+          "endCallMessage": "$end_call_message",
+          "endCallPhrases": "$end_call_phrases",
+          "maxDurationSeconds": "$max_duration_seconds",
+          "analysisPlan": "$analysis_plan",
+          "server": "$server",
+          "metadata": "$metadata"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "vapi_list_squads",
+      "description": "List squads (groups of assistants that hand calls over to each other), newest first: id, name, members with their assistantId and transfer destinations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Vapi default 100, newest first)."
+          },
+          "created_at_gt": {
+            "type": "string",
+            "description": "Only items created after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_at_lt": {
+            "type": "string",
+            "description": "Only items created before this ISO 8601 time. For the next page pass the createdAt of the last item you got."
+          },
+          "updated_at_gt": {
+            "type": "string",
+            "description": "Only items updated after this ISO 8601 time."
+          },
+          "updated_at_lt": {
+            "type": "string",
+            "description": "Only items updated before this ISO 8601 time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/squad",
+        "queryParams": {
+          "limit": "$limit",
+          "createdAtGt": "$created_at_gt",
+          "createdAtLt": "$created_at_lt",
+          "updatedAtGt": "$updated_at_gt",
+          "updatedAtLt": "$updated_at_lt"
+        }
+      }
+    },
+    {
+      "name": "vapi_get_squad",
+      "description": "One squad with its members, their assistant ids or inline assistants, and member overrides.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "squad_id": {
+            "type": "string",
+            "description": "The squad id (a UUID)."
+          }
+        },
+        "required": [
+          "squad_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/squad/{squad_id}"
+      }
+    },
+    {
+      "name": "vapi_list_calls",
+      "description": "List calls, newest first: id, type (inboundPhoneCall, outboundPhoneCall, webCall), status, endedReason, assistantId, squadId, phoneNumberId, customer number, startedAt, endedAt, cost (USD), campaignId and the analysis summary. Transcripts and messages are left out; use vapi_get_call for one call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assistant_id": {
+            "type": "string",
+            "description": "Only calls of this assistant."
+          },
+          "phone_number_id": {
+            "type": "string",
+            "description": "Only calls on this Vapi phone number id."
+          },
+          "call_id": {
+            "type": "string",
+            "description": "Only the call with this id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (default 25, at most 1000), newest first.",
+            "default": 25
+          },
+          "created_at_gt": {
+            "type": "string",
+            "description": "Only items created after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_at_lt": {
+            "type": "string",
+            "description": "Only items created before this ISO 8601 time. For the next page pass the createdAt of the last item you got."
+          },
+          "updated_at_gt": {
+            "type": "string",
+            "description": "Only items updated after this ISO 8601 time."
+          },
+          "updated_at_lt": {
+            "type": "string",
+            "description": "Only items updated before this ISO 8601 time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/call",
+        "queryParams": {
+          "id": "$call_id",
+          "assistantId": "$assistant_id",
+          "phoneNumberId": "$phone_number_id",
+          "limit": "$limit",
+          "createdAtGt": "$created_at_gt",
+          "createdAtLt": "$created_at_lt",
+          "updatedAtGt": "$updated_at_gt",
+          "updatedAtLt": "$updated_at_lt"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].messages",
+            "[*].artifact",
+            "[*].assistant",
+            "[*].squad",
+            "[*].workflow",
+            "[*].monitor",
+            "[*].transport",
+            "[*].artifactPlan",
+            "[*].costs",
+            "[*].assistantOverrides",
+            "[*].squadOverrides"
+          ]
+        }
+      }
+    },
+    {
+      "name": "vapi_get_call",
+      "description": "One call in full: status, endedReason, customer, timings, cost and costBreakdown (USD), analysis (summary, structuredData, successEvaluation), and artifact with the transcript, the per-message log (artifact.messages, including tool calls) and recording URLs (artifact.recordingUrl, stereoRecordingUrl). Also the monitor URLs of a live call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "The call id (a UUID)."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/call/{call_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "messages",
+            "artifact.messagesOpenAIFormatted",
+            "artifact.performanceMetrics"
+          ]
+        }
+      }
+    },
+    {
+      "name": "vapi_get_call_logs",
+      "description": "Download the debug log file of one ended call (all logging output of the pipeline: transcriber, model, voice, tool calls, errors). Use it when vapi_get_call does not explain why a call failed. Can be large.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "The call id (a UUID)."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/call/{call_id}/call-logs"
+      }
+    },
+    {
+      "name": "vapi_create_call",
+      "description": "Start a real outbound phone call: Vapi dials customer_number from one of your Vapi phone numbers and the assistant (or squad) talks to the person. This reaches a real person and costs money (Vapi bills per minute for the platform, model, voice and transcriber, plus telephony), so show the user who is called, from which number, by which assistant and with which variables, and call only after the user confirms. With schedule_plan the call is placed later. Returns the call with id and status (queued, then ringing, in-progress, ended); follow it with vapi_get_call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number_id": {
+            "type": "string",
+            "description": "Your Vapi phone number to call from (id from vapi_list_phone_numbers)."
+          },
+          "customer_number": {
+            "type": "string",
+            "description": "The number to call in E.164 format, e.g. +14155550123."
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Name of the person called, for your own reference (also usable in prompts)."
+          },
+          "customer_extension": {
+            "type": "string",
+            "description": "Extension to dial after the call is answered."
+          },
+          "assistant_id": {
+            "type": "string",
+            "description": "The assistant that handles the call (from vapi_list_assistants). Give this or squad_id."
+          },
+          "squad_id": {
+            "type": "string",
+            "description": "The squad that handles the call instead of a single assistant."
+          },
+          "assistant_overrides": {
+            "type": "object",
+            "description": "Per-call overrides of the assistant, most often template variables: {\"variableValues\": {\"name\": \"Joe\", \"appointment\": \"Tuesday 3 pm\"}}; can also override firstMessage, voice or model."
+          },
+          "schedule_plan": {
+            "type": "object",
+            "description": "Place the call later: {\"earliestAt\": \"2026-11-02T15:00:00Z\", \"latestAt\": \"2026-11-02T17:00:00Z\"} (ISO 8601)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the call, for your own reference."
+          }
+        },
+        "required": [
+          "phone_number_id",
+          "customer_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/call",
+        "bodyMapping": {
+          "name": "$name",
+          "assistantId": "$assistant_id",
+          "squadId": "$squad_id",
+          "assistantOverrides": "$assistant_overrides",
+          "phoneNumberId": "$phone_number_id",
+          "customer": {
+            "number": "$customer_number",
+            "name": "$customer_name",
+            "extension": "$customer_extension"
+          },
+          "schedulePlan": "$schedule_plan"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vapi_list_phone_numbers",
+      "description": "List the organization's phone numbers (Vapi numbers and imported Twilio, Vonage, Telnyx or SIP numbers): id, number, name, provider, status, the assistantId, squadId or workflowId that answers inbound calls, and the server URL. Paged: results plus metadata (currentPage, totalPages, hasNextPage).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search by name, number or SIP URI (partial, case-insensitive)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Vapi default 100, newest first)."
+          },
+          "created_at_gt": {
+            "type": "string",
+            "description": "Only items created after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_at_lt": {
+            "type": "string",
+            "description": "Only items created before this ISO 8601 time. For the next page pass the createdAt of the last item you got."
+          },
+          "updated_at_gt": {
+            "type": "string",
+            "description": "Only items updated after this ISO 8601 time."
+          },
+          "updated_at_lt": {
+            "type": "string",
+            "description": "Only items updated before this ISO 8601 time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/phone-number",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "limit": "$limit",
+          "createdAtGt": "$created_at_gt",
+          "createdAtLt": "$created_at_lt",
+          "updatedAtGt": "$updated_at_gt",
+          "updatedAtLt": "$updated_at_lt"
+        }
+      }
+    },
+    {
+      "name": "vapi_get_phone_number",
+      "description": "One phone number with its provider, status, inbound assistant, squad or workflow, fallback destination and server settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number_id": {
+            "type": "string",
+            "description": "The phone number id (a UUID)."
+          }
+        },
+        "required": [
+          "phone_number_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/phone-number/{phone_number_id}"
+      }
+    },
+    {
+      "name": "vapi_update_phone_number",
+      "description": "Change who answers a phone number or its name: set assistant_id or squad_id for inbound calls, a fallback_destination, or the server URL. Live inbound calls follow the change immediately, so confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number_id": {
+            "type": "string",
+            "description": "The phone number id (a UUID)."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name of the number, for your own reference."
+          },
+          "assistant_id": {
+            "type": "string",
+            "description": "Assistant that answers inbound calls."
+          },
+          "squad_id": {
+            "type": "string",
+            "description": "Squad that answers inbound calls (instead of an assistant)."
+          },
+          "fallback_destination": {
+            "type": "object",
+            "description": "Where inbound calls go when no assistant answers: {\"type\": \"number\", \"number\": \"+14155550123\"}."
+          },
+          "server": {
+            "type": "object",
+            "description": "Server URL for inbound call webhooks on this number: {\"url\": \"https://...\"}."
+          }
+        },
+        "required": [
+          "phone_number_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/phone-number/{phone_number_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "assistantId": "$assistant_id",
+          "squadId": "$squad_id",
+          "fallbackDestination": "$fallback_destination",
+          "server": "$server"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "vapi_list_tools",
+      "description": "List the tools assistants can call during a call (function, apiRequest, transferCall, endCall, dtmf, query, mcp, integrations): id, type, function name and description, server URL, destinations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Vapi default 100, newest first)."
+          },
+          "created_at_gt": {
+            "type": "string",
+            "description": "Only items created after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_at_lt": {
+            "type": "string",
+            "description": "Only items created before this ISO 8601 time. For the next page pass the createdAt of the last item you got."
+          },
+          "updated_at_gt": {
+            "type": "string",
+            "description": "Only items updated after this ISO 8601 time."
+          },
+          "updated_at_lt": {
+            "type": "string",
+            "description": "Only items updated before this ISO 8601 time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tool",
+        "queryParams": {
+          "limit": "$limit",
+          "createdAtGt": "$created_at_gt",
+          "createdAtLt": "$created_at_lt",
+          "updatedAtGt": "$updated_at_gt",
+          "updatedAtLt": "$updated_at_lt"
+        }
+      }
+    },
+    {
+      "name": "vapi_get_tool",
+      "description": "One tool with its full definition: function parameters, server, messages spoken while it runs, transfer destinations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tool_id": {
+            "type": "string",
+            "description": "The tool id (a UUID)."
+          }
+        },
+        "required": [
+          "tool_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tool/{tool_id}"
+      }
+    },
+    {
+      "name": "vapi_list_files",
+      "description": "List uploaded files (knowledge for assistants): id, name, originalName, bytes, mimetype, status (processing, done, failed), purpose, url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "description": "Only files of this purpose.",
+            "enum": [
+              "assistant",
+              "knowledge-base-v2",
+              "composer-attachment"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/file",
+        "queryParams": {
+          "purpose": "$purpose"
+        }
+      }
+    },
+    {
+      "name": "vapi_get_file",
+      "description": "One uploaded file with its status, size, url and parsedTextUrl (the extracted text).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "The file id (a UUID)."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/file/{file_id}"
+      }
+    },
+    {
+      "name": "vapi_upload_file",
+      "description": "Upload a document (PDF, DOCX, TXT, CSV, MD, ...) to Vapi from a public URL, for use as assistant knowledge. Vapi fetches nothing itself: AnythingMCP downloads file_url (up to 10 MB) and sends the bytes. Returns the file with id and status processing; check vapi_get_file until status is done.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the document to upload."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "What the file is for (optional).",
+            "enum": [
+              "assistant",
+              "knowledge-base-v2"
+            ]
+          }
+        },
+        "required": [
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/file",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          },
+          "purpose": "$purpose"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vapi_list_knowledge_bases",
+      "description": "List knowledge bases (version 2): id, name, description, createdAt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Vapi default 100, newest first)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/knowledge-base",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "vapi_get_knowledge_base",
+      "description": "One knowledge base (version 2) with its name, description and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "knowledge_base_id": {
+            "type": "string",
+            "description": "The knowledge base id (a UUID)."
+          }
+        },
+        "required": [
+          "knowledge_base_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/knowledge-base/{knowledge_base_id}"
+      }
+    },
+    {
+      "name": "vapi_list_chats",
+      "description": "List text chats with assistants, newest first: id, assistantId, squadId, sessionId, input, output messages, cost (USD). Paged: results plus metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assistant_id": {
+            "type": "string",
+            "description": "Only chats of this assistant."
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Only chats of this session."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (default 25, at most 1000), newest first.",
+            "default": 25
+          },
+          "created_at_gt": {
+            "type": "string",
+            "description": "Only items created after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_at_lt": {
+            "type": "string",
+            "description": "Only items created before this ISO 8601 time. For the next page pass the createdAt of the last item you got."
+          },
+          "updated_at_gt": {
+            "type": "string",
+            "description": "Only items updated after this ISO 8601 time."
+          },
+          "updated_at_lt": {
+            "type": "string",
+            "description": "Only items updated before this ISO 8601 time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chat",
+        "queryParams": {
+          "assistantId": "$assistant_id",
+          "sessionId": "$session_id",
+          "page": "$page",
+          "limit": "$limit",
+          "createdAtGt": "$created_at_gt",
+          "createdAtLt": "$created_at_lt",
+          "updatedAtGt": "$updated_at_gt",
+          "updatedAtLt": "$updated_at_lt"
+        }
+      }
+    },
+    {
+      "name": "vapi_get_chat",
+      "description": "One text chat with its input, context messages, output and cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "The chat id (a UUID)."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chat/{chat_id}"
+      }
+    },
+    {
+      "name": "vapi_create_chat",
+      "description": "Send a text message to an assistant and get its answer, without a phone call: useful to test a prompt or tools. Model usage is billed. Continue a conversation with previous_chat_id (the id of the last chat) or session_id. Returns the chat with output (the assistant's reply messages) and cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "string",
+            "description": "The user's message to the assistant."
+          },
+          "assistant_id": {
+            "type": "string",
+            "description": "The assistant to talk to. Give this or squad_id."
+          },
+          "squad_id": {
+            "type": "string",
+            "description": "The squad to talk to instead of an assistant."
+          },
+          "previous_chat_id": {
+            "type": "string",
+            "description": "Continue after this chat (its messages become context). Do not combine with session_id."
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Continue inside this session."
+          },
+          "assistant_overrides": {
+            "type": "object",
+            "description": "Template variables and overrides: {\"variableValues\": {\"name\": \"Joe\"}}."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the chat, for your own reference."
+          }
+        },
+        "required": [
+          "input"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat",
+        "bodyMapping": {
+          "input": "$input",
+          "assistantId": "$assistant_id",
+          "squadId": "$squad_id",
+          "previousChatId": "$previous_chat_id",
+          "sessionId": "$session_id",
+          "assistantOverrides": "$assistant_overrides",
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vapi_list_campaigns",
+      "description": "List outbound call campaigns (batch calling), newest first: id, name, status (scheduled, in-progress, ended, cancelled), assistantId or squadId, phoneNumberId, schedulePlan and call counters. Paged: results plus metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only campaigns in this status.",
+            "enum": [
+              "scheduled",
+              "in-progress",
+              "ended",
+              "cancelled",
+              "archived"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Vapi default 100, newest first)."
+          },
+          "created_at_gt": {
+            "type": "string",
+            "description": "Only items created after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_at_lt": {
+            "type": "string",
+            "description": "Only items created before this ISO 8601 time. For the next page pass the createdAt of the last item you got."
+          },
+          "updated_at_gt": {
+            "type": "string",
+            "description": "Only items updated after this ISO 8601 time."
+          },
+          "updated_at_lt": {
+            "type": "string",
+            "description": "Only items updated before this ISO 8601 time."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaign",
+        "queryParams": {
+          "status": "$status",
+          "page": "$page",
+          "limit": "$limit",
+          "createdAtGt": "$created_at_gt",
+          "createdAtLt": "$created_at_lt",
+          "updatedAtGt": "$updated_at_gt",
+          "updatedAtLt": "$updated_at_lt"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "results[*].customers",
+            "results[*].calls"
+          ]
+        }
+      }
+    },
+    {
+      "name": "vapi_get_campaign",
+      "description": "One campaign with its customers, the calls it placed (calls map by call id) and the counters of scheduled, queued, in-progress and ended calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "The campaign id (a UUID)."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaign/{campaign_id}"
+      }
+    },
+    {
+      "name": "vapi_query_analytics",
+      "description": "Aggregate call metrics: count, sum, avg, min or max of call columns (duration, cost, and others) over a time range, optionally per day or week and grouped by assistantId, endedReason, type, status or analysis.successEvaluation. Read-only, though sent as POST. Example queries: [{\"table\": \"call\", \"name\": \"daily\", \"operations\": [{\"operation\": \"count\", \"column\": \"id\"}, {\"operation\": \"sum\", \"column\": \"cost\"}, {\"operation\": \"avg\", \"column\": \"duration\"}], \"groupBy\": [\"assistantId\"], \"timeRange\": {\"start\": \"2026-10-01T00:00:00Z\", \"end\": \"2026-10-31T00:00:00Z\", \"step\": \"day\", \"timezone\": \"Europe/Berlin\"}}]. Without timeRange the last 7 days are used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "One or more queries: table (call or subscription), name (your label, echoed in the answer), operations [{operation, column, alias?}], optional groupBy, groupByVariableValue and timeRange {start, end, step, timezone}."
+          }
+        },
+        "required": [
+          "queries"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/analytics",
+        "bodyMapping": {
+          "queries": "$queries"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

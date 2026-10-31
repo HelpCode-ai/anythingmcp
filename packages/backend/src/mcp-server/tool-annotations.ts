@@ -20,6 +20,8 @@
  * override instead of a guess.
  */
 
+import { EMAIL_METHOD_ANNOTATIONS, isEmailMethod } from '../connectors/email/email-builtins';
+
 export interface ToolAnnotations {
   /** Human-readable title for display. */
   title?: string;
@@ -189,6 +191,12 @@ function derive(tool: AnnotationSource): ToolAnnotations {
     annotations.destructiveHint = false;
     annotations.idempotentHint = true;
     return annotations;
+  }
+
+  // Email built-ins: each method's hints are fixed (email-builtins.ts). The
+  // mailbox is the user's own, a closed domain; only sending reaches out.
+  if (isEmailMethod(method)) {
+    return { ...annotations, ...EMAIL_METHOD_ANNOTATIONS[method] };
   }
 
   // OData built-ins (list, describe, query, get) only ever read, on ODATA and

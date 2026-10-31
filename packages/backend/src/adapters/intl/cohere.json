@@ -1,0 +1,337 @@
+{
+  "slug": "cohere",
+  "name": "Cohere",
+  "aliases": ["Cohere API", "Cohere Command", "Cohere Embed", "Cohere Rerank"],
+  "description": "Let your AI use Cohere with your own API key: chat with Command models (with citations from your documents), create embeddings, rerank search results, transcribe audio, parse document images, count tokens, and check models, datasets, batches and embed jobs.",
+  "region": "intl",
+  "category": "data",
+  "icon": "cohere",
+  "docsUrl": "https://docs.cohere.com/reference/about",
+  "prerequisites": "A Cohere account and an API key from dashboard.cohere.com/api-keys. Trial keys are free but rate limited and not for production; production keys bill every model call. About 2 minutes.",
+  "requiredEnvVars": ["COHERE_API_KEY"],
+  "envVarMeta": {
+    "COHERE_API_KEY": {
+      "label": "Cohere API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "dashboard.cohere.com, API Keys. A trial key is free and rate limited; a production key bills chat, embed, rerank, transcription and parse calls to the account.",
+      "link": "https://dashboard.cohere.com/api-keys",
+      "pattern": "^[A-Za-z0-9]{30,}$",
+      "patternMessage": "Paste only the key as Cohere shows it, without spaces and without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Cohere refused the API key: it is wrong or was deleted. Copy it again from https://dashboard.cohere.com/api-keys.",
+    "402": "Cohere needs a payment method for this call. Add one under Billing at https://dashboard.cohere.com.",
+    "rate_limited": "Cohere rate limited the key. Trial keys have low per-minute and monthly limits; wait, or switch to a production key."
+  },
+  "probe": { "tool": "cohere_list_models" },
+  "connector": {
+    "name": "Cohere API",
+    "type": "REST",
+    "baseUrl": "https://api.cohere.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": { "token": "{{COHERE_API_KEY}}" },
+    "headers": { "Accept": "application/json", "User-Agent": "AnythingMCP", "X-Client-Name": "AnythingMCP" },
+    "healthcheckPath": "/v1/models"
+  },
+  "instructions": "## Cohere\nThis connector calls the **Cohere API** (`https://api.cohere.com`, v2 for chat, embed, rerank, transcription and parse) with the user's own key: answers from Command models, grounded answers with citations from documents the user passes, embeddings for semantic search, reranking of search results, speech-to-text, document image parsing, tokenization, and the model list, datasets, batches and embed jobs of the account.\n\n**Paid calls**: `cohere_chat`, `cohere_embed`, `cohere_rerank`, `cohere_transcribe_audio` and `cohere_parse_document` run a model. With a production key each call is billed (chat per input and output token, embed per token or image, rerank per search of up to 100 documents). A trial key is free but rate limited per minute and per month and may not be used commercially. Confirm with the user before large or repeated calls; set `max_tokens` to cap a chat reply. `cohere_tokenize`, `cohere_detokenize`, `cohere_check_api_key` and the list and get tools cost nothing.\n\n**Setup (2 minutes)**\n1. Sign up at https://dashboard.cohere.com.\n2. Open **API Keys** (https://dashboard.cohere.com/api-keys) and copy the trial key, or create a production key after adding a payment method under Billing.\n3. Paste it into `COHERE_API_KEY`. It is sent as `Authorization: Bearer` and only to Cohere.\n4. Run `cohere_check_api_key` or `cohere_list_models` to check it.\n\n**Models (check `cohere_list_models`, ids change)**\n- Chat: `command-a-03-2025` (default choice), `command-a-reasoning-08-2025` (reasoning), `command-a-vision-07-2025` (images), `command-a-translate-08-2025` (translation), `command-r7b-12-2024` (small and cheap).\n- Embed: `embed-v4.0` (text and images, `output_dimension` 256, 512, 1024 or 1536), `embed-v5.0-pro`, `embed-v5.0-fast`, `embed-multilingual-v3.0`.\n- Rerank: `rerank-v5.0-pro`, `rerank-v5.0-fast`, `rerank-v3.5`.\n- Transcribe: `cohere-transcribe-03-2026`. Parse: `parse-v5.0`.\n\n**Workflow**\n- Choose a model: `cohere_list_models` (filter `endpoint` chat, embed or rerank) and `cohere_get_model` for one model's context length, features and endpoints.\n- Answer: `cohere_chat` with `model` and `messages`. Pass `documents` (strings or `{\"data\": {\"title\": \"...\", \"snippet\": \"...\"}}`) for a grounded answer; the reply then carries `message.citations` pointing into them. `response_format` forces JSON, `tools` adds function calling, `thinking` `{\"type\": \"disabled\"}` turns reasoning off on reasoning models.\n- Search: `cohere_embed` turns up to 96 texts into vectors; use `input_type` `search_document` for what you store and `search_query` for the query. `cohere_rerank` orders up to 1,000 documents by relevance to a query and returns `results` with `index` (position in your list) and `relevance_score` (0 to 1).\n- Audio and documents: `cohere_transcribe_audio` takes a public link to an audio file (flac, mp3, mpeg, mpga, ogg, wav, up to 10 MB through this connector) and the `language`; the connector downloads it and uploads it. `cohere_parse_document` turns an image of a page (public link or data URI, up to 20 MB; PDFs are not supported yet) into markdown or blocks.\n- Tokens: `cohere_tokenize` counts the tokens of a text for a model, `cohere_detokenize` turns token ids back into text.\n- Account data: `cohere_list_datasets`, `cohere_get_dataset` and `cohere_get_dataset_usage` (storage used, the limit is 10 GB per organization); `cohere_list_batches` and `cohere_get_batch` for Batch API jobs; `cohere_list_embed_jobs` and `cohere_get_embed_job` for embed jobs. Creating, cancelling and deleting them is not part of this connector.\n\n**Reading answers**: chat returns `message.content[]` (items of `type` text with `text`), `finish_reason` (`COMPLETE`, `MAX_TOKENS`, `STOP_SEQUENCE`, `TOOL_CALL`, `ERROR`) and `usage.billed_units` with the billed input and output tokens. Embeddings are under `embeddings.float`, one vector per text in order. Dates are ISO 8601, UTC.\n\n**Paging**: `cohere_list_models` and `cohere_list_batches` return `next_page_token`; pass it as `page_token` until it is empty. `cohere_list_datasets` pages with `limit` and `offset`.\n\n**Not included**: the Classify, Summarize and Generate endpoints and connectors are deprecated by Cohere and left out; fine-tuning is deprecated as well.\n\n**Errors**: 400 bad request (e.g. a parameter the model does not take, more than 96 texts); 401 invalid key; 402 payment method needed; 404 unknown model, dataset, batch or job; 422 the request could not be processed; 429 rate limit (trial keys are low, do not loop); 499 the request was cancelled; 500 and 503 Cohere-side errors, retry once later.",
+  "tools": [
+    {
+      "name": "cohere_list_models",
+      "description": "List the Cohere models available to this key, with endpoints they serve (chat, embed, rerank), context length, features and whether they are deprecated. Filter by endpoint; page with page_token = next_page_token. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint": { "type": "string", "enum": ["chat", "embed", "rerank"], "description": "Only models that serve this endpoint." },
+          "default_only": { "type": "boolean", "description": "With endpoint: only the default model of that endpoint." },
+          "page_size": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 50, "description": "Models per page, default 50." },
+          "page_token": { "type": "string", "description": "next_page_token of the previous page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/models",
+        "queryParams": { "endpoint": "$endpoint", "default_only": "$default_only", "page_size": "$page_size", "page_token": "$page_token" }
+      }
+    },
+    {
+      "name": "cohere_get_model",
+      "description": "Read one Cohere model by name: endpoints, default endpoints, context length, features (e.g. tools, vision, reasoning), tokenizer URL and whether it is deprecated or fine-tuned. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "description": "Model name, e.g. command-a-03-2025 or embed-v4.0." }
+        },
+        "required": ["model"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/models/{model}" }
+    },
+    {
+      "name": "cohere_check_api_key",
+      "description": "Check that the Cohere API key is valid and active; returns valid plus the organization and owner ids. Free.",
+      "endpointMapping": { "method": "POST", "path": "/v1/check-api-key" },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "cohere_chat",
+      "description": "Ask a Cohere Command model and get its reply (Chat API v2, non-streaming). Pass documents for a grounded answer with citations. COSTS MONEY with a production key: billed per input and output token (trial keys are free but rate limited). Confirm with the user before larger or repeated calls and set max_tokens to cap the cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "description": "Chat model, e.g. command-a-03-2025, command-a-reasoning-08-2025, command-a-vision-07-2025, command-r7b-12-2024 (cheapest)." },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "object" },
+            "description": "The conversation, oldest first: [{\"role\": \"system\", \"content\": \"...\"}, {\"role\": \"user\", \"content\": \"...\"}]. Roles: system, user, assistant, tool. Vision models take content as a list of parts such as {\"type\": \"image_url\", \"image_url\": {\"url\": \"https://...\"}}."
+          },
+          "documents": { "type": "array", "items": {}, "description": "Documents the model may cite: strings, or {\"id\": \"doc1\", \"data\": {\"title\": \"...\", \"snippet\": \"...\"}}. The reply then has message.citations." },
+          "citation_options": { "type": "object", "description": "{\"mode\": \"ACCURATE\" | \"FAST\" | \"OFF\"}: citation quality versus speed." },
+          "max_tokens": { "type": "integer", "minimum": 1, "description": "Upper bound on output tokens. Set it to cap cost." },
+          "temperature": { "type": "number", "minimum": 0, "description": "Randomness, default 0.3; lower is more deterministic." },
+          "p": { "type": "number", "minimum": 0.01, "maximum": 0.99, "description": "Nucleus sampling, default 0.75." },
+          "k": { "type": "integer", "minimum": 0, "maximum": 500, "description": "Top-k sampling; 0 (default) switches it off." },
+          "seed": { "type": "integer", "description": "Seed for best-effort repeatable sampling." },
+          "stop_sequences": { "type": "array", "items": { "type": "string" }, "maxItems": 5, "description": "Up to 5 strings where generation stops." },
+          "response_format": { "type": "object", "description": "Structured output: {\"type\": \"json_object\"}, optionally with \"json_schema\": {...}." },
+          "tools": { "type": "array", "items": { "type": "object" }, "description": "Function definitions: [{\"type\": \"function\", \"function\": {\"name\": \"...\", \"description\": \"...\", \"parameters\": {...}}}]. The reply then has message.tool_calls; run them and send role tool messages back." },
+          "tool_choice": { "type": "string", "enum": ["REQUIRED", "NONE"], "description": "REQUIRED forces a tool call, NONE forbids one. Omit to let the model decide." },
+          "safety_mode": { "type": "string", "enum": ["CONTEXTUAL", "STRICT", "OFF"], "description": "Safety instruction added to the prompt, default CONTEXTUAL." },
+          "thinking": { "type": "object", "description": "Reasoning models: {\"type\": \"disabled\"} turns reasoning off, {\"type\": \"enabled\", \"token_budget\": 2000} caps it." }
+        },
+        "required": ["model", "messages"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/chat",
+        "bodyMapping": {
+          "model": "$model",
+          "messages": "$messages",
+          "documents": "$documents",
+          "citation_options": "$citation_options",
+          "max_tokens": "$max_tokens",
+          "temperature": "$temperature",
+          "p": "$p",
+          "k": "$k",
+          "seed": "$seed",
+          "stop_sequences": "$stop_sequences",
+          "response_format": "$response_format",
+          "tools": "$tools",
+          "tool_choice": "$tool_choice",
+          "safety_mode": "$safety_mode",
+          "thinking": "$thinking",
+          "stream": false
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "cohere_embed",
+      "description": "Turn up to 96 texts (or images as data URIs) into embedding vectors for semantic search, clustering or classification (Embed API v2). Default embed-v4.0 with 256 float dimensions. COSTS MONEY with a production key: billed per token or image. Confirm with the user before embedding large collections.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "texts": { "type": "array", "items": { "type": "string" }, "maxItems": 96, "description": "Texts to embed, at most 96." },
+          "images": { "type": "array", "items": { "type": "string" }, "description": "Images as data URIs (data:image/png;base64,...) for image embeddings, with input_type image." },
+          "model": { "type": "string", "default": "embed-v4.0", "description": "Embedding model, default embed-v4.0; also embed-v5.0-pro, embed-v5.0-fast, embed-multilingual-v3.0." },
+          "input_type": { "type": "string", "enum": ["search_document", "search_query", "classification", "clustering", "image"], "default": "search_document", "description": "search_document for stored texts, search_query for the query, classification, clustering, or image." },
+          "output_dimension": { "type": "integer", "enum": [256, 512, 1024, 1536], "default": 256, "description": "Vector size for embed-v4.0 and newer, default 256 here to keep answers small." },
+          "embedding_types": { "type": "array", "items": { "type": "string", "enum": ["float", "int8", "uint8", "binary", "ubinary", "base64"] }, "default": ["float"], "description": "Vector encodings to return, default [\"float\"]." },
+          "truncate": { "type": "string", "enum": ["NONE", "START", "END"], "description": "How to cut inputs longer than the model allows: END (default), START, or NONE to get an error instead." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/embed",
+        "bodyMapping": {
+          "texts": "$texts",
+          "images": "$images",
+          "model": "$model",
+          "input_type": "$input_type",
+          "output_dimension": "$output_dimension",
+          "embedding_types": "$embedding_types",
+          "truncate": "$truncate"
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "cohere_rerank",
+      "description": "Order a list of documents by relevance to a query (Rerank API v2) and return the top results with their index in the list and a relevance_score from 0 to 1. COSTS MONEY with a production key: billed per search of up to 100 documents (longer documents count as several). Confirm with the user before large or repeated calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "The search query." },
+          "documents": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 1000, "description": "Texts to rank, at most 1,000 (fewer is cheaper). Structured records can be passed as YAML strings." },
+          "model": { "type": "string", "default": "rerank-v5.0-fast", "description": "Rerank model, default rerank-v5.0-fast; rerank-v5.0-pro is more accurate." },
+          "top_n": { "type": "integer", "minimum": 1, "description": "Return only the best n results. Omit for all." },
+          "max_tokens_per_doc": { "type": "integer", "minimum": 1, "description": "Truncate each document to this many tokens, default 4096." }
+        },
+        "required": ["query", "documents"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/rerank",
+        "bodyMapping": { "query": "$query", "documents": "$documents", "model": "$model", "top_n": "$top_n", "max_tokens_per_doc": "$max_tokens_per_doc" }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "cohere_transcribe_audio",
+      "description": "Transcribe speech in an audio file to text with Cohere Transcribe. Pass a public link: the connector downloads the file (up to 10 MB; flac, mp3, mpeg, mpga, ogg, wav) and uploads it. COSTS MONEY with a production key. Confirm with the user before transcribing their recordings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "audio_url": { "type": "string", "format": "uri", "description": "Public HTTPS link to the audio file." },
+          "language": { "type": "string", "description": "Language of the audio as an ISO-639-1 code, e.g. en, de, ja. Required by Cohere." },
+          "model": { "type": "string", "default": "cohere-transcribe-03-2026", "description": "Transcription model, default cohere-transcribe-03-2026 (cohere-transcribe-arabic-07-2026 for Arabic)." },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 1, "description": "Sampling temperature 0-1." }
+        },
+        "required": ["audio_url", "language"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/audio/transcriptions",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": { "__file": "$audio_url" },
+          "language": "$language",
+          "model": "$model",
+          "temperature": "$temperature"
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "cohere_parse_document",
+      "description": "Parse an image of a document page (scan, photo, screenshot) into markdown, with tables inlined, or into layout blocks (Parse API v2). Takes a public image link or a data URI up to 20 MB; PDFs are not supported yet. COSTS MONEY with a production key. Confirm with the user before parsing many pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": { "type": "string", "description": "Public HTTPS link to the image, or a data URI (data:image/png;base64,...)." },
+          "model": { "type": "string", "default": "parse-v5.0", "description": "Parse model, default parse-v5.0." },
+          "output_format": { "type": "string", "enum": ["markdown", "blocks"], "description": "markdown (default): markdown per page; blocks: typed layout blocks." }
+        },
+        "required": ["image_url"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/parse",
+        "bodyMapping": {
+          "model": "$model",
+          "document": { "type": "image_url", "image_url": "$image_url" },
+          "output_format": "$output_format"
+        }
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "cohere_tokenize",
+      "description": "Split a text into tokens with the tokenizer of a Cohere model and return the token ids and token strings, e.g. to count tokens before a chat call. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "Text to tokenize, 1 to 65,536 characters." },
+          "model": { "type": "string", "default": "command-a-03-2025", "description": "Model whose tokenizer is used, default command-a-03-2025." }
+        },
+        "required": ["text"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/v1/tokenize", "bodyMapping": { "text": "$text", "model": "$model" } },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "cohere_detokenize",
+      "description": "Turn a list of token ids back into text with the tokenizer of a Cohere model. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tokens": { "type": "array", "items": { "type": "integer" }, "minItems": 1, "description": "Token ids, e.g. from cohere_tokenize." },
+          "model": { "type": "string", "default": "command-a-03-2025", "description": "Model whose tokenizer is used, default command-a-03-2025." }
+        },
+        "required": ["tokens"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/v1/detokenize", "bodyMapping": { "tokens": "$tokens", "model": "$model" } },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "cohere_list_datasets",
+      "description": "List the datasets of the Cohere account (inputs for embed jobs, batches and fine-tuning) with id, name, type, validation status and creation time. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset_type": { "type": "string", "description": "Only this type, e.g. embed-input, embed-result, batch-chat-v2-input, batch-embed-v2-input, chat-finetune-input." },
+          "validation_status": { "type": "string", "enum": ["unknown", "queued", "processing", "failed", "validated", "skipped"], "description": "Only datasets with this validation status." },
+          "before": { "type": "string", "description": "Only datasets created before this ISO 8601 date-time." },
+          "after": { "type": "string", "description": "Only datasets created after this ISO 8601 date-time." },
+          "limit": { "type": "integer", "minimum": 1, "default": 25, "description": "Datasets per page, default 25." },
+          "offset": { "type": "integer", "minimum": 0, "description": "Number of datasets to skip." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/datasets",
+        "queryParams": { "datasetType": "$dataset_type", "validationStatus": "$validation_status", "before": "$before", "after": "$after", "limit": "$limit", "offset": "$offset" }
+      }
+    },
+    {
+      "name": "cohere_get_dataset",
+      "description": "Read one Cohere dataset: name, type, validation status and error, schema, size and its parts. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset_id": { "type": "string", "description": "Dataset id from cohere_list_datasets." }
+        },
+        "required": ["dataset_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/datasets/{dataset_id}" }
+    },
+    {
+      "name": "cohere_get_dataset_usage",
+      "description": "Read how much dataset storage the Cohere organization uses, in bytes (the limit is 10 GB per organization). Free.",
+      "endpointMapping": { "method": "GET", "path": "/v1/datasets/usage" }
+    },
+    {
+      "name": "cohere_list_batches",
+      "description": "List the Batch API jobs of the Cohere account with id, name, model, status, input and output dataset ids and request counts. Page with page_token = next_page_token. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": { "type": "integer", "minimum": 1, "default": 25, "description": "Batches per page, default 25." },
+          "page_token": { "type": "string", "description": "next_page_token of the previous page." },
+          "order_by": { "type": "string", "description": "Sort order, e.g. created_at desc or updated_at desc." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/v2/batches", "queryParams": { "page_size": "$page_size", "page_token": "$page_token", "order_by": "$order_by" } }
+    },
+    {
+      "name": "cohere_get_batch",
+      "description": "Read one Cohere batch job: status, model, input and output dataset ids, request counts (succeeded, failed) and timestamps. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": { "type": "string", "description": "Batch id from cohere_list_batches." }
+        },
+        "required": ["batch_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v2/batches/{batch_id}" }
+    },
+    {
+      "name": "cohere_list_embed_jobs",
+      "description": "List the embed jobs of the Cohere account with job id, name, status, model, input and output dataset ids and creation time. Free.",
+      "endpointMapping": { "method": "GET", "path": "/v1/embed-jobs" }
+    },
+    {
+      "name": "cohere_get_embed_job",
+      "description": "Read one Cohere embed job: status (processing, complete, cancelling, cancelled, failed), model, truncate setting, input dataset and the output dataset with the embeddings. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string", "description": "Embed job id from cohere_list_embed_jobs." }
+        },
+        "required": ["job_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/embed-jobs/{job_id}" }
+    }
+  ]
+}

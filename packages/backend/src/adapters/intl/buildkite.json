@@ -1,0 +1,1639 @@
+{
+  "slug": "buildkite",
+  "name": "Buildkite",
+  "description": "Let your AI check Buildkite: pipelines, builds and jobs, job logs, artifacts and annotations, agents, clusters and queues, and Test Engine flaky and slow tests, and start, rebuild and retry builds or unblock steps after you confirm.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "buildkite",
+  "docsUrl": "https://buildkite.com/docs/apis/rest-api",
+  "instructions": "## Buildkite\nThis connector works with the **Buildkite REST API** (`https://api.buildkite.com/v2`) and the **Test Engine API** (`/v2/analytics`): organizations, pipelines, builds, jobs and their logs, artifacts, annotations, agents, clusters and queues, and Test Engine suites, tests and runs. 34 tools: the AI reads all of these, and can start, rebuild and retry builds, unblock steps and add annotations after you confirm. It acts as the user who owns the token.\n\n**Setup (about 3 minutes)**\n1. In Buildkite open your avatar > **Personal Settings** > **API Access Tokens** (https://buildkite.com/user/api-access-tokens) and click **New API Access Token**.\n2. Choose the organizations and these scopes: `read_builds`, `read_build_logs`, `read_pipelines`, `read_artifacts`, `read_agents`, `read_clusters`, `read_organizations`, `read_user` and, for Test Engine, `read_suites`. For the writes add `write_builds`. Leave out what you do not want the AI to do.\n3. Paste the token into `BUILDKITE_API_TOKEN`. It is sent as `Authorization: Bearer <token>` to api.buildkite.com only.\n4. Check it with `buildkite_get_access_token` (shows the scopes), then `buildkite_list_organizations`.\n\n**Slugs and numbers**: tools take the organization slug (`org`) and the pipeline slug (`pipeline`) as in `buildkite.com/<org>/<pipeline>`, and the build **number** (#123), not the build UUID. Jobs, artifacts and agents use UUIDs. `buildkite_list_test_runs` filters by the build UUID (`id` of the build).\n\n**How to work**\n1. Find things: `buildkite_get_current_user`, `buildkite_list_organizations`, `buildkite_get_organization`, `buildkite_list_pipelines`, `buildkite_get_pipeline`.\n2. Builds: `buildkite_list_builds` (whole organization) or `buildkite_list_pipeline_builds` (one pipeline), filtered by branch, state (failed, running, blocked ...), commit or dates. They leave jobs out by default; `buildkite_get_build` shows them.\n3. Why did it fail: `buildkite_list_jobs` with state=failed, then `buildkite_get_job` and `buildkite_get_job_log` (the last 100,000 bytes by default). `buildkite_list_annotations` often holds the test summary. Artifacts: `buildkite_list_build_artifacts`, `buildkite_list_job_artifacts`, `buildkite_get_artifact`.\n4. Agents and capacity: `buildkite_list_agents`, `buildkite_get_agent`, `buildkite_list_clusters`, `buildkite_get_cluster`, `buildkite_list_cluster_queues`.\n5. Test Engine (flaky and slow tests): `buildkite_list_test_suites`, `buildkite_list_tests` (sort_by=reliability, order=asc for the least reliable, or labels=flaky), `buildkite_get_test`, `buildkite_list_test_runs`, `buildkite_get_test_run`, `buildkite_list_failed_executions`.\n\n**Writes need the user's confirmation**: `buildkite_create_build`, `buildkite_rebuild_build`, `buildkite_retry_failed_jobs`, `buildkite_retry_job`, `buildkite_unblock_job` and `buildkite_create_annotation`. Builds run real steps on your agents, including deployments, and use compute. `buildkite_unblock_job` approves a manual gate, often the one before production: call it only when the user explicitly says so. Say which pipeline, build and branch and call after the user agrees.\n\n**Switched off at install**: `buildkite_cancel_build`; it cannot be undone, so an admin switches it on when the team needs it.\n\n**Reading answers**: states are lower case (`passed`, `failed`, `running`, `blocked`, `canceled`). Times are ISO 8601 in UTC. `web_url` opens the build or job in Buildkite. Test durations are in seconds, reliability is a fraction (0.95 = 95%).\n\n**Paging**: list tools take `page` and `per_page` (up to 100, default 30). When there are more results the answer carries `_pagination.nextUrl`; call again with the next `page` (or `after` for `buildkite_list_jobs`) until `_pagination` is missing. Very deep build listings answer 400; narrow them with branch or created_from.\n\n**Limits**: Buildkite limits REST calls per organization and per user per minute and answers 429 when either is used up; wait the seconds in `RateLimit-Reset` and try again.\n\n**Errors**: 401 means the token is wrong, expired or revoked. 403 means the token lacks the scope for the call (check `buildkite_get_access_token`) or no access to that organization. 404 means a wrong slug, number or id. 422 explains why a build or job cannot be created, retried or unblocked.\n\n**Official MCP server**: Buildkite also runs its own MCP server at `https://mcp.buildkite.com/mcp` (OAuth) and `https://mcp.buildkite.com/direct` (`Authorization: Bearer <API token>`).\n\n**Out of scope here**: job environment variables (they hold secrets), deleting logs, artifacts, annotations or pipelines, creating or changing pipelines, clusters, queues and agent tokens, stopping or pausing agents, teams, members, audit events, package registries, and test state changes (mute, skip).",
+  "prerequisites": "A Buildkite account with access to the organization, and an API access token from Personal Settings > API Access Tokens. About 3 minutes.",
+  "requiredEnvVars": [
+    "BUILDKITE_API_TOKEN"
+  ],
+  "appRegistrationUrl": "https://buildkite.com/user/api-access-tokens",
+  "envVarMeta": {
+    "BUILDKITE_API_TOKEN": {
+      "label": "API access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Buildkite, Personal Settings > API Access Tokens > New API Access Token. Pick the organizations and the read scopes, plus write_builds for starting and retrying builds.",
+      "link": "https://buildkite.com/user/api-access-tokens",
+      "example": "bkua_...",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token (it usually starts with bkua_), without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Buildkite refused the token: it is wrong, expired or revoked. Create a new one under Personal Settings > API Access Tokens.",
+    "403": "The token works but lacks the scope or the organization for this call. Edit the token and add the scope, e.g. read_builds.",
+    "rate_limited": "Buildkite is rate limiting this token or organization. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "buildkite_get_access_token"
+  },
+  "connector": {
+    "name": "Buildkite REST API",
+    "type": "REST",
+    "baseUrl": "https://api.buildkite.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BUILDKITE_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v2/access-token"
+  },
+  "tools": [
+    {
+      "name": "buildkite_get_access_token",
+      "description": "Read the API access token in use: its scopes, description, expiry and owner. A quick check that the token works and which actions it allows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/access-token"
+      }
+    },
+    {
+      "name": "buildkite_get_current_user",
+      "description": "Read the Buildkite user the token belongs to: id, name, email and avatar. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/user"
+      }
+    },
+    {
+      "name": "buildkite_list_organizations",
+      "description": "List the organizations the token can reach, with their slug, name and web URL. The slug is what every other tool takes as org. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_get_organization",
+      "description": "Read one organization: name, slug, web URL and links to its pipelines and agents. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}"
+      }
+    },
+    {
+      "name": "buildkite_list_pipelines",
+      "description": "List the pipelines of an organization: slug, name, repository, default branch, cluster and running and scheduled build counts. Filter by part of the name or repository URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only pipelines whose name contains this text (case-insensitive)."
+          },
+          "repository": {
+            "type": "string",
+            "description": "Only pipelines whose repository URL contains this text."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/pipelines",
+        "queryParams": {
+          "name": "$name",
+          "repository": "$repository",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_get_pipeline",
+      "description": "Read one pipeline: repository, default branch, branch filters, cluster, provider settings and its YAML steps configuration. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          }
+        },
+        "required": [
+          "org",
+          "pipeline"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}"
+      }
+    },
+    {
+      "name": "buildkite_list_builds",
+      "description": "List the builds of a whole organization, newest first: number, state, branch, commit, message, creator, pipeline and times. Filter by branch, state, commit, creator or dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Only builds on this branch; * works as a wildcard, e.g. main or release/*."
+          },
+          "state": {
+            "type": "string",
+            "description": "Only builds in this state: running, scheduled, passed, failing, failed, blocked, canceling, canceled, skipped, not_run, or finished (all completed states).",
+            "enum": [
+              "running",
+              "scheduled",
+              "passed",
+              "failing",
+              "failed",
+              "blocked",
+              "canceling",
+              "canceled",
+              "skipped",
+              "not_run",
+              "finished"
+            ]
+          },
+          "commit": {
+            "type": "string",
+            "description": "Only builds of this full commit SHA."
+          },
+          "creator": {
+            "type": "string",
+            "description": "Only builds created by this user id (UUID)."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only builds created at or after this time, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only builds created before this time, ISO 8601."
+          },
+          "finished_from": {
+            "type": "string",
+            "description": "Only builds finished at or after this time, ISO 8601."
+          },
+          "exclude_jobs": {
+            "type": "boolean",
+            "description": "Leave the job list out of each build; default true to keep answers short. Use buildkite_get_build or buildkite_list_jobs for jobs.",
+            "default": true
+          },
+          "exclude_pipeline": {
+            "type": "boolean",
+            "description": "Leave the expanded pipeline out of each build; default true.",
+            "default": true
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/builds",
+        "queryParams": {
+          "branch": "$branch",
+          "state": "$state",
+          "commit": "$commit",
+          "creator": "$creator",
+          "created_from": "$created_from",
+          "created_to": "$created_to",
+          "finished_from": "$finished_from",
+          "exclude_jobs": "$exclude_jobs",
+          "exclude_pipeline": "$exclude_pipeline",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_list_pipeline_builds",
+      "description": "List the builds of one pipeline, newest first, with the same filters as buildkite_list_builds. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Only builds on this branch; * works as a wildcard, e.g. main or release/*."
+          },
+          "state": {
+            "type": "string",
+            "description": "Only builds in this state: running, scheduled, passed, failing, failed, blocked, canceling, canceled, skipped, not_run, or finished (all completed states).",
+            "enum": [
+              "running",
+              "scheduled",
+              "passed",
+              "failing",
+              "failed",
+              "blocked",
+              "canceling",
+              "canceled",
+              "skipped",
+              "not_run",
+              "finished"
+            ]
+          },
+          "commit": {
+            "type": "string",
+            "description": "Only builds of this full commit SHA."
+          },
+          "creator": {
+            "type": "string",
+            "description": "Only builds created by this user id (UUID)."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only builds created at or after this time, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only builds created before this time, ISO 8601."
+          },
+          "finished_from": {
+            "type": "string",
+            "description": "Only builds finished at or after this time, ISO 8601."
+          },
+          "exclude_jobs": {
+            "type": "boolean",
+            "description": "Leave the job list out of each build; default true to keep answers short. Use buildkite_get_build or buildkite_list_jobs for jobs.",
+            "default": true
+          },
+          "exclude_pipeline": {
+            "type": "boolean",
+            "description": "Leave the expanded pipeline out of each build; default true.",
+            "default": true
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org",
+          "pipeline"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds",
+        "queryParams": {
+          "branch": "$branch",
+          "state": "$state",
+          "commit": "$commit",
+          "creator": "$creator",
+          "created_from": "$created_from",
+          "created_to": "$created_to",
+          "finished_from": "$finished_from",
+          "exclude_jobs": "$exclude_jobs",
+          "exclude_pipeline": "$exclude_pipeline",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_get_build",
+      "description": "Read one build by its number: state, branch, commit, message, creator, times, job_state_counts and its jobs with state, exit status, step key, agent and web URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "number": {
+            "type": "integer",
+            "description": "Build number as shown in the app (#123), not the build UUID.",
+            "minimum": 1
+          },
+          "include_retried_jobs": {
+            "type": "boolean",
+            "description": "Also list earlier attempts of retried jobs."
+          },
+          "exclude_pipeline": {
+            "type": "boolean",
+            "description": "Leave the expanded pipeline out; default true.",
+            "default": true
+          }
+        },
+        "required": [
+          "org",
+          "pipeline",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}",
+        "queryParams": {
+          "include_retried_jobs": "$include_retried_jobs",
+          "exclude_pipeline": "$exclude_pipeline"
+        }
+      }
+    },
+    {
+      "name": "buildkite_list_jobs",
+      "description": "List the jobs of a build, optionally only some states or one step or group key: id, name, step key, state, exit status, agent and times. Use it to find the failed job of a big build. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "number": {
+            "type": "integer",
+            "description": "Build number as shown in the app (#123), not the build UUID.",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "description": "Only jobs in this state, e.g. failed, running, blocked, passed, canceled, timed_out. Sent as state[]."
+          },
+          "step_key": {
+            "type": "string",
+            "description": "Only jobs of the step with this key."
+          },
+          "group_key": {
+            "type": "string",
+            "description": "Only jobs of the group step with this key."
+          },
+          "include_retried_jobs": {
+            "type": "boolean",
+            "description": "false to show only the latest attempt of each step. Default true."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page, from the next link in _pagination."
+          }
+        },
+        "required": [
+          "org",
+          "pipeline",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}/jobs",
+        "queryParams": {
+          "state[]": "$state",
+          "step_key": "$step_key",
+          "group_key": "$group_key",
+          "include_retried_jobs": "$include_retried_jobs",
+          "per_page": "$per_page",
+          "after": "$after"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_get_job",
+      "description": "Read one job by id: name, command, state, exit status, signal, agent, retry information, times and web URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Job id (a UUID) from buildkite_get_build or buildkite_list_jobs."
+          }
+        },
+        "required": [
+          "org",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/jobs/{job_id}"
+      }
+    },
+    {
+      "name": "buildkite_get_job_log",
+      "description": "Read the end of a job's log as plain text, by default the last 100,000 bytes, where the error usually is. Raise tail_bytes for more. Log lines can contain ANSI colour codes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Job id (a UUID) from buildkite_get_build or buildkite_list_jobs."
+          },
+          "tail_bytes": {
+            "type": "integer",
+            "description": "How many bytes from the end of the log to return.",
+            "minimum": 1,
+            "maximum": 5000000,
+            "default": 100000
+          }
+        },
+        "required": [
+          "org",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/jobs/{job_id}/log",
+        "headers": {
+          "Accept": "text/plain",
+          "Range": "bytes=-${tail_bytes}"
+        }
+      }
+    },
+    {
+      "name": "buildkite_list_build_artifacts",
+      "description": "List the artifacts uploaded by all jobs of a build: id, job id, path, file size, mime type, state and sha1. Filter by state or path glob. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "number": {
+            "type": "integer",
+            "description": "Build number as shown in the app (#123), not the build UUID.",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "description": "Only artifacts in this state.",
+            "enum": [
+              "new",
+              "error",
+              "finished",
+              "deleted",
+              "expired"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Only artifacts at this path; * works as a wildcard, e.g. coverage/*."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org",
+          "pipeline",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}/artifacts",
+        "queryParams": {
+          "state": "$state",
+          "path": "$path",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_list_job_artifacts",
+      "description": "List the artifacts of one job, with the same fields and filters as buildkite_list_build_artifacts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Job id (a UUID) from buildkite_get_build or buildkite_list_jobs."
+          },
+          "state": {
+            "type": "string",
+            "description": "Only artifacts in this state.",
+            "enum": [
+              "new",
+              "error",
+              "finished",
+              "deleted",
+              "expired"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Only artifacts at this path; * works as a wildcard."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/jobs/{job_id}/artifacts",
+        "queryParams": {
+          "state": "$state",
+          "path": "$path",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_get_artifact",
+      "description": "Read one artifact's metadata: path, size, mime type, state, sha1 and its download URL (the file itself opens in the Buildkite app). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Job id (a UUID) from buildkite_get_build or buildkite_list_jobs."
+          },
+          "artifact_id": {
+            "type": "string",
+            "description": "Artifact id from buildkite_list_job_artifacts or buildkite_list_build_artifacts."
+          }
+        },
+        "required": [
+          "org",
+          "job_id",
+          "artifact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/jobs/{job_id}/artifacts/{artifact_id}"
+      }
+    },
+    {
+      "name": "buildkite_list_annotations",
+      "description": "List the annotations of a build: context, style (success, info, warning, error), priority and the rendered HTML body, often a test or coverage summary. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "number": {
+            "type": "integer",
+            "description": "Build number as shown in the app (#123), not the build UUID.",
+            "minimum": 1
+          },
+          "scope": {
+            "type": "string",
+            "description": "build (default), job, or all.",
+            "enum": [
+              "build",
+              "job",
+              "all"
+            ]
+          },
+          "omit_body": {
+            "type": "boolean",
+            "description": "true to leave the HTML bodies out."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org",
+          "pipeline",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}/annotations",
+        "queryParams": {
+          "scope": "$scope",
+          "omit_body": "$omit_body",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_list_agents",
+      "description": "List the connected agents of an organization: id, name, hostname, version, queue, tags (meta_data), connection state and the job they run. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only agents with this name."
+          },
+          "hostname": {
+            "type": "string",
+            "description": "Only agents on this hostname."
+          },
+          "version": {
+            "type": "string",
+            "description": "Only agents of this exact version, e.g. 3.80.0."
+          },
+          "cluster_queue_id": {
+            "type": "string",
+            "description": "Only agents of this cluster queue (UUID)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/agents",
+        "queryParams": {
+          "name": "$name",
+          "hostname": "$hostname",
+          "version": "$version",
+          "cluster_queue_id": "$cluster_queue_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_get_agent",
+      "description": "Read one agent by id, also a disconnected one: connection state, hostname, version, queue, tags, current job and times. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "Agent id (UUID) from buildkite_list_agents."
+          }
+        },
+        "required": [
+          "org",
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/agents/{agent_id}"
+      }
+    },
+    {
+      "name": "buildkite_list_clusters",
+      "description": "List the clusters of an organization: id, name, description, default queue and maintainers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/clusters",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_get_cluster",
+      "description": "Read one cluster: name, description, default queue and maintainers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "cluster_id": {
+            "type": "string",
+            "description": "Cluster id (UUID) from buildkite_list_clusters."
+          }
+        },
+        "required": [
+          "org",
+          "cluster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/clusters/{cluster_id}"
+      }
+    },
+    {
+      "name": "buildkite_list_cluster_queues",
+      "description": "List the queues of a cluster: id, key, description, hosted agent settings and whether dispatch is paused. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "cluster_id": {
+            "type": "string",
+            "description": "Cluster id (UUID) from buildkite_list_clusters."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org",
+          "cluster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations/{org}/clusters/{cluster_id}/queues",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_list_test_suites",
+      "description": "List the Test Engine suites of an organization: slug, name, default branch and web URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          }
+        },
+        "required": [
+          "org"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/organizations/{org}/suites"
+      }
+    },
+    {
+      "name": "buildkite_list_tests",
+      "description": "List the tests of a Test Engine suite with metrics over a time window: reliability, average and total duration, execution counts, labels (such as flaky), state and owners. Sort by reliability ascending to find flaky tests. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "suite": {
+            "type": "string",
+            "description": "Test suite slug from buildkite_list_test_suites."
+          },
+          "period": {
+            "type": "string",
+            "description": "Window such as 7days or 28days. Do not combine with min_timestamp or max_timestamp."
+          },
+          "min_timestamp": {
+            "type": "string",
+            "description": "Window start, RFC 3339, e.g. 2026-10-01T00:00:00Z."
+          },
+          "max_timestamp": {
+            "type": "string",
+            "description": "Window end, RFC 3339; defaults to now."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Only executions on this branch; !main excludes it, feature* matches a prefix."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated labels; ! excludes one, e.g. flaky,!slow."
+          },
+          "state": {
+            "type": "string",
+            "description": "Only tests in this state.",
+            "enum": [
+              "enabled",
+              "muted",
+              "skipped"
+            ]
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Metric to sort by; default duration_avg.",
+            "enum": [
+              "duration_avg",
+              "duration_sum",
+              "duration_min",
+              "duration_max",
+              "reliability"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc (default).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "min_executions": {
+            "type": "integer",
+            "description": "Only tests with at least this many executions in the window.",
+            "minimum": 1
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org",
+          "suite"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/organizations/{org}/suites/{suite}/tests",
+        "headers": {
+          "Buildkite-Version": "2026-08-01"
+        },
+        "queryParams": {
+          "period": "$period",
+          "min_timestamp": "$min_timestamp",
+          "max_timestamp": "$max_timestamp",
+          "branch": "$branch",
+          "labels": "$labels",
+          "state": "$state",
+          "sort_by": "$sort_by",
+          "order": "$order",
+          "min_executions": "$min_executions",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_get_test",
+      "description": "Read one test of a suite with its duration, reliability and execution metrics and its flakiness scores over a time window. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "suite": {
+            "type": "string",
+            "description": "Test suite slug from buildkite_list_test_suites."
+          },
+          "test_id": {
+            "type": "string",
+            "description": "Test id from buildkite_list_tests."
+          },
+          "period": {
+            "type": "string",
+            "description": "Window such as 7days or 28days."
+          },
+          "min_timestamp": {
+            "type": "string",
+            "description": "Window start, RFC 3339."
+          },
+          "max_timestamp": {
+            "type": "string",
+            "description": "Window end, RFC 3339."
+          }
+        },
+        "required": [
+          "org",
+          "suite",
+          "test_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/organizations/{org}/suites/{suite}/tests/{test_id}",
+        "headers": {
+          "Buildkite-Version": "2026-08-01"
+        },
+        "queryParams": {
+          "period": "$period",
+          "min_timestamp": "$min_timestamp",
+          "max_timestamp": "$max_timestamp"
+        }
+      }
+    },
+    {
+      "name": "buildkite_list_test_runs",
+      "description": "List the test runs of a suite, newest first: id, branch, commit, result, execution counts by result and the build they belong to. Filter by build UUID. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "suite": {
+            "type": "string",
+            "description": "Test suite slug from buildkite_list_test_suites."
+          },
+          "build_id": {
+            "type": "string",
+            "description": "Only runs of this build (the build UUID id field, not the number)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org",
+          "suite"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/organizations/{org}/suites/{suite}/runs",
+        "queryParams": {
+          "build_id": "$build_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_get_test_run",
+      "description": "Read one test run: state, result, branch, commit, execution counts and times. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "suite": {
+            "type": "string",
+            "description": "Test suite slug from buildkite_list_test_suites."
+          },
+          "run_id": {
+            "type": "string",
+            "description": "Run id from buildkite_list_test_runs."
+          }
+        },
+        "required": [
+          "org",
+          "suite",
+          "run_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/organizations/{org}/suites/{suite}/runs/{run_id}"
+      }
+    },
+    {
+      "name": "buildkite_list_failed_executions",
+      "description": "List the failed test executions of a run: test name and location, failure reason and, with include_failure_expanded, the expanded failure details and backtrace. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "suite": {
+            "type": "string",
+            "description": "Test suite slug from buildkite_list_test_suites."
+          },
+          "run_id": {
+            "type": "string",
+            "description": "Run id from buildkite_list_test_runs."
+          },
+          "include_failure_expanded": {
+            "type": "boolean",
+            "description": "true to include the expanded failure output."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30
+          }
+        },
+        "required": [
+          "org",
+          "suite",
+          "run_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/organizations/{org}/suites/{suite}/runs/{run_id}/failed_executions",
+        "queryParams": {
+          "include_failure_expanded": "$include_failure_expanded",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "buildkite_create_build",
+      "description": "Start a new build of a pipeline for a commit and branch. It runs the pipeline's steps, including any deploy steps, on your agents. Tell the user the pipeline, branch, commit and environment and call after the user agrees. Returns the new build with its number and web URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "commit": {
+            "type": "string",
+            "description": "Ref, SHA or tag to build, e.g. HEAD."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch the commit belongs to, e.g. main. Branch filters of the pipeline and its steps apply to it."
+          },
+          "message": {
+            "type": "string",
+            "description": "Build message shown in Buildkite."
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables for the build, e.g. {\"DEPLOY\": \"false\"}."
+          },
+          "meta_data": {
+            "type": "object",
+            "description": "Build meta-data, e.g. {\"release\": \"2026.10\"}."
+          },
+          "clean_checkout": {
+            "type": "boolean",
+            "description": "true to force a fresh checkout on the agent."
+          },
+          "ignore_pipeline_branch_filters": {
+            "type": "boolean",
+            "description": "true to build even if the pipeline's branch filter would skip this branch (step filters still apply)."
+          },
+          "author": {
+            "type": "object",
+            "description": "Who the build is shown as created by, {\"name\": \"...\", \"email\": \"...\"}; default the token's user."
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "description": "For a pull request build: the pull request number."
+          },
+          "pull_request_base_branch": {
+            "type": "string",
+            "description": "For a pull request build: its base branch."
+          },
+          "pull_request_repository": {
+            "type": "string",
+            "description": "For a pull request build from a fork: the fork's git repository URL."
+          }
+        },
+        "required": [
+          "org",
+          "pipeline",
+          "commit",
+          "branch"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds",
+        "bodyMapping": {
+          "commit": "$commit",
+          "branch": "$branch",
+          "message": "$message",
+          "env": "$env",
+          "meta_data": "$meta_data",
+          "clean_checkout": "$clean_checkout",
+          "ignore_pipeline_branch_filters": "$ignore_pipeline_branch_filters",
+          "author": "$author",
+          "pull_request_id": "$pull_request_id",
+          "pull_request_base_branch": "$pull_request_base_branch",
+          "pull_request_repository": "$pull_request_repository"
+        }
+      }
+    },
+    {
+      "name": "buildkite_rebuild_build",
+      "description": "Run a finished build again as a new build with the same commit, branch and settings, including any deploy steps. Tell the user which build and call after the user agrees. Returns the new build.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "number": {
+            "type": "integer",
+            "description": "Build number as shown in the app (#123), not the build UUID.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "org",
+          "pipeline",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}/rebuild"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "buildkite_retry_failed_jobs",
+      "description": "Retry the failed jobs of a build in place, optionally only some failure kinds. Tell the user which build and call after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "number": {
+            "type": "integer",
+            "description": "Build number as shown in the app (#123), not the build UUID.",
+            "minimum": 1
+          },
+          "states": {
+            "type": "string",
+            "description": "Comma-separated failure kinds to retry: canceled, expired, failed, soft_failed, timed_out. Empty retries every retryable failure."
+          }
+        },
+        "required": [
+          "org",
+          "pipeline",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}/retry_failed_jobs",
+        "bodyMapping": {
+          "states": "$states"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "buildkite_retry_job",
+      "description": "Retry one failed, timed out or canceled job; the retry runs as a new job in the same build. Tell the user which job and call after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Job id (a UUID) from buildkite_get_build or buildkite_list_jobs."
+          }
+        },
+        "required": [
+          "org",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/organizations/{org}/jobs/{job_id}/retry"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "buildkite_unblock_job",
+      "description": "Unblock a block step (a manual approval, often before a deploy) so the build continues, optionally with values for the step's fields. This approves whatever comes next. Tell the user which build and step and call only after the user explicitly agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Job id of the blocked step (type manual, state blocked) from buildkite_list_jobs."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Values for the block step's fields, keyed by field key, e.g. {\"release-name\": \"2026.10\"}."
+          }
+        },
+        "required": [
+          "org",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/organizations/{org}/jobs/{job_id}/unblock",
+        "bodyMapping": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "buildkite_create_annotation",
+      "description": "Add an annotation (a Markdown or HTML note shown on the build page) to a build, or append to the one with the same context. Call after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "number": {
+            "type": "integer",
+            "description": "Build number as shown in the app (#123), not the build UUID.",
+            "minimum": 1
+          },
+          "body": {
+            "type": "string",
+            "description": "Annotation text in Markdown or HTML."
+          },
+          "style": {
+            "type": "string",
+            "description": "Box style; default default.",
+            "enum": [
+              "success",
+              "info",
+              "warning",
+              "error"
+            ]
+          },
+          "context": {
+            "type": "string",
+            "description": "Name that identifies the annotation on this build, e.g. ai-summary. One annotation per context."
+          },
+          "append": {
+            "type": "boolean",
+            "description": "true to append body to the annotation with the same context instead of replacing it."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "1 to 10; higher shows first. Default 3.",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "org",
+          "pipeline",
+          "number",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}/annotations",
+        "bodyMapping": {
+          "body": "$body",
+          "style": "$style",
+          "context": "$context",
+          "append": "$append",
+          "priority": "$priority"
+        }
+      }
+    },
+    {
+      "name": "buildkite_cancel_build",
+      "description": "Cancel a scheduled, running or failing build; its running jobs stop and the rest never run, which can leave a deployment half done. It cannot be resumed, only rebuilt. Tell the user which build and call after the user agrees.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string",
+            "description": "Organization slug from buildkite_list_organizations, as in buildkite.com/<org>, e.g. acme-inc."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline slug from buildkite_list_pipelines, as in buildkite.com/<org>/<pipeline>, e.g. web-app."
+          },
+          "number": {
+            "type": "integer",
+            "description": "Build number as shown in the app (#123), not the build UUID.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "org",
+          "pipeline",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}/cancel"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

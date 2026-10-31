@@ -1,0 +1,623 @@
+{
+  "slug": "prismic",
+  "name": "Prismic",
+  "aliases": [
+    "Prismic.io",
+    "Prismic CMS"
+  ],
+  "description": "Prismic headless page builder: query published and scheduled documents with Prismic filters, read custom type and slice models, browse and upload media, and create or update draft documents through the Migration API.",
+  "region": "intl",
+  "category": "cms",
+  "icon": "prismic",
+  "docsUrl": "https://prismic.io/docs/content-api",
+  "instructions": "## Prismic\nThis connector reads a Prismic repository through the **Content API** (`https://<repository>.cdn.prismic.io/api/v2`) and writes through Prismic's write APIs: the **Migration API** for documents, the **Asset API** for the media library, and the **Types API** to read the content models. Prismic also runs its own MCP server (`https://mcp.prismic.io/mcp`, OAuth sign-in) for editing and publishing from an assistant; this connector is the token-based alternative.\n\n**Setup (3 minutes)**\n1. `PRISMIC_REPOSITORY`: the repository name, the part before `.prismic.io` in your dashboard URL.\n2. `PRISMIC_ACCESS_TOKEN` (optional): only when the Content API is private. Repository **Settings > API & Security**, generate an access token (or `npx prismic token create`). Leave it empty for a public API.\n3. `PRISMIC_WRITE_TOKEN` (optional, needed for every tool marked \"Needs the write token\" and for all writes): **Settings > API & Security > Write APIs**, generate a token (or `npx prismic token create --write`). It is sent as `Authorization: Bearer <token>` with the `repository` header. It carries wide rights: keep it to trusted workspaces.\n4. Run `prismic_get_repository` to check the repository name.\n\n**Reading content (two steps)**\n1. `prismic_get_repository` returns `refs`. Take the `ref` of the entry with `isMasterRef: true` (published content), or a release's ref to preview scheduled content. Every content query needs it, and it changes on each publish.\n2. Then `prismic_search_documents` with filters in `q`, `prismic_get_document` by id, `prismic_get_document_by_uid` by type and UID, or `prismic_list_documents_by_type`. The repository answer also lists the custom types, tags and languages.\n\n**Filters (`q`)**: `[[at(document.type,\"blog_post\")]]`; combine several: `[[at(document.type,\"blog_post\")][any(document.tags,[\"news\",\"events\"])]]`. Others: `fulltext(document,\"text\")`, `at(my.blog_post.author,\"<id>\")`, `date.after(document.first_publication_date,\"2026-01-01\")`, `not`, `in(document.id,[...])`, `number.lt(my.product.price,100)`. `orderings` such as `[my.blog_post.date desc]`.\n\n**Models and media (write token)**: `prismic_list_custom_types` and `prismic_get_custom_type` give the field structure, `prismic_list_shared_slices` and `prismic_get_shared_slice` the slices. `prismic_list_assets` browses the media library, `prismic_upload_asset` uploads a file from a URL, `prismic_update_asset` edits alt text, credits and notes.\n\n**Writing documents (write token)**: `prismic_create_document` and `prismic_update_document` save drafts into a **migration release**: they are not live until an editor publishes that release in the dashboard (Migration Releases tab). There is no publish call in these APIs. Build `data` from the custom type model; rich text is a list of blocks (`{\"type\": \"paragraph\", \"text\": \"...\", \"spans\": []}`), images and media take an asset id, links `{\"link_type\": \"Document\", \"id\": \"...\"}` or `{\"link_type\": \"Web\", \"url\": \"...\"}`. An update replaces all content and tags. Changing content models and deleting are left to the Prismic dashboard or CLI.\n\n**Reading the answers**: content lists carry `results`, `page`, `total_pages`, `total_results_size` and `next_page`. Rich text fields come as block lists; dates are `YYYY-MM-DD`, timestamps ISO 8601. Document ids look like `ZMI65RQAADkECUFM`.\n\n**Paging**: `page` (from 1) and `page_size` (20 by default, 100 at most), or `orderings` plus `after` with the last document id. Assets page with `cursor`.\n\n**Limits and errors**: the Content API allows 200 uncached requests per second and URLs up to 2,048 characters (keep `graph_query` short). The Migration and Asset APIs take one request per second per repository. 404 on `prismic_get_repository` means a wrong repository name; 401 or 403 a private API without a valid access token, or a write call without a valid write token; 400 a malformed filter or an invalid ref; 422 data that does not fit the model.",
+  "prerequisites": "A Prismic repository; an access token if its Content API is private, and a write token for models, media and writes.",
+  "requiredEnvVars": [
+    "PRISMIC_REPOSITORY"
+  ],
+  "optionalEnvVars": [
+    "PRISMIC_ACCESS_TOKEN",
+    "PRISMIC_WRITE_TOKEN"
+  ],
+  "envVarMeta": {
+    "PRISMIC_REPOSITORY": {
+      "label": "Repository name",
+      "kind": "setting",
+      "help": "The name of your repository, the part before .prismic.io in the dashboard URL.",
+      "example": "your-repo-name",
+      "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+      "patternMessage": "Only the repository name in lower case, e.g. your-repo-name, without https:// or .prismic.io."
+    },
+    "PRISMIC_ACCESS_TOKEN": {
+      "label": "Content API access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Only for a private Content API: repository Settings > API & Security > generate an access token. Leave empty when the API is public.",
+      "link": "https://prismic.io/docs/api-authentication#access-tokens",
+      "pattern": "^[A-Za-z0-9._-]{20,}$",
+      "patternMessage": "Paste only the token, without spaces or quotes."
+    },
+    "PRISMIC_WRITE_TOKEN": {
+      "label": "Write token",
+      "kind": "credential",
+      "secret": true,
+      "help": "For the Types, Asset and Migration APIs: repository Settings > API & Security > Write APIs > generate a token. Sent as a Bearer token.",
+      "link": "https://prismic.io/docs/api-authentication#write-tokens",
+      "pattern": "^[A-Za-z0-9._-]{20,}$",
+      "patternMessage": "Paste only the token, without spaces, quotes or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "404": "Prismic does not know this repository. Check PRISMIC_REPOSITORY: only the name, e.g. your-repo-name.",
+    "401": "The Content API of this repository is private. Set PRISMIC_ACCESS_TOKEN from Settings > API & Security.",
+    "403": "Prismic refused the token. Generate a new access token, or a write token for the Types, Asset and Migration APIs, under Settings > API & Security."
+  },
+  "probe": {
+    "tool": "prismic_get_repository"
+  },
+  "connector": {
+    "name": "Prismic APIs",
+    "type": "REST",
+    "baseUrl": "https://{{PRISMIC_REPOSITORY}}.cdn.prismic.io/api/v2",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP (https://anythingmcp.com)"
+    }
+  },
+  "tools": [
+    {
+      "name": "prismic_get_repository",
+      "description": "The repository's entry point for the Content API: refs (the master ref needed by every content query, plus release refs), custom types, tags, languages and bookmarks. Call it first.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "",
+        "queryParams": {
+          "access_token": "${PRISMIC_ACCESS_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_search_documents",
+      "description": "Query published content (or a release) with Prismic filters: by type, tag, id, uid, field values, full text or dates, sorted and paged. Returns results with id, uid, type, lang, tags, first and last publication dates and data (the fields), plus total_results_size and total_pages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "Content version to read: the ref of the master ref (isMasterRef true) from prismic_get_repository, or a release ref for scheduled content. Refs change on every publish: fetch a fresh one when the API answers that the ref is unknown or expired."
+          },
+          "q": {
+            "type": "string",
+            "description": "Filters, each in brackets, all inside brackets: [[at(document.type,\"blog_post\")][fulltext(document,\"pricing\")][any(document.tags,[\"news\"])][date.after(document.first_publication_date,\"2026-01-01\")][at(my.blog_post.author,\"<document id>\")]]."
+          },
+          "orderings": {
+            "type": "string",
+            "description": "Sort, e.g. [my.blog_post.date desc] or [document.first_publication_date desc,document.id]."
+          },
+          "after": {
+            "type": "string",
+            "description": "Return documents after this document id (with orderings), for cursor paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Documents per page (default 20, max 100)."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Locale code, e.g. en-us or fr-fr; * for all locales. Default: the master locale."
+          },
+          "fetch_links": {
+            "type": "string",
+            "description": "Fields of linked documents to include, e.g. author.name,author.avatar."
+          },
+          "graph_query": {
+            "type": "string",
+            "description": "GraphQuery string for selective or deep fetching, e.g. {blog_post{title author{...on author{name}}}}."
+          }
+        },
+        "required": [
+          "ref"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/search",
+        "queryParams": {
+          "ref": "$ref",
+          "q": "$q",
+          "orderings": "$orderings",
+          "after": "$after",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "lang": "$lang",
+          "fetchLinks": "$fetch_links",
+          "graphQuery": "$graph_query",
+          "access_token": "${PRISMIC_ACCESS_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_get_document",
+      "description": "One document by its id with all its fields (data), slices, tags, alternate languages and publication dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "Content version to read: the ref of the master ref (isMasterRef true) from prismic_get_repository, or a release ref for scheduled content. Refs change on every publish: fetch a fresh one when the API answers that the ref is unknown or expired."
+          },
+          "id": {
+            "type": "string",
+            "description": "Document id, e.g. ZMI65RQAADkECUFM."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Locale code, e.g. en-us or fr-fr; * for all locales. Default: the master locale."
+          },
+          "fetch_links": {
+            "type": "string",
+            "description": "Fields of linked documents to include, e.g. author.name,author.avatar."
+          },
+          "graph_query": {
+            "type": "string",
+            "description": "GraphQuery string for selective or deep fetching, e.g. {blog_post{title author{...on author{name}}}}."
+          }
+        },
+        "required": [
+          "ref",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/search",
+        "queryParams": {
+          "ref": "$ref",
+          "q": "[[at(document.id,\"${id}\")]]",
+          "lang": "$lang",
+          "fetchLinks": "$fetch_links",
+          "graphQuery": "$graph_query",
+          "access_token": "${PRISMIC_ACCESS_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_get_document_by_uid",
+      "description": "One document by its custom type and UID (the slug-like unique id), e.g. type page and uid about-us.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "Content version to read: the ref of the master ref (isMasterRef true) from prismic_get_repository, or a release ref for scheduled content. Refs change on every publish: fetch a fresh one when the API answers that the ref is unknown or expired."
+          },
+          "type": {
+            "type": "string",
+            "description": "API id of the custom type, e.g. page or blog_post."
+          },
+          "uid": {
+            "type": "string",
+            "description": "The document UID, e.g. about-us."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Locale code, e.g. en-us or fr-fr; * for all locales. Default: the master locale."
+          },
+          "fetch_links": {
+            "type": "string",
+            "description": "Fields of linked documents to include, e.g. author.name,author.avatar."
+          },
+          "graph_query": {
+            "type": "string",
+            "description": "GraphQuery string for selective or deep fetching, e.g. {blog_post{title author{...on author{name}}}}."
+          }
+        },
+        "required": [
+          "ref",
+          "type",
+          "uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/search",
+        "queryParams": {
+          "ref": "$ref",
+          "q": "[[at(my.${type}.uid,\"${uid}\")]]",
+          "lang": "$lang",
+          "fetchLinks": "$fetch_links",
+          "graphQuery": "$graph_query",
+          "access_token": "${PRISMIC_ACCESS_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_list_documents_by_type",
+      "description": "All documents of one custom type, paged and optionally sorted, e.g. every blog_post newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "Content version to read: the ref of the master ref (isMasterRef true) from prismic_get_repository, or a release ref for scheduled content. Refs change on every publish: fetch a fresh one when the API answers that the ref is unknown or expired."
+          },
+          "type": {
+            "type": "string",
+            "description": "API id of the custom type, e.g. blog_post."
+          },
+          "orderings": {
+            "type": "string",
+            "description": "Sort, e.g. [document.first_publication_date desc]."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Documents per page (default 20, max 100)."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Locale code, e.g. en-us or fr-fr; * for all locales. Default: the master locale."
+          },
+          "fetch_links": {
+            "type": "string",
+            "description": "Fields of linked documents to include, e.g. author.name,author.avatar."
+          },
+          "graph_query": {
+            "type": "string",
+            "description": "GraphQuery string for selective or deep fetching, e.g. {blog_post{title author{...on author{name}}}}."
+          }
+        },
+        "required": [
+          "ref",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/documents/search",
+        "queryParams": {
+          "ref": "$ref",
+          "q": "[[at(document.type,\"${type}\")]]",
+          "orderings": "$orderings",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "lang": "$lang",
+          "fetchLinks": "$fetch_links",
+          "graphQuery": "$graph_query",
+          "access_token": "${PRISMIC_ACCESS_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_list_custom_types",
+      "description": "The custom types (page types) of the repository with their JSON model: tabs, fields, slice zones, repeatable or single, and status (active or disabled). Needs the write token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://customtypes.prismic.io/customtypes",
+        "headers": {
+          "repository": "{{PRISMIC_REPOSITORY}}",
+          "Authorization": "Bearer ${PRISMIC_WRITE_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_get_custom_type",
+      "description": "One custom type model by its API id, with every field and its configuration. Use it before creating or updating documents of that type. Needs the write token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type_id": {
+            "type": "string",
+            "description": "API id of the custom type, e.g. blog_post."
+          }
+        },
+        "required": [
+          "type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://customtypes.prismic.io/customtypes/{type_id}",
+        "headers": {
+          "repository": "{{PRISMIC_REPOSITORY}}",
+          "Authorization": "Bearer ${PRISMIC_WRITE_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_list_shared_slices",
+      "description": "The shared slices of the repository with their variations and fields (primary and items). Needs the write token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://customtypes.prismic.io/slices",
+        "headers": {
+          "repository": "{{PRISMIC_REPOSITORY}}",
+          "Authorization": "Bearer ${PRISMIC_WRITE_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_get_shared_slice",
+      "description": "One shared slice model by id, with its variations and fields. Needs the write token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slice_id": {
+            "type": "string",
+            "description": "Shared slice id, e.g. TextSlice."
+          }
+        },
+        "required": [
+          "slice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://customtypes.prismic.io/slices/{slice_id}",
+        "headers": {
+          "repository": "{{PRISMIC_REPOSITORY}}",
+          "Authorization": "Bearer ${PRISMIC_WRITE_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_list_assets",
+      "description": "Assets of the media library: id, url, filename, kind, size, width and height, alt, credits, notes and tags. Filter by type or keyword; paged with a cursor. Needs the write token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_type": {
+            "type": "string",
+            "description": "Asset type, e.g. all or image."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Keyword to match in title, filename, alt, notes or credits."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of assets, e.g. 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Asset id after which to continue, from the previous answer's cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://asset-api.prismic.io/assets",
+        "queryParams": {
+          "assetType": "$asset_type",
+          "keyword": "$keyword",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        },
+        "headers": {
+          "repository": "{{PRISMIC_REPOSITORY}}",
+          "Authorization": "Bearer ${PRISMIC_WRITE_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_upload_asset",
+      "description": "Upload a file from a public URL to the media library, with optional alt text, credits and notes. Returns the asset id to use in image or media link fields. One upload per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "description": "Public URL of the file to upload (fetched by the connector, 10 MB at most).",
+            "format": "uri"
+          },
+          "alt": {
+            "type": "string",
+            "description": "Alt text, up to 500 characters."
+          },
+          "credits": {
+            "type": "string",
+            "description": "Credits, up to 500 characters."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes, up to 500 characters."
+          }
+        },
+        "required": [
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://asset-api.prismic.io/assets",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          },
+          "alt": "$alt",
+          "credits": "$credits",
+          "notes": "$notes"
+        },
+        "headers": {
+          "repository": "{{PRISMIC_REPOSITORY}}",
+          "Authorization": "Bearer ${PRISMIC_WRITE_TOKEN}"
+        },
+        "bodyEncoding": "form-data"
+      }
+    },
+    {
+      "name": "prismic_update_asset",
+      "description": "Change the alt text, credits or notes of a media library asset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "Asset id from prismic_list_assets or prismic_upload_asset."
+          },
+          "alt": {
+            "type": "string",
+            "description": "Alt text, up to 500 characters."
+          },
+          "credits": {
+            "type": "string",
+            "description": "Credits, up to 500 characters."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes, up to 500 characters."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://asset-api.prismic.io/assets/{asset_id}",
+        "bodyMapping": {
+          "alt": "$alt",
+          "credits": "$credits",
+          "notes": "$notes"
+        },
+        "headers": {
+          "repository": "{{PRISMIC_REPOSITORY}}",
+          "Authorization": "Bearer ${PRISMIC_WRITE_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_create_document",
+      "description": "Create a document as a draft through the Migration API. It lands in a migration release, where an editor reviews and publishes it. data must follow the custom type model (prismic_get_custom_type). One write per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title shown in the document list."
+          },
+          "type": {
+            "type": "string",
+            "description": "API id of the custom type."
+          },
+          "uid": {
+            "type": "string",
+            "description": "UID; required when the type has one, not allowed when it has none."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Locale code, e.g. en-us."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags for the document.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_language_id": {
+            "type": "string",
+            "description": "Id of the document this one translates."
+          },
+          "data": {
+            "type": "object",
+            "description": "Field values keyed by field API id, e.g. {\"title\": [{\"type\": \"heading1\", \"text\": \"Hello\", \"spans\": []}], \"image\": {\"id\": \"<asset id>\"}, \"link\": {\"link_type\": \"Document\", \"id\": \"<doc id>\"}, \"slices\": [{\"slice_type\": \"text\", \"variation\": \"default\", \"primary\": {...}}]}."
+          }
+        },
+        "required": [
+          "title",
+          "type",
+          "lang",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://migration.prismic.io/documents",
+        "bodyMapping": {
+          "title": "$title",
+          "type": "$type",
+          "uid": "$uid",
+          "lang": "$lang",
+          "tags": "$tags",
+          "alternate_language_id": "$alternate_language_id",
+          "data": "$data"
+        },
+        "headers": {
+          "repository": "{{PRISMIC_REPOSITORY}}",
+          "Authorization": "Bearer ${PRISMIC_WRITE_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "prismic_update_document",
+      "description": "Replace the content of an existing document through the Migration API, saved as a draft in a migration release. data replaces the whole content, and tags left out are removed: read the document first and send everything back. Type and locale cannot change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Document id."
+          },
+          "uid": {
+            "type": "string",
+            "description": "UID; required when the type has one."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title shown in the document list."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags; omitting them deletes the existing ones.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "data": {
+            "type": "object",
+            "description": "The full content, as for prismic_create_document."
+          }
+        },
+        "required": [
+          "id",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "https://migration.prismic.io/documents/{id}/",
+        "bodyMapping": {
+          "uid": "$uid",
+          "title": "$title",
+          "tags": "$tags",
+          "data": "$data"
+        },
+        "headers": {
+          "repository": "{{PRISMIC_REPOSITORY}}",
+          "Authorization": "Bearer ${PRISMIC_WRITE_TOKEN}"
+        }
+      }
+    }
+  ]
+}

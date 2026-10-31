@@ -166,6 +166,19 @@ describe('ConnectorSetupService — find', () => {
     const out: any = (await service.find(ctx, { query: 'payone sorare', limit: 10 })).body;
     expect(out.results.map((r: any) => r.adapter)).not.toEqual(expect.arrayContaining(['payone', 'sorare']));
   });
+
+  it('offers payment connectors for their read tools on the default profile, never cryptocurrency ones', async () => {
+    const { service, ctx } = build();
+    const claude = { ...ctx, profile: 'default' as const };
+    const stripe: any = (await service.find(claude, { query: 'stripe', limit: 10 })).body;
+    const hit = stripe.results.find((r: any) => r.adapter === 'stripe');
+    expect(hit.servedHere).toMatch(/Read tools only/);
+    const crypto: any = (await service.find(claude, { query: 'binance coinbase sorare', limit: 10 })).body;
+    expect(crypto.results.map((r: any) => r.adapter)).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^(binance|coinbase|sorare)$/)]),
+    );
+    expect((await service.install(claude, { adapter: 'binance' })).isError).toBe(true);
+  });
 });
 
 describe('ConnectorSetupService — install', () => {

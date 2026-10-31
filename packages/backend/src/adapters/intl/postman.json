@@ -1,0 +1,1537 @@
+{
+  "slug": "postman",
+  "name": "Postman",
+  "description": "Let your AI work with Postman: workspaces, collections and requests, environments, Spec Hub specs, APIs, mock servers and their call logs, monitors and team users, and create or change collections, requests, environments, mocks, monitors and specs after you confirm.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "postman",
+  "docsUrl": "https://learning.postman.com/api-docs/api-reference",
+  "instructions": "## Postman\nThis connector works with the **Postman API** (`https://api.postman.com`, or `https://api.eu.postman.com` for the EU data region): workspaces, collections with their folders and requests, environments, APIs, Spec Hub specifications, mock servers and their call logs, monitors, team users and search. 35 tools: the AI can read all of these, and create or change collections, requests, environments, mocks, monitors and specs after you confirm. No tool deletes a workspace, collection, request, environment, mock, monitor or spec.\n\n**Setup (about 2 minutes)**\n1. In Postman open your avatar > **Settings** > **API keys** (https://go.postman.co/settings/me/api-keys) and click **Generate API Key**. Give it a name and copy the key; it starts with `PMAK-`.\n2. Paste it into `POSTMAN_API_KEY`. It is sent in the `X-Api-Key` header. The key acts as your Postman user and sees what you see in every workspace.\n3. Set `POSTMAN_API_URL` to `https://api.postman.com`, or to `https://api.eu.postman.com` if your team is on an Enterprise plan in the Postman EU data region.\n4. Check the setup with `postman_get_me`.\n\n**Ids and uids**: most objects have an `id` and a `uid` (`<owner user id>-<id>`). Mocks, monitors and `postman_update_collection` take the collection **uid**; `postman_create_collection_request`, `postman_update_collection_request` and `postman_create_collection_folder` take the plain collection **id**. Other reads take either.\n\n**How to work**\n- Who and what: `postman_get_me` (user id, team id, monthly usage), `postman_list_workspaces` (pass createdBy with your user id for \"my workspaces\"), `postman_get_workspace` (everything a workspace holds), `postman_list_team_users`, `postman_search` (find a collection, request or spec by text).\n- Collections: `postman_list_collections`, `postman_get_collection` (model=minimal first for a big one), `postman_get_collection_folder`, `postman_get_collection_request`.\n- Environments: `postman_list_environments`, `postman_get_environment`.\n- API design: `postman_list_specs`, `postman_get_spec`, `postman_list_spec_files`, `postman_get_spec_file`, `postman_get_spec_definition` (whole resolved definition). Older API Builder APIs: `postman_list_apis`, `postman_get_api`.\n- Mocks: `postman_list_mocks`, `postman_get_mock`, `postman_get_mock_call_logs` (what clients sent to the mock and what it answered).\n- Monitors: `postman_list_monitors`, `postman_get_monitor` (lastRun shows the latest result).\n\n**Writes need the user's confirmation**: `postman_create_collection`, `postman_update_collection`, `postman_create_collection_folder`, `postman_create_collection_request`, `postman_update_collection_request`, `postman_create_environment`, `postman_update_environment`, `postman_create_mock`, `postman_create_monitor`, `postman_run_monitor`, `postman_create_spec` and `postman_update_spec_file`. Say what will be created or changed, in which workspace, and call after the user agrees. Everything you write is visible to the workspace's members. `postman_run_monitor` sends the collection's real requests to their APIs and uses a monitoring run; `postman_create_monitor` keeps doing so on its schedule. A new mock is public unless private is true. `postman_update_environment` takes one kind of JSON Patch operation per call; read the environment first to get the variable positions.\n\n**Collection runs**: the Postman API has no endpoint that runs a collection directly. Use a monitor (`postman_create_monitor`, then `postman_run_monitor`), or the Postman CLI in your own CI.\n\n**Secrets**: environment variables of type secret come back with their values when they are shared. Collection variables and request auth may hold tokens too. Do not repeat such values unless the user asks.\n\n**Paging**: `postman_list_workspaces`, `postman_list_apis`, `postman_list_specs`, `postman_list_monitors`, `postman_get_mock_call_logs` and `postman_search` return `meta.nextCursor`; call again with `cursor` set to it until it is empty. `postman_list_collections` pages with `limit` and `offset`. Dates are ISO 8601 in UTC.\n\n**Limits**: Postman allows 300 requests per minute per user; `postman_list_collections`, `postman_list_workspaces`, `postman_get_workspace` and the monitor endpoints only 10 calls in 10 seconds. Each plan also has a monthly quota of API calls; `postman_get_me` shows the usage under operations. 429 with rateLimited means wait (Retry-After gives the seconds); serviceLimitExhausted means the plan's quota is used up and a team admin has to act.\n\n**Errors**: 401 means the key is wrong, expired or revoked, or belongs to the other data region (check `POSTMAN_API_URL`). 403 means your role in that workspace does not allow the call. 404 means the id does not exist or you cannot see it. 400 names the field that is wrong, for example a collection id where a uid is needed.\n\n**Official MCP server**: Postman also runs its own MCP server at `https://mcp.postman.com/mcp` (EU: `https://mcp.eu.postman.com/mcp`), with OAuth or `Authorization: Bearer <API key>`.\n\n**Out of scope here**: deleting anything, forks and pull requests, comments, tags, governance, API catalog, private API network, SCIM, audit logs, billing and the older API Builder writes.",
+  "prerequisites": "A Postman account with access to the workspaces, and a Postman API key from Settings > API keys. About 2 minutes.",
+  "requiredEnvVars": [
+    "POSTMAN_API_URL",
+    "POSTMAN_API_KEY"
+  ],
+  "appRegistrationUrl": "https://go.postman.co/settings/me/api-keys",
+  "envVarMeta": {
+    "POSTMAN_API_URL": {
+      "label": "Data region (API address)",
+      "kind": "address",
+      "help": "https://api.postman.com for the default (US) region, https://api.eu.postman.com if your team is in the Postman EU data region.",
+      "example": "https://api.postman.com",
+      "pattern": "^https://api\\.(eu\\.)?postman\\.com$",
+      "patternMessage": "Use exactly https://api.postman.com or https://api.eu.postman.com, without a path or trailing slash."
+    },
+    "POSTMAN_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Postman, avatar > Settings > API keys > Generate API Key. It starts with PMAK-.",
+      "link": "https://go.postman.co/settings/me/api-keys",
+      "example": "PMAK-...",
+      "pattern": "^PMAK-\\S{20,}$",
+      "patternMessage": "Paste the whole API key; it starts with PMAK- and has no spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Postman refused the API key: it is wrong, expired or revoked, or it belongs to the other data region. Generate a new key under Settings > API keys and check POSTMAN_API_URL.",
+    "403": "The key works, but your role does not allow this call in that workspace.",
+    "rate_limited": "Postman is rate limiting this key, or the monthly API quota of your plan is used up. Wait a minute, or check the usage with postman_get_me."
+  },
+  "probe": {
+    "tool": "postman_get_me"
+  },
+  "connector": {
+    "name": "Postman API",
+    "type": "REST",
+    "baseUrl": "{{POSTMAN_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{POSTMAN_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me"
+  },
+  "tools": [
+    {
+      "name": "postman_get_me",
+      "description": "Read the Postman user the API key belongs to: user id, username, email, team id and name, and the monthly usage of API calls and other plan limits (operations). Start here: the user id filters other lists. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      }
+    },
+    {
+      "name": "postman_list_workspaces",
+      "description": "List the workspaces the key can see: id, name, type and visibility (personal, team, private, public, partner). Most other tools need a workspace id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Only workspaces of this type.",
+            "enum": [
+              "personal",
+              "team",
+              "private",
+              "public",
+              "partner"
+            ]
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "Only workspaces created by these user ids, comma-separated, e.g. the id from postman_get_me for \"my workspaces\"."
+          },
+          "elementType": {
+            "type": "string",
+            "description": "With elementId: return the workspace that holds this element.",
+            "enum": [
+              "collection",
+              "specification"
+            ]
+          },
+          "elementId": {
+            "type": "string",
+            "description": "With elementType: a collection uid (<owner id>-<collection id>) or a spec id."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.nextCursor of the previous response. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Workspaces per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces",
+        "queryParams": {
+          "type": "$type",
+          "createdBy": "$createdBy",
+          "elementType": "$elementType",
+          "elementId": "$elementId",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "postman_get_workspace",
+      "description": "Read one workspace with the collections, environments, mocks, monitors and APIs it contains (ids, uids and names), its visibility and who created it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string",
+            "description": "Workspace id from postman_list_workspaces, e.g. 1f0df51a-8658-4ee8-a2a1-d2567dfa09a9."
+          },
+          "include": {
+            "type": "string",
+            "description": "Optional extras, comma-separated: team (the team id), scim (SCIM ids of creator and last editor), mocks:deactivated (also deactivated mock servers)."
+          }
+        },
+        "required": [
+          "workspaceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workspaces/{workspaceId}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "postman_list_collections",
+      "description": "List collections, optionally of one workspace: id, uid, name, owner and dates. Page with limit and offset; name filters by exact name and cannot be combined with limit or offset. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional workspace id from postman_list_workspaces. An unknown id returns an empty list, not an error."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional exact collection name; partial matches are not supported. Do not combine with limit or offset."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Collections per page.",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first collection to return.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections",
+        "queryParams": {
+          "workspace": "$workspace",
+          "name": "$name",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "postman_get_collection",
+      "description": "Read a whole collection in Postman Collection Format v2.1: info, folders and requests (item), variables, auth and scripts. Large collections are big; pass model=minimal to get only the ids of the root-level folders and requests first. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Collection id or uid from postman_list_collections. The uid is <owner id>-<collection id>, e.g. 12345678-12ece9e1-2abf-4edc-8e34-de66e74114d2; both forms work here."
+          },
+          "model": {
+            "type": "string",
+            "description": "minimal returns only the root-level folder and request ids instead of the full collection.",
+            "enum": [
+              "minimal"
+            ]
+          }
+        },
+        "required": [
+          "collectionId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/{collectionId}",
+        "queryParams": {
+          "model": "$model"
+        }
+      }
+    },
+    {
+      "name": "postman_get_collection_request",
+      "description": "Read one request of a collection: method, url, headers, query parameters, body, auth and scripts. Request ids come from postman_get_collection (item[].id) or postman_get_collection_folder. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Collection id or uid from postman_list_collections. The uid is <owner id>-<collection id>, e.g. 12345678-12ece9e1-2abf-4edc-8e34-de66e74114d2; both forms work here."
+          },
+          "requestId": {
+            "type": "string",
+            "description": "Request id from the collection items."
+          },
+          "uid": {
+            "type": "boolean",
+            "description": "Return all ids in uid form (<owner id>-<id>)."
+          },
+          "populate": {
+            "type": "boolean",
+            "description": "Return all of the request contents, including its saved responses."
+          }
+        },
+        "required": [
+          "collectionId",
+          "requestId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/{collectionId}/requests/{requestId}",
+        "queryParams": {
+          "uid": "$uid",
+          "populate": "$populate"
+        }
+      }
+    },
+    {
+      "name": "postman_get_collection_folder",
+      "description": "Read one folder of a collection with the ids of its requests and subfolders (or their full contents with populate). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Collection id or uid from postman_list_collections. The uid is <owner id>-<collection id>, e.g. 12345678-12ece9e1-2abf-4edc-8e34-de66e74114d2; both forms work here."
+          },
+          "folderId": {
+            "type": "string",
+            "description": "Folder id from the collection items."
+          },
+          "uid": {
+            "type": "boolean",
+            "description": "Return all ids in uid form (<owner id>-<id>)."
+          },
+          "populate": {
+            "type": "boolean",
+            "description": "Return the full contents of the requests and subfolders."
+          }
+        },
+        "required": [
+          "collectionId",
+          "folderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/collections/{collectionId}/folders/{folderId}",
+        "queryParams": {
+          "uid": "$uid",
+          "populate": "$populate"
+        }
+      }
+    },
+    {
+      "name": "postman_list_environments",
+      "description": "List environments, optionally of one workspace: id, uid, name, owner and dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional workspace id from postman_list_workspaces."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/environments",
+        "queryParams": {
+          "workspace": "$workspace"
+        }
+      }
+    },
+    {
+      "name": "postman_get_environment",
+      "description": "Read an environment with its variables (key, value, type, enabled). Values of shared variables are returned, including secret-type ones; do not repeat secret values to the user unless asked. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "environmentId": {
+            "type": "string",
+            "description": "Environment id or uid from postman_list_environments."
+          }
+        },
+        "required": [
+          "environmentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/environments/{environmentId}"
+      }
+    },
+    {
+      "name": "postman_list_apis",
+      "description": "List the APIs (API Builder) of a workspace: id, name, summary and dates. New design work lives in Spec Hub instead; see postman_list_specs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string",
+            "description": "Workspace id from postman_list_workspaces, e.g. 1f0df51a-8658-4ee8-a2a1-d2567dfa09a9."
+          },
+          "createdBy": {
+            "type": "integer",
+            "description": "Only APIs created by this user id."
+          },
+          "description": {
+            "type": "string",
+            "description": "Only APIs whose description contains this text (case-insensitive)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.nextCursor of the previous response. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "APIs per page.",
+            "minimum": 1,
+            "default": 10
+          }
+        },
+        "required": [
+          "workspaceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis",
+        "headers": {
+          "Accept": "application/vnd.api.v10+json"
+        },
+        "queryParams": {
+          "workspaceId": "$workspaceId",
+          "createdBy": "$createdBy",
+          "description": "$description",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "postman_get_api",
+      "description": "Read one API with, on request, its linked collections, versions, schemas or Git repository details. Git-connected APIs only return versions and gitInfo. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "apiId": {
+            "type": "string",
+            "description": "API id from postman_list_apis."
+          },
+          "include": {
+            "type": "string",
+            "description": "Optional, comma-separated: collections, versions, schemas, gitInfo."
+          }
+        },
+        "required": [
+          "apiId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis/{apiId}",
+        "headers": {
+          "Accept": "application/vnd.api.v10+json"
+        },
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "postman_list_mocks",
+      "description": "List the active mock servers: id, uid, name, mockUrl, the collection and environment they serve, and whether they are private. Without filters only the mocks you created. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional workspace id; wins over teamId."
+          },
+          "teamId": {
+            "type": "string",
+            "description": "Optional team id (from postman_get_me) for the whole team's mocks."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mocks",
+        "queryParams": {
+          "workspace": "$workspace",
+          "teamId": "$teamId"
+        }
+      }
+    },
+    {
+      "name": "postman_get_mock",
+      "description": "Read a mock server: mockUrl, collection, environment, private flag, delay and server responses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mockId": {
+            "type": "string",
+            "description": "Mock id from postman_list_mocks."
+          }
+        },
+        "required": [
+          "mockId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mocks/{mockId}"
+      }
+    },
+    {
+      "name": "postman_get_mock_call_logs",
+      "description": "Read the requests a mock server received and what it answered, newest first with sort=servedAt and direction=desc. At most 100 logs or 6.5 MB per call; headers and bodies only with include. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mockId": {
+            "type": "string",
+            "description": "Mock id from postman_list_mocks."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only calls from this time on, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only calls up to this time, ISO 8601."
+          },
+          "responseStatusCode": {
+            "type": "integer",
+            "description": "Only calls answered with this HTTP status, e.g. 404."
+          },
+          "requestMethod": {
+            "type": "string",
+            "description": "Only calls with this HTTP method, e.g. POST."
+          },
+          "requestPath": {
+            "type": "string",
+            "description": "Only calls to this path, e.g. /users."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; requires direction.",
+            "enum": [
+              "servedAt"
+            ]
+          },
+          "direction": {
+            "type": "string",
+            "description": "Sort direction; requires sort.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Optional, comma-separated: request.headers, request.body, response.headers, response.body."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.nextCursor of the previous response. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Logs per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        },
+        "required": [
+          "mockId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mocks/{mockId}/call-logs",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until",
+          "responseStatusCode": "$responseStatusCode",
+          "requestMethod": "$requestMethod",
+          "requestPath": "$requestPath",
+          "sort": "$sort",
+          "direction": "$direction",
+          "include": "$include",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "postman_list_monitors",
+      "description": "List monitors (scheduled collection runs): id, uid, name, owner and whether they are active. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional workspace id."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true for active monitors only."
+          },
+          "owner": {
+            "type": "integer",
+            "description": "Only monitors of this user id."
+          },
+          "collectionUid": {
+            "type": "string",
+            "description": "Only monitors of this collection uid."
+          },
+          "environmentUid": {
+            "type": "string",
+            "description": "Only monitors that use this environment uid."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.nextCursor of the previous response. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Monitors per page, up to 25.",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitors",
+        "queryParams": {
+          "workspace": "$workspace",
+          "active": "$active",
+          "owner": "$owner",
+          "collectionUid": "$collectionUid",
+          "environmentUid": "$environmentUid",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "postman_get_monitor",
+      "description": "Read a monitor: collection, environment, schedule (cron and time zone), regions, notifications, and lastRun with status, start and finish time and the counts of passed and failed assertions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitorId": {
+            "type": "string",
+            "description": "Monitor id from postman_list_monitors."
+          }
+        },
+        "required": [
+          "monitorId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/monitors/{monitorId}"
+      }
+    },
+    {
+      "name": "postman_list_specs",
+      "description": "List the API specifications in Spec Hub for a workspace: id, name, type (OPENAPI:3.0, ASYNCAPI:2.0 ...) and dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string",
+            "description": "Workspace id from postman_list_workspaces, e.g. 1f0df51a-8658-4ee8-a2a1-d2567dfa09a9."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.nextCursor of the previous response. Leave empty for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Specs per page.",
+            "minimum": 1,
+            "default": 10
+          }
+        },
+        "required": [
+          "workspaceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/specs",
+        "queryParams": {
+          "workspaceId": "$workspaceId",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "postman_get_spec",
+      "description": "Read a spec's metadata: name, type, dates and who created and changed it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "specId": {
+            "type": "string",
+            "description": "Spec id from postman_list_specs."
+          }
+        },
+        "required": [
+          "specId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/specs/{specId}"
+      }
+    },
+    {
+      "name": "postman_list_spec_files",
+      "description": "List the files of a spec with their path and type (ROOT is the entry file, DEFAULT a referenced file). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "specId": {
+            "type": "string",
+            "description": "Spec id from postman_list_specs."
+          }
+        },
+        "required": [
+          "specId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/specs/{specId}/files"
+      }
+    },
+    {
+      "name": "postman_get_spec_file",
+      "description": "Read one file of a spec, including its content as text. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "specId": {
+            "type": "string",
+            "description": "Spec id from postman_list_specs."
+          },
+          "filePath": {
+            "type": "string",
+            "description": "File path inside the spec as returned by postman_list_spec_files, e.g. index.yaml or components/schemas.json. Slashes stay as they are."
+          }
+        },
+        "required": [
+          "specId",
+          "filePath"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/specs/{specId}/files/{filePath}"
+      }
+    },
+    {
+      "name": "postman_get_spec_definition",
+      "description": "Read the complete, resolved definition of an OpenAPI or AsyncAPI spec, with all files combined. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "specId": {
+            "type": "string",
+            "description": "Spec id from postman_list_specs."
+          }
+        },
+        "required": [
+          "specId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/specs/{specId}/definitions"
+      }
+    },
+    {
+      "name": "postman_list_team_users",
+      "description": "List the users of the Postman team: id, name, username, email, roles and join date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "groupId": {
+            "type": "integer",
+            "description": "Optional user group id to list only its members."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "groupId": "$groupId"
+        }
+      }
+    },
+    {
+      "name": "postman_search",
+      "description": "Search Postman for requests, collections, workspaces, environments, documents, flows or specs by text. By default only resources of your own team; ownership=external or all also finds public ones. Sent as POST but changes nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "elementType": {
+            "type": "string",
+            "description": "What to search for.",
+            "enum": [
+              "requests",
+              "collections",
+              "workspaces",
+              "environments",
+              "documents",
+              "flows",
+              "specs"
+            ]
+          },
+          "q": {
+            "type": "string",
+            "description": "Search text, case-insensitive."
+          },
+          "ownership": {
+            "type": "string",
+            "description": "organization (your team, default), external (not your team) or all.",
+            "enum": [
+              "organization",
+              "external",
+              "all"
+            ]
+          },
+          "filters": {
+            "type": "object",
+            "description": "Optional filters as {\"$and\": [ {...}, ... ]}, one condition per entry, as documented for the Postman search endpoint."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.nextCursor of the previous response."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1,
+            "default": 10
+          }
+        },
+        "required": [
+          "elementType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search",
+        "queryParams": {
+          "cursor": "$cursor",
+          "limit": "$limit"
+        },
+        "bodyMapping": {
+          "elementType": "$elementType",
+          "q": "$q",
+          "ownership": "$ownership",
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "postman_create_collection",
+      "description": "Create a collection in a workspace, empty or with folders and requests in Postman Collection Format v2.1. Tell the user the workspace and name and call after the user agrees. Returns the new id and uid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace id from postman_list_workspaces, e.g. 1f0df51a-8658-4ee8-a2a1-d2567dfa09a9."
+          },
+          "name": {
+            "type": "string",
+            "description": "Collection name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description, Markdown allowed."
+          },
+          "item": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Optional folders and requests in Collection Format v2.1, e.g. [{\"name\": \"List users\", \"request\": {\"method\": \"GET\", \"url\": \"https://api.example.com/users\"}}]. Empty for an empty collection.",
+            "default": []
+          },
+          "variable": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Optional collection variables, e.g. [{\"key\": \"baseUrl\", \"value\": \"https://api.example.com\"}]. Do not put secrets here."
+          },
+          "auth": {
+            "type": "object",
+            "description": "Optional collection auth, e.g. {\"type\": \"bearer\", \"bearer\": [{\"key\": \"token\", \"value\": \"{{token}}\", \"type\": \"string\"}]}."
+          }
+        },
+        "required": [
+          "workspace",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/collections",
+        "queryParams": {
+          "workspace": "$workspace"
+        },
+        "bodyMapping": {
+          "collection": {
+            "info": {
+              "name": "$name",
+              "description": "$description",
+              "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": "$item",
+            "variable": "$variable",
+            "auth": "$auth"
+          }
+        }
+      }
+    },
+    {
+      "name": "postman_update_collection",
+      "description": "Change a collection's name or description, its variables or its auth, leaving folders and requests as they are. Variables listed are added or updated. Show the change and call after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Collection uid from postman_list_collections: <owner id>-<collection id>, e.g. 12345678-12ece9e1-2abf-4edc-8e34-de66e74114d2."
+          },
+          "info": {
+            "type": "object",
+            "description": "Name and description to set, e.g. {\"name\": \"Payments API\", \"description\": \"...\"}."
+          },
+          "variable": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Collection variables to add or update, e.g. [{\"key\": \"baseUrl\", \"value\": \"https://staging.example.com\"}]. Secret variables cannot be set here."
+          },
+          "auth": {
+            "type": "object",
+            "description": "New collection auth in Collection Format v2.1, e.g. {\"type\": \"apikey\", \"apikey\": [...]}."
+          }
+        },
+        "required": [
+          "collectionId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/collections/{collectionId}",
+        "bodyMapping": {
+          "collection": {
+            "info": "$info",
+            "variable": "$variable",
+            "auth": "$auth"
+          }
+        }
+      }
+    },
+    {
+      "name": "postman_create_collection_folder",
+      "description": "Create a folder in a collection, at the top level or inside another folder. Call after the user agrees. Returns the folder id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Collection id from postman_list_collections: the plain id (12ece9e1-2abf-4edc-8e34-de66e74114d2), not the uid with the owner prefix."
+          },
+          "name": {
+            "type": "string",
+            "description": "Folder name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description."
+          },
+          "folder": {
+            "type": "string",
+            "description": "Optional id of the parent folder; empty for the top level."
+          }
+        },
+        "required": [
+          "collectionId",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/collections/{collectionId}/folders",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "folder": "$folder"
+        }
+      }
+    },
+    {
+      "name": "postman_create_collection_request",
+      "description": "Add a request to a collection, at the top level or in a folder: method, URL, headers, query parameters, body and scripts. Call after the user agrees. Returns the request id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Collection id from postman_list_collections: the plain id (12ece9e1-2abf-4edc-8e34-de66e74114d2), not the uid with the owner prefix."
+          },
+          "folder": {
+            "type": "string",
+            "description": "Optional folder id to create the request in."
+          },
+          "name": {
+            "type": "string",
+            "description": "Request name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description."
+          },
+          "method": {
+            "type": "string",
+            "description": "HTTP method.",
+            "enum": [
+              "GET",
+              "PUT",
+              "POST",
+              "PATCH",
+              "DELETE",
+              "COPY",
+              "HEAD",
+              "OPTIONS",
+              "LINK",
+              "UNLINK",
+              "PURGE",
+              "LOCK",
+              "UNLOCK",
+              "PROPFIND",
+              "VIEW"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "Request URL; variables like {{baseUrl}}/users are allowed."
+          },
+          "headerData": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Optional headers, e.g. [{\"key\": \"Accept\", \"value\": \"application/json\"}]."
+          },
+          "queryParams": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Optional query parameters, e.g. [{\"key\": \"page\", \"value\": \"1\"}]."
+          },
+          "dataMode": {
+            "type": "string",
+            "description": "Body mode.",
+            "enum": [
+              "raw",
+              "urlencoded",
+              "formdata",
+              "binary",
+              "graphql"
+            ]
+          },
+          "rawModeData": {
+            "type": "string",
+            "description": "Body text for dataMode raw, e.g. a JSON document."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Form fields for dataMode urlencoded or formdata, e.g. [{\"key\": \"name\", \"value\": \"Ada\", \"type\": \"text\"}]."
+          },
+          "dataOptions": {
+            "type": "object",
+            "description": "Optional body options, e.g. {\"raw\": {\"language\": \"json\"}}."
+          },
+          "auth": {
+            "type": "object",
+            "description": "Optional request auth in Collection Format v2.1."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Optional pre-request and test scripts, e.g. [{\"listen\": \"test\", \"script\": {\"exec\": [\"pm.response.to.have.status(200);\"]}}]."
+          }
+        },
+        "required": [
+          "collectionId",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/collections/{collectionId}/requests",
+        "queryParams": {
+          "folder": "$folder"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "method": "$method",
+          "url": "$url",
+          "headerData": "$headerData",
+          "queryParams": "$queryParams",
+          "dataMode": "$dataMode",
+          "rawModeData": "$rawModeData",
+          "data": "$data",
+          "dataOptions": "$dataOptions",
+          "auth": "$auth",
+          "events": "$events"
+        }
+      }
+    },
+    {
+      "name": "postman_update_collection_request",
+      "description": "Change a request in a collection: name, method, URL, headers, query parameters, body, auth or scripts. The fields you pass replace the old ones; a request cannot be moved to another folder here. Show the change and call after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Collection id from postman_list_collections: the plain id (12ece9e1-2abf-4edc-8e34-de66e74114d2), not the uid with the owner prefix."
+          },
+          "requestId": {
+            "type": "string",
+            "description": "Request id from postman_get_collection or postman_get_collection_folder."
+          },
+          "name": {
+            "type": "string",
+            "description": "New request name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "method": {
+            "type": "string",
+            "description": "HTTP method.",
+            "enum": [
+              "GET",
+              "PUT",
+              "POST",
+              "PATCH",
+              "DELETE",
+              "COPY",
+              "HEAD",
+              "OPTIONS",
+              "LINK",
+              "UNLINK",
+              "PURGE",
+              "LOCK",
+              "UNLOCK",
+              "PROPFIND",
+              "VIEW"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "New request URL."
+          },
+          "headerData": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Headers, e.g. [{\"key\": \"Accept\", \"value\": \"application/json\"}]."
+          },
+          "queryParams": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Query parameters, e.g. [{\"key\": \"page\", \"value\": \"1\"}]."
+          },
+          "dataMode": {
+            "type": "string",
+            "description": "Body mode.",
+            "enum": [
+              "raw",
+              "urlencoded",
+              "formdata",
+              "binary",
+              "graphql"
+            ]
+          },
+          "rawModeData": {
+            "type": "string",
+            "description": "Body text for dataMode raw."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Form fields for dataMode urlencoded or formdata."
+          },
+          "dataOptions": {
+            "type": "object",
+            "description": "Body options, e.g. {\"raw\": {\"language\": \"json\"}}."
+          },
+          "auth": {
+            "type": "object",
+            "description": "Request auth in Collection Format v2.1."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Pre-request and test scripts."
+          }
+        },
+        "required": [
+          "collectionId",
+          "requestId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/collections/{collectionId}/requests/{requestId}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "method": "$method",
+          "url": "$url",
+          "headerData": "$headerData",
+          "queryParams": "$queryParams",
+          "dataMode": "$dataMode",
+          "rawModeData": "$rawModeData",
+          "data": "$data",
+          "dataOptions": "$dataOptions",
+          "auth": "$auth",
+          "events": "$events"
+        }
+      }
+    },
+    {
+      "name": "postman_create_environment",
+      "description": "Create an environment in a workspace with its variables. Values are shared with everyone in the workspace; mark secrets with type secret. Call after the user agrees. Returns the new id and uid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace id from postman_list_workspaces, e.g. 1f0df51a-8658-4ee8-a2a1-d2567dfa09a9."
+          },
+          "name": {
+            "type": "string",
+            "description": "Environment name, e.g. Staging."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Variables, e.g. [{\"key\": \"baseUrl\", \"value\": \"https://staging.example.com\", \"type\": \"default\", \"enabled\": true}]. type is default or secret.",
+            "default": []
+          }
+        },
+        "required": [
+          "workspace",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/environments",
+        "queryParams": {
+          "workspace": "$workspace"
+        },
+        "bodyMapping": {
+          "environment": {
+            "name": "$name",
+            "values": "$values"
+          }
+        }
+      }
+    },
+    {
+      "name": "postman_update_environment",
+      "description": "Change an environment with JSON Patch operations of one kind per call: add variables, replace the name or a variable property, or remove variables. Variable positions come from postman_get_environment (values[0] is /values/0). Show the change and call after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "environmentId": {
+            "type": "string",
+            "description": "Environment id or uid from postman_list_environments."
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "One kind of operation per call. Rename: [{\"op\": \"replace\", \"path\": \"/name\", \"value\": \"Production\"}]. Change a value: [{\"op\": \"replace\", \"path\": \"/values/0/value\", \"value\": \"https://api.example.com\"}]. Add: [{\"op\": \"add\", \"path\": \"/values/3\", \"value\": {\"key\": \"region\", \"value\": \"eu\", \"type\": \"default\", \"enabled\": true}}]. Remove: [{\"op\": \"remove\", \"path\": \"/values/2\"}].",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "environmentId",
+          "operations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/environments/{environmentId}",
+        "bodyMapping": {
+          "__raw": "$operations"
+        }
+      }
+    },
+    {
+      "name": "postman_create_mock",
+      "description": "Create a mock server that answers with the saved example responses of a collection. Mocks are public unless private is true. Call after the user agrees. Returns the mock id and mockUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace id from postman_list_workspaces, e.g. 1f0df51a-8658-4ee8-a2a1-d2567dfa09a9."
+          },
+          "collection": {
+            "type": "string",
+            "description": "Collection uid from postman_list_collections: <owner id>-<collection id>, e.g. 12345678-12ece9e1-2abf-4edc-8e34-de66e74114d2."
+          },
+          "name": {
+            "type": "string",
+            "description": "Mock server name."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Optional environment uid (<owner id>-<environment id>) from postman_list_environments."
+          },
+          "private": {
+            "type": "boolean",
+            "description": "true to require a Postman API key on every call to the mock. Default false (public)."
+          }
+        },
+        "required": [
+          "workspace",
+          "collection"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/mocks",
+        "queryParams": {
+          "workspace": "$workspace"
+        },
+        "bodyMapping": {
+          "mock": {
+            "collection": "$collection",
+            "environment": "$environment",
+            "name": "$name",
+            "private": "$private"
+          }
+        }
+      }
+    },
+    {
+      "name": "postman_create_monitor",
+      "description": "Create a monitor that runs a collection on a schedule from Postman's cloud. Each run uses monitoring requests of the plan. Tell the user the collection, schedule and environment and call after the user agrees. Returns the monitor id and uid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Workspace id from postman_list_workspaces, e.g. 1f0df51a-8658-4ee8-a2a1-d2567dfa09a9."
+          },
+          "name": {
+            "type": "string",
+            "description": "Monitor name."
+          },
+          "collection": {
+            "type": "string",
+            "description": "Collection uid from postman_list_collections: <owner id>-<collection id>, e.g. 12345678-12ece9e1-2abf-4edc-8e34-de66e74114d2."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Optional environment uid (<owner id>-<environment id>) from postman_list_environments."
+          },
+          "cron": {
+            "type": "string",
+            "description": "Schedule as a cron pattern, e.g. 0 */6 * * * (every 6 hours) or 0 6 * * MON-FRI (weekdays 6 am)."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the schedule, e.g. Europe/Berlin."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "false to create it paused. Default true."
+          }
+        },
+        "required": [
+          "workspace",
+          "name",
+          "collection",
+          "cron"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/monitors",
+        "queryParams": {
+          "workspace": "$workspace"
+        },
+        "bodyMapping": {
+          "monitor": {
+            "name": "$name",
+            "collection": "$collection",
+            "environment": "$environment",
+            "schedule": {
+              "cron": "$cron",
+              "timezone": "$timezone"
+            },
+            "active": "$active"
+          }
+        }
+      }
+    },
+    {
+      "name": "postman_run_monitor",
+      "description": "Run a monitor now, which sends the collection's real requests to their APIs and uses a monitoring run of the plan. Runs asynchronously by default; read the result later with postman_get_monitor (lastRun). Call after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monitorId": {
+            "type": "string",
+            "description": "Monitor id from postman_list_monitors."
+          },
+          "async": {
+            "type": "boolean",
+            "description": "true (default) returns at once; false waits up to 300 seconds for the run and returns its stats, executions and failures.",
+            "default": true
+          }
+        },
+        "required": [
+          "monitorId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/monitors/{monitorId}/run",
+        "queryParams": {
+          "async": "$async"
+        }
+      }
+    },
+    {
+      "name": "postman_create_spec",
+      "description": "Create an API specification in Spec Hub from one or more files (OpenAPI, AsyncAPI, protobuf, GraphQL, Smithy). A path with a slash creates a folder; multi-file specs have one root file. Call after the user agrees. Returns the spec id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string",
+            "description": "Workspace id from postman_list_workspaces, e.g. 1f0df51a-8658-4ee8-a2a1-d2567dfa09a9."
+          },
+          "name": {
+            "type": "string",
+            "description": "Spec name."
+          },
+          "type": {
+            "type": "string",
+            "description": "Spec type.",
+            "enum": [
+              "OPENAPI:2.0",
+              "OPENAPI:3.0",
+              "OPENAPI:3.1",
+              "ASYNCAPI:2.0",
+              "ASYNCAPI:3.0",
+              "PROTOBUF:2",
+              "PROTOBUF:3",
+              "GRAPHQL",
+              "SMITHY:2.0"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Files with path and content as text, e.g. [{\"path\": \"index.yaml\", \"content\": \"openapi: 3.0.0 ...\"}]. At most 12 MB per file.",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "workspaceId",
+          "name",
+          "type",
+          "files"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/specs",
+        "queryParams": {
+          "workspaceId": "$workspaceId"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "files": "$files"
+        }
+      }
+    },
+    {
+      "name": "postman_update_spec_file",
+      "description": "Change one file of an OpenAPI or protobuf spec: its content, its name, or its type (ROOT or DEFAULT). Only one of the three per call. Read the file first with postman_get_spec_file, show the change and call after the user agrees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "specId": {
+            "type": "string",
+            "description": "Spec id from postman_list_specs."
+          },
+          "filePath": {
+            "type": "string",
+            "description": "File path inside the spec as returned by postman_list_spec_files, e.g. index.yaml or components/schemas.json. Slashes stay as they are."
+          },
+          "content": {
+            "type": "string",
+            "description": "The new full content of the file as text."
+          },
+          "name": {
+            "type": "string",
+            "description": "New file name."
+          },
+          "type": {
+            "type": "string",
+            "description": "ROOT makes it the entry file (the old root becomes DEFAULT).",
+            "enum": [
+              "ROOT",
+              "DEFAULT"
+            ]
+          }
+        },
+        "required": [
+          "specId",
+          "filePath"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/specs/{specId}/files/{filePath}",
+        "bodyMapping": {
+          "content": "$content",
+          "name": "$name",
+          "type": "$type"
+        }
+      }
+    }
+  ]
+}
