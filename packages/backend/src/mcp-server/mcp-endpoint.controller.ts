@@ -216,6 +216,8 @@ const INTENT_DESCRIPTION =
 const SKILLS_SAVE_TOOL = 'skills_save_to_workspace';
 /** Built-in inline code execution tool (per-server endpoint, codeMode 'inline'). */
 const CODE_EXECUTE_TOOL = 'code_execute';
+/** Built-in tool to propose a saved code tool for admin approval (codeMode 'inline'). */
+const CODE_PROPOSE_TOOL = 'code_propose_tool';
 /** Built-in workspace memory tools (per-server endpoint, Enterprise). */
 const MEMORY_SEARCH_TOOL = 'memory_search';
 const MEMORY_SAVE_TOOL = 'memory_save';
@@ -2269,6 +2271,90 @@ export class McpEndpointController {
               );
               const { structured: _s, ...rest } = result;
               return rest;
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+
+    // Propose a saved code tool for an admin to approve. Gated exactly like
+    // inline code (codeMode 'inline' + capability + runner). Records an inert
+    // proposal — it never runs code and grants no authority; the tool is always
+    // invoker + read-only until an admin approves it through the normal
+    // tool-creation path, where definer / writes are re-gated.
+    if (params.inlineCode && !registeredNames.has(CODE_PROPOSE_TOOL)) {
+      registeredNames.add(CODE_PROPOSE_TOOL);
+      const proposeConnectorIds = params.inlineCode.connectorIds;
+      entries.push({
+        name: CODE_PROPOSE_TOOL,
+        sig: `${CODE_PROPOSE_TOOL}:v1`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            CODE_PROPOSE_TOOL,
+            {
+              description:
+                'Propose saving a reusable code tool (a short JavaScript program that ' +
+                'orchestrates several of this workspace\'s tools) for a workspace admin ' +
+                'to review and approve. Use this after you have found a multi-step pattern ' +
+                'worth keeping. It does NOT run the code and does NOT create the tool: it ' +
+                'records a proposal. The admin decides whether it becomes a tool. Propose ' +
+                'read-only programs using the same `amcp.run` / `amcp.search` tools you can ' +
+                'call with code_execute.',
+              inputSchema: {
+                name: z.string().min(1).max(160).describe('A short, descriptive tool name.'),
+                description: z
+                  .string()
+                  .min(1)
+                  .max(2000)
+                  .describe('What the tool does, for the admin and future callers.'),
+                code: z
+                  .string()
+                  .min(1)
+                  .max(100_000)
+                  .describe('The async JavaScript program body, same contract as code_execute.'),
+                rationale: z
+                  .string()
+                  .max(2000)
+                  .optional()
+                  .describe('Why this is worth saving (shown to the admin reviewing it).'),
+                inputSchema: z
+                  .record(z.string(), z.any())
+                  .optional()
+                  .describe('Optional JSON Schema for the tool\'s own input parameters.'),
+              },
+              annotations: { title: 'Propose a code tool', readOnlyHint: true, openWorldHint: false },
+            },
+            async (args: { name: string; description: string; code: string; rationale?: string; inputSchema?: unknown }) => {
+              const org = invocationContext.organizationId;
+              const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true });
+              if (!org) return fail('Proposing a code tool requires an identified workspace.');
+              if (!proposeConnectorIds.length) return fail('No connectors are available to propose a tool for.');
+              try {
+                const s = await this.kgSkills.proposeCodeTool(org, {
+                  connectorId: proposeConnectorIds[0],
+                  usesConnectorIds: proposeConnectorIds,
+                  name: String(args?.name ?? ''),
+                  description: String(args?.description ?? ''),
+                  code: String(args?.code ?? ''),
+                  parameters: args?.inputSchema,
+                  rationale: String(args?.rationale ?? ''),
+                  mcpServerId: invocationContext.mcpServerId ?? null,
+                });
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: JSON.stringify({
+                        ok: true,
+                        proposalId: s.id,
+                        message:
+                          'Proposal recorded for admin review. It will not run or become a tool until an admin approves it.',
+                      }),
+                    },
+                  ],
+                };
+              } catch (e: any) {
+                return fail(e?.message ? String(e.message) : 'Could not record the proposal.');
+              }
             },
           ) as unknown as ToolHandle,
       });
