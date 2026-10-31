@@ -14,6 +14,14 @@ import { AppSelect } from '@/components/ui/select';
 import { HeadersEditor, headerRowsToObject, type HeaderRow } from '@/components/headers-editor';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { cn } from '@/lib/utils';
+import {
+  EMPTY_EMAIL_FORM,
+  EmailSettingsFields,
+  emailBaseUrl,
+  emailFormToAuthConfig,
+  emailFormToConfig,
+  type EmailFormState,
+} from '@/components/email-settings-fields';
 
 const DEFAULT_LOGIN_BODY = '{\n  "username": "${username}",\n  "password": "${password}"\n}';
 
@@ -25,6 +33,7 @@ const CONNECTOR_TYPES = [
   { id: 'ODATA', tone: 'bg-[var(--t-success-bg)] text-[var(--t-success-fg)]' },
   { id: 'MCP', tone: 'bg-[var(--t-purple-bg)] text-[var(--t-purple-fg)]' },
   { id: 'DATABASE', tone: 'bg-[var(--t-emerald-bg)] text-[var(--t-emerald-fg)]' },
+  { id: 'EMAIL', tone: 'bg-[var(--brand-tint)] text-[var(--brand)]' },
 ];
 
 // Shared by the type buttons and the marketplace link. A native <button>
@@ -44,10 +53,12 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
   ODATA: <ODataIcon />,
   MCP: <McpIcon />,
   DATABASE: <DatabaseIcon />,
+  EMAIL: <MailIcon />,
 };
 
 export default function NewConnectorPage() {
-  const { token } = useAuth();
+  const { token, deploymentMode } = useAuth();
+  const isCloud = deploymentMode === 'cloud';
   const t = useTranslations('connectorNew');
   // What to register in the provider's app, as the server will send it.
   const [oauthRedirectUri, setOauthRedirectUri] = useState<string | null>(null);
@@ -96,6 +107,8 @@ export default function NewConnectorPage() {
   const [ltRefreshOn401, setLtRefreshOn401] = useState(true);
   const [headerRows, setHeaderRows] = useState<HeaderRow[]>([]);
   const [dbReadOnly, setDbReadOnly] = useState(true);
+  // EMAIL: servers, login and sender (IMAP + SMTP).
+  const [emailForm, setEmailForm] = useState<EmailFormState>(EMPTY_EMAIL_FORM);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -112,7 +125,7 @@ export default function NewConnectorPage() {
   const [catalogMatches, setCatalogMatches] = useState<CatalogUrlMatch[]>([]);
   useEffect(() => {
     const url = baseUrl.trim();
-    if (!token || !url || selectedType === 'DATABASE' || !url.includes('.')) {
+    if (!token || !url || selectedType === 'DATABASE' || selectedType === 'EMAIL' || !url.includes('.')) {
       setCatalogMatches([]);
       return;
     }
@@ -208,6 +221,15 @@ export default function NewConnectorPage() {
       : {},
   });
 
+  const emailConnectorData = () => ({
+    name,
+    type: 'EMAIL',
+    baseUrl: emailBaseUrl(emailForm),
+    authType: 'BASIC_AUTH',
+    authConfig: emailFormToAuthConfig(emailForm),
+    config: { email: emailFormToConfig(emailForm) },
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !selectedType) return;
@@ -224,17 +246,20 @@ export default function NewConnectorPage() {
     setLoading(true);
 
     try {
-      const data: any = {
-        name,
-        type: selectedType,
-        baseUrl,
-        authType,
-      };
-      const authConfig = buildAuthConfig();
+      const data: any =
+        selectedType === 'EMAIL'
+          ? emailConnectorData()
+          : {
+              name,
+              type: selectedType,
+              baseUrl,
+              authType,
+            };
+      const authConfig = selectedType === 'EMAIL' ? data.authConfig : buildAuthConfig();
       if (authConfig) data.authConfig = authConfig;
       const headers = headerRowsToObject(headerRows);
-      if (Object.keys(headers).length > 0) data.headers = headers;
-      if (specUrl) data.specUrl = specUrl;
+      if (Object.keys(headers).length > 0 && selectedType !== 'EMAIL') data.headers = headers;
+      if (specUrl && selectedType !== 'EMAIL') data.specUrl = specUrl;
       if (selectedType === 'DATABASE') {
         data.config = { readOnly: dbReadOnly };
       }
@@ -285,12 +310,16 @@ export default function NewConnectorPage() {
     setLoading(true);
 
     try {
-      const data: any = { name: name || 'Test', type: selectedType, baseUrl, authType };
-      if (selectedType === 'ODATA') data.config = buildODataConfig();
-      const authConfig = buildAuthConfig();
-      if (authConfig) data.authConfig = authConfig;
-      const headers = headerRowsToObject(headerRows);
-      if (Object.keys(headers).length > 0) data.headers = headers;
+      let data: any = { name: name || 'Test', type: selectedType, baseUrl, authType };
+      if (selectedType === 'EMAIL') {
+        data = { ...emailConnectorData(), name: name || 'Test' };
+      } else {
+        if (selectedType === 'ODATA') data.config = buildODataConfig();
+        const authConfig = buildAuthConfig();
+        if (authConfig) data.authConfig = authConfig;
+        const headers = headerRowsToObject(headerRows);
+        if (Object.keys(headers).length > 0) data.headers = headers;
+      }
 
       const created = await connectors.create(data, token);
       const result = await connectors.test(created.id, token);
@@ -436,6 +465,10 @@ export default function NewConnectorPage() {
                 />
               </div>
 
+              {selectedType === 'EMAIL' ? (
+                <EmailSettingsFields value={emailForm} onChange={setEmailForm} isCloud={isCloud} />
+              ) : (
+              <>
               <div>
                 <label className={labelClass}>
                   {selectedType === 'DATABASE' ? t('fields.connectionString') : t('fields.baseUrl')}
@@ -865,6 +898,8 @@ export default function NewConnectorPage() {
               {selectedType !== 'DATABASE' && selectedType !== 'MCP' && (
                 <HeadersEditor rows={headerRows} onChange={setHeaderRows} />
               )}
+              </>
+              )}
 
               <div className="flex gap-[10px] pt-1">
                 <button
@@ -877,7 +912,7 @@ export default function NewConnectorPage() {
                 <button
                   type="button"
                   onClick={handleTest}
-                  disabled={loading || !baseUrl}
+                  disabled={loading || (selectedType === 'EMAIL' ? !emailForm.imapHost.trim() : !baseUrl)}
                   className="h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-4 text-[13px] font-medium text-[var(--text-2)] hover:border-[var(--border-strong)] disabled:opacity-50"
                 >
                   {t('testConnection')}
@@ -954,6 +989,14 @@ function ODataIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="7" cy="12" r="4" />
       <path d="M14 7h7M14 12h7M14 17h7" />
+    </svg>
+  );
+}
+function MailIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-10 6L2 7" />
     </svg>
   );
 }

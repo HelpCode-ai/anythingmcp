@@ -1,0 +1,1730 @@
+{
+  "slug": "loyverse",
+  "name": "Loyverse",
+  "aliases": [
+    "Loyverse POS"
+  ],
+  "description": "Loyverse point of sale: sales and refund receipts, shifts and cash, items with variants, categories, modifiers, discounts and taxes, stock per store, loyalty customers, employees, stores, POS devices, payment types, suppliers and webhooks.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "loyverse",
+  "docsUrl": "https://developer.loyverse.com/docs/",
+  "instructions": "## Loyverse\nThis connector uses the **Loyverse API v1.0** (`https://api.loyverse.com/v1.0`), the back office API of the Loyverse point of sale. It reads sales and refund receipts, shifts, the item catalog with variants, categories, modifiers, discounts and taxes, stock levels per store, customers with loyalty points, employees, stores, POS devices, payment types and suppliers, and it can create and update catalog records, customers and stock and record receipts.\n\n**Setup (2 minutes)**\n1. Sign in to the Loyverse Back Office as the owner and open **Settings**, **Access tokens** (https://r.loyverse.com/dashboard/#/integrations/tokens). Access tokens are part of the Integrations add-on on some plans.\n2. Click **Add access token**, give it a name, optionally an expiry date, and save. Copy the token.\n3. Paste it into `LOYVERSE_ACCESS_TOKEN`. It is sent as `Authorization: Bearer <token>` and has full access to the account, so keep it private.\n4. Run `loyverse_get_merchant` to check it.\n\n**Workflow**\n- Account and stores: `loyverse_get_merchant` (currency and decimals), `loyverse_list_stores`, `loyverse_get_store`, `loyverse_list_pos_devices`.\n- Sales: `loyverse_list_receipts` by store and date range (`created_at_min`/`created_at_max`), `loyverse_get_receipt` by receipt number. `loyverse_create_receipt` records a sale made elsewhere. Shifts and cash: `loyverse_list_shifts`, `loyverse_get_shift`. Payment types: `loyverse_list_payment_types`, `loyverse_get_payment_type`.\n- Refunds: `loyverse_refund_receipt` creates a refund receipt for chosen lines of a sale.\n- Catalog: `loyverse_list_items`, `loyverse_get_item`, `loyverse_save_item`, `loyverse_delete_item`; variants (SKU, barcode, price per store) with `loyverse_list_variants` (search by `sku`), `loyverse_get_variant`, `loyverse_save_variant`; `loyverse_list_categories`, `loyverse_get_category`, `loyverse_save_category`; `loyverse_list_modifiers`; `loyverse_list_discounts`, `loyverse_get_discount`, `loyverse_save_discount`; `loyverse_list_taxes`, `loyverse_get_tax`, `loyverse_save_tax`; `loyverse_list_suppliers`.\n- Stock: `loyverse_list_inventory` gives `in_stock` per variant and store; `loyverse_set_inventory` sets new levels.\n- Customers and staff: `loyverse_list_customers` (search by `email`), `loyverse_get_customer`, `loyverse_save_customer`, `loyverse_delete_customer`; `loyverse_list_employees`, `loyverse_get_employee`.\n- Webhooks: `loyverse_list_webhooks`, `loyverse_create_webhook` (one event per webhook).\n\n**Switched off at install**: `loyverse_refund_receipt`, `loyverse_delete_item` and `loyverse_delete_customer`; they cannot be undone, so an admin switches them on when the team needs them.\n\n**Before writing**: the save tools create a record without `id` and update it with `id`, and an update replaces the record, so read it first and send every field you want to keep. `loyverse_set_inventory` takes the new absolute quantity in `stock_after`, not a difference. A receipt created through the API reduces stock and counts in reports; confirm lines and payments with the user.\n\n**Reading the answers**: ids are UUIDs, receipts are addressed by `receipt_number` (e.g. 1-1001). Money is a decimal number in the account currency (see `loyverse_get_merchant`). Receipts have `receipt_type` SALE or REFUND; refunds carry positive amounts, so subtract them when you add up sales, and `cancelled_at` marks cancelled receipts. All times are UTC (ISO 8601); convert to the store's time zone before you group by day. Records deleted in the Back Office are hidden unless `show_deleted` is true.\n\n**Paging**: list tools (all but stores, POS devices, payment types, discounts and taxes, which return everything at once) return `limit` records (50 by default, 250 at most) and a `cursor` while more exist; pass it as `cursor` until it is missing.\n\n**Limits and errors**: 300 requests per 300 seconds per account (429 `RATE_LIMITED` above). Errors come as `errors: [{code, details, field}]`: 401 `UNAUTHORIZED` a wrong or expired token, 402 `PAYMENT_REQUIRED` a lapsed subscription or a missing add-on, 403 `FORBIDDEN`, 404 `NOT_FOUND` a wrong id, 400 `INVALID_VALUE` or `MISSING_REQUIRED_PARAMETER` with the field named.",
+  "prerequisites": "A Loyverse account and a personal access token from the Back Office (Settings, Access tokens).",
+  "requiredEnvVars": [
+    "LOYVERSE_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "LOYVERSE_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Loyverse Back Office, Settings, Access tokens: add a token and copy it. It has full access to the account.",
+      "link": "https://r.loyverse.com/dashboard/#/integrations/tokens",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the access token, without spaces, quotes or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Loyverse refused the access token. Copy it again from Settings, Access tokens, or create a new one; an expired token also returns 401.",
+    "402": "The Loyverse subscription or the add-on that includes the API has lapsed. Check the billing page in the Back Office.",
+    "429": "Loyverse allows 300 requests per 300 seconds per account. Wait a few minutes and try again."
+  },
+  "probe": {
+    "tool": "loyverse_get_merchant"
+  },
+  "connector": {
+    "name": "Loyverse API",
+    "type": "REST",
+    "baseUrl": "https://api.loyverse.com/v1.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{LOYVERSE_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/merchant/"
+  },
+  "tools": [
+    {
+      "name": "loyverse_get_merchant",
+      "description": "Get the Loyverse account (merchant) behind the token: business name, email, country and currency with its decimal places. Use it to check the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchant/"
+      }
+    },
+    {
+      "name": "loyverse_list_stores",
+      "description": "List the stores of the account with name, address, phone and description. Store ids filter receipts, shifts, inventory and POS devices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_ids": {
+            "type": "string",
+            "description": "Only these store ids, comma-separated."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stores",
+        "queryParams": {
+          "store_ids": "$store_ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "show_deleted": "$show_deleted"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_store",
+      "description": "Get one store by its id (UUID) with name, address, phone number and description, as shown in the Back Office.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Store id (UUID)."
+          }
+        },
+        "required": [
+          "store_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stores/{store_id}"
+      }
+    },
+    {
+      "name": "loyverse_list_pos_devices",
+      "description": "List the POS devices (registers) of the account, optionally for one store, with name, store id and whether the device is activated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Only devices of this store id."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pos_devices",
+        "queryParams": {
+          "store_id": "$store_id",
+          "show_deleted": "$show_deleted"
+        }
+      }
+    },
+    {
+      "name": "loyverse_list_receipts",
+      "description": "List sales and refund receipts, newest first, with line items, discounts, taxes, payments, totals, store, employee, customer and POS device. Filter by store, date range or receipt numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receipt_numbers": {
+            "type": "string",
+            "description": "Only these receipt numbers, comma-separated, e.g. 1-1001,1-1002."
+          },
+          "since_receipt_number": {
+            "type": "string",
+            "description": "Receipts created at or after the receipt with this number."
+          },
+          "before_receipt_number": {
+            "type": "string",
+            "description": "Receipts created up to the receipt with this number."
+          },
+          "store_id": {
+            "type": "string",
+            "description": "Only receipts of this store id."
+          },
+          "order": {
+            "type": "string",
+            "description": "Only receipts with this order name or number (the order field of the receipt)."
+          },
+          "source": {
+            "type": "string",
+            "description": "Only receipts from this source, e.g. point of sale or the name of the app that created them."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/receipts",
+        "queryParams": {
+          "receipt_numbers": "$receipt_numbers",
+          "since_receipt_number": "$since_receipt_number",
+          "before_receipt_number": "$before_receipt_number",
+          "store_id": "$store_id",
+          "order": "$order",
+          "source": "$source",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_receipt",
+      "description": "Get one receipt by its receipt number (e.g. 1-1001) with all line items, modifiers, discounts, taxes, payments and the refund link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receipt_number": {
+            "type": "string",
+            "description": "Receipt number as printed, e.g. 1-1001."
+          }
+        },
+        "required": [
+          "receipt_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/receipts/{receipt_number}"
+      }
+    },
+    {
+      "name": "loyverse_create_receipt",
+      "description": "Record a sales receipt in Loyverse (e.g. a sale made in another channel). Stock is reduced for tracked items. Payments must add up to the receipt total. Confirm the lines and amounts with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "description": "Store id where the sale is recorded."
+          },
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id credited with the sale."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id to attach (earns points)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Order name or number to store on the receipt."
+          },
+          "source": {
+            "type": "string",
+            "description": "Free text naming where the sale came from, e.g. Online shop."
+          },
+          "receipt_date": {
+            "type": "string",
+            "description": "Sale time in UTC, ISO 8601. Default now."
+          },
+          "note": {
+            "type": "string",
+            "description": "Receipt note."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Lines: {variant_id, quantity, price?, cost?, line_note?, line_taxes?: [{id}], line_discounts?: [{id}], line_modifiers?: [{modifier_option_id}]}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "total_discounts": {
+            "type": "array",
+            "description": "Receipt-level discounts: [{id, scope: RECEIPT}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "payments": {
+            "type": "array",
+            "description": "Payments: [{payment_type_id, money_amount, paid_at?}]. The sum must equal the receipt total.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "store_id",
+          "line_items",
+          "payments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/receipts",
+        "bodyMapping": {
+          "store_id": "$store_id",
+          "employee_id": "$employee_id",
+          "customer_id": "$customer_id",
+          "order": "$order",
+          "source": "$source",
+          "receipt_date": "$receipt_date",
+          "note": "$note",
+          "line_items": "$line_items",
+          "total_discounts": "$total_discounts",
+          "payments": "$payments"
+        }
+      }
+    },
+    {
+      "name": "loyverse_refund_receipt",
+      "description": "Create a refund receipt for some or all lines of a sales receipt. It cannot be undone and returns money to the customer, so show the lines to the user and wait for a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receipt_number": {
+            "type": "string",
+            "description": "Number of the sales receipt to refund, e.g. 1-1001."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Lines to refund: [{id, quantity}], where id is the line item id from the sales receipt.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "store_id": {
+            "type": "string",
+            "description": "Store id where the refund is made (default the store of the sale)."
+          },
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id making the refund."
+          },
+          "source": {
+            "type": "string",
+            "description": "Free text naming where the refund came from."
+          },
+          "receipt_date": {
+            "type": "string",
+            "description": "Refund time in UTC, ISO 8601. Default now."
+          }
+        },
+        "required": [
+          "receipt_number",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/receipts/{receipt_number}/refund",
+        "bodyMapping": {
+          "line_items": "$line_items",
+          "store_id": "$store_id",
+          "employee_id": "$employee_id",
+          "source": "$source",
+          "receipt_date": "$receipt_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "loyverse_list_shifts",
+      "description": "List closed cash register shifts with opening and closing time, cash movements, expected and actual cash, gross and net sales, taxes and payments per type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_ids": {
+            "type": "string",
+            "description": "Only shifts of these store ids, comma-separated."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only shifts opened at or after this UTC time, ISO 8601."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only shifts opened at or before this UTC time, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shifts",
+        "queryParams": {
+          "store_ids": "$store_ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_shift",
+      "description": "Get one shift by id with cash drawer amounts, cash movements, sales totals, taxes and payment totals per payment type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shift_id": {
+            "type": "string",
+            "description": "Shift id (UUID)."
+          }
+        },
+        "required": [
+          "shift_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shifts/{shift_id}"
+      }
+    },
+    {
+      "name": "loyverse_list_payment_types",
+      "description": "List payment types (cash, card, check and custom ones) with their id and type. Receipts reference them in payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_type_ids": {
+            "type": "string",
+            "description": "Only these payment type ids, comma-separated."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment_types",
+        "queryParams": {
+          "payment_type_ids": "$payment_type_ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "show_deleted": "$show_deleted"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_payment_type",
+      "description": "Get one payment type by id with its name, type (CASH, NONINTEGRATEDCARD, CHECK, OTHER and so on) and stores.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_type_id": {
+            "type": "string",
+            "description": "Payment type id (UUID)."
+          }
+        },
+        "required": [
+          "payment_type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment_types/{payment_type_id}"
+      }
+    },
+    {
+      "name": "loyverse_list_items",
+      "description": "List items of the catalog with category, taxes, modifiers, options and their variants (SKU, barcode, cost, default price and price per store).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items_ids": {
+            "type": "string",
+            "description": "Only these item ids, comma-separated."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "items_ids": "$items_ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "show_deleted": "$show_deleted",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_item",
+      "description": "Get one item by id with its variants, prices per store, category, tax ids, modifier ids, stock tracking and composite components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id (UUID)."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{item_id}"
+      }
+    },
+    {
+      "name": "loyverse_save_item",
+      "description": "Create an item, or update it when id is given (Loyverse upserts with POST). Send the full item: fields left out on an update are reset. Prices are per variant.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Item id to update; leave out to create."
+          },
+          "item_name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "reference_id": {
+            "type": "string",
+            "description": "Your own reference."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category id."
+          },
+          "track_stock": {
+            "type": "boolean",
+            "description": "Track inventory for this item."
+          },
+          "sold_by_weight": {
+            "type": "boolean",
+            "description": "Sold by weight."
+          },
+          "is_composite": {
+            "type": "boolean",
+            "description": "Composite item made of components."
+          },
+          "use_production": {
+            "type": "boolean",
+            "description": "Produce composite items in advance (stock of the composite itself)."
+          },
+          "components": {
+            "type": "array",
+            "description": "For composite items: [{variant_id, quantity}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "primary_supplier_id": {
+            "type": "string",
+            "description": "Supplier id."
+          },
+          "tax_ids": {
+            "type": "array",
+            "description": "Tax ids applied to the item.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modifiers_ids": {
+            "type": "array",
+            "description": "Modifier ids available on the item.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "option1_name": {
+            "type": "string",
+            "description": "Name of the first option, e.g. Size."
+          },
+          "option2_name": {
+            "type": "string",
+            "description": "Name of the second option."
+          },
+          "option3_name": {
+            "type": "string",
+            "description": "Name of the third option."
+          },
+          "form": {
+            "type": "string",
+            "description": "Shape shown on the POS when there is no image.",
+            "enum": [
+              "SQUARE",
+              "CIRCLE",
+              "SUN",
+              "OCTAGON"
+            ]
+          },
+          "color": {
+            "type": "string",
+            "description": "Colour shown on the POS.",
+            "enum": [
+              "GREY",
+              "RED",
+              "PINK",
+              "ORANGE",
+              "YELLOW",
+              "GREEN",
+              "BLUE",
+              "PURPLE"
+            ]
+          },
+          "variants": {
+            "type": "array",
+            "description": "Variants: [{variant_id? (to update), sku, barcode, option1_value, cost, purchase_cost, default_pricing_type: FIXED|VARIABLE, default_price, stores: [{store_id, pricing_type, price, available_for_sale, optimal_stock, low_stock}]}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "item_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items",
+        "bodyMapping": {
+          "id": "$id",
+          "item_name": "$item_name",
+          "description": "$description",
+          "reference_id": "$reference_id",
+          "category_id": "$category_id",
+          "track_stock": "$track_stock",
+          "sold_by_weight": "$sold_by_weight",
+          "is_composite": "$is_composite",
+          "use_production": "$use_production",
+          "components": "$components",
+          "primary_supplier_id": "$primary_supplier_id",
+          "tax_ids": "$tax_ids",
+          "modifiers_ids": "$modifiers_ids",
+          "option1_name": "$option1_name",
+          "option2_name": "$option2_name",
+          "option3_name": "$option3_name",
+          "form": "$form",
+          "color": "$color",
+          "variants": "$variants"
+        }
+      }
+    },
+    {
+      "name": "loyverse_delete_item",
+      "description": "Delete an item and its variants from the catalog. It cannot be undone through the API, so confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Item id (UUID)."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/items/{item_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "loyverse_list_variants",
+      "description": "List item variants with SKU, barcode, option values, cost, default price and per-store price and availability. Find a variant by SKU here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variants_ids": {
+            "type": "string",
+            "description": "Only these variant ids, comma-separated."
+          },
+          "items_ids": {
+            "type": "string",
+            "description": "Only variants of these item ids, comma-separated."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Only the variant with this SKU."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/variants",
+        "queryParams": {
+          "variants_ids": "$variants_ids",
+          "items_ids": "$items_ids",
+          "sku": "$sku",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "show_deleted": "$show_deleted",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_variant",
+      "description": "Get one item variant by id with SKU, barcode, option values, cost and the price and availability in each store.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "string",
+            "description": "Variant id (UUID)."
+          }
+        },
+        "required": [
+          "variant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/variants/{variant_id}"
+      }
+    },
+    {
+      "name": "loyverse_save_variant",
+      "description": "Create a variant of an existing item, or update it when variant_id is given (upsert with POST). Prices and availability are set per store.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "string",
+            "description": "Variant id to update; leave out to create."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item the variant belongs to."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU (unique)."
+          },
+          "reference_variant_id": {
+            "type": "string",
+            "description": "Your own reference."
+          },
+          "option1_value": {
+            "type": "string",
+            "description": "Value of the first option, e.g. Large."
+          },
+          "option2_value": {
+            "type": "string",
+            "description": "Value of the second option."
+          },
+          "option3_value": {
+            "type": "string",
+            "description": "Value of the third option."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Barcode."
+          },
+          "cost": {
+            "type": "number",
+            "description": "Cost price."
+          },
+          "purchase_cost": {
+            "type": "number",
+            "description": "Purchase cost from the supplier."
+          },
+          "default_pricing_type": {
+            "type": "string",
+            "description": "FIXED price or VARIABLE (entered at sale).",
+            "enum": [
+              "FIXED",
+              "VARIABLE"
+            ]
+          },
+          "default_price": {
+            "type": "number",
+            "description": "Default selling price in the account currency."
+          },
+          "stores": {
+            "type": "array",
+            "description": "Per store: [{store_id, pricing_type, price, available_for_sale, optimal_stock, low_stock}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/variants",
+        "bodyMapping": {
+          "variant_id": "$variant_id",
+          "item_id": "$item_id",
+          "sku": "$sku",
+          "reference_variant_id": "$reference_variant_id",
+          "option1_value": "$option1_value",
+          "option2_value": "$option2_value",
+          "option3_value": "$option3_value",
+          "barcode": "$barcode",
+          "cost": "$cost",
+          "purchase_cost": "$purchase_cost",
+          "default_pricing_type": "$default_pricing_type",
+          "default_price": "$default_price",
+          "stores": "$stores"
+        }
+      }
+    },
+    {
+      "name": "loyverse_list_categories",
+      "description": "List item categories with name and colour. Items reference them through category_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "categories_ids": {
+            "type": "string",
+            "description": "Only these category ids, comma-separated."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "categories_ids": "$categories_ids",
+          "show_deleted": "$show_deleted",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_category",
+      "description": "Get one item category by id (UUID) with its name, colour and creation and deletion times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id (UUID)."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/{category_id}"
+      }
+    },
+    {
+      "name": "loyverse_save_category",
+      "description": "Create an item category, or rename or recolour it when id is given (Loyverse upserts with POST).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Category id to update; leave out to create."
+          },
+          "name": {
+            "type": "string",
+            "description": "Category name."
+          },
+          "color": {
+            "type": "string",
+            "description": "Colour shown on the POS.",
+            "enum": [
+              "GREY",
+              "RED",
+              "PINK",
+              "ORANGE",
+              "YELLOW",
+              "GREEN",
+              "BLUE",
+              "PURPLE"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/categories",
+        "bodyMapping": {
+          "id": "$id",
+          "name": "$name",
+          "color": "$color"
+        }
+      }
+    },
+    {
+      "name": "loyverse_list_modifiers",
+      "description": "List modifiers (e.g. Milk: whole, oat) with their options and prices and the stores where they are used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "modifier_ids": {
+            "type": "string",
+            "description": "Only these modifier ids, comma-separated."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/modifiers",
+        "queryParams": {
+          "modifier_ids": "$modifier_ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "show_deleted": "$show_deleted",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_list_discounts",
+      "description": "List discounts with type (fixed or variable, percent or amount, by points), value, stores and whether access is restricted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "discount_ids": {
+            "type": "string",
+            "description": "Only these discount ids, comma-separated."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/discounts",
+        "queryParams": {
+          "discount_ids": "$discount_ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "show_deleted": "$show_deleted"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_discount",
+      "description": "Get one discount by id (UUID) with its type, amount or percent, stores and restricted access flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "discount_id": {
+            "type": "string",
+            "description": "Discount id (UUID)."
+          }
+        },
+        "required": [
+          "discount_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/discounts/{discount_id}"
+      }
+    },
+    {
+      "name": "loyverse_save_discount",
+      "description": "Create a discount, or update it when id is given (upsert with POST). Fixed discounts carry an amount or a percent; variable ones are entered at sale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Discount id to update; leave out to create."
+          },
+          "name": {
+            "type": "string",
+            "description": "Discount name."
+          },
+          "type": {
+            "type": "string",
+            "description": "Discount type.",
+            "enum": [
+              "FIXED_PERCENT",
+              "FIXED_AMOUNT",
+              "VARIABLE_PERCENT",
+              "VARIABLE_AMOUNT",
+              "DISCOUNT_BY_POINTS"
+            ]
+          },
+          "discount_amount": {
+            "type": "number",
+            "description": "Amount off for FIXED_AMOUNT, in the account currency."
+          },
+          "discount_percent": {
+            "type": "number",
+            "description": "Percent off for FIXED_PERCENT, e.g. 10."
+          },
+          "stores": {
+            "type": "array",
+            "description": "Store ids where the discount is available.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "restricted_access": {
+            "type": "boolean",
+            "description": "Only employees with the right may apply it."
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/discounts",
+        "bodyMapping": {
+          "id": "$id",
+          "name": "$name",
+          "type": "$type",
+          "discount_amount": "$discount_amount",
+          "discount_percent": "$discount_percent",
+          "stores": "$stores",
+          "restricted_access": "$restricted_access"
+        }
+      }
+    },
+    {
+      "name": "loyverse_list_taxes",
+      "description": "List taxes with rate, type (included in the price or added to it) and stores. Items reference them through tax_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tax_ids": {
+            "type": "string",
+            "description": "Only these tax ids, comma-separated."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/taxes",
+        "queryParams": {
+          "tax_ids": "$tax_ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "show_deleted": "$show_deleted"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_tax",
+      "description": "Get one tax by id (UUID) with its name, rate in percent, type (INCLUDED or ADDED) and stores.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tax_id": {
+            "type": "string",
+            "description": "Tax id (UUID)."
+          }
+        },
+        "required": [
+          "tax_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/taxes/{tax_id}"
+      }
+    },
+    {
+      "name": "loyverse_save_tax",
+      "description": "Create a tax, or update it when id is given (upsert with POST). A tax is INCLUDED in prices or ADDED on top, with a rate in percent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Tax id to update; leave out to create."
+          },
+          "name": {
+            "type": "string",
+            "description": "Tax name, e.g. VAT 20%."
+          },
+          "type": {
+            "type": "string",
+            "description": "INCLUDED in the price or ADDED to it.",
+            "enum": [
+              "INCLUDED",
+              "ADDED"
+            ]
+          },
+          "rate": {
+            "type": "number",
+            "description": "Rate in percent, e.g. 20."
+          },
+          "stores": {
+            "type": "array",
+            "description": "Store ids where the tax applies.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "rate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/taxes",
+        "bodyMapping": {
+          "id": "$id",
+          "name": "$name",
+          "type": "$type",
+          "rate": "$rate",
+          "stores": "$stores"
+        }
+      }
+    },
+    {
+      "name": "loyverse_list_suppliers",
+      "description": "List suppliers with contact name, email, phone, website, address and note. Items reference them through primary_supplier_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers/",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_list_inventory",
+      "description": "List stock levels per item variant and store (in_stock). Filter by store, variant or update time to see what changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "store_ids": {
+            "type": "string",
+            "description": "Only these store ids, comma-separated."
+          },
+          "variant_ids": {
+            "type": "string",
+            "description": "Only these variant ids, comma-separated."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only levels updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only levels updated at or before this UTC time, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory",
+        "queryParams": {
+          "store_ids": "$store_ids",
+          "variant_ids": "$variant_ids",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_set_inventory",
+      "description": "Set the stock of item variants in stores. stock_after is the new absolute quantity, not a change: read the current level first and confirm the new values with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventory_levels": {
+            "type": "array",
+            "description": "Levels to set: [{variant_id, store_id, stock_after}], up to 250 per call.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "inventory_levels"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory",
+        "bodyMapping": {
+          "inventory_levels": "$inventory_levels"
+        }
+      }
+    },
+    {
+      "name": "loyverse_list_customers",
+      "description": "List loyalty customers with contact details, customer code, note, first and last visit, total visits, total spent and points balance. Search by email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_ids": {
+            "type": "string",
+            "description": "Only these customer ids, comma-separated."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only the customer with this email."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "customer_ids": "$customer_ids",
+          "email": "$email",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_customer",
+      "description": "Get one customer by id with contact details, address, customer code, visits, total spent and loyalty points.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (UUID)."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}"
+      }
+    },
+    {
+      "name": "loyverse_save_customer",
+      "description": "Create a customer, or update one when id is given (upsert with POST). total_points sets the loyalty balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Customer id to update; leave out to create."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region or state."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Country, ISO 3166-1 alpha-2, e.g. GB."
+          },
+          "customer_code": {
+            "type": "string",
+            "description": "Your own customer code or loyalty card number."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note."
+          },
+          "total_points": {
+            "type": "number",
+            "description": "Loyalty points balance to set."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "id": "$id",
+          "name": "$name",
+          "email": "$email",
+          "phone_number": "$phone_number",
+          "address": "$address",
+          "city": "$city",
+          "region": "$region",
+          "postal_code": "$postal_code",
+          "country_code": "$country_code",
+          "customer_code": "$customer_code",
+          "note": "$note",
+          "total_points": "$total_points"
+        }
+      }
+    },
+    {
+      "name": "loyverse_delete_customer",
+      "description": "Delete a customer with their loyalty points. It cannot be undone through the API, so confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (UUID)."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/customers/{customer_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "loyverse_list_employees",
+      "description": "List employees with name, email, phone, role and the stores they work in. Receipts and shifts reference them through employee_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_ids": {
+            "type": "string",
+            "description": "Only these employee ids, comma-separated."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601, e.g. 2026-03-30T00:00:00.000Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only records created at or before this UTC time, ISO 8601."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only records updated at or after this UTC time, ISO 8601."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only records updated at or before this UTC time, ISO 8601."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include soft-deleted records (they carry deleted_at)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Objects per page, 1 to 250 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor from the previous response (its cursor field) to get the next page. Absent in the response on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/employees",
+        "queryParams": {
+          "employee_ids": "$employee_ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "show_deleted": "$show_deleted",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "loyverse_get_employee",
+      "description": "Get one employee by id (UUID) with name, email, phone number, owner flag and the stores they work in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Employee id (UUID)."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/employees/{employee_id}"
+      }
+    },
+    {
+      "name": "loyverse_list_webhooks",
+      "description": "List the webhooks of the account with event type, target URL and status (ENABLED or DISABLED after failed deliveries).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks/"
+      }
+    },
+    {
+      "name": "loyverse_create_webhook",
+      "description": "Subscribe an HTTPS URL to one event: receipts, items, customers or inventory changes, or closed shifts. Event type plus URL must be unique.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "HTTPS URL that receives the POST notifications."
+          },
+          "type": {
+            "type": "string",
+            "description": "Event to subscribe to.",
+            "enum": [
+              "inventory_levels.update",
+              "items.update",
+              "customers.update",
+              "receipts.update",
+              "shifts.create"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "ENABLED (default) or DISABLED.",
+            "enum": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/webhooks/",
+        "bodyMapping": {
+          "url": "$url",
+          "type": "$type",
+          "status": "$status"
+        }
+      }
+    }
+  ]
+}

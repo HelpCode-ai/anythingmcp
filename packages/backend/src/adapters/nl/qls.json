@@ -1,0 +1,1662 @@
+{
+  "slug": "qls",
+  "name": "QLS",
+  "description": "Ship and fulfil with Pakketdienst QLS from an AI agent: parcel shipments with labels and tracking, shipping products and delivery options, service points, fulfilment orders, fulfilment products and stock, backorders, returns and inbound purchase orders. HTTP Basic auth with the mijn.pakketdienstqls.nl login.",
+  "aliases": [
+    "Pakketdienst QLS",
+    "QLS Fulfilment"
+  ],
+  "region": "nl",
+  "category": "logistics",
+  "icon": "qls",
+  "docsUrl": "https://api.pakketdienstqls.nl/swagger/",
+  "instructions": "## QLS\nThis connector uses the **QLS Fulfilment and Parcel Service API** of Pakketdienst QLS on `https://api.pakketdienstqls.nl` (OpenAPI at `https://api.pakketdienstqls.nl/swagger/`): parcel shipments with labels and tracking, shipping products and their delivery options, service points, fulfilment orders picked from the QLS warehouse, fulfilment products and stock, returns and inbound purchase orders. QLS publishes a v1 and a v2 API; the connector uses v2 where QLS offers it (shipment creation, returns, purchase orders) and v1 for the rest.\n\n**Setup (about 5 minutes)**\n1. You need an account on mijn.pakketdienstqls.nl. QLS authenticates the API with **HTTP Basic** and the login details of that portal. Use a separate user for the API where your account allows it (ask QLS IT support at it@pakketdienstqls.nl), so a password change of a person does not break the connector.\n2. Put the user name (usually an email address) in `QLS_USERNAME` and the password in `QLS_PASSWORD`.\n3. Install and run `qls_list_companies`. It returns the company id (a UUID) that every other tool takes as `company_id`; `qls_get_company` shows one company.\n\n**Ids you need first**: `qls_list_companies` (company_id), then `qls_list_brands` and `qls_get_brand` (brand_id, needed for shipments and orders) and `qls_list_shipping_products` (shipping products with `combinations[].id` = `product_combination_id`, `options[].tag` = delivery options, prices per country and weight band). Look up pick-up points with `qls_list_service_points` or, for one product, `qls_list_product_service_points`, and pass their `servicepoint_code`.\n\n**Parcel shipments (your own stock)**: `qls_list_shipments` (filter by status, reference, barcode, receiver, dates or `search`), `qls_get_shipment` (set `with_label` for the PDF and ZPL label URLs), `qls_get_shipment_return` (the return shipment of a parcel) and `qls_create_shipment`, which books the parcel and returns barcode, tracking URL and `label_pdf_url`.\n\n**Fulfilment (stock at QLS)**: `qls_list_fulfillment_orders` and `qls_get_fulfillment_order` show status, ordered, reserved and delivered amounts and the shipments of each delivery; `qls_create_fulfillment_order` places an order, `qls_update_fulfillment_order` puts it on hold, releases it or changes reference, remarks or service point, and `qls_cancel_fulfillment_order` cancels it. Products: `qls_list_fulfillment_products`, `qls_get_fulfillment_product`, `qls_create_fulfillment_product`, `qls_update_fulfillment_product` and `qls_delete_fulfillment_product` (switched off). Stock: `qls_list_stock` (available, salable, reserved, incoming per product), `qls_get_product_stock` (per warehouse location) and `qls_list_backorders`.\n\n**Returns and inbound goods**: `qls_list_returns` and `qls_get_return`, `qls_create_return_from_order` to announce a return; `qls_list_purchase_orders`, `qls_list_purchase_orders_in_transit`, `qls_get_purchase_order`, `qls_create_purchase_order` to announce goods coming to the warehouse, and `qls_list_suppliers`.\n\n**Writes: confirm first.** Creating a shipment books a real parcel and costs money; a fulfilment order is picked and shipped from your stock. Before every write show the user what will happen (receiver, products and amounts, shipping product) and wait for a yes.\n\n**Reading the answers**: every answer is wrapped as `{\"meta\": {\"code\": 200}, \"errors\": [], \"data\": ..., \"pagination\": ...}`; the data is under `data`, problems are listed in `errors`. Weights are in **grams**, prices and cash on delivery in **euros**, dimensions in millimetres. Ids of companies, brands, orders, products and shipments are UUID strings; shipping product and combination ids are integers. Fulfilment order statuses: error_validation, concept, received, pending, partically_sent (QLS spelling), sent.\n\n**Paging**: lists return up to 100 entries per page. `pagination` carries `page`, `pageCount`, `count` and `nextPage`; call again with `page` + 1 while `nextPage` is true.\n\n**Dates in filters**: the stock and purchase order filters take `d-m-Y H:i` (e.g. `1-10-2026 00:00`); the other date filters take a date or date-time such as `2026-10-01 00:00:00`.\n\n**Errors**: 401 means wrong user name or password; 404 (`Niet Gevonden`) an unknown id or a company id that is not yours; 422 or a filled `errors` list a validation problem (QLS answers in Dutch).\n\n**Switched off at install**: `qls_delete_fulfillment_product` and `qls_cancel_fulfillment_order`, which cannot be undone; an admin switches them on when the team needs them.",
+  "requiredEnvVars": [
+    "QLS_USERNAME",
+    "QLS_PASSWORD"
+  ],
+  "prerequisites": "An account on mijn.pakketdienstqls.nl; the API takes the login of that portal (preferably a separate user for the API).",
+  "envVarMeta": {
+    "QLS_USERNAME": {
+      "label": "User name",
+      "kind": "credential",
+      "help": "The login of mijn.pakketdienstqls.nl you want the API to use, usually an email address.",
+      "link": "https://mijn.pakketdienstqls.nl",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the user name alone, without spaces."
+    },
+    "QLS_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that user.",
+      "link": "https://mijn.pakketdienstqls.nl"
+    }
+  },
+  "verifyHints": {
+    "401": "QLS refused the login. Check QLS_USERNAME and QLS_PASSWORD: they are the login details of mijn.pakketdienstqls.nl.",
+    "404": "QLS does not know this id. Take the company id from qls_list_companies and the other ids from the list tools."
+  },
+  "probe": {
+    "tool": "qls_list_companies"
+  },
+  "connector": {
+    "name": "QLS Fulfilment and Parcel Service API",
+    "type": "REST",
+    "baseUrl": "https://api.pakketdienstqls.nl",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{QLS_USERNAME}}",
+      "password": "{{QLS_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "qls_list_companies",
+      "description": "List the QLS companies the API user may act for, with their id and name. Call this first: every other tool needs the company id it returns.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies"
+      }
+    },
+    {
+      "name": "qls_get_company",
+      "description": "Get one QLS company (id and name) by its id, to confirm which account the API user works on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}"
+      }
+    },
+    {
+      "name": "qls_list_brands",
+      "description": "List the brands (trade names) of a company. A brand carries the sender, return and customs addresses and policies; creating a shipment or a fulfilment order needs its brand_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/brands"
+      }
+    },
+    {
+      "name": "qls_get_brand",
+      "description": "Get one brand (trade name) of a company by its id, with its name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id from qls_list_brands."
+          }
+        },
+        "required": [
+          "company_id",
+          "brand_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/brands/{brand_id}"
+      }
+    },
+    {
+      "name": "qls_list_shipping_products",
+      "description": "List the shipping products (shipping methods such as DHL or PostNL parcel, mailbox or service point) the company may use, with their price per country and weight band, maximum dimensions, delivery options and the combinations of options. A shipment needs a product id and a product_combination_id from this list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/products"
+      }
+    },
+    {
+      "name": "qls_list_service_points",
+      "description": "Find carrier service points (pick-up points) near a postal code for every service point product the company has enabled, with address, opening times and the servicepoint_code to put on a shipment or order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter country code, e.g. NL or BE."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code to search around, e.g. 1234AB."
+          }
+        },
+        "required": [
+          "company_id",
+          "country",
+          "postal_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/service-points/{country}/{postal_code}"
+      }
+    },
+    {
+      "name": "qls_list_product_service_points",
+      "description": "Find service points near a postal code for one shipping product (for example only DHL service points), with address, opening times and servicepoint_code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Shipping product id from qls_list_shipping_products."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter country code, e.g. NL."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code to search around, e.g. 1234AB."
+          }
+        },
+        "required": [
+          "company_id",
+          "product_id",
+          "country",
+          "postal_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/products/{product_id}/service-points/{country}/{postal_code}"
+      }
+    },
+    {
+      "name": "qls_list_shipments",
+      "description": "List the parcel shipments of a company with status (created, printed, pre_transit, in_transit, delivered, returned_to_sender), barcode, tracking id and tracking URL. Filter by reference, barcode, status, brand, receiver fields or created/modified dates, or search freely.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Your shipment reference."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Carrier barcode."
+          },
+          "status": {
+            "type": "string",
+            "description": "Shipment status.",
+            "enum": [
+              "created",
+              "printed",
+              "pre_transit",
+              "in_transit",
+              "delivered",
+              "returned_to_sender"
+            ]
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Only shipments of this brand."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only shipments created after this date, e.g. 2026-10-01 00:00:00."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only shipments created before this date."
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only shipments changed after this date."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only shipments changed before this date."
+          },
+          "receiver_name": {
+            "type": "string",
+            "description": "Receiver name."
+          },
+          "receiver_postalcode": {
+            "type": "string",
+            "description": "Receiver postal code."
+          },
+          "receiver_country": {
+            "type": "string",
+            "description": "Receiver country code."
+          },
+          "receiver_email": {
+            "type": "string",
+            "description": "Receiver email address."
+          },
+          "shop_integration_reference": {
+            "type": "string",
+            "description": "Order reference of the connected web shop."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free text search over the shipments."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. The answer carries pagination (page, pageCount, nextPage); call again with the next page while nextPage is true."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/shipments",
+        "queryParams": {
+          "filter[reference]": "$reference",
+          "filter[barcode]": "$barcode",
+          "filter[status]": "$status",
+          "filter[brand_id]": "$brand_id",
+          "filter[created >]": "$created_after",
+          "filter[created <]": "$created_before",
+          "filter[modified >]": "$modified_after",
+          "filter[modified <]": "$modified_before",
+          "filter[receiver_contact.name]": "$receiver_name",
+          "filter[receiver_contact.postalcode]": "$receiver_postalcode",
+          "filter[receiver_contact.country]": "$receiver_country",
+          "filter[receiver_contact.email]": "$receiver_email",
+          "filter[shop_integration_reference]": "$shop_integration_reference",
+          "search": "$search",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "qls_get_shipment",
+      "description": "Get one shipment with status, weight in grams, barcode, tracking id and URL. Set with_label to true to also get the label as a PDF URL and a ZPL URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "shipment_id": {
+            "type": "string",
+            "description": "Shipment id (UUID)."
+          },
+          "with_label": {
+            "type": "boolean",
+            "description": "true adds the label URLs (label, label_zpl) to the answer."
+          }
+        },
+        "required": [
+          "company_id",
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/shipments/{shipment_id}",
+        "queryParams": {
+          "returnShipmentLabel": "$with_label"
+        }
+      }
+    },
+    {
+      "name": "qls_get_shipment_return",
+      "description": "Get the return shipment created for a shipment (status, barcode, tracking), when the consumer sent the parcel back with a return label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "shipment_id": {
+            "type": "string",
+            "description": "Id of the original shipment."
+          }
+        },
+        "required": [
+          "company_id",
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/shipments/{shipment_id}/returns"
+      }
+    },
+    {
+      "name": "qls_list_fulfillment_orders",
+      "description": "List fulfilment orders (orders QLS picks, packs and ships from its warehouse) with status (error_validation, concept, received, pending, partically_sent, sent), receiver, ordered products, deliveries and their shipments. Filter by status, customer reference, brand, receiver fields or dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "status": {
+            "type": "string",
+            "description": "Order status.",
+            "enum": [
+              "error_validation",
+              "concept",
+              "received",
+              "pending",
+              "partically_sent",
+              "sent"
+            ]
+          },
+          "customer_reference": {
+            "type": "string",
+            "description": "Your order reference, e.g. the web shop order number."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Only orders of this brand."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only orders created after this date, e.g. 2026-10-01 00:00:00."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only orders created before this date."
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only orders changed after this date."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only orders changed before this date."
+          },
+          "receiver_name": {
+            "type": "string",
+            "description": "Receiver name."
+          },
+          "receiver_postalcode": {
+            "type": "string",
+            "description": "Receiver postal code."
+          },
+          "receiver_email": {
+            "type": "string",
+            "description": "Receiver email address."
+          },
+          "shop_integration_reference": {
+            "type": "string",
+            "description": "Order reference of the connected web shop."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free text search over the orders."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. The answer carries pagination (page, pageCount, nextPage); call again with the next page while nextPage is true."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/fulfillment/orders",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[customer_reference]": "$customer_reference",
+          "filter[brand_id]": "$brand_id",
+          "filter[created >]": "$created_after",
+          "filter[created <]": "$created_before",
+          "filter[modified >]": "$modified_after",
+          "filter[modified <]": "$modified_before",
+          "filter[receiver_contact.name]": "$receiver_name",
+          "filter[receiver_contact.postalcode]": "$receiver_postalcode",
+          "filter[receiver_contact.email]": "$receiver_email",
+          "filter[shop_integration_reference]": "$shop_integration_reference",
+          "search": "$search",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "data[*].products[*].product.warehouse_stocks",
+            "data[*].deliveries[*].delivery_products[*].order_product.product.warehouse_stocks"
+          ]
+        }
+      }
+    },
+    {
+      "name": "qls_get_fulfillment_order",
+      "description": "Get one fulfilment order with status, amounts ordered, reserved and delivered, receiver, products, deliveries and the shipments (barcode, tracking URL) that left the warehouse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Fulfilment order id (UUID)."
+          }
+        },
+        "required": [
+          "company_id",
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/fulfillment/orders/{order_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "data.products[*].product.warehouse_stocks",
+            "data.deliveries[*].delivery_products[*].order_product.product.warehouse_stocks"
+          ]
+        }
+      }
+    },
+    {
+      "name": "qls_list_fulfillment_products",
+      "description": "List the fulfilment products (articles stored at QLS) with name, EAN, SKU, article number, total, reserved and blocked stock and prices. Filter by name, EAN, SKU, article number, stock levels or dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN barcode."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU."
+          },
+          "article_number": {
+            "type": "string",
+            "description": "QLS article number."
+          },
+          "amount_available_greater_than": {
+            "type": "integer",
+            "description": "Only products with more available stock than this."
+          },
+          "amount_available_less_than": {
+            "type": "integer",
+            "description": "Only products with less available stock than this, e.g. 1 for out of stock."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only products created after this date."
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only products changed after this date."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. The answer carries pagination (page, pageCount, nextPage); call again with the next page while nextPage is true."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/fulfillment/products",
+        "queryParams": {
+          "filter[name]": "$name",
+          "filter[ean]": "$ean",
+          "filter[sku]": "$sku",
+          "filter[article_number]": "$article_number",
+          "filter[amount_available >]": "$amount_available_greater_than",
+          "filter[amount_available <]": "$amount_available_less_than",
+          "filter[created >]": "$created_after",
+          "filter[modified >]": "$modified_after",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "data[*].warehouse_stocks"
+          ]
+        }
+      }
+    },
+    {
+      "name": "qls_get_fulfillment_product",
+      "description": "Get one fulfilment product with EAN, SKU, prices, stock totals and the warehouse locations (zone, rack, shelf, best-before) where it is stored.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Fulfilment product id (UUID)."
+          }
+        },
+        "required": [
+          "company_id",
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/fulfillment/products/{product_id}"
+      }
+    },
+    {
+      "name": "qls_list_stock",
+      "description": "List stock per fulfilment product only: total, reserved, available, salable, sold, backorder, incoming and forecast amounts. 100 products per page. Lighter than qls_list_fulfillment_products for stock checks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Only this fulfilment product id."
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only products changed after this moment, format d-m-Y H:i, e.g. 1-10-2026 00:00."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only products changed before this moment, format d-m-Y H:i."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only products created after this moment, format d-m-Y H:i."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only products created before this moment, format d-m-Y H:i."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. The answer carries pagination (page, pageCount, nextPage); call again with the next page while nextPage is true."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/fulfillment/products/stock",
+        "queryParams": {
+          "filter[product_id]": "$product_id",
+          "filter[greater_than_modified]": "$modified_after",
+          "filter[less_than_modified]": "$modified_before",
+          "filter[greater_than_created]": "$created_after",
+          "filter[less_than_created]": "$created_before",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "qls_get_product_stock",
+      "description": "Get the warehouse stock records of one fulfilment product: per location the current and reserved amount, batch and best-before date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Fulfilment product id (UUID)."
+          }
+        },
+        "required": [
+          "company_id",
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/fulfillment/products/{product_id}/stocks"
+      }
+    },
+    {
+      "name": "qls_list_backorders",
+      "description": "List the fulfilment products that are in backorder (ordered but not in stock) with the missing amount, to see what to replenish.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only backorders created after this moment."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only backorders created before this moment."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/fulfillment/products/backorders",
+        "queryParams": {
+          "filter[created >]": "$created_after",
+          "filter[created <]": "$created_before"
+        }
+      }
+    },
+    {
+      "name": "qls_list_returns",
+      "description": "List returns handled by QLS (v2) with status (created, approved, rejected, partially_rejected, quarantine, incomplete, completed and more), the original shipment and order, consumer and returned products with reason. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "status": {
+            "type": "string",
+            "description": "Return status.",
+            "enum": [
+              "created",
+              "approved",
+              "rejected",
+              "partially_rejected",
+              "quarantine",
+              "partially_in_quarantine",
+              "incomplete",
+              "more_than_complete",
+              "completed"
+            ]
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only returns created after this moment."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only returns created before this moment."
+          },
+          "processed_after": {
+            "type": "string",
+            "description": "Only returns processed after this moment."
+          },
+          "processed_before": {
+            "type": "string",
+            "description": "Only returns processed before this moment."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. The answer carries pagination (page, pageCount, nextPage); call again with the next page while nextPage is true."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/companies/{company_id}/returns",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[created >]": "$created_after",
+          "filter[created <]": "$created_before",
+          "filter[processed >]": "$processed_after",
+          "filter[processed <]": "$processed_before",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "qls_get_return",
+      "description": "Get one return (v2) with status, consumer, original shipment and order and the returned products with expected and received amounts and reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "return_id": {
+            "type": "string",
+            "description": "Return id."
+          }
+        },
+        "required": [
+          "company_id",
+          "return_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/companies/{company_id}/returns/{return_id}"
+      }
+    },
+    {
+      "name": "qls_list_purchase_orders",
+      "description": "List purchase orders (announced inbound deliveries of goods to the QLS warehouse, v2) with status (created, in_transit, arrived, partially_arrived, processing, closed, archived, cancelled). 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "status": {
+            "type": "string",
+            "description": "Purchase order status.",
+            "enum": [
+              "created",
+              "arrived",
+              "partially_arrived",
+              "in_transit",
+              "processing",
+              "closed",
+              "archived",
+              "cancelled"
+            ]
+          },
+          "customer_title": {
+            "type": "string",
+            "description": "Your title of the purchase order."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only purchase orders created after this moment, format d-m-Y H:i, e.g. 1-10-2026 00:00."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only purchase orders created before this moment, format d-m-Y H:i."
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only purchase orders changed after this moment, format d-m-Y H:i."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only purchase orders changed before this moment, format d-m-Y H:i."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. The answer carries pagination (page, pageCount, nextPage); call again with the next page while nextPage is true."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/companies/{company_id}/purchase-orders",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[customer_title]": "$customer_title",
+          "filter[greater_than_created]": "$created_after",
+          "filter[less_than_created]": "$created_before",
+          "filter[greater_than_modified]": "$modified_after",
+          "filter[less_than_modified]": "$modified_before",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "qls_list_purchase_orders_in_transit",
+      "description": "List the purchase orders whose goods are on their way to the QLS warehouse (v2), with deliveries, products and estimated arrival.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. The answer carries pagination (page, pageCount, nextPage); call again with the next page while nextPage is true."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/companies/{company_id}/purchase-orders/in-transit",
+        "queryParams": {
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "qls_get_purchase_order",
+      "description": "Get one purchase order (v2) with its products and amounts, suppliers, deliveries (barcode, estimated arrival, received) and labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "purchase_order_id": {
+            "type": "integer",
+            "description": "Purchase order id."
+          }
+        },
+        "required": [
+          "company_id",
+          "purchase_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/companies/{company_id}/purchase-orders/{purchase_order_id}"
+      }
+    },
+    {
+      "name": "qls_list_suppliers",
+      "description": "List the suppliers of a company (id and name), used on purchase orders and linked to fulfilment products for reports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{company_id}/suppliers"
+      }
+    },
+    {
+      "name": "qls_create_shipment",
+      "description": "Create a parcel shipment (v2) and get its barcode, tracking URL and label URLs (label_pdf_url, label_zpl_url). Needs brand_id, product_combination_id (from qls_list_shipping_products) and the receiver; sender and return address default to the brand. Books a real parcel with the carrier and costs money: show the receiver, product and weight and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id from qls_list_brands."
+          },
+          "product_combination_id": {
+            "type": "integer",
+            "description": "Combination id of the shipping product and its options, from qls_list_shipping_products (combinations[].id)."
+          },
+          "receiver_contact": {
+            "type": "object",
+            "description": "Address: {\"name\": \"...\", \"companyname\": \"...\", \"street\": \"...\", \"housenumber\": \"12\", \"address2\": \"\", \"postalcode\": \"1234AB\", \"locality\": \"Amsterdam\", \"country\": \"NL\", \"email\": \"...\", \"phone\": \"...\"}. street, postalcode, locality and country are required; country is a two-letter ISO code.",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "companyname": {
+                "type": "string"
+              },
+              "street": {
+                "type": "string"
+              },
+              "housenumber": {
+                "type": "string"
+              },
+              "address2": {
+                "type": "string"
+              },
+              "postalcode": {
+                "type": "string"
+              },
+              "locality": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "vat": {
+                "type": "string"
+              },
+              "eori": {
+                "type": "string"
+              },
+              "oss": {
+                "type": "string"
+              }
+            }
+          },
+          "reference": {
+            "type": "string",
+            "description": "Your reference, e.g. the order number."
+          },
+          "weight": {
+            "type": "integer",
+            "description": "Weight in grams."
+          },
+          "servicepoint_code": {
+            "type": "string",
+            "description": "servicepoint_code from qls_list_service_points to ship to a pick-up point."
+          },
+          "cod_amount": {
+            "type": "number",
+            "description": "Cash on delivery amount in euros, only with a COD product."
+          },
+          "customs_shipment_type": {
+            "type": "string",
+            "description": "Customs type for shipments outside the EU.",
+            "enum": [
+              "commercial",
+              "documents",
+              "return",
+              "sample"
+            ]
+          },
+          "customs_invoice_number": {
+            "type": "string",
+            "description": "Invoice number for customs."
+          },
+          "shipment_products": {
+            "type": "array",
+            "description": "Contents for customs: [{\"amount\": 1, \"name\": \"T-shirt\", \"country_code_of_origin\": \"NL\", \"hs_code\": \"610910\", \"price_per_unit\": 19.95, \"weight_per_unit\": 200, \"ean\": \"...\", \"sku\": \"...\", \"currency\": \"EUR\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "sender_contact": {
+            "type": "object",
+            "description": "Sender address, only to override the brand address. Same shape as receiver_contact.",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "companyname": {
+                "type": "string"
+              },
+              "street": {
+                "type": "string"
+              },
+              "housenumber": {
+                "type": "string"
+              },
+              "address2": {
+                "type": "string"
+              },
+              "postalcode": {
+                "type": "string"
+              },
+              "locality": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "vat": {
+                "type": "string"
+              },
+              "eori": {
+                "type": "string"
+              },
+              "oss": {
+                "type": "string"
+              }
+            }
+          },
+          "return_contact": {
+            "type": "object",
+            "description": "Return address, only to override the brand address. Same shape as receiver_contact.",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "companyname": {
+                "type": "string"
+              },
+              "street": {
+                "type": "string"
+              },
+              "housenumber": {
+                "type": "string"
+              },
+              "address2": {
+                "type": "string"
+              },
+              "postalcode": {
+                "type": "string"
+              },
+              "locality": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "vat": {
+                "type": "string"
+              },
+              "eori": {
+                "type": "string"
+              },
+              "oss": {
+                "type": "string"
+              }
+            }
+          },
+          "zpl_direct": {
+            "type": "boolean",
+            "description": "true to get the ZPL label directly."
+          }
+        },
+        "required": [
+          "company_id",
+          "brand_id",
+          "product_combination_id",
+          "receiver_contact"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/companies/{company_id}/shipments",
+        "bodyMapping": {
+          "brand_id": "$brand_id",
+          "product_combination_id": "$product_combination_id",
+          "receiver_contact": "$receiver_contact",
+          "reference": "$reference",
+          "weight": "$weight",
+          "servicepoint_code": "$servicepoint_code",
+          "cod_amount": "$cod_amount",
+          "customs_shipment_type": "$customs_shipment_type",
+          "customs_invoice_number": "$customs_invoice_number",
+          "shipment_products": "$shipment_products",
+          "sender_contact": "$sender_contact",
+          "return_contact": "$return_contact",
+          "zpl_direct": "$zpl_direct"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "qls_create_fulfillment_order",
+      "description": "Create a fulfilment order: QLS picks the products from its stock, packs and ships them to the receiver. Needs brand_id, the receiver and the products (fulfilment product id or EAN/SKU with amount). Starts a real shipment from the warehouse: show the receiver and lines and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id from qls_list_brands."
+          },
+          "receiver_contact": {
+            "type": "object",
+            "description": "Address: {\"name\": \"...\", \"companyname\": \"...\", \"street\": \"...\", \"housenumber\": \"12\", \"address2\": \"\", \"postalcode\": \"1234AB\", \"locality\": \"Amsterdam\", \"country\": \"NL\", \"email\": \"...\", \"phone\": \"...\"}. street, postalcode, locality and country are required; country is a two-letter ISO code.",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "companyname": {
+                "type": "string"
+              },
+              "street": {
+                "type": "string"
+              },
+              "housenumber": {
+                "type": "string"
+              },
+              "address2": {
+                "type": "string"
+              },
+              "postalcode": {
+                "type": "string"
+              },
+              "locality": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "vat": {
+                "type": "string"
+              },
+              "eori": {
+                "type": "string"
+              },
+              "oss": {
+                "type": "string"
+              }
+            }
+          },
+          "products": {
+            "type": "array",
+            "description": "Order lines: [{\"product_id\": \"<fulfilment product id>\", \"amount_ordered\": 2, \"name\": \"...\"}]. Use the ids from qls_list_fulfillment_products.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "customer_reference": {
+            "type": "string",
+            "description": "Your order number, shown in reports and on the packing slip."
+          },
+          "servicepoint_code": {
+            "type": "string",
+            "description": "servicepoint_code to deliver to a pick-up point."
+          },
+          "delivery_options": {
+            "type": "array",
+            "description": "Delivery option tags of the shipping product, e.g. [\"signature\"]; see qls_list_shipping_products (options[].tag).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "processable": {
+            "type": "string",
+            "description": "Date and time from which QLS may process the order, to hold it until then."
+          },
+          "total_price": {
+            "type": "number",
+            "description": "Order total, for customs and insurance."
+          },
+          "custom_values": {
+            "type": "array",
+            "description": "Extra key/value pairs: [{\"key\": \"...\", \"value\": \"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "company_id",
+          "brand_id",
+          "receiver_contact",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies/{company_id}/fulfillment/orders",
+        "bodyMapping": {
+          "brand_id": "$brand_id",
+          "receiver_contact": "$receiver_contact",
+          "products": "$products",
+          "customer_reference": "$customer_reference",
+          "servicepoint_code": "$servicepoint_code",
+          "delivery_options": "$delivery_options",
+          "processable": "$processable",
+          "total_price": "$total_price",
+          "custom_values": "$custom_values"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "qls_update_fulfillment_order",
+      "description": "Change a fulfilment order that has not left the warehouse: put it on hold or release it, change the processable date, your reference, the remarks or the service point. Confirm the change with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Fulfilment order id."
+          },
+          "hold": {
+            "type": "boolean",
+            "description": "true holds the order, false releases it."
+          },
+          "processable": {
+            "type": "string",
+            "description": "Date and time from which QLS may process the order."
+          },
+          "customer_reference": {
+            "type": "string",
+            "description": "New order reference."
+          },
+          "customer_remarks": {
+            "type": "string",
+            "description": "Remarks for the warehouse."
+          },
+          "servicepoint_code": {
+            "type": "string",
+            "description": "New service point code."
+          }
+        },
+        "required": [
+          "company_id",
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/companies/{company_id}/fulfillment/orders/{order_id}",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "hold": "$hold",
+          "processable": "$processable",
+          "customer_reference": "$customer_reference",
+          "customer_remarks": "$customer_remarks",
+          "servicepoint_code": "$servicepoint_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "qls_cancel_fulfillment_order",
+      "description": "Cancel a fulfilment order that has not been shipped yet; its reserved stock is released. Cannot be undone: name the order and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Fulfilment order id."
+          }
+        },
+        "required": [
+          "company_id",
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies/{company_id}/fulfillment/orders/{order_id}/cancel"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "qls_create_fulfillment_product",
+      "description": "Create a fulfilment product (an article QLS will store and ship) with name, EAN, SKU, image and prices. Confirm the data with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN barcode."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU."
+          },
+          "image_url": {
+            "type": "string",
+            "description": "URL of a product image."
+          },
+          "price_cost": {
+            "type": "number",
+            "description": "Cost price in euros."
+          },
+          "price_store": {
+            "type": "number",
+            "description": "Sales price in euros."
+          },
+          "order_unit": {
+            "type": "number",
+            "description": "Order unit (pieces per unit)."
+          }
+        },
+        "required": [
+          "company_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies/{company_id}/fulfillment/products",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "name": "$name",
+          "ean": "$ean",
+          "sku": "$sku",
+          "image_url": "$image_url",
+          "price_cost": "$price_cost",
+          "price_store": "$price_store",
+          "order_unit": "$order_unit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "qls_update_fulfillment_product",
+      "description": "Update a fulfilment product: EAN, SKU, image or prices. Send only the fields to change and confirm them with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Fulfilment product id."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN barcode."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU."
+          },
+          "image_url": {
+            "type": "string",
+            "description": "URL of a product image."
+          },
+          "price_cost": {
+            "type": "number",
+            "description": "Cost price in euros."
+          },
+          "price_store": {
+            "type": "number",
+            "description": "Sales price in euros."
+          },
+          "order_unit": {
+            "type": "number",
+            "description": "Order unit (pieces per unit)."
+          }
+        },
+        "required": [
+          "company_id",
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/companies/{company_id}/fulfillment/products/{product_id}",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "ean": "$ean",
+          "sku": "$sku",
+          "image_url": "$image_url",
+          "price_cost": "$price_cost",
+          "price_store": "$price_store",
+          "order_unit": "$order_unit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "qls_delete_fulfillment_product",
+      "description": "Delete a fulfilment product that has no stock or open orders. Cannot be undone. Installed switched off; name the product and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Fulfilment product id."
+          }
+        },
+        "required": [
+          "company_id",
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/companies/{company_id}/fulfillment/products/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "qls_create_return_from_order",
+      "description": "Announce a return for a fulfilment order (v2): QLS expects the listed products back and processes them on arrival. Confirm the products and amounts with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Fulfilment order id the goods were shipped with."
+          },
+          "return_products": {
+            "type": "array",
+            "description": "[{\"product_id\": \"<fulfilment product id>\", \"ean\": \"...\", \"amount_expected\": 1}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "client_note": {
+            "type": "string",
+            "description": "Note for the warehouse, e.g. the return reason."
+          }
+        },
+        "required": [
+          "company_id",
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/companies/{company_id}/returns/order/{order_id}",
+        "bodyMapping": {
+          "return_products": "$return_products",
+          "client_note": "$client_note"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "qls_create_purchase_order",
+      "description": "Announce an inbound delivery of goods to the QLS warehouse (v2 purchase order) with the products and amounts, suppliers and the expected deliveries. Confirm the lines with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "Company id (a UUID) from qls_list_companies."
+          },
+          "customer_title": {
+            "type": "string",
+            "description": "Your title or number for the purchase order."
+          },
+          "purchase_order_products": {
+            "type": "array",
+            "description": "[{\"fulfillment_product_id\": \"<id>\", \"amount\": 100}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "suppliers": {
+            "type": "array",
+            "description": "Supplier ids from qls_list_suppliers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deliveries": {
+            "type": "array",
+            "description": "Expected deliveries: [{\"barcode\": \"...\", \"estimated_arrival\": \"2026-11-05\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "pre_order": {
+            "type": "boolean",
+            "description": "true when the goods may already be sold before they arrive."
+          }
+        },
+        "required": [
+          "company_id",
+          "purchase_order_products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/companies/{company_id}/purchase-orders",
+        "bodyMapping": {
+          "customer_title": "$customer_title",
+          "purchase_order_products": "$purchase_order_products",
+          "suppliers": "$suppliers",
+          "deliveries": "$deliveries",
+          "pre_order": "$pre_order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

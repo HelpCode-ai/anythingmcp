@@ -101,6 +101,7 @@ Die meisten Unternehmen haben noch keine MCP-Server. Sie haben eine REST-API, ei
 | **GraphQL** | Introspection macht aus Queries und Mutations Tools, oder du definierst die Operationen selbst | [GraphQL](docs/connectors/graphql.md) · [Anleitung](https://anythingmcp.com/de/guides/graphql-to-mcp) |
 | **OData** (inklusive SAP Gateway) | Liest das `$metadata` jedes Dienstes, sodass das Modell Entitätsmengen, Schlüssel und die fachlichen SAP-Bezeichnungen sieht; V2 und V4 | [OData](docs/connectors/odata.md) · [Anleitung](https://anythingmcp.com/de/guides/odata-to-mcp) |
 | **SQL und MongoDB** | PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA, SQLite und MongoDB: Schema-, Beispiel- und Abfrage-Tools, standardmäßig nur lesend | [Datenbank](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp) · [Demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **E-Mail (IMAP/SMTP)** | Jedes Postfach (IONOS, Strato, GMX, T-Online, Gmail mit App-Passwort, eigener Mailserver): Ordner auflisten, suchen, mit Anhängen lesen, markieren, verschieben, Entwürfe speichern und senden | [E-Mail](docs/connectors/email.md) |
 | **Ein anderer MCP-Server** | Seine Tools erkennen und neben deinen eigenen bereitstellen, hinter derselben Authentifizierung und demselben Audit | [MCP-Bridge](docs/connectors/mcp-bridge.md) |
 
 Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connector werden auf dem Server eingesetzt und der KI nie gezeigt.

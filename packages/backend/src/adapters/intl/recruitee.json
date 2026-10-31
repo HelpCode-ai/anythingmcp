@@ -1,0 +1,1738 @@
+{
+  "slug": "recruitee",
+  "name": "Recruitee",
+  "aliases": [
+    "Tellent Recruitee",
+    "Recruitee ATS"
+  ],
+  "description": "Recruitee applicant tracking: jobs (offers) and talent pools, candidates and full search, pipelines and stages, placements, notes, tags, departments, locations, interviews and evaluations, tasks and activity. Recruitee ATS API with a personal API token.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "recruitee",
+  "docsUrl": "https://docs.recruitee.com/reference/getting-started",
+  "prerequisites": "A Recruitee user whose role covers the jobs and candidates the agent should see; the token acts as that user.",
+  "requiredEnvVars": [
+    "RECRUITEE_COMPANY_ID",
+    "RECRUITEE_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "RECRUITEE_COMPANY_ID": {
+      "label": "Company ID",
+      "kind": "setting",
+      "help": "Recruitee, Settings > Apps and plugins > Personal API tokens: the company ID shown on that page (a number). The company subdomain also works.",
+      "link": "https://app.recruitee.com/#/settings/api_tokens",
+      "example": "123456",
+      "pattern": "^[A-Za-z0-9-]+$",
+      "patternMessage": "Enter only the company ID (e.g. 123456) or subdomain, not a URL."
+    },
+    "RECRUITEE_API_TOKEN": {
+      "label": "Personal API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Recruitee, Settings > Apps and plugins > Personal API tokens > Add new token. The token belongs to one company and acts with your role.",
+      "link": "https://docs.recruitee.com/reference/getting-started",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the token, without Bearer, spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Recruitee refused the token (Token not found). Create a new personal API token in the same company; tokens are per company and cannot be shown again.",
+    "403": "The token's user role cannot do this. Use a token of a user with access to the jobs and candidates involved.",
+    "404": "Unknown company ID or record. Copy the company ID from the Personal API tokens page."
+  },
+  "probe": {
+    "tool": "recruitee_get_current_admin"
+  },
+  "connector": {
+    "name": "Recruitee ATS API",
+    "type": "REST",
+    "baseUrl": "https://api.recruitee.com/c/{{RECRUITEE_COMPANY_ID}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{RECRUITEE_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/admin"
+  },
+  "instructions": "## Recruitee\nThis connector reads and updates **Recruitee** (Tellent Recruitee), an applicant tracking system, through its ATS API (`https://api.recruitee.com/c/<company id>`): jobs and talent pools, candidates, pipelines and stages, notes, tags, departments, locations, interviews and evaluations, tasks and the activity feed.\n\n**Personal data**: candidates are applicants with CVs, contact details, evaluations and sometimes date of birth or nationality. Read only what the task needs and respect the company's GDPR settings; do not copy candidate data into other tools without a reason.\n\n**Setup (3 minutes)**\n1. In Recruitee open **Settings > Apps and plugins > Personal API tokens** (`https://app.recruitee.com/#/settings/api_tokens`), click **Add new token**, give it a label and confirm your password. Copy the token into `RECRUITEE_API_TOKEN`.\n2. Copy the **company ID** shown on the same page into `RECRUITEE_COMPANY_ID`.\n3. The token acts as you, with your role, in that one company only (another company needs its own token). Recruitee cannot narrow its scope, so create it with a user whose role fits what the agent should do. `recruitee_get_current_admin` is the install check.\n\n**Words**: a job is an *offer* (`kind` job; a talent pool is an offer of `kind` talent_pool). A candidate in a job is a *placement*: it carries the stage and the disqualification for that job. Team members are *admins*.\n\n**Workflow**\n- Team: `recruitee_get_current_admin`, `recruitee_list_admins` (ids for task assignees and filters).\n- Jobs: `recruitee_list_offers` (filter by `statuses` such as published), `recruitee_get_offer` (description and the pipeline stages with their ids), `recruitee_list_offer_notes`. Create and manage: `recruitee_create_offer` (draft), `recruitee_update_offer`, `recruitee_publish_offer`, `recruitee_unpublish_offer`, `recruitee_close_offer`.\n- Candidates: `recruitee_list_candidates` (simple filters), `recruitee_search_candidates` (full search with `filters_json`), `recruitee_get_candidate` (profile and placements), `recruitee_list_candidate_notes`, `recruitee_list_candidate_tasks`, `recruitee_list_candidate_activities`. Company-wide feed: `recruitee_list_activities`.\n- Pipeline of a job: `recruitee_list_placements` (who is in which stage), `recruitee_list_pipeline_templates`, `recruitee_get_pipeline_template`, `recruitee_list_disqualify_reasons`.\n- Moving candidates: `recruitee_assign_candidate` (into a job or talent pool), `recruitee_change_stage` (placement id and stage id from `recruitee_get_offer`), `recruitee_disqualify_candidate` and `recruitee_requalify_candidate`.\n- Adding and enriching candidates: `recruitee_create_candidate` (optionally applied to jobs; a `remote_cv_url` is parsed), `recruitee_update_candidate`, `recruitee_add_candidate_tags`, `recruitee_remove_candidate_tags`, `recruitee_add_candidate_field`, `recruitee_create_candidate_note`.\n- Reference lists: `recruitee_list_departments`, `recruitee_get_department`, `recruitee_list_locations`, `recruitee_get_location`, `recruitee_list_tags`, `recruitee_list_sources`.\n- Interviews: `recruitee_list_interview_events` (upcoming by default), `recruitee_get_interview_event`, `recruitee_list_interview_results` (evaluations and scorecards).\n- Tasks: `recruitee_list_tasks`, `recruitee_create_task`, `recruitee_complete_task`.\n\n**Switched off at install**: `recruitee_delete_candidate` and `recruitee_remove_placement`; they cannot be undone, so an admin switches them on when the team needs them.\n\n**Automations**: creating a candidate on a job, changing a stage with `run_actions` true, or disqualifying can trigger emails and actions the company configured in Recruitee. Say so before doing it for many candidates.\n\n**Search filters** (`recruitee_search_candidates`): `filters_json` is a JSON array as a string, e.g. `[{\"field\":\"all\",\"query\":\"java\"},{\"filter\":\"tags\",\"id\":{\"in\":[12]}},{\"field\":\"created_at\",\"gte\":\"2026-10-01\"}]`. Text: `field` all; status and source: `{\"field\":\"status\",\"in\":[\"qualified\"]}`; stages: `{\"filter\":\"stages\",\"name\":{\"in\":[...]}}`.\n\n**Reading the answers**\n- Ids are integers. Dates and times are ISO 8601 in UTC (`2026-10-19T11:02:32Z`).\n- A candidate's `placements` list one entry per job with `offer_id`, `stage_id` and `disqualify_reason`; use the placement `id` for stage and qualification changes.\n- `adminapp_url` links to the candidate in Recruitee.\n\n**Paging**: `recruitee_list_candidates` pages with `limit` (max 1000) and `offset`; offers, search, locations, activities, events and tasks page with `limit` and `page` (from 1). Stop when a page returns fewer items than `limit`.\n\n**Errors**: 401 `invalid_token` means a wrong, revoked or other company's token; 403 a role without the right; 404 a wrong company ID or record id; 422 a validation error with the field named in the body.\n",
+  "tools": [
+    {
+      "name": "recruitee_get_current_admin",
+      "description": "The team member (admin) the token belongs to: id, name, email, role and time zone. The install check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin"
+      }
+    },
+    {
+      "name": "recruitee_list_admins",
+      "description": "Team members (admins) of the company with id, name, email and role; ids are used for task assignees, interview participants and followers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "authorized_for_candidate_id": {
+            "type": "integer",
+            "description": "Only team members who can access this candidate."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admins",
+        "queryParams": {
+          "authorized_for_candidate_id": "$authorized_for_candidate_id"
+        }
+      }
+    },
+    {
+      "name": "recruitee_list_offers",
+      "description": "Jobs and talent pools (Recruitee calls them offers): id, title, status, kind, department, locations, recruiter, candidate counts, pipeline and careers site URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "draft, published, internal, closed, archived. Omit for all."
+          },
+          "kind": {
+            "type": "string",
+            "description": "job or talent_pool. Omit for both.",
+            "enum": [
+              "job",
+              "talent_pool"
+            ]
+          },
+          "department_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these department ids."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these location ids."
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these offer tag ids."
+          },
+          "offer_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these offer ids."
+          },
+          "recruiter_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only offers with these recruiter admin ids."
+          },
+          "hiring_manager_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only offers with these hiring manager admin ids."
+          },
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra parts: description, requirements, highlight, work_models, salary, dynamic_fields, follower_ids, location_ids, requisition_ids, tags, counters."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 1000)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers",
+        "queryParams": {
+          "statuses[]": "$statuses",
+          "kind": "$kind",
+          "department_ids[]": "$department_ids",
+          "location_ids[]": "$location_ids",
+          "tag_ids[]": "$tag_ids",
+          "offer_ids[]": "$offer_ids",
+          "recruiter_ids[]": "$recruiter_ids",
+          "hiring_manager_ids[]": "$hiring_manager_ids",
+          "include[]": "$include",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "recruitee_get_offer",
+      "description": "One job or talent pool by id with description, requirements, locations, department, hiring team and its pipeline stages (ids used to move candidates).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Offer id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/{id}"
+      }
+    },
+    {
+      "name": "recruitee_list_offer_notes",
+      "description": "Internal team notes on a job (offer), with author, text and time of each note.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "integer",
+            "description": "Offer id."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/{offer_id}/notes"
+      }
+    },
+    {
+      "name": "recruitee_list_candidates",
+      "description": "List candidates with name, emails, phones, source, tags, rating, placements (job, stage, disqualified) and creation date. Contains personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search the candidate's name or job."
+          },
+          "offer_id": {
+            "type": "integer",
+            "description": "Only candidates of this offer."
+          },
+          "qualified": {
+            "type": "boolean",
+            "description": "true only qualified candidates."
+          },
+          "disqualified": {
+            "type": "boolean",
+            "description": "true only disqualified candidates."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true only deleted candidates."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated candidate ids, e.g. 234221,4211412."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only candidates created after this date, YYYY-MM-DD."
+          },
+          "sort": {
+            "type": "string",
+            "description": "by_date (default) or by_last_message.",
+            "enum": [
+              "by_date",
+              "by_last_message"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per call, default 100, max 1000.",
+            "maximum": 1000
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip: previous offset plus limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/candidates",
+        "queryParams": {
+          "query": "$query",
+          "offer_id": "$offer_id",
+          "qualified": "$qualified",
+          "disqualified": "$disqualified",
+          "deleted": "$deleted",
+          "ids": "$ids",
+          "created_after": "$created_after",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "recruitee_search_candidates",
+      "description": "Full candidate search across the database with filters on text, tags, sources, stages, ratings, dates, custom fields, education and experience.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters_json": {
+            "type": "string",
+            "description": "Filters as a JSON array string, e.g. [{\"field\":\"all\",\"query\":\"python developer\"}] for full text, [{\"filter\":\"tags\",\"id\":{\"in\":[12]}}] for tags, [{\"field\":\"created_at\",\"gte\":\"2026-10-01\"}] for dates. Combine several objects in the array."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field and direction, e.g. created_at_desc (default), relevance_desc, candidate_name_asc, last_activity_at_desc, candidate_rating_desc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 60)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/new/candidates",
+        "queryParams": {
+          "filters_json": "$filters_json",
+          "sort_by": "$sort_by",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "recruitee_get_candidate",
+      "description": "One candidate by id: contact details, CV and cover letter links, sources, tags, custom fields, ratings, placements (job, stage, disqualification) and open question answers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Candidate id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/candidates/{id}"
+      }
+    },
+    {
+      "name": "recruitee_list_candidate_notes",
+      "description": "Team notes on a candidate with author, text, pinned flag and time of each note.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "integer",
+            "description": "Candidate id."
+          }
+        },
+        "required": [
+          "candidate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/candidates/{candidate_id}/notes"
+      }
+    },
+    {
+      "name": "recruitee_list_candidate_activities",
+      "description": "Activity history of a candidate: applications, stage moves, emails, notes, evaluations and events, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "integer",
+            "description": "Candidate id."
+          }
+        },
+        "required": [
+          "candidate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking/candidates/{candidate_id}/activities"
+      }
+    },
+    {
+      "name": "recruitee_list_activities",
+      "description": "Company-wide activity feed (applications, stage changes, notes, emails, evaluations), filterable by candidates, offers, event names and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these candidate ids."
+          },
+          "offers": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these offer ids."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these activity event names."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "From date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "To date, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking/activities",
+        "queryParams": {
+          "candidates[]": "$candidates",
+          "offers[]": "$offers",
+          "events[]": "$events",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "recruitee_list_placements",
+      "description": "Candidates in a job's pipeline (placements): placement id, candidate, stage, disqualification, rating, upcoming event and overdue date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "integer",
+            "description": "Offer id."
+          },
+          "stage_id": {
+            "type": "integer",
+            "description": "Only this pipeline stage."
+          },
+          "qualified": {
+            "type": "boolean",
+            "description": "true only qualified."
+          },
+          "disqualified": {
+            "type": "boolean",
+            "description": "true only disqualified."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "with_tags": {
+            "type": "boolean",
+            "description": "Include tags (default false)."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/{offer_id}/placements",
+        "queryParams": {
+          "stage_id": "$stage_id",
+          "qualified": "$qualified",
+          "disqualified": "$disqualified",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order",
+          "with_tags": "$with_tags"
+        }
+      }
+    },
+    {
+      "name": "recruitee_list_pipeline_templates",
+      "description": "Pipeline templates with their stages (id, name, category such as apply, interview, offer, hire).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Only templates with this title."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pipeline_templates",
+        "queryParams": {
+          "title": "$title"
+        }
+      }
+    },
+    {
+      "name": "recruitee_get_pipeline_template",
+      "description": "One pipeline template with all its stages in order (stage id, name and category).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Pipeline template id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pipeline_templates/{id}"
+      }
+    },
+    {
+      "name": "recruitee_list_disqualify_reasons",
+      "description": "Reasons a candidate can be disqualified with (id and name), for recruitee_disqualify_candidate.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disqualify_reasons"
+      }
+    },
+    {
+      "name": "recruitee_list_departments",
+      "description": "Departments of the company with id, name and offer counts, to filter or create jobs.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments"
+      }
+    },
+    {
+      "name": "recruitee_get_department",
+      "description": "One department by id with its name and translations, to resolve the department_id of a job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Department id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments/{id}"
+      }
+    },
+    {
+      "name": "recruitee_list_locations",
+      "description": "Job locations with id, name, address, city, country and active flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search term."
+          },
+          "scope": {
+            "type": "string",
+            "description": "active, archived or all (default).",
+            "enum": [
+              "active",
+              "archived",
+              "all"
+            ]
+          },
+          "view_mode": {
+            "type": "string",
+            "description": "brief (default) or full with translations and offer counters.",
+            "enum": [
+              "brief",
+              "full"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 60)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations",
+        "queryParams": {
+          "query": "$query",
+          "scope": "$scope",
+          "view_mode": "$view_mode",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "recruitee_get_location",
+      "description": "One job location by id with its full address, translations and active flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Location id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations/{id}"
+      }
+    },
+    {
+      "name": "recruitee_list_tags",
+      "description": "Candidate tags of the company with id, name and how many candidates carry them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search term."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "name or taggings_count.",
+            "enum": [
+              "name",
+              "taggings_count"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "asc (default) or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": {
+          "query": "$query",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order"
+        }
+      }
+    },
+    {
+      "name": "recruitee_list_sources",
+      "description": "Candidate sources (where applicants came from) with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sources"
+      }
+    },
+    {
+      "name": "recruitee_list_interview_events",
+      "description": "Scheduled interviews and other events: candidate, job, participants, start and end, location or video link, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "description": "my or all (default).",
+            "enum": [
+              "my",
+              "all"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "upcoming (default), past_due or all.",
+            "enum": [
+              "upcoming",
+              "past_due",
+              "all"
+            ]
+          },
+          "candidate_id": {
+            "type": "integer",
+            "description": "Only events of this candidate."
+          },
+          "admin_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only events of these team members."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Range start, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Range end, YYYY-MM-DD."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone of the range, e.g. Europe/Amsterdam."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default unlimited)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, with limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/interview/events",
+        "queryParams": {
+          "scope": "$scope",
+          "status": "$status",
+          "candidate_id": "$candidate_id",
+          "admin_ids[]": "$admin_ids",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "timezone": "$timezone",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "recruitee_get_interview_event",
+      "description": "One interview event with participants, times, location and the candidate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Event id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/interview/events/{id}"
+      }
+    },
+    {
+      "name": "recruitee_list_interview_results",
+      "description": "Evaluations and scorecards written about candidates, with reviewer, rating and answers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "integer",
+            "description": "Only results for this candidate."
+          },
+          "kind": {
+            "type": "string",
+            "description": "evaluation, questionnaire or all (default).",
+            "enum": [
+              "evaluation",
+              "questionnaire",
+              "all"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "description": "my or all (default).",
+            "enum": [
+              "my",
+              "all"
+            ]
+          },
+          "admin_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only results by these team members."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, with limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/interview/results",
+        "queryParams": {
+          "candidate_id": "$candidate_id",
+          "kind": "$kind",
+          "scope": "$scope",
+          "admin_ids[]": "$admin_ids",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "recruitee_list_tasks",
+      "description": "Recruiting tasks of the company: title, description, candidate, assignees, due date and completion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "description": "my, unassigned or all.",
+            "enum": [
+              "my",
+              "unassigned",
+              "all"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "completed or uncompleted.",
+            "enum": [
+              "completed",
+              "uncompleted"
+            ]
+          },
+          "admin_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only tasks of these team members."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "due_date, created_at or completed_at.",
+            "enum": [
+              "due_date",
+              "created_at",
+              "completed_at"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "scope": "$scope",
+          "status": "$status",
+          "admin_ids[]": "$admin_ids",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "recruitee_list_candidate_tasks",
+      "description": "Tasks linked to one candidate with assignees, due date and completion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "integer",
+            "description": "Candidate id."
+          },
+          "status": {
+            "type": "string",
+            "description": "completed or uncompleted.",
+            "enum": [
+              "completed",
+              "uncompleted"
+            ]
+          }
+        },
+        "required": [
+          "candidate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/candidates/{candidate_id}/tasks",
+        "queryParams": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "recruitee_create_candidate",
+      "description": "Add a candidate, optionally applied to jobs. Recruitee may send automatic emails configured for the job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Email addresses."
+          },
+          "phones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Phone numbers."
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Links, e.g. a portfolio."
+          },
+          "social_links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Social profile links, e.g. LinkedIn."
+          },
+          "cover_letter": {
+            "type": "string",
+            "description": "Cover letter text."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Source tags, e.g. [\"Referral\"]."
+          },
+          "remote_cv_url": {
+            "type": "string",
+            "description": "Public URL of the CV file; Recruitee downloads and parses it."
+          },
+          "offers": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Offer ids to apply the candidate to (first stage). Omit to add without a job."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidates",
+        "bodyMapping": {
+          "candidate": {
+            "name": "$name",
+            "emails": "$emails",
+            "phones": "$phones",
+            "links": "$links",
+            "social_links": "$social_links",
+            "cover_letter": "$cover_letter",
+            "sources": "$sources",
+            "remote_cv_url": "$remote_cv_url"
+          },
+          "offers": "$offers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "recruitee_update_candidate",
+      "description": "Change a candidate's profile: name, emails, phones, links, cover letter or sources. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Candidate id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Profile fields, e.g. {\"name\":\"Ana Diaz\",\"emails\":[\"ana@example.com\"],\"phones\":[\"+31 6 1234 5678\"]}."
+          }
+        },
+        "required": [
+          "id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/candidates/{id}",
+        "bodyMapping": {
+          "candidate": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "recruitee_delete_candidate",
+      "description": "Delete a candidate with all their data. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Candidate id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/candidates/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "recruitee_add_candidate_tags",
+      "description": "Add tags to a candidate by name; tag names that do not exist yet are created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "integer",
+            "description": "Candidate id."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names, e.g. [\"Python\",\"Senior\"]."
+          }
+        },
+        "required": [
+          "candidate_id",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidates/{candidate_id}/tags",
+        "bodyMapping": {
+          "tags": "$tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "recruitee_remove_candidate_tags",
+      "description": "Remove tags from a candidate (the tags stay in the company list).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "integer",
+            "description": "Candidate id."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names to remove."
+          }
+        },
+        "required": [
+          "candidate_id",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/candidates/{candidate_id}/tags",
+        "bodyMapping": {
+          "tags": "$tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "recruitee_add_candidate_field",
+      "description": "Add a profile field to a candidate, e.g. skills, languages, nationality or a single-line value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "integer",
+            "description": "Candidate id."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Field type.",
+            "enum": [
+              "single_line",
+              "multi_line",
+              "boolean",
+              "address",
+              "gender",
+              "date_of_birth",
+              "nationality",
+              "language_skill",
+              "skills"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Field name (for single_line, multi_line and boolean)."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Values, e.g. [{\"text\":\"Python\"}] for skills or single_line, [{\"flag\":true}] for boolean, [{\"language_code\":\"de\",\"level\":\"fluent\"}] for language_skill, [{\"country_code\":\"NL\"}] for nationality, [{\"date\":\"1990-04-01\"}] for date_of_birth."
+          }
+        },
+        "required": [
+          "candidate_id",
+          "kind",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/custom_fields/candidates/{candidate_id}/fields",
+        "bodyMapping": {
+          "field": {
+            "kind": "$kind",
+            "name": "$name",
+            "values": "$values"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "recruitee_create_candidate_note",
+      "description": "Write a team note on a candidate's profile (visible to the hiring team, not to the candidate).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "integer",
+            "description": "Candidate id."
+          },
+          "text": {
+            "type": "string",
+            "description": "Note text."
+          }
+        },
+        "required": [
+          "candidate_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/candidates/{candidate_id}/notes",
+        "bodyMapping": {
+          "note": {
+            "body_json": {
+              "doc": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "$text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "recruitee_assign_candidate",
+      "description": "Put an existing candidate into a job's pipeline (first stage) or a talent pool. Returns the placement.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "candidate_id": {
+            "type": "integer",
+            "description": "Candidate id."
+          },
+          "offer_id": {
+            "type": "integer",
+            "description": "Offer (job) id. Give this or talent_pool_id."
+          },
+          "talent_pool_id": {
+            "type": "integer",
+            "description": "Talent pool id."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Location ids of the job the candidate applies for."
+          }
+        },
+        "required": [
+          "candidate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/placements",
+        "bodyMapping": {
+          "candidate_id": "$candidate_id",
+          "offer_id": "$offer_id",
+          "talent_pool_id": "$talent_pool_id",
+          "location_ids": "$location_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "recruitee_change_stage",
+      "description": "Move a candidate's placement to another pipeline stage. Moving to a hired stage can need hired_at, work_location_id and, with requisitions, opening_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "placement_id": {
+            "type": "integer",
+            "description": "Placement id (from recruitee_get_candidate or recruitee_list_placements)."
+          },
+          "stage_id": {
+            "type": "integer",
+            "description": "Target stage id (from recruitee_get_offer)."
+          },
+          "proceed": {
+            "type": "boolean",
+            "description": "true places the candidate at the top of the stage."
+          },
+          "hired_at": {
+            "type": "string",
+            "description": "Hire date-time, ISO 8601, for a hired stage."
+          },
+          "job_starts_at": {
+            "type": "string",
+            "description": "Start date-time, ISO 8601."
+          },
+          "work_location_id": {
+            "type": "integer",
+            "description": "Work location id, needed when hiring."
+          },
+          "opening_id": {
+            "type": "integer",
+            "description": "Requisition opening id, needed when hiring with requisitions."
+          },
+          "run_actions": {
+            "type": "boolean",
+            "description": "true runs the stage's automated actions (e.g. emails)."
+          }
+        },
+        "required": [
+          "placement_id",
+          "stage_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/placements/{placement_id}/change_stage",
+        "bodyMapping": {
+          "stage_id": "$stage_id",
+          "proceed": "$proceed",
+          "hired_at": "$hired_at",
+          "job_starts_at": "$job_starts_at",
+          "work_location_id": "$work_location_id",
+          "opening_id": "$opening_id",
+          "run_actions": "$run_actions"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "recruitee_disqualify_candidate",
+      "description": "Disqualify a candidate in one job (placement) with a reason. Reversible with recruitee_requalify_candidate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "placement_id": {
+            "type": "integer",
+            "description": "Placement id."
+          },
+          "disqualify_reason_id": {
+            "type": "integer",
+            "description": "Reason id from recruitee_list_disqualify_reasons."
+          }
+        },
+        "required": [
+          "placement_id",
+          "disqualify_reason_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/placements/{placement_id}/disqualify",
+        "bodyMapping": {
+          "disqualify_reason_id": "$disqualify_reason_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "recruitee_requalify_candidate",
+      "description": "Requalify a disqualified candidate in one job (placement), back into the pipeline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "placement_id": {
+            "type": "integer",
+            "description": "Placement id."
+          }
+        },
+        "required": [
+          "placement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/placements/{placement_id}/requalify"
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "recruitee_remove_placement",
+      "description": "Remove a candidate from a job's pipeline, with that placement's stage history. Cannot be undone; switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "placement_id": {
+            "type": "integer",
+            "description": "Placement id."
+          }
+        },
+        "required": [
+          "placement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/placements/{placement_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "recruitee_create_offer",
+      "description": "Create a job (or talent pool) as a draft; publish it with recruitee_publish_offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "kind": {
+            "type": "string",
+            "description": "job (default) or talent_pool.",
+            "enum": [
+              "job",
+              "talent_pool"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "Job description (HTML allowed)."
+          },
+          "requirements": {
+            "type": "string",
+            "description": "Requirements (HTML allowed)."
+          },
+          "department_id": {
+            "type": "integer",
+            "description": "Department id."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Location ids from recruitee_list_locations."
+          },
+          "remote": {
+            "type": "boolean",
+            "description": "Show as remote."
+          },
+          "hybrid": {
+            "type": "boolean",
+            "description": "Show as hybrid."
+          },
+          "on_site": {
+            "type": "boolean",
+            "description": "Show as on-site."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers",
+        "bodyMapping": {
+          "offer": {
+            "title": "$title",
+            "kind": "$kind",
+            "description": "$description",
+            "requirements": "$requirements",
+            "department_id": "$department_id",
+            "location_ids": "$location_ids",
+            "remote": "$remote",
+            "hybrid": "$hybrid",
+            "on_site": "$on_site"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "recruitee_update_offer",
+      "description": "Change a job's fields, e.g. title, description, requirements, department, locations or salary. Only the fields sent change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Offer id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Offer fields, e.g. {\"title\":\"Senior Engineer\",\"salary\":{\"min\":4000,\"max\":5500,\"currency\":\"EUR\",\"period\":\"month\"}}."
+          }
+        },
+        "required": [
+          "id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/offers/{id}",
+        "bodyMapping": {
+          "offer": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "recruitee_publish_offer",
+      "description": "Publish a job on the careers site and job boards set up for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Offer id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/offers/{id}/publish"
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "recruitee_unpublish_offer",
+      "description": "Unpublish a job: it leaves the careers site but keeps its candidates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Offer id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/offers/{id}/unpublish"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "recruitee_close_offer",
+      "description": "Close a job: no new applications, candidates stay in the pipeline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Offer id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/offers/{id}/close"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "recruitee_create_task",
+      "description": "Create a recruiting task for team members, optionally linked to a candidate and with a due date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Details."
+          },
+          "candidate_id": {
+            "type": "integer",
+            "description": "Candidate the task is about."
+          },
+          "admin_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Assignee team member ids from recruitee_list_admins."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date-time, ISO 8601."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone of the due date, e.g. Europe/Amsterdam (required with due_date)."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": {
+          "task": {
+            "title": "$title",
+            "description": "$description",
+            "candidate_id": "$candidate_id",
+            "admin_ids": "$admin_ids",
+            "due_date": "$due_date",
+            "timezone": "$timezone"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "recruitee_complete_task",
+      "description": "Mark a task as completed, or reopen it with completed false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Task id."
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "true completes, false reopens."
+          }
+        },
+        "required": [
+          "id",
+          "completed"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/tasks/{id}/completion",
+        "bodyMapping": {
+          "task": {
+            "completed": "$completed"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    }
+  ]
+}

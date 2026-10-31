@@ -101,6 +101,7 @@ docker compose up -d
 | **GraphQL** | 通过内省把查询和变更转化为工具，也可以自行定义操作 | [GraphQL](docs/connectors/graphql.md) · [指南](https://anythingmcp.com/zh/guides/graphql-to-mcp) |
 | **OData**（包括 SAP Gateway） | 读取每个服务的 `$metadata`，让模型看到实体集、键和 SAP 的业务标签；支持 V2 和 V4 | [OData](docs/connectors/odata.md) · [指南](https://anythingmcp.com/zh/guides/odata-to-mcp) |
 | **SQL 和 MongoDB** | PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SAP HANA、SQLite 和 MongoDB：结构、示例和查询工具，默认只读 | [数据库](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [指南](https://anythingmcp.com/zh/guides/database-to-mcp) · [演示：sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **电子邮件（IMAP/SMTP）** | 任意邮箱（IONOS、Strato、GMX、T-Online、使用应用专用密码的 Gmail、自建邮件服务器）：列出文件夹、搜索、阅读邮件及附件、标记、移动、保存草稿和发送 | [电子邮件](docs/connectors/email.md) |
 | **另一个 MCP 服务器** | 发现它的工具，并与你自己的工具一起提供，共用同一套认证和审计 | [MCP 桥接](docs/connectors/mcp-bridge.md) |
 
 工具在运行时注册，无需重启。每个连接器的 `{{VAR}}` 值在服务器端替换，不会展示给 AI。

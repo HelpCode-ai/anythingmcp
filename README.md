@@ -95,6 +95,7 @@ Most companies have no MCP servers yet. They have a REST API, an ERP, a SOAP ser
 | **GraphQL** | Introspection turns queries and mutations into tools, or you define the operations yourself | [GraphQL](docs/connectors/graphql.md) · [guide](https://anythingmcp.com/guides/graphql-to-mcp) |
 | **OData** (SAP Gateway included) | Reads each service's `$metadata`, so the model sees entity sets, keys and SAP's business labels; V2 and V4 | [OData](docs/connectors/odata.md) · [guide](https://anythingmcp.com/guides/odata-to-mcp) |
 | **SQL and MongoDB** | PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA, SQLite and MongoDB: schema, example and query tools, read-only by default | [Database](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [guide](https://anythingmcp.com/guides/database-to-mcp) · [demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **Email (IMAP/SMTP)** | Any mailbox (IONOS, Strato, GMX, T-Online, Gmail with an app password, your own mail server): list folders, search, read with attachments, flag, move, save drafts and send | [Email](docs/connectors/email.md) |
 | **Another MCP server** | Discover its tools and serve them next to your own, behind the same auth and audit | [MCP bridge](docs/connectors/mcp-bridge.md) |
 
 Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are interpolated on the server and never shown to the AI.

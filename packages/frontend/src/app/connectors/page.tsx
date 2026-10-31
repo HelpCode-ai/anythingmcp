@@ -27,6 +27,7 @@ const TYPE_STYLES: Record<string, { text: string; bg: string; icon: string }> = 
   MCP: { text: 'MCP', bg: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400', icon: 'MCP' },
   DATABASE: { text: 'Database', bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400', icon: 'DB' },
   ODATA: { text: 'OData', bg: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-400', icon: 'OD' },
+  EMAIL: { text: 'Email', bg: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400', icon: '@' },
 };
 
 /** Connector TYPE → redesign Badge tone. */
@@ -38,6 +39,7 @@ const TYPE_TONE: Record<string, Tone> = {
   GRAPHQL: 'pink',
   MCP: 'purple',
   ODATA: 'success',
+  EMAIL: 'brand',
 };
 
 /** First-letters of a connector name, for the square icon fallback. */
@@ -86,14 +88,20 @@ const SUPPORTED_TYPES = [
   { type: 'SOAP', label: 'SOAP' },
   { type: 'MCP', label: 'MCP' },
   { type: 'DATABASE', label: 'Database' },
+  { type: 'EMAIL', label: 'Email (IMAP/SMTP)' },
 ];
 
 export default function ConnectorsPage() {
   const { token } = useAuth();
   const t = useTranslations('connectors');
   const authTypeLabel = useAuthTypeLabel();
-  // Only "Database" is a word; the other type names are the same everywhere.
-  const typeLabel = (type: string) => (type === 'DATABASE' ? t('types.database') : (TYPE_STYLES[type]?.text ?? type));
+  // Only "Database" and "Email" are words; the other type names are the same everywhere.
+  const typeLabel = (type: string) =>
+    type === 'DATABASE'
+      ? t('types.database')
+      : type === 'EMAIL'
+        ? t('types.email')
+        : (TYPE_STYLES[type]?.text ?? type);
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -417,7 +425,7 @@ export default function ConnectorsPage() {
           </p>
           <p className="mb-6 text-xs text-[var(--text-3)]">
             {t('empty.supports', {
-              types: SUPPORTED_TYPES.map((s) => (s.type === 'DATABASE' ? typeLabel(s.type) : s.label)).join(', '),
+              types: SUPPORTED_TYPES.map((s) => (s.type === 'DATABASE' || s.type === 'EMAIL' ? typeLabel(s.type) : s.label)).join(', '),
             })}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
@@ -462,6 +470,7 @@ export default function ConnectorsPage() {
                 { value: 'ODATA', label: 'OData' },
                 { value: 'MCP', label: 'MCP' },
                 { value: 'DATABASE', label: typeLabel('DATABASE') },
+                { value: 'EMAIL', label: typeLabel('EMAIL') },
               ]}
             />
             <span className="text-[13px] text-[var(--text-3)]">

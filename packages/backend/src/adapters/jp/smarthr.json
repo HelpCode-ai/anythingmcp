@@ -1,0 +1,1543 @@
+{
+  "slug": "smarthr",
+  "name": "SmartHR",
+  "aliases": [
+    "スマートHR",
+    "SmartHR API"
+  ],
+  "description": "SmartHR, the Japanese HR and labour management cloud: employees with departments, job titles, employment types, grades, work locations and custom fields, dependents and childcare leaves, user accounts and invitations, payroll runs and payslips. Creates and updates employees and departments. Bearer access token per tenant; holds sensitive personal data.",
+  "instructions": "## SmartHR\nThis connector uses the **SmartHR API v1** (`https://<tenant>.smarthr.jp/api/v1`) of SmartHR, the HR and labour management cloud used in Japan: employees (従業員, called crews in the API) with departments, job titles, employment types, grades, work locations and custom fields, their dependents and leaves, user accounts, invitations, and payroll runs with payslips. The sandbox (`<tenant>.daruma.space`) works the same way.\n\n**Personal data**: SmartHR holds sensitive personal data (家族, addresses, birth dates, insurance and pension numbers, bank accounts, salary). Read only what the task needs: `smarthr_list_crews` returns a short profile by default, and `fields` limits `smarthr_get_crew` too. Do not copy personal data into other systems or messages unless the user asks for exactly that.\n\n**Setup (about 5 minutes, SmartHR admin)**\n1. Sign in to SmartHR as an administrator (管理者). Open **共通設定 (Common settings)**, **外部システム連携 (External integrations)**, **アクセストークン (Access tokens)**, and click **新規発行 (Issue)**.\n2. Name the token and choose its permissions: reading (参照) for the data the AI should see (従業員, 部署, 役職, 雇用形態, カスタム項目, 家族, ユーザー, 給与明細 as needed) and updating (更新) only for the write tools you keep on. Fewer permissions mean less personal data exposed.\n3. Copy the token into `SMARTHR_ACCESS_TOKEN`; it is shown once, so keep it secret.\n4. Enter the host of your SmartHR address in `SMARTHR_HOST`: `example.smarthr.jp` for https://example.smarthr.jp, or `example.daruma.space` for the sandbox (apply at https://developer.smarthr.jp/api/about_sandbox).\n5. Install. The check runs `smarthr_list_companies`.\n\n**Workflow**\n- Company structure: `smarthr_list_companies`, `smarthr_list_biz_establishments`, `smarthr_list_departments`, `smarthr_get_department`, `smarthr_list_job_titles` (役職), `smarthr_list_employment_types`, `smarthr_list_grades`, `smarthr_list_work_locations`, `smarthr_list_payment_periods`.\n- Custom fields: `smarthr_list_crew_custom_field_templates` (template ids for writes) and `smarthr_list_crew_custom_field_template_groups`.\n- Find people: `smarthr_list_crews` by `q`, `emp_code`, `emp_status`, department, title, dates; `smarthr_get_crew` for one person. For changes since a date sort by `-updated_at` and stop at older rows (there is no updated-since filter).\n- Family and leave: `smarthr_list_crew_dependents`, `smarthr_get_crew_dependent`, `smarthr_list_dependent_relations`, `smarthr_list_crew_childcare_leaves`.\n- Accounts: `smarthr_list_users` and `smarthr_get_user` (a user is the login, a crew the employee record; `embed=crew` links them).\n- Payroll: `smarthr_list_payrolls`, `smarthr_get_payroll`, `smarthr_list_payslips`, `smarthr_get_payslip`.\n- Writes: `smarthr_create_crew`, `smarthr_update_crew` (partial update), `smarthr_invite_crew` (sends an email, with a form from `smarthr_list_crew_input_forms`), `smarthr_create_department`, `smarthr_update_department`. Show the change and wait for the user's yes. A resignation is an update (`emp_status` retired, `resigned_at`), not a delete.\n\n**Paging**: lists take `page` and `per_page` (at most 100, default 10). The answer carries `_headers.x-total-count` (the total) and `_pagination.nextCursor` (the next page) until the last page. Ids are UUID strings; dates are `YYYY-MM-DD`, times ISO 8601.\n\n**Limits and errors**: 10 requests per second and 5,000 per hour per token, 50,000 per minute per tenant (429 `too_many_requests`: wait). Errors carry `code`, `type`, `message` and `errors` per field: 401 `unauthorized_token` is a wrong or revoked token, 403 a permission the token was not given or a feature the plan lacks (payslips), 404 a wrong id or host, 422 invalid input (read `errors`).\n\n**Switched off at install**: `smarthr_delete_crew`; it cannot be undone, so an admin switches it on when the team needs it.",
+  "region": "jp",
+  "category": "hr",
+  "icon": "smarthr",
+  "docsUrl": "https://developer.smarthr.jp/api",
+  "prerequisites": "A SmartHR tenant and an administrator who issues an access token under 共通設定, 外部システム連携, アクセストークン, with the read and update permissions the AI should have.",
+  "requiredEnvVars": [
+    "SMARTHR_HOST",
+    "SMARTHR_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "SMARTHR_HOST": {
+      "label": "SmartHR host",
+      "kind": "setting",
+      "help": "The host of your SmartHR address without https://: example.smarthr.jp, or example.daruma.space for the sandbox.",
+      "example": "example.smarthr.jp",
+      "pattern": "^[a-z0-9][a-z0-9-]*\\.(smarthr\\.jp|daruma\\.space)$",
+      "patternMessage": "Enter only the host, e.g. example.smarthr.jp or example.daruma.space, without https:// or a path."
+    },
+    "SMARTHR_ACCESS_TOKEN": {
+      "label": "API access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "SmartHR, 共通設定, 外部システム連携, アクセストークン, 新規発行. Only administrators can issue one; pick the read and update permissions there.",
+      "link": "https://developer.smarthr.jp/api/about_api",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the token only, without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "403": "The token works but lacks the permission for this data. Edit its permissions under 共通設定, 外部システム連携, アクセストークン.",
+    "401": "SmartHR did not accept the token: check SMARTHR_ACCESS_TOKEN and that it was not deleted under 共通設定, 外部システム連携, アクセストークン, and that it belongs to this host.",
+    "404": "Nothing answered at this address. Check SMARTHR_HOST (e.g. example.smarthr.jp, or example.daruma.space for the sandbox)."
+  },
+  "probe": {
+    "tool": "smarthr_list_companies"
+  },
+  "connector": {
+    "name": "SmartHR API",
+    "type": "REST",
+    "baseUrl": "https://{{SMARTHR_HOST}}/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SMARTHR_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "smarthr_list_companies",
+      "description": "List the companies (会社) of the SmartHR tenant: id, name, corporate number, address and representative. The install check.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "embed": {
+            "type": "string",
+            "description": "owner adds the company owner.",
+            "enum": [
+              "owner"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/companies",
+        "queryParams": {
+          "embed": "$embed",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_biz_establishments",
+      "description": "List the business establishments (事業所) used for social and labour insurance: id, name, address, insurance numbers and owner.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "embed": {
+            "type": "string",
+            "description": "Embed soc_ins_owner, lab_ins_owner or company.",
+            "enum": [
+              "soc_ins_owner",
+              "lab_ins_owner",
+              "company"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/biz_establishments",
+        "queryParams": {
+          "embed": "$embed",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_departments",
+      "description": "List departments (部署) with id, name, code, position (sort order), parent and full path. Employees link to them through department_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Only the department with this code."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, e.g. position or -updated_at."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/departments",
+        "queryParams": {
+          "code": "$code",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_get_department",
+      "description": "Read one department (部署) with its name, code, parent and position in the tree.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Department id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/departments/{id}"
+      }
+    },
+    {
+      "name": "smarthr_create_department",
+      "description": "Create a department (部署), optionally under a parent department.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Department name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Department code."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Parent department id."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Sort position among its siblings."
+          },
+          "company_id": {
+            "type": "string",
+            "description": "Company id, when the tenant has several companies."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/departments",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "parent_id": "$parent_id",
+          "position": "$position",
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "smarthr_update_department",
+      "description": "Rename or move a department (部署): name is always sent; code, parent and position only when given.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Department id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Department name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Department code."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Parent department id."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Sort position."
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/departments/{id}",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "parent_id": "$parent_id",
+          "position": "$position"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "smarthr_list_job_titles",
+      "description": "List job titles (役職, positions) with id, name and rank. Employees carry them in positions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "description": "Sort field, e.g. rank."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/job_titles",
+        "queryParams": {
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_employment_types",
+      "description": "List employment types (雇用形態) with id, name and preset_type (full_timer, part_timer, contract_worker ...).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/employment_types",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_grades",
+      "description": "List grades (等級) with id, name and position, as used in the employee grade field.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/grades",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_work_locations",
+      "description": "List work locations (勤務地) with id, name and address, as used in work_location_id of an employee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/work_locations",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_payment_periods",
+      "description": "List the pay period settings (給与支給形態) such as monthly or hourly, used in payment_period_id of an employee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "description": "Sort field."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payment_periods",
+        "queryParams": {
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_crew_custom_field_templates",
+      "description": "List the custom employee fields (カスタム従業員項目): id (template_id for writes), name, type (string, text, decimal, date, enum, file), options and group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "embed": {
+            "type": "string",
+            "description": "group replaces group_id with the group object.",
+            "enum": [
+              "group"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/crew_custom_field_templates",
+        "queryParams": {
+          "embed": "$embed",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_crew_custom_field_template_groups",
+      "description": "List the groups of custom employee fields (カスタム項目グループ), optionally with their templates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "embed": {
+            "type": "string",
+            "description": "templates adds the templates of each group.",
+            "enum": [
+              "templates"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/crew_custom_field_template_groups",
+        "queryParams": {
+          "embed": "$embed",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_crews",
+      "description": "Search employees (従業員, crews). Filter by employee code, status (employed, absent, retired), employment type, department, job title, hire or resignation dates, ids, or free text over name, business name, department and title. By default only a short set of fields is returned; ask for more with fields. Personal data: only request the fields the task needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Free text over name, business name, department and job title."
+          },
+          "emp_code": {
+            "type": "string",
+            "description": "Employee number (社員番号)."
+          },
+          "emp_status": {
+            "type": "string",
+            "description": "employed (在籍), absent (休職) or retired (退職).",
+            "enum": [
+              "employed",
+              "absent",
+              "retired"
+            ]
+          },
+          "employment_type_id": {
+            "type": "string",
+            "description": "Employment type id(s), comma separated."
+          },
+          "department_id": {
+            "type": "string",
+            "description": "Department id(s), comma separated."
+          },
+          "position_id": {
+            "type": "string",
+            "description": "Job title id(s), comma separated."
+          },
+          "id": {
+            "type": "string",
+            "description": "Employee id(s), comma separated."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User id(s), comma separated."
+          },
+          "gender": {
+            "type": "string",
+            "description": "Gender on the family register: male or female.",
+            "enum": [
+              "male",
+              "female"
+            ]
+          },
+          "entered_at_from": {
+            "type": "string",
+            "description": "Hired on or after, YYYY-MM-DD."
+          },
+          "entered_at_to": {
+            "type": "string",
+            "description": "Hired on or before, YYYY-MM-DD."
+          },
+          "resigned_at_from": {
+            "type": "string",
+            "description": "Resigned on or after, YYYY-MM-DD."
+          },
+          "resigned_at_to": {
+            "type": "string",
+            "description": "Resigned on or before, YYYY-MM-DD."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, e.g. emp_code or -updated_at (newest change first; use it for incremental syncs)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, comma separated. Default is a short profile; e.g. add birth_at,address,custom_fields only when needed.",
+            "default": "id,emp_code,last_name,first_name,last_name_yomi,first_name_yomi,business_last_name,business_first_name,emp_status,employment_type,departments,positions,email,entered_at,resigned_at,user_id,updated_at"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/crews",
+        "queryParams": {
+          "q": "$q",
+          "emp_code": "$emp_code",
+          "emp_status": "$emp_status",
+          "employment_type_id": "$employment_type_id",
+          "department_id": "$department_id",
+          "position_id": "$position_id",
+          "id": "$id",
+          "user_id": "$user_id",
+          "gender": "$gender",
+          "entered_at_from": "$entered_at_from",
+          "entered_at_to": "$entered_at_to",
+          "resigned_at_from": "$resigned_at_from",
+          "resigned_at_to": "$resigned_at_to",
+          "sort": "$sort",
+          "fields": "$fields",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_get_crew",
+      "description": "Read one employee (従業員) with every field, or only the fields listed: names and readings, contact, address, employment, departments, job titles, insurance numbers, salary data, bank accounts and custom fields. Contains sensitive personal data: pass fields to limit what is read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Employee (crew) id from smarthr_list_crews."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, comma separated, e.g. id,last_name,first_name,departments,positions. Omit for all."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/crews/{id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "smarthr_create_crew",
+      "description": "Register a new employee (従業員). Names, readings, gender and status are required. The person is not invited to SmartHR until smarthr_invite_crew. Personal data: enter only what the user gave you.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "emp_code": {
+            "type": "string",
+            "description": "Employee number (社員番号)."
+          },
+          "emp_status": {
+            "type": "string",
+            "description": "employed (在籍), absent (休職) or retired (退職).",
+            "enum": [
+              "employed",
+              "absent",
+              "retired"
+            ]
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Family name (姓)."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "Given name (名)."
+          },
+          "last_name_yomi": {
+            "type": "string",
+            "description": "Family name in katakana (姓カナ)."
+          },
+          "first_name_yomi": {
+            "type": "string",
+            "description": "Given name in katakana (名カナ)."
+          },
+          "business_last_name": {
+            "type": "string",
+            "description": "Business family name (ビジネスネーム)."
+          },
+          "business_first_name": {
+            "type": "string",
+            "description": "Business given name."
+          },
+          "gender": {
+            "type": "string",
+            "description": "Gender on the family register: male or female.",
+            "enum": [
+              "male",
+              "female"
+            ]
+          },
+          "birth_at": {
+            "type": "string",
+            "description": "Birth date, YYYY-MM-DD."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address; used for the SmartHR invitation."
+          },
+          "tel_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "entered_at": {
+            "type": "string",
+            "description": "Hire date (入社年月日), YYYY-MM-DD."
+          },
+          "resigned_at": {
+            "type": "string",
+            "description": "Resignation date (退職年月日), YYYY-MM-DD."
+          },
+          "resigned_reason": {
+            "type": "string",
+            "description": "Reason for resignation."
+          },
+          "employment_type_id": {
+            "type": "string",
+            "description": "Employment type id from smarthr_list_employment_types."
+          },
+          "department_ids": {
+            "type": "array",
+            "description": "Department ids from smarthr_list_departments; replaces the current departments.",
+            "items": {
+              "type": "string",
+              "description": "A department id."
+            }
+          },
+          "positions": {
+            "type": "array",
+            "description": "Job title names (役職); replaces the current titles. Unknown names create a new job title.",
+            "items": {
+              "type": "string",
+              "description": "A job title name."
+            }
+          },
+          "grade": {
+            "type": "string",
+            "description": "Grade name (等級)."
+          },
+          "work_location_id": {
+            "type": "string",
+            "description": "Work location id from smarthr_list_work_locations."
+          },
+          "biz_establishment_id": {
+            "type": "string",
+            "description": "Business establishment id from smarthr_list_biz_establishments."
+          },
+          "contract_type": {
+            "type": "string",
+            "description": "unlimited (無期) or fixed_term (有期).",
+            "enum": [
+              "unlimited",
+              "fixed_term"
+            ]
+          },
+          "contract_start_on": {
+            "type": "string",
+            "description": "Contract start, YYYY-MM-DD."
+          },
+          "contract_end_on": {
+            "type": "string",
+            "description": "Contract end, YYYY-MM-DD."
+          },
+          "custom_fields": {
+            "type": "array",
+            "description": "Custom field values: [{\"template_id\": \"...\", \"value\": \"...\"}] with template ids from smarthr_list_crew_custom_field_templates (dates YYYY-MM-DD, enum by option id or physical name).",
+            "items": {
+              "type": "object",
+              "description": "One custom value.",
+              "properties": {
+                "template_id": {
+                  "type": "string",
+                  "description": "Custom field template id."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value as text in the format of the template type."
+                }
+              },
+              "required": [
+                "template_id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "emp_status",
+          "last_name",
+          "first_name",
+          "last_name_yomi",
+          "first_name_yomi",
+          "gender"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/crews",
+        "bodyMapping": {
+          "emp_code": "$emp_code",
+          "emp_status": "$emp_status",
+          "last_name": "$last_name",
+          "first_name": "$first_name",
+          "last_name_yomi": "$last_name_yomi",
+          "first_name_yomi": "$first_name_yomi",
+          "business_last_name": "$business_last_name",
+          "business_first_name": "$business_first_name",
+          "gender": "$gender",
+          "birth_at": "$birth_at",
+          "email": "$email",
+          "tel_number": "$tel_number",
+          "entered_at": "$entered_at",
+          "resigned_at": "$resigned_at",
+          "resigned_reason": "$resigned_reason",
+          "employment_type_id": "$employment_type_id",
+          "department_ids": "$department_ids",
+          "positions": "$positions",
+          "grade": "$grade",
+          "work_location_id": "$work_location_id",
+          "biz_establishment_id": "$biz_establishment_id",
+          "contract_type": "$contract_type",
+          "contract_start_on": "$contract_start_on",
+          "contract_end_on": "$contract_end_on",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "smarthr_update_crew",
+      "description": "Change fields of an employee (従業員) with a partial update (PATCH): only the fields you send change, and a filled name, reading, gender, birth date or address cannot be emptied. Read the employee first and show the change before saving.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Employee (crew) id."
+          },
+          "emp_code": {
+            "type": "string",
+            "description": "Employee number (社員番号)."
+          },
+          "emp_status": {
+            "type": "string",
+            "description": "employed (在籍), absent (休職) or retired (退職).",
+            "enum": [
+              "employed",
+              "absent",
+              "retired"
+            ]
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Family name (姓)."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "Given name (名)."
+          },
+          "last_name_yomi": {
+            "type": "string",
+            "description": "Family name in katakana (姓カナ)."
+          },
+          "first_name_yomi": {
+            "type": "string",
+            "description": "Given name in katakana (名カナ)."
+          },
+          "business_last_name": {
+            "type": "string",
+            "description": "Business family name (ビジネスネーム)."
+          },
+          "business_first_name": {
+            "type": "string",
+            "description": "Business given name."
+          },
+          "gender": {
+            "type": "string",
+            "description": "Gender on the family register: male or female.",
+            "enum": [
+              "male",
+              "female"
+            ]
+          },
+          "birth_at": {
+            "type": "string",
+            "description": "Birth date, YYYY-MM-DD."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address; used for the SmartHR invitation."
+          },
+          "tel_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "entered_at": {
+            "type": "string",
+            "description": "Hire date (入社年月日), YYYY-MM-DD."
+          },
+          "resigned_at": {
+            "type": "string",
+            "description": "Resignation date (退職年月日), YYYY-MM-DD."
+          },
+          "resigned_reason": {
+            "type": "string",
+            "description": "Reason for resignation."
+          },
+          "employment_type_id": {
+            "type": "string",
+            "description": "Employment type id from smarthr_list_employment_types."
+          },
+          "department_ids": {
+            "type": "array",
+            "description": "Department ids from smarthr_list_departments; replaces the current departments.",
+            "items": {
+              "type": "string",
+              "description": "A department id."
+            }
+          },
+          "positions": {
+            "type": "array",
+            "description": "Job title names (役職); replaces the current titles. Unknown names create a new job title.",
+            "items": {
+              "type": "string",
+              "description": "A job title name."
+            }
+          },
+          "grade": {
+            "type": "string",
+            "description": "Grade name (等級)."
+          },
+          "work_location_id": {
+            "type": "string",
+            "description": "Work location id from smarthr_list_work_locations."
+          },
+          "biz_establishment_id": {
+            "type": "string",
+            "description": "Business establishment id from smarthr_list_biz_establishments."
+          },
+          "contract_type": {
+            "type": "string",
+            "description": "unlimited (無期) or fixed_term (有期).",
+            "enum": [
+              "unlimited",
+              "fixed_term"
+            ]
+          },
+          "contract_start_on": {
+            "type": "string",
+            "description": "Contract start, YYYY-MM-DD."
+          },
+          "contract_end_on": {
+            "type": "string",
+            "description": "Contract end, YYYY-MM-DD."
+          },
+          "custom_fields": {
+            "type": "array",
+            "description": "Custom field values: [{\"template_id\": \"...\", \"value\": \"...\"}] with template ids from smarthr_list_crew_custom_field_templates (dates YYYY-MM-DD, enum by option id or physical name).",
+            "items": {
+              "type": "object",
+              "description": "One custom value.",
+              "properties": {
+                "template_id": {
+                  "type": "string",
+                  "description": "Custom field template id."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value as text in the format of the template type."
+                }
+              },
+              "required": [
+                "template_id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/crews/{id}",
+        "bodyMapping": {
+          "emp_code": "$emp_code",
+          "emp_status": "$emp_status",
+          "last_name": "$last_name",
+          "first_name": "$first_name",
+          "last_name_yomi": "$last_name_yomi",
+          "first_name_yomi": "$first_name_yomi",
+          "business_last_name": "$business_last_name",
+          "business_first_name": "$business_first_name",
+          "gender": "$gender",
+          "birth_at": "$birth_at",
+          "email": "$email",
+          "tel_number": "$tel_number",
+          "entered_at": "$entered_at",
+          "resigned_at": "$resigned_at",
+          "resigned_reason": "$resigned_reason",
+          "employment_type_id": "$employment_type_id",
+          "department_ids": "$department_ids",
+          "positions": "$positions",
+          "grade": "$grade",
+          "work_location_id": "$work_location_id",
+          "biz_establishment_id": "$biz_establishment_id",
+          "contract_type": "$contract_type",
+          "contract_start_on": "$contract_start_on",
+          "contract_end_on": "$contract_end_on",
+          "custom_fields": "$custom_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "smarthr_invite_crew",
+      "description": "Invite an employee to SmartHR: sends the invitation email to the email of the employee, from the given inviter, optionally with an employee information form (従業員情報収集フォーム). A second call re-invites. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Employee (crew) id."
+          },
+          "inviter_user_id": {
+            "type": "string",
+            "description": "User id of the inviter, from smarthr_list_users."
+          },
+          "crew_input_form_id": {
+            "type": "string",
+            "description": "Employee information form id, from smarthr_list_crew_input_forms."
+          }
+        },
+        "required": [
+          "id",
+          "inviter_user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/crews/{id}/invite",
+        "bodyMapping": {
+          "inviter_user_id": "$inviter_user_id",
+          "crew_input_form_id": "$crew_input_form_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "smarthr_delete_crew",
+      "description": "Delete an employee (従業員) and all of their data for good. To record a resignation use smarthr_update_crew with emp_status retired and resigned_at instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Employee (crew) id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/crews/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "smarthr_list_crew_input_forms",
+      "description": "List the employee information forms (従業員情報収集フォーム) that can be sent with an invitation: id, name and fields asked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/crew_input_forms",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_crew_dependents",
+      "description": "List the dependents (家族, family members) of an employee: name, relation, birth date, whether they are a tax or health insurance dependent, income and custom fields. Personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "crew_id": {
+            "type": "string",
+            "description": "Employee (crew) id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "crew_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/crews/{crew_id}/dependents",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_get_crew_dependent",
+      "description": "Read one dependent (家族) of an employee with all fields. Personal data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "crew_id": {
+            "type": "string",
+            "description": "Employee (crew) id."
+          },
+          "id": {
+            "type": "string",
+            "description": "Dependent id."
+          }
+        },
+        "required": [
+          "crew_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/crews/{crew_id}/dependents/{id}"
+      }
+    },
+    {
+      "name": "smarthr_list_dependent_relations",
+      "description": "List the relation types (続柄) usable for dependents, e.g. spouse, child; filter spouse returns only spouse relations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "spouse for spouse relations only.",
+            "enum": [
+              "spouse"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dependent_relations",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_crew_childcare_leaves",
+      "description": "List maternity and childcare leaves (産休育休) of an employee with their periods.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "crew_id": {
+            "type": "string",
+            "description": "Employee (crew) id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "crew_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/crews/{crew_id}/maternity_childcare_leaves",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_list_users",
+      "description": "List SmartHR user accounts (ユーザー): id, email, role, admin flag, invitation state and, with embed crew, the linked employee. A user is the login; a crew is the employee record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "description": "Sort field."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Embed crew, biz_establishment, biz_establishment_company or department_company.",
+            "enum": [
+              "crew",
+              "biz_establishment",
+              "biz_establishment_company",
+              "department_company"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users",
+        "queryParams": {
+          "sort": "$sort",
+          "embed": "$embed",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_get_user",
+      "description": "Read one SmartHR user account with role, admin flag and invitation dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "User id."
+          },
+          "embed": {
+            "type": "string",
+            "description": "Embed crew, biz_establishment, biz_establishment_company or department_company.",
+            "enum": [
+              "crew",
+              "biz_establishment",
+              "biz_establishment_company",
+              "department_company"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users/{id}",
+        "queryParams": {
+          "embed": "$embed"
+        }
+      }
+    },
+    {
+      "name": "smarthr_list_payrolls",
+      "description": "List payroll runs (給与明細グループ): id, payment type (salary or bonus), paid date, period, status (fixed, published) and name. Needs the payslip feature of SmartHR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_type": {
+            "type": "string",
+            "description": "salary (給与) or bonus (賞与).",
+            "enum": [
+              "salary",
+              "bonus"
+            ]
+          },
+          "paid_at_from": {
+            "type": "string",
+            "description": "Paid on or after, YYYY-MM-DD."
+          },
+          "paid_at_to": {
+            "type": "string",
+            "description": "Paid on or before, YYYY-MM-DD."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payrolls",
+        "queryParams": {
+          "payment_type": "$payment_type",
+          "paid_at_from": "$paid_at_from",
+          "paid_at_to": "$paid_at_to",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_get_payroll",
+      "description": "Read one payroll run (給与明細グループ) with its status, dates and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Payroll id from smarthr_list_payrolls."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payrolls/{id}"
+      }
+    },
+    {
+      "name": "smarthr_list_payslips",
+      "description": "List the payslips (給与明細) of a payroll run: per employee the allowances, deductions, attendance and totals. Salary data: read only what the task needs, filter by crew_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payroll_id": {
+            "type": "string",
+            "description": "Payroll id."
+          },
+          "crew_id": {
+            "type": "string",
+            "description": "Employee id(s), comma separated."
+          },
+          "embed": {
+            "type": "string",
+            "description": "company adds the company.",
+            "enum": [
+              "company"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, 1-based (default 1). The x-total-count header gives the total; call again with _pagination.nextCursor as page while it is present.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "payroll_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payrolls/{payroll_id}/payslips",
+        "queryParams": {
+          "crew_id": "$crew_id",
+          "embed": "$embed",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      }
+    },
+    {
+      "name": "smarthr_get_payslip",
+      "description": "Read one payslip (給与明細) with allowances, deductions, attendance and aggregates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payroll_id": {
+            "type": "string",
+            "description": "Payroll id."
+          },
+          "id": {
+            "type": "string",
+            "description": "Payslip id."
+          },
+          "embed": {
+            "type": "string",
+            "description": "company adds the company.",
+            "enum": [
+              "company"
+            ]
+          }
+        },
+        "required": [
+          "payroll_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payrolls/{payroll_id}/payslips/{id}",
+        "queryParams": {
+          "embed": "$embed"
+        }
+      }
+    }
+  ]
+}

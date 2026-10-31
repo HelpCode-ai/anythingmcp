@@ -1,0 +1,1655 @@
+{
+  "slug": "tableau",
+  "name": "Tableau",
+  "aliases": [
+    "Tableau Cloud",
+    "Tableau Server",
+    "Tableau Online"
+  ],
+  "description": "Tableau Cloud and Server: find workbooks, views and data sources, read view data as CSV, images and PDFs, query published data sources, trace lineage, manage projects, tags, group members and extract refreshes.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "tableau",
+  "docsUrl": "https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api_ref.htm",
+  "instructions": "## Tableau\nThis connector works with **Tableau Cloud** and **Tableau Server** (2024.2 or later) through the REST API 3.23, the VizQL Data Service and the Metadata API: sites, projects, workbooks, views (data as CSV, images, PDFs, Excel crosstabs), published data sources and their fields, queries on data sources, lineage, users and groups, background jobs and extract refreshes.\n\n**Setup (5 minutes)**\n1. In Tableau open your **Account Settings**, section **Personal Access Tokens**, enter a token name and click **Create Token**. Copy the name into `TABLEAU_PAT_NAME` and the secret (shown once) into `TABLEAU_PAT_SECRET`. On Tableau Server an admin may have to allow personal access tokens first.\n2. `TABLEAU_SERVER_URL`: the address without a path, e.g. `https://prod-useast-a.online.tableau.com` (Tableau Cloud: the pod host you see in the browser) or `https://tableau.example.com`.\n3. `TABLEAU_SITE`: the site's content URL, the part after `/site/` in the browser address (`#/site/acme/home` gives `acme`). For the Default site of a Tableau Server leave it empty.\n4. Run `tableau_get_current_session` to check the sign-in.\n\nThe connector signs in with the token and reuses the session; it signs in again when the session expires. Tableau allows one session per token at a time, so do not use the same token in another tool, and Tableau Cloud revokes a token that has not been used for 15 days (create a new one then).\n\n**Workflow**\n- Start with `tableau_get_current_session`: `site.id` is the `site_id` every site tool needs. `tableau_get_server_info`, `tableau_list_sites` and `tableau_get_site` describe the server and site.\n- Find content: `tableau_search_content` (words, with type filters), `tableau_list_projects`, `tableau_list_workbooks`, `tableau_get_workbook`, `tableau_list_workbook_views`, `tableau_list_views`, `tableau_get_view`, `tableau_list_workbook_connections`.\n- Read what a dashboard shows: `tableau_get_view_data` (CSV of the marks), `tableau_get_view_image` (PNG to look at), `tableau_get_view_pdf`, `tableau_download_view_crosstab_excel`, `tableau_get_workbook_pdf`. Narrow them with `filters` such as `{\"vf_Region\": \"West\"}`.\n- Query data directly: `tableau_list_datasources`, `tableau_get_datasource`, `tableau_list_datasource_connections`, then `tableau_read_datasource_metadata` for the field captions and `tableau_query_datasource` to aggregate and filter them (VizQL Data Service).\n- Lineage and impact: `tableau_metadata_query` (GraphQL on the Metadata API, for example which workbooks use a table).\n- People: `tableau_list_users`, `tableau_get_user`, `tableau_list_user_groups`, `tableau_list_groups`, `tableau_list_group_users`, `tableau_add_user_to_group`.\n- Refreshes and jobs: `tableau_list_extract_refresh_tasks`, `tableau_run_extract_refresh_task`, `tableau_refresh_workbook`, `tableau_refresh_datasource`, then `tableau_list_jobs` and `tableau_get_job` to follow them; `tableau_cancel_job` stops one.\n- Organize: `tableau_create_project`, `tableau_update_project`, `tableau_update_workbook`, `tableau_move_workbook`, `tableau_add_workbook_tags`, `tableau_add_datasource_tags`.\n\n**Switched off at install**: `tableau_cancel_job`; it cannot be undone, so an admin switches it on when the team needs it.\n\n**Reading the answers**: ids are LUIDs (UUIDs). Lists come as `{\"pagination\": {\"pageNumber\", \"pageSize\", \"totalAvailable\"}, \"workbooks\": {\"workbook\": [...]}}` (the same for projects, views, datasources, users, groups, jobs). Times are ISO 8601 in UTC. `tableau_get_view_data` returns CSV text with a header row; numbers are formatted as in the view. `tableau_query_datasource` returns `data` as a list of objects keyed by field caption (with the function, e.g. `SUM(Sales)`). A job's `finishCode` is 0 for success, 1 for failure, 2 for cancelled.\n\n**Paging**: list tools take `page_size` (up to 1000) and `page_number`; continue while `pageNumber * pageSize` is below `totalAvailable`. `tableau_search_content` pages with `limit` and `page`; its answer carries the total and the next page.\n\n**Filters and sorting**: `filter` is `field:operator:value`, several joined by commas, e.g. `projectName:eq:Finance,updatedAt:gt:2026-01-01T00:00:00Z`; `in` takes `[a,b]`. `sort` is `field:asc` or `field:desc`.\n\n**Limits and requirements**: `tableau_read_datasource_metadata` and `tableau_query_datasource` need Tableau Cloud or Tableau Server 2025.1 with the VizQL Data Service on, and the API Access capability on the data source. `tableau_metadata_query` needs the Metadata API (on by default on Tableau Cloud; enabled by an admin on Server). `tableau_search_content` needs Tableau Cloud or Server 2022.3 and later. Content Tableau returns is limited to what the token's user may see.\n\n**Errors**: Tableau answers `{\"error\": {\"code\", \"summary\", \"detail\"}}`. 401 (codes 401001 and 401002) means a wrong or expired token or wrong site content URL; 403 a user without permission; 404 (404000 to 404xxx) a wrong id or a site_id from another site; 400 a bad filter or parameter; 409 a duplicate name or a refresh that is already queued.",
+  "prerequisites": "A Tableau Cloud site or Tableau Server 2024.2 or later, and a personal access token of a user who can see the content.",
+  "requiredEnvVars": [
+    "TABLEAU_SERVER_URL",
+    "TABLEAU_PAT_NAME",
+    "TABLEAU_PAT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "TABLEAU_SITE"
+  ],
+  "envVarMeta": {
+    "TABLEAU_SERVER_URL": {
+      "label": "Tableau address",
+      "kind": "address",
+      "secret": false,
+      "help": "Tableau Cloud: the pod host from the browser, e.g. https://prod-useast-a.online.tableau.com. Tableau Server: its address, without a path.",
+      "example": "https://prod-useast-a.online.tableau.com",
+      "pattern": "^https?://[^/\\s]+/?$",
+      "patternMessage": "Enter only the scheme and host, e.g. https://prod-useast-a.online.tableau.com, without #/site/... or another path."
+    },
+    "TABLEAU_SITE": {
+      "label": "Site content URL",
+      "kind": "setting",
+      "secret": false,
+      "help": "The part after /site/ in the browser address (#/site/acme/home gives acme). Empty for the Default site of a Tableau Server.",
+      "example": "acme"
+    },
+    "TABLEAU_PAT_NAME": {
+      "label": "Token name",
+      "kind": "credential",
+      "secret": false,
+      "help": "Account Settings, Personal Access Tokens: the name you gave the token."
+    },
+    "TABLEAU_PAT_SECRET": {
+      "label": "Token secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The token secret, shown once when the token is created."
+    }
+  },
+  "verifyHints": {
+    "401": "Tableau refused the sign-in: check the token name and secret (they are case-sensitive), the site content URL, and that the token has not expired or been revoked.",
+    "403": "The token's user may not do this. Check the user's site role and permissions.",
+    "404": "Nothing answered at this address. Check TABLEAU_SERVER_URL: only the scheme and host, and Tableau Server 2024.2 or later."
+  },
+  "probe": {
+    "tool": "tableau_get_current_session"
+  },
+  "connector": {
+    "name": "Tableau REST API",
+    "type": "REST",
+    "baseUrl": "{{TABLEAU_SERVER_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{TABLEAU_SERVER_URL}}/api/3.23/auth/signin",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "credentials": {
+          "personalAccessTokenName": "${username}",
+          "personalAccessTokenSecret": "${password}",
+          "site": {
+            "contentUrl": "{{TABLEAU_SITE}}"
+          }
+        }
+      },
+      "username": "{{TABLEAU_PAT_NAME}}",
+      "password": "{{TABLEAU_PAT_SECRET}}",
+      "tokenJsonPath": "credentials.token",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "X-Tableau-Auth",
+      "headerTemplate": "${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/3.23/serverinfo"
+  },
+  "tools": [
+    {
+      "name": "tableau_get_current_session",
+      "description": "The signed-in session: site (id, name, contentUrl) and user (id, name, site role). The site.id is the site_id every other tool needs; call this first.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sessions/current"
+      }
+    },
+    {
+      "name": "tableau_get_server_info",
+      "description": "Product version, build and the newest REST API version of the Tableau Server or Tableau Cloud pod.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/serverinfo"
+      }
+    },
+    {
+      "name": "tableau_list_sites",
+      "description": "Sites the signed-in user can reach (on Tableau Cloud usually only the signed-in one): id, name, contentUrl, state, admin mode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_site",
+      "description": "Settings of a site: name, contentUrl, state, storage quota, user quota, and which features (subscriptions, flows, Ask Data, ...) are on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}"
+      }
+    },
+    {
+      "name": "tableau_search_content",
+      "description": "Search the site's content by words: workbooks, views, data sources, projects, flows, metrics, tables, databases. Returns hits.items with type, the content (luid, title, ownerName, projectName, modifiedTime) and usage counts (hitsTotal).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "terms": {
+            "type": "string",
+            "description": "Search words."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Restrict the hits, e.g. type:eq:workbook, type:in:[workbook,datasource], ownerId:in:[luid1,luid2]."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. hitsTotal:desc or hitsSmallSpanTotal:desc (views in the last two weeks)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Hits per page (default 10).",
+            "minimum": 1
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of hits to return, for the next page after the first.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/-/search",
+        "queryParams": {
+          "terms": "$terms",
+          "filter": "$filter",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "tableau_list_projects",
+      "description": "Projects (folders) of the site: id, name, description, parent project id, owner, content permissions mode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression field:operator:value, several joined by commas (all must match). Operators: eq, in, gt, gte, lt, lte, has. Fields: name, ownerName, parentProjectId, topLevelProject, createdAt, updatedAt."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression field:asc or field:desc, e.g. name:asc or updatedAt:desc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, e.g. _default_ or _all_, or a list such as id,name,updatedAt."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/projects",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "fields": "$fields",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "tableau_list_workbooks",
+      "description": "Workbooks of the site: id, name, contentUrl, project, owner, size, tags, created and updated time, webpageUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression field:operator:value, several joined by commas (all must match). Operators: eq, in, gt, gte, lt, lte, has. Fields: name, projectName, ownerName, tags, createdAt, updatedAt, contentUrl, favoritesTotal."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression field:asc or field:desc, e.g. name:asc or updatedAt:desc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, e.g. _default_ or _all_, or a list such as id,name,updatedAt."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/workbooks",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "fields": "$fields",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_workbook",
+      "description": "One workbook: name, description, project, owner, tags, views, data acceleration and freshness settings, webpageUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "workbook_id": {
+            "type": "string",
+            "description": "Workbook id (LUID) from tableau_list_workbooks or tableau_search_content."
+          }
+        },
+        "required": [
+          "site_id",
+          "workbook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/workbooks/{workbook_id}"
+      }
+    },
+    {
+      "name": "tableau_list_workbook_views",
+      "description": "Views (sheets and dashboards) of a workbook: id, name, contentUrl, and with include_usage_statistics the total view count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "workbook_id": {
+            "type": "string",
+            "description": "Workbook id (LUID) from tableau_list_workbooks or tableau_search_content."
+          },
+          "include_usage_statistics": {
+            "type": "boolean",
+            "description": "true adds usage.totalViewCount."
+          }
+        },
+        "required": [
+          "site_id",
+          "workbook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/workbooks/{workbook_id}/views",
+        "queryParams": {
+          "includeUsageStatistics": "$include_usage_statistics"
+        }
+      }
+    },
+    {
+      "name": "tableau_list_workbook_connections",
+      "description": "Data connections of a workbook: type, server address, port, user name, and the published data source behind each.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "workbook_id": {
+            "type": "string",
+            "description": "Workbook id (LUID) from tableau_list_workbooks or tableau_search_content."
+          }
+        },
+        "required": [
+          "site_id",
+          "workbook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/workbooks/{workbook_id}/connections"
+      }
+    },
+    {
+      "name": "tableau_list_views",
+      "description": "Views of the whole site: id, name, contentUrl, workbook, owner, project, tags, and with include_usage_statistics the view count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "include_usage_statistics": {
+            "type": "boolean",
+            "description": "true adds usage.totalViewCount."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression field:operator:value, several joined by commas (all must match). Operators: eq, in, gt, gte, lt, lte, has. Fields: name, workbookName, projectName, ownerName, tags, viewUrlName, createdAt, updatedAt."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression field:asc or field:desc, e.g. name:asc or updatedAt:desc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, e.g. _default_ or _all_, or a list such as id,name,updatedAt."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/views",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "fields": "$fields",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number",
+          "includeUsageStatistics": "$include_usage_statistics"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_view",
+      "description": "One view: name, contentUrl, workbook, owner, project, tags, and with include_usage_statistics the view count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "view_id": {
+            "type": "string",
+            "description": "View id (LUID) from tableau_list_views or tableau_list_workbook_views."
+          },
+          "include_usage_statistics": {
+            "type": "boolean",
+            "description": "true adds usage.totalViewCount."
+          }
+        },
+        "required": [
+          "site_id",
+          "view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/views/{view_id}",
+        "queryParams": {
+          "includeUsageStatistics": "$include_usage_statistics"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_view_data",
+      "description": "The data behind a view as CSV text (the summary data of its marks), optionally filtered with vf_ filters. The best way to read the numbers a dashboard sheet shows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "view_id": {
+            "type": "string",
+            "description": "View id (LUID) from tableau_list_views or tableau_list_workbook_views."
+          },
+          "max_age": {
+            "type": "integer",
+            "description": "Accept a cached rendering up to this many minutes old (minimum 1). Leave out for Tableau's default.",
+            "minimum": 1
+          },
+          "filters": {
+            "type": "object",
+            "description": "View filters as query keys with the vf_ prefix and the field name as shown in the view, e.g. {\"vf_Region\": \"West\", \"vf_Order Date (Years)\": \"2026\"}. Several values for one field: comma-separated."
+          }
+        },
+        "required": [
+          "site_id",
+          "view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/views/{view_id}/data",
+        "queryParams": {
+          "maxAge": "$max_age",
+          "__merge": "$filters"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_view_image",
+      "description": "A PNG image of a view, returned as an image the model can look at, optionally filtered with vf_ filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "view_id": {
+            "type": "string",
+            "description": "View id (LUID) from tableau_list_views or tableau_list_workbook_views."
+          },
+          "resolution": {
+            "type": "string",
+            "description": "high for maximum pixel density.",
+            "enum": [
+              "high"
+            ]
+          },
+          "viz_width": {
+            "type": "integer",
+            "description": "Width in pixels; with viz_height sets size and aspect ratio."
+          },
+          "viz_height": {
+            "type": "integer",
+            "description": "Height in pixels."
+          },
+          "max_age": {
+            "type": "integer",
+            "description": "Accept a cached rendering up to this many minutes old (minimum 1). Leave out for Tableau's default.",
+            "minimum": 1
+          },
+          "filters": {
+            "type": "object",
+            "description": "View filters as query keys with the vf_ prefix and the field name as shown in the view, e.g. {\"vf_Region\": \"West\", \"vf_Order Date (Years)\": \"2026\"}. Several values for one field: comma-separated."
+          }
+        },
+        "required": [
+          "site_id",
+          "view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/views/{view_id}/image",
+        "queryParams": {
+          "resolution": "$resolution",
+          "vizWidth": "$viz_width",
+          "vizHeight": "$viz_height",
+          "maxAge": "$max_age",
+          "__merge": "$filters"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_view_pdf",
+      "description": "A PDF of one view, returned as a file, with paper size and orientation, optionally filtered with vf_ filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "view_id": {
+            "type": "string",
+            "description": "View id (LUID) from tableau_list_views or tableau_list_workbook_views."
+          },
+          "type": {
+            "type": "string",
+            "description": "Paper size: A3, A4, A5, B5, Executive, Folio, Ledger, Legal (default), Letter, Note, Quarto, Tabloid.",
+            "enum": [
+              "A3",
+              "A4",
+              "A5",
+              "B5",
+              "Executive",
+              "Folio",
+              "Ledger",
+              "Legal",
+              "Letter",
+              "Note",
+              "Quarto",
+              "Tabloid"
+            ]
+          },
+          "orientation": {
+            "type": "string",
+            "description": "Portrait (default) or Landscape.",
+            "enum": [
+              "Portrait",
+              "Landscape"
+            ]
+          },
+          "max_age": {
+            "type": "integer",
+            "description": "Accept a cached rendering up to this many minutes old (minimum 1). Leave out for Tableau's default.",
+            "minimum": 1
+          },
+          "filters": {
+            "type": "object",
+            "description": "View filters as query keys with the vf_ prefix and the field name as shown in the view, e.g. {\"vf_Region\": \"West\", \"vf_Order Date (Years)\": \"2026\"}. Several values for one field: comma-separated."
+          }
+        },
+        "required": [
+          "site_id",
+          "view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/views/{view_id}/pdf",
+        "queryParams": {
+          "type": "$type",
+          "orientation": "$orientation",
+          "maxAge": "$max_age",
+          "__merge": "$filters"
+        }
+      }
+    },
+    {
+      "name": "tableau_download_view_crosstab_excel",
+      "description": "The crosstab of a view as an Excel file (.xlsx), returned as a file, optionally filtered with vf_ filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "view_id": {
+            "type": "string",
+            "description": "View id (LUID) from tableau_list_views or tableau_list_workbook_views."
+          },
+          "max_age": {
+            "type": "integer",
+            "description": "Accept a cached rendering up to this many minutes old (minimum 1). Leave out for Tableau's default.",
+            "minimum": 1
+          },
+          "filters": {
+            "type": "object",
+            "description": "View filters as query keys with the vf_ prefix and the field name as shown in the view, e.g. {\"vf_Region\": \"West\", \"vf_Order Date (Years)\": \"2026\"}. Several values for one field: comma-separated."
+          }
+        },
+        "required": [
+          "site_id",
+          "view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/views/{view_id}/crosstab/excel",
+        "queryParams": {
+          "maxAge": "$max_age",
+          "__merge": "$filters"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_workbook_pdf",
+      "description": "A PDF of all views of a workbook, returned as a file, with paper size and orientation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "workbook_id": {
+            "type": "string",
+            "description": "Workbook id (LUID) from tableau_list_workbooks or tableau_search_content."
+          },
+          "type": {
+            "type": "string",
+            "description": "Paper size: A3, A4, A5, B5, Executive, Folio, Ledger, Legal (default), Letter, Note, Quarto, Tabloid.",
+            "enum": [
+              "A3",
+              "A4",
+              "A5",
+              "B5",
+              "Executive",
+              "Folio",
+              "Ledger",
+              "Legal",
+              "Letter",
+              "Note",
+              "Quarto",
+              "Tabloid"
+            ]
+          },
+          "orientation": {
+            "type": "string",
+            "description": "Portrait (default) or Landscape.",
+            "enum": [
+              "Portrait",
+              "Landscape"
+            ]
+          },
+          "max_age": {
+            "type": "integer",
+            "description": "Accept a cached rendering up to this many minutes old (minimum 1). Leave out for Tableau's default.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id",
+          "workbook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/workbooks/{workbook_id}/pdf",
+        "queryParams": {
+          "type": "$type",
+          "orientation": "$orientation",
+          "maxAge": "$max_age"
+        }
+      }
+    },
+    {
+      "name": "tableau_list_datasources",
+      "description": "Published data sources of the site: id, name, type (database type), project, owner, tags, certification, whether it has an extract, created and updated time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression field:operator:value, several joined by commas (all must match). Operators: eq, in, gt, gte, lt, lte, has. Fields: name, projectName, ownerName, type, isCertified, hasExtracts, tags, updatedAt."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression field:asc or field:desc, e.g. name:asc or updatedAt:desc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, e.g. _default_ or _all_, or a list such as id,name,updatedAt."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/datasources",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "fields": "$fields",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_datasource",
+      "description": "One published data source: name, description, type, project, owner, certification note, extract and refresh information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "datasource_id": {
+            "type": "string",
+            "description": "Published data source id (LUID) from tableau_list_datasources or tableau_search_content."
+          }
+        },
+        "required": [
+          "site_id",
+          "datasource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/datasources/{datasource_id}"
+      }
+    },
+    {
+      "name": "tableau_list_datasource_connections",
+      "description": "Connections of a published data source: type, server address, port, user name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "datasource_id": {
+            "type": "string",
+            "description": "Published data source id (LUID) from tableau_list_datasources or tableau_search_content."
+          }
+        },
+        "required": [
+          "site_id",
+          "datasource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/datasources/{datasource_id}/connections"
+      }
+    },
+    {
+      "name": "tableau_read_datasource_metadata",
+      "description": "Fields of a published data source through the VizQL Data Service: fieldCaption (the name to use in queries), dataType, role (dimension or measure), default aggregation, description. Call it before tableau_query_datasource.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "datasource_id": {
+            "type": "string",
+            "description": "Published data source id (LUID) from tableau_list_datasources or tableau_search_content."
+          }
+        },
+        "required": [
+          "datasource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/vizql-data-service/read-metadata",
+        "bodyMapping": {
+          "datasource": {
+            "datasourceLuid": "$datasource_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tableau_query_datasource",
+      "description": "Query a published data source through the VizQL Data Service: pick fields (dimensions and aggregated measures), filters and sorting, get rows back as objects. Tableau Cloud or Tableau Server 2025.1 and later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "datasource_id": {
+            "type": "string",
+            "description": "Published data source id (LUID) from tableau_list_datasources or tableau_search_content."
+          },
+          "query": {
+            "type": "object",
+            "description": "The query: {\"fields\": [{\"fieldCaption\": \"Region\"}, {\"fieldCaption\": \"Sales\", \"function\": \"SUM\", \"sortDirection\": \"DESC\", \"sortPriority\": 1}], \"filters\": [{\"field\": {\"fieldCaption\": \"Order Date\"}, \"filterType\": \"QUANTITATIVE_DATE\", \"quantitativeFilterType\": \"RANGE\", \"minDate\": \"2026-01-01\", \"maxDate\": \"2026-06-30\"}]}. Functions: SUM, AVG, MIN, MAX, COUNT, COUNTD, MEDIAN, YEAR, QUARTER, MONTH, WEEK, DAY, TRUNC_MONTH, ... Filter types: SET, MATCH, QUANTITATIVE_NUMERICAL, QUANTITATIVE_DATE, DATE (relative), TOP."
+          },
+          "options": {
+            "type": "object",
+            "description": "Optional: {\"returnFormat\": \"OBJECTS\", \"disaggregate\": false, \"debug\": false}."
+          }
+        },
+        "required": [
+          "datasource_id",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/vizql-data-service/query-datasource",
+        "bodyMapping": {
+          "datasource": {
+            "datasourceLuid": "$datasource_id"
+          },
+          "query": "$query",
+          "options": "$options"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tableau_metadata_query",
+      "description": "Run a GraphQL query on the Tableau Metadata API for lineage: which workbooks use a data source, upstream databases and tables, columns, calculated fields, owners, data quality warnings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "GraphQL query, e.g. { publishedDatasources(filter: {luid: \"...\"}) { name downstreamWorkbooks { name luid } upstreamTables { name schema database { name } } } }."
+          },
+          "variables": {
+            "type": "object",
+            "description": "GraphQL variables, if the query declares any."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/metadata/graphql",
+        "bodyMapping": {
+          "query": "$query",
+          "variables": "$variables"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tableau_list_users",
+      "description": "Users of the site: id, name, full name, e-mail, site role (Creator, Explorer, Viewer, SiteAdministratorCreator, Unlicensed, ...), last login, auth setting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression field:operator:value, several joined by commas (all must match). Operators: eq, in, gt, gte, lt, lte, has. Fields: name, friendlyName, siteRole, lastLogin, email, domainName."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression field:asc or field:desc, e.g. name:asc or updatedAt:desc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, e.g. _default_ or _all_, or a list such as id,name,updatedAt."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/users",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "fields": "$fields",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_user",
+      "description": "One user: name, full name, e-mail, site role, last login, external auth id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User id (LUID) from tableau_list_users."
+          }
+        },
+        "required": [
+          "site_id",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/users/{user_id}"
+      }
+    },
+    {
+      "name": "tableau_list_user_groups",
+      "description": "Groups a user belongs to: group id, name, domain and minimum site role.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User id (LUID) from tableau_list_users."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/users/{user_id}/groups",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "tableau_list_groups",
+      "description": "Groups of the site: id, name, domain, minimum site role and user count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression field:operator:value, several joined by commas (all must match). Operators: eq, in, gt, gte, lt, lte, has. Fields: name, domainName, minimumSiteRole, isLocal, userCount."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression field:asc or field:desc, e.g. name:asc or updatedAt:desc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, e.g. _default_ or _all_, or a list such as id,name,updatedAt."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/groups",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "fields": "$fields",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "tableau_list_group_users",
+      "description": "Members of a group: user id, name, full name, site role and last login.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id (LUID) from tableau_list_groups."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/groups/{group_id}/users",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "tableau_list_jobs",
+      "description": "Background jobs of the site (extract refreshes, subscriptions, flows): id, type, status, progress, created, started and ended time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter, e.g. jobType:eq:refresh_extracts, progress:lt:100, status:eq:Failed, createdAt:gt:2026-10-01T00:00:00Z."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort, e.g. createdAt:desc."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Fields to return, e.g. _default_ or _all_."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to return, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/jobs",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "fields": "$fields",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "tableau_get_job",
+      "description": "Status of one job: progress (0 to 100), finishCode (0 success, 1 failed, 2 cancelled), notes with the error text, and the workbook or data source it works on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Job id from tableau_list_jobs or from a refresh answer (job.id)."
+          }
+        },
+        "required": [
+          "site_id",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/jobs/{job_id}"
+      }
+    },
+    {
+      "name": "tableau_list_extract_refresh_tasks",
+      "description": "Scheduled extract refresh tasks of the site: task id, priority, type (full or incremental), schedule (frequency and next run time), and the workbook or data source refreshed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/3.23/sites/{site_id}/tasks/extractRefreshes"
+      }
+    },
+    {
+      "name": "tableau_refresh_workbook",
+      "description": "Refresh the extracts of a workbook now. Returns a job; follow it with tableau_get_job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "workbook_id": {
+            "type": "string",
+            "description": "Workbook id (LUID) from tableau_list_workbooks or tableau_search_content."
+          }
+        },
+        "required": [
+          "site_id",
+          "workbook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/3.23/sites/{site_id}/workbooks/{workbook_id}/refresh",
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "tableau_refresh_datasource",
+      "description": "Refresh the extract of a published data source now. Returns a job; follow it with tableau_get_job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "datasource_id": {
+            "type": "string",
+            "description": "Published data source id (LUID) from tableau_list_datasources or tableau_search_content."
+          }
+        },
+        "required": [
+          "site_id",
+          "datasource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/3.23/sites/{site_id}/datasources/{datasource_id}/refresh",
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "tableau_run_extract_refresh_task",
+      "description": "Run a scheduled extract refresh task now instead of waiting for its schedule. Returns a job; follow it with tableau_get_job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from tableau_list_extract_refresh_tasks."
+          }
+        },
+        "required": [
+          "site_id",
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/3.23/sites/{site_id}/tasks/extractRefreshes/{task_id}/runNow",
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "tableau_cancel_job",
+      "description": "Cancel a running or queued job (an extract refresh, a subscription or a flow run). A cancelled job cannot be resumed; it has to be started again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "Job id from tableau_list_jobs or from a refresh answer (job.id)."
+          }
+        },
+        "required": [
+          "site_id",
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/3.23/sites/{site_id}/jobs/{job_id}"
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "tableau_create_project",
+      "description": "Create a project, at the top level or inside a parent project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Project name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "parent_project_id": {
+            "type": "string",
+            "description": "Parent project id; leave out for a top-level project."
+          },
+          "content_permissions": {
+            "type": "string",
+            "description": "LockedToProject, ManagedByOwner (default) or LockedToProjectWithoutNested.",
+            "enum": [
+              "LockedToProject",
+              "ManagedByOwner",
+              "LockedToProjectWithoutNested"
+            ]
+          }
+        },
+        "required": [
+          "site_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/3.23/sites/{site_id}/projects",
+        "bodyMapping": {
+          "project": {
+            "name": "$name",
+            "description": "$description",
+            "parentProjectId": "$parent_project_id",
+            "contentPermissions": "$content_permissions"
+          }
+        }
+      }
+    },
+    {
+      "name": "tableau_update_project",
+      "description": "Rename a project, change its description or content permissions, or move it under another parent. Only the fields you pass change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project id (LUID) from tableau_list_projects."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "parent_project_id": {
+            "type": "string",
+            "description": "New parent project id."
+          },
+          "content_permissions": {
+            "type": "string",
+            "description": "LockedToProject, ManagedByOwner or LockedToProjectWithoutNested.",
+            "enum": [
+              "LockedToProject",
+              "ManagedByOwner",
+              "LockedToProjectWithoutNested"
+            ]
+          }
+        },
+        "required": [
+          "site_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/3.23/sites/{site_id}/projects/{project_id}",
+        "bodyMapping": {
+          "project": {
+            "name": "$name",
+            "description": "$description",
+            "parentProjectId": "$parent_project_id",
+            "contentPermissions": "$content_permissions"
+          }
+        }
+      }
+    },
+    {
+      "name": "tableau_update_workbook",
+      "description": "Rename a workbook or switch its tabs on or off. Only the fields you pass change; tableau_move_workbook moves it to another project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "workbook_id": {
+            "type": "string",
+            "description": "Workbook id (LUID) from tableau_list_workbooks or tableau_search_content."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "show_tabs": {
+            "type": "boolean",
+            "description": "true shows the views as tabs."
+          }
+        },
+        "required": [
+          "site_id",
+          "workbook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/3.23/sites/{site_id}/workbooks/{workbook_id}",
+        "bodyMapping": {
+          "workbook": {
+            "name": "$name",
+            "showTabs": "$show_tabs"
+          }
+        }
+      }
+    },
+    {
+      "name": "tableau_move_workbook",
+      "description": "Move a workbook to another project (its permissions may follow the target project's settings).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "workbook_id": {
+            "type": "string",
+            "description": "Workbook id (LUID) from tableau_list_workbooks or tableau_search_content."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Target project id from tableau_list_projects."
+          }
+        },
+        "required": [
+          "site_id",
+          "workbook_id",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/3.23/sites/{site_id}/workbooks/{workbook_id}",
+        "bodyMapping": {
+          "workbook": {
+            "project": {
+              "id": "$project_id"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "tableau_add_workbook_tags",
+      "description": "Add tags to a workbook; existing tags stay, the answer lists all tags of the workbook.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "workbook_id": {
+            "type": "string",
+            "description": "Workbook id (LUID) from tableau_list_workbooks or tableau_search_content."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tags to add: [{\"label\": \"finance\"}, {\"label\": \"certified\"}]."
+          }
+        },
+        "required": [
+          "site_id",
+          "workbook_id",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/3.23/sites/{site_id}/workbooks/{workbook_id}/tags",
+        "bodyMapping": {
+          "tags": {
+            "tag": "$tags"
+          }
+        }
+      }
+    },
+    {
+      "name": "tableau_add_datasource_tags",
+      "description": "Add tags to a published data source; existing tags stay, the answer lists all of them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "datasource_id": {
+            "type": "string",
+            "description": "Published data source id (LUID) from tableau_list_datasources or tableau_search_content."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Tags to add: [{\"label\": \"finance\"}]."
+          }
+        },
+        "required": [
+          "site_id",
+          "datasource_id",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/3.23/sites/{site_id}/datasources/{datasource_id}/tags",
+        "bodyMapping": {
+          "tags": {
+            "tag": "$tags"
+          }
+        }
+      }
+    },
+    {
+      "name": "tableau_add_user_to_group",
+      "description": "Add a user of the site to a group (local groups only; Active Directory groups sync from the directory).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id (LUID) from tableau_get_current_session (site.id)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id (LUID) from tableau_list_groups."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User id (LUID) from tableau_list_users."
+          }
+        },
+        "required": [
+          "site_id",
+          "group_id",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/3.23/sites/{site_id}/groups/{group_id}/users",
+        "bodyMapping": {
+          "user": {
+            "id": "$user_id"
+          }
+        }
+      }
+    }
+  ]
+}

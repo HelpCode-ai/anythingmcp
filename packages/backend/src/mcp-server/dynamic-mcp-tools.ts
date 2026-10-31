@@ -36,6 +36,7 @@ import { recordToolCall } from '../common/metrics';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
+import { EmailEngine } from '../connectors/engines/email.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { hashContent } from '../adapters/catalog-fingerprint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
@@ -96,6 +97,7 @@ export class DynamicMcpTools {
     private readonly kgService: KgService,
     @Optional() private readonly odataEngine?: ODataEngine,
     @Optional() private readonly userCredentials?: UserCredentialsService,
+    @Optional() private readonly emailEngine?: EmailEngine,
   ) {}
 
   /**
@@ -514,6 +516,11 @@ export class DynamicMcpTools {
             // OData settings may carry {{VAR}} (an adapter's SAP client).
             odataSettings: interpolateDeep(
               (tool.connectorConfig.config as { odata?: unknown } | undefined)?.odata,
+              envVars,
+            ),
+            // Email settings too: a catalog install keeps {{EMAIL_IMAP_HOST}}.
+            emailSettings: interpolateDeep(
+              (tool.connectorConfig.config as { email?: unknown } | undefined)?.email,
               envVars,
             ),
           },
@@ -993,7 +1000,7 @@ export class DynamicMcpTools {
     config: any,
     endpointMapping: any,
     params: Record<string, unknown>,
-    extra?: { connectorConfig?: Record<string, unknown>; odataSettings?: unknown },
+    extra?: { connectorConfig?: Record<string, unknown>; odataSettings?: unknown; emailSettings?: unknown },
   ): Promise<{ body: unknown; meta?: ResponseMeta }> {
     // Static response tools — return text immediately without engine dispatch.
     //
@@ -1054,6 +1061,17 @@ export class DynamicMcpTools {
         return {
           body: await this.mcpClientEngine.execute(config, endpointMapping, params),
         };
+      case 'EMAIL': {
+        if (!this.emailEngine) throw new Error('The email engine is not available.');
+        return {
+          body: await this.emailEngine.execute(
+            { authConfig: config.authConfig, baseUrl: config.baseUrl },
+            endpointMapping,
+            params,
+            extra?.emailSettings ?? (extra?.connectorConfig as { email?: unknown } | undefined)?.email,
+          ),
+        };
+      }
       case 'DATABASE': {
         const connectorConfig = extra?.connectorConfig as any;
         const readOnly = connectorConfig?.readOnly !== false;

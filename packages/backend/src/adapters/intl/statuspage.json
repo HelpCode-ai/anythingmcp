@@ -1,0 +1,1809 @@
+{
+  "slug": "statuspage",
+  "name": "Statuspage",
+  "aliases": [
+    "Atlassian Statuspage",
+    "StatusPage.io"
+  ],
+  "description": "Atlassian Statuspage management API: status pages, components and groups with uptime, incidents and scheduled maintenances with their updates, incident templates, subscribers and system metrics. Open and update incidents, announce maintenances, change component statuses and manage subscribers.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "statuspage",
+  "docsUrl": "https://developer.statuspage.io/",
+  "instructions": "## Statuspage\nThis connector works with **Atlassian Statuspage** through its management REST API (`https://api.statuspage.io/v1`): your status pages, their components and component groups with uptime, incidents and scheduled maintenances with every update, incident templates, subscribers and system metrics. It can open and update incidents, announce maintenances, change component statuses, manage subscribers and push metric data. The public status API of a page (`<page>.statuspage.io/api/v2`) is not used.\n\n**Setup (2 minutes)**\n1. Sign in at https://manage.statuspage.io, open your avatar menu (bottom left) and choose **API info** (https://manage.statuspage.io/login then API info).\n2. Copy an existing API key or create one. The key acts with the rights of the user it belongs to and reaches every page of the organization; it cannot be limited to read-only.\n3. Paste the key into `STATUSPAGE_API_KEY` (the key alone; the connector sends `Authorization: OAuth <key>`) and run `statuspage_list_pages` to check it. The page id is also shown on the API info page.\n\n**Workflow**\n- Find the page: `statuspage_list_pages`, then `statuspage_get_page`. Every other tool needs its `page_id`.\n- What is down right now: `statuspage_list_unresolved_incidents`, `statuspage_list_active_maintenances`, `statuspage_list_components` (component `status`), then `statuspage_get_incident`. History and search: `statuspage_list_incidents` with `q`.\n- Components: `statuspage_get_component`, `statuspage_update_component` (change a status without an incident), `statuspage_create_component`. Groups: `statuspage_list_component_groups`, `statuspage_get_component_group`, `statuspage_create_component_group`, `statuspage_update_component_group`. Uptime reports: `statuspage_get_component_uptime`, `statuspage_get_component_group_uptime`.\n- Incident communication: look at `statuspage_list_incident_templates` for agreed wording, then `statuspage_create_incident` with the affected `components` and their status. Post progress with `statuspage_update_incident` (status identified, monitoring, then resolved, with a `body` each time, and the components back to operational). Fix a typo in an earlier update with `statuspage_edit_incident_update`. After the incident: `statuspage_get_postmortem`. `statuspage_delete_incident` is switched off by default. New templates: `statuspage_create_incident_template`.\n- Planned work: `statuspage_create_scheduled_maintenance` with the window and components (with `scheduled_auto_in_progress` / `scheduled_auto_completed` it runs by itself), then `statuspage_list_upcoming_incidents` and `statuspage_list_scheduled_incidents`; move or close it with `statuspage_update_incident` (in_progress, verifying, completed).\n- Subscribers: `statuspage_count_subscribers` or `statuspage_get_subscriber_histogram` for numbers, `statuspage_list_subscribers` (search with `q`), `statuspage_get_subscriber`, `statuspage_list_unsubscribed_subscribers`, `statuspage_list_incident_subscribers`. Changes: `statuspage_create_subscriber`, `statuspage_unsubscribe_subscriber`.\n- Metrics: `statuspage_list_metrics`, `statuspage_get_metric`, `statuspage_list_metrics_providers`; push a point to a self-submitted metric with `statuspage_add_metric_data`.\n\n**Before writing**: incidents, maintenances and component statuses are public, and by default every change emails, texts and calls webhooks of all subscribers. Confirm the wording and the components with the user first; pass `deliver_notifications: false` for a quiet change.\n\n**Reading the answers**: ids are 12-character strings. Times are ISO 8601 with time zone; uptime dates are YYYY-MM-DD in the page's time zone, outage durations are seconds. Component `status` is operational, under_maintenance, degraded_performance, partial_outage or major_outage. Incident `impact` is none, maintenance, minor, major or critical; `incident_updates` is newest first. Page colours and logo URLs are left out of the page answers.\n\n**Paging**: lists take `page` (from 1) and `per_page` (at most 100); `statuspage_list_incidents` uses `limit` instead of `per_page`. `statuspage_list_subscribers` counts `page` from 0 and returns everything without `limit`. A page shorter than the page size is the last one.\n\n**Limits and errors**: each key may make about 1 request per second (measured over a minute); 420 or 429 means wait and retry. 401 is a wrong or deleted key, 404 an unknown id or a page the key cannot reach, 422 a validation error naming the field (e.g. a status that does not fit the incident type).",
+  "prerequisites": "A Statuspage account and an API key from the API info page of manage.statuspage.io.",
+  "requiredEnvVars": [
+    "STATUSPAGE_API_KEY"
+  ],
+  "envVarMeta": {
+    "STATUSPAGE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Statuspage, avatar menu (bottom left), API info: copy or create an API key. Paste the key alone, without OAuth in front.",
+      "link": "https://manage.statuspage.io/login",
+      "pattern": "^(?!OAuth\\s)(?!Bearer\\s)[A-Za-z0-9-]{20,}$",
+      "patternMessage": "Paste only the key as Statuspage shows it, without OAuth or Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Statuspage refused the key: it is wrong or was deleted. Copy it again from API info in manage.statuspage.io.",
+    "403": "Statuspage accepted the key but refused this request: the key's user lacks the rights or the plan does not include the feature.",
+    "429": "Statuspage allows about 1 request per second per key. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "statuspage_list_pages"
+  },
+  "connector": {
+    "name": "Statuspage API",
+    "type": "REST",
+    "baseUrl": "https://api.statuspage.io/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "OAuth {{STATUSPAGE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/pages"
+  },
+  "tools": [
+    {
+      "name": "statuspage_list_pages",
+      "description": "List the status pages this API key can manage: id, name, subdomain and custom domain, public URL, time zone and which subscription types are allowed. Start here to get the `page_id` every other tool needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].css_body_background_color",
+            "[*].css_font_color",
+            "[*].css_light_font_color",
+            "[*].css_greens",
+            "[*].css_yellows",
+            "[*].css_oranges",
+            "[*].css_blues",
+            "[*].css_reds",
+            "[*].css_border_color",
+            "[*].css_graph_color",
+            "[*].css_link_color",
+            "[*].css_no_data",
+            "[*].favicon_logo",
+            "[*].transactional_logo",
+            "[*].hero_cover",
+            "[*].email_logo",
+            "[*].twitter_logo"
+          ]
+        }
+      }
+    },
+    {
+      "name": "statuspage_get_page",
+      "description": "Get one status page with its settings: name, headline, description, URL and domain, support URL, time zone, notification sender and the allowed subscriber types (email, SMS, webhook, RSS).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "css_body_background_color",
+            "css_font_color",
+            "css_light_font_color",
+            "css_greens",
+            "css_yellows",
+            "css_oranges",
+            "css_blues",
+            "css_reds",
+            "css_border_color",
+            "css_graph_color",
+            "css_link_color",
+            "css_no_data",
+            "favicon_logo",
+            "transactional_logo",
+            "hero_cover",
+            "email_logo",
+            "twitter_logo"
+          ]
+        }
+      }
+    },
+    {
+      "name": "statuspage_list_components",
+      "description": "List the components of a page (the services shown on it) with id, name, description, current status, group id, position and start date. Group headers appear here too, with `group: true`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/components",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_get_component",
+      "description": "Get one component: name, description, current status (operational, under_maintenance, degraded_performance, partial_outage, major_outage), group, position, showcase flag and start date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "component_id": {
+            "type": "string",
+            "description": "Component id, from `statuspage_list_components`."
+          }
+        },
+        "required": [
+          "page_id",
+          "component_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/components/{component_id}"
+      }
+    },
+    {
+      "name": "statuspage_create_component",
+      "description": "Create a component on a page, optionally inside a group, with its initial status. The component appears on the public page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name of the component."
+          },
+          "description": {
+            "type": "string",
+            "description": "Longer description shown on the page."
+          },
+          "status": {
+            "type": "string",
+            "description": "Current status of the component.",
+            "enum": [
+              "operational",
+              "under_maintenance",
+              "degraded_performance",
+              "partial_outage",
+              "major_outage"
+            ]
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Id of the component group to place it in, from `statuspage_list_component_groups`."
+          },
+          "showcase": {
+            "type": "boolean",
+            "description": "Show the component on the page's main list (with its uptime bar when enabled)."
+          },
+          "only_show_if_degraded": {
+            "type": "boolean",
+            "description": "Hide the component while it is operational (needs a feature enabled by Statuspage)."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Date the component started being used, YYYY-MM-DD; uptime is counted from it."
+          }
+        },
+        "required": [
+          "page_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pages/{page_id}/components",
+        "bodyMapping": {
+          "component": {
+            "name": "$name",
+            "description": "$description",
+            "status": "$status",
+            "group_id": "$group_id",
+            "showcase": "$showcase",
+            "only_show_if_degraded": "$only_show_if_degraded",
+            "start_date": "$start_date"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "statuspage_update_component",
+      "description": "Change a component: set its status (e.g. major_outage or back to operational) without opening an incident, or rename it, move it to another group or change its description. A status change is visible on the public page at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "component_id": {
+            "type": "string",
+            "description": "Component id, from `statuspage_list_components`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name of the component."
+          },
+          "description": {
+            "type": "string",
+            "description": "Longer description shown on the page."
+          },
+          "status": {
+            "type": "string",
+            "description": "Current status of the component.",
+            "enum": [
+              "operational",
+              "under_maintenance",
+              "degraded_performance",
+              "partial_outage",
+              "major_outage"
+            ]
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Id of the component group to place it in, from `statuspage_list_component_groups`."
+          },
+          "showcase": {
+            "type": "boolean",
+            "description": "Show the component on the page's main list (with its uptime bar when enabled)."
+          },
+          "only_show_if_degraded": {
+            "type": "boolean",
+            "description": "Hide the component while it is operational (needs a feature enabled by Statuspage)."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Date the component started being used, YYYY-MM-DD; uptime is counted from it."
+          }
+        },
+        "required": [
+          "page_id",
+          "component_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/pages/{page_id}/components/{component_id}",
+        "bodyMapping": {
+          "component": {
+            "name": "$name",
+            "description": "$description",
+            "status": "$status",
+            "group_id": "$group_id",
+            "showcase": "$showcase",
+            "only_show_if_degraded": "$only_show_if_degraded",
+            "start_date": "$start_date"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "statuspage_get_component_uptime",
+      "description": "Get the uptime of one component over a date window: uptime percentage, major and partial outage seconds, and the related events (outages and incidents) unless skipped. Needs the component's uptime display enabled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "component_id": {
+            "type": "string",
+            "description": "Component id, from `statuspage_list_components`."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the window, YYYY-MM-DD (or YYYY-MM, or YYYY). Default 90 days ago or the start date, whichever is later. At most six calendar months per call."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the window, YYYY-MM-DD (or YYYY-MM, or YYYY). Default today in the page's time zone."
+          },
+          "skip_related_events": {
+            "type": "boolean",
+            "description": "Leave out the list of outages and related incidents, returning only the percentages."
+          }
+        },
+        "required": [
+          "page_id",
+          "component_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/components/{component_id}/uptime",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "skip_related_events": "$skip_related_events"
+        }
+      }
+    },
+    {
+      "name": "statuspage_list_component_groups",
+      "description": "List the component groups of a page: id, name, description, position and the ids of the components in each group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/component-groups",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_get_component_group",
+      "description": "Get one component group with its name, description, position and the ids of its components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Component group id, from `statuspage_list_component_groups`."
+          }
+        },
+        "required": [
+          "page_id",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/component-groups/{group_id}"
+      }
+    },
+    {
+      "name": "statuspage_create_component_group",
+      "description": "Create a component group on a page from a name and the ids of the components it should contain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name of the group."
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the components that belong to the group, from `statuspage_list_components`. Replaces the current list on update."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the group."
+          }
+        },
+        "required": [
+          "page_id",
+          "name",
+          "components"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pages/{page_id}/component-groups",
+        "bodyMapping": {
+          "description": "$description",
+          "component_group": {
+            "name": "$name",
+            "components": "$components"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "statuspage_update_component_group",
+      "description": "Rename a component group, change its description or replace the list of components it contains (the API needs the name and the full component list on every update).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Component group id, from `statuspage_list_component_groups`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name of the group."
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the components that belong to the group, from `statuspage_list_components`. Replaces the current list on update."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the group."
+          }
+        },
+        "required": [
+          "page_id",
+          "group_id",
+          "name",
+          "components"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/pages/{page_id}/component-groups/{group_id}",
+        "bodyMapping": {
+          "description": "$description",
+          "component_group": {
+            "name": "$name",
+            "components": "$components"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "statuspage_get_component_group_uptime",
+      "description": "Get the uptime of a component group over a date window: uptime percentage, outage seconds and related events, summed over its components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Component group id, from `statuspage_list_component_groups`."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the window, YYYY-MM-DD (or YYYY-MM, or YYYY). Default 90 days ago or the start date, whichever is later. At most six calendar months per call."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the window, YYYY-MM-DD (or YYYY-MM, or YYYY). Default today in the page's time zone."
+          },
+          "skip_related_events": {
+            "type": "boolean",
+            "description": "Leave out the list of outages and related incidents, returning only the percentages."
+          }
+        },
+        "required": [
+          "page_id",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/component-groups/{group_id}/uptime",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "skip_related_events": "$skip_related_events"
+        }
+      }
+    },
+    {
+      "name": "statuspage_list_incidents",
+      "description": "List or search a page's incidents and maintenances, newest first: id, name, status, impact, affected components, all updates with their text, scheduled window, resolved time and shortlink. `q` searches names, statuses, postmortems and update texts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "q": {
+            "type": "string",
+            "description": "Text to search for in the incident name, status, postmortem and update texts."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/incidents",
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_list_unresolved_incidents",
+      "description": "List the page's open incidents (investigating, identified or monitoring): what is currently shown as an ongoing problem.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/incidents/unresolved",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_list_upcoming_incidents",
+      "description": "List the page's upcoming scheduled maintenances: planned and not started yet, with their scheduled window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/incidents/upcoming",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_list_active_maintenances",
+      "description": "List the scheduled maintenances that are in progress or being verified right now.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/incidents/active_maintenance",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_list_scheduled_incidents",
+      "description": "List all scheduled maintenances of the page (upcoming, in progress and completed), with their windows and updates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/incidents/scheduled",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_get_incident",
+      "description": "Get one incident or maintenance with every update (id, status, body, display time, affected components), its impact, components, scheduled window, postmortem state and shortlink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `statuspage_list_incidents` or one of the other incident lists."
+          }
+        },
+        "required": [
+          "page_id",
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/incidents/{incident_id}"
+      }
+    },
+    {
+      "name": "statuspage_create_incident",
+      "description": "Open a realtime incident on the public page: a name, a first message, its status (investigating by default) and the components affected, with their new status. Subscribers are notified unless deliver_notifications is false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Incident title shown on the page, up to 255 characters."
+          },
+          "status": {
+            "type": "string",
+            "description": "Starting status (default investigating).",
+            "enum": [
+              "investigating",
+              "identified",
+              "monitoring",
+              "resolved"
+            ]
+          },
+          "body": {
+            "type": "string",
+            "description": "First update shown under the incident, up to 25000 characters."
+          },
+          "impact_override": {
+            "type": "string",
+            "description": "Impact to show instead of the one computed from the component statuses.",
+            "enum": [
+              "none",
+              "maintenance",
+              "minor",
+              "major",
+              "critical"
+            ]
+          },
+          "components": {
+            "type": "object",
+            "description": "Component statuses to set with this change, as a map of component id to status, e.g. {\"8kbf7d35c070\": \"major_outage\"}. Values: operational, under_maintenance, degraded_performance, partial_outage, major_outage. Component ids from `statuspage_list_components`.",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "operational",
+                "under_maintenance",
+                "degraded_performance",
+                "partial_outage",
+                "major_outage"
+              ]
+            }
+          },
+          "component_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the components affected by the incident (listed on it). Use `components` to also change their status."
+          },
+          "deliver_notifications": {
+            "type": "boolean",
+            "description": "Notify the page's subscribers (email, SMS, webhooks, Slack) about this change. Default true; set false to change the page quietly."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Your own data attached to the incident; every top-level value must itself be an object, e.g. {\"jira\": {\"issue\": \"OPS-12\"}}."
+          }
+        },
+        "required": [
+          "page_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pages/{page_id}/incidents",
+        "bodyMapping": {
+          "incident": {
+            "name": "$name",
+            "status": "$status",
+            "body": "$body",
+            "impact_override": "$impact_override",
+            "components": "$components",
+            "component_ids": "$component_ids",
+            "deliver_notifications": "$deliver_notifications",
+            "metadata": "$metadata"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "statuspage_create_scheduled_maintenance",
+      "description": "Announce a scheduled maintenance: name, message, window (scheduled_for to scheduled_until) and affected components, with optional reminders and automatic start and completion that move the components to under_maintenance and back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Maintenance title shown on the page, up to 255 characters."
+          },
+          "body": {
+            "type": "string",
+            "description": "Description of the maintenance, the first update."
+          },
+          "scheduled_for": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601 with time zone, e.g. 2026-11-05T22:00:00Z."
+          },
+          "scheduled_until": {
+            "type": "string",
+            "description": "End of the window, ISO 8601 with time zone."
+          },
+          "component_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the components under maintenance, from `statuspage_list_components`."
+          },
+          "components": {
+            "type": "object",
+            "description": "Component statuses to set with this change, as a map of component id to status, e.g. {\"8kbf7d35c070\": \"major_outage\"}. Values: operational, under_maintenance, degraded_performance, partial_outage, major_outage. Component ids from `statuspage_list_components`.",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "operational",
+                "under_maintenance",
+                "degraded_performance",
+                "partial_outage",
+                "major_outage"
+              ]
+            }
+          },
+          "scheduled_remind_prior": {
+            "type": "boolean",
+            "description": "Remind subscribers before the maintenance starts."
+          },
+          "scheduled_auto_in_progress": {
+            "type": "boolean",
+            "description": "Switch the maintenance to in_progress automatically at scheduled_for."
+          },
+          "scheduled_auto_completed": {
+            "type": "boolean",
+            "description": "Switch the maintenance to completed automatically at scheduled_until."
+          },
+          "auto_transition_to_maintenance_state": {
+            "type": "boolean",
+            "description": "Set the affected components to under_maintenance when it starts."
+          },
+          "auto_transition_to_operational_state": {
+            "type": "boolean",
+            "description": "Set the affected components back to operational when it completes."
+          },
+          "auto_transition_deliver_notifications_at_start": {
+            "type": "boolean",
+            "description": "Notify subscribers when the automatic start happens."
+          },
+          "auto_transition_deliver_notifications_at_end": {
+            "type": "boolean",
+            "description": "Notify subscribers when the automatic completion happens."
+          },
+          "deliver_notifications": {
+            "type": "boolean",
+            "description": "Notify the page's subscribers (email, SMS, webhooks, Slack) about this change. Default true; set false to change the page quietly."
+          }
+        },
+        "required": [
+          "page_id",
+          "name",
+          "scheduled_for",
+          "scheduled_until"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pages/{page_id}/incidents",
+        "bodyMapping": {
+          "incident": {
+            "status": "scheduled",
+            "name": "$name",
+            "body": "$body",
+            "scheduled_for": "$scheduled_for",
+            "scheduled_until": "$scheduled_until",
+            "component_ids": "$component_ids",
+            "components": "$components",
+            "scheduled_remind_prior": "$scheduled_remind_prior",
+            "scheduled_auto_in_progress": "$scheduled_auto_in_progress",
+            "scheduled_auto_completed": "$scheduled_auto_completed",
+            "auto_transition_to_maintenance_state": "$auto_transition_to_maintenance_state",
+            "auto_transition_to_operational_state": "$auto_transition_to_operational_state",
+            "auto_transition_deliver_notifications_at_start": "$auto_transition_deliver_notifications_at_start",
+            "auto_transition_deliver_notifications_at_end": "$auto_transition_deliver_notifications_at_end",
+            "deliver_notifications": "$deliver_notifications"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "statuspage_update_incident",
+      "description": "Post an update on an incident or maintenance: a new status (identified, monitoring, resolved; in_progress, verifying, completed for maintenances) with a message in `body`, and component status changes. Can also rename it, change its impact or reschedule a maintenance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `statuspage_list_incidents` or one of the other incident lists."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status. Realtime incidents: investigating, identified, monitoring, resolved. Maintenances: scheduled, in_progress, verifying, completed.",
+            "enum": [
+              "investigating",
+              "identified",
+              "monitoring",
+              "resolved",
+              "scheduled",
+              "in_progress",
+              "verifying",
+              "completed"
+            ]
+          },
+          "body": {
+            "type": "string",
+            "description": "Text of the new update shown under the incident, up to 25000 characters."
+          },
+          "name": {
+            "type": "string",
+            "description": "New title of the incident."
+          },
+          "impact_override": {
+            "type": "string",
+            "description": "Impact to show instead of the computed one.",
+            "enum": [
+              "none",
+              "maintenance",
+              "minor",
+              "major",
+              "critical"
+            ]
+          },
+          "components": {
+            "type": "object",
+            "description": "Component statuses to set with this change, as a map of component id to status, e.g. {\"8kbf7d35c070\": \"major_outage\"}. Values: operational, under_maintenance, degraded_performance, partial_outage, major_outage. Component ids from `statuspage_list_components`.",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "operational",
+                "under_maintenance",
+                "degraded_performance",
+                "partial_outage",
+                "major_outage"
+              ]
+            }
+          },
+          "component_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the components affected by the incident (listed on it). Use `components` to also change their status."
+          },
+          "scheduled_for": {
+            "type": "string",
+            "description": "New start of a maintenance window, ISO 8601."
+          },
+          "scheduled_until": {
+            "type": "string",
+            "description": "New end of a maintenance window, ISO 8601."
+          },
+          "deliver_notifications": {
+            "type": "boolean",
+            "description": "Notify the page's subscribers (email, SMS, webhooks, Slack) about this change. Default true; set false to change the page quietly."
+          }
+        },
+        "required": [
+          "page_id",
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/pages/{page_id}/incidents/{incident_id}",
+        "bodyMapping": {
+          "incident": {
+            "status": "$status",
+            "body": "$body",
+            "name": "$name",
+            "impact_override": "$impact_override",
+            "components": "$components",
+            "component_ids": "$component_ids",
+            "scheduled_for": "$scheduled_for",
+            "scheduled_until": "$scheduled_until",
+            "deliver_notifications": "$deliver_notifications"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "statuspage_edit_incident_update",
+      "description": "Correct a previous update of an incident: change its text or the time it is displayed at. Does not change the incident's status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `statuspage_list_incidents` or one of the other incident lists."
+          },
+          "incident_update_id": {
+            "type": "string",
+            "description": "Update id, from `incident_updates[].id` in `statuspage_get_incident`."
+          },
+          "body": {
+            "type": "string",
+            "description": "Corrected text of the update."
+          },
+          "display_at": {
+            "type": "string",
+            "description": "Time the update is shown as posted, ISO 8601."
+          },
+          "deliver_notifications": {
+            "type": "boolean",
+            "description": "Send the corrected update to subscribers again."
+          },
+          "wants_twitter_update": {
+            "type": "boolean",
+            "description": "Also post the change to the connected Twitter (X) account."
+          }
+        },
+        "required": [
+          "page_id",
+          "incident_id",
+          "incident_update_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/pages/{page_id}/incidents/{incident_id}/incident_updates/{incident_update_id}",
+        "bodyMapping": {
+          "incident_update": {
+            "body": "$body",
+            "display_at": "$display_at",
+            "deliver_notifications": "$deliver_notifications",
+            "wants_twitter_update": "$wants_twitter_update"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "statuspage_delete_incident",
+      "description": "Delete an incident or maintenance and all its updates from the page and its history. Cannot be undone; resolve the incident instead unless it was opened by mistake. Switched off by default.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `statuspage_list_incidents` or one of the other incident lists."
+          }
+        },
+        "required": [
+          "page_id",
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/pages/{page_id}/incidents/{incident_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "statuspage_get_postmortem",
+      "description": "Get the postmortem of an incident: draft or published body, publish time and whether subscribers and Twitter were notified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `statuspage_list_incidents` or one of the other incident lists."
+          }
+        },
+        "required": [
+          "page_id",
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/incidents/{incident_id}/postmortem"
+      }
+    },
+    {
+      "name": "statuspage_list_incident_templates",
+      "description": "List the incident and maintenance templates of a page: name, title, body, status to apply, affected components and the default notification and tweet choices. Use one to fill `statuspage_create_incident` with consistent wording.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/incident_templates",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_create_incident_template",
+      "description": "Create an incident or maintenance template with a name, title and message, the status to apply and the components it affects.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Template name, as shown in the Templates list."
+          },
+          "title": {
+            "type": "string",
+            "description": "Incident or maintenance title the template fills in."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message the template fills in as the first update."
+          },
+          "update_status": {
+            "type": "string",
+            "description": "Status the incident moves to when the template is used.",
+            "enum": [
+              "investigating",
+              "identified",
+              "monitoring",
+              "resolved",
+              "scheduled",
+              "in_progress",
+              "verifying",
+              "completed"
+            ]
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Id of the template group it belongs to."
+          },
+          "component_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the components the template marks as affected."
+          },
+          "should_send_notifications": {
+            "type": "boolean",
+            "description": "Tick deliver notifications by default when the template is used."
+          },
+          "should_tweet": {
+            "type": "boolean",
+            "description": "Tick tweet update by default when the template is used."
+          }
+        },
+        "required": [
+          "page_id",
+          "name",
+          "title",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pages/{page_id}/incident_templates",
+        "bodyMapping": {
+          "template": {
+            "name": "$name",
+            "title": "$title",
+            "body": "$body",
+            "update_status": "$update_status",
+            "group_id": "$group_id",
+            "component_ids": "$component_ids",
+            "should_send_notifications": "$should_send_notifications",
+            "should_tweet": "$should_tweet"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "statuspage_list_subscribers",
+      "description": "List or search the page's subscribers: id, mode (email, sms, webhook, slack, teams), contact, the components they follow, quarantine state and creation time. Contact details are personal data; only fetch them when needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "q": {
+            "type": "string",
+            "description": "Search the email address, webhook endpoint or phone number (not Slack subscribers)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only subscribers of this type.",
+            "enum": [
+              "email",
+              "sms",
+              "webhook",
+              "slack",
+              "teams",
+              "integration_partner"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "Only subscribers in this state (default active); all for every state.",
+            "enum": [
+              "active",
+              "unconfirmed",
+              "quarantined",
+              "all"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page. With `q` at most 100; without `q` there is no limit, so set one (e.g. 100) on large pages.",
+            "minimum": 1
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page offset, starting at 0 (not 1): skips page x limit subscribers.",
+            "minimum": 0
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Sort by the contact (primary), creation time, quarantine time or search relevance.",
+            "enum": [
+              "primary",
+              "created_at",
+              "quarantined_at",
+              "relevance"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/subscribers",
+        "queryParams": {
+          "q": "$q",
+          "type": "$type",
+          "state": "$state",
+          "limit": "$limit",
+          "page": "$page",
+          "sort_field": "$sort_field",
+          "sort_direction": "$sort_direction"
+        }
+      }
+    },
+    {
+      "name": "statuspage_get_subscriber",
+      "description": "Get one subscriber: mode, email, endpoint or phone number, the components they follow, quarantine and purge dates and creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "subscriber_id": {
+            "type": "string",
+            "description": "Subscriber id, from `statuspage_list_subscribers`."
+          }
+        },
+        "required": [
+          "page_id",
+          "subscriber_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/subscribers/{subscriber_id}"
+      }
+    },
+    {
+      "name": "statuspage_count_subscribers",
+      "description": "Count the page's subscribers, optionally only of one type or state. Cheaper than listing when only the number matters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only count subscribers of this type.",
+            "enum": [
+              "email",
+              "sms",
+              "webhook",
+              "slack",
+              "teams",
+              "integration_partner"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "Only count subscribers in this state (default active).",
+            "enum": [
+              "active",
+              "unconfirmed",
+              "quarantined",
+              "all"
+            ]
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/subscribers/count",
+        "queryParams": {
+          "type": "$type",
+          "state": "$state"
+        }
+      }
+    },
+    {
+      "name": "statuspage_get_subscriber_histogram",
+      "description": "Get the number of subscribers per type (email, sms, webhook, slack, teams) and state (active, unconfirmed, quarantined) in one call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/subscribers/histogram_by_state"
+      }
+    },
+    {
+      "name": "statuspage_list_unsubscribed_subscribers",
+      "description": "List the subscribers who unsubscribed from the page, with their contact and when they left.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/subscribers/unsubscribed",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_list_incident_subscribers",
+      "description": "List the people subscribed to one incident only (not to the whole page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `statuspage_list_incidents` or one of the other incident lists."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id",
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/incidents/{incident_id}/subscribers",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_create_subscriber",
+      "description": "Subscribe someone to the page by email, SMS (phone_number and phone_country) or webhook (endpoint and email), for the whole page or only some components. Sends a confirmation unless skipped.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address, for an email subscriber (and the contact of a webhook subscriber)."
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Webhook URL, for a webhook subscriber (send `email` with it)."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number as dialled inside `phone_country`, for an SMS subscriber."
+          },
+          "phone_country": {
+            "type": "string",
+            "description": "Two-letter country code of the phone number, e.g. US or DE."
+          },
+          "component_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the components the subscriber follows; leave out for the whole page. At least one id when given."
+          },
+          "skip_confirmation_notification": {
+            "type": "boolean",
+            "description": "Do not send the confirmation message; an email subscriber is then confirmed at once. Only with the person's consent."
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pages/{page_id}/subscribers",
+        "bodyMapping": {
+          "subscriber": {
+            "email": "$email",
+            "endpoint": "$endpoint",
+            "phone_number": "$phone_number",
+            "phone_country": "$phone_country",
+            "component_ids": "$component_ids",
+            "skip_confirmation_notification": "$skip_confirmation_notification"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "statuspage_unsubscribe_subscriber",
+      "description": "Unsubscribe a subscriber from the page. They stop receiving notifications and are told so unless skip_unsubscription_notification is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "subscriber_id": {
+            "type": "string",
+            "description": "Subscriber id, from `statuspage_list_subscribers`."
+          },
+          "skip_unsubscription_notification": {
+            "type": "boolean",
+            "description": "Do not tell the subscriber they were unsubscribed."
+          }
+        },
+        "required": [
+          "page_id",
+          "subscriber_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/pages/{page_id}/subscribers/{subscriber_id}",
+        "queryParams": {
+          "skip_unsubscription_notification": "$skip_unsubscription_notification"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "statuspage_list_metrics",
+      "description": "List the system metrics shown on the page (response time, error rate and so on): id, name, suffix, y-axis bounds, decimal places, display flag and the provider it comes from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of the result list, starting at 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Results per page, up to 100 (the default and maximum).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/metrics",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "statuspage_get_metric",
+      "description": "Get one metric's settings: name, suffix, tooltip, y-axis range, decimals, display flag, most recent data time and provider.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "metric_id": {
+            "type": "string",
+            "description": "Metric id, from `statuspage_list_metrics`."
+          }
+        },
+        "required": [
+          "page_id",
+          "metric_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/metrics/{metric_id}"
+      }
+    },
+    {
+      "name": "statuspage_add_metric_data",
+      "description": "Add one data point to a custom metric (one whose data you submit yourself): a value at a Unix timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          },
+          "metric_id": {
+            "type": "string",
+            "description": "Metric id, from `statuspage_list_metrics`."
+          },
+          "timestamp": {
+            "type": "integer",
+            "description": "Time of the data point, Unix seconds."
+          },
+          "value": {
+            "type": "number",
+            "description": "Value of the data point, in the metric's unit."
+          }
+        },
+        "required": [
+          "page_id",
+          "metric_id",
+          "timestamp",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pages/{page_id}/metrics/{metric_id}/data",
+        "bodyMapping": {
+          "data": {
+            "timestamp": "$timestamp",
+            "value": "$value"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "statuspage_list_metrics_providers",
+      "description": "List the metric providers connected to the page (Datadog, New Relic, Pingdom, Librato or self-submitted): id, type, state and when it last fetched data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id (12 characters, e.g. `gytm4qzbx9t6`), from `statuspage_list_pages` (`id`)."
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pages/{page_id}/metrics_providers"
+      }
+    }
+  ]
+}

@@ -1,0 +1,838 @@
+{
+  "slug": "microsoft-powerpoint",
+  "name": "PowerPoint (Microsoft 365)",
+  "description": "Let your AI work with PowerPoint presentations in OneDrive and SharePoint: find decks, read their details and version history, see a slide thumbnail, download them or get them as PDF, create new decks from a template, rename, move, check out and in, and restore an earlier version. Microsoft 365 through Microsoft Graph, signed in with your Microsoft account.",
+  "instructions": "## PowerPoint\nThis connector works with PowerPoint presentations (`.pptx`, `.pptm`, `.ppsx` and the older `.ppt`) stored in OneDrive or SharePoint through **Microsoft Graph v1.0** (`https://graph.microsoft.com/v1.0`, drive items): find presentations, read their details, version history and who has access, get them as PDF or as the original file, create new ones from a template, rename, move, check out and in, and restore an earlier version. Everything runs as the user who authorized the connector: the AI sees and changes exactly what that user can. Work or school accounts (Microsoft 365) are fully supported; personal OneDrive supports search, details, download, PDF, copy, rename and move.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com (or https://portal.azure.com) → **Applications → App registrations → New registration**.\n2. Name it (e.g. \"AnythingMCP Microsoft 365\") and choose the **supported account types**:\n   - *Accounts in this organizational directory only* (single tenant): set `MICROSOFT_TENANT_ID` to the **Directory (tenant) ID** shown on the app's Overview page (a GUID), or to your domain such as `contoso.onmicrosoft.com`.\n   - *Accounts in any organizational directory* (multi-tenant): set `MICROSOFT_TENANT_ID` to `organizations`.\n   - *... and personal Microsoft accounts*: set `MICROSOFT_TENANT_ID` to `common` (work, school and personal accounts) or `consumers` (personal accounts only).\n   The value must match the app's account type, otherwise Microsoft refuses the sign-in (AADSTS50194 or AADSTS50020).\n3. Under **Redirect URI** pick platform **Web** and enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: add `offline_access`, `User.Read`, `Files.ReadWrite` (and `Files.ReadWrite.All` for presentations in SharePoint, in Teams or shared with the user, see **Scopes**).\n5. **Certificates & secrets → New client secret**. Copy the secret **Value** (not the Secret ID); it is shown once. Note its expiry date: when it expires the connector stops working until you paste a new one.\n6. Paste the **Application (client) ID** into `MICROSOFT_CLIENT_ID`, the secret value into `MICROSOFT_CLIENT_SECRET`, the tenant value from step 2 into `MICROSOFT_TENANT_ID`, and install.\n7. On the connector page click **Authorize with Provider** and sign in with the account whose presentations the AI should work with. The refresh token is stored encrypted and access tokens (about 1 hour) are renewed automatically.\n\n**One Entra app for all Microsoft connectors**: the app registration made for the Outlook, OneDrive or Excel connector works here as well. Add the delegated permissions from step 4, keep the same redirect URI, and reuse the same `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `MICROSOFT_TENANT_ID`. Each connector asks only for its own scopes when you authorize it.\n\n**Admin consent**: these delegated permissions normally do not need an administrator, but many organisations turn off user consent. If the sign-in shows \"Need admin approval\" (AADSTS65001 or AADSTS90094), a tenant administrator opens the app registration → **API permissions → Grant admin consent for <organisation>** once.\n\n**Scopes**: `offline_access User.Read Files.ReadWrite`. `offline_access` is what makes Microsoft issue a refresh token. `Files.ReadWrite` covers the user's own OneDrive. For presentations in SharePoint libraries, in Teams channels or shared by other people, and for `microsoft_powerpoint_find_presentations`, add `Files.ReadWrite.All` to the app registration and replace `Files.ReadWrite` with it in the connector's OAuth settings, then authorize again. For a read-only setup, use `offline_access User.Read Files.Read.All`, authorize again, and disable `microsoft_powerpoint_copy_presentation`, `microsoft_powerpoint_rename_presentation`, `microsoft_powerpoint_move_presentation`, `microsoft_powerpoint_restore_version`, `microsoft_powerpoint_check_out` and `microsoft_powerpoint_check_in`.\n\n**Switched off at install**: `microsoft_powerpoint_create_sharing_link` and `microsoft_powerpoint_delete_presentation`; a sharing link hands the file to other people, and a presentation the AI reads could ask it to share or delete something, so an admin switches them on when the team needs them. Deleted presentations go to the recycle bin and can be restored there.\n\n**Finding a presentation**: every tool takes the presentation's `drive_id` and `item_id`.\n- In the user's OneDrive: `microsoft_powerpoint_search_my_presentations` (name and content search; it also returns other file types, keep the `.pptx` hits) or `microsoft_powerpoint_get_presentation_by_path` (e.g. `Documents/Sales/Pitch 2026.pptx`). Both return `id` and `parentReference.driveId`. `microsoft_powerpoint_get_my_drive` gives the OneDrive's own drive id.\n- Everywhere (OneDrive, SharePoint, Teams, shared with the user): `microsoft_powerpoint_find_presentations` with words or KQL, restricted to PowerPoint files. Hits are in `hitsContainers[0].hits[]`; use `resource.id` as `item_id` and `resource.parentReference.driveId` as `drive_id`. Work or school accounts only, with `Files.Read.All` or `Files.ReadWrite.All`.\n- Browsing: `microsoft_powerpoint_list_folder` with `item_id` `root` lists the top of a drive, then folder ids.\n\n**Reading**\n- `microsoft_powerpoint_get_presentation`: name, size, who created and last changed it and when, `webUrl` (opens it in PowerPoint for the web: give it to the user), `publication` (check-out state in SharePoint).\n- `microsoft_powerpoint_convert_to_pdf`: Microsoft 365 converts the presentation to PDF and the PDF is attached to the result, so the AI can read the text and layout. This is the way to read content: Graph has no API that returns the text of a presentation.\n- `microsoft_powerpoint_download_presentation`: the original `.pptx` file as an attachment, e.g. to hand it to another tool.\n- See the deck: `microsoft_powerpoint_get_thumbnail` returns a picture of the first slide (`large` is 800 px wide, or a custom size such as `c1600x900`); `microsoft_powerpoint_list_thumbnails` lists the sizes. For every slide, use `microsoft_powerpoint_convert_to_pdf`: each slide becomes a page.\n- History: `microsoft_powerpoint_list_versions` (newest first, ids like `4.0`), `microsoft_powerpoint_download_version` for an earlier one.\n- Access: `microsoft_powerpoint_list_permissions`.\nFiles over 10 MB are described but not attached; give the user the `webUrl` instead.\n\n**Creating and changing presentations**: Graph cannot write into a presentation, and this connector cannot upload PowerPoint files (an upload would need the file's bytes in the call). To create a new presentation, keep a template in OneDrive or SharePoint and use `microsoft_powerpoint_copy_presentation` with a new `name`: the copy runs in the background and appears in the target folder after a few seconds (`microsoft_powerpoint_list_folder` to get its id). Then `microsoft_powerpoint_rename_presentation` and `microsoft_powerpoint_move_presentation` organise it, and the user edits it through `webUrl`.\n- `microsoft_powerpoint_restore_version` makes an earlier version current; the replaced content stays in the history, so it can be undone. Work or school only.\n- SharePoint libraries that require check-out: `microsoft_powerpoint_check_out` before the user edits, `microsoft_powerpoint_check_in` with a comment afterwards. A file checked out by someone else answers 423 `resourceLocked`.\n- `microsoft_powerpoint_create_sharing_link` (switched off) makes a `view` or `edit` link for `anonymous`, `organization` or `users`.\n\n**Comments**: Microsoft Graph v1.0 has no API for comments or tracked changes inside PowerPoint files, so this connector cannot read or add them.\n\n**Pagination**: list and search answers carry `@odata.nextLink` while more results exist; call the same tool again with the same arguments and `skip_token` set to the `$skiptoken` (or `skipToken`) value in that link. `microsoft_powerpoint_find_presentations` pages with `from` and `size` (`moreResultsAvailable` says whether there are more).\n\n**Rate limits**: Microsoft Graph throttles per user and per app. A throttled call answers 429 or 503 with Retry-After; wait and retry. Converting a large presentation to PDF can take some seconds.\n\n**Common errors**\n- 401 `InvalidAuthenticationToken`: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 `accessDenied`: a permission is missing or not consented, or the presentation belongs to someone else and the scope lacks `Files.ReadWrite.All`. `microsoft_powerpoint_find_presentations` answers 403 without `Files.Read.All` or `Files.ReadWrite.All`.\n- 404 `itemNotFound`: wrong drive or item id, or the item was deleted. A version id that does not exist also answers 404.\n- 406 or 415 on `microsoft_powerpoint_convert_to_pdf`: the file type cannot be converted, or the file is password protected.\n- 409 `nameAlreadyExists`: a file with that name exists in the folder; pick another name or `conflict_behavior` `rename`.\n- 423 `resourceLocked`: the file is checked out or locked for editing.\n\n**Out of scope here**: uploading PowerPoint files, editing their content, comments, and SharePoint site management (use the Microsoft SharePoint connector).",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "microsoft-powerpoint",
+  "docsUrl": "https://learn.microsoft.com/en-us/graph/api/resources/driveitem",
+  "aliases": [
+    "Microsoft PowerPoint",
+    "PowerPoint Online",
+    "MS PowerPoint"
+  ],
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center → App registrations → your app → Overview: Application (client) ID. The app registration made for the Outlook connector works here too.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "help": "Same app → Certificates & secrets → New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant",
+      "kind": "setting",
+      "help": "Single-tenant app: the Directory (tenant) ID from the app's Overview page (or your domain, e.g. contoso.onmicrosoft.com). Multi-tenant app: organizations. App that also accepts personal accounts: common (or consumers for personal accounts only).",
+      "example": "organizations",
+      "pattern": "^(common|organizations|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use a tenant GUID, a verified domain such as contoso.onmicrosoft.com, or one of common, organizations, consumers."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
+    "403": "The app lacks a Graph permission or consent for it. Add Files.ReadWrite (or Files.ReadWrite.All) and User.Read as delegated permissions, grant admin consent if your organisation requires it, and authorize again.",
+    "404": "Microsoft Graph found no OneDrive for this account. Work or school accounts need a OneDrive licence, and the user must have opened OneDrive once.",
+    "rate_limited": "Microsoft Graph is throttling this account. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "microsoft_powerpoint_get_my_drive"
+  },
+  "prerequisites": "An app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated Graph permissions `offline_access`, `User.Read` and `Files.ReadWrite` (`Files.ReadWrite.All` for presentations in SharePoint, in Teams or shared with the user), and a client secret. The app registration of the Outlook, OneDrive or Excel connector can be reused: add the permission to it. Some organisations only let an admin grant consent.",
+  "connector": {
+    "name": "PowerPoint (Microsoft Graph)",
+    "type": "REST",
+    "baseUrl": "https://graph.microsoft.com/v1.0",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "offline_access User.Read Files.ReadWrite"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me/drive"
+  },
+  "tools": [
+    {
+      "name": "microsoft_powerpoint_get_my_drive",
+      "description": "Get the signed-in user's OneDrive: drive id (the drive_id for presentations stored there), type (personal or business), owner, storage quota and webUrl. A cheap check that the connector works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive",
+        "queryParams": {
+          "$select": "id,driveType,name,owner,quota,webUrl"
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_search_my_presentations",
+      "description": "Search the user's own OneDrive by name, metadata and content, e.g. \"offer 2026\". Graph returns every file type that matches: keep the hits whose name ends in .pptx (or whose file.mimeType is the PowerPoint type). Returns id, name, size, dates, parentReference.driveId (the drive_id the other tools need) and webUrl. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, e.g. \"offer 2026\". Write a single quote as two (''), e.g. \"O''Brien\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (default 200).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/root/search(q='{query}')",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,remoteItem,shared",
+          "$top": "$top",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_find_presentations",
+      "description": "Find PowerPoint presentations everywhere the user has access (their OneDrive, SharePoint sites, Teams files, files shared with them) with Microsoft Search. The query is restricted to PowerPoint files. Supports KQL, e.g. \"budget\", \"author:\\\"Ana Diaz\\\"\", \"*\" for all. Returns hitsContainers[0].hits with summary and resource (id, name, webUrl, parentReference.driveId, lastModifiedDateTime). Work or school accounts only; needs Files.Read.All or Files.ReadWrite.All in the scopes. Page with from and size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search words or KQL, e.g. \"quarterly review\", \"author:\\\"Ana Diaz\\\"\", or \"*\" for all PowerPoint presentations."
+          },
+          "from": {
+            "type": "integer",
+            "description": "0-based offset of the first hit, for the next page (from + size of the previous call).",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Hits per page, 1 to 500 (default 25).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/query",
+        "bodyMapping": {
+          "requests": [
+            {
+              "entityTypes": [
+                "driveItem"
+              ],
+              "query": {
+                "queryString": "$query",
+                "queryTemplate": "({searchTerms}) (filetype:pptx OR filetype:pptm OR filetype:ppt)"
+              },
+              "from": "$from",
+              "size": "$size"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_list_folder",
+      "description": "List the files and folders inside a folder of a drive (item_id \"root\" for its top level), to browse to a presentation. Returns id, name, size, dates, file or folder facet, parentReference and webUrl. Paginate with skip_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id: the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, or parentReference.driveId of an item in a SharePoint library."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Id of the folder, from a list or search result, or \"root\" for the top of the drive."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Items per page (default 200).",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "skip_token": {
+            "type": "string",
+            "description": "To fetch the next page, pass the $skiptoken (or skipToken) value from the @odata.nextLink of the previous response, with the same other arguments."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/children",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,lastModifiedBy,parentReference,file,folder,remoteItem,shared",
+          "$top": "$top",
+          "$skiptoken": "$skip_token"
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_get_presentation",
+      "description": "Get a presentation's details: name, size, created and last modified (when and by whom), folder (parentReference), mimeType and hashes, sharing state, check-out state (publication), eTag and webUrl, the link that opens it in PowerPoint for the web. Does not return the content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,createdBy,lastModifiedBy,parentReference,file,folder,shared,description,eTag,cTag,publication"
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_get_presentation_by_path",
+      "description": "Get a presentation in the user's own OneDrive by its path, e.g. \"Documents/Sales/Pitch 2026.pptx\". Returns the same details as microsoft_powerpoint_get_presentation, including id and parentReference.driveId for the other tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path from the top of the OneDrive without a leading slash, e.g. \"Documents/Sales/Pitch 2026.pptx\". Names containing #, % or ? cannot be addressed by path: use microsoft_powerpoint_search_my_presentations."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/drive/root:/{path}",
+        "queryParams": {
+          "$select": "id,name,size,webUrl,createdDateTime,lastModifiedDateTime,createdBy,lastModifiedBy,parentReference,file,folder,shared,description,eTag,cTag,publication"
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_download_presentation",
+      "description": "Download the presentation file itself (.pptx), as it is stored. It is handed over as an attached file, not as text, up to 10 MB. To read the text, prefer microsoft_powerpoint_convert_to_pdf.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/content",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_convert_to_pdf",
+      "description": "Get the presentation converted to PDF by Microsoft 365 (works for .pptx, .ppt, .ppsx, .pps and .odp files), attached to the result as a PDF file up to 10 MB that the AI can read. Converting a large file can take some seconds. The stored file is not changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/content",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "pdf"
+        }
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_list_thumbnails",
+      "description": "List the thumbnail images Microsoft 365 made of the presentation's first slide: sizes small, medium and large with width, height and a short-lived url. Use microsoft_powerpoint_get_thumbnail to see one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/thumbnails",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_get_thumbnail",
+      "description": "Get a picture of the presentation's first slide, returned as an image the AI can look at. size: small (96 px wide), medium (176 px), large (800 px), or a custom size such as c1600x900 (fits within 1600 x 900).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "size": {
+            "type": "string",
+            "description": "small, medium, large, or a custom bounding box cWIDTHxHEIGHT, e.g. c1600x900.",
+            "default": "large",
+            "pattern": "^(small|medium|large|c[0-9]{1,4}x[0-9]{1,4})$"
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/thumbnails/0/{size}/content",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 4194304
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_list_versions",
+      "description": "List the presentation's version history: each version's id (e.g. \"4.0\"), when and by whom it was saved, and size, newest first. Download one with microsoft_powerpoint_download_version or bring it back with microsoft_powerpoint_restore_version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/versions",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_download_version",
+      "description": "Download an earlier version of the presentation as an attached file (up to 10 MB), e.g. to compare it with the current one. The current file is not changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "version_id": {
+            "type": "string",
+            "description": "Version id from microsoft_powerpoint_list_versions, e.g. \"3.0\" on work or school accounts."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "version_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/versions/{version_id}/content",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_list_permissions",
+      "description": "List who has access to the presentation: each permission's id, roles (read, write, owner), the people or groups granted (grantedToV2, grantedToIdentitiesV2), sharing links (link.type, link.scope, link.webUrl), inheritance and expiry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/drives/{drive_id}/items/{item_id}/permissions",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_copy_presentation",
+      "description": "Create a new presentation as a copy of an existing one, typically a template (e.g. \"Templates/Company deck.pptx\"), in a target folder under a new name. Runs asynchronously: Graph answers 202 with no body and the copy appears shortly after; find it with microsoft_powerpoint_list_folder. Needs the target drive id and folder id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation (or template) to copy."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation (or template) to copy."
+          },
+          "destination_drive_id": {
+            "type": "string",
+            "description": "Drive id of the target folder: the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive."
+          },
+          "destination_folder_id": {
+            "type": "string",
+            "description": "Id of the target folder, from microsoft_powerpoint_list_folder or a search result. For the top folder use the real id that microsoft_powerpoint_list_folder results carry in parentReference.id, not \"root\"."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the new presentation, with extension, e.g. \"Pitch Rossi 2026.pptx\" (default: the original's name)."
+          },
+          "conflict_behavior": {
+            "type": "string",
+            "description": "When the name exists in the target: \"fail\" (default) or \"rename\" (Graph appends a number). Personal OneDrive ignores it.",
+            "enum": [
+              "fail",
+              "rename"
+            ],
+            "default": "fail"
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "destination_drive_id",
+          "destination_folder_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/copy",
+        "encodePathParams": true,
+        "queryParams": {
+          "@microsoft.graph.conflictBehavior": "$conflict_behavior"
+        },
+        "bodyMapping": {
+          "parentReference": {
+            "driveId": "$destination_drive_id",
+            "id": "$destination_folder_id"
+          },
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_rename_presentation",
+      "description": "Rename a presentation in place. Keep the extension (.pptx). Returns the item's id, name, parentReference and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name with extension, e.g. \"Pitch Rossi 2026.pptx\". Not allowed: \" * : < > ? / \\ |."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/drives/{drive_id}/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_move_presentation",
+      "description": "Move a presentation into another folder of the same drive, optionally renaming it on the way. Returns the item's id, name, new parentReference and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "new_parent_id": {
+            "type": "string",
+            "description": "Id of the target folder in the same drive, from microsoft_powerpoint_list_folder or a search result."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional new name, with extension."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "new_parent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/drives/{drive_id}/items/{item_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "parentReference": {
+            "id": "$new_parent_id"
+          },
+          "name": "$name"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "['@microsoft.graph.downloadUrl']"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_restore_version",
+      "description": "Make an earlier version the current content of the presentation. The content it replaces stays in the version history as a version of its own, so this can be undone by restoring that one. OneDrive for work or school and SharePoint only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "version_id": {
+            "type": "string",
+            "description": "Version id from microsoft_powerpoint_list_versions, e.g. \"3.0\" on work or school accounts."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "version_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/versions/{version_id}/restoreVersion",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_check_out",
+      "description": "Check out a presentation in a SharePoint library that requires check-out, so that only the user can change it until it is checked in. Answers 204 with no body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/checkout",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_check_in",
+      "description": "Check a checked-out presentation back in, with a comment that is stored with the new version, so other people see the changes and can edit it again. Answers 204 with no body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Check-in comment stored with the version, e.g. \"Prices updated\"."
+          },
+          "check_in_as": {
+            "type": "string",
+            "description": "\"published\" to publish a major version where the library uses minor versions; leave out otherwise.",
+            "enum": [
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/checkin",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "comment": "$comment",
+          "checkInAs": "$check_in_as"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "microsoft_powerpoint_create_sharing_link",
+      "description": "Create a sharing link for the presentation: type \"view\" or \"edit\", scope \"anonymous\" (anyone with the link, if the organisation allows it), \"organization\" (people in the organisation) or \"users\" (only people already given access). Returns the link with its webUrl. Installed switched off: a link gives other people access to the file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          },
+          "type": {
+            "type": "string",
+            "description": "Link type.",
+            "enum": [
+              "view",
+              "edit"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "description": "Who the link works for. Personal OneDrive supports only anonymous.",
+            "enum": [
+              "anonymous",
+              "organization",
+              "users"
+            ]
+          },
+          "expiration_date_time": {
+            "type": "string",
+            "description": "Optional ISO 8601 expiry, e.g. 2026-12-31T23:00:00Z (where the organisation allows expiring links)."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/drives/{drive_id}/items/{item_id}/createLink",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "type": "$type",
+          "scope": "$scope",
+          "expirationDateTime": "$expiration_date_time"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "microsoft_powerpoint_delete_presentation",
+      "description": "Delete a presentation. It goes to the recycle bin of the OneDrive or SharePoint site, where the user can restore it. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "description": "Drive id of the presentation: parentReference.driveId from a search or list result, or the id from microsoft_powerpoint_get_my_drive for the user's own OneDrive, e.g. b!s8RqPCGh0ESQS2EYnKM0IKS3lM7GxjdAviiob7oc5pXv_0LiL-62Qq3IXyrXnEop."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Item id of the presentation in that drive, from a search or list result. Work or school ids look like 01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K, personal ones like D4648F06C91D9D3D!54927."
+          }
+        },
+        "required": [
+          "drive_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/drives/{drive_id}/items/{item_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    }
+  ]
+}

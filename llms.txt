@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 572 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 679 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ## Getting started
 
@@ -11,6 +11,7 @@
 ## Connectors
 
 - [SQL database to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/database.md): AnythingMCP lets Claude, ChatGPT and Copilot query PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, Oracle, SAP HANA, SQLite and MongoDB through MCP,...
+- [Email (IMAP/SMTP) to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/email.md): An Email connector gives Claude, ChatGPT and Copilot a mailbox through MCP: IMAP to read, search and organise mail, SMTP to send it.
 - [GraphQL to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/graphql.md): AnythingMCP turns any GraphQL API into MCP tools for Claude, ChatGPT and Copilot without code.
 - [LOGIN_TOKEN Authentication](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/login-token-auth.md): Build connectors that exchange credentials for cached bearer tokens with automatic refresh and re-login.
 - [MCP Bridge Connector — MCP-to-MCP Gateway](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/mcp-bridge.md): The MCP Bridge connector lets you connect to other MCP servers and re-expose their tools through AnythingMCP.

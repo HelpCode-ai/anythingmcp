@@ -1,0 +1,1552 @@
+{
+  "slug": "appstle-subscriptions",
+  "name": "Appstle Subscriptions",
+  "aliases": [
+    "Appstle",
+    "Appstle Subscription App"
+  ],
+  "description": "Manage Shopify subscriptions in Appstle from any AI agent: find subscription contracts and customers, see upcoming and past renewal orders, pause, resume or cancel, skip and reschedule orders, change frequency and next billing date, add, swap or remove products, apply discounts, update the delivery address, and read selling plans, swap rules, retention activity and revenue per subscription.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "appstle-subscriptions",
+  "docsUrl": "https://developers.appstle.com/subscription/introduction",
+  "instructions": "## Appstle Subscriptions\nThis connector uses the **Appstle Subscriptions Admin API** (`https://subscription-admin.appstle.com/api/external/v2`) of Appstle, the subscription app for Shopify stores. It reads subscription contracts, customers, upcoming and past renewal orders (billing attempts), subscription groups and selling plans, product swap rules, retention activity and per-contract revenue, and it can manage subscriptions: pause, resume, cancel, skip or reschedule orders, change frequency and next billing date, add, swap or remove products, apply or remove discounts, and change the delivery address.\n\n**Setup (2 minutes)**\n1. In the Shopify admin open the Appstle Subscriptions app, then **Settings**, **API Key Management** (API access needs an Appstle plan that includes it).\n2. Create an API key (up to 10 per store) and paste it into `APPSTLE_API_KEY`. It is sent in the `X-API-Key` header and gives full access to the store's subscriptions: keep it secret.\n3. Run `appstle_subscriptions_list_subscription_contracts` to check the key.\n\n**Workflow**\n- Find a subscription: `appstle_subscriptions_list_subscription_contracts` (by status, customer name or email, order number, product, next billing date), or `appstle_subscriptions_list_customers` then `appstle_subscriptions_get_customer`, `appstle_subscriptions_list_customer_subscriptions`. `appstle_subscriptions_get_contract` gives the full contract with line ids and discount ids.\n- Orders: `appstle_subscriptions_list_upcoming_orders` gives the billing attempt ids of the next orders; `appstle_subscriptions_list_past_orders` the processed renewals; `appstle_subscriptions_get_contract_fulfillments` tracking of the latest order.\n- Skips and dates: `appstle_subscriptions_skip_order`, `appstle_subscriptions_skip_upcoming_order`, `appstle_subscriptions_unskip_order`, `appstle_subscriptions_reschedule_order`, `appstle_subscriptions_update_next_billing_date`; `appstle_subscriptions_bill_order_now` charges an order at once.\n- Pause and cancel: `appstle_subscriptions_update_contract_status` pauses (PAUSED) or resumes (ACTIVE); `appstle_subscriptions_cancel_contract` cancels for good.\n- Frequency: `appstle_subscriptions_update_billing_interval`, `appstle_subscriptions_update_delivery_interval`, or switch the selling plan with `appstle_subscriptions_update_line_item` (`selling_plan_name` from `appstle_subscriptions_list_selling_plans`).\n- Products and swaps: `appstle_subscriptions_add_line_item`, `appstle_subscriptions_update_line_item`, `appstle_subscriptions_remove_line_item`; `appstle_subscriptions_list_product_swaps` shows the automatic swap rules.\n- Discounts: `appstle_subscriptions_apply_discount_code`, `appstle_subscriptions_add_custom_discount`, `appstle_subscriptions_remove_discount`.\n- Delivery and payment: `appstle_subscriptions_get_delivery_options`, `appstle_subscriptions_update_shipping_address`, `appstle_subscriptions_update_order_note`, `appstle_subscriptions_send_payment_method_update_email`.\n- Plans: `appstle_subscriptions_list_subscription_groups`, `appstle_subscriptions_get_subscription_group`, `appstle_subscriptions_list_selling_plans`.\n- Analytics: `appstle_subscriptions_get_contract_analytics`, `appstle_subscriptions_get_contract_current_cycle` per contract; `appstle_subscriptions_get_past_orders_report` (status SUCCESS for revenue, FAILURE for failed payments) and `appstle_subscriptions_list_retention_activities` (cancel and pause flows) across the shop.\n- Customer self-service: `appstle_subscriptions_get_customer_portal_link` creates a login link to the customer portal.\n\n**Writes** change real subscriptions and usually email the customer. Before a pause, skip, date or product change, say what will change and wait for a yes. `appstle_subscriptions_cancel_contract` and `appstle_subscriptions_bill_order_now` are installed switched off: an admin switches them on when the team needs them.\n\n**Reading the answers**: ids are numeric (contract, customer, billing attempt, group, product, variant), except line ids and discount ids, which are full Shopify GraphQL ids (`gid://shopify/SubscriptionLine/...`): pass them exactly as returned. Dates are ISO 8601 with time zone (`2026-11-01T00:00:00Z`). Amounts are in the shop currency. Statuses: contracts ACTIVE, PAUSED, CANCELLED; billing attempts QUEUED (upcoming), SUCCESS, FAILURE, SKIPPED and others.\n\n**Paging**: list tools take `page` (from 0) and `size` (default 20, at most 2000). The total is in `_headers.x-total-count`; the `link` header gives the next page. `sort` takes database column names in snake_case with a direction, e.g. `next_billing_date,asc`. `appstle_subscriptions_get_customer` pages contracts with `cursor`.\n\n**Errors**: 401 or 403 means the API key is wrong, revoked or the plan has no API access. 400 explains a refused change (e.g. a date in the past, a line below the minimum, an order that is no longer QUEUED). 404 an unknown id. 429 a rate limit: wait and retry.",
+  "prerequisites": "A Shopify store with the Appstle Subscriptions app on a plan with API access, and an API key from Appstle Settings, API Key Management.",
+  "requiredEnvVars": [
+    "APPSTLE_API_KEY"
+  ],
+  "envVarMeta": {
+    "APPSTLE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Appstle Subscriptions in the Shopify admin, Settings, API Key Management: create a key and copy it.",
+      "link": "https://developers.appstle.com/subscription/authentication",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Appstle did not accept the API key. Copy it again from Settings, API Key Management in the Appstle app; it may have been deleted.",
+    "403": "The key was accepted but may not do this. Check that the Appstle plan includes API access.",
+    "rate_limited": "Appstle is rate limiting this key. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "appstle_subscriptions_list_subscription_contracts",
+    "params": {
+      "size": 1
+    }
+  },
+  "connector": {
+    "name": "Appstle Subscriptions Admin API",
+    "type": "REST",
+    "baseUrl": "https://subscription-admin.appstle.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-Key",
+      "apiKey": "{{APPSTLE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "appstle_subscriptions_list_subscription_contracts",
+      "description": "List and search subscription contracts of the shop: contract id, status, customer name and email, next billing date, billing and delivery interval, products (contractDetailsJson), order amount and the initial order. Filter by status, dates, customer, order number, product, variant, selling plan, plan type or amount. The total count is in _headers.x-total-count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only contracts with this status.",
+            "enum": [
+              "ACTIVE",
+              "PAUSED",
+              "CANCELLED"
+            ]
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Part of the customer name or email (case-insensitive)."
+          },
+          "order_name": {
+            "type": "string",
+            "description": "Order number such as #1001 (initial or later orders, partial match)."
+          },
+          "subscription_contract_id": {
+            "type": "string",
+            "description": "Contract id or part of it."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created on or after, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created on or before, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Updated on or after, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Updated on or before, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "next_billing_from": {
+            "type": "string",
+            "description": "Next billing date on or after, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z. Needs next_billing_to as well."
+          },
+          "next_billing_to": {
+            "type": "string",
+            "description": "Next billing date on or before, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z. Needs next_billing_from as well."
+          },
+          "delivery_interval": {
+            "type": "string",
+            "description": "Delivery interval unit (Appstle names this filter billingPolicyInterval).",
+            "enum": [
+              "DAY",
+              "WEEK",
+              "MONTH",
+              "YEAR"
+            ]
+          },
+          "delivery_interval_count": {
+            "type": "integer",
+            "description": "Delivery interval count (Appstle names this filter billingPolicyIntervalCount)."
+          },
+          "plan_type": {
+            "type": "string",
+            "description": "prepaid (billed for several deliveries at once) or non-prepaid.",
+            "enum": [
+              "prepaid",
+              "non-prepaid"
+            ]
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Only contracts containing this Shopify product id (numeric)."
+          },
+          "variant_id": {
+            "type": "integer",
+            "description": "Only contracts containing this Shopify variant id (numeric)."
+          },
+          "selling_plan_id": {
+            "type": "integer",
+            "description": "Only contracts on this selling plan id (numeric)."
+          },
+          "min_order_amount": {
+            "type": "number",
+            "description": "Lowest order amount (sum of quantity times current price)."
+          },
+          "max_order_amount": {
+            "type": "number",
+            "description": "Highest order amount."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Items per page (at most 2000).",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 2000
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort by a database column name and direction, e.g. next_billing_date,asc or created_at,desc (snake_case, not camelCase)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-contract-details",
+        "queryParams": {
+          "status": "$status",
+          "customerName": "$customer_name",
+          "orderName": "$order_name",
+          "subscriptionContractId": "$subscription_contract_id",
+          "fromCreatedDate": "$created_from",
+          "toCreatedDate": "$created_to",
+          "fromUpdatedDate": "$updated_from",
+          "toUpdatedDate": "$updated_to",
+          "fromNextDate": "$next_billing_from",
+          "toNextDate": "$next_billing_to",
+          "billingPolicyInterval": "$delivery_interval",
+          "billingPolicyIntervalCount": "$delivery_interval_count",
+          "planType": "$plan_type",
+          "productId": "$product_id",
+          "variantId": "$variant_id",
+          "sellingPlanId": "$selling_plan_id",
+          "minOrderAmount": "$min_order_amount",
+          "maxOrderAmount": "$max_order_amount",
+          "page": "$page",
+          "size": "$size",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "appstle_subscriptions_get_contract",
+      "description": "One subscription contract as Shopify holds it: status, next billing date, billing and delivery policy, lines (with the line ids the line tools need, variant, quantity, price, selling plan), discounts (with discount ids), delivery method and address, customer and payment method.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-contracts/contract-external/{contract_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_get_contract_analytics",
+      "description": "Revenue analytics of one contract: total revenue generated, number of successful orders and the formatted revenue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-contract-details/analytics/{contract_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_get_contract_current_cycle",
+      "description": "Current billing cycle number of a contract (how many successful billings so far, the initial order counting as 1).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-contract-details/current-cycle/{contract_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_get_contract_fulfillments",
+      "description": "Fulfillment of the latest successful order of a contract: shipment status, tracking numbers and links, delivery estimate and fulfilled line items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-contract-details/subscription-fulfillments/{contract_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_get_delivery_options",
+      "description": "Delivery methods a contract can switch to, based on its address and products (shipping, local delivery, pickup).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/data/contract-delivery-options",
+        "queryParams": {
+          "contractId": "$contract_id"
+        }
+      }
+    },
+    {
+      "name": "appstle_subscriptions_list_upcoming_orders",
+      "description": "Upcoming (QUEUED) orders of a contract or a customer, by billing date: billing attempt id, billing date and status. The billing attempt id is what the skip, unskip, reschedule and bill-now tools take.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Shopify customer id (numeric, without the gid:// prefix)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-billing-attempts/top-orders",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "customerId": "$customer_id"
+        }
+      }
+    },
+    {
+      "name": "appstle_subscriptions_list_past_orders",
+      "description": "Past (processed) renewal orders of the shop, a contract or a customer: successful, failed and skipped billing attempts with order id and name, billing date, status and error. Initial checkout orders are not included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Shopify customer id (numeric, without the gid:// prefix)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Items per page (at most 2000).",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 2000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-billing-attempts/past-orders",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "customerId": "$customer_id",
+          "page": "$page",
+          "size": "$size"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "appstle_subscriptions_get_past_orders_report",
+      "description": "Report of renewal billing attempts across the shop by status (e.g. FAILURE for failed payments, SUCCESS, SKIPPED), with date range, retry count and contract status filters: the base for revenue, churn and dunning analysis.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Billing attempt status to report on.",
+            "enum": [
+              "SUCCESS",
+              "FAILURE",
+              "SKIPPED",
+              "QUEUED",
+              "REQUESTING",
+              "PROGRESS",
+              "CONTRACT_CANCELLED",
+              "CONTRACT_ENDED",
+              "CONTRACT_PAUSED",
+              "AUTO_CHARGE_DISABLED",
+              "SHOPIFY_EXCEPTION",
+              "SKIPPED_DUNNING_MGMT",
+              "SKIPPED_INVENTORY_MGMT",
+              "IMMEDIATE_TRIGGERED",
+              "SECURITY_CHALLENGE",
+              "CONTRACT_PAUSED_MAX_CYCLES",
+              "REFUNDED",
+              "PENDING"
+            ]
+          },
+          "from_day": {
+            "type": "string",
+            "description": "From, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "to_day": {
+            "type": "string",
+            "description": "To, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "contract_status": {
+            "type": "string",
+            "description": "Only contracts with this status, e.g. ACTIVE, PAUSED, CANCELLED."
+          },
+          "attempt_count": {
+            "type": "integer",
+            "description": "Only attempts with this retry count."
+          },
+          "include_shopify_exception": {
+            "type": "boolean",
+            "description": "Include the Shopify error for failures."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Items per page (at most 2000).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 2000
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-billing-attempts/past-orders/report",
+        "queryParams": {
+          "status": "$status",
+          "fromDay": "$from_day",
+          "toDay": "$to_day",
+          "contractId": "$contract_id",
+          "contractStatus": "$contract_status",
+          "attemptCount": "$attempt_count",
+          "includeShopifyException": "$include_shopify_exception",
+          "page": "$page",
+          "size": "$size"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "appstle_subscriptions_list_customers",
+      "description": "Customers that have subscriptions, with name, email, number of subscriptions and their status. Filter by name or exact email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Part of the customer name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Exact email address."
+          },
+          "active_more_than_one_subscription": {
+            "type": "boolean",
+            "description": "Only customers with more than one active subscription."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Items per page (at most 2000).",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 2000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-contract-details/customers",
+        "queryParams": {
+          "name": "$name",
+          "email": "$email",
+          "activeMoreThanOneSubscription": "$active_more_than_one_subscription",
+          "page": "$page",
+          "size": "$size"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "appstle_subscriptions_get_customer",
+      "description": "One customer with profile (name, email, phone, addresses), payment methods and a page of their subscription contracts. Page the contracts with cursor = pageInfo.endCursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Shopify customer id (numeric, without the gid:// prefix)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "pageInfo.endCursor from the previous answer."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-customers/{customer_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "appstle_subscriptions_list_customer_subscriptions",
+      "description": "All valid (active, paused or otherwise not deleted) subscription contracts of one customer with full details: status, products, billing and delivery schedule, prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Shopify customer id (numeric, without the gid:// prefix)."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-customers-detail/valid/{customer_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_get_customer_portal_link",
+      "description": "Create a time-limited link to the customer portal where a customer manages their own subscriptions. Look the customer up by id or email. The link logs in as that customer: give it only to that customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Shopify customer id (numeric, without the gid:// prefix)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Customer email, instead of customer_id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/manage-subscription-link",
+        "queryParams": {
+          "customerId": "$customer_id",
+          "emailId": "$email"
+        }
+      }
+    },
+    {
+      "name": "appstle_subscriptions_list_subscription_groups",
+      "description": "Subscription groups (Shopify selling plan groups) with their selling plans (frequency, discount, prepaid settings) and the products and variants they apply to.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-groups"
+      }
+    },
+    {
+      "name": "appstle_subscriptions_get_subscription_group",
+      "description": "One subscription group (selling plan group) by id with its plans and products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "description": "Subscription group id (numeric), from appstle_subscriptions_list_subscription_groups."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-groups/{group_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_list_selling_plans",
+      "description": "Every selling plan across all subscription groups in one flat list: selling plan id and name, frequency, discount and group. Use the id or name with appstle_subscriptions_update_line_item.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/subscription-groups/all-selling-plans"
+      }
+    },
+    {
+      "name": "appstle_subscriptions_list_product_swaps",
+      "description": "Product swap automations of the shop: rules that replace products in subscription orders after a number of cycles, with source and destination variants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rule_name": {
+            "type": "string",
+            "description": "Only rules with this name."
+          },
+          "source_variants": {
+            "type": "string",
+            "description": "Only rules with these source variant ids."
+          },
+          "destination_variants": {
+            "type": "string",
+            "description": "Only rules with these destination variant ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/product-swaps",
+        "queryParams": {
+          "ruleName": "$rule_name",
+          "sourceVariants": "$source_variants",
+          "destinationVariants": "$destination_variants"
+        }
+      }
+    },
+    {
+      "name": "appstle_subscriptions_list_retention_activities",
+      "description": "Customer retention activities: each time a customer went through the cancel or pause flow, with the reason, the retention offer shown and whether it was accepted (discount, pause, frequency change, swap) or the customer left. Useful for churn analysis.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "event_source": {
+            "type": "string",
+            "description": "PAUSE or CANCELLATION flow.",
+            "enum": [
+              "PAUSE",
+              "CANCELLATION"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Outcome status of the activity."
+          },
+          "retention_action": {
+            "type": "string",
+            "description": "Retention offer type."
+          },
+          "retention_reason": {
+            "type": "string",
+            "description": "Reason the customer gave."
+          },
+          "from_day": {
+            "type": "string",
+            "description": "From, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "to_day": {
+            "type": "string",
+            "description": "To, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "default": 0,
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Items per page (at most 2000).",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 2000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/external/v2/customer-retention-activities",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "eventSource": "$event_source",
+          "status": "$status",
+          "retentionAction": "$retention_action",
+          "retentionReason": "$retention_reason",
+          "fromDay": "$from_day",
+          "toDay": "$to_day",
+          "page": "$page",
+          "size": "$size"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "link"
+        ]
+      }
+    },
+    {
+      "name": "appstle_subscriptions_update_contract_status",
+      "description": "Pause (PAUSED) or resume (ACTIVE) a subscription. Paused contracts are not billed or shipped until resumed. The customer may get an email. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "status": {
+            "type": "string",
+            "description": "PAUSED to pause, ACTIVE to resume.",
+            "enum": [
+              "ACTIVE",
+              "PAUSED"
+            ]
+          }
+        },
+        "required": [
+          "contract_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-update-status",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_cancel_contract",
+      "description": "Cancel a subscription contract now: all future billing and deliveries stop and the customer gets the cancellation email if enabled. It cannot be resumed. Show the user which contract it is and wait for a yes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "cancellation_feedback": {
+            "type": "string",
+            "description": "Why the customer cancels, e.g. Too expensive."
+          },
+          "cancellation_note": {
+            "type": "string",
+            "description": "Internal note, not shown to the customer."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/external/v2/subscription-contracts/{contract_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "cancellationFeedback": "$cancellation_feedback",
+          "cancellationNote": "$cancellation_note"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "appstle_subscriptions_update_next_billing_date",
+      "description": "Move the next billing (order) date of a contract. By default the later orders move with it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "next_billing_date": {
+            "type": "string",
+            "description": "New date in the future, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "reschedule_future_orders": {
+            "type": "boolean",
+            "description": "true (default): later orders follow the new date; false: only the next order moves."
+          }
+        },
+        "required": [
+          "contract_id",
+          "next_billing_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-update-billing-date",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "nextBillingDate": "$next_billing_date",
+          "rescheduleFutureOrder": "$reschedule_future_orders"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_update_billing_interval",
+      "description": "Change how often the customer is charged, e.g. every 2 WEEK or every 1 MONTH. Billing dates and pricing are recalculated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "interval_count": {
+            "type": "integer",
+            "description": "Number of units between billings, e.g. 2.",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "interval": {
+            "type": "string",
+            "description": "Interval unit.",
+            "enum": [
+              "DAY",
+              "WEEK",
+              "MONTH",
+              "YEAR"
+            ]
+          }
+        },
+        "required": [
+          "contract_id",
+          "interval_count",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-update-billing-interval",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "intervalCount": "$interval_count",
+          "interval": "$interval"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_update_delivery_interval",
+      "description": "Change how often the subscription is delivered (for prepaid plans this can differ from billing).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "delivery_interval_count": {
+            "type": "integer",
+            "description": "Number of units between deliveries.",
+            "minimum": 1
+          },
+          "delivery_interval": {
+            "type": "string",
+            "description": "Interval unit.",
+            "enum": [
+              "DAY",
+              "WEEK",
+              "MONTH",
+              "YEAR"
+            ]
+          }
+        },
+        "required": [
+          "contract_id",
+          "delivery_interval_count",
+          "delivery_interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-update-delivery-interval",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "deliveryIntervalCount": "$delivery_interval_count",
+          "deliveryInterval": "$delivery_interval"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_skip_order",
+      "description": "Skip one upcoming (QUEUED) order by its billing attempt id; it stays listed as SKIPPED and later orders are not affected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_attempt_id": {
+            "type": "integer",
+            "description": "Billing attempt id (the id of an upcoming order), from appstle_subscriptions_list_upcoming_orders."
+          },
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "is_prepaid": {
+            "type": "boolean",
+            "description": "true when the contract is on a prepaid plan."
+          }
+        },
+        "required": [
+          "billing_attempt_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-billing-attempts/skip-order/{billing_attempt_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "subscriptionContractId": "$contract_id",
+          "isPrepaid": "$is_prepaid"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_skip_upcoming_order",
+      "description": "Skip the next upcoming order of a contract without knowing its billing attempt id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-billing-attempts/skip-upcoming-order",
+        "queryParams": {
+          "subscriptionContractId": "$contract_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "appstle_subscriptions_unskip_order",
+      "description": "Restore a skipped order to QUEUED so it is billed and shipped again; only possible before its billing date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_attempt_id": {
+            "type": "integer",
+            "description": "Billing attempt id (the id of an upcoming order), from appstle_subscriptions_list_upcoming_orders."
+          },
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          }
+        },
+        "required": [
+          "billing_attempt_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-billing-attempts/unskip-order/{billing_attempt_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "subscriptionContractId": "$contract_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_reschedule_order",
+      "description": "Move one upcoming order to another date; optionally shift the later orders by the same offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_attempt_id": {
+            "type": "integer",
+            "description": "Billing attempt id (the id of an upcoming order), from appstle_subscriptions_list_upcoming_orders."
+          },
+          "billing_date": {
+            "type": "string",
+            "description": "New billing date, ISO 8601 with time zone, e.g. 2026-11-01T00:00:00Z."
+          },
+          "reschedule_future_orders": {
+            "type": "boolean",
+            "description": "Also move the later orders (default false)."
+          }
+        },
+        "required": [
+          "billing_attempt_id",
+          "billing_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-billing-attempts/reschedule-order/{billing_attempt_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "billingDate": "$billing_date",
+          "rescheduleFutureOrder": "$reschedule_future_orders"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_bill_order_now",
+      "description": "Charge an upcoming order now instead of on its billing date. It charges the customer's card: confirm with the user first. The result arrives later: check appstle_subscriptions_list_past_orders. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "billing_attempt_id": {
+            "type": "integer",
+            "description": "Billing attempt id (the id of an upcoming order), from appstle_subscriptions_list_upcoming_orders."
+          }
+        },
+        "required": [
+          "billing_attempt_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-billing-attempts/attempt-billing/{billing_attempt_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "appstle_subscriptions_add_line_item",
+      "description": "Add a product variant to a subscription, recurring or only for the next order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "variant_id": {
+            "type": "string",
+            "description": "Shopify variant id, numeric or gid://shopify/ProductVariant/..."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Quantity, 1 to 999.",
+            "minimum": 1,
+            "maximum": 999
+          },
+          "one_time": {
+            "type": "boolean",
+            "description": "true: only in the next order; false (default): every order."
+          }
+        },
+        "required": [
+          "contract_id",
+          "variant_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-add-line-item",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "variantId": "$variant_id",
+          "quantity": "$quantity",
+          "isOneTimeProduct": "$one_time"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "appstle_subscriptions_update_line_item",
+      "description": "Change a product in a subscription: its quantity, price, variant (swap to another product or flavour) and/or selling plan (frequency), in one call. Pass only what changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "line_id": {
+            "type": "string",
+            "description": "Line id of the product in the contract, the full GraphQL id such as gid://shopify/SubscriptionLine/abc-123, from appstle_subscriptions_get_contract (lines)."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "New quantity.",
+            "minimum": 1,
+            "maximum": 9999
+          },
+          "variant_id": {
+            "type": "string",
+            "description": "New variant, gid://shopify/ProductVariant/..., to swap the product."
+          },
+          "price": {
+            "type": "number",
+            "description": "New price in the shop currency."
+          },
+          "is_price_per_unit": {
+            "type": "boolean",
+            "description": "Prepaid plans: true = price per delivery, false (default) = total per billing."
+          },
+          "selling_plan_name": {
+            "type": "string",
+            "description": "Name of the selling plan to switch to, from appstle_subscriptions_list_selling_plans."
+          }
+        },
+        "required": [
+          "contract_id",
+          "line_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-update-line-item",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "lineId": "$line_id",
+          "quantity": "$quantity",
+          "variantId": "$variant_id",
+          "price": "$price",
+          "isPricePerUnit": "$is_price_per_unit",
+          "sellingPlanName": "$selling_plan_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_remove_line_item",
+      "description": "Remove a product from a subscription. Appstle refuses when it would leave the subscription below its minimum. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "line_id": {
+            "type": "string",
+            "description": "Line id of the product in the contract, the full GraphQL id such as gid://shopify/SubscriptionLine/abc-123, from appstle_subscriptions_get_contract (lines)."
+          },
+          "remove_discount": {
+            "type": "boolean",
+            "description": "Also remove discounts that apply only to this line (default true)."
+          }
+        },
+        "required": [
+          "contract_id",
+          "line_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-remove-line-item",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "lineId": "$line_id",
+          "removeDiscount": "$remove_discount"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_apply_discount_code",
+      "description": "Apply an existing Shopify discount code to the future orders of a subscription.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "discount_code": {
+            "type": "string",
+            "description": "Active Shopify discount code (case-sensitive)."
+          }
+        },
+        "required": [
+          "contract_id",
+          "discount_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-apply-discount",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "discountCode": "$discount_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "appstle_subscriptions_add_custom_discount",
+      "description": "Give a subscription a manual discount: PERCENTAGE (percentage), FIXED amount off or a fixed PRICE (amount), optionally for a limited number of cycles and per item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "discount_type": {
+            "type": "string",
+            "description": "Kind of discount.",
+            "enum": [
+              "PERCENTAGE",
+              "FIXED",
+              "PRICE"
+            ]
+          },
+          "percentage": {
+            "type": "integer",
+            "description": "Percent off, 1 to 100 (PERCENTAGE).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in the shop currency (FIXED or PRICE)."
+          },
+          "discount_title": {
+            "type": "string",
+            "description": "Title shown on orders."
+          },
+          "recurring_cycle_limit": {
+            "type": "integer",
+            "description": "Number of billing cycles it applies to; leave empty for no limit."
+          },
+          "applies_on_each_item": {
+            "type": "boolean",
+            "description": "true: per line item; false (default): on the order subtotal."
+          }
+        },
+        "required": [
+          "contract_id",
+          "discount_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-add-discount",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "discountType": "$discount_type",
+          "percentage": "$percentage",
+          "amount": "$amount",
+          "discountTitle": "$discount_title",
+          "recurringCycleLimit": "$recurring_cycle_limit",
+          "appliesOnEachItem": "$applies_on_each_item"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "appstle_subscriptions_remove_discount",
+      "description": "Remove a discount from a subscription; future orders are priced without it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "discount_id": {
+            "type": "string",
+            "description": "Discount id, the full gid://shopify/SubscriptionManualDiscount/... from appstle_subscriptions_get_contract (discounts)."
+          }
+        },
+        "required": [
+          "contract_id",
+          "discount_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-remove-discount",
+        "queryParams": {
+          "contractId": "$contract_id",
+          "discountId": "$discount_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_update_shipping_address",
+      "description": "Change the delivery address (or delivery method type) of a subscription for future orders. Send the complete address, not only the changed field: read the current one with appstle_subscriptions_get_contract. The customer gets an address-changed email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "address2": {
+            "type": "string",
+            "description": "Apartment, suite."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "province_code": {
+            "type": "string",
+            "description": "Province or state code, e.g. CA."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO country code, e.g. US."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "method_type": {
+            "type": "string",
+            "description": "SHIPPING (default), LOCAL or PICK_UP.",
+            "enum": [
+              "SHIPPING",
+              "LOCAL",
+              "PICK_UP"
+            ]
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Pickup or local delivery location id (for LOCAL and PICK_UP)."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-update-shipping-address",
+        "queryParams": {
+          "contractId": "$contract_id"
+        },
+        "bodyMapping": {
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "company": "$company",
+          "address1": "$address1",
+          "address2": "$address2",
+          "city": "$city",
+          "zip": "$zip",
+          "provinceCode": "$province_code",
+          "countryCode": "$country_code",
+          "phone": "$phone",
+          "methodType": "$method_type",
+          "locationId": "$location_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_update_order_note",
+      "description": "Set the note added to every future order of a subscription (empty text clears it).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          },
+          "order_note": {
+            "type": "string",
+            "description": "Note text."
+          }
+        },
+        "required": [
+          "contract_id",
+          "order_note"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-update-order-note/{contract_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "orderNote": "$order_note"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "appstle_subscriptions_send_payment_method_update_email",
+      "description": "Have Shopify email the customer a secure link to update the payment method of a subscription (e.g. after a failed payment).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "integer",
+            "description": "Subscription contract id (numeric, without the gid://shopify/SubscriptionContract/ prefix), from appstle_subscriptions_list_subscription_contracts."
+          }
+        },
+        "required": [
+          "contract_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/external/v2/subscription-contracts-update-payment-method",
+        "queryParams": {
+          "contractId": "$contract_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}
