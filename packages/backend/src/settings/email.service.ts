@@ -30,6 +30,7 @@ import {
 import { buildUnsubscribeUrl, unsubscribeSecret } from './unsubscribe-token';
 import { createEmailLinkToken } from '../common/email-link-token';
 import { isSocialProviderId } from '../auth/social/social-providers';
+import { maskEmail } from '../auth/mcp-email-verification';
 
 /** The longest an email waits for the trust numbers before going out without fresh ones. */
 const STATS_WAIT_MS = 3000;
@@ -272,10 +273,10 @@ export class EmailService {
           ...this.mail(passwordResetEmail({ resetUrl }, await this.brand())),
         });
 
-        this.logger.log(`Password reset email sent to ${to}`);
+        this.logger.log(`Password reset email sent to ${maskEmail(to)}`);
         return true;
       } catch (err) {
-        this.logger.error(`Failed to send password reset via SMTP to ${to}: ${err}`);
+        this.logger.error(`Failed to send password reset via SMTP to ${maskEmail(to)}: ${err}`);
         return false;
       }
     }
@@ -369,7 +370,7 @@ export class EmailService {
           ...this.mail(email!),
         });
 
-        this.logger.log(`Invitation email sent to ${to} (via ${transport.source} SMTP)`);
+        this.logger.log(`Invitation email sent to ${maskEmail(to)} (via ${transport.source} SMTP)`);
         return {
           sent: true,
           ...(workspaceError
@@ -437,10 +438,10 @@ export class EmailService {
           ...this.mail(licenseKeyEmail({ name, licenseKey }, await this.brand())),
         });
 
-        this.logger.log(`Welcome email sent to ${to}`);
+        this.logger.log(`Welcome email sent to ${maskEmail(to)}`);
         return true;
       } catch (err) {
-        this.logger.error(`Failed to send welcome email via SMTP to ${to}: ${err}`);
+        this.logger.error(`Failed to send welcome email via SMTP to ${maskEmail(to)}: ${err}`);
         return false;
       }
     }
@@ -482,7 +483,7 @@ export class EmailService {
           ...this.mail(verificationEmail({ code, verifyUrl }, await this.brand())),
         });
 
-        this.logger.log(`Verification email sent to ${to}`);
+        this.logger.log(`Verification email sent to ${maskEmail(to)}`);
         return true;
       } catch (err) {
         this.logger.error(
@@ -593,7 +594,7 @@ export class EmailService {
   ): Promise<boolean> {
     const transport = await this.createTransporter();
     if (!transport) {
-      this.logger.warn(`Skipping trial-${stage} email to ${to}: no SMTP configured`);
+      this.logger.warn(`Skipping trial-${stage} email to ${maskEmail(to)}: no SMTP configured`);
       return false;
     }
 
@@ -611,10 +612,10 @@ export class EmailService {
 
     try {
       await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email) });
-      this.logger.log(`Trial-${stage} email sent to ${to}`);
+      this.logger.log(`Trial-${stage} email sent to ${maskEmail(to)}`);
       return true;
     } catch (err) {
-      this.logger.error(`Failed to send trial-${stage} email to ${to}: ${err}`);
+      this.logger.error(`Failed to send trial-${stage} email to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }
@@ -648,7 +649,7 @@ export class EmailService {
         to,
         ...this.mail(email, headers),
       });
-      this.logger.log(`Activation-reminder email sent to ${to}`);
+      this.logger.log(`Activation-reminder email sent to ${maskEmail(to)}`);
       return true;
     } catch (err) {
       this.logger.error(
@@ -672,7 +673,7 @@ export class EmailService {
   ): Promise<boolean> {
     const transport = await this.createTransporter();
     if (!transport) {
-      this.logger.warn(`Skipping trial win-back email to ${to}: no SMTP configured`);
+      this.logger.warn(`Skipping trial win-back email to ${maskEmail(to)}: no SMTP configured`);
       return false;
     }
 
@@ -688,10 +689,10 @@ export class EmailService {
         to,
         ...this.mail(email, headers),
       });
-      this.logger.log(`Trial win-back (${offer.kind}) email sent to ${to}`);
+      this.logger.log(`Trial win-back (${offer.kind}) email sent to ${maskEmail(to)}`);
       return true;
     } catch (err) {
-      this.logger.error(`Failed to send trial win-back email to ${to}: ${err}`);
+      this.logger.error(`Failed to send trial win-back email to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }
@@ -707,7 +708,7 @@ export class EmailService {
   ): Promise<boolean> {
     const transport = await this.createTransporter();
     if (!transport) {
-      this.logger.warn(`Skipping card-trial offer email to ${to}: no SMTP configured`);
+      this.logger.warn(`Skipping card-trial offer email to ${maskEmail(to)}: no SMTP configured`);
       return false;
     }
 
@@ -718,10 +719,10 @@ export class EmailService {
 
     try {
       await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email, headers) });
-      this.logger.log(`Card-trial offer email sent to ${to}`);
+      this.logger.log(`Card-trial offer email sent to ${maskEmail(to)}`);
       return true;
     } catch (err) {
-      this.logger.error(`Failed to send card-trial offer email to ${to}: ${err}`);
+      this.logger.error(`Failed to send card-trial offer email to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }
@@ -739,7 +740,7 @@ export class EmailService {
   ): Promise<boolean> {
     const transport = await this.createTransporter(organizationId);
     if (!transport) {
-      this.logger.warn(`Skipping connector sign-in email to ${to}: no SMTP configured`);
+      this.logger.warn(`Skipping connector sign-in email to ${maskEmail(to)}: no SMTP configured`);
       return false;
     }
     const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '') || this.cloudUrl();
@@ -754,10 +755,10 @@ export class EmailService {
     );
     try {
       await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email) });
-      this.logger.log(`Connector sign-in email sent to ${to}`);
+      this.logger.log(`Connector sign-in email sent to ${maskEmail(to)}`);
       return true;
     } catch (err) {
-      this.logger.error(`Failed to send connector sign-in email to ${to}: ${err}`);
+      this.logger.error(`Failed to send connector sign-in email to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }
