@@ -1,0 +1,16 @@
+{
+  "//": "Code-runner sandbox import map. Verified 2026-10-31 against deno 2.9.8. The sandbox runs with --no-remote, so any specifier that resolves to a remote URL fails closed. Remapping every file: prefix onto a remote URL therefore turns every file import — relative, absolute, via new Function, or chained through data:/blob: modules — into a blocked remote specifier, while --deny-read already blocks Deno.readFile and the node:fs builtins. This is the layer that closes the import-based file reads (plain import, and `import(..., { with: { type: 'text' | 'json' } })`) that bypass --deny-read on their own. The exact key for the harness is more specific than the file:/// prefix, so the entry module still loads; everything else under file: is blocked.",
+  "imports": {
+    "file:///opt/code-runner/harness.js": "file:///opt/code-runner/harness.js",
+    "file://": "https://code-runner.invalid.disabled/",
+    "file:///": "https://code-runner.invalid.disabled/",
+    "./": "https://code-runner.invalid.disabled/",
+    "../": "https://code-runner.invalid.disabled/",
+    "/": "https://code-runner.invalid.disabled/",
+    "node:": "https://code-runner.invalid.disabled/node/",
+    "npm:": "https://code-runner.invalid.disabled/npm/",
+    "jsr:": "https://code-runner.invalid.disabled/jsr/",
+    "http://": "https://code-runner.invalid.disabled/http/",
+    "https://": "https://code-runner.invalid.disabled/https/"
+  }
+}

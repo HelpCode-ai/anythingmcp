@@ -1682,7 +1682,17 @@
     "cacheTtl": "Response Cache TTL",
     "cacheSeconds": "seconds (0 = no caching)",
     "cacheHint": "Cache identical requests in Redis to reduce API calls. Common values: 60 (1 min), 300 (5 min), 3600 (1 hour).",
-    "preview": "Preview generated mapping (JSON)"
+    "preview": "Preview generated mapping (JSON)",
+    "codeText": "Code Tool",
+    "codeProgram": "Program",
+    "codeProgramHint": "An async JavaScript body. Call other tools with await amcp.run(name, args), amcp.search(query), amcp.describe(name). The tool inputs are available as args. Return the result.",
+    "codeUses": "Uses (connectors)",
+    "codeUsesHint": "JSON: the connectors this code tool may call, e.g. [{\"connectorId\":\"<id>\",\"tools\":[\"tool_name\"]}]. Omit \"tools\" to allow all of a connector. Only connectors from this workspace.",
+    "codeRunAs": "Run as",
+    "codeRunAsInvoker": "Invoker (the caller's own permissions)",
+    "codeRunAsDefiner": "Definer (admin-curated; admins only)",
+    "codeAllowWrites": "Allow write tools",
+    "codeAllowWritesHint": "Off = the program may only call read-only tools. Writes require Enterprise."
   },
   "responseMapping": {
     "title": "Response Mapping",

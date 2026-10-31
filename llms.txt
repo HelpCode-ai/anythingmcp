@@ -41,6 +41,7 @@
 - [Service level objectives](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/slo.md): These are the SLOs we commit to for the managed AnythingMCP cloud.
 - [Single Sign-On (Microsoft Entra ID, Google, Okta, Auth0, OIDC)](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/sso.md): Let members sign in with your organization's identity provider instead of a password, and keep their AnythingMCP roles in step with your directory groups.
 - [SCIM provisioning with Microsoft Entra ID — step by step](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/scim-entra-setup.md): Click-by-click setup for automatic user and group provisioning from Entra ID into AnythingMCP.
+- [Code mode](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/code-mode.md): Run isolated JavaScript that orchestrates several MCP tools in one step: saved code tools, inline code_execute, governance and deployment.
 - [License FAQ](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/license-faq.md): Understand the AGPL license, the commercial EE boundary, and contributor licensing.
 
 ## Reference

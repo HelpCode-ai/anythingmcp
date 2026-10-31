@@ -37,6 +37,7 @@ model Organization {
   licenses         License[]
   orgSettings      OrgSettings[]
   toolInvocations  ToolInvocation[]
+  codeRuns         CodeRun[]
   kgNodes          KgNode[]
   kgEdges          KgEdge[]
   kgConnectorState KgConnectorState[]
@@ -180,6 +181,7 @@ model User {
   connectorCredentials     UserConnectorCredential[]
   mcpServers               McpServerConfig[]
   toolInvocations          ToolInvocation[]
+  codeRuns                 CodeRun[]
   passwordResetTokens      PasswordResetToken[]
   mcpApiKeys               McpApiKey[]
   emailVerificationTokens  EmailVerificationToken[]
@@ -288,6 +290,11 @@ model Role {
   isSystem       Boolean       @default(false) @map("is_system")
   organizationId String?       @map("organization_id")
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Per-role capability flags beyond the tool allow-list, e.g.
+  /// `{ "inlineCode": true }` to let the role run the generic code_execute
+  /// tool. Null / absent keys mean the capability is off. The tool allow-list
+  /// (ToolRoleAccess) stays the mechanism for individual tools.
+  capabilities   Json?
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
@@ -622,6 +629,7 @@ model McpTool {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   invocations ToolInvocation[]
+  codeRuns    CodeRun[]
   roleAccess  ToolRoleAccess[]
 
   @@unique([connectorId, name])
@@ -689,6 +697,12 @@ model McpServerConfig {
   /// full text) or `index` (always the index).
   skillsDelivery String @default("auto") @map("skills_delivery")
 
+  /// Code mode on this server: `off` (default; no code tools or inline code),
+  /// `tools` (saved code tools only) or `inline` (also the generic
+  /// code_execute tool). Governs exposure, not authority — roles, read/write
+  /// and the runner still apply.
+  codeMode String @default("off") @map("code_mode")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -696,6 +710,7 @@ model McpServerConfig {
   apiKeys         McpApiKey[]
   toolInvocations ToolInvocation[]
   kgSkills        KgSkillSuggestion[]
+  codeRuns        CodeRun[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -824,6 +839,40 @@ model ToolInvocation {
   @@index([organizationId, createdAt])
   @@index([connectorId, createdAt])
   @@map("tool_invocations")
+}
+
+// One row per code-mode run (a saved code tool, or an inline code_execute). The
+// individual tool calls a run makes are still recorded in tool_invocations
+// (correlated via client_info.codeRun); this row is the run itself, for
+// per-plan retention and quotas. Org-scoped like every audit table.
+model CodeRun {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?      @map("user_id")
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  mcpServerId    String?          @map("mcp_server_id")
+  mcpServer      McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
+
+  // The saved code tool this run executed (null for an inline code_execute run,
+  // and kept null if the tool is later deleted).
+  toolId String?  @map("tool_id")
+  tool   McpTool? @relation(fields: [toolId], references: [id], onDelete: SetNull)
+
+  // `tool` = a saved code tool, `inline` = an ad-hoc code_execute run.
+  source        String           @default("tool")
+  status        InvocationStatus
+  durationMs    Int?             @map("duration_ms")
+  // How many amcp.* tool calls the run made (each also logged in tool_invocations).
+  toolCallCount Int              @default(0) @map("tool_call_count")
+  error         String?          @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([toolId, createdAt])
+  @@map("code_runs")
 }
 
 // ── Identity Providers (SSO) ────────────────────────────────────────────────
@@ -1509,6 +1558,10 @@ model KgSkillSuggestion {
   mcpServerId    String?          @map("mcp_server_id")
   mcpServer      McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
 
+  // What this suggestion proposes: `skill` (the default — a workspace skill)
+  // or `code` (a saved code tool an admin approves into an McpTool with
+  // endpointMapping.method = 'code'). Each kind is reviewed the same way.
+  kind          String   @default("skill")
   title         String
   whenToUse     String   @db.Text @map("when_to_use")
   instruction   String   @db.Text

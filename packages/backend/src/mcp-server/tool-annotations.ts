@@ -208,6 +208,20 @@ function derive(tool: AnnotationSource): ToolAnnotations {
     return annotations;
   }
 
+  // Code tools: read-only unless the tool is explicitly allowed to write. The
+  // whole run is governed by the bridge, but the hint drives the read/write
+  // split on the shared endpoint and how carefully an agent treats it.
+  if (method === 'code') {
+    const allowWrites =
+      !!tool.endpointMapping &&
+      (tool.endpointMapping as { allowWrites?: unknown }).allowWrites === true;
+    annotations.readOnlyHint = !allowWrites;
+    annotations.destructiveHint = allowWrites;
+    annotations.idempotentHint = false;
+    annotations.openWorldHint = true;
+    return annotations;
+  }
+
   switch (type) {
     case 'REST':
     case 'ODATA':

@@ -178,6 +178,10 @@ interface ToolSetParams {
   memory?: MemoryCaller;
   /** Which knowledge folders the caller may see in the server's workspace. */
   folders?: FolderAccess | null;
+  /** Set when the caller may run inline code on this server (codeMode 'inline'
+   *  + the inlineCode role capability + a configured runner): offers
+   *  code_execute over these connectors. */
+  inlineCode?: { connectorIds: string[] };
 }
 
 interface InvocationContext {
@@ -210,6 +214,8 @@ const INTENT_DESCRIPTION =
 
 /** Built-in companion of the Agent Skills Finder adapter. */
 const SKILLS_SAVE_TOOL = 'skills_save_to_workspace';
+/** Built-in inline code execution tool (per-server endpoint, codeMode 'inline'). */
+const CODE_EXECUTE_TOOL = 'code_execute';
 /** Built-in workspace memory tools (per-server endpoint, Enterprise). */
 const MEMORY_SEARCH_TOOL = 'memory_search';
 const MEMORY_SAVE_TOOL = 'memory_save';
@@ -262,6 +268,27 @@ export class McpEndpointController {
   /** The caller's knowledge-folder access in a workspace (null without the module). */
   private async folderAccessFor(organizationId: string, userId?: string | null) {
     return this.folders ? this.folders.accessFor(organizationId, userId) : null;
+  }
+
+  /**
+   * Whether this caller may run inline code on this server, and over which
+   * connectors. All four must hold: the server opts in (codeMode 'inline'), a
+   * runner is configured, the caller is an identified user whose role carries
+   * the inlineCode capability, and at least one connector is in reach. Returns
+   * the connector scope for code_execute, or undefined to not offer it.
+   */
+  private async resolveInlineCode(
+    mcpServerConfig: { organizationId: string; codeMode?: string },
+    userId: string | undefined,
+    visibleConnectorIds: string[],
+  ): Promise<{ connectorIds: string[] } | undefined> {
+    if (mcpServerConfig.codeMode !== 'inline') return undefined;
+    if (!userId) return undefined;
+    if (!this.toolExecutor.codeModeAvailable()) return undefined;
+    if (!visibleConnectorIds || visibleConnectorIds.length === 0) return undefined;
+    const caps = await this.rolesService.getCapabilities(userId, mcpServerConfig.organizationId);
+    if (!caps.inlineCode) return undefined;
+    return { connectorIds: visibleConnectorIds };
   }
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
@@ -1241,6 +1268,15 @@ export class McpEndpointController {
     // The same per-member decision marks this caller's calls as learnable.
     invocationContext.learnable = captureIntent;
 
+    // Inline code execution: the server opts in (codeMode 'inline'), the caller's
+    // role carries the inlineCode capability, a runner is configured, and there
+    // is at least one connector in reach for the code to call.
+    const inlineCode = await this.resolveInlineCode(
+      mcpServerConfig,
+      user?.sub,
+      visibleConnectorIds,
+    );
+
     const params: ToolSetParams = {
       serverTools,
       allowedToolIds,
@@ -1252,6 +1288,7 @@ export class McpEndpointController {
       // Memory belongs to the server's organization and its member levels.
       memory: withFolders(await this.memory?.caller(mcpServerConfig.organizationId, user?.sub), folderAccess),
       folders: folderAccess,
+      inlineCode,
     };
 
     // Register this server's tool surface onto the per-request McpServer.
@@ -1677,6 +1714,11 @@ export class McpEndpointController {
       const skillHints = skillsVisible
         ? await this.kgSkills.toolHints(serverOrganizationId, serverId, visibleIds, folderAccess)
         : undefined;
+      // Re-read the server's codeMode so toggling it applies on the next rebuild.
+      const serverCfg = await this.mcpServersService.findById(serverId);
+      const inlineCode = serverCfg
+        ? await this.resolveInlineCode(serverCfg, user?.sub, visibleIds)
+        : undefined;
       const entries = this.planToolSet({
         serverTools,
         allowedToolIds,
@@ -1687,6 +1729,7 @@ export class McpEndpointController {
         skillHints,
         memory: withFolders(await this.memory?.caller(serverOrganizationId, user?.sub), folderAccess),
         folders: folderAccess,
+        inlineCode,
       });
       const signature = this.aggregateSig(entries);
       if (signature === session.signature) return; // nothing changed here
@@ -1854,7 +1897,10 @@ export class McpEndpointController {
             const result = await this.toolExecutor.executeTool(
               tool.name,
               toolArgs,
-              { ...ctx, connectorIds: [tool.connectorId] },
+              // allowedToolIds lets a code tool in `invoker` mode re-check the
+              // caller's role on every inner call; the role filter above already
+              // gated listing and this top-level call.
+              { ...ctx, connectorIds: [tool.connectorId], allowedToolIds },
             );
             // When an outputSchema is advertised, the SDK requires
             // structuredContent on success. Provide the result object
@@ -2178,6 +2224,51 @@ export class McpEndpointController {
               return {
                 content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
               };
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+
+    // Inline code execution (code_execute): offered only when the server's
+    // codeMode is 'inline' and the caller's role has the inlineCode capability
+    // (resolved in handleMcpRequest). Read-only, invoker rights, over exactly
+    // the connectors visible to this caller on this server.
+    if (params.inlineCode && !registeredNames.has(CODE_EXECUTE_TOOL)) {
+      registeredNames.add(CODE_EXECUTE_TOOL);
+      const inlineConnectorIds = params.inlineCode.connectorIds;
+      const inlineAllowed = allowedToolIds;
+      entries.push({
+        name: CODE_EXECUTE_TOOL,
+        sig: `${CODE_EXECUTE_TOOL}:v1:${inlineConnectorIds.length}`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            CODE_EXECUTE_TOOL,
+            {
+              description:
+                'Run a short JavaScript program that orchestrates several of this ' +
+                'workspace\'s tools in one step, instead of many separate tool calls. ' +
+                'Write an async function body. Discover and call tools with ' +
+                '`await amcp.search(query)`, `await amcp.describe(name)` and ' +
+                '`await amcp.run(name, args)`, and `return` the result. Read-only: ' +
+                'only tools that do not change data can be called, with your own ' +
+                'permissions. No filesystem, network or environment access.',
+              inputSchema: {
+                code: z
+                  .string()
+                  .min(1)
+                  .max(100_000)
+                  .describe('The async JavaScript program body to run.'),
+              },
+              annotations: { title: 'Run code', readOnlyHint: true, openWorldHint: false },
+            },
+            async (args: { code: string }) => {
+              const result = await this.toolExecutor.executeInlineCode(
+                String(args?.code ?? ''),
+                { ...invocationContext, allowedToolIds: inlineAllowed },
+                { connectorIds: inlineConnectorIds, allowedToolIds: inlineAllowed },
+              );
+              const { structured: _s, ...rest } = result;
+              return rest;
             },
           ) as unknown as ToolHandle,
       });

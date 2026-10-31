@@ -1,0 +1,10 @@
+# AVD-DS-0002 — "Specify at least 1 USER command with a non-root user".
+# Waived for deploy/code-runner/Dockerfile: its PID 1 (the code-mode supervisor)
+# must run as root so it can setpriv DOWN to an unprivileged uid for each run; a
+# non-root PID 1 could not change the child's uid. The container runs with
+# cap_drop ALL (only SETUID/SETGID kept), read_only, no-new-privileges and no
+# egress (see docker-compose.yml), and the untrusted code itself always runs as
+# uid 10001. The Trivy build in CI does not honour path-scoped misconfig
+# ignores, so this waiver is rule-wide; the other Dockerfiles (root,
+# deploy/motis) already declare a non-root USER, so nothing else is affected.
+AVD-DS-0002
