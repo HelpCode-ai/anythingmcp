@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import type { KgNode, KgEdge } from '@/lib/api';
 
 const NODE_PALETTE = [
@@ -74,6 +75,7 @@ export function KgGraph({
   onSelectNode,
   onSelectEdge,
 }: Props) {
+  const t = useTranslations('knowledgeGraph.graph');
   const { pos, colorByConnector } = useMemo(() => layout(nodes), [nodes]);
 
   // Degree per node + adjacency (used for sizing, label priority and focus mode).
@@ -302,16 +304,16 @@ export function KgGraph({
 
       {/* Zoom / fit controls */}
       <div className="absolute bottom-3 right-3 flex flex-col gap-1.5">
-        <button type="button" aria-label="Zoom in" className={ctrlBtn} onClick={() => zoomBy(0.8)}>
+        <button type="button" aria-label={t('zoomIn')} className={ctrlBtn} onClick={() => zoomBy(0.8)}>
           +
         </button>
-        <button type="button" aria-label="Zoom out" className={ctrlBtn} onClick={() => zoomBy(1.25)}>
+        <button type="button" aria-label={t('zoomOut')} className={ctrlBtn} onClick={() => zoomBy(1.25)}>
           −
         </button>
         <button
           type="button"
-          aria-label="Fit graph to view"
-          title="Fit to view"
+          aria-label={t('fit')}
+          title={t('fitTitle')}
           className={ctrlBtn}
           onClick={() => setView(bounds)}
         >

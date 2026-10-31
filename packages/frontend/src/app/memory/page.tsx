@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import {
   memory as memoryApi,
@@ -31,19 +32,13 @@ const AUTH_METHODS = new Set(['jwt', 'oauth', 'none', 'mcp_api_key', 'static_api
 
 type Tab = 'personal' | 'organization' | 'pending';
 
-const ACCESS_LABEL: Record<MemoryAccessLevel, string> = {
-  none: 'No access',
-  read: 'Read company memory',
-  personal: 'Personal memory + read company memory',
-  contribute: 'Personal memory + propose to company memory',
-};
-
 const inputCls =
   'w-full h-[38px] px-3 rounded-[9px] text-[13px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--border-strong)]';
 const textareaCls =
   'w-full px-3 py-2.5 rounded-[9px] text-[13px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--border-strong)] leading-relaxed';
 
 export default function MemoryPage() {
+  const t = useTranslations('memory');
   const { token, user } = useAuth();
   const [status, setStatus] = useState<MemoryStatus | null>(null);
   const [statusError, setStatusError] = useState('');
@@ -67,8 +62,8 @@ export default function MemoryPage() {
     memoryApi
       .status(token)
       .then(setStatus)
-      .catch((e) => setStatusError(e.message || 'Could not load memory'));
-  }, [token]);
+      .catch((e) => setStatusError(e.message || t('loadFailed')));
+  }, [token, t]);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
@@ -101,29 +96,29 @@ export default function MemoryPage() {
       })
       .catch((e) => {
         if (!cancelled) {
-          setMsg(e.message || 'Could not load memory');
+          setMsg(e.message || t('loadFailed'));
           setData((d) => ({ ...d, key: listKey }));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [token, licensed, tab, debounced, page, listKey, companyTab, folderSel]);
+  }, [token, licensed, tab, debounced, page, listKey, companyTab, folderSel, t]);
   const load = () => setReload((n) => n + 1);
   const { items, total, pending } = data;
   const loading = data.key !== listKey;
 
   if (statusError) {
     return (
-      <AppShell title="Memory" maxWidth={1120}>
+      <AppShell title={t('title')} maxWidth={1120}>
         <p className="text-[13px] text-[var(--danger)]">{statusError}</p>
       </AppShell>
     );
   }
   if (!status) {
     return (
-      <AppShell title="Memory" maxWidth={1120}>
-        <p className="text-[13px] text-[var(--text-3)]">Loading…</p>
+      <AppShell title={t('title')} maxWidth={1120}>
+        <p className="text-[13px] text-[var(--text-3)]">{t('loading')}</p>
       </AppShell>
     );
   }
@@ -135,19 +130,16 @@ export default function MemoryPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const tabs: Array<{ key: Tab; label: string; show: boolean; count?: number }> = [
-    { key: 'personal', label: 'My memory', show: true },
-    { key: 'organization', label: 'Company memory', show: canReadOrg },
-    { key: 'pending', label: 'To review', show: curator, count: pending },
+    { key: 'personal', label: t('tabs.personal'), show: true },
+    { key: 'organization', label: t('tabs.organization'), show: canReadOrg },
+    { key: 'pending', label: t('tabs.pending'), show: curator, count: pending },
   ];
+  const hl = (chunks: React.ReactNode) => <span className="text-[var(--text)]">{chunks}</span>;
 
   return (
-    <AppShell title="Memory" maxWidth={1120}>
+    <AppShell title={t('title')} maxWidth={1120}>
       <p className="text-[13px] leading-relaxed text-[var(--text-2)] mb-4">
-        Facts, preferences and notes your AI clients save and find again, in any client connected to
-        a server of this workspace. <span className="text-[var(--text)]">My memory</span> is visible
-        only to you. <span className="text-[var(--text)]">Company memory</span> is shared with
-        everyone; AI clients can propose additions, which admins and editors review unless the
-        workspace saves them automatically.
+        {t.rich('intro', { hl })}
       </p>
 
       {!status.licensed ? (
@@ -155,40 +147,40 @@ export default function MemoryPage() {
       ) : (
         <>
           <p className="text-[12.5px] text-[var(--text-3)] mb-3">
-            Your access in this workspace: <span className="text-[var(--text)]">{ACCESS_LABEL[status.access]}</span>
-            {isAdmin ? (
-              <>
-                {' '}· set per user under{' '}
-                <Link href="/settings/users" className="text-[var(--brand)] hover:underline">
-                  Settings → Users
-                </Link>
-              </>
-            ) : (
-              ' · set by your admin'
-            )}
+            {isAdmin
+              ? t.rich('accessAdmin', {
+                  level: t(`access.${status.access}`),
+                  hl,
+                  link: (chunks) => (
+                    <Link href="/settings/users" className="text-[var(--brand)] hover:underline">
+                      {chunks}
+                    </Link>
+                  ),
+                })
+              : t.rich('accessMember', { level: t(`access.${status.access}`), hl })}
           </p>
           {msg && <p className="text-[12px] text-[var(--text-3)] mb-3">{msg}</p>}
 
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="inline-flex p-[3px] rounded-[10px] border border-[var(--border)] gap-0.5">
               {tabs
-                .filter((t) => t.show)
-                .map((t) => (
+                .filter((x) => x.show)
+                .map((x) => (
                   <button
-                    key={t.key}
+                    key={x.key}
                     onClick={() => {
-                      setTab(t.key);
+                      setTab(x.key);
                       setPage(0);
                     }}
                     className={cn(
                       'px-3 py-1.5 rounded-[7px] text-[12.5px] font-medium transition-colors',
-                      tab === t.key
+                      tab === x.key
                         ? 'bg-[var(--brand)] text-[var(--primary-foreground)]'
                         : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
                     )}
                   >
-                    {t.label}
-                    {t.count ? <span className="ml-1.5 text-[11px] opacity-80">{t.count}</span> : null}
+                    {x.label}
+                    {x.count ? <span className="ml-1.5 text-[11px] opacity-80">{x.count}</span> : null}
                   </button>
                 ))}
             </div>
@@ -198,7 +190,7 @@ export default function MemoryPage() {
                 setQuery(e.target.value);
                 setPage(0);
               }}
-              placeholder="Search memory…"
+              placeholder={t('searchPlaceholder')}
               className={cn(inputCls, 'w-full sm:w-56')}
             />
           </div>
@@ -233,7 +225,7 @@ export default function MemoryPage() {
               folders={tab === 'organization' ? folders : []}
               defaultFolderId={folderSel && folderSel !== 'none' ? folderSel : ''}
               onSaved={() => {
-                setMsg('Saved.');
+                setMsg(t('saved'));
                 setPage(0);
                 load();
                 reloadFolders();
@@ -243,14 +235,14 @@ export default function MemoryPage() {
           )}
 
           {loading ? (
-            <p className="text-[13px] text-[var(--text-3)]">Loading…</p>
+            <p className="text-[13px] text-[var(--text-3)]">{t('loading')}</p>
           ) : items.length === 0 ? (
             <Card className="p-6 text-center text-[13px] text-[var(--text-3)]">
               {tab === 'personal'
-                ? 'Nothing saved yet. Ask your AI client to remember something, or add it above.'
+                ? t('empty.personal')
                 : tab === 'pending'
-                  ? 'Nothing waiting for review.'
-                  : 'The company memory is empty.'}
+                  ? t('empty.pending')
+                  : t('empty.organization')}
             </Card>
           ) : (
             <div className="flex flex-col gap-2.5">
@@ -276,14 +268,18 @@ export default function MemoryPage() {
           {total > PAGE_SIZE && (
             <div className="flex items-center justify-between mt-4 text-[13px]">
               <span className="text-[var(--text-3)]">
-                {page * PAGE_SIZE + 1}–{Math.min(total, (page + 1) * PAGE_SIZE)} of {total}
+                {t('pager.range', {
+                  from: page * PAGE_SIZE + 1,
+                  to: Math.min(total, (page + 1) * PAGE_SIZE),
+                  total,
+                })}
               </span>
               <div className="flex items-center gap-2.5">
                 <Button variant="secondary" size="md" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-                  ← Prev
+                  {t('pager.prev')}
                 </Button>
                 <span className="text-[var(--text-3)]">
-                  Page {page + 1} / {totalPages}
+                  {t('pager.page', { page: page + 1, total: totalPages })}
                 </span>
                 <Button
                   variant="secondary"
@@ -291,7 +287,7 @@ export default function MemoryPage() {
                   disabled={page + 1 >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next →
+                  {t('pager.next')}
                 </Button>
               </div>
             </div>
@@ -354,6 +350,7 @@ function NewMemoryForm({
   onSaved: () => void;
   onError: (msg: string) => void;
 }) {
+  const t = useTranslations('memory');
   const [content, setContent] = useState('');
   const [folderId, setFolderId] = useState(defaultFolderId);
   const [kind, setKind] = useState('fact');
@@ -373,7 +370,7 @@ function NewMemoryForm({
         ...(about.trim() ? { about } : {}),
         tags: tags
           .split(',')
-          .map((t) => t.trim())
+          .map((tag) => tag.trim())
           .filter(Boolean),
       });
       setContent('');
@@ -381,7 +378,7 @@ function NewMemoryForm({
       setAbout('');
       onSaved();
     } catch (e: any) {
-      onError(e.message || 'Could not save');
+      onError(e.message || t('form.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -396,9 +393,7 @@ function NewMemoryForm({
           rows={2}
           maxLength={CONTENT_MAX}
           placeholder={
-            scope === 'organization'
-              ? 'Add to the company memory, e.g. "STAMMKUNDE means a customer with a framework agreement"'
-              : 'Add to your memory, e.g. "Answer me in Italian, numbers as tables"'
+            scope === 'organization' ? t('form.placeholderOrganization') : t('form.placeholderPersonal')
           }
           className={textareaCls}
         />
@@ -407,20 +402,20 @@ function NewMemoryForm({
             value={kind}
             onChange={(e) => setKind(e.target.value)}
             className={cn(inputCls, 'w-auto')}
-            aria-label="Kind"
+            aria-label={t('form.kind')}
           >
-            <option value="fact">Fact</option>
-            <option value="preference">Preference</option>
-            <option value="note">Note</option>
+            <option value="fact">{t('kinds.fact')}</option>
+            <option value="preference">{t('kinds.preference')}</option>
+            <option value="note">{t('kinds.note')}</option>
           </select>
           {folders.length > 0 && (
             <select
               value={folderId}
               onChange={(e) => setFolderId(e.target.value)}
               className={cn(inputCls, 'w-auto max-w-[220px]')}
-              aria-label="Folder"
+              aria-label={t('form.folder')}
             >
-              {folderOptions(folders, 'No folder').map((o) => (
+              {folderOptions(folders, t('form.noFolder')).map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -430,23 +425,23 @@ function NewMemoryForm({
           <input
             value={tags}
             onChange={(e) => setTags(e.target.value)}
-            placeholder="Tags, comma separated (optional)"
+            placeholder={t('form.tagsPlaceholder')}
             className={cn(inputCls, 'flex-1 min-w-[180px]')}
           />
           <input
             value={about}
             onChange={(e) => setAbout(e.target.value)}
-            placeholder="About (optional), e.g. customer"
-            title="The kind of thing this is about, as the knowledge graph names it. AI clients get it when they look that entity up."
+            placeholder={t('form.aboutPlaceholder')}
+            title={t('form.aboutTitle')}
             className={cn(inputCls, 'w-[190px]')}
             maxLength={80}
           />
           <Button variant="primary" size="md" onClick={submit} disabled={saving || !content.trim()}>
-            {saving ? 'Saving…' : scope === 'organization' ? 'Add to company memory' : 'Remember'}
+            {saving ? t('form.saving') : scope === 'organization' ? t('form.addCompany') : t('form.remember')}
           </Button>
         </div>
         <p className="text-[11.5px] text-[var(--text-3)]">
-          Never store passwords, tokens or keys: they are refused.
+          {t('form.noSecrets')}
         </p>
       </div>
     </Card>
@@ -472,6 +467,8 @@ function MemoryCard({
   onChanged: () => void;
   onError: (msg: string) => void;
 }) {
+  const t = useTranslations('memory');
+  const locale = useLocale();
   const [editing, setEditing] = useState(false);
   const [folderId, setFolderId] = useState(item.folderId ?? '');
   const folderPath = folders.find((f) => f.id === item.folderId)?.path;
@@ -484,7 +481,7 @@ function MemoryCard({
       await fn();
       onChanged();
     } catch (e: any) {
-      onError(e.message || 'Action failed');
+      onError(e.message || t('card.actionFailed'));
     } finally {
       setBusy(false);
     }
@@ -492,7 +489,12 @@ function MemoryCard({
 
   // Older items stored the auth method ("jwt", "oauth") as the client: not a name.
   const client = item.source?.client && !AUTH_METHODS.has(item.source.client) ? item.source.client : null;
-  const via = item.source?.via === 'mcp' ? `saved by an AI client${client ? ` (${client})` : ''}` : 'added in the dashboard';
+  const via =
+    item.source?.via === 'mcp'
+      ? client
+        ? t('card.viaAiClient', { client })
+        : t('card.viaAi')
+      : t('card.viaDashboard');
 
   return (
     <Card className={cn('px-[18px] py-3.5', item.status === 'rejected' && 'opacity-60')}>
@@ -510,9 +512,9 @@ function MemoryCard({
               value={folderId}
               onChange={(e) => setFolderId(e.target.value)}
               className={cn(inputCls, 'w-auto max-w-[260px]')}
-              aria-label="Folder"
+              aria-label={t('form.folder')}
             >
-              {folderOptions(folders, 'No folder').map((o) => (
+              {folderOptions(folders, t('form.noFolder')).map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -534,10 +536,10 @@ function MemoryCard({
                 })
               }
             >
-              Save
+              {t('save')}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setEditing(false)}>
-              Cancel
+              {t('cancel')}
             </Button>
           </div>
         </div>
@@ -547,27 +549,27 @@ function MemoryCard({
             <p className="text-[13.5px] leading-[1.55] text-[var(--text)] whitespace-pre-wrap">{item.content}</p>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-[var(--text-3)]">
               <Badge tone="neutral" className="rounded-full px-2 py-[1px]">
-                {item.kind}
+                {t.has(`kindBadges.${item.kind}`) ? t(`kindBadges.${item.kind}`) : item.kind}
               </Badge>
               {item.status === 'pending' && (
                 <Badge tone="warn" className="rounded-full px-2 py-[1px]">
-                  waiting for review
+                  {t('card.pending')}
                 </Badge>
               )}
               {item.status === 'rejected' && (
                 <Badge tone="danger" className="rounded-full px-2 py-[1px]">
-                  rejected
+                  {t('card.rejected')}
                 </Badge>
               )}
-              {item.tags?.map((t) => (
-                <span key={t} className="rounded-full border border-[var(--border)] px-2 py-[1px]">
-                  {t}
+              {item.tags?.map((tag) => (
+                <span key={tag} className="rounded-full border border-[var(--border)] px-2 py-[1px]">
+                  {tag}
                 </span>
               ))}
               <span>
                 {folderPath ? `${folderPath} · ` : ''}
-                {item.about ? `about ${item.about} · ` : ''}
-                {via} · {new Date(item.updatedAt).toLocaleDateString()}
+                {item.about ? `${t('card.about', { about: item.about })} · ` : ''}
+                {via} · {new Date(item.updatedAt).toLocaleDateString(locale)}
               </span>
             </div>
           </div>
@@ -580,7 +582,7 @@ function MemoryCard({
                   onClick={() => run(() => memoryApi.approve(token, item.id))}
                   className="h-[30px] px-[11px] bg-[var(--ok)] text-[var(--ok-foreground)] hover:opacity-90"
                 >
-                  Approve
+                  {t('card.approve')}
                 </Button>
                 <Button
                   variant="secondary"
@@ -589,21 +591,21 @@ function MemoryCard({
                   onClick={() => run(() => memoryApi.reject(token, item.id))}
                   className="h-[30px] px-[11px]"
                 >
-                  Reject
+                  {t('card.reject')}
                 </Button>
               </>
             )}
             {canEdit && (
               <>
                 <Button variant="secondary" size="sm" onClick={() => setEditing(true)} className="h-[30px] px-[11px]">
-                  Edit
+                  {t('edit')}
                 </Button>
                 <Button
                   variant="secondary"
                   size="sm"
                   disabled={busy}
-                  aria-label="Delete memory item"
-                  title="Delete"
+                  aria-label={t('card.deleteAria')}
+                  title={t('delete')}
                   onClick={() => run(() => memoryApi.remove(token, item.id))}
                   className="h-[30px] w-[30px] p-0 text-[var(--danger)]"
                 >
@@ -629,6 +631,7 @@ function MemorySettings({
   settings: MemoryStatus['settings'];
   onSaved: (s: MemoryStatus['settings']) => void;
 }) {
+  const t = useTranslations('memory');
   const [defaultAccess, setDefaultAccess] = useState(settings.defaultAccess);
   const [writeMode, setWriteMode] = useState(settings.writeMode);
   const [saving, setSaving] = useState(false);
@@ -640,9 +643,9 @@ function MemorySettings({
     try {
       const s = await memoryApi.updateSettings(token, { defaultAccess, writeMode });
       onSaved(s);
-      setMsg('Saved.');
+      setMsg(t('saved'));
     } catch (e: any) {
-      setMsg(e.message || 'Could not save');
+      setMsg(e.message || t('form.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -650,11 +653,11 @@ function MemorySettings({
 
   return (
     <Card className="p-[22px] mt-6">
-      <h3 className="text-sm font-semibold text-[var(--text)] mb-3">Workspace settings</h3>
+      <h3 className="text-sm font-semibold text-[var(--text)] mb-3">{t('settings.title')}</h3>
       <div className="flex max-w-[560px] flex-col gap-4">
         <div>
           <label htmlFor="memory-write-mode" className="mb-1.5 block text-[12.5px] font-medium text-[var(--text)]">
-            Company memory from AI clients
+            {t('settings.writeMode')}
           </label>
           <select
             id="memory-write-mode"
@@ -662,17 +665,16 @@ function MemorySettings({
             onChange={(e) => setWriteMode(e.target.value as 'approval' | 'auto')}
             className={inputCls}
           >
-            <option value="approval">Needs approval by an admin or editor</option>
-            <option value="auto">Saved automatically</option>
+            <option value="approval">{t('settings.approval')}</option>
+            <option value="auto">{t('settings.auto')}</option>
           </select>
           <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
-            Applies to users allowed to propose to the company memory. Either way you see who saved what,
-            and can edit or delete it here.
+            {t('settings.writeModeHint')}
           </p>
         </div>
         <div>
           <label htmlFor="memory-default-access" className="mb-1.5 block text-[12.5px] font-medium text-[var(--text)]">
-            Default access for users
+            {t('settings.defaultAccess')}
           </label>
           <select
             id="memory-default-access"
@@ -680,18 +682,18 @@ function MemorySettings({
             onChange={(e) => setDefaultAccess(e.target.value as MemoryAccessLevel)}
             className={inputCls}
           >
-            <option value="none">{ACCESS_LABEL.none}</option>
-            <option value="read">{ACCESS_LABEL.read}</option>
-            <option value="personal">{ACCESS_LABEL.personal}</option>
-            <option value="contribute">{ACCESS_LABEL.contribute}</option>
+            <option value="none">{t('access.none')}</option>
+            <option value="read">{t('access.read')}</option>
+            <option value="personal">{t('access.personal')}</option>
+            <option value="contribute">{t('access.contribute')}</option>
           </select>
           <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
-            For users set to Default under Settings → Users, including new ones.
+            {t('settings.defaultAccessHint')}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="primary" size="md" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Save settings'}
+            {saving ? t('settings.saving') : t('settings.save')}
           </Button>
           {msg && <span className="text-[12.5px] text-[var(--text-3)]">{msg}</span>}
         </div>

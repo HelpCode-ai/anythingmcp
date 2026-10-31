@@ -1464,6 +1464,220 @@ test.describe('admin pages from Accept-Language', () => {
   });
 });
 
+async function knowledgeSession(page: Page) {
+  await fakeSession(page);
+  // Registered after fakeSession's routes, so these win for their URLs.
+  await page.route(/\/api\//, (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/api/knowledge-graph') {
+      return json({
+        enabled: true,
+        lastBuiltAt: '2026-01-02T10:00:00Z',
+        nodes: [
+          {
+            id: 'n1', entity: 'customer', label: 'Customer', connectorId: 'c1', connectorName: 'Shop',
+            fields: [{ name: 'id', type: 'string' }, { name: 'email', type: 'string' }],
+            toolNames: ['list_customers'], source: 'STATIC', confidence: 1, observations: 0,
+          },
+          {
+            id: 'n2', entity: 'order', label: 'Order', connectorId: 'c1', connectorName: 'Shop',
+            fields: [{ name: 'customerId', type: 'string' }], toolNames: ['list_orders'],
+            source: 'STATIC', confidence: 1, observations: 0,
+          },
+        ],
+        edges: [
+          {
+            id: 'e1', sourceNodeId: 'n2', targetNodeId: 'n1', kind: 'references', matchKey: 'customerId',
+            source: 'STATIC', confidence: 0.9, observations: 3, isManual: false, status: 'active',
+          },
+        ],
+      });
+    }
+    if (path === '/api/knowledge-graph/settings') return json({ enabled: true, llmEnabled: true });
+    if (path === '/api/connectors') return json([{ id: 'c1', name: 'Shop' }]);
+    if (path === '/api/mcp-servers') return json([{ id: 'm1', name: 'Sales' }]);
+    if (path === '/api/knowledge-folders') {
+      return json({
+        restrictionsAvailable: false,
+        folders: [
+          { id: 'f1', parentId: null, name: 'Orders', description: null, roleIds: [], path: 'Orders', depth: 0, skillCount: 1, memoryCount: 1 },
+        ],
+      });
+    }
+    if (path === '/api/knowledge-graph/skills') {
+      return json({
+        total: 2,
+        take: 25,
+        skip: 0,
+        counts: { pending: 1, applied: 1, dismissed: 0 },
+        items: [
+          {
+            id: 's1', connectorId: null, mcpServerId: 'm1', mcpServer: { name: 'Sales' },
+            title: 'Confirm the delivery address', whenToUse: 'Before placing an order',
+            instruction: 'Ask the user to confirm the address.', confidence: 1, evidenceCount: 0,
+            status: 'applied', source: 'manual', version: 2, useCount: 3, lastUsedAt: '2026-01-05T08:00:00Z',
+          },
+          {
+            id: 's2', connectorId: 'c1', connector: { name: 'Shop' }, mcpServerId: null,
+            title: 'Order lookups', whenToUse: 'When looking up an order',
+            instruction: 'Search by order number first.', confidence: 0.85, evidenceCount: 4,
+            status: 'pending', source: 'consolidation', replaces: ['a', 'b'], body: 'Step 1',
+            version: 1, useCount: 0,
+          },
+        ],
+      });
+    }
+    if (path === '/api/knowledge-graph/skills/s1/versions') {
+      return json([
+        { version: 1, title: 'Check the address', whenToUse: '', instruction: 'Check it.', body: null, createdAt: '2026-01-03T09:00:00Z' },
+      ]);
+    }
+    if (path === '/api/memory/status') {
+      return json({
+        licensed: true,
+        access: 'contribute',
+        isCurator: true,
+        settings: { defaultAccess: 'personal', writeMode: 'approval' },
+      });
+    }
+    if (path === '/api/memory/items') {
+      const base = { ownerUserId: 'u1', createdByUserId: 'u1', approvedByUserId: null, approvedAt: null, createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z' };
+      if (url.searchParams.get('scope') === 'personal') {
+        return json({
+          total: 1, pending: 1, take: 25, skip: 0,
+          items: [
+            { ...base, id: 'mm1', scope: 'personal', kind: 'preference', content: 'Answer in short bullet points', tags: ['style'], status: 'active', source: { via: 'mcp', client: 'Claude' } },
+          ],
+        });
+      }
+      return json({
+        total: 1, pending: 1, take: 25, skip: 0,
+        items: [
+          { ...base, id: 'mm2', scope: 'organization', kind: 'fact', content: 'STAMMKUNDE means a customer with a framework agreement', tags: [], status: 'pending', source: { via: 'ui' }, about: 'customer', folderId: 'f1' },
+        ],
+      });
+    }
+    return route.fallback();
+  });
+}
+
+test.describe('knowledge graph, AI skills and memory from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the knowledge graph and the AI skills in German', async ({ page }) => {
+      await knowledgeSession(page);
+      await page.goto('/knowledge-graph');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('button', { name: 'Graph neu aufbauen' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Mit KI anreichern' })).toBeVisible();
+      await expect(page.getByText('Ebene', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'beobachtet', exact: true })).toBeVisible();
+      await expect(page.getByText('Vorschläge anzeigen', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 Entitäten · 1 Beziehung', { exact: true })).toBeVisible();
+      await expect(page.getByText('Datenfluss', { exact: true })).toBeVisible();
+      await expect(page.getByText('Erkunden', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: '+ Entität hinzufügen' }).click();
+      await expect(page.getByPlaceholder('Bezeichnung (z. B. Treuestufe)')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Vergrößern' })).toBeVisible();
+      // The first node circle is the Customer entity (labels only show once zoomed in).
+      await page.locator('svg g[transform] > circle').first().click();
+      await expect(page.getByRole('heading', { name: 'Customer' })).toBeVisible();
+      await expect(page.getByText('Felder (2)', { exact: true })).toBeVisible();
+      await expect(page.getByText('Verbindungen (1)', { exact: true })).toBeVisible();
+      await expect(page.getByText('Referenz · customerId', { exact: true })).toBeVisible();
+
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByRole('banner').getByText('KI-Skills', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Vorgeschlagen\s*1$/ })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Aus behobenen Fehlern lernen' })).toBeVisible();
+      await expect(page.getByText(/^Server: Sales · von Hand geschrieben · v2 · 3× geöffnet, zuletzt am 5\.1\.2026$/)).toBeVisible();
+      await expect(
+        page.getByText(/^Connector: Shop · Vorschlag zum Zusammenführen · v1 · Konfidenz 0\.85 · 4 Beispiele · noch nicht geöffnet$/),
+      ).toBeVisible();
+      await expect(
+        page.getByText('Ersetzt 2 aktive Skills: Wenn Sie ihn übernehmen, werden diese deaktiviert (sie bleiben mit ihrem Verlauf erhalten).'),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Verlauf (1 frühere Version)' }).click();
+      await expect(page.getByRole('button', { name: 'Verlauf ausblenden' })).toBeVisible();
+      await expect(page.getByText('Ordner', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Alle Skills' })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the memory page in Italian', async ({ page }) => {
+      await knowledgeSession(page);
+      await page.goto('/memory');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('banner').getByText('Memoria', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText(/^Il tuo accesso in questo workspace: Memoria personale \+ proposte alla memoria aziendale · si imposta per utente in/),
+      ).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Impostazioni → Utenti' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'La mia memoria' })).toBeVisible();
+      await expect(page.getByText('preferenza', { exact: true })).toBeVisible();
+      await expect(page.getByText(/salvato da un client AI \(Claude\) · 02\/01\/2026$/)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Ricorda' })).toBeVisible();
+      await expect(page.getByText('Non salvare mai password, token o chiavi: vengono rifiutati.')).toBeVisible();
+
+      await page.getByRole('button', { name: /^Da rivedere/ }).click();
+      await expect(page.getByText('in attesa di revisione', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^Orders · riguarda customer · aggiunto dalla dashboard/)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Approva' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Tutta la memoria aziendale' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Impostazioni del workspace' })).toBeVisible();
+      await expect(page.getByLabel('Accesso predefinito per gli utenti')).toHaveValue('personal');
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the knowledge graph, AI skills and memory pages in English', async ({ page }) => {
+      await knowledgeSession(page);
+      await page.goto('/knowledge-graph');
+      await expect(page.getByRole('button', { name: 'Rebuild graph' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'observed', exact: true })).toBeVisible();
+      await expect(page.getByText('show suggested', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 entities · 1 relationships', { exact: true })).toBeVisible();
+      await expect(page.getByText('data flow', { exact: true })).toBeVisible();
+      // The first node circle is the Customer entity (labels only show once zoomed in).
+      await page.locator('svg g[transform] > circle').first().click();
+      await expect(page.getByRole('heading', { name: 'Customer' })).toBeVisible();
+      await expect(page.getByText('Fields (2)', { exact: true })).toBeVisible();
+      await expect(page.getByText('references · customerId', { exact: true })).toBeVisible();
+
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByRole('banner').getByText('AI Skills', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText(
+          "Rules and procedures for recurring tasks, scoped to one connector or to a whole MCP server. Active skills reach that server's AI clients on connect, as full text or as a list they open with skill_get (set per server). Long procedures are always opened on demand.",
+        ),
+      ).toBeVisible();
+      await expect(page.getByText(/^server: Sales · written by hand · v2 · opened 3×, last 1\/5\/2026$/)).toBeVisible();
+      await expect(
+        page.getByText(/^connector: Shop · merge proposal · v1 · confidence 0\.85 · 4 example\(s\) · not opened yet$/),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'History (1 earlier version)' })).toBeVisible();
+      await expect(page.getByText('Procedure (6 characters)', { exact: true })).toBeVisible();
+
+      await page.goto('/memory');
+      await expect(
+        page.getByText(/^Your access in this workspace: Personal memory \+ propose to company memory · set per user under/),
+      ).toBeVisible();
+      await expect(page.getByText('preference', { exact: true })).toBeVisible();
+      await expect(page.getByText(/saved by an AI client \(Claude\) · 1\/2\/2026$/)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Remember' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;
