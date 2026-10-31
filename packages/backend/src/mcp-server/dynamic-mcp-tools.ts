@@ -71,6 +71,22 @@ export type ToolResultContent = [
     | { type: 'resource'; resource: { uri: string; mimeType: string; blob: string } }
   )[],
 ];
+/** Invocation context shared by the code-tool and inline-code paths. */
+interface CodeExecContext {
+  userId?: string;
+  userEmail?: string;
+  organizationId?: string;
+  authMethod?: string;
+  apiKeyName?: string;
+  mcpServerId?: string;
+  mcpServerName?: string;
+  connectorIds?: string[];
+  intent?: string;
+  learnable?: boolean;
+  allowedToolIds?: string[] | null;
+  inCodeRun?: boolean;
+}
+
 import { ResponseBodyError } from '../connectors/engines/response-error.util';
 import { connectorSecretValues } from '../connectors/connector-secrets.util';
 import { redactSecretsDeep } from '../common/secret-literals.util';
@@ -1041,20 +1057,7 @@ export class DynamicMcpTools {
   private async executeCodeTool(
     tool: RegisteredTool,
     params: Record<string, unknown>,
-    context?: {
-      userId?: string;
-      userEmail?: string;
-      organizationId?: string;
-      authMethod?: string;
-      apiKeyName?: string;
-      mcpServerId?: string;
-      mcpServerName?: string;
-      connectorIds?: string[];
-      intent?: string;
-      learnable?: boolean;
-      allowedToolIds?: string[] | null;
-      inCodeRun?: boolean;
-    },
+    context?: CodeExecContext,
   ): Promise<{ content: ToolResultContent; isError?: boolean; structured?: unknown }> {
     const startTime = Date.now();
     const spec = parseCodeToolMapping(tool.endpointMapping);
@@ -1094,74 +1097,7 @@ export class DynamicMcpTools {
           ? []
           : null;
 
-    const toBridgeTool = (t: RegisteredTool): BridgeResolvedTool => ({
-      id: t.id,
-      name: t.name,
-      connectorId: t.connectorId,
-      readOnly:
-        deriveToolAnnotations({
-          name: t.name,
-          connectorType: t.connectorType,
-          endpointMapping: t.endpointMapping as { method?: string; path?: string },
-          connectorConfig: { config: t.connectorConfig?.config ?? null },
-          annotations: t.annotations,
-        }).readOnlyHint === true,
-      isCode: isCodeMethod(t.endpointMapping),
-    });
-
-    const deps: CodeBridgeDeps = {
-      resolveTool: (name) => {
-        const resolved = this.toolRegistry.getTool(name, usesConnectorIds);
-        return resolved ? toBridgeTool(resolved) : undefined;
-      },
-      allowedToolIds,
-      runTool: async (name, args, connectorId) => {
-        const r = await this.executeTool(name, args, {
-          ...context,
-          connectorIds: [connectorId],
-          allowedToolIds,
-          inCodeRun: true,
-        });
-        if (r.isError) {
-          throw new Error(textOf(r.content) ?? `Tool '${name}' failed.`);
-        }
-        if (r.structured !== undefined) return r.structured;
-        const text = textOf(r.content);
-        try {
-          return text ? JSON.parse(text) : null;
-        } catch {
-          return text ?? null;
-        }
-      },
-      search: async (query) => {
-        const q = query.toLowerCase().trim();
-        const seen = new Set<string>();
-        const out: { tool: string; description: string; readOnly: boolean }[] = [];
-        for (const connectorId of usesConnectorIds) {
-          for (const t of this.toolRegistry.getAllTools()) {
-            if (t.connectorId !== connectorId || isCodeMethod(t.endpointMapping)) continue;
-            if (seen.has(t.name)) continue;
-            const hay = `${t.name} ${t.description ?? ''}`.toLowerCase();
-            if (q && !hay.includes(q)) continue;
-            seen.add(t.name);
-            out.push({ tool: t.name, description: t.description ?? '', readOnly: toBridgeTool(t).readOnly });
-            if (out.length >= 50) return out;
-          }
-        }
-        return out;
-      },
-      describe: async (name) => {
-        const resolved = this.toolRegistry.getTool(name, usesConnectorIds);
-        if (!resolved) return null;
-        return {
-          name: resolved.name,
-          description: resolved.description ?? '',
-          inputSchema: resolved.parameters ?? {},
-          readOnly: toBridgeTool(resolved).readOnly,
-        };
-      },
-    };
-
+    const deps = this.codeBridgeDeps(usesConnectorIds, allowedToolIds, context);
     const bridge = buildCodeBridge(spec, deps);
     // The program receives its tool arguments as `args` via a wrapper the runner
     // does not add, so expose them through a declared variable: prepend a const.
@@ -1217,7 +1153,162 @@ export class DynamicMcpTools {
         : undefined,
     });
     this.logToolCall(tool, context, durationMs, result.ok ? 'SUCCESS' : 'ERROR');
+    return this.codeResultToContent(result);
+  }
 
+  /**
+   * Run an inline code program (the generic `code_execute` tool): a program the
+   * model wrote on the spot, read-only, with the caller's own permissions, over
+   * the connectors reachable on this server. Unlike a saved code tool there is
+   * no McpTool, so only a `code_runs` row is written (source `inline`); the
+   * inner tool calls still log their own `tool_invocations`. Exposure is gated
+   * by the caller (server codeMode `inline` + the role's `inlineCode`
+   * capability); this method enforces read-only and invoker rights.
+   */
+  /** Whether a code-runner is configured, so code mode can run at all. */
+  codeModeAvailable(): boolean {
+    return !!this.codeExecutor?.isConfigured();
+  }
+
+  async executeInlineCode(
+    code: string,
+    context: CodeExecContext,
+    opts: { connectorIds: string[]; allowedToolIds: string[] | null },
+  ): Promise<{ content: ToolResultContent; isError?: boolean; structured?: unknown }> {
+    const startTime = Date.now();
+    const fail = (message: string, name = 'Error'): { content: ToolResultContent; isError: true } => ({
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: message, name }, null, 2) }],
+      isError: true,
+    });
+    if (typeof code !== 'string' || !code.trim()) return fail('No code was provided to run.');
+    if (!this.codeExecutor || !this.codeExecutor.isConfigured()) {
+      return fail('Code mode is not available on this instance (no code-runner configured).', 'Unavailable');
+    }
+
+    // Inline code is always read-only, invoker rights, over exactly the
+    // connectors the caller can reach on this server.
+    const spec = {
+      code,
+      uses: opts.connectorIds.map((connectorId) => ({ connectorId })),
+      runAs: 'invoker' as const,
+      allowWrites: false,
+    };
+    const deps = this.codeBridgeDeps(opts.connectorIds, opts.allowedToolIds, context);
+    const bridge = buildCodeBridge(spec, deps);
+    const program = `const args = {};\n${code}`;
+
+    const result = await this.codeExecutor.run({ code: program, bridge });
+    const durationMs = Date.now() - startTime;
+
+    if (context.organizationId) {
+      void this.prisma.codeRun
+        .create({
+          data: {
+            organizationId: context.organizationId,
+            userId: context.userId,
+            mcpServerId: context.mcpServerId,
+            toolId: null,
+            source: 'inline',
+            status: result.ok ? 'SUCCESS' : 'ERROR',
+            durationMs,
+            toolCallCount: result.calls.length,
+            error: result.ok ? undefined : (result.error?.message ?? 'code run failed').slice(0, 2000),
+          },
+        })
+        .catch((e) => this.logger.warn(`code_runs audit write failed: ${e?.message ?? e}`));
+    }
+
+    return this.codeResultToContent(result);
+  }
+
+  /**
+   * The CodeBridgeDeps shared by saved code tools and inline code: resolve a
+   * tool within the allowed connectors, run it back through executeTool (so
+   * licence, tenant scope and audit apply, with inCodeRun set), and search /
+   * describe over the same set. The access rules (uses, read/write, role) are
+   * applied by buildCodeBridge around these, per the spec.
+   */
+  private codeBridgeDeps(
+    usesConnectorIds: string[],
+    allowedToolIds: string[] | null,
+    context?: CodeExecContext,
+  ): CodeBridgeDeps {
+    const toBridgeTool = (t: RegisteredTool): BridgeResolvedTool => ({
+      id: t.id,
+      name: t.name,
+      connectorId: t.connectorId,
+      readOnly:
+        deriveToolAnnotations({
+          name: t.name,
+          connectorType: t.connectorType,
+          endpointMapping: t.endpointMapping as { method?: string; path?: string },
+          connectorConfig: { config: t.connectorConfig?.config ?? null },
+          annotations: t.annotations,
+        }).readOnlyHint === true,
+      isCode: isCodeMethod(t.endpointMapping),
+    });
+
+    return {
+      resolveTool: (name) => {
+        const resolved = this.toolRegistry.getTool(name, usesConnectorIds);
+        return resolved ? toBridgeTool(resolved) : undefined;
+      },
+      allowedToolIds,
+      runTool: async (name, args, connectorId) => {
+        const r = await this.executeTool(name, args, {
+          ...context,
+          connectorIds: [connectorId],
+          allowedToolIds,
+          inCodeRun: true,
+        });
+        if (r.isError) {
+          throw new Error(textOf(r.content) ?? `Tool '${name}' failed.`);
+        }
+        if (r.structured !== undefined) return r.structured;
+        const text = textOf(r.content);
+        try {
+          return text ? JSON.parse(text) : null;
+        } catch {
+          return text ?? null;
+        }
+      },
+      search: async (query) => {
+        const q = query.toLowerCase().trim();
+        const seen = new Set<string>();
+        const out: { tool: string; description: string; readOnly: boolean }[] = [];
+        for (const connectorId of usesConnectorIds) {
+          for (const t of this.toolRegistry.getAllTools()) {
+            if (t.connectorId !== connectorId || isCodeMethod(t.endpointMapping)) continue;
+            if (seen.has(t.name)) continue;
+            const hay = `${t.name} ${t.description ?? ''}`.toLowerCase();
+            if (q && !hay.includes(q)) continue;
+            seen.add(t.name);
+            out.push({ tool: t.name, description: t.description ?? '', readOnly: toBridgeTool(t).readOnly });
+            if (out.length >= 50) return out;
+          }
+        }
+        return out;
+      },
+      describe: async (name) => {
+        const resolved = this.toolRegistry.getTool(name, usesConnectorIds);
+        if (!resolved) return null;
+        return {
+          name: resolved.name,
+          description: resolved.description ?? '',
+          inputSchema: resolved.parameters ?? {},
+          readOnly: toBridgeTool(resolved).readOnly,
+        };
+      },
+    };
+  }
+
+  /** Turn a code-run result into a tool result (shared by tool and inline runs). */
+  private codeResultToContent(result: {
+    ok: boolean;
+    value?: unknown;
+    error?: { name: string; message: string };
+    logs: { level: string; message: string }[];
+  }): { content: ToolResultContent; isError?: boolean; structured?: unknown } {
     if (result.ok) {
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result.value ?? null, null, 2) }],

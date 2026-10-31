@@ -216,3 +216,59 @@ describe('DynamicMcpTools — code tools', () => {
     expect(res.content[0].text).toMatch(/not a tool this code tool can use|uses/);
   });
 });
+
+describe('DynamicMcpTools — inline code', () => {
+  it('runs inline code over the given connectors and writes an inline code_runs row', async () => {
+    const { executor, prisma } = build([innerRead], (b) => b.run('inner_read', {}));
+    const res = await executor.executeInlineCode(
+      'return await amcp.run("inner_read", {});',
+      { userId: 'u1', organizationId: 'org1' },
+      { connectorIds: ['c1'], allowedToolIds: ['read-1'] },
+    );
+    expect(res.isError).toBeUndefined();
+    expect(res.structured).toEqual({ text: 'READVALUE' });
+    expect(prisma.codeRun.create).toHaveBeenCalledTimes(1);
+    expect(prisma.codeRun.create.mock.calls[0][0].data).toMatchObject({
+      organizationId: 'org1',
+      toolId: null,
+      source: 'inline',
+      status: 'SUCCESS',
+    });
+  });
+
+  it('inline code is read-only: a write tool is refused', async () => {
+    const { executor } = build([innerWrite], (b) => b.run('inner_write', {}));
+    const res = await executor.executeInlineCode(
+      'return await amcp.run("inner_write", {});',
+      { userId: 'u1', organizationId: 'org1' },
+      { connectorIds: ['c1'], allowedToolIds: ['write-1'] },
+    );
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('read-only');
+  });
+
+  it('inline code re-checks the caller role (invoker rights)', async () => {
+    const { executor } = build([innerRead], (b) => b.run('inner_read', {}));
+    const res = await executor.executeInlineCode(
+      'return await amcp.run("inner_read", {});',
+      { userId: 'u1', organizationId: 'org1' },
+      { connectorIds: ['c1'], allowedToolIds: [] }, // caller may use nothing
+    );
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('Access denied');
+  });
+
+  it('refuses inline code when no runner is configured', async () => {
+    const { executor } = build([innerRead], (b) => b.run('inner_read', {}), { configured: false });
+    const res = await executor.executeInlineCode('return 1;', { organizationId: 'org1' }, { connectorIds: ['c1'], allowedToolIds: null });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('not available');
+  });
+
+  it('reports codeModeAvailable from the runner', () => {
+    const { executor } = build([innerRead], (b) => b.run('x', {}));
+    expect(executor.codeModeAvailable()).toBe(true);
+    const off = build([innerRead], (b) => b.run('x', {}), { configured: false });
+    expect(off.executor.codeModeAvailable()).toBe(false);
+  });
+});
