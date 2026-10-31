@@ -222,6 +222,11 @@ export function isExcludedAdapterSlug(slug: string, profile: SharedToolsetProfil
 
 /** True for a tool of a catalog connector the shared endpoint does not serve in `profile`. */
 export function excludedOnSharedEndpoint(tool: RegisteredTool, profile: SharedToolsetProfile): boolean {
+  // Code tools are never served on the shared endpoint: the per-server codeMode
+  // switch that governs them has no equivalent here, so serving them would run
+  // code outside that control. Shared-endpoint code mode is a separate,
+  // Enterprise-gated design (see the code-mode issues).
+  if ((tool.endpointMapping as { method?: unknown } | undefined)?.method === 'code') return true;
   const slug = tool.connectorConfig?.config?.adapterSlug;
   if (typeof slug !== 'string') return false;
   const served = sharedEndpointAccess(slug, profile);
