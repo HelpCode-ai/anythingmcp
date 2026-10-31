@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { knowledgeFolders, roles as rolesApi, type KnowledgeFolder } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -73,6 +74,7 @@ export function KnowledgeFolderTree({
   isAdmin: boolean;
   onChanged: () => void;
 }) {
+  const t = useTranslations('knowledgeFolders');
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
@@ -93,7 +95,7 @@ export function KnowledgeFolderTree({
       onChanged();
       onSelect(f.id);
     } catch (e: any) {
-      setError(e.message || 'Could not create the folder');
+      setError(e.message || t('createFailed'));
     }
   };
 
@@ -117,14 +119,14 @@ export function KnowledgeFolderTree({
   return (
     <Card className="p-2.5">
       <div className="mb-1.5 flex items-center justify-between px-1">
-        <span className="text-[11.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">Folders</span>
+        <span className="text-[11.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">{t('title')}</span>
         {canEdit && (
           <button
             onClick={() => setCreating((v) => !v)}
             className="text-[12px] text-[var(--brand)] hover:underline"
-            title={parent ? `New folder inside ${parent.path}` : 'New top-level folder'}
+            title={parent ? t('newInside', { path: parent.path }) : t('newTop')}
           >
-            {creating ? 'Cancel' : '+ New'}
+            {creating ? t('cancel') : t('new')}
           </button>
         )}
       </div>
@@ -135,18 +137,18 @@ export function KnowledgeFolderTree({
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && create()}
-            placeholder={parent && parent.depth < MAX_DEPTH ? `Inside ${parent.path}` : 'Folder name'}
+            placeholder={parent && parent.depth < MAX_DEPTH ? t('inside', { path: parent.path }) : t('name')}
             className={inputCls}
           />
           <Button size="sm" variant="primary" onClick={create} disabled={!newName.trim()}>
-            Create
+            {t('create')}
           </Button>
         </div>
       )}
       {error && <p className="px-1 pb-1 text-[11.5px] text-[var(--danger)]">{error}</p>}
-      <nav className="flex flex-col gap-0.5" aria-label="Folders">
-        {item('', kind === 'skill' ? 'All skills' : 'All company memory', 0)}
-        {folders.length > 0 && item('none', 'Not in a folder', 0)}
+      <nav className="flex flex-col gap-0.5" aria-label={t('title')}>
+        {item('', kind === 'skill' ? t('allSkills') : t('allMemory'), 0)}
+        {folders.length > 0 && item('none', t('notInFolder'), 0)}
         {folders.map((f) => (
           <div key={f.id}>
             <div className="group flex items-center">
@@ -160,7 +162,7 @@ export function KnowledgeFolderTree({
                     {f.roleIds.length > 0 && (
                       <>
                         <LockIcon />
-                        <span className="sr-only">Limited to roles:</span>
+                        <span className="sr-only">{t('limited')}</span>
                       </>
                     )}
                   </>,
@@ -171,9 +173,9 @@ export function KnowledgeFolderTree({
                 <button
                   onClick={() => setEditing(editing === f.id ? null : f.id)}
                   className="px-1 text-[11.5px] text-[var(--text-3)] opacity-0 hover:text-[var(--text)] group-hover:opacity-100 focus:opacity-100"
-                  aria-label={`Edit folder ${f.path}`}
+                  aria-label={t('editAria', { path: f.path })}
                 >
-                  Edit
+                  {t('edit')}
                 </button>
               )}
             </div>
@@ -196,7 +198,7 @@ export function KnowledgeFolderTree({
       </nav>
       {folders.length === 0 && (
         <p className="px-1 pt-1.5 text-[11.5px] leading-relaxed text-[var(--text-3)]">
-          Folders group skills and company memory by topic, for people and for AI clients.
+          {t('emptyHint')}
         </p>
       )}
     </Card>
@@ -218,6 +220,7 @@ function FolderEditor({
   isAdmin: boolean;
   onDone: (deleted?: boolean) => void;
 }) {
+  const t = useTranslations('knowledgeFolders');
   const [name, setName] = useState(folder.name);
   const [description, setDescription] = useState(folder.description ?? '');
   const [parentId, setParentId] = useState(folder.parentId ?? '');
@@ -262,7 +265,7 @@ function FolderEditor({
       if (canRestrict && !sameRoles) await knowledgeFolders.setRoles(token, folder.id, roleIds);
       onDone();
     } catch (e: any) {
-      setError(e.message || 'Could not save');
+      setError(e.message || t('saveFailed'));
     } finally {
       setBusy(false);
     }
@@ -271,9 +274,9 @@ function FolderEditor({
   const remove = async () => {
     if (
       !confirm(
-        `Delete the folder "${folder.path}"?\n\nIts subfolders, skills and memory move to ${
-          folder.parentId ? 'the folder above' : 'the top level'
-        }. Nothing else is deleted.`,
+        folder.parentId
+          ? t('confirmDeleteUp', { path: folder.path })
+          : t('confirmDeleteTop', { path: folder.path }),
       )
     )
       return;
@@ -282,43 +285,43 @@ function FolderEditor({
       await knowledgeFolders.remove(token, folder.id);
       onDone(true);
     } catch (e: any) {
-      setError(e.message || 'Could not delete');
+      setError(e.message || t('deleteFailed'));
       setBusy(false);
     }
   };
 
   return (
     <div className="my-1 ml-2 flex flex-col gap-1.5 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-2.5">
-      <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} aria-label="Folder name" />
+      <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} aria-label={t('name')} />
       <textarea
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         rows={2}
         maxLength={500}
-        placeholder="What belongs here (shown to AI clients)"
+        placeholder={t('descriptionPlaceholder')}
         className={cn(inputCls, 'h-auto py-1.5')}
       />
       <select
         value={parentId}
         onChange={(e) => setParentId(e.target.value)}
         className={inputCls}
-        aria-label="Parent folder"
+        aria-label={t('parent')}
       >
-        <option value="">Top level</option>
+        <option value="">{t('topLevel')}</option>
         {parents.map((f) => (
           <option key={f.id} value={f.id}>
-            Inside {f.path}
+            {t('inside', { path: f.path })}
           </option>
         ))}
       </select>
       {canRestrict ? (
         <fieldset className="rounded-[8px] border border-[var(--border)] p-2">
-          <legend className="px-1 text-[11.5px] text-[var(--text-2)]">Visible to</legend>
+          <legend className="px-1 text-[11.5px] text-[var(--text-2)]">{t('visibleTo')}</legend>
           <p className="mb-1 text-[11px] text-[var(--text-3)]">
-            None checked: the whole workspace. Admins always see every folder.
+            {t('noneChecked')}
           </p>
           {roleList.length === 0 && (
-            <p className="text-[11px] text-[var(--text-3)]">No roles yet: create them under Settings → Roles.</p>
+            <p className="text-[11px] text-[var(--text-3)]">{t('noRoles')}</p>
           )}
           {roleList.map((r) => (
             <label key={r.id} className="flex items-center gap-1.5 text-[12px] text-[var(--text)]">
@@ -335,21 +338,23 @@ function FolderEditor({
         </fieldset>
       ) : folder.roleIds.length > 0 ? (
         <p className="text-[11px] text-[var(--text-3)]">
-          Visible to: {folder.roleIds.map((id) => roleList.find((r) => r.id === id)?.name ?? 'a role').join(', ')}
+          {t('visibleToList', {
+            roles: folder.roleIds.map((id) => roleList.find((r) => r.id === id)?.name ?? t('aRole')).join(', '),
+          })}
         </p>
       ) : isAdmin ? (
-        <p className="text-[11px] text-[var(--text-3)]">Limiting folders to roles is part of Enterprise.</p>
+        <p className="text-[11px] text-[var(--text-3)]">{t('enterprise')}</p>
       ) : null}
       {error && <p className="text-[11.5px] text-[var(--danger)]">{error}</p>}
       <div className="flex gap-1.5">
         <Button size="sm" variant="primary" onClick={save} disabled={busy || !name.trim()}>
-          Save
+          {t('save')}
         </Button>
         <Button size="sm" variant="secondary" onClick={() => onDone()}>
-          Cancel
+          {t('cancel')}
         </Button>
         <Button size="sm" variant="danger" className="ml-auto" onClick={remove} disabled={busy}>
-          Delete
+          {t('delete')}
         </Button>
       </div>
     </div>
@@ -365,9 +370,10 @@ function FolderIcon() {
 }
 
 function LockIcon() {
+  const t = useTranslations('knowledgeFolders');
   return (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-70" aria-hidden="true">
-      <title>Limited to roles</title>
+      <title>{t('lockTitle')}</title>
       <rect x="4" y="11" width="16" height="10" rx="2" />
       <path d="M8 11V7a4 4 0 0 1 8 0v4" />
     </svg>

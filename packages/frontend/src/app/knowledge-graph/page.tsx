@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { knowledgeGraph, connectors as connectorsApi, type KgNode, type KgEdge } from '@/lib/api';
 import { KgGraph } from '@/components/kg-graph';
@@ -12,13 +13,6 @@ import { StatusPill } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 const SOURCES = ['STATIC', 'OBSERVED', 'MANUAL', 'LLM'] as const;
-const KIND_LABEL: Record<string, string> = {
-  references: 'references',
-  produces_consumes: 'data flow',
-  parent_child: 'parent / child',
-  same_identity: 'same identity',
-  related: 'related',
-};
 const KIND_OPTIONS = [
   'references',
   'produces_consumes',
@@ -33,7 +27,22 @@ const labelClass = 'block text-[12.5px] font-medium text-[var(--text-2)]';
 const sectionLabelClass =
   'text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[var(--text-3)]';
 
+/** The label of an edge kind in the UI language, or the raw kind when unknown. */
+function useKindLabel() {
+  const t = useTranslations('knowledgeGraph');
+  return (kind: string) => (t.has(`kinds.${kind}`) ? t(`kinds.${kind}`) : kind);
+}
+
+/** The label of a graph layer (STATIC, OBSERVED, ...), or the raw value lowercased. */
+function useSourceLabel() {
+  const t = useTranslations('knowledgeGraph');
+  return (source: string) => (t.has(`sources.${source}`) ? t(`sources.${source}`) : source.toLowerCase());
+}
+
 export default function KnowledgeGraphPage() {
+  const t = useTranslations('knowledgeGraph');
+  const locale = useLocale();
+  const sourceLabel = useSourceLabel();
   const { token, user } = useAuth();
   const [nodes, setNodes] = useState<KgNode[]>([]);
   const [edges, setEdges] = useState<KgEdge[]>([]);
@@ -66,9 +75,9 @@ export default function KnowledgeGraphPage() {
         setLastBuiltAt(g.lastBuiltAt);
         setEnabled(g.enabled);
       })
-      .catch((e) => setStatus(e.message || 'Failed to load graph'))
+      .catch((e) => setStatus(e.message || t('status.loadFailed')))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, t]);
 
   useEffect(() => {
     load();
@@ -86,17 +95,21 @@ export default function KnowledgeGraphPage() {
   const enrich = async () => {
     if (!token) return;
     setEnriching(true);
-    setStatus('Asking the model for relationship suggestions…');
+    setStatus(t('status.enriching'));
     try {
       const r = await knowledgeGraph.enrich(token);
       setStatus(
         r.skipped
-          ? 'No changes since the last enrichment.'
-          : `AI suggested ${r.suggested} relationship(s)${r.model ? ` (${r.model})` : ''}. Review them in the “suggested” layer.`,
+          ? t('status.noChanges')
+          : t('status.suggested', {
+              count: r.suggested,
+              hasModel: r.model ? 'yes' : 'no',
+              model: r.model ?? '',
+            }),
       );
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Enrichment failed');
+      setStatus(e.message || t('status.enrichFailed'));
     } finally {
       setEnriching(false);
     }
@@ -105,13 +118,13 @@ export default function KnowledgeGraphPage() {
   const rebuild = async () => {
     if (!token) return;
     setRebuilding(true);
-    setStatus('Rebuilding graph…');
+    setStatus(t('status.rebuilding'));
     try {
       const r = await knowledgeGraph.rebuild(token);
-      setStatus(`Rebuilt: ${r.nodes} entities, ${r.edges} relationships from ${r.connectors} connectors.`);
+      setStatus(t('status.rebuilt', { nodes: r.nodes, edges: r.edges, connectors: r.connectors }));
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Rebuild failed');
+      setStatus(e.message || t('status.rebuildFailed'));
     } finally {
       setRebuilding(false);
     }
@@ -168,31 +181,31 @@ export default function KnowledgeGraphPage() {
     if (!token) return;
     try {
       await knowledgeGraph.updateEdge(token, id, body);
-      setStatus('Saved');
+      setStatus(t('status.saved'));
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Save failed');
+      setStatus(e.message || t('status.saveFailed'));
     }
   };
   const deleteNode = async (id: string) => {
     if (!token) return;
     try {
       await knowledgeGraph.deleteNode(token, id);
-      setStatus('Entity deleted');
+      setStatus(t('status.entityDeleted'));
       setSelectedNodeId(null);
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Delete failed');
+      setStatus(e.message || t('status.deleteFailed'));
     }
   };
   const saveNode = async (id: string, body: { label?: string; description?: string | null }) => {
     if (!token) return;
     try {
       await knowledgeGraph.updateNode(token, id, body);
-      setStatus('Saved');
+      setStatus(t('status.saved'));
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Save failed');
+      setStatus(e.message || t('status.saveFailed'));
     }
   };
   const createEdge = async (body: {
@@ -204,10 +217,10 @@ export default function KnowledgeGraphPage() {
     if (!token) return;
     try {
       await knowledgeGraph.createEdge(token, body);
-      setStatus('Connection added');
+      setStatus(t('status.connectionAdded'));
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Create failed');
+      setStatus(e.message || t('status.createFailed'));
     }
   };
   const createNode = async (body: {
@@ -218,19 +231,25 @@ export default function KnowledgeGraphPage() {
     if (!token) return;
     try {
       await knowledgeGraph.createNode(token, body);
-      setStatus('Entity added');
+      setStatus(t('status.entityAdded'));
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Create failed');
+      setStatus(e.message || t('status.createFailed'));
     }
   };
 
   return (
     <AppShell
-      title="Knowledge Graph"
-      subtitle={`${nodes.length} entities · ${visibleEdges.length} relationships${
-        lastBuiltAt ? ` · built ${new Date(lastBuiltAt).toLocaleString()}` : ''
-      }`}
+      title={t('title')}
+      subtitle={
+        lastBuiltAt
+          ? t('countsBuilt', {
+              nodes: nodes.length,
+              edges: visibleEdges.length,
+              date: new Date(lastBuiltAt).toLocaleString(locale),
+            })
+          : t('counts', { nodes: nodes.length, edges: visibleEdges.length })
+      }
       maxWidth="100%"
       hideFooter
       actions={
@@ -242,11 +261,11 @@ export default function KnowledgeGraphPage() {
                 onClick={enrich}
                 disabled={enriching || rebuilding}
               >
-                {enriching ? 'Enriching…' : 'Enrich with AI'}
+                {enriching ? t('enriching') : t('enrich')}
               </Button>
             )}
             <Button onClick={rebuild} disabled={rebuilding || enriching}>
-              {rebuilding ? 'Rebuilding…' : 'Rebuild graph'}
+              {rebuilding ? t('rebuilding') : t('rebuild')}
             </Button>
           </div>
         ) : undefined
@@ -255,7 +274,7 @@ export default function KnowledgeGraphPage() {
       {/* Filters / status bar */}
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
         <div className="flex items-center gap-2">
-          <span className={sectionLabelClass}>Layer</span>
+          <span className={sectionLabelClass}>{t('layer')}</span>
           {SOURCES.map((s) => (
             <button
               key={s}
@@ -267,16 +286,16 @@ export default function KnowledgeGraphPage() {
                   : 'border-[var(--border)] text-[var(--text-3)] hover:border-[var(--border-strong)]',
               )}
             >
-              {s.toLowerCase()}
+              {sourceLabel(s)}
             </button>
           ))}
         </div>
         <label className="flex items-center gap-1.5 text-[var(--text-2)]">
           <input type="checkbox" checked={showSuggested} onChange={(e) => setShowSuggested(e.target.checked)} />
-          <span>show suggested</span>
+          <span>{t('showSuggested')}</span>
         </label>
         <label className="flex items-center gap-2 text-[var(--text-2)]">
-          <span className={sectionLabelClass}>min confidence</span>
+          <span className={sectionLabelClass}>{t('minConfidence')}</span>
           <input
             type="range"
             min={0}
@@ -293,7 +312,7 @@ export default function KnowledgeGraphPage() {
             href="/knowledge-graph/skills"
             className="whitespace-nowrap text-[12.5px] font-medium text-[var(--brand)] hover:underline"
           >
-            Skills →
+            {t('skillsLink')}
           </Link>
         </div>
       </div>
@@ -304,25 +323,25 @@ export default function KnowledgeGraphPage() {
           <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
             <Legend />
             <span className="text-[12px] text-[var(--text-3)]">
-              {nodes.length} entities · {visibleEdges.length} relationships
+              {t('counts', { nodes: nodes.length, edges: visibleEdges.length })}
             </span>
           </div>
           <div className="relative h-[calc(72vh-49px)] bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--brand)_5%,transparent),transparent_70%)]">
             {loading ? (
               <div className="flex h-full items-center justify-center text-[var(--text-3)]">
-                Loading graph…
+                {t('loading')}
               </div>
             ) : !enabled ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-                <p className="font-medium text-[var(--text)]">The Knowledge Graph is disabled for this workspace.</p>
+                <p className="font-medium text-[var(--text)]">{t('disabled')}</p>
                 <p className="text-[13px] text-[var(--text-3)]">
-                  An admin can enable it in Settings → Organization → Features.
+                  {t('disabledHint')}
                 </p>
               </div>
             ) : nodes.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
                 <p className="text-[13px] text-[var(--text-3)]">
-                  No graph yet. {isAdmin ? 'Click “Rebuild graph” to generate it from your connectors and usage.' : 'Ask an admin to build the graph.'}
+                  {isAdmin ? t('emptyAdmin') : t('emptyMember')}
                 </p>
               </div>
             ) : (
@@ -369,9 +388,9 @@ export default function KnowledgeGraphPage() {
             />
           ) : (
             <Card className="p-[18px]">
-              <p className="mb-1 text-[14px] font-semibold text-[var(--text)]">Explore</p>
+              <p className="mb-1 text-[14px] font-semibold text-[var(--text)]">{t('explore')}</p>
               <p className="text-[13px] text-[var(--text-2)]">
-                Click an entity to see its fields and links, or an edge to inspect (and edit) a relationship.
+                {t('exploreHint')}
               </p>
               {isAdmin && connectorList.length > 0 && (
                 <AddNodeForm connectors={connectorList} onCreate={createNode} />
@@ -388,19 +407,20 @@ export default function KnowledgeGraphPage() {
 }
 
 function Legend() {
+  const kindLabel = useKindLabel();
   const items = [
     ['references', '#6366f1'],
-    ['data flow', '#16a34a'],
-    ['parent / child', '#94a3b8'],
-    ['same identity', '#f59e0b'],
+    ['produces_consumes', '#16a34a'],
+    ['parent_child', '#94a3b8'],
+    ['same_identity', '#f59e0b'],
     ['related', '#a855f7'],
   ] as const;
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {items.map(([label, color]) => (
-        <span key={label} className="flex items-center gap-1.5 text-[12px] text-[var(--text-2)]">
+      {items.map(([kind, color]) => (
+        <span key={kind} className="flex items-center gap-1.5 text-[12px] text-[var(--text-2)]">
           <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: color }} />
-          {label}
+          {kindLabel(kind)}
         </span>
       ))}
     </div>
@@ -422,6 +442,9 @@ function NodePanel({
   onSave: (body: { label?: string; description?: string | null }) => void;
   onDelete: () => void;
 }) {
+  const t = useTranslations('knowledgeGraph');
+  const kindLabel = useKindLabel();
+  const sourceLabel = useSourceLabel();
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(node.label);
   const [description, setDescription] = useState(node.description ?? '');
@@ -429,7 +452,7 @@ function NodePanel({
     <div className="flex flex-col gap-3.5">
       <Card className="p-[18px]">
         <p className={cn(sectionLabelClass, 'mb-2')}>
-          {node.connectorName ?? 'connector'} · {String(node.source).toLowerCase()}
+          {node.connectorName ?? t('node.connector')} · {sourceLabel(String(node.source))}
         </p>
 
         {editing ? (
@@ -438,14 +461,14 @@ function NodePanel({
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               className={inputClass}
-              placeholder="Label"
+              placeholder={t('node.labelPlaceholder')}
             />
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               className={inputClass}
-              placeholder="Description (shown to AI clients reading the graph)"
+              placeholder={t('node.descriptionPlaceholder')}
             />
             <div className="flex gap-2">
               <Button
@@ -455,7 +478,7 @@ function NodePanel({
                   setEditing(false);
                 }}
               >
-                Save
+                {t('save')}
               </Button>
               <Button
                 size="sm"
@@ -466,7 +489,7 @@ function NodePanel({
                   setEditing(false);
                 }}
               >
-                Cancel
+                {t('cancel')}
               </Button>
             </div>
           </div>
@@ -481,16 +504,16 @@ function NodePanel({
             {isAdmin && (
               <div className="flex shrink-0 gap-1.5">
                 <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
-                  Edit
+                  {t('edit')}
                 </Button>
                 <Button
                   size="sm"
                   variant="secondary"
                   onClick={onDelete}
                   className="text-[var(--danger)]"
-                  title="Delete this entity and its links"
+                  title={t('node.deleteTitle')}
                 >
-                  Delete
+                  {t('delete')}
                 </Button>
               </div>
             )}
@@ -499,7 +522,7 @@ function NodePanel({
       </Card>
 
       <Card className="p-[18px]">
-        <p className={cn(sectionLabelClass, 'mb-2')}>Fields ({node.fields.length})</p>
+        <p className={cn(sectionLabelClass, 'mb-2')}>{t('node.fields', { count: node.fields.length })}</p>
         <div className="flex flex-wrap gap-1.5">
           {node.fields.slice(0, 40).map((f) => (
             <span
@@ -514,7 +537,7 @@ function NodePanel({
       </Card>
 
       <Card className="p-[18px]">
-        <p className={cn(sectionLabelClass, 'mb-2.5')}>Connections ({edges.length})</p>
+        <p className={cn(sectionLabelClass, 'mb-2.5')}>{t('node.connections', { count: edges.length })}</p>
         <ul className="flex flex-col gap-2.5">
           {edges.map((e) => {
             const other = e.sourceNodeId === node.id ? nodeById.get(e.targetNodeId) : nodeById.get(e.sourceNodeId);
@@ -527,7 +550,7 @@ function NodePanel({
                 <div className="min-w-0">
                   <div className="text-[13px] font-medium text-[var(--text)]">{other?.label ?? '?'}</div>
                   <div className="text-[11.5px] text-[var(--text-3)]">
-                    {KIND_LABEL[e.kind] ?? e.kind}
+                    {kindLabel(e.kind)}
                     {e.matchKey ? ` · ${e.matchKey}` : ''}
                   </div>
                 </div>
@@ -540,14 +563,14 @@ function NodePanel({
 
       {node.toolNames.length > 0 && (
         <Card className="p-[18px]">
-          <p className={cn(sectionLabelClass, 'mb-2')}>Tools ({node.toolNames.length})</p>
+          <p className={cn(sectionLabelClass, 'mb-2')}>{t('node.tools', { count: node.toolNames.length })}</p>
           <div className="flex flex-wrap gap-1.5">
-            {node.toolNames.slice(0, 30).map((t) => (
+            {node.toolNames.slice(0, 30).map((name) => (
               <span
-                key={t}
+                key={name}
                 className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-[3px] font-mono text-[10.5px] text-[var(--text-2)]"
               >
-                {t}
+                {name}
               </span>
             ))}
           </div>
@@ -574,6 +597,9 @@ function EdgePanel({
   onDelete: () => void;
   onSave: (body: { kind?: string; note?: string | null }) => void;
 }) {
+  const t = useTranslations('knowledgeGraph');
+  const kindLabel = useKindLabel();
+  const sourceLabel = useSourceLabel();
   const src = nodeById.get(edge.sourceNodeId);
   const tgt = nodeById.get(edge.targetNodeId);
   const [kind, setKind] = useState(edge.kind);
@@ -582,8 +608,10 @@ function EdgePanel({
   return (
     <Card className="p-[18px]">
       <div className="mb-3.5 flex items-center gap-2">
-        <span className={sectionLabelClass}>{String(edge.source).toLowerCase()}</span>
-        <StatusPill tone={edge.status === 'suggested' ? 'warn' : 'success'}>{edge.status}</StatusPill>
+        <span className={sectionLabelClass}>{sourceLabel(String(edge.source))}</span>
+        <StatusPill tone={edge.status === 'suggested' ? 'warn' : 'success'}>
+          {t.has(`edgeStatus.${edge.status}`) ? t(`edgeStatus.${edge.status}`) : edge.status}
+        </StatusPill>
       </div>
 
       <div className="mb-3.5 flex items-center gap-2.5">
@@ -601,16 +629,16 @@ function EdgePanel({
       </div>
 
       <dl className="space-y-1.5 text-[13px]">
-        <Row k="Kind" v={KIND_LABEL[edge.kind] ?? edge.kind} />
-        {edge.matchKey && <Row k="Match key" v={edge.matchKey} />}
-        <Row k="Confidence" v={edge.confidence.toFixed(2)} />
-        <Row k="Observations" v={String(edge.observations)} />
+        <Row k={t('edge.kind')} v={kindLabel(edge.kind)} />
+        {edge.matchKey && <Row k={t('edge.matchKey')} v={edge.matchKey} />}
+        <Row k={t('edge.confidence')} v={edge.confidence.toFixed(2)} />
+        <Row k={t('edge.observations')} v={String(edge.observations)} />
       </dl>
 
       {isAdmin ? (
         <div className="mt-3.5 space-y-2.5">
           <label className={labelClass}>
-            <span className="mb-1.5 block">Kind</span>
+            <span className="mb-1.5 block">{t('edge.kind')}</span>
             <select
               value={kind}
               onChange={(e) => setKind(e.target.value)}
@@ -618,23 +646,23 @@ function EdgePanel({
             >
               {KIND_OPTIONS.map((k) => (
                 <option key={k} value={k}>
-                  {KIND_LABEL[k] ?? k}
+                  {kindLabel(k)}
                 </option>
               ))}
             </select>
           </label>
           <label className={labelClass}>
-            <span className="mb-1.5 block">Description (served to AI clients)</span>
+            <span className="mb-1.5 block">{t('edge.note')}</span>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
               className={inputClass}
-              placeholder="Why these entities are linked…"
+              placeholder={t('edge.notePlaceholder')}
             />
           </label>
           <Button size="sm" onClick={() => onSave({ kind, note: note.trim() ? note : null })} disabled={!dirty}>
-            Save changes
+            {t('edge.saveChanges')}
           </Button>
         </div>
       ) : (
@@ -649,14 +677,14 @@ function EdgePanel({
         <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3.5">
           {edge.status === 'suggested' && (
             <Button size="sm" onClick={onConfirm}>
-              Confirm
+              {t('edge.confirm')}
             </Button>
           )}
           <Button size="sm" variant="secondary" onClick={onReject}>
-            Reject
+            {t('edge.reject')}
           </Button>
           <Button size="sm" variant="secondary" onClick={onDelete} className="text-[var(--danger)]">
-            Delete
+            {t('delete')}
           </Button>
         </div>
       )}
@@ -671,6 +699,7 @@ function AddNodeForm({
   connectors: Array<{ id: string; name: string }>;
   onCreate: (body: { connectorId: string; label: string; description?: string }) => void;
 }) {
+  const t = useTranslations('knowledgeGraph');
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
   const [connectorId, setConnectorId] = useState('');
@@ -679,18 +708,18 @@ function AddNodeForm({
   if (!open) {
     return (
       <Button size="sm" className="mt-4 mr-2" onClick={() => setOpen(true)}>
-        + Add entity
+        {t('addNode.open')}
       </Button>
     );
   }
   const valid = label.trim() && connectorId;
   return (
     <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-3.5">
-      <p className="text-[13px] font-semibold text-[var(--text)]">New entity</p>
+      <p className="text-[13px] font-semibold text-[var(--text)]">{t('addNode.title')}</p>
       <input
         value={label}
         onChange={(e) => setLabel(e.target.value)}
-        placeholder="Label (e.g. Loyalty tier)"
+        placeholder={t('addNode.labelPlaceholder')}
         className={inputClass}
       />
       <select
@@ -698,7 +727,7 @@ function AddNodeForm({
         onChange={(e) => setConnectorId(e.target.value)}
         className={inputClass}
       >
-        <option value="">Belongs to connector…</option>
+        <option value="">{t('addNode.connector')}</option>
         {connectors.map((c) => (
           <option key={c.id} value={c.id}>{c.name}</option>
         ))}
@@ -707,7 +736,7 @@ function AddNodeForm({
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         rows={2}
-        placeholder="Description (optional, served to AI clients)"
+        placeholder={t('addNode.description')}
         className={inputClass}
       />
       <div className="flex gap-2">
@@ -722,10 +751,10 @@ function AddNodeForm({
             setOpen(false);
           }}
         >
-          Add entity
+          {t('addNode.submit')}
         </Button>
         <Button size="sm" variant="secondary" onClick={() => setOpen(false)}>
-          Cancel
+          {t('cancel')}
         </Button>
       </div>
     </div>
@@ -743,6 +772,8 @@ function AddEdgeForm({
     () => [...nodes].sort((a, b) => a.label.localeCompare(b.label)),
     [nodes],
   );
+  const t = useTranslations('knowledgeGraph');
+  const kindLabel = useKindLabel();
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState('');
   const [target, setTarget] = useState('');
@@ -752,7 +783,7 @@ function AddEdgeForm({
   if (!open) {
     return (
       <Button size="sm" className="mt-4" onClick={() => setOpen(true)}>
-        + Add connection
+        {t('addEdge.open')}
       </Button>
     );
   }
@@ -760,20 +791,20 @@ function AddEdgeForm({
   const valid = source && target && source !== target;
   return (
     <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-3.5">
-      <p className="text-[13px] font-semibold text-[var(--text)]">New connection</p>
+      <p className="text-[13px] font-semibold text-[var(--text)]">{t('addEdge.title')}</p>
       <select value={source} onChange={(e) => setSource(e.target.value)} className={inputClass}>
-        <option value="">From entity…</option>
+        <option value="">{t('addEdge.from')}</option>
         {sorted.map((n) => (
           <option key={n.id} value={n.id}>{n.label} ({n.connectorName ?? '—'})</option>
         ))}
       </select>
       <select value={kind} onChange={(e) => setKind(e.target.value)} className={inputClass}>
         {KIND_OPTIONS.map((k) => (
-          <option key={k} value={k}>{KIND_LABEL[k] ?? k}</option>
+          <option key={k} value={k}>{kindLabel(k)}</option>
         ))}
       </select>
       <select value={target} onChange={(e) => setTarget(e.target.value)} className={inputClass}>
-        <option value="">To entity…</option>
+        <option value="">{t('addEdge.to')}</option>
         {sorted.map((n) => (
           <option key={n.id} value={n.id}>{n.label} ({n.connectorName ?? '—'})</option>
         ))}
@@ -782,7 +813,7 @@ function AddEdgeForm({
         value={note}
         onChange={(e) => setNote(e.target.value)}
         rows={2}
-        placeholder="Description (optional, served to AI clients)"
+        placeholder={t('addNode.description')}
         className={inputClass}
       />
       <div className="flex gap-2">
@@ -797,10 +828,10 @@ function AddEdgeForm({
             setOpen(false);
           }}
         >
-          Add
+          {t('addEdge.submit')}
         </Button>
         <Button size="sm" variant="secondary" onClick={() => setOpen(false)}>
-          Cancel
+          {t('cancel')}
         </Button>
       </div>
     </div>
