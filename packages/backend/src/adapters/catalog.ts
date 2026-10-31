@@ -567,6 +567,7 @@ import * as strapi from './intl/strapi.json';
 import * as streak from './intl/streak.json';
 import * as stripe from './intl/stripe.json';
 import * as substack from './intl/substack.json';
+import * as sumup from './intl/sumup.json';
 import * as supabase from './intl/supabase.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
@@ -1512,6 +1513,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   streak as unknown as AdapterDefinition,
   stripe as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,
+  sumup as unknown as AdapterDefinition,
   supabase as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
   synology as unknown as AdapterDefinition,

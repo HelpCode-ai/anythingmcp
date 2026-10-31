@@ -1,0 +1,143 @@
+{
+  "slug": "sumup",
+  "name": "SumUp",
+  "description": "Manage SumUp merchant accounts, transactions, payouts, checkouts and subaccounts from any AI agent. 6 tools with Bearer-token authentication.",
+  "instructions": "This connector interacts with the SumUp API (developer.sumup.com).\n\n**Setup**:\n1. Log in to the SumUp Dashboard at https://me.sumup.com.\n2. Navigate to **Settings → For Developers** (or Developer Portal).\n3. Generate an API Key (Personal Access Token).\n4. Set `SUMUP_API_KEY`.\n\n**Authentication**: `Authorization: Bearer ${SUMUP_API_KEY}`.\n\n**Overview of capabilities**:\n- Retrieve authenticated merchant account and profile details.\n- Query transaction history with date range, status, and pagination filters.\n- Fetch specific transaction details by code or ID.\n- List payouts and bank settlement batches.\n- List customer checkouts and payment links.\n- List operator subaccounts.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "sumup",
+  "docsUrl": "https://developer.sumup.com/api",
+  "requiredEnvVars": ["SUMUP_API_KEY"],
+  "connector": {
+    "name": "SumUp API",
+    "type": "REST",
+    "baseUrl": "https://api.sumup.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SUMUP_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v0.1/me"
+  },
+  "tools": [
+    {
+      "name": "sumup_get_merchant_profile",
+      "description": "Retrieve the merchant profile and account information associated with the authenticated API key, including merchant code, company name, currency, and country.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me"
+      }
+    },
+    {
+      "name": "sumup_list_transactions",
+      "description": "List transaction history for the authenticated merchant account with filtering by date range, payment status, and pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "changes_since": {
+            "type": "string",
+            "description": "Retrieve transactions changed since the given timestamp (ISO 8601 format)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of transactions to return per page (default 20, max 100)."
+          },
+          "order": {
+            "type": "string",
+            "enum": ["ascending", "descending"],
+            "description": "Order of transactions by timestamp (default descending)."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter transactions by statuses (e.g. ['SUCCESSFUL', 'CANCELLED', 'FAILED'])."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me/transactions/history"
+      }
+    },
+    {
+      "name": "sumup_get_transaction",
+      "description": "Retrieve detailed information for a specific transaction by transaction ID or transaction code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique internal ID or transaction code of the transaction."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me/transactions"
+      }
+    },
+    {
+      "name": "sumup_list_payouts",
+      "description": "Retrieve payout history and settlement reports transferred to the merchant bank account, filtered by date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start date for payouts filter in YYYY-MM-DD format."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date for payouts filter in YYYY-MM-DD format."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of payout records to return (default 20, max 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me/payouts"
+      }
+    },
+    {
+      "name": "sumup_list_checkouts",
+      "description": "List online checkouts and payment links generated for customers, with optional status and checkout reference filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "checkout_reference": {
+            "type": "string",
+            "description": "Filter by custom merchant checkout reference string."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/checkouts"
+      }
+    },
+    {
+      "name": "sumup_list_subaccounts",
+      "description": "Retrieve operator subaccounts configured under the main merchant account.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me/subaccounts"
+      }
+    }
+  ]
+}
