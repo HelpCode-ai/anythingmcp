@@ -2597,5 +2597,29 @@
         "s8": "Um einen Benutzer ohne Wartezeit zu testen: <strong>Provision on demand</strong>. Nutzen Sie es erneut, nachdem Sie den Benutzer in Entra deaktiviert haben."
       }
     }
+  },
+  "adminPages": {
+    "backToDashboard": "Zurück zum Dashboard",
+    "users": {
+      "inviteNoSmtp": "SMTP ist nicht konfiguriert. Geben Sie diesen Einladungslink manuell weiter:",
+      "joined": "Beigetreten",
+      "unrestricted": "Uneingeschränkt"
+    },
+    "roles": {
+      "title": "MCP-Rollenverwaltung",
+      "selectAll": "Alle auswählen"
+    },
+    "settings": {
+      "title": "Admin-Einstellungen"
+    },
+    "ssrf": {
+      "saved": "SSRF-Allowlist gespeichert",
+      "title": "SSRF-Allowlist",
+      "intro": "Hostnamen (oder <code>*.suffix</code>-Platzhalter bzw. einfache IP-Adressen), die der SSRF-Schutz durchlässt, wenn sie auf eine private Netzwerkadresse auflösen. Nötig, wenn Connectors Dienste im internen Netzwerk aufrufen, z. B. einen Docker-Compose-Dienst wie <code>koch-filesystem-bridge</code>.",
+      "warning": "⚠ Mit Vorsicht verwenden. Alles, was hier eingetragen ist, ist für jeden Connector in jeder Organisation dieser Installation erreichbar. Tragen Sie keine Hosts ein, denen Sie nicht voll vertrauen.",
+      "envHosts": "Aus der Umgebungsvariable <code>SSRF_ALLOWED_HOSTS</code> (schreibgeschützt):",
+      "list": "Von Admins bearbeitbare Liste (ein Host pro Zeile)",
+      "save": "Allowlist speichern"
+    }
   }
 }

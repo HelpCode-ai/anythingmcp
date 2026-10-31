@@ -1365,6 +1365,105 @@ test.describe('settings roles, administration, license and single sign-on from A
   });
 });
 
+async function adminPagesSession(page: Page) {
+  await settingsAdminSession(page);
+  // Registered after settingsAdminSession's routes, so these win for their URLs.
+  await page.route(/\/api\//, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/api/connectors') return json([{ id: 'c1', name: 'Shop' }]);
+    if (path === '/api/connectors/c1/tools') return json([{ id: 'tl1', name: 'list_orders' }, { id: 'tl2', name: 'get_order' }]);
+    if (path === '/api/roles/r1/tools') return json([{ tool: { id: 'tl1' } }]);
+    if (path === '/api/admin/settings/ssrf-allowed-hosts') return json({ hosts: ['koch-filesystem-bridge'], envHosts: ['db.internal'] });
+    return route.fallback();
+  });
+}
+
+test.describe('admin pages from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the admin users and roles pages in German', async ({ page }) => {
+      await adminPagesSession(page);
+      await page.goto('/admin/users');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('banner').getByText('Benutzerverwaltung', { exact: true })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'Beigetreten' })).toBeVisible();
+      await expect(page.getByText('Uneingeschränkt', { exact: true })).toBeVisible();
+      await expect(page.getByText('2.1.2026', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Insgesamt 2 Benutzer. Der erste registrierte Benutzer wird automatisch ADMIN.'),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Benutzer einladen' }).click();
+      await expect(page.getByRole('heading', { name: 'Neuen Benutzer einladen' })).toBeVisible();
+
+      await page.goto('/admin/roles');
+      await expect(page.getByRole('banner').getByText('MCP-Rollenverwaltung', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 Tools zugewiesen', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Tools verwalten' }).click();
+      await expect(page.getByRole('button', { name: 'Speichern (1 Tool)' })).toBeVisible();
+      await page.getByRole('button', { name: 'Alle auswählen' }).click();
+      await expect(page.getByRole('button', { name: 'Speichern (2 Tools)' })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'MCP-Tool-Rolle' })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the admin settings page in Italian', async ({ page }) => {
+      await adminPagesSession(page);
+      await page.goto('/admin/settings');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('banner').getByText('Impostazioni di amministrazione', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Email / configurazione SMTP' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Prova la connessione' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Allowlist SSRF' })).toBeVisible();
+      await expect(page.getByText(/^Dalla variabile d’ambiente SSRF_ALLOWED_HOSTS \(sola lettura\):$/)).toBeVisible();
+      await expect(page.getByText(/^Nomi host \(oppure caratteri jolly \*\.suffix/)).toBeVisible();
+      await page.getByRole('button', { name: 'Salva allowlist' }).click();
+      await expect(page.getByText('Allowlist SSRF salvata', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the admin pages in English', async ({ page }) => {
+      await adminPagesSession(page);
+      await page.goto('/admin/users');
+      await expect(page.getByRole('banner').getByText('User Management', { exact: true })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'Joined' })).toBeVisible();
+      await expect(page.getByText('Unrestricted', { exact: true })).toBeVisible();
+      await expect(page.getByText('1/2/2026', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 users total. The first registered user automatically becomes ADMIN.')).toBeVisible();
+
+      await page.goto('/admin/roles');
+      await expect(page.getByRole('banner').getByText('MCP Role Management', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 user', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Manage Tools' }).click();
+      await expect(page.getByRole('button', { name: 'Save (1 tools)' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Select all', exact: true })).toBeVisible();
+
+      await page.goto('/admin/settings');
+      await expect(page.getByRole('banner').getByText('Admin Settings', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText(
+          'Hostnames (or *.suffix wildcards / plain IPs) that the SSRF guard will let through when they resolve to a private network address. Needed when connectors call services on the internal network — e.g. a Docker-compose service like koch-filesystem-bridge.',
+        ),
+      ).toBeVisible();
+      await expect(
+        page.getByText(
+          "⚠ Use with caution. Anything added here can be reached by every connector in every organization on this deployment. Do not add hosts you don't fully trust.",
+        ),
+      ).toBeVisible();
+      await expect(page.getByText('From SSRF_ALLOWED_HOSTS env var (read-only):')).toBeVisible();
+      await page.getByRole('button', { name: 'Save allowlist' }).click();
+      await expect(page.getByText('SSRF allowlist saved', { exact: true })).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;

@@ -2597,5 +2597,29 @@
         "s8": "Per provare un utente senza aspettare: <strong>Provision on demand</strong>. Usalo di nuovo dopo aver disattivato l'utente in Entra."
       }
     }
+  },
+  "adminPages": {
+    "backToDashboard": "Torna alla dashboard",
+    "users": {
+      "inviteNoSmtp": "SMTP non è configurato. Condividi manualmente questo link di invito:",
+      "joined": "Data di iscrizione",
+      "unrestricted": "Senza restrizioni"
+    },
+    "roles": {
+      "title": "Gestione dei ruoli MCP",
+      "selectAll": "Seleziona tutti"
+    },
+    "settings": {
+      "title": "Impostazioni di amministrazione"
+    },
+    "ssrf": {
+      "saved": "Allowlist SSRF salvata",
+      "title": "Allowlist SSRF",
+      "intro": "Nomi host (oppure caratteri jolly <code>*.suffix</code> o semplici indirizzi IP) che la protezione SSRF lascia passare quando si risolvono in un indirizzo di rete privato. Serve quando i connettori chiamano servizi sulla rete interna, ad esempio un servizio Docker Compose come <code>koch-filesystem-bridge</code>.",
+      "warning": "⚠ Usala con cautela. Tutto ciò che aggiungi qui è raggiungibile da ogni connettore in ogni organizzazione di questa installazione. Non aggiungere host di cui non ti fidi completamente.",
+      "envHosts": "Dalla variabile d’ambiente <code>SSRF_ALLOWED_HOSTS</code> (sola lettura):",
+      "list": "Elenco modificabile dagli amministratori (un host per riga)",
+      "save": "Salva allowlist"
+    }
   }
 }
