@@ -1,0 +1,293 @@
+{
+  "slug": "plentymarkets",
+  "name": "PlentyONE (plentymarkets)",
+  "description": "Access PlentyONE (formerly plentymarkets), the German multi-channel e-commerce ERP: orders, variations, stock levels, warehouses, customer contacts and order status updates via the REST API.",
+  "region": "de",
+  "category": "e-commerce",
+  "icon": "plentymarkets",
+  "docsUrl": "https://developers.plentymarkets.com",
+  "instructions": "**PlentyONE (formerly plentymarkets) is a German multi-channel e-commerce ERP.** It manages orders, items and variations, stock levels across multiple warehouses, and customer contacts across marketplaces like Amazon, eBay, Otto and webshops.\n\n**Authentication via LOGIN_TOKEN:** PlentyONE uses short-lived JWT tokens (86,400s / 24h). This adapter uses the `LOGIN_TOKEN` flow: it POSTs `{username, password}` to `{{PLENTY_URL}}/rest/login`, extracts the returned `access_token`, sends it as `Authorization: Bearer <token>`, and refreshes it proactively (every 3600s and automatically upon receiving an HTTP 401). You never handle raw tokens manually.\n\n**Setup and Credentials:**\n- `PLENTY_URL`: The root URL of your PlentyONE system (e.g. `https://p12345.my.plentysystems.com`, no trailing slash). You can locate this in the PlentyONE backend under *Setup → Settings → API → Data*.\n- `PLENTY_USERNAME`: REST API user username.\n- `PLENTY_PASSWORD`: REST API user password.\n\n**Best Practices:** We recommend creating a dedicated REST user account with least-privilege permissions under *Setup → Settings → User → Accounts*. Note that each active REST user counts against the concurrent API user limit (typically 3 users on standard plans; receiving HTTP 429 indicates concurrency exhaustion).\n\n**Rate Limits:** PlentyONE enforces rate limits based on system edition (Basic edition: 80 read calls/minute, 40 write calls/minute). Agents should stagger batch requests.\n\n**Item vs Variation vs Stock:** In PlentyONE, catalog items are containers holding one or more variations (`/items/variations`). Inventory availability is tracked per variation per warehouse (`/stockmanagement/stock`). To query physical stock, retrieve the `variationId` first, then call `plentymarkets_list_stock`.\n\n**Order Status Management:** Orders progress through numeric status codes (e.g., 5.0 for cleared for shipping). The status update tool `plentymarkets_update_order_status` executes a destructive write operation and is installed switched off (`enabled: false`) by default. Enable it explicitly when automated order transitions are required.",
+  "requiredEnvVars": [
+    "PLENTY_URL",
+    "PLENTY_USERNAME",
+    "PLENTY_PASSWORD"
+  ],
+  "connector": {
+    "name": "PlentyONE REST API",
+    "type": "REST",
+    "baseUrl": "{{PLENTY_URL}}/rest",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{PLENTY_URL}}/rest/login",
+      "loginMethod": "POST",
+      "loginBody": {
+        "username": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{PLENTY_USERNAME}}",
+      "password": "{{PLENTY_PASSWORD}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 86400,
+      "proactiveRefreshSeconds": 3600,
+      "refreshOn401": true
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/stockmanagement/warehouses"
+  },
+  "probe": {
+    "tool": "plentymarkets_list_warehouses"
+  },
+  "tools": [
+    {
+      "name": "plentymarkets_list_warehouses",
+      "description": "List all fulfillment and storage warehouses configured in the PlentyONE system with their identifier, name, and warehouse type. Ideal for connectivity testing.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockmanagement/warehouses"
+      }
+    },
+    {
+      "name": "plentymarkets_list_orders",
+      "description": "Query sales orders in PlentyONE filtered by status range, creation timestamp window, customer contact identifier, or included relations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statusFrom": {
+            "type": "number",
+            "description": "Filter orders starting from this numeric status ID (e.g. 1.0 for unpaid, 5.0 for cleared for shipping)."
+          },
+          "statusTo": {
+            "type": "number",
+            "description": "Filter orders up to this numeric status ID (e.g. 5.9 for in-picking/in-packing)."
+          },
+          "createdAtFrom": {
+            "type": "string",
+            "description": "Earliest order creation timestamp in ISO 8601 format (e.g. 2026-10-01T00:00:00+02:00)."
+          },
+          "createdAtTo": {
+            "type": "string",
+            "description": "Latest order creation timestamp in ISO 8601 format (e.g. 2026-10-31T23:59:59+02:00)."
+          },
+          "contactId": {
+            "type": "integer",
+            "description": "Filter orders placed by a specific customer contact ID."
+          },
+          "with": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Additional sub-resources to embed in order results, such as 'orderItems' or 'addresses'."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page index of paginated order results to retrieve (default is 1)."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Maximum number of order records to return per page (maximum is 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "statusFrom": "{{statusFrom}}",
+          "statusTo": "{{statusTo}}",
+          "createdAtFrom": "{{createdAtFrom}}",
+          "createdAtTo": "{{createdAtTo}}",
+          "contactId": "{{contactId}}",
+          "with": "{{with}}",
+          "page": "{{page}}",
+          "itemsPerPage": "{{itemsPerPage}}"
+        }
+      }
+    },
+    {
+      "name": "plentymarkets_get_order",
+      "description": "Retrieve full details of a specific PlentyONE sales order by ID, including order items, totals, billing/shipping addresses, and current status.",
+      "parameters": {
+        "type": "object",
+        "required": ["orderId"],
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "description": "The unique numerical identifier of the PlentyONE order."
+          },
+          "with": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional related data arrays to include, such as 'orderItems', 'addresses', or 'comments'."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{{orderId}}",
+        "queryParams": {
+          "with": "{{with}}"
+        }
+      }
+    },
+    {
+      "name": "plentymarkets_list_variations",
+      "description": "Search item variations in the PlentyONE product catalog by exact item number, name, barcode/EAN, or active availability status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "numberExact": {
+            "type": "string",
+            "description": "Search for variations matching this exact variation SKU or number."
+          },
+          "itemName": {
+            "type": "string",
+            "description": "Search for variations by partial or complete product item name."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Search for variations matching an exact barcode or EAN code."
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Filter by active status (true for active variations, false for inactive)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page index for paginated catalog variation search results (default is 1)."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Number of catalog variation records to return per page (maximum is 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/variations",
+        "queryParams": {
+          "numberExact": "{{numberExact}}",
+          "itemName": "{{itemName}}",
+          "barcode": "{{barcode}}",
+          "isActive": "{{isActive}}",
+          "page": "{{page}}",
+          "itemsPerPage": "{{itemsPerPage}}"
+        }
+      }
+    },
+    {
+      "name": "plentymarkets_list_stock",
+      "description": "Inspect stock and inventory levels across PlentyONE warehouses for a specific product variation or warehouse identifier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variationId": {
+            "type": "integer",
+            "description": "The numerical identifier of the item variation to inspect inventory for."
+          },
+          "warehouseId": {
+            "type": "integer",
+            "description": "Filter inventory quantities to this specific storage or fulfillment warehouse ID."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockmanagement/stock",
+        "queryParams": {
+          "variationId": "{{variationId}}",
+          "warehouseId": "{{warehouseId}}"
+        }
+      }
+    },
+    {
+      "name": "plentymarkets_list_contacts",
+      "description": "Search customer and business partner contacts in PlentyONE by email address or free-text query across name, company, and address fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact or prefix email address of the customer contact to find."
+          },
+          "fullText": {
+            "type": "string",
+            "description": "Free-text search query across contact names, company names, and customer numbers."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page index for paginated contact records (default is 1)."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "description": "Number of customer contact records to return per page (maximum is 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/contacts",
+        "queryParams": {
+          "email": "{{email}}",
+          "fullText": "{{fullText}}",
+          "page": "{{page}}",
+          "itemsPerPage": "{{itemsPerPage}}"
+        }
+      }
+    },
+    {
+      "name": "plentymarkets_get_contact",
+      "description": "Retrieve comprehensive contact profile information for a specific customer or merchant contact record in PlentyONE by ID.",
+      "parameters": {
+        "type": "object",
+        "required": ["contactId"],
+        "properties": {
+          "contactId": {
+            "type": "integer",
+            "description": "The unique numerical identifier of the customer contact to retrieve."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/contacts/{{contactId}}"
+      }
+    },
+    {
+      "name": "plentymarkets_update_order_status",
+      "description": "Update the workflow status of an existing PlentyONE order. Write operation disabled by default to require explicit enablement.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "required": ["orderId", "statusId"],
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "description": "The unique numerical identifier of the PlentyONE order to update."
+          },
+          "statusId": {
+            "type": "number",
+            "description": "The new numeric workflow status code to set (e.g. 5.0 for cleared for shipping, 7.0 for finished)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{{orderId}}",
+        "body": {
+          "statusId": "{{statusId}}"
+        }
+      }
+    }
+  ]
+}
