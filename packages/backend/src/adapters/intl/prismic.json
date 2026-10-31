@@ -22,7 +22,7 @@
   "envVarMeta": {
     "PRISMIC_REPOSITORY": {
       "label": "Repository name",
-      "kind": "address",
+      "kind": "setting",
       "help": "The name of your repository, the part before .prismic.io in the dashboard URL.",
       "example": "your-repo-name",
       "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
