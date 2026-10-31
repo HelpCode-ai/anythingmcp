@@ -60,7 +60,9 @@ async function bootstrap() {
       limit: '10mb',
       type: ['application/json', 'application/scim+json'],
       verify: (req: any, _res, buf) => {
-        if (req.url?.startsWith('/api/support/webhook')) req.rawBody = buf;
+        if (req.url?.startsWith('/api/support/webhook') || req.url?.startsWith('/api/webhooks/')) {
+          req.rawBody = buf;
+        }
       },
     }),
   );

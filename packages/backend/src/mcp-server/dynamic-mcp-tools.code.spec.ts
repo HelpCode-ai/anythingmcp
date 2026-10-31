@@ -108,6 +108,7 @@ function build(tools: RegisteredTool[], program: (bridge: any) => Promise<unknow
     reject as any, // mcpClient
     reject as any, // database
     kg as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any, // webhookEvents
     reject as any, // odata
     undefined, // userCredentials
     undefined, // emailEngine

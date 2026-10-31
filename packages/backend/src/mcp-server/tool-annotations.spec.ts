@@ -42,6 +42,22 @@ describe('deriveToolAnnotations', () => {
       });
     });
 
+    it('marks the webhook recent-events builtin read-only, whatever the connector type', () => {
+      // It reads WebhookEvent storage, never the upstream connector, so the
+      // connector's own type (REST, GRAPHQL, ...) must not matter here.
+      expect(
+        deriveToolAnnotations({
+          name: 'stripe_recent_events',
+          connectorType: 'REST',
+          endpointMapping: { method: 'webhook_recent_events', path: '' },
+        }),
+      ).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
+    });
+
     it('treats POST as an additive, non-idempotent write', () => {
       expect(deriveToolAnnotations(rest('POST', 'create_invoice'))).toMatchObject({
         readOnlyHint: false,
