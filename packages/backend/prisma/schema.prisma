@@ -1562,6 +1562,13 @@ model KgSkillSuggestion {
   // or `code` (a saved code tool an admin approves into an McpTool with
   // endpointMapping.method = 'code'). Each kind is reviewed the same way.
   kind          String   @default("skill")
+  // For a `code` proposal: the candidate code tool an admin approves into an
+  // McpTool (endpointMapping.method = 'code'). Shape:
+  //   { connectorId, name, description, parameters, endpointMapping }
+  // Null for a `skill`. The proposal is inert: nothing runs until an admin
+  // approves it through the normal tool-creation path (assertValidCodeTool +
+  // plan cap), so an agent can never raise its own authority.
+  payload       Json?
   title         String
   whenToUse     String   @db.Text @map("when_to_use")
   instruction   String   @db.Text
