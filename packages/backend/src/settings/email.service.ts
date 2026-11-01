@@ -29,6 +29,7 @@ import {
 } from './email-templates';
 import { buildUnsubscribeUrl, unsubscribeSecret } from './unsubscribe-token';
 import { createEmailLinkToken } from '../common/email-link-token';
+import { marketingOrigin } from '../license/license-checkout';
 import { isSocialProviderId } from '../auth/social/social-providers';
 import { maskEmail } from '../auth/mcp-email-verification';
 
@@ -95,7 +96,7 @@ export class EmailService {
   }
 
   private marketingUrl(): string {
-    return (process.env.MARKETING_URL || 'https://anythingmcp.com').replace(/\/+$/, '');
+    return marketingOrigin();
   }
 
   /**
@@ -293,12 +294,12 @@ export class EmailService {
     }
     if (!licenseKey) {
       this.logger.warn(
-        `SMTP not configured and no license key available — cannot send password reset to ${to}`,
+        `SMTP not configured and no license key available — cannot send password reset to ${maskEmail(to)}`,
       );
       return false;
     }
     this.logger.log(
-      `SMTP not configured, using external API fallback for password reset to ${to}`,
+      `SMTP not configured, using external API fallback for password reset to ${maskEmail(to)}`,
     );
     return this.sendViaExternalApi('/api/email/password-reset', {
       email: to,
@@ -381,7 +382,7 @@ export class EmailService {
         };
       } catch (err: any) {
         this.logger.error(
-          `Failed to send invitation via ${transport.source} SMTP to ${to}: ${err}`,
+          `Failed to send invitation via ${transport.source} SMTP to ${maskEmail(to)}: ${err}`,
         );
         if (transport.source === 'workspace') {
           workspaceError = err.message || 'SMTP delivery failed';
@@ -471,7 +472,7 @@ export class EmailService {
       // (cloud provider, sysadmin, leaked dump). The fallback path below
       // delivers the code via Mailgun.
       this.logger.debug(
-        `Local SMTP not configured for ${to}; delegating verification email to external API.`,
+        `Local SMTP not configured for ${maskEmail(to)}; delegating verification email to external API.`,
       );
     }
 
@@ -487,7 +488,7 @@ export class EmailService {
         return true;
       } catch (err) {
         this.logger.error(
-          `Failed to send verification email via SMTP to ${to}: ${err}`,
+          `Failed to send verification email via SMTP to ${maskEmail(to)}: ${err}`,
         );
       }
     }
@@ -543,7 +544,7 @@ export class EmailService {
     const transport = await this.createTransporter();
     if (!transport) {
       this.logger.warn(
-        `Skipping onboarding-reminder email to ${to}: no SMTP configured`,
+        `Skipping onboarding-reminder email to ${maskEmail(to)}: no SMTP configured`,
       );
       return false;
     }
@@ -567,12 +568,12 @@ export class EmailService {
         ...this.mail(email, headers),
       });
       this.logger.log(
-        `Onboarding-reminder email (day ${dayNumber}${opts?.aiClient ? ', AI client connected' : ''}) sent to ${to}`,
+        `Onboarding-reminder email (day ${dayNumber}${opts?.aiClient ? ', AI client connected' : ''}) sent to ${maskEmail(to)}`,
       );
       return true;
     } catch (err) {
       this.logger.error(
-        `Failed to send onboarding-reminder email to ${to}: ${err}`,
+        `Failed to send onboarding-reminder email to ${maskEmail(to)}: ${err}`,
       );
       return false;
     }
@@ -634,7 +635,7 @@ export class EmailService {
     const transport = await this.createTransporter();
     if (!transport) {
       this.logger.warn(
-        `Skipping activation-reminder email to ${to}: no SMTP configured`,
+        `Skipping activation-reminder email to ${maskEmail(to)}: no SMTP configured`,
       );
       return false;
     }
@@ -653,7 +654,7 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(
-        `Failed to send activation-reminder email to ${to}: ${err}`,
+        `Failed to send activation-reminder email to ${maskEmail(to)}: ${err}`,
       );
       return false;
     }
@@ -774,7 +775,7 @@ export class EmailService {
         timeout: 10000,
       });
       this.logger.log(
-        `Email sent via external API: ${endpoint} to ${body.email}`,
+        `Email sent via external API: ${endpoint} to ${maskEmail(body.email)}`,
       );
       return true;
     } catch (err: any) {
@@ -797,7 +798,7 @@ export class EmailService {
         timeout: 10000,
       });
       this.logger.log(
-        `Email sent via external API: ${endpoint} to ${body.email}`,
+        `Email sent via external API: ${endpoint} to ${maskEmail(body.email)}`,
       );
       return { sent: true };
     } catch (err: any) {

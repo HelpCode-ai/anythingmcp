@@ -343,6 +343,20 @@ describe('openai adapter: static spec conformance', () => {
     });
   });
 
+  it('gives generation 120 s and the image tools room for base64 pictures; the rest keep the defaults', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    const limits = async (name: string, params: Record<string, unknown>) => {
+      mockedAxios.mockClear();
+      await call(name, params);
+      return { timeout: sent().timeout, maxContentLength: sent().maxContentLength };
+    };
+    const image = { timeout: 120_000, maxContentLength: 40 * 1024 * 1024 };
+    expect(await limits('openai_generate_image', { prompt: 'A cat', n: 4 })).toEqual(image);
+    expect(await limits('openai_edit_image', { prompt: 'Make it purple', images: [{ file_id: 'file-1' }] })).toEqual(image);
+    expect(await limits('openai_create_response', { input: 'Hi' })).toEqual({ timeout: 120_000, maxContentLength: 10 * 1024 * 1024 });
+    expect(await limits('openai_list_models', {})).toEqual({ timeout: 30_000, maxContentLength: 10 * 1024 * 1024 });
+  });
+
   it('embeds, moderates and pages lists with the documented fields', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
     await call('openai_create_embeddings', { input: ['a', 'b'] });
