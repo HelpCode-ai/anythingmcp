@@ -1,3 +1,4 @@
+import axios from 'axios';
 import * as adapter from './sumup.json';
 
 type Tool = {
@@ -65,8 +66,17 @@ describe('sumup adapter — static spec conformance', () => {
 });
 
 describe('sumup adapter — live integration', () => {
-  const live = process.env.RUN_SUMUP_LIVE === '1' ? it : it.skip;
-  live('queries merchant profile with valid SUMUP_API_KEY', async () => {
-    expect(process.env.SUMUP_API_KEY).toBeDefined();
+  const live = process.env.RUN_SUMUP_LIVE === '1' && process.env.SUMUP_API_KEY ? it : it.skip;
+
+  live('GET https://api.sumup.com/v0.1/me returns merchant_profile', async () => {
+    const response = await axios.get('https://api.sumup.com/v0.1/me', {
+      headers: {
+        Authorization: `Bearer ${process.env.SUMUP_API_KEY}`,
+        Accept: 'application/json',
+      },
+      timeout: 15000,
+    });
+    expect(response.status).toBe(200);
+    expect(response.data).toHaveProperty('merchant_profile');
   });
 });
