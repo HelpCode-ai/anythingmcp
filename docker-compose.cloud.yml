@@ -187,6 +187,13 @@ x-backend: &backend
     # Where replies go when SMTP_FROM is a noreply address.
     - SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
     - SMTP_SECURE=${SMTP_SECURE:-false}
+    # Optional sender for trial lifecycle, win-back and blocked-call emails (main SMTP when unset).
+    - RETENTION_SMTP_HOST=${RETENTION_SMTP_HOST:-}
+    - RETENTION_SMTP_PORT=${RETENTION_SMTP_PORT:-}
+    - RETENTION_SMTP_USER=${RETENTION_SMTP_USER:-}
+    - RETENTION_SMTP_PASS=${RETENTION_SMTP_PASS:-}
+    - RETENTION_SMTP_FROM=${RETENTION_SMTP_FROM:-}
+    - RETENTION_SMTP_REPLY_TO=${RETENTION_SMTP_REPLY_TO:-}
     # Live support chat (Libredesk). Unset = no widget, no triage webhook.
     - SUPPORT_CHAT_URL=${SUPPORT_CHAT_URL:-}
     - SUPPORT_CHAT_INBOX_ID=${SUPPORT_CHAT_INBOX_ID:-}

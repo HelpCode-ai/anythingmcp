@@ -23,6 +23,8 @@ import {
   licenseKeyEmail,
   onboardingReminderEmail,
   passwordResetEmail,
+  TrialBlockedCallsEmailInput,
+  trialBlockedCallsEmail,
   trialLifecycleEmail,
   trialWinbackEmail,
   verificationEmail,
@@ -223,6 +225,54 @@ export class EmailService {
       from: systemSmtpFrom(process.env),
       replyTo: process.env.SMTP_REPLY_TO,
     });
+  }
+
+  /**
+   * The retention sender, from ENV (RETENTION_SMTP_HOST/PORT/USER/PASS/FROM
+   * and RETENTION_SMTP_REPLY_TO): the trial lifecycle, win-back and
+   * blocked-call emails go out from it, so they can come from a person on the
+   * product's own domain while every other email keeps the system sender. Port
+   * 465 or 2465 means implicit TLS; any other port upgrades with STARTTLS
+   * (2587 too, for hosts that block the standard SMTP ports). Read only here,
+   * never returned by any API. Null when not configured.
+   */
+  private retentionSmtp() {
+    const host = process.env.RETENTION_SMTP_HOST?.trim();
+    if (!host) return null;
+    const port = Number(process.env.RETENTION_SMTP_PORT) || 587;
+    return this.normalizeSmtp({
+      host,
+      port,
+      secure: port === 465 || port === 2465,
+      user: process.env.RETENTION_SMTP_USER || '',
+      pass: process.env.RETENTION_SMTP_PASS || '',
+      from: process.env.RETENTION_SMTP_FROM?.trim() || undefined,
+      replyTo: process.env.RETENTION_SMTP_REPLY_TO?.trim() || undefined,
+    });
+  }
+
+  /**
+   * The transport for retention emails: the retention sender when it is
+   * configured, else the instance/system one (createTransporter), with
+   * RETENTION_SMTP_REPLY_TO as the Reply-To when set. Null when neither exists.
+   */
+  private async createRetentionTransporter(): Promise<{
+    transporter: nodemailer.Transporter;
+    from: string;
+    replyTo?: string;
+  } | null> {
+    const own = this.retentionSmtp();
+    if (own) {
+      return {
+        transporter: this.buildTransport(own),
+        from: own.from || systemSmtpFrom(process.env),
+        replyTo: own.replyTo,
+      };
+    }
+    const main = await this.createTransporter();
+    if (!main) return null;
+    const replyTo = process.env.RETENTION_SMTP_REPLY_TO?.trim();
+    return replyTo ? { ...main, replyTo } : main;
   }
 
   /**
@@ -593,7 +643,7 @@ export class EmailService {
     stage: 'warn3' | 'warn1' | 'expired',
     recap: { connectors: number; successfulCalls: number; daysLeft: number },
   ): Promise<boolean> {
-    const transport = await this.createTransporter();
+    const transport = await this.createRetentionTransporter();
     if (!transport) {
       this.logger.warn(`Skipping trial-${stage} email to ${maskEmail(to)}: no SMTP configured`);
       return false;
@@ -612,7 +662,12 @@ export class EmailService {
     );
 
     try {
-      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email) });
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        ...(transport.replyTo ? { replyTo: transport.replyTo } : {}),
+        ...this.mail(email),
+      });
       this.logger.log(`Trial-${stage} email sent to ${maskEmail(to)}`);
       return true;
     } catch (err) {
@@ -672,7 +727,7 @@ export class EmailService {
     name: string,
     offer: WinbackOffer,
   ): Promise<boolean> {
-    const transport = await this.createTransporter();
+    const transport = await this.createRetentionTransporter();
     if (!transport) {
       this.logger.warn(`Skipping trial win-back email to ${maskEmail(to)}: no SMTP configured`);
       return false;
@@ -688,12 +743,57 @@ export class EmailService {
       await transport.transporter.sendMail({
         from: transport.from,
         to,
+        ...(transport.replyTo ? { replyTo: transport.replyTo } : {}),
         ...this.mail(email, headers),
       });
       this.logger.log(`Trial win-back (${offer.kind}) email sent to ${maskEmail(to)}`);
       return true;
     } catch (err) {
       this.logger.error(`Failed to send trial win-back email to ${maskEmail(to)}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * After a Cloud trial ended, the workspace's AI kept calling its tools
+   * (onboarding cron, runBlockedCallPass): what it tried, and the offer.
+   * Marketing: the caller honours the opt-out, and the email carries the
+   * unsubscribe line.
+   */
+  async sendTrialBlockedCallsEmail(
+    to: string,
+    name: string,
+    details: Omit<TrialBlockedCallsEmailInput, 'name' | 'cloudUrl' | 'marketingUrl' | 'emailToken'>,
+  ): Promise<boolean> {
+    const transport = await this.createRetentionTransporter();
+    if (!transport) {
+      this.logger.warn(`Skipping blocked-calls email to ${maskEmail(to)}: no SMTP configured`);
+      return false;
+    }
+
+    const { ctx, headers } = await this.marketing(to);
+    const email = trialBlockedCallsEmail(
+      {
+        ...details,
+        name,
+        cloudUrl: this.cloudUrl(),
+        marketingUrl: this.marketingUrl(),
+        emailToken: createEmailLinkToken(to),
+      },
+      ctx,
+    );
+
+    try {
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        ...(transport.replyTo ? { replyTo: transport.replyTo } : {}),
+        ...this.mail(email, headers),
+      });
+      this.logger.log(`Blocked-calls email sent to ${maskEmail(to)}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send blocked-calls email to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }
