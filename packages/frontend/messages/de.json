@@ -2745,6 +2745,20 @@
       "applied": "Aktiv",
       "dismissed": "Verworfen"
     },
+    "codeProposal": {
+      "badge": "Code-Tool-Vorschlag",
+      "created": "Erstellt",
+      "meta": "{scope} · von einem Agenten vorgeschlagen · nur lesend, läuft mit den Berechtigungen des Aufrufers",
+      "createTool": "Tool erstellen",
+      "dismiss": "Verwerfen",
+      "deleteAria": "Vorschlag löschen",
+      "why": "Warum:",
+      "does": "Funktion:",
+      "program": "Programm ({count, number} Zeichen)",
+      "note": "Beim Erstellen wird ein nur lesendes Code-Tool für {connector} angelegt. Damit es Daten schreiben oder mit den Rechten des Autors laufen kann, bearbeiten Sie es anschließend auf der Tool-Seite des Connectors.",
+      "theConnector": "den Connector",
+      "createFailed": "Das Tool konnte nicht erstellt werden."
+    },
     "status": {
       "loadFailed": "Laden fehlgeschlagen",
       "analyzingServer": "Der Kontext des Servers wird analysiert…",
