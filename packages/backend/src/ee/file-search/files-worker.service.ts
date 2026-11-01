@@ -44,6 +44,28 @@ export class FilesWorkerService implements OnApplicationBootstrap, OnApplication
     }
   };
 
+  /**
+   * A worker stopped mid-sync (deploy, crash, memory limit) leaves its run on
+   * "running" forever, and the Files panel would show it in progress. On start
+   * such runs become partial, unless a live worker still holds the source's
+   * lease. The sync itself continues on its own; no file loses its progress.
+   */
+  async closeInterruptedRuns(): Promise<number> {
+    try {
+      const n = await this.prisma.$executeRaw`
+        UPDATE file_sync_runs r
+           SET status = 'partial', finished_at = now(),
+               error = 'Interrupted: the File Search worker restarted. The sync continues on its own.'
+         WHERE r.status = 'running'
+           AND NOT EXISTS (SELECT 1 FROM file_sources s WHERE s.connector_id = r.connector_id AND s.lease_until > now())`;
+      if (n > 0) this.logger.log(`closed ${n} interrupted sync run(s)`);
+      return n;
+    } catch (err) {
+      this.logger.warn(`could not close interrupted sync runs: ${(err as Error).message}`);
+      return 0;
+    }
+  }
+
   onApplicationBootstrap(): void {
     if (!process.env.FILES_WORKER_TOKEN || process.env.FILES_WORKER_TOKEN.length < 16) {
       throw new Error('FILES_WORKER_TOKEN must be set (at least 16 characters) for files-worker.');
@@ -56,7 +78,8 @@ export class FilesWorkerService implements OnApplicationBootstrap, OnApplication
     this.scheduler = new Scheduler(this.prisma, this.repo, sync, scans, this.shares, this.workerId, concurrency);
     this.server = new InternalServer(this.prisma, this.repo, extractor, this.scheduler);
     this.server.listen(Number(process.env.FILES_WORKER_PORT ?? 8891), process.env.FILES_WORKER_HOST ?? '0.0.0.0');
-    this.scheduler.start();
+    // Close the runs a stopped worker left open first, then start syncing.
+    void this.closeInterruptedRuns().finally(() => this.scheduler.start());
     this.logger.log(`files-worker ${this.workerId} started (concurrency ${concurrency}, extractor ${extractor.configured ? 'configured' : 'NOT configured'})`);
   }
 
