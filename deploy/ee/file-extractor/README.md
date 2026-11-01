@@ -79,6 +79,44 @@ messages never contain document content.
 Numbered items have no size limit of their own (an EPUB chapter or a long
 mail can be large); the backend splits every item into search chunks.
 
+### `POST /render`
+
+One page of a PDF, or an image file, as a JPEG picture, for AI clients that
+show images but not PDFs (title blocks and stamps of technical drawings are
+vector graphics without text). Same token check, multipart form, size limit,
+slots and isolated child process as `/extract`.
+
+| field      | required | content |
+|------------|----------|---------|
+| `file`     | yes      | the PDF or image bytes |
+| `filename` | no       | original name; its extension picks the renderer |
+| `options`  | no       | JSON string, `{"page": 1, "maxPx": 1600}`: `page` ≥ 1, `maxPx` ≥ 64, capped at 2400 |
+
+Result (HTTP 200):
+
+```json
+{"ok": true, "mimeType": "image/jpeg", "base64": "...", "width": 1131, "height": 1600,
+ "page": 1, "pageCount": 3, "error": null}
+```
+
+or `{"ok": false, "error": {"kind": "...", "message": "..."}}` with `kind`
+one of `unsupported` (not a PDF or image), `page_out_of_range` (the message
+names the page count), `encrypted`, `too_large` (upload, pixels or memory),
+`timeout`, `damaged`. Bad `options` are 400, a wrong token 401.
+
+- PDF (`pypdfium2`, annotations drawn): the page is scaled so its longest
+  side is `maxPx` pixels (at most 8x its size in points).
+- Images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.tif`, `.tiff`,
+  `.bmp`, Pillow): only the PNG, JPEG, GIF, WebP, TIFF and BMP decoders are
+  used, whatever the extension says (a mislabelled image still works, an EPS
+  in disguise is never handed to Ghostscript). The declared size is checked
+  before decoding: more than 100 million pixels is `too_large`. Multi-page
+  TIFFs (scans, faxes) have pages; GIF and WebP animations show their first
+  frame. EXIF orientation is applied, transparency becomes white, the
+  longest side is reduced to `maxPx` (never enlarged).
+- Output: JPEG quality 80; above 1.5 MB the quality drops to 65 and 50, then
+  the picture shrinks by a quarter until it fits.
+
 ### `GET /health`
 
 `{"ok": true, "ocr": <bool>, "version": "1"}`. No token needed. `ocr` is

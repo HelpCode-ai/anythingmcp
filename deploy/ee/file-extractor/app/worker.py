@@ -102,10 +102,32 @@ def extract_to_result(spec: dict) -> dict:
     return _result(job)
 
 
+def render_job_result(spec: dict) -> dict:
+    from .render import render_to_result
+
+    try:
+        return render_to_result(spec)
+    except ExtractError as exc:
+        return render_error(exc.kind, exc.message)
+    except MemoryError:
+        return render_error("too_large", "The picture needs more memory than the extractor allows.")
+    except Exception as exc:  # any decoder failure on hostile input
+        return render_error("damaged", f"The file could not be shown ({type(exc).__name__}).")
+
+
+def render_error(kind: str, message: str) -> dict:
+    """Result of a failed ``/render``: no pages or text counters, and
+    ``corrupt`` is called ``damaged`` there."""
+    return {"ok": False, "error": {"kind": "damaged" if kind == "corrupt" else kind, "message": message}}
+
+
 def child_main(spec: dict, result_path: str) -> None:
     _harden(spec)
     try:
-        result = extract_to_result(spec)
+        if spec.get("kind") == "render":
+            result = render_job_result(spec)
+        else:
+            result = extract_to_result(spec)
     except MemoryError:
         result = error_result("too_large", "The document needs more memory than the extractor allows.")
     tmp_path = result_path + ".tmp"
