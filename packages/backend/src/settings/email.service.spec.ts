@@ -186,7 +186,8 @@ describe('EmailService', () => {
       await service.sendTrialLifecycleEmail('ada.lovelace@example.com', 'Ada', 'warn3', { connectors: 2, successfulCalls: 41, daysLeft: 3 });
       sendMail.mockRejectedValueOnce(new Error('boom'));
       await service.sendWelcomeEmail('ada.lovelace@example.com', 'Ada', 'LICENSE-KEY').catch(() => undefined);
-      expect(lines.length).toBeGreaterThanOrEqual(2);
+      await service.sendOnboardingReminderEmail('ada.lovelace@example.com', 'Ada', 1);
+      expect(lines.length).toBeGreaterThanOrEqual(3);
       for (const line of lines) expect(line).not.toContain('ada.lovelace@');
       expect(lines.some((line) => line.includes('ad***@example.com'))).toBe(true);
     } finally {

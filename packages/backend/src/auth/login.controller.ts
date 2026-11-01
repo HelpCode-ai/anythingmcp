@@ -41,6 +41,7 @@ import {
   signupClientFor,
   type TrustRowOptions,
 } from './auth-page';
+import { maskEmail } from './mcp-email-verification';
 
 /**
  * Carries the VERIFIED identity across the second step of the authorize flow.
@@ -230,7 +231,7 @@ export class LoginController {
       );
       clearBinding();
       if (result.kind === 'MCP') {
-        this.logger.log(`Authorization signed in with ${provider}: ${result.user.email}`);
+        this.logger.log(`Authorization signed in with ${provider}: ${maskEmail(result.user.email)}`);
         return this.completeSignIn(req, res, result.user, result.provider);
       }
       if (result.kind === 'LINK') {
@@ -348,7 +349,7 @@ export class LoginController {
           `/auth/login?switch=1&error=${encodeURIComponent('Your session has expired. Please sign in.')}`,
         );
       }
-      this.logger.log(`Authorization approved from dashboard session: ${sessionUser.email}`);
+      this.logger.log(`Authorization approved from dashboard session: ${maskEmail(sessionUser.email)}`);
       return this.completeSignIn(req, res, sessionUser);
     }
 
@@ -365,7 +366,7 @@ export class LoginController {
     const user = await findUserByEmail<User>(this.prisma, email);
 
     if (!user) {
-      this.logger.warn(`Login attempt for non-existent user: ${email}`);
+      this.logger.warn(`Login attempt for non-existent user: ${maskEmail(email)}`);
       return res.redirect(
         `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
       );
@@ -376,7 +377,7 @@ export class LoginController {
     // user could still authorize an AI client with a password — bypassing the
     // IdP's MFA and Conditional Access on exactly the surface that matters.
     if (user.passwordLoginDisabled) {
-      this.logger.warn(`Password login refused for SSO-only account: ${email}`);
+      this.logger.warn(`Password login refused for SSO-only account: ${maskEmail(email)}`);
       return res.redirect(
         `/auth/login?error=${encodeURIComponent('Password sign-in is disabled for this account. Use your organization sign-in.')}`,
       );
@@ -384,7 +385,7 @@ export class LoginController {
 
     // Nullable for IdP-provisioned users — never hand null to bcrypt.
     if (!user.passwordHash) {
-      this.logger.warn(`Login attempt for passwordless account: ${email}`);
+      this.logger.warn(`Login attempt for passwordless account: ${maskEmail(email)}`);
       return res.redirect(
         `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
       );
@@ -397,13 +398,13 @@ export class LoginController {
     );
 
     if (!passwordValid) {
-      this.logger.warn(`Failed login attempt for user: ${email}`);
+      this.logger.warn(`Failed login attempt for user: ${maskEmail(email)}`);
       return res.redirect(
         `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
       );
     }
 
-    this.logger.log(`Successful login for user: ${email}`);
+    this.logger.log(`Successful login for user: ${maskEmail(email)}`);
 
     return this.completeSignIn(req, res, user);
   }
