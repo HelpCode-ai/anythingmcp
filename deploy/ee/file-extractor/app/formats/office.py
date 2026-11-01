@@ -1,5 +1,12 @@
 # Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE.
-"""Office Open XML documents: .docx (python-docx) and .pptx (python-pptx)."""
+"""Office Open XML documents: Word (python-docx) and PowerPoint (python-pptx).
+
+Both libraries refuse packages whose main part is not a plain document or
+presentation (macro-enabled files, templates, slide shows), although the XML
+inside is the same. The main part's content type is registered with the
+library's part factory and the package is opened directly, without the
+check; the file is never copied or rewritten.
+"""
 
 from __future__ import annotations
 
@@ -35,13 +42,54 @@ def _docx_table_lines(table) -> list[str]:
     return lines
 
 
+# Main-part content types of Word variants: .docm, .dotx, .dotm.
+_WORD_MAIN_TYPES = (
+    "application/vnd.ms-word.document.macroEnabled.main+xml",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml",
+    "application/vnd.ms-word.template.macroEnabledTemplate.main+xml",
+)
+# python-pptx already maps .pptm, .potx and .ppsx main parts; add .ppsm, .potm.
+_POWERPOINT_MAIN_TYPES = (
+    "application/vnd.ms-powerpoint.slideshow.macroEnabled.main+xml",
+    "application/vnd.ms-powerpoint.template.macroEnabled.main+xml",
+)
+
+
+def _open_word(path: str):
+    import docx  # noqa: F401  (registers the WML part classes)
+    from docx.opc.part import PartFactory
+    from docx.package import Package
+    from docx.parts.document import DocumentPart
+
+    for content_type in _WORD_MAIN_TYPES:
+        PartFactory.part_type_for.setdefault(content_type, DocumentPart)
+    part = Package.open(path).main_document_part
+    if not isinstance(part, DocumentPart):
+        raise ValueError("not a Word document")
+    return part.document
+
+
+def _open_powerpoint(path: str):
+    import pptx  # noqa: F401  (registers the PML part classes)
+    from pptx.opc.package import PartFactory
+    from pptx.package import Package
+    from pptx.parts.presentation import PresentationPart
+
+    for content_type in _POWERPOINT_MAIN_TYPES:
+        PartFactory.part_type_for.setdefault(content_type, PresentationPart)
+    part = Package.open(path).main_document_part
+    if not isinstance(part, PresentationPart):
+        raise ValueError("not a presentation")
+    return part.presentation
+
+
 def extract_docx(job: Job) -> None:
-    import docx
+    """.docx, .docm, .dotx, .dotm."""
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
     try:
-        document = docx.Document(job.path)
+        document = _open_word(job.path)
     except Exception as exc:
         raise ExtractError("corrupt", f"The file is not a readable Word document ({type(exc).__name__}).") from None
     _core_meta(job, document.core_properties)
@@ -85,10 +133,9 @@ def _shape_text(shape) -> list[str]:
 
 
 def extract_pptx(job: Job) -> None:
-    from pptx import Presentation
-
+    """.pptx, .pptm, .ppsx, .ppsm, .potx, .potm."""
     try:
-        presentation = Presentation(job.path)
+        presentation = _open_powerpoint(job.path)
     except Exception as exc:
         raise ExtractError("corrupt", f"The file is not a readable PowerPoint file ({type(exc).__name__}).") from None
     _core_meta(job, presentation.core_properties)

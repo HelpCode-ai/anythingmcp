@@ -200,6 +200,84 @@ def extract_xlsx(job: Job) -> None:
         wb.close()
 
 
+# -- xlsb ---------------------------------------------------------------------
+
+def _xlsb_rows(ws, strings):
+    """Yield (row number, [(col, value)]) from a pyxlsb worksheet, sparsely.
+
+    pyxlsb's own ``rows()`` pads every row to the declared sheet dimension,
+    which a hostile file can make huge, and fails on cells outside it.
+    """
+    from pyxlsb import biff12
+
+    reader = ws._reader
+    reader.seek(ws._data_offset)
+    row_number = None
+    cells: list = []
+    for recid, item in reader:
+        if recid == biff12.ROW:
+            if row_number is not None and cells:
+                yield row_number + 1, cells
+            row_number = item.r
+            cells = []
+        elif biff12.BLANK <= recid <= biff12.FORMULA_BOOLERR and item is not None:
+            if row_number is None or item.v is None or recid in (biff12.BOOLERR, biff12.FORMULA_BOOLERR):
+                continue
+            value = item.v
+            if recid == biff12.STRING:
+                value = strings[value] if isinstance(value, int) and 0 <= value < len(strings) else None
+            if value is not None and item.c is not None and 0 <= item.c < 1 << 14:
+                cells.append((item.c, value))
+        elif recid == biff12.SHEETDATA_END:
+            break
+    if row_number is not None and cells:
+        yield row_number + 1, cells
+
+
+def extract_xlsb(job: Job) -> None:
+    """Excel binary workbooks with ``pyxlsb``. Cell styles are not read, so
+    dates appear as Excel serial numbers."""
+    import defusedxml.ElementTree as safe_et
+    import pyxlsb
+    from pyxlsb import workbook as xlsb_workbook
+    from pyxlsb import worksheet as xlsb_worksheet
+
+    # pyxlsb reads the relationship parts with the stdlib parser.
+    xlsb_workbook.ET = safe_et
+    xlsb_worksheet.ET = safe_et
+    try:
+        wb = pyxlsb.open_workbook(job.path)
+    except Exception as exc:
+        raise ExtractError("corrupt", f"The file is not a readable Excel binary workbook ({type(exc).__name__}).") from None
+    try:
+        strings = wb.stringtable._strings if wb.stringtable is not None else []
+        writer = SheetWriter(job)
+        for index, name in enumerate(wb.sheets, 1):
+            if writer.full:
+                job.out.mark_truncated()
+                break
+            writer.begin_sheet(name or "")
+            try:
+                ws = wb.get_sheet(index)
+            except Exception:
+                writer.end_sheet()
+                continue
+            try:
+                for number, cells in _xlsb_rows(ws, strings):
+                    if writer.full:
+                        job.out.mark_truncated()
+                        break
+                    writer.row(number, cells)
+            except Exception:
+                pass  # keep what was read from a damaged sheet
+            finally:
+                ws.close()
+            writer.end_sheet()
+        writer.finish()
+    finally:
+        wb.close()
+
+
 # -- xls ----------------------------------------------------------------------
 
 def _xls_value(cell, datemode):

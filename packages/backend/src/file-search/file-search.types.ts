@@ -79,27 +79,45 @@ export function isPausedState(state: string): boolean {
 /** Status of one file in the index (file_entries.status). */
 export type FileEntryStatus = 'pending' | 'indexed' | 'name_only' | 'skipped_size' | 'failed' | 'gave_up';
 
+/** Configuration, data and source-code files the extractor reads as text. */
+export const CODE_EXTENSIONS = [
+  '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.properties', '.sql', '.tex', '.bib',
+  '.srt', '.vtt', '.ics', '.vcf', '.kml', '.gpx',
+  '.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.java', '.kt', '.kts', '.c', '.h',
+  '.cpp', '.hpp', '.cc', '.cs', '.go', '.rb', '.php', '.sh', '.bash', '.ps1', '.bat', '.cmd',
+  '.swift', '.rs', '.r', '.scala', '.vb', '.vbs', '.pl', '.lua', '.css', '.scss', '.less',
+  '.sass', '.gradle', '.groovy', '.dart', '.m', '.asm',
+] as const;
+
 /**
- * Extensions whose text the extractor reads (deploy/ee/file-extractor). Every
- * other file is still listed and found by name (`name_only`).
+ * Extensions whose text the extractor reads (deploy/ee/file-extractor, its
+ * GET /formats). Every other file is still listed and found by name
+ * (`name_only`).
  */
 export const TEXT_EXTENSIONS: ReadonlySet<string> = new Set([
-  '.pdf',
-  '.xlsx', '.xlsm', '.xls', '.ods', '.csv', '.tsv',
-  '.docx', '.doc', '.odt', '.rtf',
-  '.pptx', '.ppt', '.odp',
-  '.msg', '.eml',
+  '.pdf', '.xps', '.oxps',
+  '.xlsx', '.xlsm', '.xltx', '.xltm', '.xlsb', '.xls', '.ods', '.ots', '.csv', '.tsv', '.numbers',
+  '.docx', '.docm', '.dotx', '.dotm', '.doc', '.odt', '.ott', '.rtf', '.pages', '.epub',
+  '.pptx', '.pptm', '.ppsx', '.ppsm', '.potx', '.potm', '.ppt', '.odp', '.otp', '.key',
+  '.msg', '.eml', '.mbox',
   '.txt', '.md', '.json', '.xml', '.log', '.html', '.htm',
+  '.svg', '.dxf',
+  ...CODE_EXTENSIONS,
 ]);
 
 /** Human labels for the type breakdown in the wizard. */
 export const TYPE_GROUPS: Record<string, string> = {
-  '.pdf': 'PDF',
-  '.xlsx': 'Excel', '.xlsm': 'Excel', '.xls': 'Excel', '.ods': 'Excel', '.csv': 'CSV', '.tsv': 'CSV',
-  '.docx': 'Word', '.doc': 'Word', '.odt': 'Word', '.rtf': 'Word',
-  '.pptx': 'PowerPoint', '.ppt': 'PowerPoint', '.odp': 'PowerPoint',
-  '.msg': 'Outlook', '.eml': 'E-mail',
+  '.pdf': 'PDF', '.xps': 'XPS', '.oxps': 'XPS',
+  '.xlsx': 'Excel', '.xlsm': 'Excel', '.xltx': 'Excel', '.xltm': 'Excel', '.xlsb': 'Excel', '.xls': 'Excel',
+  '.ods': 'Excel', '.ots': 'Excel', '.numbers': 'Excel', '.csv': 'CSV', '.tsv': 'CSV',
+  '.docx': 'Word', '.docm': 'Word', '.dotx': 'Word', '.dotm': 'Word', '.doc': 'Word', '.odt': 'Word', '.ott': 'Word',
+  '.rtf': 'Word', '.pages': 'Word', '.epub': 'E-book',
+  '.pptx': 'PowerPoint', '.pptm': 'PowerPoint', '.ppsx': 'PowerPoint', '.ppsm': 'PowerPoint', '.potx': 'PowerPoint',
+  '.potm': 'PowerPoint', '.ppt': 'PowerPoint', '.odp': 'PowerPoint', '.otp': 'PowerPoint', '.key': 'PowerPoint',
+  '.msg': 'Outlook', '.eml': 'E-mail', '.mbox': 'E-mail',
   '.txt': 'Text', '.md': 'Text', '.json': 'Text', '.xml': 'Text', '.log': 'Text', '.html': 'Web page', '.htm': 'Web page',
+  '.svg': 'Drawing', '.dxf': 'Drawing',
+  ...Object.fromEntries(CODE_EXTENSIONS.map((ext) => [ext, 'Code'])),
 };
 
 /**

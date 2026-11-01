@@ -148,13 +148,26 @@ function errMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// Keep in sync with TEXT_EXTENSIONS in packages/backend/src/file-search/file-search.types.ts.
 const TYPE_FILTERS: Array<{ id: string; exts: string[] }> = [
-  { id: 'pdf', exts: ['.pdf'] },
-  { id: 'excel', exts: ['.xlsx', '.xlsm', '.xls', '.ods', '.csv', '.tsv'] },
-  { id: 'word', exts: ['.docx', '.doc', '.odt', '.rtf'] },
-  { id: 'powerpoint', exts: ['.pptx', '.ppt', '.odp'] },
-  { id: 'email', exts: ['.msg', '.eml'] },
+  { id: 'pdf', exts: ['.pdf', '.xps', '.oxps'] },
+  { id: 'excel', exts: ['.xlsx', '.xlsm', '.xltx', '.xltm', '.xlsb', '.xls', '.ods', '.ots', '.numbers', '.csv', '.tsv'] },
+  { id: 'word', exts: ['.docx', '.docm', '.dotx', '.dotm', '.doc', '.odt', '.ott', '.rtf', '.pages', '.epub'] },
+  { id: 'powerpoint', exts: ['.pptx', '.pptm', '.ppsx', '.ppsm', '.potx', '.potm', '.ppt', '.odp', '.otp', '.key'] },
+  { id: 'email', exts: ['.msg', '.eml', '.mbox'] },
   { id: 'text', exts: ['.txt', '.md', '.json', '.xml', '.log', '.html', '.htm'] },
+  { id: 'drawing', exts: ['.svg', '.dxf'] },
+  {
+    id: 'code',
+    exts: [
+      '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.properties', '.sql', '.tex', '.bib',
+      '.srt', '.vtt', '.ics', '.vcf', '.kml', '.gpx',
+      '.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.java', '.kt', '.kts', '.c', '.h',
+      '.cpp', '.hpp', '.cc', '.cs', '.go', '.rb', '.php', '.sh', '.bash', '.ps1', '.bat', '.cmd',
+      '.swift', '.rs', '.r', '.scala', '.vb', '.vbs', '.pl', '.lua', '.css', '.scss', '.less',
+      '.sass', '.gradle', '.groovy', '.dart', '.m', '.asm',
+    ],
+  },
 ];
 
 export default function FileSearchWizardPage() {

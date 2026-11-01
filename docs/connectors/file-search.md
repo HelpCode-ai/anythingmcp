@@ -104,12 +104,21 @@ Each File Search connector gets these tools, named with its prefix:
 Every tool except the share tools is read-only. The tools tell the model that
 file content is data and that instructions inside files are never followed.
 
-Text extraction: PDF page by page, Excel/ODS/CSV row by row with the header
-(`Sheet "Preise" row 2: Artikel=NO-10000 · Breite=750 · Preis=412`),
-Word/ODT, PowerPoint/ODP slide by slide, Outlook `.msg` and `.eml` with the
-text of their attachments, RTF and text formats, legacy `.doc`/`.ppt`/`.xls`.
-Other files are found by name. Scanned PDFs are read with OCR on Enterprise
-when the OCR extractor image is used.
+Text extraction: PDF and XPS page by page; Excel (including templates,
+macro workbooks and `.xlsb`), ODS and CSV row by row with the header
+(`Sheet "Preise" row 2: Artikel=NO-10000 · Breite=750 · Preis=412`); Word and
+ODT including templates and macro documents; PowerPoint and ODP slide by
+slide, including slide shows and templates; Outlook `.msg` and `.eml` with
+the text of their attachments, and `.mbox` mailboxes message by message;
+EPUB chapter by chapter; the visible text of SVG drawings; the text, notes
+and title-block attributes of ASCII DXF drawings; Apple Pages, Numbers and
+Keynote files through their PDF preview, when they were saved with one;
+RTF, legacy `.doc`/`.ppt`/`.xls`, and text formats: Markdown, JSON, XML,
+HTML, logs, configuration files (YAML, TOML, INI, properties), SQL, LaTeX,
+subtitles, calendars and contacts (`.ics`, `.vcf`), GPS tracks (KML, GPX),
+and source code in common languages. Other files, such as images, archives,
+binary DXF and DWG drawings, are found by name. Scanned PDFs are read with
+OCR on Enterprise when the OCR extractor image is used.
 
 ## Syncing
 

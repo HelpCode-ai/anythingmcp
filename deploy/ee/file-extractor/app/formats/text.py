@@ -1,11 +1,12 @@
 # Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE.
-"""Plain text, HTML and RTF."""
+"""Plain text (incl. configuration and source code), HTML and RTF."""
 
 from __future__ import annotations
 
 import re
 from html.parser import HTMLParser
 
+from ..errors import ExtractError
 from ..job import Job
 from ..textdecode import decode_bytes, read_capped
 
@@ -27,6 +28,49 @@ def extract_plain(job: Job) -> None:
     """txt, md, json, xml, log: decoded as text, never parsed."""
     data, more = read_capped(job.path, job.max_chars)
     add_flow_text(job, decode_bytes(data))
+    if more:
+        job.out.mark_truncated()
+
+
+_SNIFF_BYTES = 8192
+
+
+def _utf16_without_bom(head: bytes) -> str | None:
+    """``utf-16-le``/``-be`` if ``head`` looks like BOM-less UTF-16 text."""
+    even, odd = head[0::2], head[1::2]
+
+    def text_like(zeros: bytes, chars: bytes) -> bool:
+        if len(zeros) < 16 or zeros.count(0) < 0.9 * len(zeros) or chars.count(0):
+            return False
+        ascii_text = sum(1 for b in chars if 0x20 <= b < 0x7F or b in (0x09, 0x0A, 0x0D))
+        return ascii_text >= 0.9 * len(chars)
+
+    if text_like(odd, even):
+        return "utf-16-le"
+    if text_like(even, odd):
+        return "utf-16-be"
+    return None
+
+
+def extract_source(job: Job) -> None:
+    """Configuration, data and source code files (yaml, ini, sql, py, ts,
+    ...): decoded as text, never parsed or run.
+
+    Some of these extensions are shared with binary formats (``.ts`` is also
+    an MPEG transport stream video); a file with NUL bytes that is not
+    UTF-16 is reported as unsupported instead of being indexed as noise.
+    """
+    data, more = read_capped(job.path, job.max_chars)
+    head = data[:_SNIFF_BYTES]
+    has_bom = head.startswith((b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff"))
+    if b"\x00" in head and not has_bom:
+        encoding = _utf16_without_bom(head[: len(head) - len(head) % 2])
+        if encoding is None:
+            raise ExtractError("unsupported", f"The .{job.ext} file is not a text file (it contains binary data).")
+        text = data[: len(data) - len(data) % 2].decode(encoding, "replace")
+    else:
+        text = decode_bytes(data)
+    add_flow_text(job, text)
     if more:
         job.out.mark_truncated()
 
