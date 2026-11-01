@@ -12,7 +12,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "start:files-worker": "node dist/ee/file-search/files-worker.main",
+    "start:files-worker": "node dist/src/ee/file-search/files-worker.main",
     "dev:files-worker": "ts-node --transpile-only src/ee/file-search/files-worker.main.ts",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "lint:check": "eslint \"{src,test}/**/*.ts\"",
