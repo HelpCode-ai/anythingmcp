@@ -119,8 +119,7 @@ describe('EmailService', () => {
       clientName: 'Claude',
       appName: 'Etsy',
       attempts: 6,
-      percentOff: 30,
-      promoCode: 'START30',
+      offer: { kind: 'personal' as const, code: 'KEEP-P6W2XN', codesExpireAt: new Date('2026-11-11T09:00:00Z') },
       trialEndedAt: ended,
     };
     async function sendRetentionEmails(service: EmailService) {
@@ -200,7 +199,7 @@ describe('EmailService', () => {
       expect(mail.subject).toBe('Claude tried to use Etsy 6 times since yesterday');
       expect(mail.headers['List-Unsubscribe']).toContain('https://cloud.anythingmcp.com/');
       expect(mail.text).toContain(
-        'https://anythingmcp.com/pricing?promo=START30&return_url=' +
+        'https://anythingmcp.com/pricing?buy=starter&hosting=cloud&period=monthly&promo=KEEP-P6W2XN&return_url=' +
           encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate') +
           '&source=email_blocked_calls',
       );
@@ -315,12 +314,26 @@ describe('EmailService', () => {
       const { service } = make();
       await service.sendTrialLifecycleEmail('Ann@Example.com', 'Ann', 'warn1', { connectors: 1, successfulCalls: 3, daysLeft: 1 });
       await service.sendTrialWinbackEmail('Ann@Example.com', 'Ann', {
-        kind: 'discount',
-        percentOff: 30,
-        promoCode: 'START30',
+        kind: 'offer',
+        offer: {
+          kind: 'locked',
+          monthlyCode: 'KEEP-7F3K9Q',
+          yearlyCode: 'KEEP-Y4M8RT',
+          codesExpireAt: new Date('2026-10-22T09:30:00Z'),
+        },
         stage: 'first',
         trialEndedAt: new Date('2026-10-07T09:30:00Z'),
         successfulCalls: 3,
+      });
+      await service.sendTrialEndedBusinessEmail('Ann@Example.com', 'Ann', {
+        recap: { connectors: 2, successfulCalls: 30, topConnector: 'Odoo' },
+        extendUrl: 'https://cloud.anythingmcp.com/api/license/extend?token=t',
+        offer: {
+          kind: 'locked',
+          monthlyCode: 'KEEP-7F3K9Q',
+          yearlyCode: 'KEEP-Y4M8RT',
+          codesExpireAt: new Date('2026-10-22T09:30:00Z'),
+        },
       });
       await service.sendTrialWinbackEmail('Ann@Example.com', 'Ann', { kind: 'help', trialEndedAt: new Date('2026-10-07T09:30:00Z') });
 

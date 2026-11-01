@@ -91,12 +91,13 @@ export function winbackSegment(input: {
 /**
  * The control group: workspaces that get no win-back and no blocked-call
  * offer email, so each offer's effect can be measured against them. They still
- * get the trial lifecycle emails, which are account notices.
+ * get the standard trial lifecycle emails, which are account notices (not
+ * the business expiry-day email with its offer).
  *
  * Decided by the first byte of sha256('winback-holdout:' + id), so a re-run
- * never moves a workspace, and independent of the first-month test's hash
- * (winbackTestArm). About 10% of business workspaces (byte < 26), which are
- * worth the most each, and 20% of consumer and Telegram ones (byte < 51),
+ * never moves a workspace, and independent of the hash the old first-month
+ * test used (sha256 of the bare id). About 10% of business workspaces
+ * (byte < 26), which are worth the most each, and 20% of consumer and Telegram ones (byte < 51),
  * which are many, so their effect shows sooner. `unused` workspaces too
  * (byte < 51), for the one offer they can get, the blocked-call email; the
  * how-to is no offer and is never held out (the cron does not ask).
