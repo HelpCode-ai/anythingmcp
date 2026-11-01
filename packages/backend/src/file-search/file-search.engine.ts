@@ -197,31 +197,50 @@ export class FileSearchEngine {
     return { entry } as const;
   }
 
+  /**
+   * The file itself. Many clients (Claude.ai among them) show an attached
+   * image but not an attached PDF or spreadsheet, so with File Share on the
+   * plan the user always gets a temporary internal link; images up to 4 MB are
+   * attached as well. Without File Share small files are attached and the
+   * model is told where the file lives in case the client cannot show it.
+   */
   private async getFile(path: string | undefined, ctx: FileToolContext, scope: FileScope): Promise<unknown> {
     const r = await this.entryInScope(path, scope);
     if ('error' in r) return r;
     const a = await this.access.resolve(ctx.organizationId);
     const maxBytes = a.allowed ? a.quota.maxFileBytes : DEFAULT_MAX_BINARY_BYTES;
+    const limits = await this.shares.limits(ctx.organizationId);
+    const isImage = /^image\/(png|jpe?g|gif|webp)$/i.test(mimeFor(r.entry.path));
+
+    if (limits) {
+      const shared = (await this.shareFile(r.entry.path, 'internal', 24, ctx, scope, maxBytes)) as Record<string, unknown>;
+      if (!isImage || shared.error || r.entry.size > DEFAULT_MAX_BINARY_BYTES) return shared;
+      const file = await this.worker.fetchFile(ctx.organizationId, ctx.connectorId, r.entry.path, DEFAULT_MAX_BINARY_BYTES);
+      return this.binary(file, { link: shared.link, expiresAt: shared.expiresAt, linkNote: shared.note });
+    }
     if (r.entry.size <= DEFAULT_MAX_BINARY_BYTES) {
       const file = await this.worker.fetchFile(ctx.organizationId, ctx.connectorId, r.entry.path, DEFAULT_MAX_BINARY_BYTES);
-      const body: BinaryBody = {
-        [BINARY_MARKER]: 1,
-        contentType: file.contentType !== 'application/octet-stream' ? file.contentType : mimeFor(file.filename),
-        bytes: file.size,
-        filename: file.filename,
-        base64: file.bytes.toString('base64'),
-      };
-      return body;
-    }
-    const limits = await this.shares.limits(ctx.organizationId);
-    if (!limits) {
-      return {
+      return this.binary(file, {
         path: r.entry.path,
-        size: r.entry.size,
-        note: 'The file is too large to attach, and this plan has no File Share links. Tell the user where the file is (the path) so they can open it on the file server.',
-      };
+        hint: 'If the user cannot see the attachment, tell them the path so they can open the file on the file server.',
+      });
     }
-    return this.shareFile(r.entry.path, 'internal', 24, ctx, scope, maxBytes);
+    return {
+      path: r.entry.path,
+      size: r.entry.size,
+      note: 'The file is too large to attach, and this plan has no File Share links. Tell the user where the file is (the path) so they can open it on the file server.',
+    };
+  }
+
+  private binary(file: { contentType: string; size: number; filename: string; bytes: Buffer }, extra: Record<string, unknown>): BinaryBody {
+    return {
+      [BINARY_MARKER]: 1,
+      contentType: file.contentType !== 'application/octet-stream' ? file.contentType : mimeFor(file.filename),
+      bytes: file.size,
+      filename: file.filename,
+      base64: file.bytes.toString('base64'),
+      extra,
+    };
   }
 
   private async shareFile(
