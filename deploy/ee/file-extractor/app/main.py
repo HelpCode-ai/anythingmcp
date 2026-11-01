@@ -1,5 +1,5 @@
 # Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE.
-"""HTTP API: POST /extract, GET /health, GET /formats."""
+"""HTTP API: POST /extract, POST /render, GET /health, GET /formats."""
 
 from __future__ import annotations
 
@@ -23,7 +23,9 @@ from .config import HARD_MAX_CHARS, extract_concurrency, load_settings
 from .errors import empty_meta, error_result
 from .formats import SUPPORTED_EXTENSIONS, unsupported_message
 from .ocr import ocr_available
+from .render import DEFAULT_MAX_PX, HARD_MAX_PX, MIN_MAX_PX, RENDER_EXTENSIONS
 from .runner import run_job
+from .worker import render_error
 
 log = logging.getLogger("file_extractor")
 
@@ -289,6 +291,109 @@ async def extract(request: Request):
             _log_ext(ext), size, (time.monotonic() - started) * 1000, kind,
             len(result.get("pages") or []), bool(result.get("truncated")),
         )
+        return JSONResponse(result)
+    finally:
+        slots.release()
+        if workdir:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+# -- POST /render -------------------------------------------------------------------
+
+def _parse_render_options(raw: str | None) -> dict:
+    options = {"page": 1, "maxPx": DEFAULT_MAX_PX}
+    if raw is None or not raw.strip():
+        return options
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        raise _BadForm("options must be a JSON object.") from None
+    if not isinstance(value, dict):
+        raise _BadForm("options must be a JSON object.")
+    for key, low, high in (("page", 1, 100_000), ("maxPx", MIN_MAX_PX, None)):
+        if key in value and value[key] is not None:
+            v = value[key]
+            if isinstance(v, bool) or not isinstance(v, int) or v < low or (high is not None and v > high):
+                raise _BadForm(f"options.{key} must be an integer of at least {low}.")
+            options[key] = v
+    options["maxPx"] = min(options["maxPx"], HARD_MAX_PX)
+    return options
+
+
+@app.post("/render")
+async def render(request: Request):
+    """One page of a PDF, or an image, as a JPEG (base64 in JSON)."""
+    settings = load_settings()
+    if not settings.token:
+        return JSONResponse({"detail": "The extractor is not configured (EXTRACTOR_TOKEN is empty)."}, status_code=503)
+    supplied = request.headers.get("x-extractor-token", "")
+    if not hmac.compare_digest(supplied.encode("utf-8"), settings.token.encode("utf-8")):
+        return JSONResponse({"detail": "Invalid or missing X-Extractor-Token."}, status_code=401)
+
+    started = time.monotonic()
+    max_bytes = settings.max_input_bytes
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > max_bytes + FORM_OVERHEAD_BYTES:
+        log.info("render ext=unknown bytes=%s ms=%d result=error:too_large", declared, (time.monotonic() - started) * 1000)
+        return JSONResponse(render_error("too_large", f"The file is larger than the limit of {max_bytes} bytes."))
+
+    slots: asyncio.Semaphore = request.app.state.slots
+    try:
+        await asyncio.wait_for(slots.acquire(), timeout=settings.queue_timeout_seconds)
+    except asyncio.TimeoutError:
+        log.warning("render rejected: all extraction slots busy")
+        return JSONResponse({"detail": "The extractor is busy; retry later."}, status_code=503,
+                            headers={"Retry-After": "10"})
+
+    workdir = None
+    ext = ""
+    size = 0
+    try:
+        os.makedirs(settings.tmp_root, exist_ok=True)
+        workdir = tempfile.mkdtemp(prefix="fx-", dir=settings.tmp_root)
+        input_path = os.path.join(workdir, "input.bin")
+        try:
+            fields, size, part_filename, file_seen = await _receive_form(request, input_path, max_bytes)
+        except _TooLarge:
+            log.info("render ext=unknown bytes>%d ms=%d result=error:too_large", max_bytes, (time.monotonic() - started) * 1000)
+            return JSONResponse(render_error("too_large", f"The file is larger than the limit of {max_bytes} bytes."))
+        except _BadForm as exc:
+            return _bad_request(str(exc))
+        if not file_seen:
+            return _bad_request("The form field 'file' is missing.")
+        try:
+            options = _parse_render_options(fields.get("options"))
+        except _BadForm as exc:
+            return _bad_request(str(exc))
+
+        filename = fields.get("filename") or part_filename or ""
+        ext = _ext_of(filename)
+        if ext not in RENDER_EXTENSIONS:
+            what = f"Files of type .{ext}" if ext else "Files without an extension"
+            result = render_error("unsupported", f"{what} cannot be shown as a picture; PDF and image files can.")
+        elif size == 0:
+            result = render_error("damaged", "The file is empty.")
+        else:
+            typed_path = os.path.join(workdir, f"input.{ext}")
+            os.replace(input_path, typed_path)
+            timeout = settings.timeout_seconds if size <= settings.large_input_bytes else settings.large_timeout_seconds
+            spec = {
+                "kind": "render",
+                "path": typed_path,
+                "ext": ext,
+                "workdir": workdir,
+                "page": options["page"],
+                "maxPx": options["maxPx"],
+                "timeout": timeout,
+                "memoryMb": settings.child_memory_mb,
+            }
+            result = await run_job(spec, timeout)
+            if not result.get("ok"):
+                error = result.get("error") or {}
+                result = render_error(error.get("kind", "damaged"), error.get("message") or "The file could not be shown.")
+
+        kind = "ok" if result.get("ok") else "error:" + (result.get("error") or {}).get("kind", "unknown")
+        log.info("render ext=%s bytes=%d ms=%d result=%s", _log_ext(ext), size, (time.monotonic() - started) * 1000, kind)
         return JSONResponse(result)
     finally:
         slots.release()
