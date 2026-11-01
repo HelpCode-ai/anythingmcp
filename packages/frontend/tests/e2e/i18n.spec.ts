@@ -1678,6 +1678,92 @@ test.describe('knowledge graph, AI skills and memory from Accept-Language', () =
   });
 });
 
+async function codeProposalSession(page: Page) {
+  await knowledgeSession(page);
+  // Registered after knowledgeSession, so it answers the skills list first.
+  await page.route('**/api/knowledge-graph/skills?**', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        total: 1,
+        take: 25,
+        skip: 0,
+        counts: { pending: 1, applied: 0, dismissed: 0 },
+        items: [
+          {
+            id: 'k1', kind: 'code', connectorId: 'c1', connector: { name: 'Shop' }, mcpServerId: null,
+            title: 'Open orders by customer', whenToUse: '', instruction: 'Agents kept chaining three calls.',
+            confidence: 1, evidenceCount: 0, status: 'pending', source: 'agent', version: 1, useCount: 0,
+            payload: {
+              connectorId: 'c1', name: 'open_orders', description: 'Lists open orders for a customer.',
+              parameters: {}, endpointMapping: { code: 'return 1;' },
+            },
+          },
+        ],
+      }),
+    }),
+  );
+}
+
+test.describe('code tool proposal from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the code tool proposal card in German', async ({ page }) => {
+      await codeProposalSession(page);
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByText('Code-Tool-Vorschlag', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Connector: Shop · von einem Agenten vorgeschlagen · nur lesend, läuft mit den Berechtigungen des Aufrufers'),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Tool erstellen', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Verwerfen', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Vorschlag löschen', exact: true })).toBeVisible();
+      await expect(page.getByText('Programm (9 Zeichen)', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^Beim Erstellen wird ein nur lesendes Code-Tool für Shop angelegt\./)).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the code tool proposal card in Italian', async ({ page }) => {
+      await codeProposalSession(page);
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByText('Proposta di strumento di codice', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Crea strumento', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Scarta', exact: true })).toBeVisible();
+      await expect(page.getByText('Cosa fa:', { exact: true })).toBeVisible();
+      await expect(page.getByText('Programma (9 caratteri)', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the code tool proposal card in English', async ({ page }) => {
+      await codeProposalSession(page);
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByText('Code tool proposal', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("connector: Shop · proposed by an agent · read-only, runs with the caller's permissions", { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Create tool', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Dismiss', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Delete proposal', exact: true })).toBeVisible();
+      await expect(page.getByText('Why:', { exact: true })).toBeVisible();
+      await expect(page.getByText('Does:', { exact: true })).toBeVisible();
+      await expect(page.getByText('Program (9 characters)', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText(
+          "Creating it adds a read-only code tool on Shop. To let it write data or run with the author's rights, edit it afterwards on the connector's tools page.",
+          { exact: true },
+        ),
+      ).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;

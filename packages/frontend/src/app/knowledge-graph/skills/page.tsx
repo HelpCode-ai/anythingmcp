@@ -511,7 +511,7 @@ function SkillCard({
         await knowledgeGraph.skills.update(token, s.id, { status: 'applied' });
         onChanged();
       } catch (e: any) {
-        setErr(e?.message || 'Could not create the tool.');
+        setErr(e?.message || t('codeProposal.createFailed'));
       } finally {
         setBusy(false);
       }
@@ -523,14 +523,14 @@ function SkillCard({
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
               <span className="text-[14px] font-semibold text-[var(--text)]">{s.title}</span>
               <Badge tone="warn" className="rounded-full px-2 py-[2px]">
-                Code tool proposal
+                {t('codeProposal.badge')}
               </Badge>
               <Badge tone={statusMeta.tone} className="rounded-full px-2 py-[2px]">
-                {s.status === 'applied' ? 'Created' : statusMeta.label}
+                {s.status === 'applied' ? t('codeProposal.created') : statusMeta.label}
               </Badge>
             </div>
             <p className="text-[11.5px] text-[var(--text-3)]">
-              {scope} · proposed by an agent · read-only, runs with the caller&apos;s permissions
+              {t('codeProposal.meta', { scope })}
             </p>
           </div>
           {isAdmin && (
@@ -542,7 +542,7 @@ function SkillCard({
                   onClick={createTool}
                   className="h-[30px] px-[11px] bg-[var(--ok)] text-[var(--ok-foreground)] hover:opacity-90"
                 >
-                  Create tool
+                  {t('codeProposal.createTool')}
                 </Button>
               )}
               {s.status !== 'dismissed' && s.status !== 'applied' && (
@@ -553,15 +553,15 @@ function SkillCard({
                   onClick={() => run(() => knowledgeGraph.skills.dismiss(token, s.id))}
                   className="h-[30px] px-[11px]"
                 >
-                  Dismiss
+                  {t('codeProposal.dismiss')}
                 </Button>
               )}
               <Button
                 variant="secondary"
                 size="sm"
                 disabled={busy}
-                title="Delete"
-                aria-label="Delete proposal"
+                title={t('delete')}
+                aria-label={t('codeProposal.deleteAria')}
                 onClick={() => run(() => knowledgeGraph.skills.remove(token, s.id))}
                 className="h-[30px] w-[30px] p-0 text-[var(--danger)]"
               >
@@ -574,25 +574,24 @@ function SkillCard({
         </div>
         {s.instruction && (
           <p className="text-[13px] leading-[1.55] mb-1 text-[var(--text)]">
-            <span className="text-[var(--text-3)]">Why:</span> {s.instruction}
+            <span className="text-[var(--text-3)]">{t('codeProposal.why')}</span> {s.instruction}
           </p>
         )}
         {p && (
           <>
             <p className="text-[13px] leading-[1.55] text-[var(--text)]">
-              <span className="text-[var(--text-3)]">Does:</span> {p.description}
+              <span className="text-[var(--text-3)]">{t('codeProposal.does')}</span> {p.description}
             </p>
             <details className="mt-2" open>
               <summary className="cursor-pointer text-[12.5px] text-[var(--text-2)]">
-                Program ({p.endpointMapping.code.length.toLocaleString()} characters)
+                {t('codeProposal.program', { count: p.endpointMapping.code.length })}
               </summary>
               <pre className="mt-2 overflow-auto rounded-md bg-[var(--surface-2)] p-3 text-[12px] leading-[1.5] text-[var(--text)]">
                 {p.endpointMapping.code}
               </pre>
             </details>
             <p className="mt-2 text-[12px] text-[var(--text-3)]">
-              Creating it adds a read-only code tool on {s.connector?.name ?? 'the connector'}. To let it write
-              data or run with the author&apos;s rights, edit it afterwards on the connector&apos;s tools page.
+              {t('codeProposal.note', { connector: s.connector?.name ?? t('codeProposal.theConnector') })}
             </p>
           </>
         )}
