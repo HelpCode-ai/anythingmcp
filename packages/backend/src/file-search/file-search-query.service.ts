@@ -103,17 +103,45 @@ export class FileSearchQueryService {
     const query = (p.query ?? '').trim().slice(0, 500);
     if (!query) return { query, total: 0, files: [], note: 'Pass a query.' };
     const limit = Math.min(Math.max(p.limit ?? 10, 1), 50);
+    // Plain words of the query (no quotes, OR or -exclusions), for the fallbacks.
+    const plain = !/["]|(^|\s)-\S|\sor\s/i.test(query);
+    const words = query.replace(/["()]/g, ' ').split(/\s+/).filter((w) => w.length >= 2 && !/^(or|and|-.*)$/i.test(w)).slice(0, 6);
     return this.run(scope, async (tx) => {
-      const rows = await tx.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
-        SELECT c.id, c.entry_id, c.page, ts_rank_cd(c.search_vector, q.tsq) AS rank,
-               e.path, e.name, e.ext, e.size, e.mtime, e.page_count
-        FROM file_chunks c
-        JOIN file_entries e ON e.id = c.entry_id,
-             websearch_to_tsquery('simple', ${query}) AS q(tsq)
-        WHERE ${scopeSql('c', scope)} AND ${scopeSql('e', scope, p.path)} AND ${entryFilters('e', p)}
-          AND c.search_vector @@ q.tsq
-        ORDER BY rank DESC
-        LIMIT ${MAX_CANDIDATES}`);
+      const candidates = (match: Prisma.Sql, rankQuery: string) =>
+        tx.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+          SELECT c.id, c.entry_id, c.page, ts_rank_cd(c.search_vector, q.tsq) AS rank,
+                 e.path, e.name, e.ext, e.size, e.mtime, e.page_count
+          FROM file_chunks c
+          JOIN file_entries e ON e.id = c.entry_id,
+               websearch_to_tsquery('simple', ${rankQuery}) AS q(tsq)
+          WHERE ${scopeSql('c', scope)} AND ${scopeSql('e', scope, p.path)} AND ${entryFilters('e', p)}
+            AND ${match}
+          ORDER BY rank DESC
+          LIMIT ${MAX_CANDIDATES}`);
+
+      // 1. Every word on the page.
+      let match: 'all_words' | 'words_in_text_or_path' | 'any_word' = 'all_words';
+      let highlight = query;
+      let rows = await candidates(Prisma.sql`c.search_vector @@ q.tsq`, query);
+      const anyWords = words.join(' or ');
+      if (!rows.length && plain && words.length > 1) {
+        // 2. Every word either on the page or in the path ("Preisliste Brandschutztür":
+        //    the folder says Preisliste, the page says Brandschutztür), at least one on the page.
+        match = 'words_in_text_or_path';
+        highlight = anyWords;
+        rows = await candidates(
+          Prisma.sql`c.search_vector @@ q.tsq AND ${Prisma.join(
+            words.map((w) => Prisma.sql`(c.search_vector @@ plainto_tsquery('simple', ${w}) OR e.path ILIKE ${'%' + likeEscape(w) + '%'})`),
+            ' AND ',
+          )}`,
+          anyWords,
+        );
+        // 3. Pages with any of the words, best first.
+        if (!rows.length) {
+          match = 'any_word';
+          rows = await candidates(Prisma.sql`c.search_vector @@ q.tsq`, anyWords);
+        }
+      }
 
       const byFile = new Map<string, { best: Record<string, unknown>; pages: Set<number>; hits: number; score: number }>();
       for (const r of rows) {
@@ -139,7 +167,7 @@ export class FileSearchQueryService {
       const snippets = new Map<string, string>();
       if (chunkIds.length) {
         const hl = await tx.$queryRaw<Array<{ id: bigint; snippet: string }>>(Prisma.sql`
-          SELECT c.id, ts_headline('simple', c.content, websearch_to_tsquery('simple', ${query}),
+          SELECT c.id, ts_headline('simple', c.content, websearch_to_tsquery('simple', ${highlight}),
                  'MaxFragments=2, MaxWords=28, MinWords=8, FragmentDelimiter=" … ", StartSel=«, StopSel=»') AS snippet
           FROM file_chunks c
           WHERE c.organization_id = ${scope.organizationId} AND c.id IN (${Prisma.join(chunkIds)})`);
@@ -147,7 +175,6 @@ export class FileSearchQueryService {
       }
 
       // Files whose name matches but whose text does not (scans, name-only types).
-      const words = query.replace(/["()]/g, ' ').split(/\s+/).filter((w) => w.length >= 2 && !/^(or|and|-.*)$/i.test(w)).slice(0, 6);
       let nameMatches: Array<Record<string, unknown>> = [];
       if (words.length) {
         nameMatches = await tx.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
@@ -162,6 +189,15 @@ export class FileSearchQueryService {
       return {
         query,
         total,
+        ...(match !== 'all_words' && total > 0
+          ? {
+              match,
+              note:
+                match === 'words_in_text_or_path'
+                  ? 'No page contains all the words; these pages contain some of them and the file path contains the rest.'
+                  : 'No page contains all the words; these pages contain at least one of them. Check that they answer the question.',
+            }
+          : {}),
         files: files.map((f) => ({
           path: f.best.path,
           modified: f.best.mtime ? (f.best.mtime as Date).toISOString() : null,

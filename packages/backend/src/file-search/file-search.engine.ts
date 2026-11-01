@@ -103,6 +103,10 @@ export class FileSearchEngine {
           limit: int(p.limit),
         });
       case 'file_find':
+        // Without a name or glob every file would match: say what to pass instead.
+        if (!str(p.name) && !str(p.glob) && p.sort !== 'newest') {
+          return { error: 'Pass `name` (words of the file or folder name) or `glob` (e.g. "**/*.pdf"); for the newest files pass sort: "newest".' };
+        }
         return this.query.find(scope, {
           name: str(p.name),
           glob: str(p.glob),
