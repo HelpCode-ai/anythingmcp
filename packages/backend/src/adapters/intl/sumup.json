@@ -64,7 +64,13 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v0.1/me/transactions/history"
+        "path": "/v0.1/me/transactions/history",
+        "queryParams": {
+          "changes_since": "$changes_since",
+          "limit": "$limit",
+          "order": "$order",
+          "statuses": "$statuses"
+        }
       }
     },
     {
@@ -75,14 +81,21 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "The unique internal ID or transaction code of the transaction."
+            "description": "The unique internal ID of the transaction."
+          },
+          "transaction_code": {
+            "type": "string",
+            "description": "The transaction code (e.g. TD6Q7P2)."
           }
-        },
-        "required": ["id"]
+        }
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v0.1/me/transactions"
+        "path": "/v0.1/me/transactions",
+        "queryParams": {
+          "id": "$id",
+          "transaction_code": "$transaction_code"
+        }
       }
     },
     {
@@ -107,7 +120,12 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v0.1/me/payouts"
+        "path": "/v0.1/me/financials/payouts",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit"
+        }
       }
     },
     {
@@ -124,7 +142,10 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v0.1/checkouts"
+        "path": "/v0.1/checkouts",
+        "queryParams": {
+          "checkout_reference": "$checkout_reference"
+        }
       }
     },
     {
@@ -136,7 +157,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/v0.1/me/subaccounts"
+        "path": "/v0.1/me/accounts"
       }
     }
   ]
