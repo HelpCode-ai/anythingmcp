@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: "AnythingMCP — give AI assistants safe access to the software a company already runs"
+title: "AnythingMCP — open-source MCP gateway and company brain for AI agents"
 message: "If you use AnythingMCP in your research or product, please cite it as below."
 type: software
 authors:
@@ -16,14 +16,19 @@ abstract: >
   It ships 691 pre-built adapters, with a focus on ERP and e-commerce
   systems (SAP Business One, Odoo, Xentral, JTL-Wawi, weclapp, Shopware,
   WooCommerce, Amazon Seller, Kaufland, OTTO, etc.), a per-workspace
-  knowledge graph served over MCP, per-tool response mapping,
+  knowledge graph served over MCP, File Search over company file servers
+  (SFTP, WebDAV, S3, network shares), company memory and AI skills shared
+  by every AI client, Code Mode, per-tool response mapping,
   OAuth2/RBAC/SSO/SCIM governance, an audit log and a visual tool editor.
 keywords:
   - model-context-protocol
   - mcp
   - mcp-server
   - mcp-gateway
-  - api-gateway
+  - company-brain
+  - enterprise-search
+  - file-search
+  - ai-memory
   - llm-tools
   - ai-agents
   - claude

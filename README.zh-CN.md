@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：691 个连接器，其中 34 个无需 API 密钥。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 Claude、ChatGPT、Copilot 和 Gemini 连接到 ERP、电子商务、REST、SOAP 和 SQL 系统以及你的文件服务器：691 个连接器，还有企业记忆、技能和文件搜索。" width="100%" />
 </p>
 
-<h1 align="center">AnythingMCP：自行托管的 MCP 网关</h1>
+<h1 align="center">AnythingMCP：成为你企业大脑的开源 MCP 网关</h1>
 
 <p align="center">
   <a href="https://www.star-history.com/helpcode-ai/anythingmcp">
@@ -18,8 +18,9 @@
 </p>
 
 <p align="center">
-  <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将任意 REST/OpenAPI、SOAP、GraphQL、OData 或 SQL 系统转化为 Claude、ChatGPT 和 Copilot 可用的 MCP 工具。</strong><br/>
-  它自带 691 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 34 个无需 API 密钥。
+  <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将 Claude、ChatGPT、Copilot 和 Gemini 连接到你公司运行的软件以及文件服务器上的文档。</strong><br/>
+  在网关之上，它还为你维护企业大脑：一张描述各系统如何关联的知识图谱、AI 技能和企业记忆，由所有 AI 客户端共享，并按每个用户的角色限制访问。<br/>
+  691 个现成连接器，提供 12,000 多个工具，涵盖 SAP、Odoo、weclapp 和 Amazon Seller 等；其中 34 个无需 API 密钥。
 </p>
 
 <p align="center">
@@ -31,12 +32,37 @@
 </p>
 
 <p align="center">
+  <strong>AnythingMCP Cloud 上有 16,000 多个工作区</strong> · <strong>每月 150 万次以上 AI 工具调用</strong> · <strong>已收录于 Claude 官方目录</strong>
+</p>
+
+<p align="center">
   <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>免费试用云版 7 天</strong></a> · <a href="https://claude.ai/directory/anythingmcp">添加到 Claude</a> · <a href="#run-it-yourself">自己运行</a> · <a href="docs/guides.md">文档</a> · <a href="https://anythingmcp.com/zh/guides">连接器指南</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
 **在 Claude 中提一个问题，答案来自 Etsy、SAP 和一个物流 API。**
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
+
+---
+
+<a id="what-your-ai-gets"></a>
+
+## 你的 AI 能得到什么
+
+网关只负责转发调用。企业大脑还知道你的文档放在哪里、各个系统如何关联，以及公司已经做过哪些决定。AnythingMCP 通过同一个 MCP 端点，把这两者都交给每个 AI 客户端：
+
+| | 作用 | 版本 |
+|---|---|---|
+| **所有系统，一个端点** | 691 个目录连接器，或你自己的 REST/OpenAPI、SOAP、GraphQL、OData、SQL、IMAP/SMTP 或 MCP 数据源。工具在运行时注册。[连接器](#connect-any-api-soap-service-or-database) | 全部 |
+| **File Search（文件搜索）** | 为 SFTP、FTP/FTPS、WebDAV（Nextcloud、NAS）、S3 或网络共享建立索引：PDF 的每一页、带列名的 Excel 行、Word、PowerPoint，以及带附件的 Outlook 邮件。AI 回答时会注明文件、页码和日期。[File Search](docs/connectors/file-search.md) | Cloud、付费许可证 |
+| **File Share（文件分享）** | 为你文件夹中的文件或 AI 生成的文件（CSV 导出、报告）创建临时下载链接，可选内部或公开，支持过期时间和撤销。[File Share](docs/connectors/file-search.md) | Cloud、付费许可证 |
+| **企业记忆** | 在一个 AI 客户端中保存的事实和偏好，可以在任何其他客户端中再次找到：在 Claude 里说过一次，Copilot 也能用上。分为个人和公司两种范围，支持文件夹和角色限制。[记忆](docs/memory.md) | Enterprise |
+| **AI 技能** | 智能体遵循的操作流程，可以手动编写，也可以从真实请求和已修复的错误中学习，并由管理员批准。[AI 技能](docs/knowledge-graph.md#ai-skills) | 全部 |
+| **知识图谱** | 描述各系统如何关联，让智能体无需提示就能把一个系统中的客户与另一个系统中的订单对应起来。[知识图谱](docs/knowledge-graph.md) | 全部 |
+| **Code Mode** | 一段在隔离沙箱中调用多个工具的简短程序，沙箱中没有任何密钥，也无法访问网络，五步查询因此变成一次调用。[Code Mode](docs/code-mode.md) | 全部；写入权限需 Enterprise |
+| **治理** | 角色和按工具设置的权限、在字段到达模型之前将其删除的响应映射，以及记录每次调用的审计日志。从你的目录服务接入 SSO 和 SCIM。[安全](#security-and-governance) | 全部；SSO/SCIM 需 Enterprise |
+
+自行托管的 Community 版最多可供 3 名活跃用户免费使用。付费许可证和 30 天试用位于 **Settings → License**；如需 Enterprise，请发邮件至 [info@helpcode.ai](mailto:info@helpcode.ai) 或访问 [anythingmcp.com/enterprise](https://anythingmcp.com/enterprise)。
 
 ---
 
@@ -67,7 +93,7 @@ docker compose up -d
 
 <br/>
 
-[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) 使用同一套 AGPL 代码，由我们在德国**法兰克福**运营，可免费试用 7 天。你可以先在云端用自己的 API 试用，当你希望凭据不再离开内网时再迁回自有环境；连接器完全相同。如需 DPA/AVV，请联系 [info@helpcode.ai](mailto:info@helpcode.ai)。SSO 和 SCIM 仅在自行托管版本中提供。
+[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) 使用同一套 AGPL 代码，由我们在德国**法兰克福**运营，可免费试用 7 天。你可以先在云端用自己的 API 试用，当你希望凭据不再离开内网时再迁回自有环境；连接器完全相同。如需 DPA/AVV，请联系 [info@helpcode.ai](mailto:info@helpcode.ai)。SSO 和 SCIM 仅在自行托管版本中提供，并需要 Enterprise 许可证。
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
 &nbsp;
@@ -112,7 +138,7 @@ docker compose up -d
 
 ## 连接器目录
 
-共 691 个适配器，提供 2,400 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
+共 691 个适配器，提供 12,000 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
 
 | 类别 | 示例 |
 |---|---|
@@ -195,13 +221,13 @@ docker compose up -d
 
 ## 安全与治理
 
-所有组件都运行在你自己的基础设施上，因此由你决定哪些数据可以离开。OAuth2、RBAC、SSO 和 SCIM 已包含在自行托管版本中，并非付费套餐专属功能。
+所有组件都运行在你自己的基础设施上，因此由你决定哪些数据可以离开。OAuth2、角色、按工具设置的权限、响应映射和审计日志包含在所有版本中；SSO 和 SCIM 需要 Enterprise 许可证（内置 30 天试用）。
 
 - **响应映射。** 每个工具都声明哪些字段可以到达模型：删除客户的 IBAN 或员工的薪资，或者只列出要保留的字段。编辑器会基于真实响应显示前后对比；某个内置适配器从 12,172 B 减少到 1,072 B（−91%），这些字段也就不再占用上下文窗口。映射出错时默认返回原始响应；对于字段绝不能外传的工具，请设置 `"fallbackToRaw": false`，此时调用会直接失败。
 - **关键处只读。** 每个工具都带有 MCP 注解（`readOnlyHint`、`destructiveHint`），由操作自动推断，并可按工具覆盖。基于角色的工具白名单可以发布一个只能读取的 MCP 服务器，大多数人接入 ERP 时都应从这里开始。数据库查询工具只执行单条 SELECT，并阻止写入和堆叠语句。
 - **支持你会遇到的各种认证方式。** OAuth2（PKCE 和 Client Credentials）、Bearer、API Key、Basic、HMAC 请求签名、[LOGIN_TOKEN](docs/connectors/login-token-auth.md) 和 OAuth 1.0a。凭据以 AES-256-GCM 加密存储。
 - **审计日志。** 每次工具调用都会连同输入、输出、耗时和状态记录在你自己的数据库中，包括模型从未看到的完整上游响应。
-- **[SSO](docs/sso.md) 和 [SCIM](docs/scim-entra-setup.md)。** Entra ID、Google、Okta、Auth0 或任意 OIDC 提供方。每次登录时从目录组同步角色；在目录中停用某人后，其工作区访问权限和 MCP API 密钥也会一并失效。
+- **[SSO](docs/sso.md) 和 [SCIM](docs/scim-entra-setup.md)**（Enterprise）。Entra ID、Google、Okta、Auth0 或任意 OIDC 提供方。每次登录时从目录组同步角色；在目录中停用某人后，其工作区访问权限和 MCP API 密钥也会一并失效。
 
 ```json
 {
@@ -231,14 +257,17 @@ docker compose up -d
 
 ---
 
-<a id="knowledge-graph-and-ai-skills"></a>
+<a id="company-brain-knowledge-graph-ai-skills-and-memory"></a>
 
-## 知识图谱与 AI 技能
+## 企业大脑：知识图谱、AI 技能和记忆
 
 只转发调用，会把最难的部分留给智能体：知道下一步该调用哪个工具，以及你的业务所说的"未完成订单"究竟指什么。AnythingMCP 会学习这两者，并以上下文的形式交还给客户端，而不是增加额外的工具调用。
 
 - **知识图谱。** 每个工作区一张图，记录实体（客户、订单、产品）及其跨连接器的关系，根据工具定义和真实调用构建，也可以手动编辑。它只存储字段名和关系，从不存储值。每个服务器都通过 `kg_how_to_obtain` 工具提供图谱，智能体可以询问如何从一个 Shopware 订单找到 DHL 运单号。
-- **AI 技能。** 把反复出现的使用方式变成简短规则（例如"今日营收包含订单状态 2、3 和 4"），由你应用、编辑或拒绝，并写入服务器的指令中。
+- **AI 技能。** 把反复出现的使用方式变成简短规则（例如"今日营收包含订单状态 2、3 和 4"）和分步操作流程。技能可以手动编写，也可以从真实请求和已修复的错误中学习，带有版本记录，经管理员批准后才会写入服务器的指令中。
+- **企业记忆**（Enterprise）。AI 客户端通过 `memory_save` 保存事实、偏好和笔记，再通过 `memory_search` 找回，适用于连接到该工作区的任何客户端。*我的记忆*只对单个用户可见；*企业记忆*（例如"STAMMKUNDE 指签有框架协议的客户"）面向所有人，存放在按角色限制访问的文件夹中。它以"由人编写的信息"的形式提供，从不作为指令。[记忆指南](docs/memory.md)
+
+换掉助手，大脑依然在：今天用 Copilot，明天用 Claude，今晚用 n8n 智能体，它们找到的都是同一张图谱、同一套技能和同一份记忆。
 
 AI 处理默认关闭，使用你自己的 OpenAI、OpenRouter 或 Anthropic 密钥；图谱、编辑器和 MCP 工具在没有密钥时也能使用。[知识图谱指南](docs/knowledge-graph.md)
 
@@ -271,6 +300,18 @@ AI 处理默认关闭，使用你自己的 OpenAI、OpenRouter 或 Anthropic 密
 ### Claude 能安全地查询我的 SQL Server、Oracle 或 PostgreSQL 数据库吗？
 查询工具默认只读。此外，请使用仅有 SELECT 权限的数据库用户，优先使用由模型只提供参数的静态查询，并按角色设置工具白名单。响应映射会删除不能到达模型的列，每次查询都会记录在你的审计日志中。
 
+### 如何让 Claude 或 ChatGPT 搜索我们文件服务器上的文档？
+添加一个 **File Search** 连接器，通过 SFTP、FTP/FTPS、WebDAV（Nextcloud、ownCloud、Synology 或 QNAP NAS）、S3 或已挂载的网络共享指向相应文件夹。AnythingMCP 会逐页索引 PDF，连同列名索引 Excel 行，并索引 Word、PowerPoint 和 Outlook 邮件，保持索引同步，同时为每个 AI 客户端提供 `search`、`find`、`grep` 和 `read` 工具，回答时注明文件、页码和日期。Enterprise 版支持按角色设置文件夹权限。[File Search 文档](docs/connectors/file-search.md)
+
+### ChatGPT、Claude 和 Copilot 能共享同一份企业记忆吗？
+可以。启用工作区记忆（Enterprise）后，从一个 AI 客户端保存的内容可以被其他客户端找到，因为记忆存放在 AnythingMCP 中，而不是客户端里。个人条目只对作者本人可见；公司条目在文件夹和角色限制范围内共享。[记忆文档](docs/memory.md)
+
+### 什么是面向 AI 智能体的企业大脑？
+指 AI 在工具访问之外还需要的知识：你的文档放在哪里、各系统如何关联（知识图谱）、公司如何运作（AI 技能），以及公司做过哪些决定（企业记忆）。AnythingMCP 把这些全部保存在你自己的实例中，并在每个用户的角色范围内提供给所有 MCP 客户端。
+
+### AI 智能体能安全地针对我的工具运行代码吗？
+借助 Code Mode，一段简短的 JavaScript 程序可以在一步内调用多个工具。它运行在单独的 code-runner 容器中，没有文件系统、网络、环境变量或密钥；它只能调用该用户本来就有权使用的工具，每个内部调用都与直接调用一样受到权限控制和审计。在运维人员启用之前，它处于关闭状态。[Code Mode 文档](docs/code-mode.md)
+
 ### 如何把 Shopware、WooCommerce 或 Amazon Seller Central 连接到 Claude？
 为你的商店或平台安装对应的[电子商务适配器](#e-commerce--marketplace-connectors)并完成授权。WooCommerce 提供 49 个工具，Amazon Seller Central 使用官方 Selling Partner API，Shopware 6 适配器通过 Store API 读取店面目录。
 
@@ -294,4 +335,4 @@ AI 处理默认关闭，使用你自己的 OpenAI、OpenRouter 或 Anthropic 密
 
 ## License
 
-基于 [GNU Affero General Public License v3](LICENSE)（AGPL-3.0-only）**开源**。在你自己公司内部的商业使用始终包含在内；只有当你修改 AnythingMCP 并通过网络向他人提供修改后的版本时，才会产生 copyleft 义务。`ee/` 下面向云运营方的代码采用单独许可，自行托管时并不需要；参见[许可证 FAQ](docs/license-faq.md)。
+基于 [GNU Affero General Public License v3](LICENSE)（AGPL-3.0-only）**开源**。在你自己公司内部的商业使用始终包含在内；只有当你修改 AnythingMCP 并通过网络向他人提供修改后的版本时，才会产生 copyleft 义务。`ee/` 下的代码（云运营、File Search 同步引擎、版本许可）采用 AnythingMCP Commercial License，运行网关时并不需要；参见[许可证 FAQ](docs/license-faq.md)。
