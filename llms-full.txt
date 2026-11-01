@@ -1349,7 +1349,9 @@ lets AI clients publish files they write.
 - Every query on the index is filtered by workspace and connector, and the
   `file_*` tables have Row-Level Security enforced through a dedicated
   database role, so a query that forgot its filter returns nothing of another
-  workspace.
+  workspace. On a managed database where the application user may not create
+  roles, the migration skips the role and the policies apply to the
+  application user itself (as long as it is not a superuser).
 - Credentials are stored encrypted and decrypted only in `files-worker`; the
   text extractor runs on an internal network with no route out, no database
   and no secrets, read-only, without capabilities.

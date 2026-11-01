@@ -264,14 +264,32 @@ CREATE INDEX "file_entries_path_trgm_idx" ON "file_entries" USING GIN ("path" gi
 -- login, no BYPASSRLS and rights on file_* only, so the org_isolation policy
 -- applies even while the application connects as a superuser. A statement
 -- without app.current_org sees no rows and cannot write.
+-- Without CREATEROLE (some managed databases) the role is skipped with a
+-- notice: the policies below then apply to the application user itself,
+-- which is enough as long as it is not a superuser and has no BYPASSRLS. The
+-- repository switches to amcp_files only when the role is granted to it.
 DO $$
+DECLARE
+  t text;
+  file_tables text[] := ARRAY[
+    'file_sources', 'file_scans', 'file_sync_runs', 'file_entries',
+    'file_chunks', 'file_shares', 'file_access_rules'
+  ];
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'amcp_files') THEN
     CREATE ROLE amcp_files NOLOGIN NOSUPERUSER NOBYPASSRLS;
   END IF;
+  EXECUTE format('GRANT amcp_files TO %I', current_user);
+  GRANT USAGE ON SCHEMA public TO amcp_files;
+  FOREACH t IN ARRAY file_tables LOOP
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO amcp_files', t);
+  END LOOP;
+  GRANT USAGE, SELECT ON SEQUENCE "file_chunks_id_seq" TO amcp_files;
+  -- Read-only lookups the file queries join against.
+  GRANT SELECT ("id", "organization_id", "type", "is_active", "name") ON "connectors" TO amcp_files;
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'amcp_files role not created (%): Row-Level Security applies to the application user directly', SQLERRM;
 END $$;
-GRANT amcp_files TO CURRENT_USER;
-GRANT USAGE ON SCHEMA public TO amcp_files;
 
 DO $$
 DECLARE
@@ -282,7 +300,6 @@ DECLARE
   ];
 BEGIN
   FOREACH t IN ARRAY file_tables LOOP
-    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO amcp_files', t);
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS org_isolation ON %I', t);
@@ -294,6 +311,3 @@ BEGIN
     );
   END LOOP;
 END $$;
-GRANT USAGE, SELECT ON SEQUENCE "file_chunks_id_seq" TO amcp_files;
--- Read-only lookups the file queries join against.
-GRANT SELECT ("id", "organization_id", "type", "is_active", "name") ON "connectors" TO amcp_files;
