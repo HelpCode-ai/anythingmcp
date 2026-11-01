@@ -881,6 +881,7 @@ UI checked screenshot by screenshot at 1440×900 and 390×844, light and dark.
 Still open before production: Cloud enablement (Spaces bucket and lifecycle
 rule, download host, worker and extractor in the deploy, DB disk alert),
 an independent pen test of the share endpoints and the FTP/SFTP SSRF paths,
-the licence site's checkout-source allow-list for `file_quota*`, and the
-website guides (publish after the live test).
+and the website guides (publish after the live test). The licence site needs
+no change: Cloud checkout intents accept any source slug (lib/stripe.ts
+`checkoutSource`).
 
