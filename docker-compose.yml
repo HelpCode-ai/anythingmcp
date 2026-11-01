@@ -298,6 +298,8 @@ services:
         condition: service_healthy
       app:
         condition: service_healthy
+    # Lets a running slice finish and release its lease (scheduler waits 20 s).
+    stop_grace_period: 30s
     restart: unless-stopped
 
   # Text extraction for File Search (ee/): no route to the internet, no
