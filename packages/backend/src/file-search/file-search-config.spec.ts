@@ -35,6 +35,8 @@ describe('parseFileSearchConfig', () => {
   it('builds safe tool prefixes', () => {
     expect(toolPrefixFrom('Lieferanten Preislisten')).toBe('lieferanten_preislisten');
     expect(toolPrefixFrom('2026 Preise')).toBe('files_2026_preise');
+    expect(toolPrefixFrom('Drawing archive (FTPS test)')).toBe('drawing_archive_ftps');
+    expect(toolPrefixFrom('Konstruktionszeichnungsarchiv')).toBe('konstruktionszeichnungsa');
     expect(toolPrefixFrom('')).toBe('files');
   });
 });
