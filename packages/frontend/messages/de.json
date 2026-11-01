@@ -380,7 +380,8 @@
       "noLimit": "Kein Limit",
       "fileSize": "Größte Datei",
       "publicOn": "Öffentliche Links sind erlaubt.",
-      "publicOff": "Öffentliche Links sind abgeschaltet; Links öffnen sich nur für angemeldete Mitglieder."
+      "publicOff": "Öffentliche Links sind abgeschaltet; Links öffnen sich nur für angemeldete Mitglieder.",
+      "days": "{n} Tage"
     },
     "connector": {
       "title": "Links aus KI-Chats",

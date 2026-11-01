@@ -117,7 +117,7 @@ export default function FileSharePage() {
             {[
               [t('usage.stored'), `${formatBytes(usage.storedBytes)} / ${limits.maxStoredBytes != null ? formatBytes(limits.maxStoredBytes) : '∞'}`],
               [t('usage.today'), `${formatNumber(usage.linksToday, locale)} / ${formatNumber(limits.maxLinksPerDay, locale)}`],
-              [t('usage.validity'), limits.maxTtlHours != null ? t('usage.hours', { n: limits.maxTtlHours }) : t('usage.noLimit')],
+              [t('usage.validity'), limits.maxTtlHours != null ? (limits.maxTtlHours >= 48 && limits.maxTtlHours % 24 === 0 ? t('usage.days', { n: limits.maxTtlHours / 24 }) : t('usage.hours', { n: limits.maxTtlHours })) : t('usage.noLimit')],
               [t('usage.fileSize'), formatBytes(limits.maxFileBytes)],
             ].map(([k, v]) => (
               <div key={k} className="rounded-[10px] bg-[var(--surface-2)] p-3">

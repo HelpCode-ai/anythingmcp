@@ -2239,6 +2239,9 @@ export default function ConnectorDetailPage() {
                           >
                             {testingToolId === tool.id ? 'Close' : 'Test'}
                           </button>
+                          {/* File Search tools are built in: their definition comes from the
+                              connector, so they can be switched off but not edited or deleted. */}
+                          {connector?.type !== 'FILE_SEARCH' && (
                           <button
                             onClick={() => {
                               setEditingToolId(tool.id);
@@ -2248,6 +2251,7 @@ export default function ConnectorDetailPage() {
                           >
                             Edit
                           </button>
+                          )}
                           <button
                             onClick={() =>
                               setHintsToolId(hintsToolId === tool.id ? null : tool.id)
@@ -2263,7 +2267,7 @@ export default function ConnectorDetailPage() {
                           >
                             {tool.isEnabled ? 'Disable' : 'Enable'}
                           </button>
-                          {proxyAvailable && (
+                          {proxyAvailable && connector?.type !== 'FILE_SEARCH' && (
                             <label
                               className="flex items-center gap-1 rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs cursor-pointer transition-colors hover:border-[var(--border-strong)]"
                               title="Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs."
@@ -2277,12 +2281,14 @@ export default function ConnectorDetailPage() {
                               Proxy
                             </label>
                           )}
+                          {connector?.type !== 'FILE_SEARCH' && (
                           <button
                             onClick={() => handleDeleteTool(tool.id, tool.name)}
                             className="inline-flex items-center justify-center rounded-[7px] border border-[var(--danger)] bg-transparent text-[var(--danger)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--t-danger-bg)]"
                           >
                             Delete
                           </button>
+                          )}
                         </div>
                       </div>
 
