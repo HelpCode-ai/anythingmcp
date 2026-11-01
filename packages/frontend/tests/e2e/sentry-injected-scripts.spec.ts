@@ -38,10 +38,13 @@ test.describe('ignored browser messages', () => {
   test('drops a blocked Google Tag Manager beacon', () => {
     expect(ignored('Failed to fetch (ad.doubleclick.net)')).toBe(true);
     expect(ignored('Failed to fetch (www.google-analytics.com)')).toBe(true);
+    expect(ignored('Failed to fetch (analytics.google.com)')).toBe(true);
+    expect(ignored('Failed to fetch (region1.analytics.google.com)')).toBe(true);
   });
 
   test('keeps a failed fetch to our own API', () => {
     expect(ignored('Failed to fetch (cloud.anythingmcp.com)')).toBe(false);
     expect(ignored('Failed to fetch')).toBe(false);
+    expect(ignored('Failed to fetch (google.com)')).toBe(false);
   });
 });
