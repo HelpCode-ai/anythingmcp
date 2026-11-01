@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 
 export type FileTx = Parameters<Parameters<PrismaService['tenantTx']>[1]>[0];
@@ -20,20 +20,43 @@ export type FileTx = Parameters<Parameters<PrismaService['tenantTx']>[1]>[0];
  */
 @Injectable()
 export class FileSearchRepository {
+  private readonly logger = new Logger(FileSearchRepository.name);
+  /** Whether this database user may switch to amcp_files (checked once). */
+  private roleCheck: Promise<boolean> | null = null;
+
   constructor(readonly prisma: PrismaService) {}
+
+  private canUseRole(): Promise<boolean> {
+    this.roleCheck ??= this.prisma.$queryRaw<Array<{ ok: boolean; bypass: boolean }>>`
+        SELECT coalesce(pg_has_role(current_user, 'amcp_files', 'MEMBER'), false) AS ok,
+               (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass`
+      .then(([r]) => {
+        if (!r?.ok && r?.bypass) {
+          this.logger.warn('Role amcp_files is missing and the database user bypasses RLS: File Search relies on its query filters only');
+        }
+        return !!r?.ok;
+      })
+      .catch(() => false);
+    return this.roleCheck;
+  }
 
   withTenant<T>(organizationId: string, fn: (tx: FileTx) => Promise<T>, opts?: { timeoutMs?: number }): Promise<T> {
     if (!organizationId) throw new Error('withTenant requires an organizationId');
-    return this.prisma.$transaction(
-      async (tx) => {
-        await tx.$executeRaw`SELECT set_config('app.current_org', ${organizationId}, true)`;
-        await tx.$executeRawUnsafe('SET LOCAL ROLE amcp_files');
-        if (opts?.timeoutMs) {
-          await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${Math.max(100, Math.floor(opts.timeoutMs))}`);
-        }
-        return fn(tx as FileTx);
-      },
-      { timeout: Math.max(10_000, (opts?.timeoutMs ?? 0) + 5_000), maxWait: 10_000 },
+    return this.canUseRole().then((useRole) =>
+      this.prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.current_org', ${organizationId}, true)`;
+          if (useRole) await tx.$executeRawUnsafe('SET LOCAL ROLE amcp_files');
+          if (opts?.timeoutMs) {
+            await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${Math.max(100, Math.floor(opts.timeoutMs))}`);
+          }
+          return fn(tx as FileTx);
+        },
+        {
+          timeout: Math.max(10_000, (opts?.timeoutMs ?? 0) + 5_000),
+          maxWait: 10_000,
+        },
+      ),
     );
   }
 }
