@@ -4,7 +4,7 @@
 
 ## Getting started
 
-- [AnythingMCP: self-hosted MCP gateway](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/README.md): Run AnythingMCP locally, connect an AI client, and discover ready-made connectors.
+- [AnythingMCP: the open-source MCP gateway that becomes your company brain](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/README.md): Run AnythingMCP locally, connect an AI client, and discover ready-made connectors.
 - [Deployment Guide](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/deployment.md): Deploy AnythingMCP with Docker and configure authentication, networking, and production settings.
 - [AnythingMCP — Client setup, connector types & FAQ](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/guides.md): Guides for connecting AI clients to AnythingMCP, the connector types you can build, and frequently asked questions.
 
