@@ -11,7 +11,7 @@
  *   <prefix>_read        text by pages or character window
  *   <prefix>_grep        exact codes and numbers with context
  *   <prefix>_status      sync state, counts, pause reason, content summary
- *   <prefix>_get_file    the file itself (attached, or a temporary link)
+ *   <prefix>_get_file    the file itself (a temporary link; images also attached)
  *   <prefix>_share_file  a temporary download link (off at install)
  */
 
@@ -67,7 +67,7 @@ export function guideText(prefix: string, displayName: string, summary?: string 
     `2. ${prefix}_find when you know (part of) the file name, ${prefix}_list to browse a folder.`,
     `3. ${prefix}_read the file, or only the pages a search returned (pages: "4-5"), before answering. Never answer from a snippet alone.`,
     `4. ${prefix}_grep for exact codes and numbers: it returns the matching lines with context; in spreadsheets each line is a whole row with its column names.`,
-    `5. ${prefix}_get_file gives the user the file itself (attached, or a temporary link for large files).`,
+    `5. ${prefix}_get_file gives the user the file itself as a temporary download link (images are also attached). Always show the link to the user.`,
     '',
     'Always name the file, the page and the file date in the answer. When several versions match, use the newest and say which you used; warn when a document is older than 12 months.',
     `If ${prefix}_status reports a paused sync, tell the user that the newest files may be missing.`,
@@ -165,7 +165,7 @@ export function buildFileSearchBuiltinTools(opts: { prefix: string; displayName:
     },
     {
       name: `${p}_get_file`,
-      description: `Give the user one file of ${where} itself: small files are attached to the result, larger ones come back as a temporary download link when File Share is available. To read the content use ${p}_read instead.`,
+      description: `Give the user one file of ${where} itself as a temporary download link (images are also attached; without File Share on the plan, small files are attached instead). Show the link to the user. To read the content use ${p}_read instead.`,
       parameters: { type: 'object', properties: { path: { type: 'string', description: 'Relative path of the file.' } }, required: ['path'] },
       endpointMapping: { method: 'file_get', path: '' },
     },
