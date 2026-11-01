@@ -2745,6 +2745,20 @@
       "applied": "Active",
       "dismissed": "Dismissed"
     },
+    "codeProposal": {
+      "badge": "Code tool proposal",
+      "created": "Created",
+      "meta": "{scope} · proposed by an agent · read-only, runs with the caller's permissions",
+      "createTool": "Create tool",
+      "dismiss": "Dismiss",
+      "deleteAria": "Delete proposal",
+      "why": "Why:",
+      "does": "Does:",
+      "program": "Program ({count, number} characters)",
+      "note": "Creating it adds a read-only code tool on {connector}. To let it write data or run with the author's rights, edit it afterwards on the connector's tools page.",
+      "theConnector": "the connector",
+      "createFailed": "Could not create the tool."
+    },
     "status": {
       "loadFailed": "Failed to load",
       "analyzingServer": "Analyzing the server context…",

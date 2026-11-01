@@ -2745,6 +2745,20 @@
       "applied": "Attiva",
       "dismissed": "Scartata"
     },
+    "codeProposal": {
+      "badge": "Proposta di strumento di codice",
+      "created": "Creato",
+      "meta": "{scope} · proposto da un agente · sola lettura, viene eseguito con i permessi di chi lo chiama",
+      "createTool": "Crea strumento",
+      "dismiss": "Scarta",
+      "deleteAria": "Elimina la proposta",
+      "why": "Perché:",
+      "does": "Cosa fa:",
+      "program": "Programma ({count, number} caratteri)",
+      "note": "Creandolo aggiungi uno strumento di codice in sola lettura su {connector}. Per permettergli di scrivere dati o di essere eseguito con i diritti dell’autore, modificalo poi nella pagina degli strumenti del connettore.",
+      "theConnector": "il connettore",
+      "createFailed": "Impossibile creare lo strumento."
+    },
     "status": {
       "loadFailed": "Caricamento non riuscito",
       "analyzingServer": "Analisi del contesto del server…",
