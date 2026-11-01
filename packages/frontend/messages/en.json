@@ -354,6 +354,12 @@
       "text": "The {plan} plan includes {max} File Search connector(s), and all are set up. Upgrade, or delete one you no longer need.",
       "next": "The {plan} plan includes {max}.",
       "manage": "Manage connectors"
+    },
+    "pager": {
+      "label": "Pages",
+      "range": "{from}–{to} of {total}",
+      "prev": "Previous",
+      "next": "Next"
     }
   },
   "fileShare": {
@@ -383,20 +389,32 @@
       "added": "File Share connector added to your default MCP server."
     },
     "links": {
-      "title": "Active links",
+      "title": "Links",
       "empty": "No active links.",
       "loading": "Loading…",
       "public": "public",
       "internal": "internal",
       "until": "until {date}",
       "noExpiry": "no expiry",
-      "downloads": "{n} downloads",
+      "downloads": "{n, plural, one {# download} other {# downloads}}",
       "by": "by {name}",
       "revoke": "Revoke",
-      "revoked": "Link revoked and file deleted."
+      "revoked": "Link revoked and file deleted.",
+      "count": "{n, plural, one {# active link} other {# active links}}",
+      "search": "Search by file name",
+      "searchLabel": "Search links",
+      "allAccess": "All links",
+      "onlyPublic": "Public only",
+      "onlyInternal": "Internal only",
+      "mine": "Only mine",
+      "noMatch": "No link matches these filters.",
+      "confirm": "Revoke this link and delete the file?",
+      "confirmYes": "Revoke",
+      "cancel": "Cancel",
+      "expiresIn": "expires in {time}"
     },
     "policy": {
-      "title": "Workspace policy",
+      "title": "File Search and File Share policy",
       "intro": "Applies to every File Search connector and link in this workspace.",
       "enterprise": "Workspace policies are available with AnythingMCP Enterprise.",
       "saved": "Policy saved.",
@@ -413,7 +431,11 @@
       "allowPlainFtp": {
         "label": "Allow plain (unencrypted) FTP",
         "hint": "Off: only SFTP and FTPS can be connected."
-      }
+      },
+      "locked": "With AnythingMCP Enterprise an administrator can switch off public links, AI drafting and plain FTP, and cap how long links stay valid.",
+      "on": "on",
+      "off": "off",
+      "planDefault": "plan default"
     },
     "link": {
       "loading": "Loading…",

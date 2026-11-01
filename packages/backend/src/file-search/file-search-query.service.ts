@@ -404,16 +404,28 @@ export class FileSearchQueryService {
     });
   }
 
-  /** Files that failed or were skipped, for the Files tab. */
-  async problems(scope: FileScope, limit = 50) {
-    return this.run(scope, (tx) =>
-      tx.fileEntry.findMany({
-        where: { organizationId: scope.organizationId, connectorId: scope.connectorId, OR: [{ status: { in: ['failed', 'gave_up', 'skipped_size'] } }, { attempts: { gt: 0 } }] },
-        select: { path: true, status: true, lastError: true, size: true, attempts: true, updatedAt: true },
-        orderBy: { updatedAt: 'desc' },
-        take: Math.min(limit, 200),
-      }),
-    ).then((rows) => rows.map((r) => ({ ...r, size: num(r.size), updatedAt: r.updatedAt.toISOString() })));
+  /** Files that failed or were skipped, for the Files tab, one page at a time. */
+  async problems(scope: FileScope, opts: { page?: number; pageSize?: number } = {}) {
+    const pageSize = Math.min(Math.max(Math.floor(opts.pageSize ?? 20), 1), 100);
+    const page = Math.max(Math.floor(opts.page ?? 1), 1);
+    const where = {
+      organizationId: scope.organizationId,
+      connectorId: scope.connectorId,
+      OR: [{ status: { in: ['failed', 'gave_up', 'skipped_size'] } }, { attempts: { gt: 0 } }],
+    };
+    const [rows, total] = await this.run(scope, (tx) =>
+      Promise.all([
+        tx.fileEntry.findMany({
+          where,
+          select: { path: true, status: true, lastError: true, size: true, attempts: true, updatedAt: true },
+          orderBy: [{ updatedAt: 'desc' }, { path: 'asc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        tx.fileEntry.count({ where }),
+      ]),
+    );
+    return { items: rows.map((r) => ({ ...r, size: num(r.size), updatedAt: r.updatedAt.toISOString() })), total, page, pageSize };
   }
 
   /** Folder tree of the index (Files tab), aggregated to `depth` levels. */

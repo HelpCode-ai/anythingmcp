@@ -331,6 +331,28 @@ export default function NewConnectorPage() {
     }
   };
 
+  const fileSearchCard = (
+    <Link
+      key="FILE_SEARCH"
+      href="/connectors/new/file-search"
+      className={cn(
+        typeCardClass,
+        'group border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]'
+      )}
+    >
+      <div className="mb-[9px] flex w-full items-center gap-[11px]">
+        <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-[var(--t-info-bg)] text-[var(--t-info-fg)]">
+          <FolderSearchIcon />
+        </span>
+        <span className="text-[14px] font-semibold text-[var(--text)]">{tfs('card.title')}</span>
+        <span className="ml-auto text-[var(--text-3)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--brand)]">
+          <ArrowRightIcon />
+        </span>
+      </div>
+      <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">{tfs('card.description')}</p>
+    </Link>
+  );
+
   return (
     <AppShell
       backTo={{ label: 'Connectors', href: '/connectors' }}
@@ -366,27 +388,7 @@ export default function NewConnectorPage() {
               Pick a ready-made connector for a popular service. Auth and tools are pre-configured, just add your credentials.
             </p>
           </Link>
-          {/* File Search runs its own guided setup (test, scan, describe), so it
-              navigates away like the marketplace card instead of opening the form. */}
-          <Link
-            href="/connectors/new/file-search"
-            className={cn(
-              typeCardClass,
-              'group border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]'
-            )}
-          >
-            <div className="mb-[9px] flex w-full items-center gap-[11px]">
-              <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-[var(--t-info-bg)] text-[var(--t-info-fg)]">
-                <FolderSearchIcon />
-              </span>
-              <span className="text-[14px] font-semibold text-[var(--text)]">{tfs('card.title')}</span>
-              <span className="ml-auto text-[var(--text-3)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--brand)]">
-                <ArrowRightIcon />
-              </span>
-            </div>
-            <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">{tfs('card.description')}</p>
-          </Link>
-          {CONNECTOR_TYPES.map((type) => (
+          {CONNECTOR_TYPES.map((type) => [
             <button
               key={type.id}
               type="button"
@@ -409,8 +411,12 @@ export default function NewConnectorPage() {
                 <span className="text-[14px] font-semibold text-[var(--text)]">{type.name}</span>
               </div>
               <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">{type.description}</p>
-            </button>
-          ))}
+            </button>,
+            // File Search sits next to Database, its closest relative. It runs its
+            // own guided setup (test, scan, describe), so it navigates away like
+            // the marketplace card instead of opening the form below.
+            type.id === 'DATABASE' ? fileSearchCard : null,
+          ])}
         </div>
 
         {selectedType && (

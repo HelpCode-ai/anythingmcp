@@ -1,9 +1,10 @@
-import { Controller, Delete, ForbiddenException, Get, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Delete, ForbiddenException, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { FileShareService } from './file-share.service';
 import { FileShareConnectorService } from './file-share-connector.service';
+import { FileShareListQueryDto } from './file-search.dto';
 
 /**
  * File Share links (#1387). The `s/:token` routes are public on purpose: the
@@ -20,15 +21,23 @@ export class FileShareController {
 
   @UseGuards(AuthGuard('jwt'))
   @Get()
-  async list(@Req() req: any) {
+  async list(@Req() req: any, @Query() query: FileShareListQueryDto) {
     const user = req.user;
-    const [links, limits, usage] = await Promise.all([
-      this.shares.list(user.organizationId, { userId: user.role === 'ADMIN' ? undefined : user.sub }),
+    // Members see their own links; administrators every link, or only theirs.
+    const onlyMine = user.role !== 'ADMIN' || !!query.mine;
+    const [page, limits, usage] = await Promise.all([
+      this.shares.list(user.organizationId, {
+        userId: onlyMine ? user.sub : undefined,
+        q: query.q,
+        access: query.access,
+        page: query.page,
+        pageSize: query.pageSize,
+      }),
       this.shares.limits(user.organizationId),
       this.shares.usage(user.organizationId),
     ]);
     const connector = await this.connector.find(user.organizationId);
-    return { links, limits, usage, connector };
+    return { ...page, limits, usage, connector };
   }
 
   @UseGuards(AuthGuard('jwt'))

@@ -230,3 +230,25 @@ export function LockedCard({ access, onStartTrial, busy }: { access: Extract<Fil
     </Card>
   );
 }
+
+/** "21–40 of 137" with previous / next, for lists paged on the server. */
+export function Pager({ page, pageSize, total, onPage, busy }: { page: number; pageSize: number; total: number; onPage: (page: number) => void; busy?: boolean }) {
+  const t = useTranslations('fileSearch.pager');
+  if (total <= pageSize) return null;
+  const pages = Math.ceil(total / pageSize);
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  return (
+    <nav aria-label={t('label')} className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
+      <span className="text-[12px] tabular-nums text-[var(--text-3)]">{t('range', { from, to, total })}</span>
+      <div className="flex gap-2">
+        <Button size="sm" variant="secondary" disabled={busy || page <= 1} onClick={() => onPage(page - 1)}>
+          {t('prev')}
+        </Button>
+        <Button size="sm" variant="secondary" disabled={busy || page >= pages} onClick={() => onPage(page + 1)}>
+          {t('next')}
+        </Button>
+      </div>
+    </nav>
+  );
+}

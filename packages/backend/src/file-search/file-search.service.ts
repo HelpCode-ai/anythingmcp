@@ -476,9 +476,9 @@ export class FileSearchService {
     return this.query.tree({ organizationId: actor.organizationId, connectorId: id }, 4);
   }
 
-  async problems(actor: Actor, id: string) {
+  async problems(actor: Actor, id: string, page?: { page?: number; pageSize?: number }) {
     await this.loadConnector(actor, id);
-    return this.query.problems({ organizationId: actor.organizationId, connectorId: id });
+    return this.query.problems({ organizationId: actor.organizationId, connectorId: id }, page);
   }
 
   /** "Sync now": rate-limited per plan, the worker picks it up within seconds. */

@@ -63,4 +63,19 @@ describe('FileShareService', () => {
     await expect(svc.openSigned(signed.slice(0, -2) + 'xx')).rejects.toThrow(/Invalid/);
     await expect(svc.issueDownload(token, { sub: 'u2', organizationId: 'other' })).rejects.toThrow(/another workspace/);
   });
+
+  it('lists links a page at a time with the filters in the query', async () => {
+    const { svc } = make(STARTER);
+    const findMany = jest.fn(async () => []);
+    const count = jest.fn(async () => 137);
+    (svc as any).repo = { withTenant: (_o: string, fn: any) => fn({ fileShare: { findMany, count } }) };
+    (svc as any).prisma.user = { findMany: async () => [] };
+    const r = await svc.list('o', { userId: 'u', q: '  nordtor ', access: 'public', page: 3, pageSize: 500 });
+    expect(r).toMatchObject({ total: 137, page: 3, pageSize: 100 });
+    const arg = (findMany.mock.calls[0] as any)[0];
+    expect(arg.skip).toBe(200);
+    expect(arg.take).toBe(100);
+    expect(arg.where).toMatchObject({ organizationId: 'o', createdByUserId: 'u', access: 'public', filename: { contains: 'nordtor', mode: 'insensitive' }, revokedAt: null });
+    expect((count.mock.calls[0] as any)[0].where).toEqual(arg.where);
+  });
 });
