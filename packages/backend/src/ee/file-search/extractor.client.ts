@@ -25,6 +25,21 @@ export interface ExtractResult {
   error: { kind: 'unsupported' | 'encrypted' | 'corrupt' | 'timeout' | 'too_large' | 'empty'; message: string } | null;
 }
 
+/** POST /render: one page of a PDF, or an image, as a JPEG. */
+export interface RenderResult {
+  ok: boolean;
+  mimeType?: 'image/jpeg';
+  base64?: string;
+  width?: number;
+  height?: number;
+  page?: number;
+  pageCount?: number;
+  error?: {
+    kind: 'unsupported' | 'page_out_of_range' | 'encrypted' | 'too_large' | 'timeout' | 'damaged' | 'not_found' | 'read_failed' | 'unavailable';
+    message: string;
+  } | null;
+}
+
 export class ExtractorUnavailableError extends Error {}
 
 export class ExtractorClient {
@@ -53,14 +68,37 @@ export class ExtractorClient {
   }
 
   async extract(bytes: Buffer, filename: string, opts: { ocr?: boolean; maxChars?: number } = {}): Promise<ExtractResult> {
+    const timeoutMs = bytes.length > 50 * 1024 * 1024 ? 330_000 : 90_000;
+    const res = await this.post('/extract', bytes, filename, { ocr: !!opts.ocr, maxChars: opts.maxChars ?? 2_000_000 }, timeoutMs);
+    if (!res.ok) {
+      this.logger.warn(`extractor answered ${res.status}`);
+      return { ok: false, pages: [], meta: {}, truncated: false, ocrPages: 0, emptyPages: 0, error: { kind: 'corrupt', message: `Extractor error ${res.status}` } };
+    }
+    return (await res.json()) as ExtractResult;
+  }
+
+  /** One page of a PDF (or an image) as a JPEG; never throws for a bad document, only when the extractor is unavailable. */
+  async render(bytes: Buffer, filename: string, opts: { page?: number; maxPx?: number } = {}): Promise<RenderResult> {
+    const options: Record<string, number> = {};
+    if (opts.page != null) options.page = Math.max(1, Math.floor(opts.page));
+    if (opts.maxPx != null) options.maxPx = Math.min(Math.max(64, Math.floor(opts.maxPx)), 2400);
+    const timeoutMs = bytes.length > 50 * 1024 * 1024 ? 330_000 : 90_000;
+    const res = await this.post('/render', bytes, filename, options, timeoutMs);
+    if (!res.ok) {
+      this.logger.warn(`extractor /render answered ${res.status}`);
+      return { ok: false, error: { kind: 'damaged', message: `Extractor error ${res.status}` } };
+    }
+    return (await res.json()) as RenderResult;
+  }
+
+  private async post(path: string, bytes: Buffer, filename: string, options: Record<string, unknown>, timeoutMs: number): Promise<Response> {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(bytes)]), 'upload.bin');
     form.append('filename', filename);
-    form.append('options', JSON.stringify({ ocr: !!opts.ocr, maxChars: opts.maxChars ?? 2_000_000 }));
-    const timeoutMs = bytes.length > 50 * 1024 * 1024 ? 330_000 : 90_000;
+    form.append('options', JSON.stringify(options));
     let res: Response;
     try {
-      res = await fetch(`${this.base()}/extract`, {
+      res = await fetch(`${this.base()}${path}`, {
         method: 'POST',
         headers: { 'X-Extractor-Token': process.env.FILE_EXTRACTOR_TOKEN ?? '' },
         body: form,
@@ -72,10 +110,6 @@ export class ExtractorClient {
     }
     if (res.status === 503 || res.status === 429) throw new ExtractorUnavailableError(`The extractor is busy (${res.status}).`);
     if (res.status === 401) throw new ExtractorUnavailableError('The extractor refused the token (FILE_EXTRACTOR_TOKEN).');
-    if (!res.ok) {
-      this.logger.warn(`extractor answered ${res.status}`);
-      return { ok: false, pages: [], meta: {}, truncated: false, ocrPages: 0, emptyPages: 0, error: { kind: 'corrupt', message: `Extractor error ${res.status}` } };
-    }
-    return (await res.json()) as ExtractResult;
+    return res;
   }
 }

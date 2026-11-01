@@ -11,6 +11,7 @@
  *   <prefix>_read        text by pages or character window
  *   <prefix>_grep        exact codes and numbers with context
  *   <prefix>_status      sync state, counts, pause reason, content summary
+ *   <prefix>_view_page   one PDF page or an image as a picture (image content)
  *   <prefix>_get_file    the file itself (a temporary link; images also attached)
  *   <prefix>_share_file  a temporary download link (off at install)
  */
@@ -23,6 +24,7 @@ export const FILE_SEARCH_METHODS = [
   'file_grep',
   'file_status',
   'file_get',
+  'file_view',
   'file_share',
   'share_upload',
   'share_list',
@@ -67,7 +69,8 @@ export function guideText(prefix: string, displayName: string, summary?: string 
     `2. ${prefix}_find when you know (part of) the file name, ${prefix}_list to browse a folder.`,
     `3. ${prefix}_read the file, or only the pages a search returned (pages: "4-5"), before answering. Never answer from a snippet alone.`,
     `4. ${prefix}_grep for exact codes and numbers: it returns the matching lines with context; in spreadsheets each line is a whole row with its column names.`,
-    `5. ${prefix}_get_file gives the user the file itself as a temporary download link (images are also attached). Always show the link to the user.`,
+    `5. ${prefix}_view_page shows one page of a PDF, or an image file, as a picture: for drawings, stamps, tables, signatures and title blocks the text does not capture. Use ${prefix}_read for text.`,
+    `6. ${prefix}_get_file gives the user the file itself as a temporary download link (images are also attached). Always show the link to the user.`,
     '',
     'Always name the file, the page and the file date in the answer. When several versions match, use the newest and say which you used; warn when a document is older than 12 months.',
     `If ${prefix}_status reports a paused sync, tell the user that the newest files may be missing.`,
@@ -162,6 +165,19 @@ export function buildFileSearchBuiltinTools(opts: { prefix: string; displayName:
       description: `State of ${where}: what it contains, how many files are indexed, when it was last synced, and whether syncing is paused (then the newest files may be missing).`,
       parameters: { type: 'object', properties: {} },
       endpointMapping: { method: 'file_status', path: '' },
+    },
+    {
+      name: `${p}_view_page`,
+      description: `Show one page of a PDF in ${where}, or an image file, as a picture you can see: for drawings, stamps, tables, signatures and title blocks that the text does not capture. Use ${p}_read for the text. The result names the page count; ask for the next page with page + 1.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Relative path of the PDF or image file, exactly as search/find/list returned it.' },
+          page: { type: 'integer', minimum: 1, default: 1, description: 'Page to show (PDF pages, TIFF scan pages). Default 1.' },
+        },
+        required: ['path'],
+      },
+      endpointMapping: { method: 'file_view', path: '' },
     },
     {
       name: `${p}_get_file`,

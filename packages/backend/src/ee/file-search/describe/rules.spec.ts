@@ -36,6 +36,7 @@ describe('rule-based folder description', () => {
     expect(d.summary).toContain('40 documents');
     expect(d.summary).toContain('<name> - <number>');
     expect(d.instructions).toContain('pricelists_grep');
+    expect(d.instructions).toContain('pricelists_view_page');
     expect(d.instructions).toContain('"Preisliste"');
     expect(d.instructions).toContain('Archive folders are not indexed ("Alt")');
   });

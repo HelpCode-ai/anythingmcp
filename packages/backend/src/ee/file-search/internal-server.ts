@@ -7,7 +7,7 @@ import { FileSearchRepository } from '../../file-search/file-search.repository';
 import { parseFileSearchConfig, localRootsFromEnv, pickSecrets } from '../../file-search/file-search-config';
 import type { FileSourceTestResult, FileSourceTestStep } from '../../file-search/file-search.types';
 import { mimeFor } from '../../file-search/file-share.service';
-import { ExtractorClient } from './extractor.client';
+import { ExtractorClient, ExtractorUnavailableError, type RenderResult } from './extractor.client';
 import { driverFor } from './sources';
 import { SourceError } from './sources/source.types';
 import { isCloud, openSource } from './source-context';
@@ -21,6 +21,7 @@ import type { Scheduler } from './sync/scheduler';
  *   GET  /internal/health   worker + extractor
  *   POST /internal/test     connect with unsaved settings, list the root
  *   POST /internal/fetch    one indexed file, read live from the source
+ *   POST /internal/render   one page of an indexed PDF or image as a JPEG
  *   POST /internal/kick     run the scheduler now
  */
 
@@ -117,6 +118,7 @@ export class InternalServer {
       }
       if (req.method === 'POST' && url === '/internal/test') return this.json(res, 200, await this.test(await this.body(req)));
       if (req.method === 'POST' && url === '/internal/fetch') return this.fetch(await this.body(req), res);
+      if (req.method === 'POST' && url === '/internal/render') return this.json(res, 200, await this.render(await this.body(req)));
       return this.json(res, 404, { error: 'not_found' });
     } catch (err) {
       this.logger.warn(`internal ${req.url}: ${(err as Error).message}`);
@@ -158,28 +160,51 @@ export class InternalServer {
     }
   }
 
-  /** Reads one file live, only when it is in the connector's index (the caller's scope was checked by the backend). */
-  private async fetch(body: { organizationId: string; connectorId: string; path: string; maxBytes: number }, res: ServerResponse): Promise<void> {
+  /**
+   * Reads one file live, only when it is in the connector's index (the
+   * caller's scope was checked by the backend). Errors are returned, not thrown.
+   */
+  private async readIndexed(body: { organizationId: string; connectorId: string; path: string; maxBytes: number }): Promise<
+    { ok: true; name: string; buf: Buffer } | { ok: false; status: number; error: string; message: string }
+  > {
     const maxBytes = Math.min(Math.max(Number(body.maxBytes) || 0, 1), 1024 * 1024 * 1024);
     const connector = await this.prisma.connector.findFirst({ where: { id: body.connectorId, organizationId: body.organizationId } });
-    if (!connector) return this.json(res, 404, { error: 'not_found', message: 'Connector not found.' });
+    if (!connector) return { ok: false, status: 404, error: 'not_found', message: 'Connector not found.' };
     const entry = await this.repo.withTenant(body.organizationId, (tx) =>
       tx.fileEntry.findFirst({ where: { connectorId: body.connectorId, organizationId: body.organizationId, path: String(body.path ?? '') }, select: { path: true, name: true } }),
     );
-    if (!entry) return this.json(res, 404, { error: 'not_found', message: 'The file is not in the index.' });
+    if (!entry) return { ok: false, status: 404, error: 'not_found', message: 'The file is not in the index.' };
     const { session } = await openSource(connector);
     try {
       const buf = await readAll(await session.open(entry.path, maxBytes), maxBytes);
-      res.writeHead(200, {
-        'Content-Type': mimeFor(entry.name),
-        'Content-Length': String(buf.length),
-        'X-Filename': encodeURIComponent(entry.name),
-      });
-      res.end(buf);
+      return { ok: true, name: entry.name, buf };
     } catch (err) {
-      this.json(res, 200, { error: 'read_failed', message: (err as Error).message });
+      return { ok: false, status: 200, error: 'read_failed', message: (err as Error).message };
     } finally {
       await session.close().catch(() => undefined);
+    }
+  }
+
+  private async fetch(body: { organizationId: string; connectorId: string; path: string; maxBytes: number }, res: ServerResponse): Promise<void> {
+    const r = await this.readIndexed(body);
+    if (!r.ok) return this.json(res, r.status, { error: r.error, message: r.message });
+    res.writeHead(200, {
+      'Content-Type': mimeFor(r.name),
+      'Content-Length': String(r.buf.length),
+      'X-Filename': encodeURIComponent(r.name),
+    });
+    res.end(r.buf);
+  }
+
+  /** One page of an indexed PDF or image as a JPEG, rendered by the extractor (`_view_page`). */
+  private async render(body: { organizationId: string; connectorId: string; path: string; maxBytes: number; page?: number; maxPx?: number }): Promise<RenderResult> {
+    const r = await this.readIndexed(body);
+    if (!r.ok) return { ok: false, error: { kind: r.error === 'not_found' ? 'not_found' : 'read_failed', message: r.message } };
+    try {
+      return await this.extractor.render(r.buf, r.name, { page: body.page, maxPx: body.maxPx });
+    } catch (err) {
+      if (err instanceof ExtractorUnavailableError) return { ok: false, error: { kind: 'unavailable', message: err.message } };
+      throw err;
     }
   }
 }
