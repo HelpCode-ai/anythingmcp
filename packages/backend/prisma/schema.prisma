@@ -47,6 +47,7 @@ model Organization {
   kgSkills         KgSkillSuggestion[]
   securityEvents   SecurityEvent[]
   productEvents    ProductEvent[]
+  webhookEvents    WebhookEvent[]
   userRoleAssignments UserRoleAssignment[]
   identityProviders   IdentityProvider[]
   mcpConnectionGrants McpConnectionGrant[]
@@ -443,6 +444,14 @@ model Connector {
   // USER: the tokens in authConfig are never sent; each caller's own are
   // (UserConnectorCredential). authConfig keeps the client settings only.
   credentialScope CredentialScope @default(SHARED) @map("credential_scope")
+
+  // Inbound webhook ingestion: any connector may opt in regardless of type.
+  // webhookSecret is encrypted the same way authConfig is, and like it, is
+  // never returned from any API or tool response (connector-secrets.util.ts).
+  webhookEnabled  Boolean        @default(false) @map("webhook_enabled")
+  webhookProvider String?        @map("webhook_provider")
+  webhookSecret   String?        @map("webhook_secret")
+  webhookEvents   WebhookEvent[]
 
   // Specification (OpenAPI, WSDL, GraphQL schema)
   specUrl  String? @map("spec_url")
@@ -1383,6 +1392,40 @@ model ProductEvent {
   @@index([organizationId, createdAt])
   @@index([event, createdAt])
   @@map("product_events")
+}
+
+// ── Webhook Ingestion ────────────────────────────────────────────────────────
+
+// One row per verified inbound webhook delivery. Nothing lands here before
+// the provider's signature checks out (webhook-signature.util.ts). A
+// retention sweep (webhook-events.service.ts) deletes rows past a configured
+// age, and insert enforces a per-connector row cap, so storage stays bounded
+// between sweeps even under a burst.
+model WebhookEvent {
+  id             String       @id @default(cuid())
+  connectorId    String       @map("connector_id")
+  connector      Connector    @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Which verifier matched: 'stripe' today.
+  provider String
+  // Provider's own event type where it has one, e.g. payment_intent.succeeded.
+  eventType String? @map("event_type")
+  // Provider's own event id, for de-dup on at-least-once redelivery. Null for
+  // providers with no event id of their own; NULL never collides under the
+  // unique constraint below (standard Postgres/ANSI-SQL NULL semantics).
+  externalId String? @map("external_id")
+
+  // The verified body.
+  payload Json
+
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@unique([connectorId, externalId])
+  @@index([connectorId, receivedAt])
+  @@index([organizationId, receivedAt])
+  @@map("webhook_events")
 }
 
 // ── OAuth2 Authorization Server ─────────────────────────────────────────────

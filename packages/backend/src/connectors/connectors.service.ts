@@ -146,6 +146,9 @@ export class ConnectorsService {
       config?: Record<string, unknown>;
       envVars?: Record<string, string>;
       instructions?: string;
+      webhookEnabled?: boolean;
+      webhookProvider?: string;
+      webhookSecret?: string;
     },
   ): Promise<Connector> {
     assertValidHeaderNames(data.headers, data.authConfig);
@@ -169,8 +172,23 @@ export class ConnectorsService {
         config: data.config as any,
         envVars: data.envVars as any,
         instructions: data.instructions,
+        webhookEnabled: data.webhookEnabled ?? false,
+        webhookProvider: data.webhookProvider,
+        webhookSecret: data.webhookSecret
+          ? encrypt(data.webhookSecret, this.encryptionKey)
+          : null,
       },
     });
+  }
+
+  /**
+   * The connector's decrypted webhook secret, or null when webhooks are not
+   * enabled for it. Internal use only (webhook-ingest.controller.ts): never
+   * return this value from any API or tool response.
+   */
+  decryptWebhookSecret(connector: Connector): string | null {
+    if (!connector.webhookSecret) return null;
+    return decrypt(connector.webhookSecret, this.encryptionKey);
   }
 
   async update(
@@ -185,6 +203,9 @@ export class ConnectorsService {
       config: Record<string, unknown>;
       envVars: Record<string, string>;
       instructions: string;
+      webhookEnabled: boolean;
+      webhookProvider: string;
+      webhookSecret: string;
     }>,
   ): Promise<Connector> {
     const existing = await this.findById(id);
@@ -196,6 +217,15 @@ export class ConnectorsService {
         JSON.stringify(data.authConfig),
         this.encryptionKey,
       );
+    }
+    // webhookSecret is write-only, like authConfig: never returned by any
+    // API, so a client has nothing to echo back. Omit it entirely unless a
+    // real value is given, rather than let a falsy/absent one overwrite the
+    // stored secret with an empty value.
+    if (data.webhookSecret) {
+      updateData.webhookSecret = encrypt(data.webhookSecret, this.encryptionKey);
+    } else {
+      delete updateData.webhookSecret;
     }
     if (data.baseUrl !== undefined) {
       updateData.baseUrl = normalizeConnectorBaseUrl(data.baseUrl, existing.type);

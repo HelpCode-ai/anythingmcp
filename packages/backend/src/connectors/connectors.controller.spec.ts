@@ -1736,6 +1736,93 @@ describe('PUT :id — config is merged, not replaced', () => {
   });
 });
 
+describe('PUT :id — webhookEnabled toggled on update', () => {
+  const baseConnector = {
+    id: 'c1',
+    type: 'REST',
+    userId: 'u1',
+    organizationId: 'org1',
+    name: 'Stripe Billing',
+    baseUrl: 'https://api.example.test',
+    authType: 'NONE',
+    config: null,
+    envVars: null,
+    headers: null,
+    webhookEnabled: false,
+    tools: [] as Array<{ id: string; endpointMapping: unknown }>,
+  };
+
+  it('creates the webhook builtin tool when webhookEnabled flips false -> true', async () => {
+    const mcpToolCreate = jest.fn().mockResolvedValue(undefined);
+    const { controller, prisma } = buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(baseConnector),
+        update: jest.fn().mockResolvedValue({ ...baseConnector, webhookEnabled: true }),
+      },
+      prisma: {
+        connector: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+        mcpTool: { create: mcpToolCreate, deleteMany: jest.fn() },
+      },
+    });
+
+    await controller.update(req('ADMIN'), 'c1', {
+      webhookEnabled: true,
+      webhookProvider: 'stripe',
+      webhookSecret: 'whsec_x',
+    } as any);
+
+    expect(mcpToolCreate).toHaveBeenCalledTimes(1);
+    expect(mcpToolCreate.mock.calls[0][0].data).toMatchObject({
+      connectorId: 'c1',
+      name: 'stripe_billing_recent_events',
+    });
+    expect(prisma.mcpTool.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('removes the webhook builtin tool when webhookEnabled flips true -> false, matched by endpointMapping not name', async () => {
+    const deleteMany = jest.fn().mockResolvedValue({ count: 1 });
+    const connectorWithTool = {
+      ...baseConnector,
+      webhookEnabled: true,
+      // Renamed by hand after creation — removal must not depend on the name.
+      tools: [{ id: 'tool_1', endpointMapping: { method: 'webhook_recent_events', path: '' } }],
+    };
+    const { controller, prisma } = buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(connectorWithTool),
+        update: jest.fn().mockResolvedValue({ ...connectorWithTool, webhookEnabled: false }),
+      },
+      prisma: {
+        connector: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+        mcpTool: { create: jest.fn(), deleteMany },
+      },
+    });
+
+    await controller.update(req('ADMIN'), 'c1', { webhookEnabled: false } as any);
+
+    expect(deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['tool_1'] } } });
+    expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+  });
+
+  it('does nothing tool-related when webhookEnabled is left unchanged', async () => {
+    const { controller, prisma } = buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(baseConnector),
+        update: jest.fn().mockResolvedValue(baseConnector),
+      },
+      prisma: {
+        connector: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+        mcpTool: { create: jest.fn(), deleteMany: jest.fn() },
+      },
+    });
+
+    await controller.update(req('ADMIN'), 'c1', { name: 'Stripe Billing v2' } as any);
+
+    expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+    expect(prisma.mcpTool.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST :id/import — JSON definitions are additive', () => {
   const existing = [
     { id: 't1', name: 'sap_guide', operationId: null, endpointMapping: { method: 'static', path: '' }, deprecatedAt: new Date(), isEnabled: false },

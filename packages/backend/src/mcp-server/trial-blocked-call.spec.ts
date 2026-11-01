@@ -178,6 +178,7 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
       {} as any,
       {} as any,
       { scheduleObservationalIngest: jest.fn() } as any,
+      {} as any,
       undefined,
       undefined,
       undefined,
