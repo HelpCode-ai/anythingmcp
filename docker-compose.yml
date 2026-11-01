@@ -317,7 +317,7 @@ services:
   file-extractor:
     build:
       context: ./deploy/ee/file-extractor
-    image: anythingmcp-file-extractor:1
+    image: anythingmcp-file-extractor:2
     profiles: ["files"]
     container_name: ${COMPOSE_PROJECT_NAME:-amcp}-file-extractor
     environment:

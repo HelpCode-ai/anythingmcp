@@ -3145,7 +3145,9 @@
       "word": "Word",
       "powerpoint": "PowerPoint",
       "email": "E-Mail",
-      "text": "Text"
+      "text": "Text",
+      "drawing": "Zeichnungen (SVG, DXF)",
+      "code": "Code & Konfiguration"
     },
     "describe": {
       "intro": "Dieser Text sagt der KI, was der Ordner enthält und wie sie darin sucht. Jeder MCP-Server mit diesem Connector gibt ihn weiter. Prüfen Sie ihn und ergänzen Sie, was nur Sie wissen.",
