@@ -2014,3 +2014,255 @@ export const mcpServers = {
   assignConnectors: (id: string, connectorIds: string[], token: string) =>
     request(`/api/mcp-servers/${id}/connectors`, { method: 'PUT', body: { connectorIds }, token }),
 };
+
+// ── File Search and File Share (#1379) ─────────────────────────────────────
+
+export type FileSearchProtocol = 'sftp' | 'ftp' | 'ftps' | 'ftps-implicit' | 'webdav' | 'local' | 's3';
+
+export interface FileShareQuota {
+  maxTtlHours: number | null;
+  maxStoredBytes: number | null;
+  maxFileBytes: number;
+  maxLinksPerDay: number | null;
+  publicLinks: boolean;
+  internalWithoutExpiry: boolean;
+}
+
+export interface FileSearchQuota {
+  plan: string;
+  maxConnectors: number | null;
+  maxFiles: number | null;
+  maxSourceBytes: number | null;
+  maxTextChars: number | null;
+  maxFileBytes: number;
+  minIntervalMinutes: number;
+  manualSyncsPerDay: number | null;
+  share: FileShareQuota | null;
+  ocr: boolean;
+  folderRules: boolean;
+  policy: boolean;
+}
+
+export type FileSearchAccess =
+  | { allowed: true; plan: string; quota: FileSearchQuota; trialEndsAt?: string | null; next?: { plan: string; quota: FileSearchQuota } | null }
+  | { allowed: false; reason: 'no_licence' | 'expired' | 'community' | 'plan_without_feature'; message: string; trialAvailable: boolean };
+
+export interface FileSearchPolicy {
+  publicLinks: boolean;
+  maxTtlHours: number | null;
+  aiDrafting: boolean;
+  allowPlainFtp: boolean;
+}
+
+export interface FileSearchCapabilities {
+  cloud: boolean;
+  worker: { ok: boolean; extractor: boolean; ocr: boolean; error?: string };
+  access: FileSearchAccess;
+  protocols: FileSearchProtocol[];
+  localRoots: string[];
+  ai: { available: boolean; allowedByPolicy: boolean; provider: string | null; model: string | null };
+  policy: FileSearchPolicy;
+  intervals: number[];
+  usage: { connectors: number; files: number; bytes: number; textChars: number };
+}
+
+export interface FileSourceTestStep {
+  key: 'resolve' | 'connect' | 'handshake' | 'fingerprint' | 'login' | 'folder';
+  ok: boolean;
+  detail?: string;
+}
+
+export interface FileSourceTestResult {
+  ok: boolean;
+  steps: FileSourceTestStep[];
+  fingerprint?: { kind: 'ssh-host-key' | 'tls-certificate'; sha256: string };
+  rootEntries?: number;
+  sample?: string[];
+  errorKind?: string;
+  message?: string;
+}
+
+export interface FileTreeNode {
+  name: string;
+  path: string;
+  files: number;
+  bytes: number;
+  archive?: boolean;
+  children: FileTreeNode[];
+}
+
+export interface FileSearchBudget {
+  files: number;
+  bytes: number;
+  textFiles: number;
+  nameOnly: number;
+  tooLarge: number;
+  maxFiles: number | null;
+  maxBytes: number | null;
+  maxFileBytes: number;
+  usedByOtherConnectors: { files: number; bytes: number };
+  fits: boolean;
+  over: Array<{ limit: 'files' | 'bytes'; used: number; max: number }>;
+  plan: string;
+  next: { plan: string; quota: FileSearchQuota } | null;
+}
+
+export interface FileSearchSelection {
+  excludeFolders: string[];
+  extensions?: string[];
+  maxAgeYears?: number;
+}
+
+export interface FileSearchDescription {
+  source: 'ai' | 'rules';
+  summary: string;
+  instructions: string;
+  examplePrompts: string[];
+  terms: string[];
+  language: string | null;
+  model?: string;
+}
+
+export interface FileSearchScan {
+  id: string;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'describing' | 'describing_running';
+  progress: { phase?: string; files?: number; dirs?: number; useAi?: boolean } | null;
+  error: string | null;
+  truncated: boolean;
+  tree: FileTreeNode | null;
+  types: Record<string, { files: number; bytes: number }> | null;
+  totals: { files: number; dirs: number; bytes: number; oldest: string | null; newest: string | null; nameOnly: number; textFiles: number } | null;
+  suggestions: { excludeFolders: Array<{ path: string; files: number; reason: string }>; toolPrefix: string } | null;
+  description: FileSearchDescription | null;
+  samples: string[];
+  selection: FileSearchSelection;
+  budget: FileSearchBudget | null;
+}
+
+export interface FileSearchRun {
+  id: string;
+  trigger: string;
+  status: string;
+  counters: Record<string, number>;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface FileSearchOverview {
+  connector: { id: string; name: string; isActive: boolean; instructions: string | null; address: string };
+  config: Record<string, any> & { protocol: FileSearchProtocol; toolPrefix: string };
+  hasSecrets: boolean;
+  status: {
+    state: string;
+    pausedReason: string | null;
+    pausedAt: string | null;
+    summary: string | null;
+    lastSuccessAt: string | null;
+    nextSyncAt: string | null;
+    syncIntervalMinutes: number | null;
+    files: number;
+    bytes: number;
+    textChars: number;
+    byStatus: Record<string, number>;
+    runs: FileSearchRun[];
+  };
+  instructionsDraft: string | null;
+  manualSyncsToday: number;
+  lastScan: { id: string; status: string; createdAt: string } | null;
+  access: FileSearchAccess;
+  usage: { connectors: number; files: number; bytes: number; textChars: number };
+}
+
+export interface FileShareLink {
+  id: string;
+  filename: string;
+  bytes: number;
+  access: 'internal' | 'public';
+  source: 'upload' | 'connector';
+  entryPath: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  downloadCount: number;
+  state: 'active' | 'expired' | 'revoked' | 'exhausted';
+  createdBy: string | null;
+}
+
+export interface FileShareLimits {
+  plan: string;
+  maxTtlHours: number | null;
+  maxStoredBytes: number | null;
+  maxFileBytes: number;
+  maxLinksPerDay: number | null;
+  publicLinks: boolean;
+  internalWithoutExpiry: boolean;
+  cloud: boolean;
+}
+
+export const fileSearch = {
+  capabilities: (token: string) => request<FileSearchCapabilities>('/api/file-search/capabilities', { token }),
+  test: (body: { config: Record<string, unknown>; secrets?: Record<string, string>; connectorId?: string }, token: string) =>
+    request<FileSourceTestResult>('/api/file-search/test', { method: 'POST', body, token }),
+  createDraft: (body: { name: string; config: Record<string, unknown>; secrets?: Record<string, string> }, token: string) =>
+    request<{ id: string; name: string; config: Record<string, unknown> }>('/api/file-search/connectors', { method: 'POST', body, token }),
+  updateSource: (id: string, body: { name?: string; config?: Record<string, unknown>; secrets?: Record<string, string> }, token: string) =>
+    request<{ id: string }>(`/api/file-search/connectors/${id}/source`, { method: 'PUT', body, token }),
+  overview: (id: string, token: string) => request<FileSearchOverview>(`/api/file-search/connectors/${id}`, { token }),
+  startScan: (id: string, useAi: boolean, token: string) =>
+    request<{ id: string; status: string }>(`/api/file-search/connectors/${id}/scans`, { method: 'POST', body: { useAi }, token }),
+  scan: (id: string, scanId: string, token: string) => request<FileSearchScan>(`/api/file-search/connectors/${id}/scans/${scanId}`, { token }),
+  cancelScan: (id: string, scanId: string, token: string) =>
+    request(`/api/file-search/connectors/${id}/scans/${scanId}`, { method: 'DELETE', token }),
+  redescribe: (id: string, scanId: string, useAi: boolean, token: string) =>
+    request(`/api/file-search/connectors/${id}/scans/${scanId}/describe`, { method: 'POST', body: { useAi }, token }),
+  setSelection: (id: string, body: FileSearchSelection & { scanId?: string }, token: string) =>
+    request<{ selection: FileSearchSelection; budget: FileSearchBudget | null }>(`/api/file-search/connectors/${id}/selection`, { method: 'PUT', body, token }),
+  activate: (
+    id: string,
+    body: { instructions?: string; summary?: string; toolPrefix?: string; syncIntervalMinutes?: number; mcpServerIds?: string[] },
+    token: string,
+  ) => request<{ id: string; state: string; syncIntervalMinutes: number }>(`/api/file-search/connectors/${id}/activate`, { method: 'POST', body, token }),
+  tree: (id: string, token: string) => request<FileTreeNode>(`/api/file-search/connectors/${id}/tree`, { token }),
+  problems: (id: string, token: string) =>
+    request<Array<{ path: string; status: string; lastError: string | null; size: number; attempts: number; updatedAt: string }>>(
+      `/api/file-search/connectors/${id}/problems`,
+      { token },
+    ),
+  runs: (id: string, token: string) => request<FileSearchRun[]>(`/api/file-search/connectors/${id}/runs`, { token }),
+  syncNow: (id: string, token: string) => request<{ ok: boolean; state: string }>(`/api/file-search/connectors/${id}/sync`, { method: 'POST', token }),
+  pause: (id: string, token: string) => request(`/api/file-search/connectors/${id}/pause`, { method: 'POST', token }),
+  resume: (id: string, token: string) => request(`/api/file-search/connectors/${id}/resume`, { method: 'POST', token }),
+  setSchedule: (id: string, syncIntervalMinutes: number, token: string) =>
+    request<{ syncIntervalMinutes: number }>(`/api/file-search/connectors/${id}/schedule`, { method: 'PUT', body: { syncIntervalMinutes }, token }),
+  setDescription: (id: string, body: { instructions?: string; summary?: string }, token: string) =>
+    request(`/api/file-search/connectors/${id}/description`, { method: 'PUT', body, token }),
+  policy: (token: string) => request<{ policy: FileSearchPolicy; editable: boolean }>('/api/file-search/policy', { token }),
+  setPolicy: (body: Partial<FileSearchPolicy>, token: string) =>
+    request<{ policy: FileSearchPolicy }>('/api/file-search/policy', { method: 'PUT', body, token }),
+  accessRules: (id: string, token: string) =>
+    request<{ editable: boolean; roles: Array<{ id: string; name: string }>; rules: Array<{ id: string; roleId: string; pattern: string; effect: 'allow' | 'deny' }> }>(
+      `/api/file-search/connectors/${id}/access-rules`,
+      { token },
+    ),
+  setAccessRules: (id: string, rules: Array<{ roleId: string; pattern: string; effect: 'allow' | 'deny' }>, token: string) =>
+    request(`/api/file-search/connectors/${id}/access-rules`, { method: 'PUT', body: { rules }, token }),
+};
+
+export const fileShare = {
+  list: (token: string) =>
+    request<{ links: FileShareLink[]; limits: FileShareLimits | null; usage: { storedBytes: number; activeLinks: number; linksToday: number }; connector: { id: string; name: string } | null }>(
+      '/api/file-share',
+      { token },
+    ),
+  revoke: (id: string, token: string) => request(`/api/file-share/${id}`, { method: 'DELETE', token }),
+  addConnector: (token: string) => request<{ id: string; name: string }>('/api/file-share/connector', { method: 'POST', token }),
+  describe: (shareToken: string) =>
+    request<{ filename: string; bytes: number; mimeType: string; access: 'internal' | 'public'; workspace: string; expiresAt: string | null; state: string }>(
+      `/api/file-share/s/${encodeURIComponent(shareToken)}`,
+    ),
+  download: (shareToken: string, authToken?: string | null) =>
+    request<{ url: string; expiresInSeconds: number }>(
+      `/api/file-share/s/${encodeURIComponent(shareToken)}/${authToken ? 'download-internal' : 'download'}`,
+      { method: 'POST', token: authToken ?? undefined, skipAutoLogout: true },
+    ),
+};
