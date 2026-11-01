@@ -360,6 +360,23 @@ describe('gemini adapter: static spec conformance', () => {
     });
   });
 
+  it('gives generation 120 s and the image tools room for base64 pictures; the rest keep the defaults', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    const limits = async (name: string, params: Record<string, unknown>) => {
+      mockedAxios.mockClear();
+      await call(name, params);
+      return { timeout: sent().timeout, maxContentLength: sent().maxContentLength };
+    };
+    const image = { timeout: 120_000, maxContentLength: 40 * 1024 * 1024 };
+    expect(await limits('gemini_generate_image', { prompt: 'A red bicycle', image_size: '4K' })).toEqual(image);
+    expect(await limits('gemini_edit_image', { prompt: 'Make it blue', image_url: 'https://example.com/a.png', image_mime_type: 'image/png' })).toEqual(image);
+    const text = { timeout: 120_000, maxContentLength: 10 * 1024 * 1024 };
+    expect(await limits('gemini_generate_text', { prompt: 'Hi' })).toEqual(text);
+    expect(await limits('gemini_generate_content', { contents: [{ role: 'user', parts: [{ text: 'Hi' }] }] })).toEqual(text);
+    expect(await limits('gemini_analyze_file_url', { prompt: 'What is this?', file_url: 'https://example.com/a.pdf', mime_type: 'application/pdf' })).toEqual(text);
+    expect(await limits('gemini_list_models', {})).toEqual({ timeout: 30_000, maxContentLength: 10 * 1024 * 1024 });
+  });
+
   it('turns a safety block into an error the model does not retry, and lets normal answers through', async () => {
     mockedAxios.mockResolvedValue({ data: { promptFeedback: { blockReason: 'SAFETY' } } });
     await expect(call('gemini_generate_text', { prompt: 'x' })).rejects.toMatchObject({ status: 400, message: expect.stringContaining('SAFETY') });

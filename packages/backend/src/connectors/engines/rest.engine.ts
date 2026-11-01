@@ -25,7 +25,11 @@ import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
-import { toolMaxResponseBytes } from '../../common/response-size-limit';
+import {
+  DEFAULT_TOOL_TIMEOUT_MS,
+  toolResponseLimitBytes,
+  toolTimeoutMs,
+} from './request-limits.util';
 import { assertNoResponseBodyError } from './response-error.util';
 import { escapeXmlValue } from '../../common/xml-escape.util';
 import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
@@ -64,6 +68,9 @@ const NOT_SENT_CODES = ['EAI_AGAIN', 'ECONNREFUSED', 'EPROTO'];
  * exchange after the API received it. The API may have run the request.
  */
 const MAYBE_SENT_CODES = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'];
+
+/** The codes axios raises when the request ran past its timeout. */
+const TIMEOUT_CODES = ['ETIMEDOUT', 'ECONNABORTED'];
 
 /**
  * Retry-After as milliseconds: delay-seconds or an HTTP date (RFC 9110
@@ -187,6 +194,12 @@ export class RestEngine {
       // Hand back an XML body as the text it arrived as instead of parsing
       // it into an object. The OData engine needs `$metadata` verbatim.
       rawBody?: boolean;
+      // Per-tool limits for slow or large calls (image generation): the
+      // timeout in ms (1 s to 180 s, default 30 s) and the upstream body
+      // limit in bytes (at most 50 MB, default TOOL_MAX_RESPONSE_BYTES).
+      // Clamped, never off; see request-limits.util.ts.
+      timeoutMs?: unknown;
+      maxResponseBytes?: unknown;
     },
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
@@ -287,15 +300,16 @@ export class RestEngine {
         ...config.headers,
         ...resolvedEndpointHeaders,
       },
-      timeout: 30000,
+      timeout: toolTimeoutMs(endpointMapping.timeoutMs),
       // The bytes as they arrived: a text body is decoded and parsed as axios
       // always did, a file (image, PDF, …) becomes a BinaryBody instead of a
       // string of replacement characters. See binary-response.util.ts.
       responseType: 'arraybuffer',
       transformResponse: [(data: unknown, headers?: unknown) => decodeResponseBody(data, headers)],
       // Stop reading a body over the tool response limit instead of parsing
-      // tens of MB on the event loop. See response-size-limit.ts.
-      maxContentLength: toolMaxResponseBytes(),
+      // tens of MB on the event loop. See response-size-limit.ts. A tool may
+      // raise it for a body whose bulk responseMapping.images takes out.
+      maxContentLength: toolResponseLimitBytes(endpointMapping.maxResponseBytes),
     };
     // A form-data body is a one-shot stream: every send (a retry, a redirect
     // that keeps the body) needs a fresh one, built by this.
@@ -761,7 +775,15 @@ export class RestEngine {
         if (attempt > 0) rebuildBody(axiosConfig, outbound.data);
         return await outboundRequest(axiosConfig, outbound);
       } catch (error) {
-        const transient = this.isTransientError(error, method);
+        // A tool that raised its timeout (endpointMapping.timeoutMs) is slow
+        // on purpose. Running it again after a timeout would wait that long
+        // up to four times, so even an idempotent one is not retried then.
+        const slowTimeout =
+          (axiosConfig.timeout ?? 0) > DEFAULT_TOOL_TIMEOUT_MS &&
+          error instanceof AxiosError &&
+          !error.response &&
+          TIMEOUT_CODES.includes(error.code ?? '');
+        const transient = !slowTimeout && this.isTransientError(error, method);
         const delay = transient ? this.retryDelayMs(error, attempt, delaysMs) : null;
         if (delay === null) {
           // Warn, not debug: production runs at info, so a call that burned

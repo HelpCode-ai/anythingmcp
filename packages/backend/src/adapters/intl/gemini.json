@@ -191,6 +191,7 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": [
@@ -267,6 +268,7 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": "$contents",
@@ -337,6 +339,7 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": [
@@ -584,6 +587,8 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
+        "maxResponseBytes": 41943040,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": [
@@ -682,6 +687,8 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
+        "maxResponseBytes": 41943040,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": [
