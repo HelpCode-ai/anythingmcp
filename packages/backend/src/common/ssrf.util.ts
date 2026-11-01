@@ -409,6 +409,9 @@ function envProxyHosts(env: NodeJS.ProcessEnv): Set<string> {
   return hosts;
 }
 
+/** Per-address connect attempt when a host has several addresses (Node default 250). */
+export const CONNECT_ATTEMPT_TIMEOUT_MS = 1000;
+
 /**
  * http and https agents whose connections go through {@link ssrfGuardedLookup}.
  * Pass both to axios (`httpAgent`, `httpsAgent`) together with `proxy: false`:
@@ -423,7 +426,19 @@ export function createSsrfGuardedAgents(
 } {
   const lookup = ssrfGuardedLookup(env, opts);
   // Same socket reuse as Node's global agents, which these replace.
-  const options = { lookup, keepAlive: true, scheduling: 'lifo' as const, timeout: 5000 };
+  // autoSelectFamilyAttemptTimeout: for a host with both IPv4 and IPv6
+  // addresses Node tries each one for only 250 ms by default. A host without
+  // an IPv6 route (the Cloud containers) then gets one IPv4 attempt of 250 ms,
+  // and a single lost SYN fails the call with ETIMEDOUT after about half a
+  // second (Telegram: 7 calls in 6 workspaces on 31 Oct). One second per
+  // attempt rides out that loss and still falls back quickly.
+  const options = {
+    lookup,
+    keepAlive: true,
+    scheduling: 'lifo' as const,
+    timeout: 5000,
+    autoSelectFamilyAttemptTimeout: CONNECT_ATTEMPT_TIMEOUT_MS,
+  };
   return {
     httpAgent: new http.Agent(options),
     httpsAgent: new https.Agent(options),
