@@ -5,6 +5,14 @@ import { PrismaService } from '../common/prisma.service';
 const DEFAULT_RETENTION_DAYS = 7;
 const DEFAULT_MAX_EVENTS_PER_CONNECTOR = 500;
 
+/**
+ * Hard ceiling on `recentEvents()`'s `limit`, not configurable: a Stripe
+ * payload can be up to 256 KB, so a call for 200 of them puts up to 50 MB of
+ * raw provider data (which can carry customer names, e-mails and addresses)
+ * into the model's context. 50 keeps a single call's worst case reasonable.
+ */
+const MAX_RECENT_EVENTS_LIMIT = 50;
+
 const RETENTION_SWEEP_FIRST_MS = 60 * 1000;
 const RETENTION_SWEEP_MS = 60 * 60 * 1000;
 
@@ -116,7 +124,15 @@ export class WebhookEventsService implements OnModuleInit, OnModuleDestroy {
     organizationId: string,
     opts: { limit?: number; since?: string } = {},
   ): Promise<RecentWebhookEvent[]> {
-    const limit = Math.min(Math.max(opts.limit ?? 20, 1), 200);
+    // opts.limit is an MCP tool param: a model can send "20" or "abc" as
+    // easily as 20. Number(undefined) and Number("abc") are both NaN, so a
+    // non-finite result (missing, non-numeric, Infinity) falls back to the
+    // default instead of reaching Prisma as `take: NaN`.
+    const requested = Number(opts.limit);
+    const limit = Math.min(
+      Math.max(Number.isFinite(requested) ? requested : 20, 1),
+      MAX_RECENT_EVENTS_LIMIT,
+    );
     const since = opts.since ? new Date(opts.since) : undefined;
     const rows = await this.prisma.webhookEvent.findMany({
       where: {

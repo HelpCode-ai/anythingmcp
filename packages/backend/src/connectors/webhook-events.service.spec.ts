@@ -169,10 +169,28 @@ describe('WebhookEventsService', () => {
     expect(events.map((e) => e.externalId)).toEqual(['e2', 'e1']);
   });
 
-  it('clamps an out-of-range limit into [1, 200]', async () => {
+  it('clamps an out-of-range limit into [1, 50]', async () => {
     await service.recordEvent({ connectorId: 'c1', organizationId: 'org1', provider: 'stripe', payload: {} });
     const events = await service.recentEvents('c1', 'org1', { limit: 0 });
     expect(events).toHaveLength(1); // clamped to at least 1, still returns the one row
+  });
+
+  it('caps limit at 50 even when a far larger value is requested', async () => {
+    for (let i = 0; i < 60; i++) {
+      await service.recordEvent({ connectorId: 'c1', organizationId: 'org1', provider: 'stripe', externalId: `e${i}`, payload: {} });
+    }
+    const events = await service.recentEvents('c1', 'org1', { limit: 200 });
+    expect(events).toHaveLength(50);
+  });
+
+  it('falls back to the default of 20 instead of NaN when limit is not a finite number', async () => {
+    for (let i = 0; i < 25; i++) {
+      await service.recordEvent({ connectorId: 'c1', organizationId: 'org1', provider: 'stripe', externalId: `e${i}`, payload: {} });
+    }
+    // A model-supplied param can arrive as a non-numeric string just as
+    // easily as a number; this must not reach Prisma as `take: NaN`.
+    const events = await service.recentEvents('c1', 'org1', { limit: 'abc' as any });
+    expect(events).toHaveLength(20);
   });
 
   it('deletes rows past the retention window on sweep, and keeps recent ones', async () => {

@@ -40,7 +40,7 @@ export function buildWebhookBuiltinTools(opts: {
         properties: {
           limit: {
             type: 'integer',
-            description: 'Events to return, default 20, at most 200.',
+            description: 'Events to return, default 20, at most 50.',
           },
           since: {
             type: 'string',

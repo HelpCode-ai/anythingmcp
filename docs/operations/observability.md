@@ -218,6 +218,8 @@ On Cloud, metrics are instance-wide only: no series may carry an organization id
 
 Any connector may opt in (`webhookEnabled`, regardless of its type) to receive inbound webhook deliveries at `POST /api/webhooks/:connectorId`. Stripe is the only verified provider today (`Stripe-Signature`: HMAC-SHA256 over `timestamp.body`, with a 300 s replay tolerance); other providers each need their own verification scheme and are a follow-up. Nothing is stored before the signature checks out. An unknown connector id, a disabled hook, and a bad signature all answer identically, so the endpoint cannot be used to probe which connector ids exist.
 
+Stored payloads are returned to the model exactly as received by the connector's `<prefix>_recent_events` tool — including whatever personal data the provider's event carries (a Stripe payload can include a customer's name, e-mail and address). They are kept for `WEBHOOK_EVENT_RETENTION_DAYS` (7 days by default) and a single call returns at most 50 events, regardless of the `limit` requested.
+
 | Env | Default | |
 |---|---|---|
 | `WEBHOOK_EVENT_RETENTION_DAYS` | `7` | A periodic sweep (hourly, like the connector-auth-status sweep) deletes received events older than this. |

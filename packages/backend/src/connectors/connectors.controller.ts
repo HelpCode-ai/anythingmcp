@@ -1324,6 +1324,60 @@ export class ConnectorsController {
       data.config = Object.fromEntries(merged);
     }
     const updated = await this.connectorsService.update(id, data);
+
+    // webhookEnabled flipping off -> on or on -> off creates/removes the one
+    // builtin tool a webhook-enabled connector ships with (webhook-builtins.ts).
+    // Create only ran at connector creation (see POST above); without this, a
+    // connector that opted in later via this route got no tool, and one that
+    // opted out kept serving a tool for an endpoint that now answers 401 to
+    // everything.
+    if (!connector.webhookEnabled && updated.webhookEnabled) {
+      const builtinTools = buildWebhookBuiltinTools({
+        prefix: webhookToolPrefix({
+          toolPrefix: (updated.config as { webhook?: { toolPrefix?: unknown } } | null)?.webhook
+            ?.toolPrefix,
+          name: updated.name,
+        }),
+        displayName: updated.name,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: updated.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // already exists
+        }
+      }
+      this.logger.log(
+        `Auto-created ${builtinTools.length} webhook tool(s) for connector ${updated.id} (webhookEnabled turned on)`,
+      );
+    } else if (connector.webhookEnabled && !updated.webhookEnabled) {
+      // Matched by endpointMapping.method, not by recomputing the tool's
+      // name: a rename or toolPrefix change in the same request must not
+      // leave the old tool behind under its original name.
+      const connectorTools =
+        (connector as { tools?: Array<{ id: string; endpointMapping: unknown }> }).tools ?? [];
+      const webhookToolIds = connectorTools
+        .filter(
+          (t: { endpointMapping: unknown }) =>
+            (t.endpointMapping as { method?: string } | null)?.method === 'webhook_recent_events',
+        )
+        .map((t: { id: string }) => t.id);
+      if (webhookToolIds.length > 0) {
+        await this.prisma.mcpTool.deleteMany({ where: { id: { in: webhookToolIds } } });
+        this.logger.log(
+          `Removed ${webhookToolIds.length} webhook tool(s) for connector ${updated.id} (webhookEnabled turned off)`,
+        );
+      }
+    }
+
     // The registry keeps its own copy of the connector — base URL, headers,
     // auth — and reads it on every call. Without this, a changed base URL
     // showed in the form and was ignored by every tool until the next
