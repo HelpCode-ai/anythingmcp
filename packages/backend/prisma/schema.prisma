@@ -26,31 +26,38 @@ model Organization {
   // directly in the DB — there is intentionally no API to change it.
   proxyRateLimit Int? @map("proxy_rate_limit")
 
-  users            User[]
-  members          OrganizationMember[]
-  connectors       Connector[]
+  users                User[]
+  members              OrganizationMember[]
+  connectors           Connector[]
   connectorCredentials UserConnectorCredential[]
-  mcpServers       McpServerConfig[]
-  roles            Role[]
-  mcpApiKeys       McpApiKey[]
-  invitationTokens InvitationToken[]
-  licenses         License[]
-  orgSettings      OrgSettings[]
-  toolInvocations  ToolInvocation[]
-  codeRuns         CodeRun[]
-  kgNodes          KgNode[]
-  kgEdges          KgEdge[]
-  kgConnectorState KgConnectorState[]
-  kgValueSeen      KgValueSeen[]
-  memoryItems      MemoryItem[]
-  knowledgeFolders KnowledgeFolder[]
-  kgSkills         KgSkillSuggestion[]
-  securityEvents   SecurityEvent[]
-  productEvents    ProductEvent[]
-  webhookEvents    WebhookEvent[]
-  userRoleAssignments UserRoleAssignment[]
-  identityProviders   IdentityProvider[]
-  mcpConnectionGrants McpConnectionGrant[]
+  mcpServers           McpServerConfig[]
+  roles                Role[]
+  mcpApiKeys           McpApiKey[]
+  invitationTokens     InvitationToken[]
+  licenses             License[]
+  orgSettings          OrgSettings[]
+  toolInvocations      ToolInvocation[]
+  codeRuns             CodeRun[]
+  kgNodes              KgNode[]
+  kgEdges              KgEdge[]
+  kgConnectorState     KgConnectorState[]
+  kgValueSeen          KgValueSeen[]
+  memoryItems          MemoryItem[]
+  knowledgeFolders     KnowledgeFolder[]
+  kgSkills             KgSkillSuggestion[]
+  securityEvents       SecurityEvent[]
+  productEvents        ProductEvent[]
+  webhookEvents        WebhookEvent[]
+  userRoleAssignments  UserRoleAssignment[]
+  identityProviders    IdentityProvider[]
+  mcpConnectionGrants  McpConnectionGrant[]
+  fileSources          FileSource[]
+  fileScans            FileScan[]
+  fileSyncRuns         FileSyncRun[]
+  fileEntries          FileEntry[]
+  fileChunks           FileChunk[]
+  fileShares           FileShare[]
+  fileAccessRules      FileAccessRule[]
 
   @@map("organizations")
 }
@@ -111,14 +118,14 @@ enum UserRole {
 }
 
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
+  id             String        @id @default(cuid())
+  email          String        @unique
   // Nullable: users provisioned through an external IdP never have one.
-  passwordHash   String?  @map("password_hash")
+  passwordHash   String?       @map("password_hash")
   name           String?
-  role           UserRole @default(EDITOR)
-  emailVerified  Boolean  @default(false) @map("email_verified")
-  organizationId String?  @map("organization_id")
+  role           UserRole      @default(EDITOR)
+  emailVerified  Boolean       @default(false) @map("email_verified")
+  organizationId String?       @map("organization_id")
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -170,26 +177,27 @@ model User {
   mcpRoleId String? @map("mcp_role_id")
   mcpRole   Role?   @relation(fields: [mcpRoleId], references: [id], onDelete: SetNull)
 
-  roleAssignments          UserRoleAssignment[]
-  identities               UserIdentity[]
-  socialIdentities         SocialIdentity[]
-  securityEventsAsActor    SecurityEvent[] @relation("SecurityEventActor")
-  securityEventsAsTarget   SecurityEvent[] @relation("SecurityEventTarget")
-  productEvents            ProductEvent[]
+  roleAssignments        UserRoleAssignment[]
+  identities             UserIdentity[]
+  socialIdentities       SocialIdentity[]
+  securityEventsAsActor  SecurityEvent[]      @relation("SecurityEventActor")
+  securityEventsAsTarget SecurityEvent[]      @relation("SecurityEventTarget")
+  productEvents          ProductEvent[]
 
-  memberships              OrganizationMember[]
-  connectors               Connector[]
-  connectorCredentials     UserConnectorCredential[]
-  mcpServers               McpServerConfig[]
-  toolInvocations          ToolInvocation[]
-  codeRuns                 CodeRun[]
-  passwordResetTokens      PasswordResetToken[]
-  mcpApiKeys               McpApiKey[]
-  emailVerificationTokens  EmailVerificationToken[]
-  recoveryCodes            RecoveryCode[]
-  scimGroupMemberships     IdentityProviderGroupMember[]
-  mcpConnectionGrants      McpConnectionGrant[]
-  memoryItems              MemoryItem[] @relation("MemoryOwner")
+  memberships             OrganizationMember[]
+  connectors              Connector[]
+  connectorCredentials    UserConnectorCredential[]
+  mcpServers              McpServerConfig[]
+  toolInvocations         ToolInvocation[]
+  codeRuns                CodeRun[]
+  passwordResetTokens     PasswordResetToken[]
+  mcpApiKeys              McpApiKey[]
+  emailVerificationTokens EmailVerificationToken[]
+  recoveryCodes           RecoveryCode[]
+  scimGroupMemberships    IdentityProviderGroupMember[]
+  mcpConnectionGrants     McpConnectionGrant[]
+  memoryItems             MemoryItem[]                  @relation("MemoryOwner")
+  fileShares              FileShare[]                   @relation("FileShareCreator")
 
   @@index([organizationId])
   @@map("users")
@@ -216,7 +224,7 @@ model EmailVerificationToken {
   userId    String    @map("user_id")
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   token     String    @unique // UUID for link verification
-  code      String    // 6-digit numeric code
+  code      String // 6-digit numeric code
   expiresAt DateTime  @map("expires_at")
   usedAt    DateTime? @map("used_at")
   createdAt DateTime  @default(now()) @map("created_at")
@@ -264,20 +272,20 @@ model License {
 // ── User Invitation Tokens ──────────────────────────────────────────────────
 
 model InvitationToken {
-  id             String    @id @default(cuid())
+  id             String       @id @default(cuid())
   email          String
-  token          String    @unique
-  role           UserRole  @default(EDITOR)
+  token          String       @unique
+  role           UserRole     @default(EDITOR)
   /// @deprecated Superseded by `mcpRoleIds`; kept for invites created by the
   /// previous release, which stay valid for their 48h lifetime.
-  mcpRoleId      String?   @map("mcp_role_id")
-  mcpRoleIds     String[]  @default([]) @map("mcp_role_ids")
-  invitedBy      String    @map("invited_by") // admin user id
-  organizationId String    @map("organization_id")
+  mcpRoleId      String?      @map("mcp_role_id")
+  mcpRoleIds     String[]     @default([]) @map("mcp_role_ids")
+  invitedBy      String       @map("invited_by") // admin user id
+  organizationId String       @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  expiresAt      DateTime  @map("expires_at")
-  usedAt         DateTime? @map("used_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
+  expiresAt      DateTime     @map("expires_at")
+  usedAt         DateTime?    @map("used_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
 
   @@map("invitation_tokens")
 }
@@ -301,9 +309,10 @@ model Role {
 
   /// @deprecated Single-FK back-relation of `User.mcpRoleId`. Superseded by
   /// `assignments`; removed with the column in the contract migration.
-  users       User[]
-  assignments UserRoleAssignment[]
-  toolAccess  ToolRoleAccess[]
+  users           User[]
+  assignments     UserRoleAssignment[]
+  toolAccess      ToolRoleAccess[]
+  fileAccessRules FileAccessRule[]
 
   @@unique([organizationId, name])
   @@map("roles")
@@ -374,7 +383,7 @@ model McpApiKey {
   mcpServerId    String?          @map("mcp_server_id")
   mcpServer      McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
   key            String           @unique
-  name           String           // label: "Claude Desktop", "Cursor", etc.
+  name           String // label: "Claude Desktop", "Cursor", etc.
   isActive       Boolean          @default(true) @map("is_active")
   lastUsedAt     DateTime?        @map("last_used_at")
   createdAt      DateTime         @default(now()) @map("created_at")
@@ -394,6 +403,7 @@ enum ConnectorType {
   WEBHOOK
   ODATA
   EMAIL
+  FILE_SEARCH
 }
 
 enum AuthType {
@@ -422,11 +432,11 @@ enum CredentialScope {
 }
 
 model Connector {
-  id             String        @id @default(cuid())
-  userId         String        @map("user_id")
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organizationId String        @map("organization_id")
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   name     String
   type     ConnectorType
@@ -439,8 +449,8 @@ model Connector {
   healthcheckPath String? @map("healthcheck_path")
 
   // Authentication
-  authType   AuthType @default(NONE) @map("auth_type")
-  authConfig String?  @map("auth_config") // encrypted JSON
+  authType        AuthType        @default(NONE) @map("auth_type")
+  authConfig      String?         @map("auth_config") // encrypted JSON
   // USER: the tokens in authConfig are never sent; each caller's own are
   // (UserConnectorCredential). authConfig keeps the client settings only.
   credentialScope CredentialScope @default(SHARED) @map("credential_scope")
@@ -478,7 +488,7 @@ model Connector {
   // Machine-readable reason, e.g. refresh_refused, google_testing_7d, meta_logged_out.
   authStatusCode    String?   @map("auth_status_code")
   // What to do about it, in words for the user and the model.
-  authStatusMessage String?   @db.Text @map("auth_status_message")
+  authStatusMessage String?   @map("auth_status_message") @db.Text
   authStatusAt      DateTime? @map("auth_status_at")
   // A hash of the credential the status applies to: a different credential
   // (rotated, re-authorized, pasted again) is not blocked by it.
@@ -503,6 +513,13 @@ model Connector {
   kgState         KgConnectorState?
   kgSkills        KgSkillSuggestion[]
   kgValuesSeen    KgValueSeen[]
+  fileSource      FileSource?
+  fileScans       FileScan[]
+  fileSyncRuns    FileSyncRun[]
+  fileEntries     FileEntry[]
+  fileChunks      FileChunk[]
+  fileShares      FileShare[]
+  fileAccessRules FileAccessRule[]
 
   @@index([organizationId])
   @@map("connectors")
@@ -556,11 +573,11 @@ model ConnectorAuthCache {
   connectorId String    @unique @map("connector_id")
   connector   Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
 
-  token     String    @db.Text // encrypted bearer token
-  metadata  Json?     // free-form: aud claim, refresh tokens, scopes, etc.
-  expiresAt DateTime  @map("expires_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  token     String   @db.Text // encrypted bearer token
+  metadata  Json? // free-form: aud claim, refresh tokens, scopes, etc.
+  expiresAt DateTime @map("expires_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("connector_auth_cache")
 }
@@ -573,15 +590,15 @@ model McpTool {
   connector   Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
 
   name        String
-  description String    @db.Text
-  isEnabled   Boolean   @default(true) @map("is_enabled")
+  description String  @db.Text
+  isEnabled   Boolean @default(true) @map("is_enabled")
 
   // Route this tool's outbound HTTP request through the configured
   // proxy / web-unblocker (CONNECTOR_PROXY_URL). Seeded from the
   // adapter spec's per-tool `useProxy` (default false); the user can
   // toggle it per tool in the UI. Has no effect when CONNECTOR_PROXY_URL
   // is unset — the request then goes out directly.
-  useProxy    Boolean   @default(false) @map("use_proxy")
+  useProxy Boolean @default(false) @map("use_proxy")
 
   // OpenAPI operationId, when the tool was generated from an OpenAPI spec.
   // Used as the primary key for re-imports so that responseMapping and role
@@ -654,8 +671,8 @@ model McpResource {
 
   uri         String
   name        String
-  description String?   @db.Text
-  mimeType    String    @default("application/json") @map("mime_type")
+  description String? @db.Text
+  mimeType    String  @default("application/json") @map("mime_type")
 
   // How to fetch the resource data
   fetchConfig Json @map("fetch_config")
@@ -675,9 +692,9 @@ model McpPrompt {
   connector   Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
 
   name        String
-  description String?   @db.Text
-  template    String    @db.Text
-  arguments   Json?     // expected arguments for the template
+  description String? @db.Text
+  template    String  @db.Text
+  arguments   Json? // expected arguments for the template
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -695,16 +712,16 @@ model McpServerConfig {
   organizationId String       @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  name         String  @default("Default")
-  slug         String  @default("default")
-  description  String? @db.Text
-  version      String  @default("1.0.0")
-  isActive     Boolean @default(true) @map("is_active")
-  instructions String? @db.Text // custom instructions prepended to composed connector instructions
+  name           String  @default("Default")
+  slug           String  @default("default")
+  description    String? @db.Text
+  version        String  @default("1.0.0")
+  isActive       Boolean @default(true) @map("is_active")
+  instructions   String? @db.Text // custom instructions prepended to composed connector instructions
   /// How applied skills reach the model on initialize: `auto` (full text
   /// while small, else an index pointing to skill_get), `inline` (always the
   /// full text) or `index` (always the index).
-  skillsDelivery String @default("auto") @map("skills_delivery")
+  skillsDelivery String  @default("auto") @map("skills_delivery")
 
   /// Code mode on this server: `off` (default; no code tools or inline code),
   /// `tools` (saved code tools only) or `inline` (also the generic
@@ -796,8 +813,8 @@ enum InvocationStatus {
 }
 
 model ToolInvocation {
-  id     String @id @default(cuid())
-  toolId String @map("tool_id")
+  id     String  @id @default(cuid())
+  toolId String  @map("tool_id")
   tool   McpTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
   userId String? @map("user_id")
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -815,7 +832,7 @@ model ToolInvocation {
 
   // Optional natural-language user intent that led to this call (captured only
   // when the workspace enables intent capture). Feeds graph/KB optimization.
-  intent     String? @db.Text
+  intent String? @db.Text
 
   // Whether this call was routed through the proxy/unblocker (for metering).
   usedProxy  Boolean @default(false) @map("used_proxy")
@@ -826,8 +843,8 @@ model ToolInvocation {
   input      Json
   output     Json?
   status     InvocationStatus
-  durationMs Int?              @map("duration_ms")
-  error      String?           @db.Text
+  durationMs Int?             @map("duration_ms")
+  error      String?          @db.Text
 
   clientInfo String? @map("client_info") // JSON: {authMethod, apiKeyName, userEmail, mcpServerName}
 
@@ -855,11 +872,11 @@ model ToolInvocation {
 // (correlated via client_info.codeRun); this row is the run itself, for
 // per-plan retention and quotas. Org-scoped like every audit table.
 model CodeRun {
-  id             String       @id @default(cuid())
-  organizationId String       @map("organization_id")
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  userId         String?      @map("user_id")
-  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id             String           @id @default(cuid())
+  organizationId String           @map("organization_id")
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?          @map("user_id")
+  user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
   mcpServerId    String?          @map("mcp_server_id")
   mcpServer      McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
 
@@ -966,10 +983,10 @@ model IdentityProvider {
   /// always validated against a hardcoded per-type host allowlist before use.
   issuer String
 
-  clientId        String  @map("client_id")
+  clientId              String    @map("client_id")
   /// AES-256-GCM, with the AAD bound to (provider, organization) so a
   /// ciphertext cannot be replayed into another row. Never returned by the API.
-  clientSecretEnc String? @map("client_secret_enc")
+  clientSecretEnc       String?   @map("client_secret_enc")
   /// Microsoft caps secrets at 24 months and recommends under 12; surfaced in
   /// the UI so an expiry does not lock a whole workspace out by surprise.
   clientSecretExpiresAt DateTime? @map("client_secret_expires_at")
@@ -989,20 +1006,20 @@ model IdentityProvider {
   /// Capped at VIEWER in the service layer — never ADMIN or EDITOR.
   jitDefaultRole  UserRole @default(VIEWER) @map("jit_default_role")
 
-  roleSyncEnabled  Boolean          @default(false) @map("role_sync_enabled")
-  roleSyncSource   RoleSyncSource   @default(GROUPS) @map("role_sync_source")
-  roleSyncFallback RoleSyncFallback @default(DENY_ALL) @map("role_sync_fallback")
+  roleSyncEnabled        Boolean          @default(false) @map("role_sync_enabled")
+  roleSyncSource         RoleSyncSource   @default(GROUPS) @map("role_sync_source")
+  roleSyncFallback       RoleSyncFallback @default(DENY_ALL) @map("role_sync_fallback")
   /// MCP roles granted when `roleSyncFallback` is DEFAULT_ROLE and nothing
   /// matched. Empty makes DEFAULT_ROLE behave like DENY_ALL, which is the safe
   /// reading of "a default that was never configured".
-  roleSyncDefaultRoleIds String[] @default([]) @map("role_sync_default_role_ids")
+  roleSyncDefaultRoleIds String[]         @default([]) @map("role_sync_default_role_ids")
 
   /// PLACEHOLDER — column exists, NOTHING reads or writes it yet (PR 6).
   /// Intended to disable password sign-in for members of this organization.
   /// Deliberately not exposed by the API: switching it on without the recovery
   /// codes and the soak period below would let an admin lock a whole workspace
   /// out with no way back in.
-  enforceSso Boolean @default(false) @map("enforce_sso")
+  enforceSso            Boolean   @default(false) @map("enforce_sso")
   /// PLACEHOLDER — written by the SSO login flow (PR 3), unused until then.
   /// Will guard `enforceSso`: it cannot be switched on until a real sign-in
   /// through this provider has succeeded.
@@ -1055,9 +1072,9 @@ model IdentityProviderRoleMapping {
   label      String?
 
   /// Organization role granted by this mapping. Null leaves it untouched.
-  userRole UserRole? @map("user_role")
+  userRole   UserRole? @map("user_role")
   /// MCP role ids granted. The user receives the UNION across all matches.
-  mcpRoleIds String[] @default([]) @map("mcp_role_ids")
+  mcpRoleIds String[]  @default([]) @map("mcp_role_ids")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1126,15 +1143,15 @@ model UserIdentity {
   /// The provider's immutable subject. Entra: the `oid` claim. SCIM sends the
   /// same object id as `externalId`, so a SCIM-created identity and a later
   /// SSO sign-in converge on this one row.
-  externalSubject String  @map("external_subject")
+  externalSubject String    @map("external_subject")
   /// Set when SCIM has described this user — on create, or on the first
   /// PUT/PATCH that touches an identity SSO created. Distinguishes "SCIM says
   /// this user is in no group" (authoritative) from "SCIM has never mentioned
   /// them" (fall back to the token's groups claim). Without it a token that
   /// arrives without a groups claim would wipe SCIM-derived roles.
-  scimManagedAt DateTime? @map("scim_managed_at")
+  scimManagedAt   DateTime? @map("scim_managed_at")
   /// Entra: the `tid` claim. Stored so a tenant change becomes detectable.
-  externalTid     String? @map("external_tid")
+  externalTid     String?   @map("external_tid")
 
   lastLoginAt DateTime? @map("last_login_at")
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -1591,11 +1608,11 @@ model KgConnectorState {
 // (e.g. "daily revenue should include order status 2/3/4, not only 4"). A human
 // reviews each; applying it appends the instruction to the connector's guidance.
 model KgSkillSuggestion {
-  id             String       @id @default(cuid())
-  organizationId String       @map("organization_id")
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  connectorId    String?      @map("connector_id")
-  connector      Connector?   @relation(fields: [connectorId], references: [id], onDelete: SetNull)
+  id             String           @id @default(cuid())
+  organizationId String           @map("organization_id")
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectorId    String?          @map("connector_id")
+  connector      Connector?       @relation(fields: [connectorId], references: [id], onDelete: SetNull)
   // A skill is scoped to a single connector OR to a whole MCP server (which
   // understands the combined context of all its assigned connectors).
   mcpServerId    String?          @map("mcp_server_id")
@@ -1604,7 +1621,7 @@ model KgSkillSuggestion {
   // What this suggestion proposes: `skill` (the default — a workspace skill)
   // or `code` (a saved code tool an admin approves into an McpTool with
   // endpointMapping.method = 'code'). Each kind is reviewed the same way.
-  kind          String   @default("skill")
+  kind          String           @default("skill")
   // For a `code` proposal: the candidate code tool an admin approves into an
   // McpTool (endpointMapping.method = 'code'). Shape:
   //   { connectorId, name, description, parameters, endpointMapping }
@@ -1613,27 +1630,27 @@ model KgSkillSuggestion {
   // plan cap), so an agent can never raise its own authority.
   payload       Json?
   title         String
-  whenToUse     String   @db.Text @map("when_to_use")
-  instruction   String   @db.Text
-  confidence    Float    @default(0)
-  evidenceCount Int      @default(0) @map("evidence_count")
-  status        String   @default("pending") // pending | applied | dismissed
+  whenToUse     String           @map("when_to_use") @db.Text
+  instruction   String           @db.Text
+  confidence    Float            @default(0)
+  evidenceCount Int              @default(0) @map("evidence_count")
+  status        String           @default("pending") // pending | applied | dismissed
   // Where the skill came from: manual (UI/API) | llm (generated from
   // intents) | consolidation (merged proposal) | errors (learned from calls
   // that failed and were fixed) | finder (skills_save_to_workspace). Each
   // generator only replaces its own pending rows.
-  source        String   @default("manual")
+  source        String           @default("manual")
   // For a consolidation proposal: the applied skills it replaces; applying
   // it dismisses them.
-  replaces      Json     @default("[]")
+  replaces      Json             @default("[]")
   // Optional long procedure (markdown). Never pasted into the instructions:
   // served on demand by skill_get.
-  body          String?  @db.Text
+  body          String?          @db.Text
   // Incremented on every edit of title / whenToUse / instruction / body; the
   // previous content is kept in kg_skill_versions.
-  version       Int      @default(1)
-  useCount      Int      @default(0) @map("use_count")
-  lastUsedAt    DateTime? @map("last_used_at")
+  version       Int              @default(1)
+  useCount      Int              @default(0) @map("use_count")
+  lastUsedAt    DateTime?        @map("last_used_at")
   versions      KgSkillVersion[]
   // Optional folder in the workspace's knowledge tree (shared with memory).
   folderId      String?          @map("folder_id")
@@ -1648,17 +1665,17 @@ model KgSkillSuggestion {
 
 // Earlier content of a workspace skill, written when an edit changes it.
 model KgSkillVersion {
-  id              String            @id @default(cuid())
-  skillId         String            @map("skill_id")
-  skill           KgSkillSuggestion @relation(fields: [skillId], references: [id], onDelete: Cascade)
-  organizationId  String            @map("organization_id")
-  version         Int
-  title           String
-  whenToUse       String            @db.Text @map("when_to_use")
-  instruction     String            @db.Text
-  body            String?           @db.Text
-  editedByUserId  String?           @map("edited_by_user_id")
-  createdAt       DateTime          @default(now()) @map("created_at")
+  id             String            @id @default(cuid())
+  skillId        String            @map("skill_id")
+  skill          KgSkillSuggestion @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  organizationId String            @map("organization_id")
+  version        Int
+  title          String
+  whenToUse      String            @map("when_to_use") @db.Text
+  instruction    String            @db.Text
+  body           String?           @db.Text
+  editedByUserId String?           @map("edited_by_user_id")
+  createdAt      DateTime          @default(now()) @map("created_at")
 
   @@unique([skillId, version])
   @@index([organizationId])
@@ -1696,7 +1713,7 @@ model KgValueSeen {
   entity         String
   field          String
   direction      String // input | output
-  seenAt         DateTime @default(now()) @map("seen_at")
+  seenAt         DateTime     @default(now()) @map("seen_at")
 
   // One row per distinct occurrence. Without it a value seen in every call was
   // stored once per call, and re-ingesting the same invocations stored it again
@@ -1713,29 +1730,29 @@ model KgValueSeen {
 // by them; `organization` items are the company memory. Served as data, never
 // as instructions. `search_vector` is a generated tsvector (see migration).
 model MemoryItem {
-  id               String       @id @default(cuid())
-  organizationId   String       @map("organization_id")
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id               String                   @id @default(cuid())
+  organizationId   String                   @map("organization_id")
+  organization     Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   scope            String // personal | organization
-  ownerUserId      String?      @map("owner_user_id")
-  owner            User?        @relation("MemoryOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  kind             String       @default("fact") // fact | preference | note
-  content          String       @db.Text
-  tags             Json         @default("[]")
-  status           String       @default("active") // active | pending | rejected
+  ownerUserId      String?                  @map("owner_user_id")
+  owner            User?                    @relation("MemoryOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  kind             String                   @default("fact") // fact | preference | note
+  content          String                   @db.Text
+  tags             Json                     @default("[]")
+  status           String                   @default("active") // active | pending | rejected
   // { via: "mcp" | "ui", mcpServerId?, client? }
-  source           Json         @default("{}")
+  source           Json                     @default("{}")
   // Knowledge-graph entity the item is about (e.g. "customer"), normalised
   // like graph entities; kg_how_to_obtain offers matching facts.
   about            String?
   // Optional folder (organization items only; personal memory has none).
-  folderId         String?          @map("folder_id")
-  folder           KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: NoAction)
-  createdByUserId  String?      @map("created_by_user_id")
-  approvedByUserId String?      @map("approved_by_user_id")
-  approvedAt       DateTime?    @map("approved_at")
-  createdAt        DateTime     @default(now()) @map("created_at")
-  updatedAt        DateTime     @updatedAt @map("updated_at")
+  folderId         String?                  @map("folder_id")
+  folder           KnowledgeFolder?         @relation(fields: [folderId], references: [id], onDelete: NoAction)
+  createdByUserId  String?                  @map("created_by_user_id")
+  approvedByUserId String?                  @map("approved_by_user_id")
+  approvedAt       DateTime?                @map("approved_at")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  updatedAt        DateTime                 @updatedAt @map("updated_at")
   // Generated column (STORED), so Prisma never writes it.
   searchVector     Unsupported("tsvector")? @default(dbgenerated("to_tsvector('simple'::regconfig, content)")) @map("search_vector")
 
@@ -1773,4 +1790,206 @@ model KnowledgeFolder {
   @@index([organizationId])
   @@index([parentId])
   @@map("knowledge_folders")
+}
+
+// ── File Search (#1379) ─────────────────────────────────────────────────────
+// A FILE_SEARCH connector indexes the documents of a folder (SFTP, FTP/FTPS,
+// WebDAV, a mounted folder). The worker (ee/file-search) fills these tables;
+// the MCP tools only read them. Every table is org-scoped and has an RLS
+// policy (see the migration): file queries run in tenantTx + SET LOCAL ROLE
+// amcp_files so the policy applies even when the app role is a superuser.
+
+/// One per FILE_SEARCH connector: setup state, schedule, lease and counters.
+model FileSource {
+  connectorId         String       @id @map("connector_id")
+  connector           Connector    @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  organizationId      String       @map("organization_id")
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// draft | active | syncing | paused_quota | paused_licence | paused_error | paused_admin
+  setupState          String       @default("draft") @map("setup_state")
+  pausedReason        String?      @map("paused_reason") @db.Text
+  pausedAt            DateTime?    @map("paused_at")
+  pauseNotifiedAt     DateTime?    @map("pause_notified_at")
+  /// One-line content summary used in the tool descriptions.
+  summary             String?      @db.Text
+  /// The last generated description, offered as "Update description".
+  instructionsDraft   String?      @map("instructions_draft") @db.Text
+  syncIntervalMinutes Int          @default(1440) @map("sync_interval_minutes")
+  nextSyncAt          DateTime?    @map("next_sync_at")
+  leaseOwner          String?      @map("lease_owner")
+  leaseUntil          DateTime?    @map("lease_until")
+  lastRunId           String?      @map("last_run_id")
+  lastSuccessAt       DateTime?    @map("last_success_at")
+  /// Manual "Sync now" counter, reset per UTC day (manualSyncDay = YYYY-MM-DD).
+  manualSyncDay       String?      @map("manual_sync_day")
+  manualSyncCount     Int          @default(0) @map("manual_sync_count")
+  /// { files, bytes, textChars, byStatus: {...}, selectedFiles, selectedBytes }
+  stats               Json         @default("{}")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+
+  @@index([organizationId])
+  @@index([setupState, nextSyncAt])
+  @@map("file_sources")
+}
+
+/// A setup scan: a listing-only dry run plus a few samples, never indexed.
+model FileScan {
+  id              String       @id @default(cuid())
+  organizationId  String       @map("organization_id")
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectorId     String       @map("connector_id")
+  connector       Connector    @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  /// queued | running | done | failed | cancelled
+  status          String       @default("queued")
+  progress        Json         @default("{}")
+  tree            Json?
+  types           Json?
+  totals          Json?
+  samples         Json?
+  suggestions     Json?
+  description     Json?
+  truncated       Boolean      @default(false)
+  error           String?      @db.Text
+  createdByUserId String?      @map("created_by_user_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  finishedAt      DateTime?    @map("finished_at")
+
+  @@index([organizationId])
+  @@index([connectorId, createdAt])
+  @@index([status])
+  @@map("file_scans")
+}
+
+model FileSyncRun {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectorId    String       @map("connector_id")
+  connector      Connector    @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  /// schedule | manual | api | resume
+  trigger        String
+  /// running | succeeded | partial | paused | failed | cancelled
+  status         String       @default("running")
+  /// listed, new, changed, unchanged, deleted, extracted, failed, skippedSize, skippedType, bytes
+  counters       Json         @default("{}")
+  error          String?      @db.Text
+  workerId       String?      @map("worker_id")
+  startedAt      DateTime     @default(now()) @map("started_at")
+  finishedAt     DateTime?    @map("finished_at")
+
+  @@index([organizationId])
+  @@index([connectorId, startedAt])
+  @@map("file_sync_runs")
+}
+
+/// One per file seen in the source (relative path, NFC).
+model FileEntry {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectorId    String       @map("connector_id")
+  connector      Connector    @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  path           String
+  name           String
+  ext            String       @default("")
+  dir            String       @default("")
+  size           BigInt       @default(0)
+  mtime          DateTime?
+  etag           String?
+  sha256         String?
+  /// pending | indexed | name_only | skipped_size | failed | gave_up
+  status         String       @default("pending")
+  attempts       Int          @default(0)
+  lastError      String?      @map("last_error") @db.Text
+  pageCount      Int?         @map("page_count")
+  textChars      Int          @default(0) @map("text_chars")
+  indexedAt      DateTime?    @map("indexed_at")
+  seenRunId      String?      @map("seen_run_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  chunks         FileChunk[]
+
+  @@unique([connectorId, path])
+  @@index([organizationId])
+  @@index([connectorId, status])
+  @@index([connectorId, dir])
+  @@index([path(ops: raw("gin_trgm_ops"))], type: Gin, map: "file_entries_path_trgm_idx")
+  @@map("file_entries")
+}
+
+/// Extracted text: one row per PDF page, slide or ~4,000-character segment.
+model FileChunk {
+  id             BigInt                   @id @default(autoincrement())
+  organizationId String                   @map("organization_id")
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectorId    String                   @map("connector_id")
+  connector      Connector                @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  entryId        String                   @map("entry_id")
+  entry          FileEntry                @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  /// 1-based page (PDF page, slide, sheet segment); null for plain text.
+  page           Int?
+  ord            Int                      @default(0)
+  content        String                   @db.Text
+  // Generated column (STORED), so Prisma never writes it.
+  searchVector   Unsupported("tsvector")? @default(dbgenerated("to_tsvector('simple'::regconfig, content)")) @map("search_vector")
+
+  @@index([entryId])
+  @@index([connectorId])
+  @@index([organizationId])
+  @@index([searchVector], type: Gin)
+  @@map("file_chunks")
+}
+
+/// A temporary download link (File Share). Only the token's SHA-256 is stored.
+model FileShare {
+  id              String       @id @default(cuid())
+  organizationId  String       @map("organization_id")
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdByUserId String?      @map("created_by_user_id")
+  createdBy       User?        @relation("FileShareCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  /// upload | connector
+  source          String
+  connectorId     String?      @map("connector_id")
+  connector       Connector?   @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  entryPath       String?      @map("entry_path")
+  storageKey      String       @map("storage_key")
+  filename        String
+  mimeType        String       @map("mime_type")
+  bytes           Int
+  sha256          String
+  /// internal | public
+  access          String       @default("internal")
+  tokenHash       String       @unique @map("token_hash")
+  expiresAt       DateTime?    @map("expires_at")
+  maxDownloads    Int?         @map("max_downloads")
+  downloadCount   Int          @default(0) @map("download_count")
+  revokedAt       DateTime?    @map("revoked_at")
+  purgedAt        DateTime?    @map("purged_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([expiresAt])
+  @@map("file_shares")
+}
+
+/// Folder permissions per role inside one File Search connector (Enterprise).
+/// No rule for a role → the whole connector. With rules → deny by default,
+/// allow by glob, deny wins.
+model FileAccessRule {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectorId    String       @map("connector_id")
+  connector      Connector    @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  roleId         String       @map("role_id")
+  role           Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  pattern        String
+  /// allow | deny
+  effect         String       @default("allow")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([connectorId, roleId])
+  @@index([organizationId])
+  @@map("file_access_rules")
 }
