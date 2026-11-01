@@ -45,6 +45,9 @@ export const CHECKOUT_BILLING_PERIODS = ['monthly', 'yearly'] as const;
  * - start_trial: /start-trial opened without a known source.
  * - pricing_signed_in: a plan button on the public pricing page, clicked by
  *   someone already signed in to the Cloud (sent on to /start-trial).
+ * - file_quota_setup / file_quota / file_search_licence: File Search's Upgrade
+ *   buttons (setup scan over the plan, a sync paused at the limit, the
+ *   feature locked).
  * - app: a caller that did not say (DEFAULT_CHECKOUT_SOURCE).
  */
 export const CHECKOUT_SOURCES = [
@@ -61,6 +64,9 @@ export const CHECKOUT_SOURCES = [
   'chat_setup',
   'start_trial',
   'pricing_signed_in',
+  'file_quota_setup',
+  'file_quota',
+  'file_search_licence',
   'app',
 ] as const;
 export type CheckoutSource = (typeof CHECKOUT_SOURCES)[number];

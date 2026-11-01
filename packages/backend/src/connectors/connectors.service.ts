@@ -21,6 +21,8 @@ import { McpClientEngine } from './engines/mcp-client.engine';
 import { UserCredentialError, UserCredentialsService } from './user-credentials.service';
 import { withoutUserTokens } from './user-credential.util';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
+import { FilesWorkerClient } from '../file-search/files-worker.client';
+import { localRootsFromEnv, parseFileSearchConfig, pickSecrets } from '../file-search/file-search-config';
 import { openEnvVarsStrict, sealEnvVars } from '../common/crypto/env-vars-at-rest';
 import { getRequiredSecret } from '../common/secrets.util';
 import { describeInvalidHeaderNames, invalidConnectorHeaderNames } from '../common/http-header-name.util';
@@ -74,6 +76,7 @@ export class ConnectorsService {
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
     @Optional() private readonly userCredentials?: UserCredentialsService,
     @Optional() private readonly emailEngine?: EmailEngine,
+    @Optional() private readonly filesWorker?: FilesWorkerClient,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -399,6 +402,31 @@ export class ConnectorsService {
     suggestedFix?: { action: string; hostname?: string; url?: string };
   }> {
     const connector = await this.findById(id);
+
+    // File Search: the worker connects and lists the folder; this process never does.
+    if ((connector.type as string) === 'FILE_SEARCH') {
+      const cfg = (connector.config as { fileSearch?: unknown; fileShare?: boolean } | null) ?? {};
+      if (cfg.fileShare) return { ok: true, kind: 'ok', message: 'File Share needs no connection.' };
+      if (!this.filesWorker?.configured) {
+        return { ok: false, kind: 'unsupported', message: 'The files worker is not configured (FILES_WORKER_URL).' };
+      }
+      try {
+        const config = parseFileSearchConfig(cfg.fileSearch, {
+          cloud: process.env.DEPLOYMENT_MODE === 'cloud',
+          localRoots: localRootsFromEnv(),
+          connectorName: connector.name,
+        });
+        const secrets = connector.authConfig ? pickSecrets(JSON.parse(decrypt(connector.authConfig, this.encryptionKey))) : {};
+        const r = await this.filesWorker.test(config, secrets, { cloud: process.env.DEPLOYMENT_MODE === 'cloud' });
+        return {
+          ok: r.ok,
+          kind: r.ok ? 'ok' : r.errorKind === 'auth' ? 'auth_failed' : r.errorKind === 'not_found' ? 'not_found' : 'unreachable',
+          message: r.ok ? `Connection successful — ${r.rootEntries ?? 0} entries in the folder` : (r.message ?? 'The connection failed.'),
+        };
+      } catch (err) {
+        return { ok: false, kind: 'error', message: (err as Error).message };
+      }
+    }
 
     try {
       // Same substitution the tool path does, so Test connection exercises the

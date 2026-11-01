@@ -49,6 +49,7 @@ import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { EmailEngine } from '../connectors/engines/email.engine';
+import { FileSearchEngine } from '../file-search/file-search.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { hashContent } from '../adapters/catalog-fingerprint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
@@ -129,6 +130,7 @@ export class DynamicMcpTools {
     @Optional() private readonly emailEngine?: EmailEngine,
     @Optional() private readonly codeExecutor?: CodeExecutorService,
     @Optional() productEvents?: ProductEventService,
+    @Optional() private readonly fileSearchEngine?: FileSearchEngine,
   ) {
     this.blockedCalls = new TrialBlockedCallRecorder(prisma, productEvents);
   }
@@ -616,6 +618,14 @@ export class DynamicMcpTools {
             ),
             connectorId: tool.connectorId,
             organizationId: tool.organizationId,
+            // File Search reads its index per workspace and connector; the
+            // caller decides the folder scope (Enterprise folder rules).
+            fileSearch: {
+              organizationId: tool.organizationId,
+              connectorId: tool.connectorId,
+              connectorName: tool.connectorName,
+              userId: context?.userId,
+            },
           },
         );
       } finally {
@@ -1384,6 +1394,7 @@ export class DynamicMcpTools {
       emailSettings?: unknown;
       connectorId?: string;
       organizationId?: string;
+      fileSearch?: { organizationId: string; connectorId: string; connectorName?: string; userId?: string };
     },
   ): Promise<{ body: unknown; meta?: ResponseMeta }> {
     // Recent webhook events — a read of our own storage, never an outbound
@@ -1468,6 +1479,12 @@ export class DynamicMcpTools {
             params,
             extra?.emailSettings ?? (extra?.connectorConfig as { email?: unknown } | undefined)?.email,
           ),
+        };
+      }
+      case 'FILE_SEARCH': {
+        if (!this.fileSearchEngine || !extra?.fileSearch) throw new Error('File Search is not available on this server.');
+        return {
+          body: await this.fileSearchEngine.execute(endpointMapping.method, params, extra.fileSearch),
         };
       }
       case 'DATABASE': {

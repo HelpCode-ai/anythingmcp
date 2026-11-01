@@ -25,6 +25,7 @@ import { CatalogResyncService } from './catalog-resync.service';
 import { CatalogReconciler } from './catalog-reconciler.service';
 import { LicenseModule } from '../license/license.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
+import { FileSearchCoreModule } from '../file-search/file-search-core.module';
 import { IdentityProvidersModule } from '../identity-providers/identity-providers.module';
 
 const ENGINES = [
@@ -48,7 +49,7 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 // not each log in.
 @Module({
   // IdentityProvidersModule: SsoService, for signing in on the connect page.
-  imports: [McpServerModule, McpServersModule, LicenseModule, IdentityProvidersModule],
+  imports: [McpServerModule, McpServersModule, LicenseModule, IdentityProvidersModule, FileSearchCoreModule],
   controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, ToolsController, WebhookIngestController],
   providers: [
     ConnectorsService,
