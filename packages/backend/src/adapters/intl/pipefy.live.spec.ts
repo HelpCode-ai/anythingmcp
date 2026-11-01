@@ -90,14 +90,24 @@ describe('pipefy adapter — static spec conformance', () => {
   });
 });
 
-// Opt-in live check. Needs a real token; skipped in CI.
-const live = process.env.RUN_PIPEFY_LIVE === '1';
-(live ? describe : describe.skip)('pipefy — live', () => {
-  it('is exercised through the connector install + probe flow', () => {
-    // The adapter's own probe tool is the contract worth checking against a
-    // real token: `npm run start:dev`, install the adapter, and confirm
-    // Pipefy answers. Asserting an HTTP shape here would only restate
-    // the static expectations above against a credential CI does not have.
-    expect(a.probe?.tool ?? toolNames[0]).toBeTruthy();
-  });
+// Opt-in live check. Needs a real token; skipped in CI by design.
+const live =
+  process.env.RUN_PIPEFY_LIVE === '1' && process.env.PIPEFY_API_TOKEN
+    ? describe
+    : describe.skip;
+live('pipefy — live (read-only)', () => {
+  it('lists organizations through the real GraphQL API', async () => {
+    const res = await fetch(a.connector.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.PIPEFY_API_TOKEN}`,
+      },
+      body: JSON.stringify({ query: '{ organizations { id name } }' }),
+    });
+    const json = (await res.json()) as {
+      data?: { organizations?: unknown };
+    };
+    expect(Array.isArray(json.data?.organizations)).toBe(true);
+  }, 60_000);
 });
