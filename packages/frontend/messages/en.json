@@ -184,7 +184,9 @@
       "word": "Word",
       "powerpoint": "PowerPoint",
       "email": "E-mail",
-      "text": "Text"
+      "text": "Text",
+      "drawing": "Drawings (SVG, DXF)",
+      "code": "Code & config"
     },
     "describe": {
       "intro": "This text tells the AI what the folder contains and how to search it. Every MCP server with this connector passes it on. Check it and add what only you know.",

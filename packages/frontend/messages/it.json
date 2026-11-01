@@ -184,7 +184,9 @@
       "word": "Word",
       "powerpoint": "PowerPoint",
       "email": "E-mail",
-      "text": "Testo"
+      "text": "Testo",
+      "drawing": "Disegni (SVG, DXF)",
+      "code": "Codice e configurazione"
     },
     "describe": {
       "intro": "Questo testo dice all'AI cosa contiene la cartella e come cercarci. Ogni server MCP con questo connettore lo inoltra. Controllalo e aggiungi quello che sai solo tu.",
