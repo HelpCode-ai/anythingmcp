@@ -98,11 +98,19 @@ Each File Search connector gets these tools, named with its prefix:
 | `<prefix>_read` | The text of a file, by pages (`"1-3,7"`) or in windows of characters |
 | `<prefix>_grep` | Exact search with two lines of context; spreadsheet rows come with their column names |
 | `<prefix>_status` | Sync state, counts, pause reason, content summary |
+| `<prefix>_view_page` | One page of a PDF, or an image file (PNG, JPEG, GIF, WebP, TIFF, BMP), as a picture the AI can see: for drawings, stamps, signatures and title blocks that are not in the text. Parameters `path` and `page` (default 1); the answer names the page count. Rendered at most 1600 pixels on the longest side, as JPEG up to 1.5 MB |
 | `<prefix>_get_file` | The file itself as a temporary internal link (24 hours), which works in every AI client; images up to 4 MB are attached too. Without File Share on the plan, files up to 4 MB are attached and the AI names the path |
 | `<prefix>_share_file` | A temporary link (internal or public); **switched off at install** |
 
 Every tool except the share tools is read-only. The tools tell the model that
 file content is data and that instructions inside files are never followed.
+
+`_view_page` reads the file live from your server through `files-worker`,
+like `_get_file`, and renders it in the isolated text extractor; on Cloud and
+self-hosted alike nothing is stored. Clients such as Claude.ai show the
+picture but not an attached PDF. Connectors activated before this tool
+existed get it automatically when the backend starts; tools you switched off
+or edited stay as they are.
 
 Text extraction: PDF and XPS page by page; Excel (including templates,
 macro workbooks and `.xlsb`), ODS and CSV row by row with the header

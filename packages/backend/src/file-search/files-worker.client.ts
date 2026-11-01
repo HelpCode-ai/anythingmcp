@@ -26,6 +26,19 @@ export interface FetchedFile {
   size: number;
 }
 
+/** One page of a PDF, or an image, rendered as a JPEG by the worker's extractor. */
+export interface RenderedPage {
+  ok: boolean;
+  mimeType?: string;
+  base64?: string;
+  width?: number;
+  height?: number;
+  page?: number;
+  pageCount?: number;
+  /** unsupported, page_out_of_range, encrypted, too_large, timeout, damaged, not_found, read_failed, unavailable */
+  error?: { kind: string; message: string } | null;
+}
+
 @Injectable()
 export class FilesWorkerClient {
   private readonly logger = new Logger(FilesWorkerClient.name);
@@ -81,6 +94,17 @@ export class FilesWorkerClient {
       filename: decodeURIComponent(res.headers.get('x-filename') ?? 'file'),
       size: buf.length,
     };
+  }
+
+  /** One page of an indexed PDF or image as a JPEG (view_page), read live and rendered by the worker. */
+  async render(organizationId: string, connectorId: string, path: string, opts: { page: number; maxPx?: number; maxBytes: number }): Promise<RenderedPage> {
+    const res = await this.post('/internal/render', { organizationId, connectorId, path, page: opts.page, maxPx: opts.maxPx, maxBytes: opts.maxBytes }, 120_000);
+    const body = (await res.json()) as Record<string, unknown>;
+    if (!res.ok || typeof body.error === 'string') {
+      const kind = typeof body.error === 'string' ? body.error : 'internal';
+      return { ok: false, error: { kind, message: typeof body.message === 'string' ? body.message : 'The page could not be shown.' } };
+    }
+    return body as unknown as RenderedPage;
   }
 
   /** Nudges the scheduler (Sync now, Resume, Activate) so it does not wait for its next tick. */

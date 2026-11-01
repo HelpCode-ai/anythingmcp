@@ -73,14 +73,17 @@ curl -sf -H "X-Extractor-Token: $TOKEN" -F "file=@$WORK/preise.xlsx" -F "filenam
   "http://127.0.0.1:$PORT/extract" > "$WORK/xlsx.json"
 curl -sf -H "X-Extractor-Token: $TOKEN" -F "file=@$WORK/katalog.pdf" -F "filename=katalog.pdf" \
   -F 'options={"ocr": false, "maxChars": 2000000}' "http://127.0.0.1:$PORT/extract" > "$WORK/pdf.json"
+curl -sf -H "X-Extractor-Token: $TOKEN" -F "file=@$WORK/katalog.pdf" -F "filename=katalog.pdf" \
+  -F 'options={"page": 2, "maxPx": 1000}' "http://127.0.0.1:$PORT/render" > "$WORK/render.json"
 status="$(curl -s -o /dev/null -w '%{http_code}' -H "X-Extractor-Token: wrong" \
   -F "file=@$WORK/katalog.pdf" -F "filename=katalog.pdf" "http://127.0.0.1:$PORT/extract")"
 
-"$VENV/bin/python" - "$WORK/xlsx.json" "$WORK/pdf.json" "$status" "$health" <<'PY'
-import json, sys
+"$VENV/bin/python" - "$WORK/xlsx.json" "$WORK/pdf.json" "$status" "$health" "$WORK/render.json" <<'PY'
+import base64, json, sys
 xlsx = json.load(open(sys.argv[1]))
 pdf = json.load(open(sys.argv[2]))
 status, health = sys.argv[3], json.loads(sys.argv[4])
+rendered = json.load(open(sys.argv[5]))
 assert xlsx["ok"] is True, xlsx
 lines = "\n".join(p["text"] for p in xlsx["pages"]).split("\n")
 want = 'Sheet "Preise" row 2: Artikel=NT-601 · Breite=875 · Preis=412 · Lieferdatum=2026-03-01'
@@ -92,7 +95,10 @@ assert "NT-601" in pdf["pages"][0]["text"]
 assert pdf["meta"]["pageCount"] == 2
 assert status == "401", status
 assert health == {"ok": True, "ocr": False, "version": "1"}, health
-print("http checks: xlsx row rendering, pdf page numbers, 401 on wrong token, health: OK")
+assert rendered["ok"] is True and rendered["mimeType"] == "image/jpeg", {k: v for k, v in rendered.items() if k != "base64"}
+assert (rendered["page"], rendered["pageCount"], rendered["height"]) == (2, 2, 1000), {k: v for k, v in rendered.items() if k != "base64"}
+assert base64.b64decode(rendered["base64"])[:3] == b"\xff\xd8\xff"
+print("http checks: xlsx row rendering, pdf page numbers, pdf page as jpeg, 401 on wrong token, health: OK")
 PY
 echo "== container log (metadata only, no content):"
 docker logs "$NAME" 2>&1 | tail -5

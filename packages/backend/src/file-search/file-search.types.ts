@@ -105,6 +105,14 @@ export const TEXT_EXTENSIONS: ReadonlySet<string> = new Set([
   ...CODE_EXTENSIONS,
 ]);
 
+/**
+ * Files `_view_page` shows as a picture (the extractor's POST /render): PDF
+ * pages and images. Must match RENDER_EXTENSIONS in deploy/ee/file-extractor.
+ */
+export const VIEWABLE_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.tif', '.tiff', '.bmp',
+]);
+
 /** Human labels for the type breakdown in the wizard. */
 export const TYPE_GROUPS: Record<string, string> = {
   '.pdf': 'PDF', '.xps': 'XPS', '.oxps': 'XPS',
