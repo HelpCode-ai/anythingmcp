@@ -1,6 +1,6 @@
 # File Search and File Share: concept and implementation plan
 
-Status: plan, nothing built yet (2026-11-01). Branch `helpcodeai/filesearch`.
+Status: implemented on branch `helpcodeai/filesearch` (2026-11-01), not merged. See §17 for what was built and where it differs from the plan.
 This file is a working plan, not product documentation. It is not part of
 `llms.txt` (`docs/plans/` is outside the generator's sections). Drop it or
 move it to an issue before the feature PR merges, if it should not ship.
@@ -838,3 +838,49 @@ check them before launch and adjust titles.
 - Data protection: extracted text and shared files are customer data stored
   by us; add the storage provider to the Cloud sub-processor list and the DPA
   before enabling File Share on the Cloud.
+
+## 17. Implementation notes (2026-11-01)
+
+Built on `helpcodeai/filesearch`, issues #1380–#1389, one commit per step.
+Differences from the plan above, and why:
+
+- **Extractor without Tika.** `deploy/ee/file-extractor` reads legacy
+  `.doc`/`.ppt`/`.xls` with `antiword`/`catdoc` instead of a bundled Tika
+  JVM: 251 MB image instead of ~1 GB, no JVM on the Cloud droplet. `.ppt`
+  text comes back as page-less segments (catppt's blocks are not slides).
+  OCR is a separate image variant (`--build-arg OCR=1`, RapidOCR, 505 MB).
+- **Back-pressure** reads the number of active Postgres sessions
+  (`FILES_PG_ACTIVE_MAX`); the backend's MCP p95 is not read by the worker.
+  Container CPU/memory limits and the separate process are the main guard.
+- **No inline worker mode** at all: self-hosted runs `files-worker` as its
+  own container too (`./start.sh files-worker`, Compose profile `files`).
+- **Scan listing** is stored on the scan row (`file_scans.tree.listing`), so
+  the budget bar is computed exactly from the real file list.
+- **Continuation slices** reopen the same `file_sync_runs` row; only a slice
+  of an unfinished sync skips the walk (a scheduled or manual sync, a resume
+  or a selection change always re-lists the folder, so the quota check sees
+  the current content).
+- **Password-protected files** are given up at once instead of after three
+  attempts.
+- **Share links** are `/f/<token>` (the app already used `/s/<token>` for
+  setup links).
+- **Catalog entries** `sftp`, `ftp`, `webdav`, `network-folder` (type
+  FILE_SEARCH, no tools of their own, built-ins injected by `catalog.ts`)
+  open the wizard; `AdaptersService.importAdapter` refuses FILE_SEARCH so no
+  path skips test, scan and quota.
+- **Next plan** shown in limits is the first plan that really includes more
+  (Cloud trial → Team, self-hosted trial → Enterprise).
+
+Verified locally against SFTP (atmoz/sftp), FTPS (pure-ftpd, self-signed),
+WebDAV (bytemark/webdav), S3 (MinIO) and a mounted folder, with a 508-file
+supplier-style seed: wizard, scans, quota pause, licence pause and auto
+resume, the MCP tools through a real MCP endpoint, File Share links, RLS.
+Backend suite 940/940 suites green; File Search integration specs 5/5.
+UI checked screenshot by screenshot at 1440×900 and 390×844, light and dark.
+
+Still open before production: Cloud enablement (Spaces bucket and lifecycle
+rule, download host, worker and extractor in the deploy, DB disk alert),
+an independent pen test of the share endpoints and the FTP/SFTP SSRF paths,
+the licence site's checkout-source allow-list for `file_quota*`, and the
+website guides (publish after the live test).
+
