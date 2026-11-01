@@ -19,6 +19,8 @@ import { SyncRunner } from './sync-runner';
 
 const TICK_MS = 5_000;
 const LEASE_MIN = 10;
+/** How long `stop` waits for running slices before releasing their leases. */
+const STOP_WAIT_MS = 20_000;
 const SWEEP_MS = 10 * 60_000;
 const ELIGIBLE = ['active', 'syncing', 'paused_quota', 'paused_licence', 'paused_error'];
 
@@ -49,7 +51,16 @@ export class Scheduler {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
     this.wake?.();
-    await Promise.allSettled([...this.running.values()]);
+    // Give running slices a moment, then release the leases in any case: a
+    // slice on a slow server can outlast the container's stop timeout, and an
+    // unreleased lease would hold its sync for LEASE_MIN after every deploy.
+    // Progress is saved per file, so the next worker continues from there.
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      Promise.allSettled([...this.running.values()]),
+      new Promise<void>((resolve) => (timer = setTimeout(resolve, STOP_WAIT_MS))),
+    ]);
+    if (timer) clearTimeout(timer);
     await this.prisma.$executeRaw`UPDATE file_sources SET lease_owner = NULL, lease_until = NULL WHERE lease_owner = ${this.workerId}`;
   }
 
