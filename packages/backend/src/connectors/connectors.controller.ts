@@ -757,6 +757,10 @@ export class ConnectorsController {
   @ApiOperation({ summary: 'Create a new connector' })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
     this.assertCanCreate(req);
+    if ((dto.type as string) === 'FILE_SEARCH') {
+      // Set up through the File Search wizard: test, scan, describe, activate.
+      throw new BadRequestException('File Search connectors are set up with the File Search wizard (POST /api/file-search/connectors).');
+    }
     this.assertUsableBaseUrl(dto.baseUrl, dto.type);
     if (dto.type === 'EMAIL') this.assertUsableEmailSettings(dto.config, dto.baseUrl);
     // A key typed into the URL or a header (`https://api.telegram.org/bot<token>`)
@@ -1170,6 +1174,9 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
+    if ((connector.type as string) === 'FILE_SEARCH' && (dto.config !== undefined || dto.baseUrl !== undefined || dto.authConfig !== undefined)) {
+      throw new BadRequestException('Change the source of a File Search connector on its Files tab.');
+    }
     if (dto.baseUrl !== undefined) {
       this.assertUsableBaseUrl(dto.baseUrl, connector.type);
     }

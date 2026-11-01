@@ -81,6 +81,7 @@ export const SIDEBAR_SECTIONS: SettingsSection[] = [
       { href: '/settings/organization', label: 'General', description: 'Workspace and new orgs', keywords: ['organization', 'general', 'workspace', 'org'] },
       { href: '/settings/users', label: 'Users', description: 'Members and invitations', adminOnly: true, keywords: ['users', 'members', 'invitations', 'team', 'invite'] },
       { href: '/settings/roles', label: 'Roles', description: 'MCP tool access control', adminOnly: true, keywords: ['roles', 'permissions', 'access', 'rbac', 'control'] },
+      { href: '/settings/file-share', label: 'File Share', description: 'Temporary download links', keywords: ['file share', 'links', 'download', 'share', 'files'] },
       // Self-hosted only: SSO assumes the workspace owns its own directory,
       // tenant and operator. The backend refuses these routes in cloud, so
       // showing the entry there would lead an admin to a page that 404s.

@@ -21,6 +21,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { cn } from '@/lib/utils';
+import { fileSearchSetupPath } from '@/lib/file-search-catalog';
 import { copyText } from '@/lib/clipboard';
 import { returnAssistant } from '@/lib/return-assistant';
 import { GuideIntro, GuideStepper, GuideStepView, StuckLink } from '@/components/connector-setup/setup-guide';
@@ -61,8 +62,13 @@ const GROUPS: Array<{ kind: EnvVarDescriptor['kind']; title: string }> = [
 
 function SetupContent() {
   const { slug } = useParams<{ slug: string }>();
+  // File Search entries have their own guided setup (test, scan, describe).
+  const fileSearchPath = fileSearchSetupPath(slug);
   const params = useSearchParams();
   const router = useRouter();
+  useEffect(() => {
+    if (fileSearchPath) router.replace(fileSearchPath);
+  }, [fileSearchPath, router]);
   const { token } = useAuth();
   const existingId = params.get('connector');
   const back = returnAssistant(params.get('from'));

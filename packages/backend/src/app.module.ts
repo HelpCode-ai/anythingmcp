@@ -21,6 +21,7 @@ import { KgModule } from './knowledge-graph/kg.module';
 import { MemoryModule } from './memory/memory.module';
 import { KnowledgeFoldersModule } from './knowledge-folders/knowledge-folders.module';
 import { McpServersModule } from './mcp-servers/mcp-servers.module';
+import { FileSearchModule } from './file-search/file-search.module';
 import { LicenseModule } from './license/license.module';
 import { PrismaModule } from './common/prisma.module';
 import { RedisModule } from './common/redis.module';
@@ -179,6 +180,7 @@ if (useOAuth) {
     MemoryModule,
     KnowledgeFoldersModule,
     McpServersModule,
+    FileSearchModule,
     LicenseModule,
     LicensingModule,
 

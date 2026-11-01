@@ -1,0 +1,15 @@
+# Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE.
+# Direct runtime dependencies. requirements.txt is compiled from this file
+# (see README.md, "Updating dependencies").
+fastapi==0.143.3
+uvicorn==0.54.0
+python-multipart==0.0.32
+pypdfium2==5.14.0
+openpyxl==3.1.5
+defusedxml==0.7.1
+xlrd==2.0.2
+charset-normalizer==3.5.2
+python-docx==1.2.0
+python-pptx==1.0.2
+striprtf==0.0.33
+extract-msg==0.56.1

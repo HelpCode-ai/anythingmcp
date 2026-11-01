@@ -1,0 +1,168 @@
+// Licensed under the AnythingMCP Commercial License, see packages/backend/src/ee/LICENSE.
+import { Logger } from '@nestjs/common';
+import { PrismaService } from '../../../common/prisma.service';
+import { FileSearchRepository } from '../../../file-search/file-search.repository';
+import { FileShareService } from '../../../file-search/file-share.service';
+import { ScanRunner } from '../scan/scan-runner';
+import { SyncRunner } from './sync-runner';
+
+/**
+ * The files-worker loop (#1383). Coordination happens only through Postgres:
+ * a source is claimed with a lease (`FOR UPDATE SKIP LOCKED`), so several
+ * workers (blue/green, scale-out) never run the same source twice, and a
+ * crashed worker's lease simply expires.
+ *
+ * Fairness: at most FILES_WORKER_CONCURRENCY runs at once, never two of the
+ * same workspace, ordered by how overdue they are. A big backfill runs in
+ * slices and goes back to the queue after each one.
+ */
+
+const TICK_MS = 5_000;
+const LEASE_MIN = 10;
+const SWEEP_MS = 10 * 60_000;
+const ELIGIBLE = ['active', 'syncing', 'paused_quota', 'paused_licence', 'paused_error'];
+
+export class Scheduler {
+  private readonly logger = new Logger(Scheduler.name);
+  private running = new Map<string, Promise<void>>();
+  private scanning = new Set<string>();
+  private timer: NodeJS.Timeout | null = null;
+  private stopped = false;
+  private lastSweep = 0;
+  private wake: (() => void) | null = null;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly repo: FileSearchRepository,
+    private readonly sync: SyncRunner,
+    private readonly scans: ScanRunner,
+    private readonly shares: FileShareService,
+    private readonly workerId: string,
+    private readonly concurrency: number,
+  ) {}
+
+  start(): void {
+    void this.loop();
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.wake?.();
+    await Promise.allSettled([...this.running.values()]);
+    await this.prisma.$executeRaw`UPDATE file_sources SET lease_owner = NULL, lease_until = NULL WHERE lease_owner = ${this.workerId}`;
+  }
+
+  /** Called by /internal/kick: run a tick now instead of waiting. */
+  kick(): void {
+    this.wake?.();
+  }
+
+  get busy() {
+    return { syncs: this.running.size, scans: this.scanning.size };
+  }
+
+  private async loop(): Promise<void> {
+    while (!this.stopped) {
+      try {
+        await this.tick();
+      } catch (err) {
+        this.logger.error(`tick failed: ${(err as Error).message}`);
+      }
+      await new Promise<void>((resolve) => {
+        this.wake = resolve;
+        this.timer = setTimeout(resolve, TICK_MS);
+      });
+    }
+  }
+
+  private async tick(): Promise<void> {
+    await this.pickScans();
+    while (this.running.size < this.concurrency) {
+      const claimed = await this.claim();
+      if (!claimed) break;
+      const p = this.runSource(claimed.connectorId).finally(() => this.running.delete(claimed.connectorId));
+      this.running.set(claimed.connectorId, p);
+    }
+    if (Date.now() - this.lastSweep > SWEEP_MS) {
+      this.lastSweep = Date.now();
+      await this.sweep().catch((err) => this.logger.warn(`sweep failed: ${(err as Error).message}`));
+    }
+  }
+
+  private async claim(): Promise<{ connectorId: string; organizationId: string } | null> {
+    const rows = await this.prisma.$queryRaw<Array<{ connector_id: string; organization_id: string }>>`
+      UPDATE file_sources SET lease_owner = ${this.workerId}, lease_until = now() + make_interval(mins => ${LEASE_MIN})
+      WHERE connector_id = (
+        SELECT s.connector_id FROM file_sources s
+        JOIN connectors c ON c.id = s.connector_id AND c.is_active = true
+        WHERE s.setup_state = ANY(${ELIGIBLE}::text[])
+          AND s.next_sync_at IS NOT NULL AND s.next_sync_at <= now()
+          AND (s.lease_until IS NULL OR s.lease_until < now())
+          AND s.organization_id NOT IN (SELECT organization_id FROM file_sources WHERE lease_until > now())
+        ORDER BY s.next_sync_at
+        LIMIT 1
+        FOR UPDATE OF s SKIP LOCKED
+      )
+      RETURNING connector_id, organization_id`;
+    return rows[0] ? { connectorId: rows[0].connector_id, organizationId: rows[0].organization_id } : null;
+  }
+
+  private async runSource(connectorId: string): Promise<void> {
+    const renew = setInterval(() => {
+      void this.prisma.$executeRaw`UPDATE file_sources SET lease_until = now() + make_interval(mins => ${LEASE_MIN}) WHERE connector_id = ${connectorId} AND lease_owner = ${this.workerId}`;
+    }, 2 * 60_000);
+    try {
+      const out = await this.sync.run(connectorId, 'schedule');
+      if (out.status !== 'skipped') this.logger.log(`sync ${connectorId}: ${out.status}${out.more ? ' (more queued)' : ''}`);
+    } catch (err) {
+      this.logger.error(`sync ${connectorId} crashed: ${(err as Error).message}`);
+    } finally {
+      clearInterval(renew);
+      await this.prisma.$executeRaw`UPDATE file_sources SET lease_owner = NULL, lease_until = NULL WHERE connector_id = ${connectorId} AND lease_owner = ${this.workerId}`;
+    }
+  }
+
+  private async pickScans(): Promise<void> {
+    if (this.scanning.size >= 2) return;
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; organization_id: string; status: string }>>`
+      UPDATE file_scans SET status = CASE WHEN status = 'queued' THEN 'running' ELSE 'describing_running' END
+      WHERE id IN (
+        SELECT id FROM file_scans WHERE status IN ('queued', 'describing') ORDER BY created_at LIMIT ${2 - this.scanning.size}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id, organization_id, status`;
+    for (const r of rows) {
+      this.scanning.add(r.id);
+      const job = r.status === 'running' ? this.scans.run(r.id, r.organization_id) : this.scans.redescribe(r.id, r.organization_id);
+      void job
+        .catch((err) => this.logger.error(`scan ${r.id} failed: ${(err as Error).message}`))
+        .finally(() => this.scanning.delete(r.id));
+    }
+    // A scan that has been "running" for 15 minutes belongs to a worker that died.
+    await this.prisma.$executeRaw`UPDATE file_scans SET status = 'failed', error = 'The scan was interrupted. Start it again.', finished_at = now()
+      WHERE status IN ('running', 'describing_running') AND created_at < now() - interval '15 minutes' AND id <> ALL(${[...this.scanning]}::text[])`;
+  }
+
+  private async sweep(): Promise<void> {
+    const purged = await this.shares.sweep();
+    if (purged) this.logger.log(`File Share: removed ${purged} expired or revoked files`);
+    // Drafts nobody finished within 7 days.
+    const drafts = await this.prisma.$queryRaw<Array<{ connector_id: string }>>`
+      SELECT s.connector_id FROM file_sources s JOIN connectors c ON c.id = s.connector_id
+      WHERE s.setup_state = 'draft' AND c.is_active = false AND s.created_at < now() - interval '7 days' LIMIT 100`;
+    if (drafts.length) {
+      await this.prisma.connector.deleteMany({ where: { id: { in: drafts.map((d) => d.connector_id) }, isActive: false } });
+      this.logger.log(`removed ${drafts.length} unfinished File Search drafts`);
+    }
+    // Scan samples are only needed during setup.
+    await this.prisma.$executeRaw`UPDATE file_scans SET samples = NULL WHERE samples IS NOT NULL AND created_at < now() - interval '7 days'`;
+    // Licence pause: the index is kept 30 days, then removed.
+    const expired = await this.prisma.$queryRaw<Array<{ connector_id: string; organization_id: string }>>`
+      SELECT connector_id, organization_id FROM file_sources WHERE setup_state = 'paused_licence' AND paused_at < now() - interval '30 days' LIMIT 50`;
+    for (const e of expired) {
+      await this.repo.withTenant(e.organization_id, (tx) => tx.fileEntry.deleteMany({ where: { connectorId: e.connector_id, organizationId: e.organization_id } }));
+      this.logger.log(`licence pause over 30 days: removed the index of ${e.connector_id}`);
+    }
+  }
+}

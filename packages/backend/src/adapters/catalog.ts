@@ -254,6 +254,7 @@ import * as freshdesk from './intl/freshdesk.json';
 import * as freshsales from './intl/freshsales.json';
 import * as freshservice from './intl/freshservice.json';
 import * as front from './intl/front.json';
+import * as ftp from './intl/ftp.json';
 import * as fudo from './intl/fudo.json';
 import * as fxmacrodata from './intl/fxmacrodata.json';
 import * as gamma from './intl/gamma.json';
@@ -413,6 +414,7 @@ import * as neon from './intl/neon.json';
 import * as netlify from './intl/netlify.json';
 import * as netskope from './intl/netskope.json';
 import * as netsuite from './intl/netsuite.json';
+import * as networkFolder from './intl/network-folder.json';
 import * as neverbounce from './intl/neverbounce.json';
 import * as newRelic from './intl/new-relic.json';
 import * as newsapi from './intl/newsapi.json';
@@ -535,6 +537,7 @@ import * as serply from './intl/serply.json';
 import * as servicem8 from './intl/servicem8.json';
 import * as servicenow from './intl/servicenow.json';
 import * as servicetitan from './intl/servicetitan.json';
+import * as sftp from './intl/sftp.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
 import * as shopee from './intl/shopee.json';
@@ -613,6 +616,7 @@ import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
 import * as wati from './intl/wati.json';
 import * as waveAccounting from './intl/wave-accounting.json';
+import * as webdav from './intl/webdav.json';
 import * as webex from './intl/webex.json';
 import * as webflow from './intl/webflow.json';
 import * as weeek from './intl/weeek.json';
@@ -701,6 +705,7 @@ import {
   wantsODataBuiltins,
 } from '../connectors/odata/odata-builtins';
 import { buildEmailBuiltinTools } from '../connectors/email/email-builtins';
+import { buildFileSearchBuiltinTools } from '../file-search/file-search-builtins';
 import { emailToolPrefix } from '../connectors/email/email-settings';
 import { computeAdapterVersion } from './catalog-fingerprint';
 import type { EnvVarMeta, SetupKind } from './env-var-meta';
@@ -934,6 +939,20 @@ function withEmailBuiltins(adapter: AdapterDefinition): AdapterDefinition {
     prefix: emailToolPrefix({ toolPrefix: email.toolPrefix, name: adapter.slug }),
     displayName: adapter.name,
   }) as unknown as AdapterDefinition['tools'];
+  const own = new Set(adapter.tools.map((t) => t.name));
+  return { ...adapter, tools: [...adapter.tools, ...builtins.filter((t) => !own.has(t.name))] };
+}
+
+/**
+ * File Search catalog entries (#1379) show the fixed File Search tools; the
+ * connector itself is created by the File Search wizard, never by the
+ * generic import (AdaptersService.importAdapter refuses FILE_SEARCH).
+ */
+function withFileSearchBuiltins(adapter: AdapterDefinition): AdapterDefinition {
+  if ((adapter.connector.type as string) !== 'FILE_SEARCH') return adapter;
+  const fs = (adapter.connector.config?.fileSearch ?? {}) as { toolPrefix?: unknown };
+  const prefix = typeof fs.toolPrefix === 'string' && fs.toolPrefix ? fs.toolPrefix : adapter.slug.replace(/-/g, '_');
+  const builtins = buildFileSearchBuiltinTools({ prefix, displayName: adapter.name }) as unknown as AdapterDefinition['tools'];
   const own = new Set(adapter.tools.map((t) => t.name));
   return { ...adapter, tools: [...adapter.tools, ...builtins.filter((t) => !own.has(t.name))] };
 }
@@ -1199,6 +1218,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   freshsales as unknown as AdapterDefinition,
   freshservice as unknown as AdapterDefinition,
   front as unknown as AdapterDefinition,
+  ftp as unknown as AdapterDefinition,
   fudo as unknown as AdapterDefinition,
   fxmacrodata as unknown as AdapterDefinition,
   gamma as unknown as AdapterDefinition,
@@ -1358,6 +1378,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   netlify as unknown as AdapterDefinition,
   netskope as unknown as AdapterDefinition,
   netsuite as unknown as AdapterDefinition,
+  networkFolder as unknown as AdapterDefinition,
   neverbounce as unknown as AdapterDefinition,
   newRelic as unknown as AdapterDefinition,
   newsapi as unknown as AdapterDefinition,
@@ -1480,6 +1501,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   servicem8 as unknown as AdapterDefinition,
   servicenow as unknown as AdapterDefinition,
   servicetitan as unknown as AdapterDefinition,
+  sftp as unknown as AdapterDefinition,
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
   shopee as unknown as AdapterDefinition,
@@ -1558,6 +1580,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wassenger as unknown as AdapterDefinition,
   wati as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
+  webdav as unknown as AdapterDefinition,
   webex as unknown as AdapterDefinition,
   webflow as unknown as AdapterDefinition,
   weeek as unknown as AdapterDefinition,
@@ -1644,6 +1667,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
 const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(withGraphqlBuiltins)
   .map(withODataBuiltins)
   .map(withEmailBuiltins)
+  .map(withFileSearchBuiltins)
   .map((adapter) => ({
   ...adapter,
   // Computed after withGraphqlBuiltins so generated GraphQL helper tools are

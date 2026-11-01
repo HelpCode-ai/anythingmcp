@@ -26,7 +26,7 @@ export const REGIONS = [
   'de', 'gb', 'intl', 'br', 'in', 'jp', 'ng',
   'it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk',
 ];
-const ALLOWED_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'DATABASE', 'ODATA', 'EMAIL', 'LOGIN_TOKEN']);
+const ALLOWED_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'DATABASE', 'ODATA', 'EMAIL', 'LOGIN_TOKEN', 'FILE_SEARCH']);
 export const ALLOWED_AUTH_TYPES = new Set(['NONE', 'API_KEY', 'BEARER_TOKEN', 'BASIC', 'BASIC_AUTH', 'OAUTH2', 'OAUTH1', 'LOGIN_TOKEN', 'QUERY_AUTH', 'CONNECTION_STRING', 'HMAC']);
 const REQUIRED_TOP_LEVEL = ['slug', 'name', 'description', 'region', 'category', 'icon', 'docsUrl', 'requiredEnvVars', 'connector', 'tools'];
 const MIN_INSTRUCTIONS_LEN = 800;
@@ -461,6 +461,13 @@ export function validateAdapter(adapter, file, region) {
   }
 
   const slugUnderscored = adapter.slug.replace(/-/g, '_');
+  // File Search entries are set up by the File Search wizard; their tools are
+  // the fixed built-ins the catalog adds (catalog.ts withFileSearchBuiltins).
+  if (adapter.connector?.type === 'FILE_SEARCH') {
+    if (!Array.isArray(adapter.tools)) errors.push(error('tools', 'tools', 'tools must be an array (empty for File Search)', 'Use "tools": [].', 'tools'));
+    if (!adapter.connector?.config?.fileSearch?.protocol) errors.push(error('file-search', 'connector.config.fileSearch.protocol', 'File Search adapters name their protocol', 'Set connector.config.fileSearch.protocol (sftp, ftps, webdav, local, s3).', 'adapter-fields'));
+    return { errors, warnings };
+  }
   if (!Array.isArray(adapter.tools) || adapter.tools.length === 0) {
     errors.push(error('tools', 'tools', 'tools array is empty', 'Add at least one tool definition to the tools array.', 'tools'));
     return { errors, warnings };

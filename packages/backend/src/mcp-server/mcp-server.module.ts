@@ -25,6 +25,7 @@ import { GraphqlSchemaService } from '../connectors/engines/graphql-schema.servi
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { LicenseModule } from '../license/license.module';
 import { SharedSetupRegistry } from './shared-setup';
+import { FileSearchCoreModule } from '../file-search/file-search-core.module';
 
 const ENGINES = [
   RestEngine,
@@ -37,7 +38,7 @@ const ENGINES = [
 ];
 
 @Module({
-  imports: [McpServersModule, LicenseModule, SettingsModule],
+  imports: [McpServersModule, LicenseModule, SettingsModule, FileSearchCoreModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
   providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, GraphqlSchemaService, ...ENGINES],
   exports: [McpServerService, ToolRegistry, SharedSetupRegistry, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService],

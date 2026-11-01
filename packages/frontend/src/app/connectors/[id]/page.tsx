@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -22,6 +23,8 @@ import remarkGfm from 'remark-gfm';
 import { authTypeLabel, cn } from '@/lib/utils';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
+import { FilesPanel } from '@/components/file-search/files-panel';
+import Link from 'next/link';
 import {
   EMPTY_EMAIL_FORM,
   EmailSettingsFields,
@@ -169,6 +172,7 @@ function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; by
 
 export default function ConnectorDetailPage() {
   const { token, user, deploymentMode } = useAuth();
+  const tfs = useTranslations('fileSearch');
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1026,9 +1030,13 @@ export default function ConnectorDetailPage() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
             Test
           </Button>
+          {/* File Search is edited on its Files panel (source, selection, description). */}
+          {connector?.type !== 'FILE_SEARCH' && (
           <Button variant="secondary" size="md" onClick={() => setEditing(!editing)}>
             {editing ? 'Cancel' : 'Edit'}
           </Button>
+          )}
+          {connector?.type !== 'FILE_SEARCH' && (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <Button variant="secondary" size="md" title="Export this connector as a file">
@@ -1054,6 +1062,7 @@ export default function ConnectorDetailPage() {
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
+          )}
           <Button variant="outlineDanger" size="md" onClick={handleDelete}>
             Delete
           </Button>
@@ -1260,7 +1269,22 @@ export default function ConnectorDetailPage() {
           </Card>
         )}
 
+        {/* File Search: sync state, selection, description (#1385). */}
+        {connector.type === 'FILE_SEARCH' && !(connector.config as { fileShare?: boolean } | null)?.fileShare && (
+          <FilesPanel connectorId={connector.id} />
+        )}
+        {connector.type === 'FILE_SEARCH' && (connector.config as { fileShare?: boolean } | null)?.fileShare && (
+          <Card className="p-[22px]">
+            <h3 className="text-sm font-semibold">{tfs('shareConnector.title')}</h3>
+            <p className="mt-1 text-[13px] text-[var(--text-2)]">{tfs('shareConnector.text')}</p>
+            <Link href="/settings/file-share" className="mt-3 inline-flex h-9 items-center rounded-[9px] border border-[var(--border)] px-3.5 text-[13px] font-semibold text-[var(--text-2)] hover:text-[var(--text)]">
+              {tfs('shareConnector.manage')}
+            </Link>
+          </Card>
+        )}
+
         {/* Connector Details */}
+        {connector.type !== 'FILE_SEARCH' && (
         <Card className="p-[22px]">
           <h3 className="text-sm font-semibold mb-4">Connector Details</h3>
           {editing ? (
@@ -1804,6 +1828,7 @@ export default function ConnectorDetailPage() {
             </div>
           )}
         </Card>
+        )}
 
         {/* Who signs in: one shared authorization, or each user (Enterprise) */}
         {connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
@@ -1859,6 +1884,7 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* Environment Variables */}
+        {connector.type !== 'FILE_SEARCH' && (
         <Card className="p-[22px]">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -1931,6 +1957,7 @@ export default function ConnectorDetailPage() {
             </div>
           )}
         </Card>
+        )}
 
         {/* Tools Section */}
         <Card className="p-[22px]">
@@ -1940,7 +1967,7 @@ export default function ConnectorDetailPage() {
             </h3>
             <div className="flex gap-2 flex-wrap">
               {/* An email connector's tools are its built-ins: nothing to import. */}
-              {connector.type !== 'EMAIL' && (
+              {connector.type !== 'EMAIL' && connector.type !== 'FILE_SEARCH' && (
                 <Button variant="secondary" size="md" onClick={() => setShowImport(!showImport)}>
                   {showImport ? 'Cancel Import' : 'Import Tools'}
                 </Button>
@@ -1961,9 +1988,11 @@ export default function ConnectorDetailPage() {
                   {discovering ? 'Discovering...' : 'Discover from MCP Server'}
                 </Button>
               )}
+              {connector.type !== 'FILE_SEARCH' && (
               <Button variant="primary" size="md" onClick={() => setShowNewTool(!showNewTool)}>
                 {showNewTool ? 'Cancel' : 'Add Tool'}
               </Button>
+              )}
             </div>
           </div>
 

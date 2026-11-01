@@ -741,6 +741,16 @@ export class AdaptersService {
     probe: ImportProbeResult | null;
   }> {
     const adapter = this.getBySlug(slug);
+    if ((adapter.connector.type as string) === 'FILE_SEARCH') {
+      // Tested, scanned and checked against the plan by the File Search wizard;
+      // a direct install would skip all three.
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'file_search_wizard',
+        setupPath: `/connectors/new/file-search?protocol=${(adapter.connector.config as any)?.fileSearch?.protocol ?? 'sftp'}`,
+        message: 'File Search connectors are set up with the File Search wizard: Connectors → New → File Search.',
+      });
+    }
     const {
       resolvedAuthConfig,
       encryptedAuth,

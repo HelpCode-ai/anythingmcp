@@ -14,6 +14,7 @@ import { searchCatalog } from '@/lib/catalog-search';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { useCatalogSearchReport } from '@/lib/use-catalog-search-report';
 import { EFFORT_FILTERS, effortLabel, effortTone } from '@/lib/setup-effort';
+import { fileSearchSetupPath } from '@/lib/file-search-catalog';
 
 const REGION_LABELS: Record<string, string> = {
   de: 'Germany',
@@ -278,7 +279,7 @@ function AdapterStoreContent() {
   // created connectors that failed every call.
   const handleImportClick = (adapter: AdapterItem) => {
     reportPicked(adapter.slug);
-    router.push(`/connectors/setup/${encodeURIComponent(adapter.slug)}`);
+    router.push(fileSearchSetupPath(adapter.slug) ?? `/connectors/setup/${encodeURIComponent(adapter.slug)}`);
   };
 
   // Auto-import when ?install=<slug> is present (e.g. from website marketplace)

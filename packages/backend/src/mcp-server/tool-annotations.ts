@@ -21,6 +21,7 @@
  */
 
 import { EMAIL_METHOD_ANNOTATIONS, isEmailMethod } from '../connectors/email/email-builtins';
+import { fileSearchAnnotations, isFileSearchMethod } from '../file-search/file-search-builtins';
 
 export interface ToolAnnotations {
   /** Human-readable title for display. */
@@ -197,6 +198,12 @@ function derive(tool: AnnotationSource): ToolAnnotations {
   // mailbox is the user's own, a closed domain; only sending reaches out.
   if (isEmailMethod(method)) {
     return { ...annotations, ...EMAIL_METHOD_ANNOTATIONS[method] };
+  }
+
+  // File Search built-ins read the index; only the share tools create or
+  // remove a link (file-search-builtins.ts).
+  if (isFileSearchMethod(method)) {
+    return { ...annotations, ...fileSearchAnnotations(method) };
   }
 
   // OData built-ins (list, describe, query, get) only ever read, on ODATA and
