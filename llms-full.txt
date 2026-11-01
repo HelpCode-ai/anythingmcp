@@ -617,6 +617,12 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `SMTP_PASS` | No | SMTP password |
 | `SMTP_FROM` | No | Sender address (default: `AnythingMCP <SMTP_USER>`) |
 | `SMTP_REPLY_TO` | No | Reply-To address, for when `SMTP_FROM` is a noreply address |
+| `RETENTION_SMTP_HOST` | No | Cloud only: a second SMTP server for the trial lifecycle, win-back and blocked-call emails. Without it they go through the SMTP above, with `RETENTION_SMTP_REPLY_TO` as Reply-To when set. Self-hosted sends none of these emails |
+| `RETENTION_SMTP_PORT` | No | Its port (default: 587). 465 or 2465 use implicit TLS, any other port STARTTLS |
+| `RETENTION_SMTP_USER` | No | Its username |
+| `RETENTION_SMTP_PASS` | No | Its password |
+| `RETENTION_SMTP_FROM` | No | Its sender, e.g. `Your Name <support@example.com>` (default: the `SMTP_FROM` sender) |
+| `RETENTION_SMTP_REPLY_TO` | No | Reply-To of those emails, with either sender |
 | `COMPOSE_PROFILES` | No | Set to `proxy` to enable Caddy reverse proxy |
 | `DOMAIN` | No | Domain for Caddy SSL certificate (e.g., `example.com`) |
 | `ACME_EMAIL` | No | Email for Let's Encrypt certificate notifications |
