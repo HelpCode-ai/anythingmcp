@@ -780,7 +780,7 @@ self-hosted behaviour in each.
 1. Self-hosted pilot at Koch: native `local` connector on the
    Lieferanten-Unterlagen share next to the bridge; 20 real price questions
    asked against both; switch when the native one is at least as good.
-2. Cloud enablement checklist: Spaces bucket + lifecycle rule, download host
+2. Cloud enablement checklist: Spaces bucket + lifecycle rule, download host (decided: same domain, see §17)
    DNS + Caddy, `files-worker` and `file-extractor` in the blue/green deploy,
    database disk alert at 70 %, independent pen test of the share endpoints and
    the FTP/SFTP SSRF paths.
@@ -878,10 +878,35 @@ resume, the MCP tools through a real MCP endpoint, File Share links, RLS.
 Backend suite 940/940 suites green; File Search integration specs 5/5.
 UI checked screenshot by screenshot at 1440×900 and 390×844, light and dark.
 
-Still open before production: Cloud enablement (Spaces bucket and lifecycle
-rule, download host, worker and extractor in the deploy, DB disk alert),
-an independent pen test of the share endpoints and the FTP/SFTP SSRF paths,
-and the website guides (publish after the live test). The licence site needs
-no change: Cloud checkout intents accept any source slug (lib/stripe.ts
-`checkoutSource`).
+- **No separate download host in v1.** Share downloads are served by the
+  app's own domain at `/api/file-share/d/<signed>`: a 60-second HMAC URL,
+  `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`,
+  `Content-Security-Policy: sandbox; default-src 'none'`, and HTML, SVG, XML
+  and script types are always sent as `application/octet-stream`. A browser
+  never renders a shared file in the app's origin, so a second hostname adds
+  operations without closing a real gap. It can still be added later behind
+  `FILES_DOWNLOAD_BASE_URL` if a customer requires it.
+- **FTP passive mode** takes only the port from a PASV reply and always
+  connects to the control connection's (SSRF-checked) address: NAT setups
+  that announce a private address work, and no reply can redirect the data
+  channel.
 
+**Pen test (2026-11-01, local, two workspaces plus VIEWER and EDITOR):**
+31 API checks (cross-tenant on every File Search, File Share and generic
+connector route, secrets never returned, generic create and catalog import
+refused, malicious configs refused, forged and unknown tokens), MCP
+isolation, bounded regex, file-name XSS and header injection on the share
+page and download, 41 driver checks (SFTP/FTPS/WebDAV/S3 to loopback,
+RFC 1918, CGNAT, link-local metadata, IPv6 and IPv4-mapped forms,
+decimal/hex/short IPv4, DNS names resolving to loopback, WebDAV redirect to
+an internal address, PASV to a foreign host, local symlinks and traversal,
+local driver on the Cloud) and 29 role checks. Two findings, both fixed with
+regression specs: an S3 endpoint given as a literal private IP skipped the
+lookup-based guard (now checked up front), and PASV handling refused NAT
+servers instead of ignoring the announced host.
+
+Still open before production: Cloud enablement (Spaces bucket and lifecycle
+rule, worker and extractor in the deploy, DB disk alert) and the website
+guides (publish after the live test). The licence site needs no change:
+Cloud checkout intents accept any source slug (lib/stripe.ts
+`checkoutSource`).
