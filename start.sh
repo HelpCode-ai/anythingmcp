@@ -77,7 +77,7 @@ case "$MODE" in
     # container runs the migrations; this one only waits for the schema.
     echo "==> Starting files-worker (internal port ${FILES_WORKER_PORT:-8891}) as PID 1..."
     cd /app/backend
-    exec node --max-old-space-size=${FILES_WORKER_MAX_OLD_SPACE_MB:-768} dist/src/ee/file-search/files-worker.main.js
+    exec node --max-old-space-size=${FILES_WORKER_MAX_OLD_SPACE_MB:-512} dist/src/ee/file-search/files-worker.main.js
     ;;
 
   frontend)
