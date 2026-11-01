@@ -337,15 +337,25 @@ export class SyncRunner {
     } catch (err) {
       await session?.close().catch(() => undefined);
       const msg = (err as Error).message;
-      this.logger.warn(`sync ${connectorId} failed: ${msg}`);
-      await this.finishRun(orgId, run.id, 'failed', counters, msg);
+      // The extractor restarting (a deploy, or its memory limit) is not the
+      // folder's fault: the run counts as partial, no file is penalised, and
+      // the sync continues in two minutes.
+      const extractorDown = err instanceof ExtractorUnavailableError;
+      this.logger.warn(`sync ${connectorId} ${extractorDown ? 'waits for the extractor' : 'failed'}: ${msg}`);
+      await this.finishRun(
+        orgId,
+        run.id,
+        extractorDown ? 'partial' : 'failed',
+        counters,
+        extractorDown ? 'The text extractor was restarting; the sync continues in a few minutes.' : msg,
+      );
       await this.repo.withTenant(orgId, (tx) =>
         tx.fileSource.update({
           where: { connectorId },
-          data: { setupState: 'active', nextSyncAt: new Date(Date.now() + (err instanceof ExtractorUnavailableError ? 5 : 30) * 60_000), stats: { ...stats, lastError: msg, continuePending: false } },
+          data: { setupState: 'active', nextSyncAt: new Date(Date.now() + (extractorDown ? 2 : 30) * 60_000), stats: { ...stats, lastError: msg, continuePending: false } },
         }),
       );
-      return { status: 'failed', more: false };
+      return { status: extractorDown ? 'partial' : 'failed', more: false };
     }
   }
 
