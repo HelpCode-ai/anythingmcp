@@ -173,9 +173,19 @@ lets AI clients publish files they write.
 
 - Who sees the tools follows the MCP roles, as for every connector.
 - **Folder permissions (Enterprise):** allow or deny folders per role inside
-  one connector. A role without rules sees everything; with rules, only the
-  allowed folders, and deny wins. Without Enterprise, connect each folder as
-  its own connector and give it to the right roles.
+  one connector.
+  - A role without rules sees everything. Adding a rule for one role never
+    changes what other roles see.
+  - Allow rules limit a role to those folders (and their subfolders). A user
+    with several roles sees the folders any of their roles allows.
+  - Deny rules hide a folder and always win, also over an allow.
+  - Workspace administrators see every folder.
+  - Calls with an MCP API key are not tied to a user, so folder rules do not
+    apply to them: give such keys only to servers whose folders everyone with
+    the key may see.
+
+  Without Enterprise, connect each folder as its own connector and give it to
+  the right roles.
 - **Workspace policy (Enterprise):** public links on/off, longest link
   validity, AI drafting on/off, plain FTP on/off.
 - Every tool call is in the audit log as usual.

@@ -26,14 +26,20 @@ export function formatBytes(n: number | null | undefined): string {
   return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
 }
 
+/** The app's language (`<html lang>`), not the browser's: an English UI shows 50,000, not 50.000. */
+function uiLocale(locale?: string): string | undefined {
+  if (locale) return locale;
+  return typeof document !== 'undefined' ? document.documentElement.lang || undefined : undefined;
+}
+
 export function formatNumber(n: number | null | undefined, locale?: string): string {
   if (n == null) return '∞';
-  return n.toLocaleString(locale);
+  return n.toLocaleString(uiLocale(locale));
 }
 
 export function formatDate(iso: string | null | undefined, locale?: string): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
+  return new Date(iso).toLocaleString(uiLocale(locale), { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 export function intervalLabel(minutes: number, t: ReturnType<typeof useTranslations>): string {

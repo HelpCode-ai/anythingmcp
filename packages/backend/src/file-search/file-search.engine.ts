@@ -47,9 +47,10 @@ export class FileSearchEngine {
   ) {}
 
   /**
-   * The caller's folder scope: Enterprise folder rules of the caller's
-   * custom roles narrow the connector. No rules for any of the caller's
-   * roles → the whole connector.
+   * The caller's folder scope from Enterprise folder rules. A role without
+   * rules sees everything, allow rules narrow a role to some folders, deny
+   * rules always win, administrators and calls without a user (API keys) are
+   * not narrowed. The query layer applies the scope in SQL.
    */
   async scopeFor(ctx: FileToolContext): Promise<FileScope> {
     const scope: FileScope = { organizationId: ctx.organizationId, connectorId: ctx.connectorId };
@@ -66,18 +67,22 @@ export class FileSearchEngine {
       select: { roleId: true },
     });
     const mine = new Set(assignments.map((r) => r.roleId));
+    // Folder rules (Enterprise), as the Files panel and the docs state them:
+    //   - a role without rules sees everything;
+    //   - allow rules limit the caller to those folders (any of their roles);
+    //   - deny rules hide folders and always win;
+    //   - workspace administrators see everything.
+    const member = await this.prisma.organizationMember.findFirst({ where: { organizationId: ctx.organizationId, userId: ctx.userId }, select: { role: true } });
+    if (member?.role === 'ADMIN') return scope;
     const applicable = rules.filter((r) => mine.has(r.roleId));
-    const rolesWithRules = new Set(rules.map((r) => r.roleId));
-    // Folder rules exist on this connector but none for the caller's roles: an
-    // admin restricted it, so callers without a rule see nothing (deny by default).
-    if (!applicable.length && [...mine].every((id) => !rolesWithRules.has(id))) {
-      const member = await this.prisma.organizationMember.findFirst({ where: { organizationId: ctx.organizationId, userId: ctx.userId }, select: { role: true } });
-      if (member?.role === 'ADMIN') return scope;
-      return { ...scope, allow: ['\u0000none'] };
-    }
-    const allow = applicable.filter((r) => r.effect === 'allow').map((r) => relPath(r.pattern));
-    const deny = applicable.filter((r) => r.effect === 'deny').map((r) => relPath(r.pattern));
-    return { ...scope, allow: allow.length ? allow : ['\u0000none'], deny };
+    if (!applicable.length) return scope;
+    // One of the caller's roles has no rules (or no allow rules): that role
+    // sees every folder, so allow rules of other roles do not narrow it.
+    const allowRoles = new Set(rules.filter((r) => r.effect === 'allow').map((r) => r.roleId));
+    const unrestricted = [...mine].some((id) => !allowRoles.has(id));
+    const allow = unrestricted ? [] : applicable.filter((r) => r.effect === 'allow').map((r) => relPath(r.pattern)).filter(Boolean);
+    const deny = applicable.filter((r) => r.effect === 'deny').map((r) => relPath(r.pattern)).filter(Boolean);
+    return { ...scope, ...(allow.length ? { allow } : {}), ...(deny.length ? { deny } : {}) };
   }
 
   async execute(method: string, params: Record<string, unknown>, ctx: FileToolContext): Promise<unknown> {
