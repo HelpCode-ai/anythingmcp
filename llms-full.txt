@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 684 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 691 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -73,7 +73,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-684 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages.
+691 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages.
 
 | Category | Examples |
 |---|---|
@@ -1241,6 +1241,10 @@ description and (Enterprise) folder permissions.
 | WebDAV | Nextcloud and ownCloud (`https://host/remote.php/dav/files/USER/`, with an app password), Synology and QNAP WebDAV, any RFC 4918 server. |
 | S3 | AWS S3, DigitalOcean Spaces, MinIO, Hetzner, Wasabi. Folders are key prefixes. |
 | Network folder | Self-hosted only: a folder below `FILE_SOURCE_ROOTS` (an SMB/CIFS or NFS share or a NAS volume mounted on the host and bound read-only into the containers). |
+
+The marketplace also lists ready-made entries that open the wizard with the
+right settings: S3 bucket, Nextcloud, ownCloud, Synology NAS, QNAP NAS,
+Fritz!Box storage and Hetzner Storage Box.
 
 SMB is not reached directly from the Cloud: port 445 does not belong on the
 internet. Use SFTP or WebDAV on the NAS, or a self-hosted install.

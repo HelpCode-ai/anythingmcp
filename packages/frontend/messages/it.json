@@ -3070,7 +3070,8 @@
       "synology": "NAS Synology",
       "qnap": "NAS QNAP",
       "fritzbox": "Fritz!Box",
-      "hetzner": "Hetzner Storage Box"
+      "hetzner": "Hetzner Storage Box",
+      "owncloud": "ownCloud"
     },
     "ftpModes": {
       "ftps": "FTPS (esplicito, porta 21)",

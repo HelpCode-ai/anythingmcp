@@ -54,6 +54,7 @@ interface Preset {
 
 const PRESETS: Preset[] = [
   { id: 'nextcloud', protocol: 'webdav', url: 'https://cloud.example.com/remote.php/dav/files/USER/' },
+  { id: 'owncloud', protocol: 'webdav', url: 'https://owncloud.example.com/remote.php/dav/files/USER/' },
   { id: 'synology', protocol: 'sftp', port: 22 },
   { id: 'qnap', protocol: 'sftp', port: 22 },
   { id: 'fritzbox', protocol: 'ftps', port: 21 },
@@ -176,7 +177,12 @@ function Wizard() {
   const [capsError, setCapsError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>(() => (Number(params.get('step')) as Step) || 1);
   const [draftId, setDraftId] = useState<string | null>(params.get('id'));
-  const [form, setForm] = useState<Form>(() => ({ ...EMPTY, protocol: (params.get('protocol') as FileSearchProtocol) || 'sftp' }));
+  const [form, setForm] = useState<Form>(() => {
+    // A catalog entry for a product (Nextcloud, Synology…) opens with its preset.
+    const preset = PRESETS.find((p) => p.id === params.get('preset'));
+    if (preset) return { ...EMPTY, protocol: preset.protocol, port: preset.port ? String(preset.port) : '', url: preset.url ?? '' };
+    return { ...EMPTY, protocol: (params.get('protocol') as FileSearchProtocol) || 'sftp' };
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<FileSourceTestResult | null>(null);
