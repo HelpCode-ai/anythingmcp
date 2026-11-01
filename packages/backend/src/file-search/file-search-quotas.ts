@@ -186,14 +186,23 @@ function applyOverrides(base: FileSearchQuota, overrides: unknown): FileSearchQu
   return out;
 }
 
-/** The plan to suggest when a limit is reached (wizard and pause banner). */
+/**
+ * The plan to suggest when a limit is reached (wizard and pause banner): the
+ * first plan after the current one that really includes more connectors or
+ * files. A Cloud trial (Starter limits) is pointed at Team, a self-hosted
+ * evaluation (Team limits) at Enterprise.
+ */
 export function nextPlan(plan: string, cloud: boolean): { plan: string; quota: FileSearchQuota } | null {
   const order = ['trial', 'starter', 'team', 'enterprise'];
+  const current = quotaForPlan(plan, { cloud });
   const i = order.indexOf(plan === 'business' ? 'team' : plan);
-  const next = order[i + 1];
-  if (i < 0 || !next) return null;
-  const quota = quotaForPlan(next, { cloud });
-  return quota ? { plan: next, quota } : null;
+  if (i < 0 || !current) return null;
+  const more = (a: number | null, b: number | null) => (b === null ? a !== null : a !== null && b > a);
+  for (const next of order.slice(i + 1)) {
+    const quota = quotaForPlan(next, { cloud });
+    if (quota && (more(current.maxConnectors, quota.maxConnectors) || more(current.maxFiles, quota.maxFiles))) return { plan: next, quota };
+  }
+  return null;
 }
 
 /** Allowed sync intervals (minutes) for the wizard, given the plan minimum. */

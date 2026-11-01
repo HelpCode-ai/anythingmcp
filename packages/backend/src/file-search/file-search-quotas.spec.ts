@@ -25,6 +25,8 @@ describe('File Search quotas', () => {
 
   it('suggests the next plan and clamps the interval to the plan minimum', () => {
     expect(nextPlan('starter', true)?.plan).toBe('team');
+    expect(nextPlan('trial', true)?.plan).toBe('team');
+    expect(nextPlan('trial', false)?.plan).toBe('enterprise');
     expect(nextPlan('enterprise', true)).toBeNull();
     expect(clampInterval(60, quotaForPlan('team', { cloud: true })!)).toBe(1440);
     expect(clampInterval(15, quotaForPlan('enterprise', { cloud: true })!)).toBe(15);
