@@ -241,6 +241,26 @@ export const EMAIL_SAMPLES: EmailSample[] = [
       ),
   },
   {
+    // The same, for a workspace that never made a successful call.
+    id: 'blocked-calls-never-used',
+    render: (ctx, n) =>
+      trialBlockedCallsEmail(
+        {
+          name: n.name,
+          clientName: n.other || null,
+          appName: 'Etsy',
+          attempts: 3,
+          neverUsed: true,
+          percentOff: 30,
+          promoCode: 'START30',
+          trialEndedAt: SAMPLE_TRIAL_ENDED_AT,
+          cloudUrl: SAMPLE_CLOUD_URL,
+          marketingUrl: SAMPLE_MARKETING_URL,
+        },
+        unsub(ctx),
+      ),
+  },
+  {
     // A day after sign-up the sample workspace made its first successful call.
     id: 'card-trial-offer',
     render: (ctx, n) =>
@@ -290,6 +310,7 @@ export const MARKETING_SAMPLE_IDS = new Set([
   'winback-discount-final',
   'winback-help',
   'blocked-calls',
+  'blocked-calls-never-used',
   'card-trial-offer',
   'card-trial-offer-plans',
 ]);

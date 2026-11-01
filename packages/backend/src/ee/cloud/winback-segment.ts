@@ -9,8 +9,9 @@ import { getAdapter } from '../../adapters/catalog';
  * One function for every pass of the onboarding cron, so the segments cannot
  * drift between emails:
  *
- * - `unused`: never made a successful tool call. Gets the how-to, never an
- *   offer, and is never held out.
+ * - `unused`: never made a successful tool call. Its win-back is the how-to,
+ *   never an offer; only an AI that keeps calling after the trial ended
+ *   (the blocked-call email) earns it an offer.
  * - `business`: an active admin on a company address (not a consumer mailbox
  *   like gmail.com), or a business connector (BUSINESS_CONNECTORS).
  * - `telegram`: used, consumer addresses only, and every catalog connector is
@@ -96,13 +97,15 @@ export function winbackSegment(input: {
  * never moves a workspace, and independent of the first-month test's hash
  * (winbackTestArm). About 10% of business workspaces (byte < 26), which are
  * worth the most each, and 20% of consumer and Telegram ones (byte < 51),
- * which are many, so their effect shows sooner. `unused` is never held out:
- * it gets no offer anyway.
+ * which are many, so their effect shows sooner. `unused` workspaces too
+ * (byte < 51), for the one offer they can get, the blocked-call email; the
+ * how-to is no offer and is never held out (the cron does not ask).
  */
-export const HOLDOUT_BYTE_BELOW: Record<Exclude<WinbackSegment, 'unused'>, number> = {
+export const HOLDOUT_BYTE_BELOW: Record<WinbackSegment, number> = {
   business: 26,
   consumer: 51,
   telegram: 51,
+  unused: 51,
 };
 
 export function holdoutByte(organizationId: string): number {
@@ -110,7 +113,6 @@ export function holdoutByte(organizationId: string): number {
 }
 
 export function inWinbackHoldout(organizationId: string, segment: WinbackSegment): boolean {
-  if (segment === 'unused') return false;
   return holdoutByte(organizationId) < HOLDOUT_BYTE_BELOW[segment];
 }
 

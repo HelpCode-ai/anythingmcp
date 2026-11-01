@@ -59,8 +59,9 @@ describe('win-back holdout', () => {
     for (const s of ['business', 'consumer', 'telegram'] as const) expect(inWinbackHoldout('org-h0', s)).toBe(false);
   });
 
-  it('never holds out unused workspaces', () => {
-    expect(inWinbackHoldout('org-h2', 'unused')).toBe(false);
+  it('holds out unused workspaces in the 20% band too', () => {
+    expect(inWinbackHoldout('org-h22', 'unused')).toBe(true);
+    expect(inWinbackHoldout('org-h0', 'unused')).toBe(false);
   });
 
   it('holds about 10% and 20% over many ids', () => {

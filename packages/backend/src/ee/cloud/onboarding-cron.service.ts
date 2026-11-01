@@ -774,14 +774,15 @@ export class OnboardingCronService {
    * `minEvents` blocked-call events in the last `window`: its trial ended, it
    * never was a customer (the win-back's checks: any licence besides the free
    * trial, then the licence site's subscription history for every admin,
-   * postponed when the site cannot answer), it used the product (the
-   * never-used get the how-to only), it has an admin who did not opt out of
+   * postponed when the site cannot answer), it has an admin who did not opt out of
    * marketing, it is not in the control group, and no win-back email went out
    * in the last day. The email says which app the AI tried and how often.
    *
    * Once per workspace: `trial_email_blocked_calls` is set when it is sent,
-   * and whenever the workspace is ruled out for good (customer, never used,
-   * nobody to mail, control group). Sending also sets the first win-back's
+   * and whenever the workspace is ruled out for good (customer, nobody to
+   * mail, control group). A workspace that never made a successful
+   * call is included: an AI still calling after the trial is intent, and the
+   * email says so in its own words. Sending also sets the first win-back's
    * flag. A postponed or failed send sets nothing: the next run decides again
    * while the events are inside the window.
    */
@@ -848,11 +849,6 @@ export class OnboardingCronService {
         connectorConfigs: connectors.map((c) => c.config),
         successfulCalls,
       });
-      if (segment === 'unused') {
-        await this.flag(organizationId, BLOCKED_CALLS.flagKey);
-        out.skipped++;
-        continue;
-      }
       const recipients = admins.filter((a) => !a.user.emailMarketingOptOut).map((a) => a.user);
       if (recipients.length === 0) {
         await this.flag(organizationId, BLOCKED_CALLS.flagKey);
@@ -894,6 +890,7 @@ export class OnboardingCronService {
       for (const r of recipients) {
         const ok = await this.email.sendTrialBlockedCallsEmail(r.email, r.name || 'there', {
           ...attempts,
+          neverUsed: segment === 'unused',
           percentOff: firstStage.percentOff,
           promoCode,
           trialEndedAt,
@@ -956,7 +953,6 @@ export class OnboardingCronService {
    * `winback_holdout`; the stored decision holds even if the segment changes.
    */
   private async inHoldout(organizationId: string, segment: WinbackSegment): Promise<boolean> {
-    if (segment === 'unused') return false;
     const stored = await this.prisma.orgSettings.findUnique({
       where: { organizationId_key: { organizationId, key: WINBACK_HOLDOUT_KEY } },
       select: { value: true },

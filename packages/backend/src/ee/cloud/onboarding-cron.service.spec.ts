@@ -1147,6 +1147,7 @@ describe('OnboardingCronService — blocked-call email', () => {
       attempts: 3,
       appName: 'Etsy',
       clientName: 'Claude',
+      neverUsed: false,
       percentOff: 30,
       promoCode: 'START30',
       trialEndedAt: new Date(NOW - 72 * HOUR),
@@ -1222,11 +1223,20 @@ describe('OnboardingCronService — blocked-call email', () => {
     expect(some.email.sendTrialBlockedCallsEmail.mock.calls.map((c: any[]) => c[0])).toEqual(['bob@gmail.com']);
   });
 
-  it('sends nothing to a workspace that never made a successful call', async () => {
+  it('also mails a workspace that never made a successful call, in its own words', async () => {
     const { run, email, stored } = makeService({ calls: 0 });
-    await run();
+    const o = await run();
+    expect(email.sendTrialBlockedCallsEmail.mock.calls[0][2]).toMatchObject({ neverUsed: true, promoCode: 'START30' });
+    expect(o.blockedCallEmails).toBe(1);
+    expect(stored()).toMatchObject({ winback_holdout: 'unused:treatment', winback_offer: 'unused:START30:blocked_calls' });
+  });
+
+  it('holds out unused workspaces in the 20% band', async () => {
+    const { run, email, stored } = makeService({ calls: 0, organizationId: HELD_CONSUMER });
+    const o = await run();
     expect(email.sendTrialBlockedCallsEmail).not.toHaveBeenCalled();
-    expect(Object.keys(stored())).toEqual(['trial_email_blocked_calls']);
+    expect(o.blockedCallHoldout).toBe(1);
+    expect(stored().winback_holdout).toBe('unused:control');
   });
 
   it('holds out the control group: no email, once, decision stored', async () => {

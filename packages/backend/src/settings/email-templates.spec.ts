@@ -216,6 +216,16 @@ describe('blocked-call email', () => {
     expect(`${email.subject}\n${email.text}`).not.toContain('—');
   });
 
+  it('speaks to the person when the workspace never made a successful call', () => {
+    const email = EMAIL_SAMPLES.find((s) => s.id === 'blocked-calls-never-used')!.render(cloud, { name: 'Anna', other: 'Claude' });
+    expect(email.subject).toBe('You tried to use Etsy 3 times since yesterday');
+    for (const part of [email.html, email.text]) {
+      expect(part).toContain('before your first successful call');
+      expect(part).toContain('30% off your first 3 months');
+    }
+    expect(email.marketing).toBe(true);
+  });
+
   it('says "Your AI" without a client name, and caps a long one', () => {
     const none = EMAIL_SAMPLES.find((s) => s.id === 'blocked-calls')!.render(cloud, { name: 'Anna', other: '' });
     expect(none.subject).toBe('Your AI tried to use Etsy 6 times since yesterday');

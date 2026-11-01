@@ -626,6 +626,12 @@ export interface TrialBlockedCallsEmailInput {
   appName: string | null;
   /** How many blocked calls the email reports (at least 1). */
   attempts: number;
+  /**
+   * The workspace never made a successful call during its trial: the email
+   * speaks to the person who tried ("You tried to use…"), not about the AI's
+   * work.
+   */
+  neverUsed?: boolean;
   percentOff: number;
   promoCode: string;
   trialEndedAt: Date;
@@ -659,17 +665,23 @@ export function trialBlockedCallsEmail(input: TrialBlockedCallsEmailInput, ctx: 
     ),
     input.emailToken,
   );
-  const headline = `${who} tried to use ${app} ${times} since yesterday`;
-  const replyLine = 'Not the right time, or something was missing? Reply and tell us; we read every answer.';
+  const headline = input.neverUsed
+    ? `You tried to use ${app} ${times} since yesterday`
+    : `${who} tried to use ${app} ${times} since yesterday`;
+  const situation = input.neverUsed
+    ? `your AnythingMCP trial ended on ${endedOn} before your first successful call, so those calls were refused. ` +
+      `Your connectors and settings are kept: reactivate and try again from the chat, where you left off.`
+    : `your AnythingMCP trial ended on ${endedOn}, so those calls were refused. ` +
+      `Your connectors and settings are kept: reactivate and ${whoInline} can use ${app} again right away.`;
+  const replyLine = input.neverUsed
+    ? 'Did something not work the way you expected? Reply and tell us; a person reads every answer and will help you set it up.'
+    : 'Not the right time, or something was missing? Reply and tell us; we read every answer.';
   return build({
     subject: headline,
     preheader: `Your trial ended, so those calls were refused. Your connectors are still there.`,
     bodyHtml:
       h1(`${esc(headline)}.`, 'Your workspace is still there.') +
-      p(
-        `${esc(hi)} your AnythingMCP trial ended on ${endedOn}, so those calls were refused. ` +
-          `Your connectors and settings are kept: reactivate and ${esc(whoInline)} can use ${esc(app)} again right away.`,
-      ) +
+      p(`${esc(hi)} ${esc(situation)}`) +
       p(
         `If you'd like to continue, here is <strong style="font-weight:600;">${percent}% off your first 3 months</strong> on any Cloud plan. ` +
           'The code is applied when you use the button, or enter it at checkout:',
@@ -678,8 +690,7 @@ export function trialBlockedCallsEmail(input: TrialBlockedCallsEmailInput, ctx: 
       button(pricingUrl, `Reactivate with ${percent}% off`) +
       small(replyLine),
     bodyText:
-      `${hi}\n\n${headline}. Your AnythingMCP trial ended on ${endedOn}, so those calls were refused. ` +
-      `Your connectors and settings are kept: reactivate and ${whoInline} can use ${app} again right away.\n\n` +
+      `${hi}\n\n${headline}. ${situation.charAt(0).toUpperCase()}${situation.slice(1)}\n\n` +
       `Here is ${percent}% off your first 3 months on any Cloud plan.\n\n` +
       `Code: ${input.promoCode}\nReactivate: ${pricingUrl}\n\n` +
       replyLine,
