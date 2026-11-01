@@ -109,4 +109,58 @@ describe('source drivers and the SSRF guard', () => {
       data.close();
     }
   });
+
+  it('lists a folder after CWD, for servers that ignore the path in LIST', async () => {
+    process.env.SSRF_ALLOWED_HOSTS = 'localhost';
+    let cwd = '/';
+    let dataSock: net.Socket | null = null;
+    const data = net.createServer((sock) => {
+      sock.on('error', () => undefined);
+      dataSock = sock;
+    });
+    await new Promise<void>((r) => data.listen(0, '127.0.0.1', r));
+    const port = (data.address() as net.AddressInfo).port;
+    const control = net.createServer((c) => {
+      c.on('error', () => undefined);
+      c.write('220 test\r\n');
+      c.on('data', (b) => {
+        for (const line of b.toString().split('\r\n').filter(Boolean)) {
+          const [cmd, ...rest] = line.split(' ');
+          const arg = rest.join(' ');
+          const up = cmd.toUpperCase();
+          if (up === 'USER') c.write('331 pw\r\n');
+          else if (up === 'PASS') c.write('230 ok\r\n');
+          else if (up === 'CWD') {
+            cwd = arg;
+            c.write('250 ok\r\n');
+          } else if (up === 'EPSV') c.write('500 no\r\n');
+          else if (up === 'PASV') c.write(`227 Entering Passive Mode (127,0,0,1,${port >> 8},${port & 255})\r\n`);
+          else if (up === 'LIST' || up === 'MLSD') {
+            // Like a Fritz!Box: the path argument is ignored, the current folder is listed.
+            const listing = cwd === '/docs' ? '-rw-r--r-- 1 u g 5 Jan 01 2026 inner.txt\r\n' : 'drwxr-xr-x 1 u g 0 Jan 01 2026 docs\r\n';
+            c.write('150 here\r\n');
+            setTimeout(() => {
+              dataSock?.end(listing);
+              setTimeout(() => c.write('226 done\r\n'), 50);
+            }, 50);
+          } else if (up === 'QUIT') c.end('221 bye\r\n');
+          else c.write('200 ok\r\n');
+        }
+      });
+    });
+    await new Promise<void>((r) => control.listen(0, '127.0.0.1', r));
+    try {
+      const { session } = await new FtpDriver().connect(
+        { ...base, protocol: 'ftp', host: 'localhost', port: (control.address() as net.AddressInfo).port, username: 'u', rootPath: '/docs', allowPlainFtp: true },
+        { password: 'x' } as any,
+        { cloud: true, test: true, timeoutMs: 3000 },
+      );
+      expect((await session.list('')).map((e) => e.name)).toEqual(['inner.txt']);
+      await session.close();
+    } finally {
+      control.close();
+      data.close();
+    }
+  });
 });
+

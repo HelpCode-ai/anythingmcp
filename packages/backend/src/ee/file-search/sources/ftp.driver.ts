@@ -137,7 +137,11 @@ export class FtpDriver implements FileSourceDriver {
           const rel = safeRel(relDir);
           let items;
           try {
-            items = await client.list(remotePath(root, rel));
+            // CWD, then a bare LIST. Some servers (Fritz!Box, several NAS) ignore
+            // the path in `LIST -a <path>` and list the current folder instead,
+            // which made every folder look like the root.
+            await client.cd(remotePath(root, rel));
+            items = await client.list();
           } catch (err) {
             throw classifyNetworkError(err);
           }
