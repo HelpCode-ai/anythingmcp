@@ -41,7 +41,7 @@ export async function describeWithAi(f: ScanFacts): Promise<Description> {
     const instructions = [
       `Contents: ${str(j.contents, 1500)}`,
       '',
-      `How to search: ${str(j.howToSearch, 800)} Tools: ${f.toolPrefix}_find (names), ${f.toolPrefix}_grep (exact codes and numbers), ${f.toolPrefix}_search (topics), ${f.toolPrefix}_read (pages) before answering; name the file and its date.`,
+      `How to search: ${str(j.howToSearch, 800)} Tools: ${f.toolPrefix}_find (names), ${f.toolPrefix}_grep (exact codes and numbers), ${f.toolPrefix}_search (topics), ${f.toolPrefix}_read (pages) before answering, ${f.toolPrefix}_view_page (a PDF page or image as a picture, for drawings and title blocks); name the file and its date.`,
       str(j.caveats, 600) ? `Caveats: ${str(j.caveats, 600)}` : '',
     ]
       .filter((l) => l !== undefined)

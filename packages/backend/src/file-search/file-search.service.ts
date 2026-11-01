@@ -546,7 +546,12 @@ export class FileSearchService {
     return { syncIntervalMinutes: interval };
   }
 
-  /** Saves the description (instructions + one-line summary) and refreshes the tool descriptions. */
+  /**
+   * Saves the description (instructions + one-line summary) and refreshes the
+   * tool descriptions. Built-in tools added in a later release (view_page) are
+   * created here too, so saving the description brings an older connector up
+   * to date without activating it again.
+   */
   async setDescription(actor: Actor, id: string, body: { instructions?: string; summary?: string }) {
     this.assertAdmin(actor);
     const c = await this.loadConnector(actor, id);
@@ -558,7 +563,12 @@ export class FileSearchService {
     );
     const config = (c.config as any).fileSearch as FileSearchConfig;
     for (const t of buildFileSearchBuiltinTools({ prefix: config.toolPrefix, displayName: c.name, summary })) {
-      await this.prisma.mcpTool.updateMany({ where: { connectorId: id, name: t.name }, data: { description: t.description, ...(t.endpointMapping.method === 'static' ? { endpointMapping: t.endpointMapping as any } : {}) } });
+      const updated = await this.prisma.mcpTool.updateMany({ where: { connectorId: id, name: t.name }, data: { description: t.description, ...(t.endpointMapping.method === 'static' ? { endpointMapping: t.endpointMapping as any } : {}) } });
+      if (updated.count === 0) {
+        await this.prisma.mcpTool.create({
+          data: { connectorId: id, name: t.name, description: t.description, parameters: t.parameters as any, endpointMapping: t.endpointMapping as any, isEnabled: t.enabled !== false },
+        });
+      }
     }
     if (c.isActive) await this.mcpServer.reloadConnectorTools(id);
     return { ok: true };
