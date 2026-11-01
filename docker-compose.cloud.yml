@@ -207,6 +207,18 @@ x-backend: &backend
     # deploy/cloud/certs/extra-ca.pem, installed by deploy-cloud.yml; if it
     # is missing Node logs a warning and starts with its default store.
     - NODE_EXTRA_CA_CERTS=/app/extra-ca/extra-ca.pem
+    # File Search (#1379): inert until FILES_WORKER_URL is set and the
+    # `files` profile runs files-worker and file-extractor (below). File
+    # Share keeps its files in an S3 bucket on the Cloud.
+    - FILES_WORKER_URL=${FILES_WORKER_URL:-}
+    - FILES_WORKER_TOKEN=${FILES_WORKER_TOKEN:-}
+    - FILES_STORAGE=${FILES_STORAGE:-s3}
+    - FILES_S3_ENDPOINT=${FILES_S3_ENDPOINT:-}
+    - FILES_S3_REGION=${FILES_S3_REGION:-}
+    - FILES_S3_BUCKET=${FILES_S3_BUCKET:-}
+    - FILES_S3_ACCESS_KEY_ID=${FILES_S3_ACCESS_KEY_ID:-}
+    - FILES_S3_SECRET_ACCESS_KEY=${FILES_S3_SECRET_ACCESS_KEY:-}
+    - FILES_DOWNLOAD_BASE_URL=${FILES_DOWNLOAD_BASE_URL:-}
   volumes:
     # One heap snapshot per process, written by the heap guard when the heap
     # crosses HEAP_SNAPSHOT_PERCENT. A volume so it outlives the container
@@ -338,6 +350,72 @@ services:
     container_name: amcp-cloud-frontend-green
     profiles: [green]
 
+  # File Search (#1379, ee/). Not part of blue/green: one worker, its own
+  # process and limits, so a backfill never competes with MCP traffic. Off
+  # unless the `files` profile is enabled.
+  files-worker:
+    image: helpcodeai/anythingmcp:latest
+    profiles: [files]
+    container_name: amcp-cloud-files-worker
+    command: ["./start.sh", "files-worker"]
+    environment:
+      - NODE_ENV=production
+      - DEPLOYMENT_MODE=cloud
+      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - FILES_WORKER_TOKEN=${FILES_WORKER_TOKEN:-}
+      - FILES_WORKER_HOST=0.0.0.0
+      - FILES_WORKER_PORT=8891
+      - FILES_WORKER_CONCURRENCY=${FILES_WORKER_CONCURRENCY:-2}
+      - FILES_PG_ACTIVE_MAX=${FILES_PG_ACTIVE_MAX:-30}
+      - FILE_EXTRACTOR_URL=http://file-extractor:8890
+      - FILE_EXTRACTOR_TOKEN=${FILE_EXTRACTOR_TOKEN:-}
+      - FILES_STORAGE=${FILES_STORAGE:-s3}
+      - FILES_S3_ENDPOINT=${FILES_S3_ENDPOINT:-}
+      - FILES_S3_REGION=${FILES_S3_REGION:-}
+      - FILES_S3_BUCKET=${FILES_S3_BUCKET:-}
+      - FILES_S3_ACCESS_KEY_ID=${FILES_S3_ACCESS_KEY_ID:-}
+      - FILES_S3_SECRET_ACCESS_KEY=${FILES_S3_SECRET_ACCESS_KEY:-}
+      - KG_LLM_ENABLED=${KG_LLM_ENABLED:-}
+      - KG_LLM_PROVIDER=${KG_LLM_PROVIDER:-}
+      - KG_LLM_MODEL=${KG_LLM_MODEL:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    networks: [default, files_internal]
+    mem_limit: ${FILES_WORKER_MEM_LIMIT:-1g}
+    cpus: ${FILES_WORKER_CPUS:-1.0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  file-extractor:
+    image: ${FILE_EXTRACTOR_IMAGE:-anythingmcp-file-extractor:1}
+    build:
+      context: ./deploy/ee/file-extractor
+    profiles: [files]
+    container_name: amcp-cloud-file-extractor
+    environment:
+      - EXTRACTOR_TOKEN=${FILE_EXTRACTOR_TOKEN:-}
+    networks: [files_internal]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: ${FILE_EXTRACTOR_MEM_LIMIT:-2g}
+    cpus: ${FILE_EXTRACTOR_CPUS:-1.0}
+    pids_limit: 128
+    restart: unless-stopped
+
   # PostgreSQL Database
   postgres:
     image: postgres:17-alpine
@@ -434,3 +512,8 @@ volumes:
   caddy_data:
   caddy_config:
   diagnostics:
+
+networks:
+  # The text extractor has no route out (File Search).
+  files_internal:
+    internal: true
