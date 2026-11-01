@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from . import API_VERSION
 from .config import HARD_MAX_CHARS, extract_concurrency, load_settings
 from .errors import empty_meta, error_result
-from .formats import SUPPORTED_EXTENSIONS
+from .formats import SUPPORTED_EXTENSIONS, unsupported_message
 from .ocr import ocr_available
 from .runner import run_job
 
@@ -258,8 +258,7 @@ async def extract(request: Request):
         ext = _ext_of(filename)
         meta = empty_meta(ext or None)
         if ext not in SUPPORTED_EXTENSIONS:
-            message = f"Files of type .{ext} are not supported." if ext else "Files without an extension are not supported."
-            result = error_result("unsupported", message, meta)
+            result = error_result("unsupported", unsupported_message(ext), meta)
         elif size == 0:
             result = error_result("empty", "The file is empty.", meta)
         else:

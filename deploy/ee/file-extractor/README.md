@@ -49,8 +49,8 @@ On failure `ok` is `false`, `pages` is `[]` and
 
 | kind          | meaning |
 |---------------|---------|
-| `unsupported` | extension not in `/formats` (or no extension) |
-| `encrypted`   | password-protected PDF, OOXML (OLE-wrapped), ODF, XLS or DOC |
+| `unsupported` | extension not in `/formats` (or no extension), or a supported extension holding content that cannot be read: binary data in a text/code extension (e.g. a `.ts` video), binary DXF, an iWork file without PDF preview |
+| `encrypted`   | password-protected PDF, OOXML (OLE-wrapped), ODF, XLS or DOC; DRM-protected EPUB |
 | `corrupt`     | the parser could not read it, or it looks like a decompression bomb |
 | `timeout`     | extraction took longer than the deadline; the child was killed |
 | `too_large`   | upload above `MAX_INPUT_BYTES`, or the document needed more memory than allowed |
@@ -61,15 +61,23 @@ messages never contain document content.
 
 `page` semantics:
 
-- PDF: real 1-based page numbers (pages without text are omitted, numbers stay real).
-- PPTX, ODP: slide numbers.
-- Spreadsheets (XLSX, XLSM, XLS, ODS, CSV, TSV): 1-based segment numbers
-  across the workbook, at most 200 rows (or 32,000 characters) per segment;
-  a segment never spans two sheets. `meta.sheetCount` is set.
-- Everything else (DOCX, ODT, DOC, PPT, RTF, TXT, MD, JSON, XML, LOG, HTML, MSG, EML):
-  `page: null` segments of at most 4,000 characters, split on paragraph
-  boundaries, then line boundaries, and only as a last resort inside a line.
-  The backend stores each item as one search chunk.
+- PDF, XPS/OXPS and iWork previews: real 1-based page numbers (pages without
+  text are omitted, numbers stay real).
+- PowerPoint (PPTX, PPTM, PPSX, PPSM, POTX, POTM), ODP, OTP: slide numbers.
+- EPUB: the chapter's position in the spine (reading order); spine items
+  that are not text (images) keep their number but produce no item.
+- MBOX: message numbers, one item per message.
+- Spreadsheets (XLSX, XLSM, XLTX, XLTM, XLSB, XLS, ODS, OTS, CSV, TSV): 1-based
+  segment numbers across the workbook, at most 200 rows (or 32,000
+  characters) per segment; a segment never spans two sheets.
+  `meta.sheetCount` is set.
+- Everything else (Word and ODT variants, DOC, PPT, RTF, text, code, HTML,
+  MSG, EML, SVG, DXF): `page: null` segments of at most 4,000 characters,
+  split on paragraph boundaries, then line boundaries, and only as a last
+  resort inside a line.
+
+Numbered items have no size limit of their own (an EPUB chapter or a long
+mail can be large); the backend splits every item into search chunks.
 
 ### `GET /health`
 
@@ -78,8 +86,13 @@ true only in images built with `OCR=1`.
 
 ### `GET /formats`
 
-JSON array of supported extensions, with leading dot:
-`[".pdf", ".xlsx", ".xlsm", ".xls", ".ods", ".csv", ".tsv", ".docx", ".odt", ".odp", ".pptx", ".doc", ".ppt", ".rtf", ".txt", ".md", ".json", ".xml", ".log", ".html", ".htm", ".msg", ".eml"]`.
+JSON array of supported extensions, with leading dot: the formats below, in
+the order `.pdf`, `.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.xlsb`, `.xls`, `.ods`,
+`.ots`, `.csv`, `.tsv`, `.docx`, `.docm`, `.dotx`, `.dotm`, `.odt`, `.ott`,
+`.odp`, `.otp`, `.pptx`, `.pptm`, `.ppsx`, `.ppsm`, `.potx`, `.potm`, `.doc`,
+`.ppt`, `.rtf`, `.txt`, `.md`, `.json`, `.xml`, `.log`, `.html`, `.htm`,
+`.msg`, `.eml`, `.mbox`, `.svg`, `.dxf`, `.epub`, `.xps`, `.oxps`, `.pages`,
+`.numbers`, `.key`, then the configuration and source-code extensions.
 No token needed.
 
 ## Formats
@@ -87,20 +100,29 @@ No token needed.
 | extension | how |
 |-----------|-----|
 | `.pdf` | `pypdfium2`, text layer page by page; pages with < 50 characters count as `emptyPages` |
-| `.xlsx`, `.xlsm` | `openpyxl` (read-only, cached values), streamed sparsely row by row |
+| `.xlsx`, `.xlsm`, `.xltx`, `.xltm` | `openpyxl` (read-only, cached values), streamed sparsely row by row |
+| `.xlsb` | `pyxlsb` (pure Python), streamed sparsely row by row; cell styles are not read, so dates appear as Excel serial numbers |
 | `.xls` | `xlrd`; fallback `xls2csv` (catdoc). An `.xls` that is really HTML or CSV (web exports) is read as such |
-| `.ods` | own streaming reader (`defusedxml` iterparse); repeated empty rows/columns are counted, never expanded |
+| `.ods`, `.ots` | own streaming reader (`defusedxml` iterparse); repeated empty rows/columns are counted, never expanded |
 | `.csv`, `.tsv` | stdlib `csv`, delimiter sniffing, encoding detection (`charset-normalizer`); the "sheet" name is the file name |
-| `.docx` | `python-docx`: paragraphs and tables in document order, table rows as `cell · cell · cell` |
-| `.odt`, `.odp` | own streaming reader (`defusedxml` iterparse): paragraphs, tables as `cell · cell`, ODP one item per slide incl. notes |
-| `.pptx` | `python-pptx`: one item per slide (title first, text frames, group shapes, tables, `Notes: ...`) |
+| `.docx`, `.docm`, `.dotx`, `.dotm` | `python-docx`: paragraphs and tables in document order, table rows as `cell · cell · cell` |
+| `.odt`, `.ott`, `.odp`, `.otp` | own streaming reader (`defusedxml` iterparse): paragraphs, tables as `cell · cell`, ODP/OTP one item per slide incl. notes |
+| `.pptx`, `.pptm`, `.ppsx`, `.ppsm`, `.potx`, `.potm` | `python-pptx`: one item per slide (title first, text frames, group shapes, tables, `Notes: ...`) |
 | `.doc` | `antiword`, fallback `catdoc`. A `.doc` that is really RTF or DOCX is read as such |
 | `.ppt` | `catppt`; returned as `page: null` segments, because catppt's text blocks are not reliable slides (masters and notes are emitted the same way). Repeated blocks are dropped. catppt misses text in some files saved by newer PowerPoint versions |
 | `.rtf` | `striprtf` with the code page from `\ansicpg` |
 | `.txt`, `.md`, `.json`, `.xml`, `.log` | decoded with `charset-normalizer`, never parsed |
+| configuration and data: `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, `.conf`, `.properties`, `.sql`, `.tex`, `.bib`, `.srt`, `.vtt`, `.ics`, `.vcf`, `.kml`, `.gpx` | decoded like `.txt`, never parsed or run; a file with binary content (NUL bytes, not UTF-16) is `unsupported` |
+| source code: `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.jsx`, `.java`, `.kt`, `.kts`, `.c`, `.h`, `.cpp`, `.hpp`, `.cc`, `.cs`, `.go`, `.rb`, `.php`, `.sh`, `.bash`, `.ps1`, `.bat`, `.cmd`, `.swift`, `.rs`, `.r`, `.scala`, `.vb`, `.vbs`, `.pl`, `.lua`, `.css`, `.scss`, `.less`, `.sass`, `.gradle`, `.groovy`, `.dart`, `.m`, `.asm` | same as configuration files (a `.ts` video is `unsupported`) |
 | `.html`, `.htm` | stdlib `html.parser`, script/style dropped, `<title>` into `meta.title` |
 | `.msg` | `extract-msg`; header block, body (plain, else HTML), attachments |
 | `.eml` | stdlib `email`; same layout as `.msg` |
+| `.mbox` | stdlib `email`, streamed: one item per message with the `.msg` header block and the text body (attachments listed, not read); at most 20,000 messages, 16 MB parsed and 100,000 body characters per message |
+| `.svg` | `defusedxml` iterparse: only `<text>`/`<tspan>`, `<title>`, `<desc>` (and Inkscape flowed text); the root `<title>` into `meta.title` |
+| `.dxf` | own streaming reader for ASCII DXF: `TEXT`, `MTEXT` (formatting codes such as `\P`, `\f...;`, `\H...;` stripped, `\S1/2;` as `1/2`), `ATTRIB`/`ATTDEF` as `TAG: value`, dimension text overrides and multileader text, from model space, paper space and block definitions; `%%d`/`%%p`/`%%c` and `\U+XXXX` decoded, code page from `$DWGCODEPAGE`. Binary DXF is `unsupported`; `.dwg` is not supported (no free reader) and says so |
+| `.epub` | spine (reading order) from the OPF via `META-INF/container.xml` (`defusedxml`), each XHTML chapter through the HTML extraction; title and author from the OPF; DRM (chapters listed in `META-INF/encryption.xml`) is `encrypted` |
+| `.xps`, `.oxps` | `Glyphs` `UnicodeString` text, one item per `FixedPage` in document order (root relationship → FixedDocumentSequence → FixedDocuments → pages), runs on one baseline joined into a line; `defusedxml`, DTDs refused |
+| `.pages`, `.numbers`, `.key` | the embedded PDF preview (`QuickLook/Preview.pdf` or `preview.pdf`) read like a PDF; files saved without a preview (the iWork format itself has no free reader) are `unsupported` |
 
 Spreadsheet rows are rendered with their header, so a search for an article
 number returns the whole row:
@@ -132,7 +154,7 @@ Attachments: a.pdf, b.xlsx, c.exe
 ```
 
 Attachments go through the same pipeline one level deep (supported types
-only, nested `.msg`/`.eml` skipped), with all attachment text capped at
+only, nested `.msg`/`.eml`/`.mbox` skipped), with all attachment text capped at
 200,000 characters. Signed, encrypted or broken messages return what could
 be read.
 
@@ -177,16 +199,23 @@ characters); when the cap stops collection, `truncated` is `true`.
   reading). Form fields other than the file are capped at 64 KB.
 - **Bounded work.** At most `EXTRACT_CONCURRENCY` extractions run at once;
   more requests wait up to `QUEUE_TIMEOUT_SECONDS`, then get 503.
-- **Decompression bombs.** Before a ZIP-based format (xlsx, xlsm, docx, pptx,
-  odt, ods, odp) is opened, its directory is checked: at most 10,000 entries
+- **Decompression bombs.** Before a ZIP-based format (every OOXML variant,
+  xlsb, every ODF document and template, epub, xps, oxps, pages, numbers,
+  key) is opened, its directory is checked: at most 10,000 entries
   (read from the end-of-central-directory record before the directory is
   parsed), at most 500 MB declared uncompressed in total, compression ratio
   at most 200 (for the archive and every entry above 1 MB). Otherwise the
   result is `corrupt`, "looks like a decompression bomb".
-- **XML.** `openpyxl` uses `defusedxml` (installed); ODF is parsed with
-  `defusedxml` (no entity expansion, no external resources); `python-docx`
-  and `python-pptx` parse with entity resolution off. `.xml` and `.json`
-  uploads are decoded as text, never parsed.
+- **XML.** `openpyxl` uses `defusedxml` (installed); ODF, EPUB package files
+  and XPS pages are parsed with `defusedxml` (no entity expansion, no
+  external resources; XPS refuses DTDs); `python-docx` and `python-pptx`
+  parse with entity resolution off; `pyxlsb`'s relationship parts go
+  through `defusedxml`. SVG is parsed with `defusedxml` refusing external
+  entities (never fetched or read) but allowing internal ones, because
+  Adobe Illustrator declares its namespaces that way; expat's own
+  amplification limit stops "billion laughs". EPUB chapters go through
+  `html.parser`, which never resolves entities. `.xml`, `.json`, `.kml`,
+  `.gpx` and the other text formats are decoded as text, never parsed.
 - **Files.** The upload is stored as `input.<ext>` with the allow-listed
   extension only; names from the request or from attachments never become
   paths. Each request gets its own directory under `/tmp`, deleted when the
@@ -244,8 +273,11 @@ OCR=1 ./test.sh                                  # also build and test the OCR v
 ```
 
 `test.sh` needs `uv` and Docker. Fixtures are generated in `tests/samples.py`
-(PDF incl. an encrypted one, XLSX, XLS, ODS/ODT/ODP, DOCX, PPTX, CSV/TSV,
-HTML, RTF, text, EML incl. signed, ZIP bombs, OLE-encrypted OOXML). `.msg`,
+(PDF incl. an encrypted one, XLSX, XLS, ODS/ODT/ODP and their templates,
+DOCX, PPTX and their macro/template/show variants, a hand-built XLSB,
+CSV/TSV, HTML, RTF, text and code, EML incl. signed, MBOX, SVG incl. XXE
+and entity-bomb attempts, ASCII and binary DXF, EPUB incl. DRM and XXE,
+XPS/OXPS, iWork with and without preview, ZIP bombs, OLE-encrypted OOXML). `.msg`,
 `.doc` and `.ppt` cannot be generated with free tools; their tests run when
 `EXTRACTOR_SAMPLES_DIR` points to a folder with such files and are skipped
 otherwise.
