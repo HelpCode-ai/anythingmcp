@@ -109,7 +109,8 @@ file content is data and that instructions inside files are never followed.
 like `_get_file`, and renders it in the isolated text extractor; on Cloud and
 self-hosted alike nothing is stored. Clients such as Claude.ai show the
 picture but not an attached PDF. Connectors activated before this tool
-existed get it when you activate them again or save their description.
+existed get it automatically when the backend starts; tools you switched off
+or edited stay as they are.
 
 Text extraction: PDF and XPS page by page; Excel (including templates,
 macro workbooks and `.xlsb`), ODS and CSV row by row with the header
