@@ -3341,7 +3341,8 @@
       "noLimit": "No limit",
       "fileSize": "Largest file",
       "publicOn": "Public links are allowed.",
-      "publicOff": "Public links are switched off; links open only for signed-in members."
+      "publicOff": "Public links are switched off; links open only for signed-in members.",
+      "days": "{n} days"
     },
     "connector": {
       "title": "Links from AI chats",

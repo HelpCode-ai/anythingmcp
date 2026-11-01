@@ -3341,7 +3341,8 @@
       "noLimit": "Nessun limite",
       "fileSize": "File più grande",
       "publicOn": "I link pubblici sono consentiti.",
-      "publicOff": "I link pubblici sono disattivati: i link si aprono solo per i membri che hanno effettuato l'accesso."
+      "publicOff": "I link pubblici sono disattivati: i link si aprono solo per i membri che hanno effettuato l'accesso.",
+      "days": "{n} giorni"
     },
     "connector": {
       "title": "Link dalle chat AI",

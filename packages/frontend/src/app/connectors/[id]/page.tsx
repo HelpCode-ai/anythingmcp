@@ -2241,6 +2241,9 @@ export default function ConnectorDetailPage() {
                           >
                             {testingToolId === tool.id ? tt('card.close') : tt('card.test')}
                           </button>
+                          {/* File Search tools are built in: their definition comes from the
+                              connector, so they can be switched off but not edited or deleted. */}
+                          {connector?.type !== 'FILE_SEARCH' && (
                           <button
                             onClick={() => {
                               setEditingToolId(tool.id);
@@ -2250,6 +2253,7 @@ export default function ConnectorDetailPage() {
                           >
                             {tt('card.edit')}
                           </button>
+                          )}
                           <button
                             onClick={() =>
                               setHintsToolId(hintsToolId === tool.id ? null : tool.id)
@@ -2265,7 +2269,7 @@ export default function ConnectorDetailPage() {
                           >
                             {tool.isEnabled ? tt('card.disable') : tt('card.enable')}
                           </button>
-                          {proxyAvailable && (
+                          {proxyAvailable && connector?.type !== 'FILE_SEARCH' && (
                             <label
                               className="flex items-center gap-1 rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs cursor-pointer transition-colors hover:border-[var(--border-strong)]"
                               title={tt('card.proxyTitle')}
@@ -2279,12 +2283,14 @@ export default function ConnectorDetailPage() {
                               {tt('card.proxy')}
                             </label>
                           )}
+                          {connector?.type !== 'FILE_SEARCH' && (
                           <button
                             onClick={() => handleDeleteTool(tool.id, tool.name)}
                             className="inline-flex items-center justify-center rounded-[7px] border border-[var(--danger)] bg-transparent text-[var(--danger)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--t-danger-bg)]"
                           >
                             {tt('card.delete')}
                           </button>
+                          )}
                         </div>
                       </div>
 
