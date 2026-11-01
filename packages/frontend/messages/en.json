@@ -1797,6 +1797,10 @@
       "admin": {
         "label": "Administration",
         "description": "SMTP, alerts, footer links"
+      },
+      "fileShare": {
+        "label": "File Share",
+        "description": "Temporary download links"
       }
     }
   },
@@ -2984,5 +2988,437 @@
     "cancel": "Cancel",
     "edit": "Edit",
     "delete": "Delete"
+  },
+  "fileSearch": {
+    "title": "File Search",
+    "subtitle": "Let AI search inside the documents of a folder: PDF, Excel, Word, PowerPoint, Outlook",
+    "back": "New connector",
+    "loading": "Loading…",
+    "cancel": "Cancel",
+    "backStep": "Back",
+    "upgrade": "Upgrade",
+    "adminOnly": "Only workspace administrators can set up File Search connectors.",
+    "defaultName": "Documents",
+    "worker": {
+      "down": "File Search is not running on this server.",
+      "downHint": "The files worker or the text extractor is not reachable. An administrator starts them with the Compose profile \"files\" (see the File Search docs)."
+    },
+    "steps": {
+      "label": "Setup steps",
+      "source": "Source",
+      "test": "Test",
+      "scan": "Scan",
+      "describe": "Describe",
+      "activate": "Activate"
+    },
+    "source": {
+      "protocol": "Where are the files?",
+      "cloudNote": "AnythingMCP Cloud reaches servers on the internet. For a share in your office network use SFTP or WebDAV on the NAS, or run AnythingMCP self-hosted next to it.",
+      "presets": "Shortcuts",
+      "name": "Name",
+      "namePlaceholder": "Supplier price lists",
+      "nameHint": "Shown to the AI and in tool names, so name the content, not the server.",
+      "ftpMode": "Encryption",
+      "host": "Server",
+      "port": "Port",
+      "webdavUrl": "WebDAV address",
+      "s3Endpoint": "S3 endpoint",
+      "webdavHint": "Nextcloud: Files → Settings → WebDAV shows the address. Synology: install WebDAV Server and use HTTPS (port 5006).",
+      "bucket": "Bucket",
+      "region": "Region",
+      "accessKey": "Access key",
+      "secretKey": "Secret key",
+      "username": "User name",
+      "authMode": "Sign in with",
+      "privateKey": "Private key",
+      "passphrase": "Key passphrase (if any)",
+      "password": "Password",
+      "passwordKeep": "Leave empty to keep the saved password",
+      "appPasswordHint": "Nextcloud and ownCloud: create an app password under Security → Devices & sessions.",
+      "localFolder": "Folder",
+      "folder": "Folder to index",
+      "localRoots": "Allowed folders: {roots}",
+      "noLocalRoots": "No folder is allowed yet. An administrator sets FILE_SOURCE_ROOTS to the mounted folders AnythingMCP may read.",
+      "folderHint": "Everything below this folder is included. You choose subfolders after the scan.",
+      "plainFtpWarning": "Plain FTP sends the password unencrypted over the internet. I understand and accept this (better: use FTPS or SFTP).",
+      "next": "Test connection"
+    },
+    "protocols": {
+      "sftp": {
+        "title": "SFTP",
+        "description": "SSH file transfer. Most NAS and Linux servers, Hetzner Storage Box."
+      },
+      "ftp": {
+        "title": "FTP / FTPS",
+        "description": "FTP with TLS (explicit or implicit), e.g. Fritz!Box, web hosting."
+      },
+      "webdav": {
+        "title": "WebDAV / Nextcloud",
+        "description": "Nextcloud, ownCloud, Synology and QNAP WebDAV."
+      },
+      "local": {
+        "title": "Network folder",
+        "description": "A share or volume mounted into this self-hosted install (SMB, NFS)."
+      },
+      "s3": {
+        "title": "S3 bucket",
+        "description": "AWS S3, DigitalOcean Spaces, MinIO, Hetzner, Wasabi."
+      }
+    },
+    "presets": {
+      "nextcloud": "Nextcloud",
+      "synology": "Synology NAS",
+      "qnap": "QNAP NAS",
+      "fritzbox": "Fritz!Box",
+      "hetzner": "Hetzner Storage Box",
+      "owncloud": "ownCloud"
+    },
+    "ftpModes": {
+      "ftps": "FTPS (explicit, port 21)",
+      "ftps-implicit": "FTPS (implicit, port 990)",
+      "ftp": "Plain FTP (unencrypted)"
+    },
+    "authModes": {
+      "password": "Password",
+      "key": "SSH key"
+    },
+    "test": {
+      "checklist": "Connection test",
+      "steps": {
+        "resolve": "Server address",
+        "connect": "Server reachable",
+        "handshake": "Encrypted connection",
+        "fingerprint": "Server identity",
+        "login": "Login",
+        "folder": "Folder readable"
+      },
+      "intro": "AnythingMCP connects to the server, signs in and lists the folder. Nothing is saved until the test passes.",
+      "running": "Testing the connection…",
+      "ok": "Connected. {n} entries in the folder.",
+      "again": "Test again",
+      "next": "Save and continue"
+    },
+    "fingerprint": {
+      "title": "Confirm the server's identity",
+      "ssh": "This is the fingerprint of the server's SSH host key. Compare it with the one your administrator or the NAS shows. Once confirmed, AnythingMCP refuses to connect if it ever changes, which protects you from a server pretending to be yours.",
+      "tls": "The server uses a certificate no public authority vouches for, which is normal for a NAS or router. Compare its fingerprint with the one the device shows; once confirmed, only this certificate is accepted.",
+      "confirmLabel": "I checked this fingerprint and it belongs to our server.",
+      "confirm": "Confirm and test again"
+    },
+    "scan": {
+      "intro": "The scan lists the whole folder without indexing anything: how many files are in each subfolder, which types and years. It also reads a few small sample documents to describe the content. Then you choose what to include.",
+      "useAi": "Write the description with AI",
+      "aiConsent": "Folder names, file names and the first 2,000 characters of up to 20 sample files are sent to {provider}. Personal data in the samples is masked.",
+      "aiPolicyOff": "AI drafting is switched off by your workspace policy; the description is built from the folder structure.",
+      "aiUnavailable": "No AI model is configured on this server; the description is built from the folder structure.",
+      "start": "Scan folder",
+      "phase": {
+        "connecting": "Connecting…",
+        "listing": "Listing the folder…",
+        "sampling": "Reading sample documents…",
+        "describing": "Writing the description…",
+        "done": "Done"
+      },
+      "progress": "{files} files in {dirs} folders so far",
+      "cancel": "Cancel scan",
+      "retry": "Scan again",
+      "stats": {
+        "files": "Files",
+        "folders": "Folders",
+        "size": "Size",
+        "years": "Years"
+      },
+      "truncated": "The folder is very large: the scan stopped counting. Choose a subfolder in step 1 for an exact count.",
+      "folders": "Folders to include",
+      "archivesUnticked": "{n} archive folders unticked",
+      "types": "File types",
+      "typesHint": "No type selected = every type. Other files are still found by name.",
+      "age": "Changed in",
+      "ageAll": "Any time",
+      "ageYears": "The last {n} years",
+      "again": "Scan again",
+      "next": "Continue"
+    },
+    "typeGroups": {
+      "pdf": "PDF",
+      "excel": "Excel / CSV",
+      "word": "Word",
+      "powerpoint": "PowerPoint",
+      "email": "E-mail",
+      "text": "Text"
+    },
+    "describe": {
+      "intro": "This text tells the AI what the folder contains and how to search it. Every MCP server with this connector passes it on. Check it and add what only you know.",
+      "writing": "Writing the description…",
+      "byAi": "Written by AI ({model}). Check it before saving.",
+      "byRules": "Built from the folder structure and the sample documents.",
+      "summary": "One-line summary",
+      "summaryHint": "Appears in every tool description. {n} characters left.",
+      "instructions": "Instructions for the AI",
+      "instructionsHint": "What the documents are, how folders are named, what to watch out for.",
+      "terms": "Frequent terms (click to add to the summary)",
+      "preview": "What the AI sees",
+      "previewText": "Search the text of every document in the folder \"{name}\" ({summary})…",
+      "prompts": "Questions it can answer",
+      "withAi": "With AI",
+      "regenerate": "Write again",
+      "next": "Continue"
+    },
+    "activate": {
+      "prefix": "Tool prefix",
+      "prefixHint": "Tools will be named like {example}.",
+      "interval": "Sync",
+      "higherPlan": "higher plan",
+      "intervalHint": "New and changed files are picked up on every sync. Search keeps working while a sync runs.",
+      "servers": "Add to MCP servers",
+      "noServers": "There is no MCP server yet. You can add the connector to one later.",
+      "serversHint": "Only roles that have these tools can use them.",
+      "summary": "{files} files ({size}) will be indexed, then synced {interval}.",
+      "activating": "Activating…",
+      "cta": "Activate and start the first sync",
+      "ocr": "Read scanned pages (OCR)",
+      "ocrHint": "Scanned PDFs without a text layer are read with text recognition. Slower; available with Enterprise."
+    },
+    "interval": {
+      "weekly": "weekly",
+      "daily": "daily",
+      "hourly": "hourly",
+      "hours": "every {n} hours",
+      "minutes": "every {n} minutes"
+    },
+    "budget": {
+      "selected": "Selected: {files} files, {size}",
+      "unlimited": "No limit on your plan",
+      "plan": "{plan} plan: {max} files",
+      "textFiles": "{n} with readable text",
+      "nameOnly": "{n} found by name only",
+      "tooLarge": "{n} larger than {max} (listed, not read)",
+      "others": "+ {n} in your other File Search connectors",
+      "bytes": "Volume {used} of {max}",
+      "overWithNext": "The selection is larger than your plan. Untick folders or file types, or upgrade: the {plan} plan includes {max} files.",
+      "over": "The selection is larger than your plan. Untick folders or file types."
+    },
+    "tree": {
+      "collapse": "Collapse {name}",
+      "expand": "Expand {name}",
+      "include": "Include {name}",
+      "archive": "archive",
+      "files": "{n} files",
+      "filter": "Filter folders",
+      "label": "Folders",
+      "empty": "No folders match."
+    },
+    "locked": {
+      "title": "File Search is part of the paid editions",
+      "point1": "Search inside PDF, Excel, Word and Outlook files from Claude, ChatGPT, Copilot and other AI clients.",
+      "point2": "SFTP, FTP/FTPS, WebDAV and network folders, synced in the background.",
+      "point3": "Temporary download links, permissions per role, audit log.",
+      "startTrial": "Start the free 30-day trial",
+      "buy": "Buy a licence",
+      "activate": "Activate a licence"
+    },
+    "card": {
+      "title": "File Search",
+      "description": "Search inside the documents of a folder: SFTP, FTP, WebDAV, NAS or a network share."
+    },
+    "shareConnector": {
+      "title": "File Share",
+      "text": "Lets AI clients publish files they create as temporary download links. Links, limits and the workspace policy are managed in Settings.",
+      "manage": "Open File Share settings"
+    },
+    "panel": {
+      "draftTitle": "Setup not finished",
+      "draftText": "This connector was tested but not activated yet: it has no tools and does not sync.",
+      "continueSetup": "Continue setup",
+      "paused": {
+        "paused_quota": "Sync paused: the folder outgrew your plan",
+        "paused_licence": "Sync paused: File Search needs a licence",
+        "paused_error": "Sync paused: the server could not be reached",
+        "paused_admin": "Sync paused by an administrator",
+        "stillSearching": "The AI still searches the files indexed until {date}."
+      },
+      "upgradeTo": "Upgrade to {plan}",
+      "editSelection": "Edit selection",
+      "resume": "Resume",
+      "resumed": "Resumed. The next sync starts within a minute.",
+      "indexed": "Indexed",
+      "ofFiles": "of {n} files",
+      "size": "Size",
+      "chars": "{n} characters of text",
+      "lastSync": "Last sync",
+      "nextSync": "Next sync",
+      "now": "running now",
+      "planUsage": "{used} of {max} files on the {plan} plan (all File Search connectors)",
+      "nearLimit": "{pct} % used",
+      "syncQueued": "Sync started.",
+      "syncing": "Syncing…",
+      "syncNow": "Sync now",
+      "pause": "Pause",
+      "pausedMsg": "Sync paused.",
+      "scheduleSaved": "Schedule saved.",
+      "manualLeft": "Manual syncs left today: {n}",
+      "description": "What the AI is told about this folder",
+      "edit": "Edit",
+      "newDraft": "The last scan wrote a new description.",
+      "reviewDraft": "Review it",
+      "save": "Save",
+      "descriptionSaved": "Description saved; the tools were updated.",
+      "noDescription": "No description yet.",
+      "runs": "Recent syncs",
+      "runCounters": "{listed} files listed, {added} new or changed, {extracted} read, {deleted} removed",
+      "noRuns": "No sync has run yet.",
+      "problems": "{n} files need attention",
+      "problemsHint": "They are still found by name. Files that fail three times are retried only when they change.",
+      "folders": "Folders in the index",
+      "hide": "Hide",
+      "show": "Show"
+    },
+    "states": {
+      "active": "Active",
+      "syncing": "Syncing",
+      "draft": "Draft",
+      "paused_quota": "Paused: plan limit",
+      "paused_licence": "Paused: licence",
+      "paused_error": "Paused: connection",
+      "paused_admin": "Paused"
+    },
+    "runStatus": {
+      "running": "Running",
+      "succeeded": "Done",
+      "partial": "In progress",
+      "paused": "Paused",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "entryStatus": {
+      "failed": "Could not be read (will retry)",
+      "gave_up": "Could not be read",
+      "skipped_size": "Larger than the plan allows",
+      "pending": "Waiting to be read",
+      "name_only": "Found by name only",
+      "indexed": "Indexed"
+    },
+    "rules": {
+      "title": "Folder permissions",
+      "intro": "Limit roles to some folders of this connector. A role without rules sees everything; with rules it sees only the allowed folders, and deny wins.",
+      "enterprise": "Folder permissions by role are available with AnythingMCP Enterprise. Until then, connect each folder as its own connector and give it to the right roles.",
+      "role": "Role",
+      "effect": "Allow or deny",
+      "allow": "Allow",
+      "deny": "Deny",
+      "folder": "Folder",
+      "remove": "Remove",
+      "add": "Add rule",
+      "saved": "Folder permissions saved."
+    },
+    "limit": {
+      "title": "Your plan’s File Search connectors are in use",
+      "text": "The {plan} plan includes {max} File Search connector(s), and all are set up. Upgrade, or delete one you no longer need.",
+      "next": "The {plan} plan includes {max}.",
+      "manage": "Manage connectors"
+    },
+    "pager": {
+      "label": "Pages",
+      "range": "{from}–{to} of {total}",
+      "prev": "Previous",
+      "next": "Next"
+    }
+  },
+  "fileShare": {
+    "title": "File Share",
+    "subtitle": "Temporary download links for files from your folders or written by AI. Links expire on their own and the file is deleted.",
+    "locked": {
+      "title": "File Share is not part of this plan",
+      "text": "Upgrade to let AI clients hand out files as temporary links.",
+      "cta": "See plans"
+    },
+    "usage": {
+      "title": "Your limits ({plan})",
+      "stored": "Stored in active links",
+      "today": "New links today",
+      "validity": "Longest validity",
+      "hours": "{n} hours",
+      "noLimit": "No limit",
+      "fileSize": "Largest file",
+      "publicOn": "Public links are allowed.",
+      "publicOff": "Public links are switched off; links open only for signed-in members.",
+      "days": "{n} days"
+    },
+    "connector": {
+      "title": "Links from AI chats",
+      "on": "The connector \"{name}\" lets AI clients publish files they write (CSV, reports) as links.",
+      "off": "Add the File Share connector so AI clients can publish files they write (CSV, reports) as links.",
+      "add": "Add File Share connector",
+      "added": "File Share connector added to your default MCP server."
+    },
+    "links": {
+      "title": "Links",
+      "empty": "No active links.",
+      "loading": "Loading…",
+      "public": "public",
+      "internal": "internal",
+      "until": "until {date}",
+      "noExpiry": "no expiry",
+      "downloads": "{n, plural, one {# download} other {# downloads}}",
+      "by": "by {name}",
+      "revoke": "Revoke",
+      "revoked": "Link revoked and file deleted.",
+      "count": "{n, plural, one {# active link} other {# active links}}",
+      "search": "Search by file name",
+      "searchLabel": "Search links",
+      "allAccess": "All links",
+      "onlyPublic": "Public only",
+      "onlyInternal": "Internal only",
+      "mine": "Only mine",
+      "noMatch": "No link matches these filters.",
+      "confirm": "Revoke this link and delete the file?",
+      "confirmYes": "Revoke",
+      "cancel": "Cancel",
+      "expiresIn": "expires in {time}"
+    },
+    "policy": {
+      "title": "File Search and File Share policy",
+      "intro": "Applies to every File Search connector and link in this workspace.",
+      "enterprise": "Workspace policies are available with AnythingMCP Enterprise.",
+      "saved": "Policy saved.",
+      "maxTtl": "Longest link validity (hours)",
+      "maxTtlPlaceholder": "Plan default",
+      "publicLinks": {
+        "label": "Allow public links",
+        "hint": "Off: links open only for signed-in members of this workspace."
+      },
+      "aiDrafting": {
+        "label": "Allow AI to draft folder descriptions",
+        "hint": "Off: the setup never sends folder names or samples to an AI model."
+      },
+      "allowPlainFtp": {
+        "label": "Allow plain (unencrypted) FTP",
+        "hint": "Off: only SFTP and FTPS can be connected."
+      },
+      "locked": "With AnythingMCP Enterprise an administrator can switch off public links, AI drafting and plain FTP, and cap how long links stay valid.",
+      "on": "on",
+      "off": "off",
+      "planDefault": "plan default"
+    },
+    "link": {
+      "loading": "Loading…",
+      "notFound": "This link does not exist.",
+      "unavailable": "This link is not available",
+      "sharedBy": "Shared by",
+      "access": "Access",
+      "internal": "Members of the workspace",
+      "public": "Anyone with the link",
+      "expires": "Expires",
+      "never": "Never",
+      "state": {
+        "expired": "This link has expired.",
+        "revoked": "This link was revoked.",
+        "exhausted": "This link reached its download limit."
+      },
+      "signIn": "Sign in to download",
+      "download": "Download",
+      "preparing": "Preparing…",
+      "warning": "Only open files from people you trust. AnythingMCP does not check files for viruses."
+    }
   }
 }

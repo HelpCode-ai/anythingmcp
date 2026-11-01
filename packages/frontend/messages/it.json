@@ -1797,6 +1797,10 @@
       "admin": {
         "label": "Amministrazione",
         "description": "SMTP, avvisi, link nel footer"
+      },
+      "fileShare": {
+        "label": "Condivisione file",
+        "description": "Link di download temporanei"
       }
     }
   },
@@ -2984,5 +2988,437 @@
     "cancel": "Annulla",
     "edit": "Modifica",
     "delete": "Elimina"
+  },
+  "fileSearch": {
+    "title": "Ricerca file",
+    "subtitle": "Fai cercare all'AI dentro i documenti di una cartella: PDF, Excel, Word, PowerPoint, Outlook",
+    "back": "Nuovo connettore",
+    "loading": "Caricamento…",
+    "cancel": "Annulla",
+    "backStep": "Indietro",
+    "upgrade": "Upgrade",
+    "adminOnly": "Solo gli amministratori del workspace possono configurare connettori di Ricerca file.",
+    "defaultName": "Documenti",
+    "worker": {
+      "down": "La Ricerca file non è attiva su questo server.",
+      "downHint": "Il files-worker o l'estrattore di testo non sono raggiungibili. Un amministratore li avvia con il profilo Compose \"files\" (vedi la documentazione di Ricerca file)."
+    },
+    "steps": {
+      "label": "Passi della configurazione",
+      "source": "Origine",
+      "test": "Test",
+      "scan": "Scansione",
+      "describe": "Descrizione",
+      "activate": "Attivazione"
+    },
+    "source": {
+      "protocol": "Dove sono i file?",
+      "cloudNote": "AnythingMCP Cloud raggiunge i server su internet. Per una cartella condivisa nella rete dell'ufficio usa SFTP o WebDAV sul NAS, oppure installa AnythingMCP self-hosted accanto.",
+      "presets": "Scorciatoie",
+      "name": "Nome",
+      "namePlaceholder": "Listini fornitori",
+      "nameHint": "Lo vedono l'AI e i nomi dei tool: descrivi il contenuto, non il server.",
+      "ftpMode": "Cifratura",
+      "host": "Server",
+      "port": "Porta",
+      "webdavUrl": "Indirizzo WebDAV",
+      "s3Endpoint": "Endpoint S3",
+      "webdavHint": "Nextcloud: File → Impostazioni → WebDAV mostra l'indirizzo. Synology: installa WebDAV Server e usa HTTPS (porta 5006).",
+      "bucket": "Bucket",
+      "region": "Regione",
+      "accessKey": "Access key",
+      "secretKey": "Secret key",
+      "username": "Nome utente",
+      "authMode": "Accedi con",
+      "privateKey": "Chiave privata",
+      "passphrase": "Passphrase della chiave (se c'è)",
+      "password": "Password",
+      "passwordKeep": "Lascia vuoto per mantenere la password salvata",
+      "appPasswordHint": "Nextcloud e ownCloud: crea una password per app in Sicurezza → Dispositivi e sessioni.",
+      "localFolder": "Cartella",
+      "folder": "Cartella da indicizzare",
+      "localRoots": "Cartelle consentite: {roots}",
+      "noLocalRoots": "Nessuna cartella consentita. Un amministratore imposta FILE_SOURCE_ROOTS sulle cartelle montate che AnythingMCP può leggere.",
+      "folderHint": "È incluso tutto ciò che sta sotto questa cartella. Le sottocartelle le scegli dopo la scansione.",
+      "plainFtpWarning": "L'FTP non cifrato invia la password in chiaro su internet. Ho capito e lo accetto (meglio: FTPS o SFTP).",
+      "next": "Testa la connessione"
+    },
+    "protocols": {
+      "sftp": {
+        "title": "SFTP",
+        "description": "Trasferimento file via SSH. La maggior parte dei NAS e dei server Linux, Hetzner Storage Box."
+      },
+      "ftp": {
+        "title": "FTP / FTPS",
+        "description": "FTP con TLS (esplicito o implicito), ad es. Fritz!Box, hosting web."
+      },
+      "webdav": {
+        "title": "WebDAV / Nextcloud",
+        "description": "Nextcloud, ownCloud, WebDAV di Synology e QNAP."
+      },
+      "local": {
+        "title": "Cartella di rete",
+        "description": "Una condivisione o un volume montato in questa installazione self-hosted (SMB, NFS)."
+      },
+      "s3": {
+        "title": "Bucket S3",
+        "description": "AWS S3, DigitalOcean Spaces, MinIO, Hetzner, Wasabi."
+      }
+    },
+    "presets": {
+      "nextcloud": "Nextcloud",
+      "synology": "NAS Synology",
+      "qnap": "NAS QNAP",
+      "fritzbox": "Fritz!Box",
+      "hetzner": "Hetzner Storage Box",
+      "owncloud": "ownCloud"
+    },
+    "ftpModes": {
+      "ftps": "FTPS (esplicito, porta 21)",
+      "ftps-implicit": "FTPS (implicito, porta 990)",
+      "ftp": "FTP (non cifrato)"
+    },
+    "authModes": {
+      "password": "Password",
+      "key": "Chiave SSH"
+    },
+    "test": {
+      "checklist": "Test della connessione",
+      "steps": {
+        "resolve": "Indirizzo del server",
+        "connect": "Server raggiungibile",
+        "handshake": "Connessione cifrata",
+        "fingerprint": "Identità del server",
+        "login": "Accesso",
+        "folder": "Cartella leggibile"
+      },
+      "intro": "AnythingMCP si collega al server, accede ed elenca la cartella. Non viene salvato nulla finché il test non riesce.",
+      "running": "Test della connessione in corso…",
+      "ok": "Connesso. {n} elementi nella cartella.",
+      "again": "Ripeti il test",
+      "next": "Salva e continua"
+    },
+    "fingerprint": {
+      "title": "Conferma l'identità del server",
+      "ssh": "Questa è l'impronta della chiave SSH del server. Confrontala con quella mostrata dal tuo amministratore o dal NAS. Dopo la conferma AnythingMCP rifiuta la connessione se cambia: ti protegge da un server che si spaccia per il tuo.",
+      "tls": "Il server usa un certificato non garantito da un'autorità pubblica, normale per un NAS o un router. Confronta l'impronta con quella mostrata dal dispositivo; dopo la conferma viene accettato solo questo certificato.",
+      "confirmLabel": "Ho verificato l'impronta: appartiene al nostro server.",
+      "confirm": "Conferma e ripeti il test"
+    },
+    "scan": {
+      "intro": "La scansione elenca tutta la cartella senza indicizzare nulla: quanti file ci sono in ogni sottocartella, di che tipo e di che anni. Legge anche alcuni piccoli documenti di esempio per descrivere il contenuto. Poi scegli cosa includere.",
+      "useAi": "Scrivi la descrizione con l'AI",
+      "aiConsent": "Nomi delle cartelle, nomi dei file e i primi 2.000 caratteri di massimo 20 file di esempio vengono inviati a {provider}. I dati personali negli esempi vengono mascherati.",
+      "aiPolicyOff": "Le bozze con AI sono disattivate dalla policy del workspace: la descrizione viene costruita dalla struttura delle cartelle.",
+      "aiUnavailable": "Su questo server non è configurato un modello AI: la descrizione viene costruita dalla struttura delle cartelle.",
+      "start": "Scansiona la cartella",
+      "phase": {
+        "connecting": "Connessione…",
+        "listing": "Elenco della cartella…",
+        "sampling": "Lettura dei documenti di esempio…",
+        "describing": "Scrittura della descrizione…",
+        "done": "Fatto"
+      },
+      "progress": "Finora {files} file in {dirs} cartelle",
+      "cancel": "Annulla la scansione",
+      "retry": "Ripeti la scansione",
+      "stats": {
+        "files": "File",
+        "folders": "Cartelle",
+        "size": "Dimensione",
+        "years": "Anni"
+      },
+      "truncated": "La cartella è molto grande: la scansione ha smesso di contare. Scegli una sottocartella al passo 1 per un numero esatto.",
+      "folders": "Cartelle da includere",
+      "archivesUnticked": "{n} cartelle di archivio escluse",
+      "types": "Tipi di file",
+      "typesHint": "Nessun tipo selezionato = tutti i tipi. Gli altri file restano trovabili per nome.",
+      "age": "Modificati negli",
+      "ageAll": "Qualsiasi periodo",
+      "ageYears": "Ultimi {n} anni",
+      "again": "Ripeti la scansione",
+      "next": "Continua"
+    },
+    "typeGroups": {
+      "pdf": "PDF",
+      "excel": "Excel / CSV",
+      "word": "Word",
+      "powerpoint": "PowerPoint",
+      "email": "E-mail",
+      "text": "Testo"
+    },
+    "describe": {
+      "intro": "Questo testo dice all'AI cosa contiene la cartella e come cercarci. Ogni server MCP con questo connettore lo inoltra. Controllalo e aggiungi quello che sai solo tu.",
+      "writing": "Scrittura della descrizione…",
+      "byAi": "Scritta dall'AI ({model}). Controllala prima di salvare.",
+      "byRules": "Costruita dalla struttura delle cartelle e dai documenti di esempio.",
+      "summary": "Riassunto in una riga",
+      "summaryHint": "Compare in ogni descrizione dei tool. Restano {n} caratteri.",
+      "instructions": "Istruzioni per l'AI",
+      "instructionsHint": "Cosa sono i documenti, come sono nominate le cartelle, a cosa fare attenzione.",
+      "terms": "Termini frequenti (clicca per aggiungerli al riassunto)",
+      "preview": "Cosa vede l'AI",
+      "previewText": "Cerca nel testo di tutti i documenti della cartella \"{name}\" ({summary})…",
+      "prompts": "Domande a cui sa rispondere",
+      "withAi": "Con AI",
+      "regenerate": "Riscrivi",
+      "next": "Continua"
+    },
+    "activate": {
+      "prefix": "Prefisso dei tool",
+      "prefixHint": "I tool si chiameranno ad es. {example}.",
+      "interval": "Sincronizzazione",
+      "higherPlan": "piano superiore",
+      "intervalHint": "File nuovi e modificati vengono presi a ogni sincronizzazione. La ricerca funziona anche mentre sincronizza.",
+      "servers": "Aggiungi ai server MCP",
+      "noServers": "Non c'è ancora un server MCP. Puoi aggiungere il connettore a un server più tardi.",
+      "serversHint": "Solo i ruoli che hanno questi tool possono usarli.",
+      "summary": "Verranno indicizzati {files} file ({size}), poi sincronizzati {interval}.",
+      "activating": "Attivazione…",
+      "cta": "Attiva e avvia la prima sincronizzazione",
+      "ocr": "Leggi le pagine scansionate (OCR)",
+      "ocrHint": "I PDF scansionati senza testo vengono letti con il riconoscimento del testo. Più lento; disponibile con Enterprise."
+    },
+    "interval": {
+      "weekly": "ogni settimana",
+      "daily": "ogni giorno",
+      "hourly": "ogni ora",
+      "hours": "ogni {n} ore",
+      "minutes": "ogni {n} minuti"
+    },
+    "budget": {
+      "selected": "Selezionati: {files} file, {size}",
+      "unlimited": "Nessun limite nel tuo piano",
+      "plan": "Piano {plan}: {max} file",
+      "textFiles": "{n} con testo leggibile",
+      "nameOnly": "{n} trovabili solo per nome",
+      "tooLarge": "{n} più grandi di {max} (elencati, non letti)",
+      "others": "+ {n} negli altri connettori di Ricerca file",
+      "bytes": "Volume {used} su {max}",
+      "overWithNext": "La selezione supera il tuo piano. Togli cartelle o tipi di file, oppure fai l'upgrade: il piano {plan} include {max} file.",
+      "over": "La selezione supera il tuo piano. Togli cartelle o tipi di file."
+    },
+    "tree": {
+      "collapse": "Chiudi {name}",
+      "expand": "Apri {name}",
+      "include": "Includi {name}",
+      "archive": "archivio",
+      "files": "{n} file",
+      "filter": "Filtra le cartelle",
+      "label": "Cartelle",
+      "empty": "Nessuna cartella corrisponde."
+    },
+    "locked": {
+      "title": "La Ricerca file fa parte delle edizioni a pagamento",
+      "point1": "Cerca dentro file PDF, Excel, Word e Outlook da Claude, ChatGPT, Copilot e altri client AI.",
+      "point2": "SFTP, FTP/FTPS, WebDAV e cartelle di rete, sincronizzati in background.",
+      "point3": "Link di download temporanei, permessi per ruolo, registro di audit.",
+      "startTrial": "Avvia la prova gratuita di 30 giorni",
+      "buy": "Acquista una licenza",
+      "activate": "Attiva una licenza"
+    },
+    "card": {
+      "title": "Ricerca file",
+      "description": "Cerca dentro i documenti di una cartella: SFTP, FTP, WebDAV, NAS o una condivisione di rete."
+    },
+    "shareConnector": {
+      "title": "Condivisione file",
+      "text": "Permette ai client AI di pubblicare i file che creano come link di download temporanei. Link, limiti e policy del workspace si gestiscono nelle Impostazioni.",
+      "manage": "Apri le impostazioni di Condivisione file"
+    },
+    "panel": {
+      "draftTitle": "Configurazione non completata",
+      "draftText": "Questo connettore è stato testato ma non ancora attivato: non ha tool e non sincronizza.",
+      "continueSetup": "Continua la configurazione",
+      "paused": {
+        "paused_quota": "Sincronizzazione in pausa: la cartella supera il tuo piano",
+        "paused_licence": "Sincronizzazione in pausa: la Ricerca file richiede una licenza",
+        "paused_error": "Sincronizzazione in pausa: il server non era raggiungibile",
+        "paused_admin": "Sincronizzazione messa in pausa da un amministratore",
+        "stillSearching": "L'AI continua a cercare nei file indicizzati fino al {date}."
+      },
+      "upgradeTo": "Passa a {plan}",
+      "editSelection": "Modifica la selezione",
+      "resume": "Riprendi",
+      "resumed": "Ripresa. La prossima sincronizzazione parte entro un minuto.",
+      "indexed": "Indicizzati",
+      "ofFiles": "su {n} file",
+      "size": "Dimensione",
+      "chars": "{n} caratteri di testo",
+      "lastSync": "Ultima sincronizzazione",
+      "nextSync": "Prossima sincronizzazione",
+      "now": "in corso",
+      "planUsage": "{used} di {max} file nel piano {plan} (tutti i connettori di Ricerca file)",
+      "nearLimit": "{pct} % usato",
+      "syncQueued": "Sincronizzazione avviata.",
+      "syncing": "Sincronizzazione…",
+      "syncNow": "Sincronizza ora",
+      "pause": "Metti in pausa",
+      "pausedMsg": "Sincronizzazione in pausa.",
+      "scheduleSaved": "Pianificazione salvata.",
+      "manualLeft": "Sincronizzazioni manuali rimaste oggi: {n}",
+      "description": "Cosa viene detto all'AI su questa cartella",
+      "edit": "Modifica",
+      "newDraft": "L'ultima scansione ha scritto una nuova descrizione.",
+      "reviewDraft": "Rivedila",
+      "save": "Salva",
+      "descriptionSaved": "Descrizione salvata; i tool sono stati aggiornati.",
+      "noDescription": "Nessuna descrizione.",
+      "runs": "Sincronizzazioni recenti",
+      "runCounters": "{listed} file elencati, {added} nuovi o modificati, {extracted} letti, {deleted} rimossi",
+      "noRuns": "Non è ancora partita nessuna sincronizzazione.",
+      "problems": "{n} file richiedono attenzione",
+      "problemsHint": "Restano trovabili per nome. I file che falliscono tre volte vengono riprovati solo quando cambiano.",
+      "folders": "Cartelle nell'indice",
+      "hide": "Nascondi",
+      "show": "Mostra"
+    },
+    "states": {
+      "active": "Attivo",
+      "syncing": "In sincronizzazione",
+      "draft": "Bozza",
+      "paused_quota": "In pausa: limite del piano",
+      "paused_licence": "In pausa: licenza",
+      "paused_error": "In pausa: connessione",
+      "paused_admin": "In pausa"
+    },
+    "runStatus": {
+      "running": "In corso",
+      "succeeded": "Completata",
+      "partial": "In avanzamento",
+      "paused": "In pausa",
+      "failed": "Fallita",
+      "cancelled": "Annullata"
+    },
+    "entryStatus": {
+      "failed": "Non leggibile (verrà riprovato)",
+      "gave_up": "Non leggibile",
+      "skipped_size": "Più grande di quanto il piano consente",
+      "pending": "In attesa di lettura",
+      "name_only": "Trovabile solo per nome",
+      "indexed": "Indicizzato"
+    },
+    "rules": {
+      "title": "Permessi per cartella",
+      "intro": "Limita i ruoli ad alcune cartelle di questo connettore. Un ruolo senza regole vede tutto; con regole vede solo le cartelle consentite, e il divieto vince.",
+      "enterprise": "I permessi per cartella per ruolo sono disponibili con AnythingMCP Enterprise. Nel frattempo collega ogni cartella come connettore a sé e assegnalo ai ruoli giusti.",
+      "role": "Ruolo",
+      "effect": "Consenti o nega",
+      "allow": "Consenti",
+      "deny": "Nega",
+      "folder": "Cartella",
+      "remove": "Rimuovi",
+      "add": "Aggiungi regola",
+      "saved": "Permessi per cartella salvati."
+    },
+    "limit": {
+      "title": "Hai già usato tutti i connettori di Ricerca file del tuo piano",
+      "text": "Il piano {plan} include {max} connettore/i di Ricerca file e sono tutti configurati. Fai l’upgrade o elimina quello che non ti serve più.",
+      "next": "Il piano {plan} ne include {max}.",
+      "manage": "Gestisci i connettori"
+    },
+    "pager": {
+      "label": "Pagine",
+      "range": "{from}–{to} di {total}",
+      "prev": "Indietro",
+      "next": "Avanti"
+    }
+  },
+  "fileShare": {
+    "title": "Condivisione file",
+    "subtitle": "Link di download temporanei per file delle tue cartelle o scritti dall'AI. I link scadono da soli e il file viene cancellato.",
+    "locked": {
+      "title": "La Condivisione file non è inclusa in questo piano",
+      "text": "Con un upgrade i client AI possono consegnare file come link temporanei.",
+      "cta": "Vedi i piani"
+    },
+    "usage": {
+      "title": "I tuoi limiti ({plan})",
+      "stored": "Spazio nei link attivi",
+      "today": "Nuovi link oggi",
+      "validity": "Validità massima",
+      "hours": "{n} ore",
+      "noLimit": "Nessun limite",
+      "fileSize": "File più grande",
+      "publicOn": "I link pubblici sono consentiti.",
+      "publicOff": "I link pubblici sono disattivati: i link si aprono solo per i membri che hanno effettuato l'accesso.",
+      "days": "{n} giorni"
+    },
+    "connector": {
+      "title": "Link dalle chat AI",
+      "on": "Il connettore \"{name}\" permette ai client AI di pubblicare come link i file che scrivono (CSV, report).",
+      "off": "Aggiungi il connettore Condivisione file perché i client AI possano pubblicare come link i file che scrivono (CSV, report).",
+      "add": "Aggiungi il connettore Condivisione file",
+      "added": "Connettore Condivisione file aggiunto al tuo server MCP predefinito."
+    },
+    "links": {
+      "title": "Link",
+      "empty": "Nessun link attivo.",
+      "loading": "Caricamento…",
+      "public": "pubblico",
+      "internal": "interno",
+      "until": "fino al {date}",
+      "noExpiry": "senza scadenza",
+      "downloads": "{n, plural, one {# download} other {# download}}",
+      "by": "da {name}",
+      "revoke": "Revoca",
+      "revoked": "Link revocato e file cancellato.",
+      "count": "{n, plural, one {# link attivo} other {# link attivi}}",
+      "search": "Cerca per nome file",
+      "searchLabel": "Cerca link",
+      "allAccess": "Tutti i link",
+      "onlyPublic": "Solo pubblici",
+      "onlyInternal": "Solo interni",
+      "mine": "Solo i miei",
+      "noMatch": "Nessun link corrisponde ai filtri.",
+      "confirm": "Revocare questo link ed eliminare il file?",
+      "confirmYes": "Revoca",
+      "cancel": "Annulla",
+      "expiresIn": "scade tra {time}"
+    },
+    "policy": {
+      "title": "Regole per File Search e File Share",
+      "intro": "Vale per tutti i connettori di Ricerca file e i link di questo workspace.",
+      "enterprise": "Le policy del workspace sono disponibili con AnythingMCP Enterprise.",
+      "saved": "Policy salvata.",
+      "maxTtl": "Validità massima di un link (ore)",
+      "maxTtlPlaceholder": "Valore del piano",
+      "publicLinks": {
+        "label": "Consenti link pubblici",
+        "hint": "Spento: i link si aprono solo per i membri di questo workspace che hanno effettuato l'accesso."
+      },
+      "aiDrafting": {
+        "label": "Consenti all'AI di scrivere le descrizioni delle cartelle",
+        "hint": "Spento: la configurazione non invia mai nomi di cartelle o esempi a un modello AI."
+      },
+      "allowPlainFtp": {
+        "label": "Consenti FTP non cifrato",
+        "hint": "Spento: si possono collegare solo SFTP e FTPS."
+      },
+      "locked": "Con AnythingMCP Enterprise un amministratore può disattivare i link pubblici, le bozze con IA e l’FTP non cifrato, e limitare la validità dei link.",
+      "on": "attivo",
+      "off": "disattivo",
+      "planDefault": "secondo il piano"
+    },
+    "link": {
+      "loading": "Caricamento…",
+      "notFound": "Questo link non esiste.",
+      "unavailable": "Questo link non è disponibile",
+      "sharedBy": "Condiviso da",
+      "access": "Accesso",
+      "internal": "Membri del workspace",
+      "public": "Chiunque abbia il link",
+      "expires": "Scade",
+      "never": "Mai",
+      "state": {
+        "expired": "Questo link è scaduto.",
+        "revoked": "Questo link è stato revocato.",
+        "exhausted": "Questo link ha raggiunto il limite di download."
+      },
+      "signIn": "Accedi per scaricare",
+      "download": "Scarica",
+      "preparing": "Preparazione…",
+      "warning": "Apri solo file di persone di cui ti fidi. AnythingMCP non controlla i file per i virus."
+    }
   }
 }

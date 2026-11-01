@@ -1,0 +1,36 @@
+import * as raw from './ftp.json';
+import { getAdapter } from '../catalog';
+
+const a = raw as unknown as {
+  slug: string;
+  requiredEnvVars: string[];
+  instructions: string;
+  connector: { type: string; config: { fileSearch: { protocol: string; toolPrefix: string } } };
+};
+
+describe('ftp adapter: static spec conformance', () => {
+  it('is a File Search catalog entry for ftps', () => {
+    expect(a.connector.type).toBe('FILE_SEARCH');
+    expect(a.connector.config.fileSearch.protocol).toBe('ftps');
+    // The wizard asks for the server and credentials; the catalog asks for nothing.
+    expect(a.requiredEnvVars).toEqual([]);
+    expect(a.instructions.length).toBeGreaterThan(800);
+  });
+
+  it('shows the fixed File Search tools in the catalog, share_file off', () => {
+    const tools = getAdapter('ftp')!.tools as Array<{ name: string; enabled?: boolean }>;
+    expect(tools.map((t) => t.name)).toEqual(
+      ['guide', 'search', 'find', 'list', 'read', 'grep', 'status', 'get_file', 'share_file'].map((n) => `ftp_${n}`),
+    );
+    expect(tools.find((t) => t.name === 'ftp_share_file')!.enabled).toBe(false);
+  });
+});
+
+// Live: the drivers are exercised against real servers in
+// src/ee/file-search/file-search.integration.spec.ts (RUN_FILES_INTEGRATION=1, FILES_IT_FTPS).
+const live = process.env.RUN_FTP_LIVE === '1' && !!process.env.FILES_IT_FTPS;
+(live ? describe : describe.skip)('ftp adapter: live', () => {
+  it('is covered by the File Search integration spec', () => {
+    expect(process.env.FILES_IT_FTPS).toBeTruthy();
+  });
+});

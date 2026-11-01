@@ -7,11 +7,12 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RAW = 'https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/';
 const GITHUB = 'https://github.com/HelpCode-ai/anythingmcp/blob/main/';
-// Contributor credits and Cloud operator internals are not product guides.
+// Contributor credits, Cloud operator internals and design plans are not product guides.
 export const EXCLUDED_DOCS = [
   'docs/AUTHORS.md',
   'docs/operations/card-trial-offer.md',
   'docs/operations/signup-attribution.md',
+  'docs/plans/file-search.md',
 ];
 const SECTIONS = [
   ['Getting started', ['README.md', 'docs/deployment.md', 'docs/guides.md']],
@@ -36,6 +37,7 @@ const DESCRIPTIONS = {
   'docs/guides/connect-sorare-to-copilot.md': 'Use Sorare tools in GitHub Copilot Chat through an AnythingMCP MCP endpoint.',
   'docs/guides/connect-sorare-to-openclaw.md': 'Connect Sorare tools to the self-hosted OpenClaw AI assistant.',
   'docs/guides/sorare-to-mcp.md': 'Expose the Sorare GraphQL API as MCP tools for compatible AI clients.',
+  'docs/connectors/file-search.md': 'Search inside the documents of SFTP, FTP/FTPS, WebDAV, S3 and network folders from AI clients, with File Share download links, plan limits and pauses.',
   'docs/code-mode.md': 'Run isolated JavaScript that orchestrates several MCP tools in one step: saved code tools, inline code_execute, governance and deployment.',
   'docs/license-faq.md': 'Understand the AGPL license, the commercial EE boundary, and contributor licensing.',
   '.github/CONTRIBUTING.md': 'Set up development, test changes, and submit a contribution.',

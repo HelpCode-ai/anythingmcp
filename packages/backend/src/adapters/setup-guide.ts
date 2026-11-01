@@ -65,6 +65,8 @@ export function setupEffort(
   adapter: Pick<AdapterDefinition, 'connector' | 'requiredEnvVars'> & { setupGuide?: SetupGuide },
 ): SetupEffort {
   if (adapter.setupGuide) return { effort: adapter.setupGuide.effort, minutes: adapter.setupGuide.minutes };
+  // File Search: an account on the file server plus the admin-only wizard (test, scan, describe).
+  if ((adapter.connector.type as string) === 'FILE_SEARCH') return { effort: 'admin_needed', minutes: 10 };
   const kind = setupKind(adapter);
   if (kind === 'none') return { effort: 'none', minutes: 0 };
   if (kind === 'oauth_browser') {
