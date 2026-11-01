@@ -465,6 +465,7 @@ import * as pinecone from './intl/pinecone.json';
 import * as pinkConnect from './intl/pink-connect.json';
 import * as pinterest from './intl/pinterest.json';
 import * as pipedrive from './intl/pipedrive.json';
+import * as pipefy from './intl/pipefy.json';
 import * as plaid from './intl/plaid.json';
 import * as planeSo from './intl/plane-so.json';
 import * as playtomic from './intl/playtomic.json';
@@ -1410,6 +1411,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   pinkConnect as unknown as AdapterDefinition,
   pinterest as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
+  pipefy as unknown as AdapterDefinition,
   plaid as unknown as AdapterDefinition,
   planeSo as unknown as AdapterDefinition,
   playtomic as unknown as AdapterDefinition,
