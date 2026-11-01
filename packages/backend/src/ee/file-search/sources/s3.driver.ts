@@ -15,6 +15,7 @@ import {
   type FileSourceDriver,
   type RemoteEntry,
 } from './source.types';
+import { usesVirtualHostedBuckets } from '../../../file-search/file-search-config';
 
 /**
  * S3-compatible buckets (#1388): AWS, DigitalOcean Spaces, MinIO, Hetzner,
@@ -36,7 +37,7 @@ export class S3Driver implements FileSourceDriver {
     const client = new S3Client({
       endpoint,
       region: config.region || 'us-east-1',
-      forcePathStyle: !/amazonaws\.com|digitaloceanspaces\.com/.test(endpoint),
+      forcePathStyle: !usesVirtualHostedBuckets(endpoint),
       credentials: { accessKeyId: secrets.accessKeyId, secretAccessKey: secrets.secretAccessKey },
       requestHandler: new NodeHttpHandler({ httpAgent, httpsAgent, connectionTimeout: opts.timeoutMs ?? 20_000, requestTimeout: 120_000 }),
     });

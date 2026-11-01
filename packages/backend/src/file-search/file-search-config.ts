@@ -215,3 +215,27 @@ export function localRootsFromEnv(env: NodeJS.ProcessEnv = process.env): string[
     .filter((s) => s.startsWith('/'))
     .map((s) => s.replace(/\/+$/, '') || '/');
 }
+
+/**
+ * Strips leading and trailing slashes in linear time. A `/^\/+|\/+$/` regex
+ * is quadratic on a long run of slashes, and these strings come from users
+ * and from file servers.
+ */
+export function trimSlashes(s: string, side: 'both' | 'end' = 'both'): string {
+  let a = 0;
+  let b = s.length;
+  if (side === 'both') while (a < b && s.charCodeAt(a) === 47) a++;
+  while (b > a && s.charCodeAt(b - 1) === 47) b--;
+  return s.slice(a, b);
+}
+
+/** AWS and DigitalOcean Spaces use bucket subdomains; other S3 servers path-style buckets. */
+export function usesVirtualHostedBuckets(endpoint: string | undefined): boolean {
+  if (!endpoint) return true;
+  try {
+    const h = new URL(endpoint).hostname.toLowerCase();
+    return h.endsWith('.amazonaws.com') || h.endsWith('.digitaloceanspaces.com');
+  } catch {
+    return false;
+  }
+}

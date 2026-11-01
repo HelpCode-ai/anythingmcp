@@ -3,6 +3,7 @@ import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { usesVirtualHostedBuckets } from '../file-search-config';
 
 /**
  * Where File Share keeps the files behind its links (#1387).
@@ -74,7 +75,7 @@ export class S3FileStorage implements FileStorage {
     this.client = new S3Client({
       endpoint: opts.endpoint || undefined,
       region: opts.region || 'us-east-1',
-      forcePathStyle: !!opts.endpoint && !/digitaloceanspaces\.com|amazonaws\.com/.test(opts.endpoint),
+      forcePathStyle: !usesVirtualHostedBuckets(opts.endpoint),
       credentials: { accessKeyId: opts.accessKeyId, secretAccessKey: opts.secretAccessKey },
     });
   }

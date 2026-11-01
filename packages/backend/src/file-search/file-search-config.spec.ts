@@ -1,4 +1,4 @@
-import { FileSearchConfigError, displayAddress, normalizeRelPath, parseFileSearchConfig, pickSecrets, toolPrefixFrom } from './file-search-config';
+import { FileSearchConfigError, displayAddress, normalizeRelPath, parseFileSearchConfig, pickSecrets, toolPrefixFrom, trimSlashes, usesVirtualHostedBuckets } from './file-search-config';
 
 describe('parseFileSearchConfig', () => {
   const base = { cloud: false, localRoots: ['/mnt/share'] };
@@ -36,5 +36,26 @@ describe('parseFileSearchConfig', () => {
     expect(toolPrefixFrom('Lieferanten Preislisten')).toBe('lieferanten_preislisten');
     expect(toolPrefixFrom('2026 Preise')).toBe('files_2026_preise');
     expect(toolPrefixFrom('')).toBe('files');
+  });
+});
+
+describe('trimSlashes and usesVirtualHostedBuckets', () => {
+  it('trims slashes in linear time', () => {
+    expect(trimSlashes('//a/b//')).toBe('a/b');
+    expect(trimSlashes('/a/b/', 'end')).toBe('/a/b');
+    expect(trimSlashes('///')).toBe('');
+    const long = '/'.repeat(200_000) + 'x';
+    const t = Date.now();
+    expect(trimSlashes(long + '/'.repeat(200_000))).toBe('x');
+    expect(Date.now() - t).toBeLessThan(200);
+  });
+
+  it('uses bucket subdomains only for AWS and Spaces hosts', () => {
+    expect(usesVirtualHostedBuckets(undefined)).toBe(true);
+    expect(usesVirtualHostedBuckets('https://fra1.digitaloceanspaces.com')).toBe(true);
+    expect(usesVirtualHostedBuckets('https://s3.eu-central-1.amazonaws.com')).toBe(true);
+    expect(usesVirtualHostedBuckets('https://minio.example.com')).toBe(false);
+    expect(usesVirtualHostedBuckets('https://digitaloceanspaces.com.evil.example')).toBe(false);
+    expect(usesVirtualHostedBuckets('https://evil.example/amazonaws.com')).toBe(false);
   });
 });

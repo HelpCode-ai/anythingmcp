@@ -1,5 +1,6 @@
 import picomatch from 'picomatch';
 import { TEXT_EXTENSIONS, isJunkName, type FileSearchConfig } from './file-search.types';
+import { trimSlashes } from './file-search-config';
 
 /**
  * What gets indexed, and how much that is (#1385). Shared by the wizard API
@@ -33,13 +34,13 @@ export interface Estimate {
 }
 
 export function folderGlob(folder: string): string {
-  const f = folder.replace(/^\/+|\/+$/g, '');
+  const f = trimSlashes(folder);
   return `${f}/**`;
 }
 
 /** Writes a selection into the connector settings (include/exclude/extensions/age). */
 export function applySelection(config: FileSearchConfig, sel: Selection): FileSearchConfig {
-  const folders = [...new Set(sel.excludeFolders.map((f) => f.replace(/^\/+|\/+$/g, '')).filter(Boolean))].slice(0, 500);
+  const folders = [...new Set(sel.excludeFolders.map((f) => trimSlashes(f)).filter(Boolean))].slice(0, 500);
   return {
     ...config,
     include: ['**/*'],
