@@ -3315,6 +3315,12 @@
       "text": "Il piano {plan} include {max} connettore/i di Ricerca file e sono tutti configurati. Fai l’upgrade o elimina quello che non ti serve più.",
       "next": "Il piano {plan} ne include {max}.",
       "manage": "Gestisci i connettori"
+    },
+    "pager": {
+      "label": "Pagine",
+      "range": "{from}–{to} di {total}",
+      "prev": "Indietro",
+      "next": "Avanti"
     }
   },
   "fileShare": {
@@ -3344,20 +3350,32 @@
       "added": "Connettore Condivisione file aggiunto al tuo server MCP predefinito."
     },
     "links": {
-      "title": "Link attivi",
+      "title": "Link",
       "empty": "Nessun link attivo.",
       "loading": "Caricamento…",
       "public": "pubblico",
       "internal": "interno",
       "until": "fino al {date}",
       "noExpiry": "senza scadenza",
-      "downloads": "{n} download",
+      "downloads": "{n, plural, one {# download} other {# download}}",
       "by": "da {name}",
       "revoke": "Revoca",
-      "revoked": "Link revocato e file cancellato."
+      "revoked": "Link revocato e file cancellato.",
+      "count": "{n, plural, one {# link attivo} other {# link attivi}}",
+      "search": "Cerca per nome file",
+      "searchLabel": "Cerca link",
+      "allAccess": "Tutti i link",
+      "onlyPublic": "Solo pubblici",
+      "onlyInternal": "Solo interni",
+      "mine": "Solo i miei",
+      "noMatch": "Nessun link corrisponde ai filtri.",
+      "confirm": "Revocare questo link ed eliminare il file?",
+      "confirmYes": "Revoca",
+      "cancel": "Annulla",
+      "expiresIn": "scade tra {time}"
     },
     "policy": {
-      "title": "Policy del workspace",
+      "title": "Regole per File Search e File Share",
       "intro": "Vale per tutti i connettori di Ricerca file e i link di questo workspace.",
       "enterprise": "Le policy del workspace sono disponibili con AnythingMCP Enterprise.",
       "saved": "Policy salvata.",
@@ -3374,7 +3392,11 @@
       "allowPlainFtp": {
         "label": "Consenti FTP non cifrato",
         "hint": "Spento: si possono collegare solo SFTP e FTPS."
-      }
+      },
+      "locked": "Con AnythingMCP Enterprise un amministratore può disattivare i link pubblici, le bozze con IA e l’FTP non cifrato, e limitare la validità dei link.",
+      "on": "attivo",
+      "off": "disattivo",
+      "planDefault": "secondo il piano"
     },
     "link": {
       "loading": "Caricamento…",

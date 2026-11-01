@@ -83,6 +83,20 @@ export interface CreateShareInput {
   ttlHours?: number;
 }
 
+export interface FileShareListItem {
+  id: string;
+  filename: string;
+  bytes: number;
+  access: string;
+  source: string;
+  entryPath: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  downloadCount: number;
+  state: string;
+  createdBy: string | null;
+}
+
 @Injectable()
 export class FileShareService {
   private readonly logger = new Logger(FileShareService.name);
@@ -297,25 +311,38 @@ export class FileShareService {
     return { stream, filename: row.filename, mimeType: row.mimeType, bytes: row.bytes };
   }
 
-  async list(organizationId: string, opts: { userId?: string; includeInactive?: boolean } = {}) {
+  /**
+   * Links of a workspace, newest first, one page at a time. Filters: the
+   * creator (non-admins only see their own), a file-name search, the access
+   * kind. `includeInactive` also returns expired and revoked links.
+   */
+  async list(
+    organizationId: string,
+    opts: { userId?: string; includeInactive?: boolean; q?: string; access?: 'public' | 'internal'; page?: number; pageSize?: number } = {},
+  ): Promise<{ links: FileShareListItem[]; total: number; page: number; pageSize: number }> {
     const now = new Date();
-    const rows = await this.repo.withTenant(organizationId, (tx) =>
-      tx.fileShare.findMany({
-        where: {
-          organizationId,
-          ...(opts.userId ? { createdByUserId: opts.userId } : {}),
-          ...(opts.includeInactive ? {} : { revokedAt: null, purgedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }),
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 200,
-      }),
+    const pageSize = Math.min(Math.max(Math.floor(opts.pageSize ?? 20), 1), 100);
+    const page = Math.max(Math.floor(opts.page ?? 1), 1);
+    const q = opts.q?.trim().slice(0, 200);
+    const where = {
+      organizationId,
+      ...(opts.userId ? { createdByUserId: opts.userId } : {}),
+      ...(opts.access ? { access: opts.access } : {}),
+      ...(q ? { filename: { contains: q, mode: 'insensitive' as const } } : {}),
+      ...(opts.includeInactive ? {} : { revokedAt: null, purgedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }),
+    };
+    const [rows, total] = await this.repo.withTenant(organizationId, (tx) =>
+      Promise.all([
+        tx.fileShare.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * pageSize, take: pageSize }),
+        tx.fileShare.count({ where }),
+      ]),
     );
     const users = await this.prisma.user.findMany({
       where: { id: { in: [...new Set(rows.map((r) => r.createdByUserId).filter((x): x is string => !!x))] } },
       select: { id: true, name: true, email: true },
     });
     const byId = new Map(users.map((u) => [u.id, u]));
-    return rows.map((r) => ({
+    const links = rows.map((r) => ({
       id: r.id,
       filename: r.filename,
       bytes: r.bytes,
@@ -328,6 +355,7 @@ export class FileShareService {
       state: this.state(r),
       createdBy: r.createdByUserId ? (byId.get(r.createdByUserId)?.name || byId.get(r.createdByUserId)?.email || null) : null,
     }));
+    return { links, total, page, pageSize };
   }
 
   async revoke(organizationId: string, id: string, actor: { sub: string; role: string }) {

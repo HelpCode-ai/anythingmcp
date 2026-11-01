@@ -3315,6 +3315,12 @@
       "text": "Der Plan {plan} umfasst {max} Dateisuche-Connector(en), alle sind eingerichtet. Machen Sie ein Upgrade oder löschen Sie einen, den Sie nicht mehr brauchen.",
       "next": "Der Plan {plan} umfasst {max}.",
       "manage": "Connectoren verwalten"
+    },
+    "pager": {
+      "label": "Seiten",
+      "range": "{from}–{to} von {total}",
+      "prev": "Zurück",
+      "next": "Weiter"
     }
   },
   "fileShare": {
@@ -3344,20 +3350,32 @@
       "added": "Dateifreigabe-Connector wurde Ihrem Standard-MCP-Server hinzugefügt."
     },
     "links": {
-      "title": "Aktive Links",
+      "title": "Links",
       "empty": "Keine aktiven Links.",
       "loading": "Wird geladen…",
       "public": "öffentlich",
       "internal": "intern",
       "until": "bis {date}",
       "noExpiry": "ohne Ablauf",
-      "downloads": "{n} Downloads",
+      "downloads": "{n, plural, one {# Download} other {# Downloads}}",
       "by": "von {name}",
       "revoke": "Widerrufen",
-      "revoked": "Link widerrufen und Datei gelöscht."
+      "revoked": "Link widerrufen und Datei gelöscht.",
+      "count": "{n, plural, one {# aktiver Link} other {# aktive Links}}",
+      "search": "Nach Dateiname suchen",
+      "searchLabel": "Links durchsuchen",
+      "allAccess": "Alle Links",
+      "onlyPublic": "Nur öffentliche",
+      "onlyInternal": "Nur interne",
+      "mine": "Nur meine",
+      "noMatch": "Kein Link passt zu diesen Filtern.",
+      "confirm": "Diesen Link widerrufen und die Datei löschen?",
+      "confirmYes": "Widerrufen",
+      "cancel": "Abbrechen",
+      "expiresIn": "läuft in {time} ab"
     },
     "policy": {
-      "title": "Workspace-Richtlinie",
+      "title": "Richtlinie für File Search und File Share",
       "intro": "Gilt für alle Dateisuche-Connectoren und Links in diesem Workspace.",
       "enterprise": "Workspace-Richtlinien gibt es mit AnythingMCP Enterprise.",
       "saved": "Richtlinie gespeichert.",
@@ -3374,7 +3392,11 @@
       "allowPlainFtp": {
         "label": "Unverschlüsseltes FTP erlauben",
         "hint": "Aus: Nur SFTP und FTPS können verbunden werden."
-      }
+      },
+      "locked": "Mit AnythingMCP Enterprise kann ein Administrator öffentliche Links, KI-Entwürfe und unverschlüsseltes FTP abschalten und die Gültigkeit von Links begrenzen.",
+      "on": "an",
+      "off": "aus",
+      "planDefault": "laut Plan"
     },
     "link": {
       "loading": "Wird geladen…",

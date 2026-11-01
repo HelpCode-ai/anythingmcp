@@ -2223,11 +2223,13 @@ export const fileSearch = {
     token: string,
   ) => request<{ id: string; state: string; syncIntervalMinutes: number }>(`/api/file-search/connectors/${id}/activate`, { method: 'POST', body, token }),
   tree: (id: string, token: string) => request<FileTreeNode>(`/api/file-search/connectors/${id}/tree`, { token }),
-  problems: (id: string, token: string) =>
-    request<Array<{ path: string; status: string; lastError: string | null; size: number; attempts: number; updatedAt: string }>>(
-      `/api/file-search/connectors/${id}/problems`,
-      { token },
-    ),
+  problems: (id: string, token: string, page = 1, pageSize = 20) =>
+    request<{
+      items: Array<{ path: string; status: string; lastError: string | null; size: number; attempts: number; updatedAt: string }>;
+      total: number;
+      page: number;
+      pageSize: number;
+    }>(`/api/file-search/connectors/${id}/problems?page=${page}&pageSize=${pageSize}`, { token }),
   runs: (id: string, token: string) => request<FileSearchRun[]>(`/api/file-search/connectors/${id}/runs`, { token }),
   syncNow: (id: string, token: string) => request<{ ok: boolean; state: string }>(`/api/file-search/connectors/${id}/sync`, { method: 'POST', token }),
   pause: (id: string, token: string) => request(`/api/file-search/connectors/${id}/pause`, { method: 'POST', token }),
@@ -2249,11 +2251,24 @@ export const fileSearch = {
 };
 
 export const fileShare = {
-  list: (token: string) =>
-    request<{ links: FileShareLink[]; limits: FileShareLimits | null; usage: { storedBytes: number; activeLinks: number; linksToday: number }; connector: { id: string; name: string } | null }>(
-      '/api/file-share',
-      { token },
-    ),
+  list: (token: string, opts: { page?: number; pageSize?: number; q?: string; access?: 'public' | 'internal'; mine?: boolean } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.page) qs.set('page', String(opts.page));
+    if (opts.pageSize) qs.set('pageSize', String(opts.pageSize));
+    if (opts.q?.trim()) qs.set('q', opts.q.trim());
+    if (opts.access) qs.set('access', opts.access);
+    if (opts.mine) qs.set('mine', '1');
+    const query = qs.toString();
+    return request<{
+      links: FileShareLink[];
+      total: number;
+      page: number;
+      pageSize: number;
+      limits: FileShareLimits | null;
+      usage: { storedBytes: number; activeLinks: number; linksToday: number };
+      connector: { id: string; name: string } | null;
+    }>(`/api/file-share${query ? `?${query}` : ''}`, { token });
+  },
   revoke: (id: string, token: string) => request(`/api/file-share/${id}`, { method: 'DELETE', token }),
   addConnector: (token: string) => request<{ id: string; name: string }>('/api/file-share/connector', { method: 'POST', token }),
   describe: (shareToken: string) =>

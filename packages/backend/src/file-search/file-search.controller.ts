@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileSearchService } from './file-search.service';
@@ -13,6 +13,7 @@ import {
   FileSearchSelectionDto,
   FileSearchTestDto,
   FileSearchUpdateSourceDto,
+  PageQueryDto,
 } from './file-search.dto';
 
 /**
@@ -100,8 +101,8 @@ export class FileSearchController {
   }
 
   @Get('connectors/:id/problems')
-  problems(@Req() req: any, @Param('id') id: string) {
-    return this.svc.problems(req.user, id);
+  problems(@Req() req: any, @Param('id') id: string, @Query() query: PageQueryDto) {
+    return this.svc.problems(req.user, id, query);
   }
 
   @Get('connectors/:id/runs')

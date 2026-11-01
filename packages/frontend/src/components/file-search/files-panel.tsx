@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError, fileSearch, type FileSearchOverview, type FileTreeNode } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { FolderTree, formatBytes, formatDate, formatNumber, hintClass, inputClass, intervalLabel, labelClass } from './shared';
+import { FolderTree, Pager, formatBytes, formatDate, formatNumber, hintClass, inputClass, intervalLabel, labelClass } from './shared';
 
 /**
  * The Files tab of a File Search connector (#1385): sync state and progress,
@@ -31,6 +31,8 @@ function err(e: unknown) {
   return e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
 }
 
+const PROBLEMS_PAGE = 20;
+
 export function FilesPanel({ connectorId }: { connectorId: string }) {
   const t = useTranslations('fileSearch');
   const locale = useLocale();
@@ -38,6 +40,8 @@ export function FilesPanel({ connectorId }: { connectorId: string }) {
   const isAdmin = user?.role === 'ADMIN';
   const [o, setO] = useState<FileSearchOverview | null>(null);
   const [problems, setProblems] = useState<Array<{ path: string; status: string; lastError: string | null; size: number; attempts: number }>>([]);
+  const [problemsTotal, setProblemsTotal] = useState(0);
+  const [problemsPage, setProblemsPage] = useState(1);
   const [tree, setTree] = useState<FileTreeNode | null>(null);
   const [showTree, setShowTree] = useState(false);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
@@ -56,7 +60,6 @@ export function FilesPanel({ connectorId }: { connectorId: string }) {
         setSummary(ov.status.summary ?? '');
         setInstructions(ov.connector.instructions ?? '');
       }
-      fileSearch.problems(connectorId, token).then(setProblems).catch(() => undefined);
     } catch (e) {
       setMsg({ tone: 'error', text: err(e) });
     }
@@ -65,6 +68,19 @@ export function FilesPanel({ connectorId }: { connectorId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Files that could not be read, a page at a time; refreshed after each sync.
+  const lastRun = `${o?.status.lastSuccessAt ?? ''}|${o?.status.state ?? ''}`;
+  useEffect(() => {
+    if (!token) return;
+    fileSearch
+      .problems(connectorId, token, problemsPage, PROBLEMS_PAGE)
+      .then((r) => {
+        setProblems(r.items);
+        setProblemsTotal(r.total);
+      })
+      .catch(() => undefined);
+  }, [token, connectorId, problemsPage, lastRun]);
 
   // Follow a running sync.
   useEffect(() => {
@@ -293,18 +309,19 @@ export function FilesPanel({ connectorId }: { connectorId: string }) {
       </Card>
 
       {/* Problems */}
-      {problems.length > 0 && (
+      {problemsTotal > 0 && (
         <Card className="p-4 sm:p-5">
-          <h3 className="text-[14px] font-semibold text-[var(--text)]">{t('panel.problems', { n: problems.length })}</h3>
+          <h3 className="text-[14px] font-semibold text-[var(--text)]">{t('panel.problems', { n: problemsTotal })}</h3>
           <p className={hintClass}>{t('panel.problemsHint')}</p>
           <ul className="mt-3 space-y-2">
-            {problems.slice(0, 50).map((p) => (
+            {problems.map((p) => (
               <li key={p.path} className="rounded-[9px] bg-[var(--surface-2)] p-2.5 text-[12.5px]">
                 <div className="break-all font-mono text-[var(--text)]">{p.path}</div>
                 <div className="mt-0.5 text-[var(--text-3)]">{t(`entryStatus.${p.status}`)}{p.lastError ? ` — ${p.lastError}` : ''}</div>
               </li>
             ))}
           </ul>
+          <Pager page={problemsPage} pageSize={PROBLEMS_PAGE} total={problemsTotal} onPage={setProblemsPage} />
         </Card>
       )}
 

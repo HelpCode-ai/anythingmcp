@@ -139,8 +139,10 @@ export class FileSearchEngine {
         return this.shareFile(str(p.path), p.access === 'public' ? 'public' : 'internal', int(p.ttl_hours), ctx, scope);
       case 'share_upload':
         return this.shareUpload(p, ctx);
-      case 'share_list':
-        return { links: (await this.shares.list(ctx.organizationId, { userId: ctx.userId })).slice(0, 50) };
+      case 'share_list': {
+        const { links, total } = await this.shares.list(ctx.organizationId, { userId: ctx.userId, pageSize: 50 });
+        return { links, total, ...(total > links.length ? { note: `Showing the newest ${links.length} of ${total} links.` } : {}) };
+      }
       case 'share_revoke': {
         const id = str(p.id);
         if (!id) return { error: 'Pass the id of the link (from share_list).' };
