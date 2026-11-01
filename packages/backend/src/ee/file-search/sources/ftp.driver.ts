@@ -1,7 +1,8 @@
 // Licensed under the AnythingMCP Commercial License, see packages/backend/src/ee/LICENSE.
 import { PassThrough, type Readable } from 'node:stream';
 import type { TLSSocket } from 'node:tls';
-import { Client, FileType } from 'basic-ftp';
+import { Client, enterPassiveModeIPv6, FileType, type FTPContext } from 'basic-ftp';
+import { connectForPassiveTransfer, parsePasvResponse } from 'basic-ftp/dist/transfer';
 import { resolveSafeOutboundHost } from '../../../common/ssrf.util';
 import type { FileSearchConfig } from '../../../file-search/file-search.types';
 import type { FileSearchSecrets } from '../../../file-search/file-search-config';
@@ -17,6 +18,39 @@ import {
   type RemoteEntry,
 } from './source.types';
 
+/**
+ * PASV that always connects to the control connection's address and only
+ * takes the port from the reply. A server behind NAT that announces its
+ * private address still works, and no reply can point the data channel at
+ * another host.
+ */
+async function pasvToControlHost(ftp: FTPContext) {
+  const res = await ftp.request('PASV');
+  const target = parsePasvResponse(res.message);
+  const host = ftp.socket.remoteAddress?.replace(/^::ffff:/i, '');
+  if (!host) throw new Error('The control connection is closed.');
+  await connectForPassiveTransfer(host, target.port, ftp);
+  return res;
+}
+
+/** EPSV (port only) first, then PASV to the control host; the first that works is kept. */
+function controlHostTransfers(client: Client) {
+  const strategies = [enterPassiveModeIPv6, pasvToControlHost];
+  client.prepareTransfer = async (ftp: FTPContext) => {
+    let last: unknown;
+    for (const s of strategies) {
+      try {
+        const res = await s(ftp);
+        client.prepareTransfer = s;
+        return res;
+      } catch (err) {
+        last = err;
+      }
+    }
+    throw last instanceof Error ? last : new Error(String(last));
+  };
+}
+
 function normFp(fp: string): string {
   return fp.toLowerCase().replace(/[^0-9a-f]/g, '');
 }
@@ -25,9 +59,10 @@ function normFp(fp: string): string {
  * FTP, explicit FTPS (AUTH TLS) and implicit FTPS (#1382).
  *
  * - The control connection goes to the address the SSRF guard checked, and
- *   passive data connections only to that same address
- *   (`allowSeparateTransferHost: false`): a server cannot point the data
- *   channel at an internal host.
+ *   passive data connections only to that same address (the host in a PASV
+ *   reply is ignored, only its port is used): a server cannot point the data
+ *   channel at an internal host, and NAT setups that announce a private
+ *   address still work.
  * - TLS: a certificate a public CA vouches for is accepted; any other
  *   certificate only with its SHA-256 fingerprint pinned (self-signed NAS and
  *   routers). The check runs after the handshake and before the password is
@@ -44,6 +79,7 @@ export class FtpDriver implements FileSourceDriver {
       throw classifyNetworkError(err);
     }
     const client = new Client(opts.timeoutMs ?? 30_000, { allowSeparateTransferHost: false });
+    controlHostTransfers(client);
     const tlsOptions = { servername: /^[\d.:]+$/.test(host) ? undefined : host, rejectUnauthorized: false };
     let fingerprint: ConnectResult['fingerprint'];
     try {

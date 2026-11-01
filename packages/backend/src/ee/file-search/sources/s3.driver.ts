@@ -2,7 +2,7 @@
 import type { Readable } from 'node:stream';
 import { GetObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
-import { createSsrfGuardedAgents } from '../../../common/ssrf.util';
+import { assertSafeOutboundUrl, createSsrfGuardedAgents } from '../../../common/ssrf.util';
 import type { FileSearchConfig } from '../../../file-search/file-search.types';
 import type { FileSearchSecrets } from '../../../file-search/file-search-config';
 import {
@@ -24,8 +24,15 @@ import {
 export class S3Driver implements FileSourceDriver {
   async connect(config: FileSearchConfig, secrets: FileSearchSecrets, opts: ConnectOptions): Promise<ConnectResult> {
     if (!secrets.accessKeyId || !secrets.secretAccessKey) throw new SourceError('auth', 'Enter the access key and the secret key.');
-    const { httpAgent, httpsAgent } = createSsrfGuardedAgents();
     const endpoint = config.url!;
+    // The agents' lookup is not called for a literal IP (http://169.254.169.254),
+    // so the endpoint itself is checked here; the SDK does not follow redirects.
+    try {
+      await assertSafeOutboundUrl(endpoint);
+    } catch (err) {
+      throw classifyNetworkError(err);
+    }
+    const { httpAgent, httpsAgent } = createSsrfGuardedAgents();
     const client = new S3Client({
       endpoint,
       region: config.region || 'us-east-1',

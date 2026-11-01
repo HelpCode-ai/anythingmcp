@@ -64,7 +64,9 @@ export class FileShareController {
   async stream(@Param('signed') signed: string, @Res() res: Response) {
     const file = await this.shares.openSigned(signed);
     const ascii = file.filename.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
-    res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
+    // Types a browser could run or render as a page are always sent as bytes.
+    const active = /^(text\/html|application\/xhtml|image\/svg|text\/xml|application\/xml|text\/javascript|application\/javascript)/i.test(file.mimeType ?? '');
+    res.setHeader('Content-Type', active || !file.mimeType ? 'application/octet-stream' : file.mimeType);
     res.setHeader('Content-Length', String(file.bytes));
     res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.filename)}`);
     res.setHeader('X-Content-Type-Options', 'nosniff');

@@ -1,6 +1,8 @@
 // Licensed under the AnythingMCP Commercial License, see packages/backend/src/ee/LICENSE.
+import * as net from 'node:net';
 import { Readable } from 'node:stream';
-import { parseListDate } from './ftp.driver';
+import { FtpDriver, parseListDate } from './ftp.driver';
+import { S3Driver } from './s3.driver';
 import { sshFingerprint } from './sftp.driver';
 import { classifyNetworkError, limitStream, remotePath, safeRel } from './source.types';
 
@@ -37,5 +39,74 @@ describe('source helpers', () => {
     let n = 0;
     for await (const c of ok) n += (c as Buffer).length;
     expect(n).toBe(10);
+  });
+});
+
+describe('source drivers and the SSRF guard', () => {
+  const base = { include: [], exclude: [], maxDepth: 20, maxConnections: 1, toolPrefix: 'x', rootPath: '' } as any;
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env.SSRF_GUARD = 'enabled';
+    delete process.env.SSRF_ALLOW_LOCALHOST;
+    delete process.env.SSRF_ALLOW_PRIVATE;
+    process.env.SSRF_ALLOWED_HOSTS = '';
+  });
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it.each(['http://169.254.169.254', 'http://127.0.0.1:9000', 'http://[::1]:9000', 'http://10.0.0.5'])(
+    'refuses an S3 endpoint on a non-public literal IP (%s)',
+    async (url) => {
+      const err = await new S3Driver()
+        .connect({ ...base, protocol: 's3', url, bucket: 'b', region: 'us-east-1' }, { accessKeyId: 'a', secretAccessKey: 'b' } as any, { cloud: true, test: true, timeoutMs: 1000 })
+        .catch((e) => e);
+      expect(err.kind).toBe('private_address');
+    },
+  );
+
+  it('opens passive data connections to the control host only, whatever PASV announces', async () => {
+    process.env.SSRF_ALLOWED_HOSTS = 'localhost';
+    let dataConnections = 0;
+    const data = net.createServer((s) => {
+      s.on('error', () => undefined);
+      dataConnections++;
+      s.end('-rw-r--r-- 1 u g 5 Jan 01 2026 a.txt\r\n');
+    });
+    await new Promise<void>((r) => data.listen(0, '127.0.0.1', r));
+    const port = (data.address() as net.AddressInfo).port;
+    const control = net.createServer((c) => {
+      c.on('error', () => undefined);
+      c.write('220 test\r\n');
+      c.on('data', (b) => {
+        for (const line of b.toString().split('\r\n').filter(Boolean)) {
+          const cmd = line.split(' ')[0].toUpperCase();
+          if (cmd === 'USER') c.write('331 pw\r\n');
+          else if (cmd === 'PASS') c.write('230 ok\r\n');
+          else if (cmd === 'EPSV') c.write('500 no\r\n');
+          else if (cmd === 'PASV') c.write(`227 Entering Passive Mode (10,9,9,9,${port >> 8},${port & 255})\r\n`);
+          else if (cmd === 'LIST' || cmd === 'MLSD') {
+            c.write('150 here\r\n');
+            setTimeout(() => c.write('226 done\r\n'), 100);
+          } else if (cmd === 'QUIT') c.end('221 bye\r\n');
+          else c.write('200 ok\r\n');
+        }
+      });
+    });
+    await new Promise<void>((r) => control.listen(0, '127.0.0.1', r));
+    try {
+      const { session } = await new FtpDriver().connect(
+        { ...base, protocol: 'ftp', host: 'localhost', port: (control.address() as net.AddressInfo).port, username: 'u', allowPlainFtp: true },
+        { password: 'x' } as any,
+        { cloud: true, test: true, timeoutMs: 3000 },
+      );
+      const entries = await session.list('');
+      await session.close();
+      expect(entries.map((e) => e.name)).toEqual(['a.txt']);
+      expect(dataConnections).toBe(1);
+    } finally {
+      control.close();
+      data.close();
+    }
   });
 });
