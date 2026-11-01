@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import {
   knowledgeGraph,
@@ -27,11 +28,11 @@ import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
 
-const TABS: Array<{ key: string; label: string; countKey: 'pending' | 'applied' | 'dismissed' | null }> = [
-  { key: '', label: 'All', countKey: null },
-  { key: 'pending', label: 'Suggested', countKey: 'pending' },
-  { key: 'applied', label: 'Active', countKey: 'applied' },
-  { key: 'dismissed', label: 'Dismissed', countKey: 'dismissed' },
+const TABS: Array<{ key: string; labelKey: string; countKey: 'pending' | 'applied' | 'dismissed' | null }> = [
+  { key: '', labelKey: 'all', countKey: null },
+  { key: 'pending', labelKey: 'pending', countKey: 'pending' },
+  { key: 'applied', labelKey: 'applied', countKey: 'applied' },
+  { key: 'dismissed', labelKey: 'dismissed', countKey: 'dismissed' },
 ];
 
 const inputCls =
@@ -40,6 +41,8 @@ const textareaCls =
   'w-full px-3 py-2.5 rounded-[9px] text-[13px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--border-strong)] leading-relaxed';
 
 export default function SkillsPage() {
+  const t = useTranslations('aiSkills');
+  const tk = useTranslations('knowledgeGraph');
   const { token, user } = useAuth();
   const [items, setItems] = useState<KgSkill[]>([]);
   const [counts, setCounts] = useState({ pending: 0, applied: 0, dismissed: 0 });
@@ -77,9 +80,9 @@ export default function SkillsPage() {
         setCounts(r.counts);
         setTotal(r.total);
       })
-      .catch((e) => setStatus(e.message || 'Failed to load'))
+      .catch((e) => setStatus(e.message || t('status.loadFailed')))
       .finally(() => setLoading(false));
-  }, [token, statusFilter, debouncedQuery, page, folderSel]);
+  }, [token, statusFilter, debouncedQuery, page, folderSel, t]);
 
   useEffect(() => load(), [load]);
   useEffect(() => {
@@ -104,14 +107,14 @@ export default function SkillsPage() {
   const generate = async () => {
     if (!token) return;
     setGenerating(true);
-    setStatus(target ? 'Analyzing the server context…' : 'Analyzing captured intents…');
+    setStatus(target ? t('status.analyzingServer') : t('status.analyzingIntents'));
     try {
       const r = await knowledgeGraph.skills.generate(token, target || undefined);
-      setStatus(r.created > 0 ? `Generated ${r.created} suggestion(s).` : 'No new patterns found yet.');
+      setStatus(r.created > 0 ? t('status.generated', { count: r.created }) : t('status.noPatterns'));
       setPage(0);
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Generation failed');
+      setStatus(e.message || t('status.generationFailed'));
     } finally {
       setGenerating(false);
     }
@@ -120,17 +123,17 @@ export default function SkillsPage() {
   const consolidate = async () => {
     if (!token) return;
     setConsolidating(true);
-    setStatus('Consolidating active skills with AI…');
+    setStatus(t('status.consolidating'));
     try {
       const r = await knowledgeGraph.skills.consolidate(token, target || undefined);
       setStatus(
         r.proposed
-          ? `Proposed ${r.proposed} merged skill(s) replacing ${r.replaced} active ones. Review them under Suggested: applying one deactivates the skills it replaces.`
-          : `Nothing to merge (${r.before} active skill(s)).`,
+          ? t('status.proposedMerge', { proposed: r.proposed, replaced: r.replaced ?? 0 })
+          : t('status.nothingToMerge', { before: r.before }),
       );
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Consolidation failed');
+      setStatus(e.message || t('status.consolidationFailed'));
     } finally {
       setConsolidating(false);
     }
@@ -140,19 +143,19 @@ export default function SkillsPage() {
   const learnFromErrors = async () => {
     if (!token) return;
     setLearning(true);
-    setStatus('Looking for calls that failed and were fixed…');
+    setStatus(t('status.lookingForErrors'));
     try {
       const r = await knowledgeGraph.skills.proposeFromErrors(token);
       setStatus(
         r.created
-          ? `Proposed ${r.created} skill(s) from fixed errors. Review them under Suggested.`
-          : 'No recurring fixed errors yet. Only calls of users who contribute to skill learning are used.',
+          ? t('status.proposedFromErrors', { count: r.created })
+          : t('status.noFixedErrors'),
       );
       setStatusFilter('pending');
       setPage(0);
       load();
     } catch (e: any) {
-      setStatus(e.message || 'Could not look at the errors');
+      setStatus(e.message || t('status.errorsFailed'));
     } finally {
       setLearning(false);
     }
@@ -164,13 +167,13 @@ export default function SkillsPage() {
   const to = Math.min(total, (page + 1) * PAGE_SIZE);
   const everEmpty = counts.pending + counts.applied + counts.dismissed === 0;
   const scopeLabel = target
-    ? (servers.find((x) => x.id === target)?.name ?? 'this server')
-    : 'connectors';
+    ? (servers.find((x) => x.id === target)?.name ?? t('scopeThisServer'))
+    : t('scopeConnectors');
 
   return (
     <AppShell
-      backTo={{ label: 'Knowledge Graph', href: '/knowledge-graph' }}
-      title="AI Skills"
+      backTo={{ label: tk('title'), href: '/knowledge-graph' }}
+      title={t('title')}
       maxWidth={1120}
       actions={
         isAdmin && (
@@ -181,13 +184,13 @@ export default function SkillsPage() {
               value={target}
               onChange={(e) => setTarget(e.target.value)}
               className="h-9 min-w-0 max-w-[48vw] truncate px-2.5 rounded-[9px] text-[12.5px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)] outline-none md:max-w-none"
-              title="Scope for Generate / Consolidate"
-              aria-label="Scope for Generate and Consolidate"
+              title={t('scopeTitle')}
+              aria-label={t('scopeAria')}
             >
-              <option value="">From connectors</option>
+              <option value="">{t('fromConnectors')}</option>
               {servers.map((s) => (
                 <option key={s.id} value={s.id}>
-                  For server: {s.name}
+                  {t('forServer', { name: s.name })}
                 </option>
               ))}
             </select>
@@ -196,37 +199,37 @@ export default function SkillsPage() {
               size="sm"
               onClick={consolidate}
               disabled={consolidating || generating}
-              title="Merge the active skills in this scope into fewer, non-redundant ones"
+              title={t('consolidateTitle')}
               className="max-md:hidden"
             >
               <ConsolidateIcon />
-              {consolidating ? 'Consolidating…' : 'Consolidate'}
+              {consolidating ? t('consolidating') : t('consolidate')}
             </Button>
             <Button variant="secondary" size="sm" onClick={generate} disabled={generating || consolidating} className="max-md:hidden">
               <GenerateIcon />
-              {generating ? 'Generating…' : 'Generate with AI'}
+              {generating ? t('generating') : t('generate')}
             </Button>
             {/* On a phone the two AI actions fold into a menu, and the label
                 repeats the scope the select beside it is set to, so the menu
                 entry states what it will act on. */}
             <ActionMenu
               className="md:hidden"
-              label="Skill actions"
+              label={t('actionsLabel')}
               items={[
                 {
-                  label: generating ? 'Generating…' : `Generate with AI · ${scopeLabel}`,
+                  label: generating ? t('generating') : t('generateScope', { scope: scopeLabel }),
                   icon: <GenerateIcon />,
                   onSelect: generate,
                   disabled: generating || consolidating,
                 },
                 {
-                  label: consolidating ? 'Consolidating…' : `Consolidate · ${scopeLabel}`,
+                  label: consolidating ? t('consolidating') : t('consolidateScope', { scope: scopeLabel }),
                   icon: <ConsolidateIcon />,
                   onSelect: consolidate,
                   disabled: consolidating || generating,
                 },
                 {
-                  label: learning ? 'Looking…' : 'Learn from fixed errors',
+                  label: learning ? t('looking') : t('learn'),
                   icon: <GenerateIcon />,
                   onSelect: learnFromErrors,
                   disabled: learning,
@@ -235,13 +238,13 @@ export default function SkillsPage() {
             />
             <Button variant="primary" size="sm" onClick={() => setShowNew((v) => !v)}>
               {showNew ? (
-                'Close'
+                t('close')
               ) : (
                 <>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                     <path d="M12 5v14M5 12h14" />
                   </svg>
-                  New skill
+                  {t('newSkill')}
                 </>
               )}
             </Button>
@@ -252,19 +255,18 @@ export default function SkillsPage() {
       {/* The header already carries the way back to the graph, so this stays
           a description and nothing else. */}
       <p className="text-[13px] leading-relaxed text-[var(--text-2)] mb-4">
-        Rules and procedures for recurring tasks, scoped to one connector or to a whole MCP
-        server. <span className="text-[var(--text)]">Active</span> skills reach that server&apos;s AI
-        clients on connect, as full text or as a list they open with{' '}
-        <code className="font-mono text-[12px]">skill_get</code> (set per server). Long procedures
-        are always opened on demand.
+        {t.rich('intro', {
+          hl: (chunks) => <span className="text-[var(--text)]">{chunks}</span>,
+          code: (chunks) => <code className="font-mono text-[12px]">{chunks}</code>,
+        })}
       </p>
       {isAdmin && (
         <div className="mb-3 flex flex-wrap items-center gap-2.5 max-md:hidden">
           <Button variant="secondary" size="sm" onClick={learnFromErrors} disabled={learning}>
-            {learning ? 'Looking…' : 'Learn from fixed errors'}
+            {learning ? t('looking') : t('learn')}
           </Button>
           <span className="text-[12px] text-[var(--text-3)]">
-            Proposes a rule when calls failed and worked after an argument changed format. No AI model needed.
+            {t('learnHint')}
           </span>
         </div>
       )}
@@ -300,7 +302,7 @@ export default function SkillsPage() {
           defaultFolderId={folderSel && folderSel !== 'none' ? folderSel : ''}
           onCreated={() => {
             setShowNew(false);
-            setStatus('Skill created (live for MCP).');
+            setStatus(t('status.created'));
             setPage(0);
             load();
             reloadFolders();
@@ -310,19 +312,17 @@ export default function SkillsPage() {
 
       {everEmpty && !loading ? (
         <Card className="p-6 text-center">
-          <p className="text-[13px] font-medium text-[var(--text-2)]">No skills yet</p>
+          <p className="text-[13px] font-medium text-[var(--text-2)]">{t('emptyTitle')}</p>
           <p className="mx-auto mt-1.5 max-w-[46ch] text-[13px] leading-relaxed text-[var(--text-3)]">
-            {isAdmin ? (
-              <>
-                Skills are generated from captured intents. Turn on{' '}
-                <Link href="/settings/organization" className="text-[var(--brand)] hover:underline">
-                  Capture user intent and AI enrichment
-                </Link>
-                , let some tool calls run, then use Generate with AI.
-              </>
-            ) : (
-              'They are generated from captured tool-call intents. Ask an admin to generate them.'
-            )}
+            {isAdmin
+              ? t.rich('emptyAdmin', {
+                  link: (chunks) => (
+                    <Link href="/settings/organization" className="text-[var(--brand)] hover:underline">
+                      {chunks}
+                    </Link>
+                  ),
+                })
+              : t('emptyMember')}
           </p>
         </Card>
       ) : (
@@ -330,14 +330,14 @@ export default function SkillsPage() {
           {/* Status tabs with counts + search */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="inline-flex p-[3px] rounded-[10px] border border-[var(--border)] gap-0.5">
-              {TABS.map((t) => {
-                const n = t.countKey ? counts[t.countKey] : counts.pending + counts.applied + counts.dismissed;
-                const activeTab = statusFilter === t.key;
+              {TABS.map((tab) => {
+                const n = tab.countKey ? counts[tab.countKey] : counts.pending + counts.applied + counts.dismissed;
+                const activeTab = statusFilter === tab.key;
                 return (
                   <button
-                    key={t.key}
+                    key={tab.key}
                     onClick={() => {
-                      setStatusFilter(t.key);
+                      setStatusFilter(tab.key);
                       setPage(0);
                     }}
                     className={cn(
@@ -347,7 +347,7 @@ export default function SkillsPage() {
                         : 'text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
                     )}
                   >
-                    {t.label}
+                    {t(`tabs.${tab.labelKey}`)}
                     <span className={cn('ml-1.5 text-[11px]', activeTab ? 'opacity-90' : 'opacity-70')}>{n}</span>
                   </button>
                 );
@@ -356,16 +356,16 @@ export default function SkillsPage() {
             <input
               value={query}
               onChange={(e) => onSearch(e.target.value)}
-              placeholder="Search skills…"
+              placeholder={t('searchPlaceholder')}
               className={cn(inputCls, 'w-full sm:w-56')}
             />
           </div>
 
           {loading ? (
-            <p className="text-[13px] text-[var(--text-3)]">Loading…</p>
+            <p className="text-[13px] text-[var(--text-3)]">{t('loading')}</p>
           ) : items.length === 0 ? (
             <Card className="p-6 text-center text-[13px] text-[var(--text-3)]">
-              No skills match this filter.
+              {t('noMatch')}
             </Card>
           ) : (
             <div className="flex flex-col gap-2.5">
@@ -389,7 +389,7 @@ export default function SkillsPage() {
           {total > PAGE_SIZE && (
             <div className="flex items-center justify-between mt-4 text-[13px]">
               <span className="text-[var(--text-3)]">
-                {from}–{to} of {total}
+                {t('pager.range', { from, to, total })}
               </span>
               <div className="flex items-center gap-2.5">
                 <Button
@@ -398,10 +398,10 @@ export default function SkillsPage() {
                   disabled={page === 0}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
-                  ← Prev
+                  {t('pager.prev')}
                 </Button>
                 <span className="text-[var(--text-3)]">
-                  Page {page + 1} / {totalPages}
+                  {t('pager.page', { page: page + 1, total: totalPages })}
                 </span>
                 <Button
                   variant="secondary"
@@ -409,7 +409,7 @@ export default function SkillsPage() {
                   disabled={page + 1 >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next →
+                  {t('pager.next')}
                 </Button>
               </div>
             </div>
@@ -435,6 +435,9 @@ function SkillCard({
   folders: KnowledgeFolder[];
   onChanged: () => void;
 }) {
+  const t = useTranslations('aiSkills');
+  const locale = useLocale();
+  const sourceLabel = useSourceLabel();
   const [editing, setEditing] = useState(false);
   const [folderId, setFolderId] = useState(s.folderId ?? '');
   const folderPath = folders.find((f) => f.id === s.folderId)?.path;
@@ -456,22 +459,22 @@ function SkillCard({
     try {
       setHistory(await knowledgeGraph.skills.versions(token, s.id));
     } catch (e: any) {
-      setHistoryError(e.message || 'Could not load the history');
+      setHistoryError(e.message || t('card.historyFailed'));
     }
   };
 
   const scope = s.mcpServer?.name
-    ? `server: ${s.mcpServer.name}`
+    ? t('card.server', { name: s.mcpServer.name })
     : s.connector?.name
-      ? `connector: ${s.connector.name}`
-      : 'workspace';
+      ? t('card.connector', { name: s.connector.name })
+      : t('card.workspace');
 
   const statusMeta: { label: string; tone: Tone } =
     s.status === 'applied'
-      ? { label: 'Active', tone: 'success' }
+      ? { label: t('badge.applied'), tone: 'success' }
       : s.status === 'dismissed'
-        ? { label: 'Dismissed', tone: 'neutral' }
-        : { label: 'Suggested', tone: 'info' };
+        ? { label: t('badge.dismissed'), tone: 'neutral' }
+        : { label: t('badge.pending'), tone: 'info' };
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -606,20 +609,20 @@ function SkillCard({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className={cn(inputCls, 'h-9 bg-[var(--surface-2)]')}
-            placeholder="Title"
+            placeholder={t('form.titlePlaceholder')}
           />
           <input
             value={whenToUse}
             onChange={(e) => setWhenToUse(e.target.value)}
             className={cn(inputCls, 'h-9 bg-[var(--surface-2)]')}
-            placeholder="When to use"
+            placeholder={t('form.whenPlaceholder')}
           />
           <textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             rows={3}
             className={cn(textareaCls, 'bg-[var(--surface-2)]')}
-            placeholder="Instruction"
+            placeholder={t('form.instructionPlaceholder')}
           />
           <textarea
             value={procedure}
@@ -627,18 +630,18 @@ function SkillCard({
             rows={6}
             maxLength={20000}
             className={cn(textareaCls, 'bg-[var(--surface-2)] font-mono text-[12.5px]')}
-            placeholder="Full procedure (optional, markdown): steps, field rules, output format. Opened on demand with skill_get."
+            placeholder={t('form.procedurePlaceholder')}
           />
           {folders.length > 0 && (
             <select
               value={folderId}
               onChange={(e) => setFolderId(e.target.value)}
               className={cn(inputCls, 'h-9 bg-[var(--surface-2)]')}
-              aria-label="Folder"
+              aria-label={t('form.folder')}
             >
               {folderOptions(folders).map((o) => (
                 <option key={o.value} value={o.value}>
-                  {o.value ? `Folder: ${o.label}` : 'No folder'}
+                  {o.value ? t('form.folderOption', { name: o.label }) : t('form.noFolder')}
                 </option>
               ))}
             </select>
@@ -661,10 +664,10 @@ function SkillCard({
                 })
               }
             >
-              Save
+              {t('save')}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setEditing(false)}>
-              Cancel
+              {t('cancel')}
             </Button>
           </div>
         </div>
@@ -685,12 +688,19 @@ function SkillCard({
           <p className="text-[11.5px] text-[var(--text-3)]">
             {folderPath ? `${folderPath} · ` : ''}
             {scope} · {sourceLabel(s.source, s.status)} · v{s.version ?? 1}
-            {s.source === 'llm' || s.source === 'consolidation' ? ` · confidence ${s.confidence.toFixed(2)}` : ''}
-            {s.evidenceCount ? ` · ${s.evidenceCount} example(s)` : ''}
+            {s.source === 'llm' || s.source === 'consolidation'
+              ? ` · ${t('card.confidence', { value: s.confidence.toFixed(2) })}`
+              : ''}
+            {s.evidenceCount ? ` · ${t('card.examples', { count: s.evidenceCount })}` : ''}
             {' · '}
             {s.useCount
-              ? `opened ${s.useCount}×${s.lastUsedAt ? `, last ${new Date(s.lastUsedAt).toLocaleDateString()}` : ''}`
-              : 'not opened yet'}
+              ? s.lastUsedAt
+                ? t('card.openedLast', {
+                    count: s.useCount,
+                    date: new Date(s.lastUsedAt).toLocaleDateString(locale),
+                  })
+                : t('card.opened', { count: s.useCount })
+              : t('card.notOpened')}
           </p>
         </div>
         {isAdmin && (
@@ -702,7 +712,7 @@ function SkillCard({
                 onClick={() => run(() => knowledgeGraph.skills.apply(token, s.id))}
                 className="h-[30px] px-[11px] bg-[var(--ok)] text-[var(--ok-foreground)] hover:opacity-90"
               >
-                {s.status === 'dismissed' ? 'Activate' : 'Apply'}
+                {s.status === 'dismissed' ? t('card.activate') : t('card.apply')}
               </Button>
             )}
             {s.status === 'applied' && (
@@ -713,18 +723,18 @@ function SkillCard({
                 onClick={() => run(() => knowledgeGraph.skills.dismiss(token, s.id))}
                 className="h-[30px] px-[11px]"
               >
-                Deactivate
+                {t('card.deactivate')}
               </Button>
             )}
             <Button variant="secondary" size="sm" onClick={() => setEditing(true)} className="h-[30px] px-[11px]">
-              Edit
+              {t('edit')}
             </Button>
             <Button
               variant="secondary"
               size="sm"
               disabled={busy}
-              title="Delete"
-              aria-label="Delete skill"
+              title={t('delete')}
+              aria-label={t('card.deleteAria')}
               onClick={() => run(() => knowledgeGraph.skills.remove(token, s.id))}
               className="h-[30px] w-[30px] p-0 text-[var(--danger)]"
             >
@@ -736,20 +746,20 @@ function SkillCard({
         )}
       </div>
       <p className="text-[13px] leading-[1.55] mb-1 text-[var(--text)]">
-        <span className="text-[var(--text-3)]">When:</span> {s.whenToUse}
+        <span className="text-[var(--text-3)]">{t('card.when')}</span> {s.whenToUse}
       </p>
       <p className="text-[13px] leading-[1.55] text-[var(--text)]">
-        <span className="text-[var(--text-3)]">Do:</span> {s.instruction}
+        <span className="text-[var(--text-3)]">{t('card.do')}</span> {s.instruction}
       </p>
       {s.status === 'pending' && (s.replaces?.length ?? 0) > 0 && (
         <p className="mt-1 text-[12px] text-[var(--text-3)]">
-          Replaces {s.replaces!.length} active skills: applying it deactivates them (they stay, with their history).
+          {t('card.replaces', { count: s.replaces!.length })}
         </p>
       )}
       {s.body && (
         <details className="mt-2">
           <summary className="cursor-pointer text-[12.5px] text-[var(--text-2)]">
-            Procedure ({s.body.length.toLocaleString()} characters)
+            {t('card.procedure', { count: s.body.length })}
           </summary>
           <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 font-mono text-[12px] leading-relaxed text-[var(--text)]">
             {s.body}
@@ -759,7 +769,7 @@ function SkillCard({
       {(s.version ?? 1) > 1 && (
         <div className="mt-2">
           <button onClick={toggleHistory} className="text-[12px] text-[var(--brand)] hover:underline">
-            {history ? 'Hide history' : `History (${(s.version ?? 1) - 1} earlier version${(s.version ?? 1) > 2 ? 's' : ''})`}
+            {history ? t('card.hideHistory') : t('card.history', { count: (s.version ?? 1) - 1 })}
           </button>
           {historyError && <p className="text-[12px] text-[var(--danger)]">{historyError}</p>}
           {history && (
@@ -767,13 +777,19 @@ function SkillCard({
               {history.map((v) => (
                 <li key={v.version} className="rounded-[9px] border border-[var(--border)] p-3 text-[12.5px]">
                   <p className="mb-1 text-[11.5px] text-[var(--text-3)]">
-                    v{v.version} · replaced {new Date(v.createdAt).toLocaleString()}
+                    v{v.version} · {t('card.replaced', { date: new Date(v.createdAt).toLocaleString(locale) })}
                   </p>
                   <p className="font-medium text-[var(--text)]">{v.title}</p>
-                  {v.whenToUse && <p className="text-[var(--text-2)]">When: {v.whenToUse}</p>}
-                  <p className="text-[var(--text-2)]">Do: {v.instruction}</p>
+                  {v.whenToUse && (
+                    <p className="text-[var(--text-2)]">
+                      {t('card.when')} {v.whenToUse}
+                    </p>
+                  )}
+                  <p className="text-[var(--text-2)]">
+                    {t('card.do')} {v.instruction}
+                  </p>
                   {v.body && (
-                    <p className="text-[var(--text-3)]">Procedure: {v.body.length.toLocaleString()} characters</p>
+                    <p className="text-[var(--text-3)]">{t('card.historyProcedure', { count: v.body.length })}</p>
                   )}
                 </li>
               ))}
@@ -785,12 +801,15 @@ function SkillCard({
   );
 }
 
-function sourceLabel(source?: string, status?: string): string {
-  if (source === 'llm') return 'AI-generated';
-  if (source === 'consolidation') return status === 'pending' ? 'merge proposal' : 'merged by AI';
-  if (source === 'errors') return 'learned from fixed errors';
-  if (source === 'finder') return 'from Skills Finder';
-  return 'written by hand';
+function useSourceLabel() {
+  const t = useTranslations('aiSkills.sources');
+  return (source?: string, status?: string): string => {
+    if (source === 'llm') return t('llm');
+    if (source === 'consolidation') return status === 'pending' ? t('mergeProposal') : t('mergedByAi');
+    if (source === 'errors') return t('errors');
+    if (source === 'finder') return t('finder');
+    return t('manual');
+  };
 }
 
 function NewSkillForm({
@@ -808,6 +827,7 @@ function NewSkillForm({
   defaultFolderId: string;
   onCreated: () => void;
 }) {
+  const t = useTranslations('aiSkills');
   const [folderId, setFolderId] = useState(defaultFolderId);
   const [title, setTitle] = useState('');
   const [whenToUse, setWhenToUse] = useState('');
@@ -837,7 +857,7 @@ function NewSkillForm({
       setScope('');
       onCreated();
     } catch (e: any) {
-      setErr(e.message || 'Create failed');
+      setErr(e.message || t('form.createFailed'));
     } finally {
       setSaving(false);
     }
@@ -845,25 +865,25 @@ function NewSkillForm({
 
   return (
     <Card className="p-4 mb-3.5 bg-[var(--surface-2)]">
-      <p className="text-[13.5px] font-semibold mb-3 text-[var(--text)]">New skill</p>
+      <p className="text-[13.5px] font-semibold mb-3 text-[var(--text)]">{t('newSkill')}</p>
       <div className="flex flex-col gap-2.5">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Title (e.g. Always confirm the delivery address)"
+          placeholder={t('form.newTitlePlaceholder')}
           className={inputCls}
         />
         <input
           value={whenToUse}
           onChange={(e) => setWhenToUse(e.target.value)}
-          placeholder="When to use (optional)"
+          placeholder={t('form.newWhenPlaceholder')}
           className={inputCls}
         />
         <textarea
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
           rows={3}
-          placeholder="Instruction for the agent (imperative guidance)"
+          placeholder={t('form.newInstructionPlaceholder')}
           className={textareaCls}
         />
         <textarea
@@ -871,7 +891,7 @@ function NewSkillForm({
           onChange={(e) => setProcedure(e.target.value)}
           rows={5}
           maxLength={20000}
-          placeholder="Full procedure (optional, markdown): steps, field rules, output format. The AI opens it with skill_get when the skill applies."
+          placeholder={t('form.newProcedurePlaceholder')}
           className={cn(textareaCls, 'font-mono text-[12.5px]')}
         />
         {folders.length > 0 && (
@@ -879,11 +899,11 @@ function NewSkillForm({
             value={folderId}
             onChange={(e) => setFolderId(e.target.value)}
             className={cn(inputCls, 'text-[var(--text)]')}
-            aria-label="Folder"
+            aria-label={t('form.folder')}
           >
             {folderOptions(folders).map((o) => (
               <option key={o.value} value={o.value}>
-                {o.value ? `Folder: ${o.label}` : 'No folder (top level)'}
+                {o.value ? t('form.folderOption', { name: o.label }) : t('form.noFolderTop')}
               </option>
             ))}
           </select>
@@ -893,18 +913,18 @@ function NewSkillForm({
           onChange={(e) => setScope(e.target.value)}
           className={cn(inputCls, 'text-[var(--text)]')}
         >
-          <option value="">Scope… (where this skill applies)</option>
+          <option value="">{t('form.scopePlaceholder')}</option>
           {servers.length > 0 && (
-            <optgroup label="MCP servers">
+            <optgroup label={t('form.mcpServers')}>
               {servers.map((s) => (
-                <option key={s.id} value={`srv:${s.id}`}>Server: {s.name}</option>
+                <option key={s.id} value={`srv:${s.id}`}>{t('form.serverOption', { name: s.name })}</option>
               ))}
             </optgroup>
           )}
           {connectors.length > 0 && (
-            <optgroup label="Connectors">
+            <optgroup label={t('form.connectors')}>
               {connectors.map((c) => (
-                <option key={c.id} value={`con:${c.id}`}>Connector: {c.name}</option>
+                <option key={c.id} value={`con:${c.id}`}>{t('form.connectorOption', { name: c.name })}</option>
               ))}
             </optgroup>
           )}
@@ -912,10 +932,10 @@ function NewSkillForm({
         {err && <p className="text-[12px] text-[var(--danger)]">{err}</p>}
         <div className="flex items-center gap-2.5 mt-0.5">
           <Button variant="primary" size="md" onClick={submit} disabled={!valid || saving}>
-            {saving ? 'Creating…' : 'Create skill'}
+            {saving ? t('form.creating') : t('form.create')}
           </Button>
           <span className="text-[11.5px] text-[var(--text-3)]">
-            Created as active → immediately available to the MCP server.
+            {t('form.createdHint')}
           </span>
         </div>
       </div>
