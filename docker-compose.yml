@@ -216,6 +216,7 @@ services:
       - FILES_WORKER_TOKEN=${FILES_WORKER_TOKEN:-}
       - FILES_WORKER_HOST=0.0.0.0
       - FILES_WORKER_PORT=8891
+      - FILES_WORKER_MAX_OLD_SPACE_MB=${FILES_WORKER_MAX_OLD_SPACE_MB:-512}
       - FILES_WORKER_CONCURRENCY=${FILES_WORKER_CONCURRENCY:-2}
       - FILE_EXTRACTOR_URL=http://file-extractor:8890
       - FILE_EXTRACTOR_TOKEN=${FILE_EXTRACTOR_TOKEN:-}
@@ -252,6 +253,14 @@ services:
         condition: service_healthy
     # Lets a running slice finish and release its lease (scheduler waits 20 s).
     stop_grace_period: 30s
+    # The image's own healthcheck probes the backend on :4000; the worker
+    # answers on its internal port.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 -O /dev/null --header \"X-Worker-Token: $${FILES_WORKER_TOKEN}\" http://127.0.0.1:8891/internal/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 
   # Text extraction for File Search (ee/): no route to the internet, no
