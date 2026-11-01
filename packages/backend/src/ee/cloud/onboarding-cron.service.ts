@@ -1,13 +1,23 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
-import { isConsumerEmail } from '../../common/consumer-email-domains';
 import { getAdapter } from '../../adapters/catalog';
+import { ProductEvents } from '../../audit/product-event.service';
 import { EmailService } from '../../settings/email.service';
 import type { WinbackOffer } from '../../settings/email-templates';
 import { LicenseService } from '../../license/license.service';
 import { LicenseReleaseService } from '../../license/license-release.service';
 import { CardTrialOfferService } from '../../license/card-trial-offer.service';
+import {
+  WINBACK_HOLDOUT_KEY,
+  WINBACK_OFFER_KEY,
+  type WinbackSegment,
+  holdoutValue,
+  inWinbackHoldout,
+  isHoldoutValue,
+  offerValue,
+  winbackSegment,
+} from './winback-segment';
 
 const HOURS = (n: number) => n * 60 * 60 * 1000;
 
@@ -92,48 +102,30 @@ const WINBACK_TEST = {
 type WinbackTestArm = typeof WINBACK_TEST.testArm | typeof WINBACK_TEST.controlArm;
 
 /**
- * Connectors that mark a workspace as a business, by catalog category: an
- * Etsy or Shopify seller writing from a Gmail address is a small business,
- * not a private user, and stays out of the consumer test. Vinted is the
- * exception: its sellers are private people selling their own things.
- * Custom connectors (not from the catalog) say nothing either way.
+ * "Your AI tried to use X": an expired trial whose AI keeps calling its tools
+ * (the `trial_expired_call_blocked` events the MCP tool path records, at most
+ * one per workspace and tool an hour) is the warmest lead there is. Sent once
+ * per workspace, to a workspace with at least `minEvents` of those in the last
+ * `window`, with the first win-back's offer. It counts as the first win-back:
+ * it also sets that stage's flag, so nobody gets two offers in a week. No two
+ * win-back emails go out within `spacing` of each other, this one included.
  */
-const BUSINESS_CONNECTORS = {
-  categories: new Set([
-    'e-commerce',
-    'crm',
-    'accounting',
-    'erp',
-    'payments',
-    'logistics',
-    'finance',
-    'hr',
-    'support',
-    'itsm',
-    'wholesale',
-    'advertising',
-    'marketing-automation',
-    'field-service',
-    'construction',
-    'dms',
-    'time-tracking',
-    'e-signature',
-    'banking',
-  ]),
-  privateSlugs: new Set(['vinted']),
-};
+const BLOCKED_CALLS = {
+  flagKey: 'trial_email_blocked_calls',
+  window: HOURS(48),
+  minEvents: 2,
+  spacing: HOURS(24),
+  /** Stored in `winback_offer` as the stage. */
+  stage: 'blocked_calls',
+} as const;
+
+/** OrgSettings flags of the win-back emails, for the spacing between them. */
+const WINBACK_EMAIL_FLAGS = [...WINBACK_STAGES.map((s) => s.flagKey), BLOCKED_CALLS.flagKey];
 
 /** The test arm of a workspace: even first byte of sha256(id) gets the €5.99 offer. */
 export function winbackTestArm(organizationId: string): WinbackTestArm {
   const firstByte = createHash('sha256').update(organizationId).digest()[0];
   return firstByte % 2 === 0 ? WINBACK_TEST.testArm : WINBACK_TEST.controlArm;
-}
-
-function isBusinessConnector(config: unknown): boolean {
-  const slug = (config as { adapterSlug?: unknown } | null)?.adapterSlug;
-  if (typeof slug !== 'string' || BUSINESS_CONNECTORS.privateSlugs.has(slug)) return false;
-  const category = getAdapter(slug)?.category;
-  return !!category && BUSINESS_CONNECTORS.categories.has(category);
 }
 
 /**
@@ -235,6 +227,9 @@ export class OnboardingCronService {
     winbackFirstMonth: number;
     winbackControl: number;
     winbackHelp: number;
+    winbackHoldout: number;
+    blockedCallEmails: number;
+    blockedCallHoldout: number;
     cardTrialOffers: number;
     skipped: number;
   }> {
@@ -257,6 +252,9 @@ export class OnboardingCronService {
       winbackFirstMonth: 0,
       winbackControl: 0,
       winbackHelp: 0,
+      winbackHoldout: 0,
+      blockedCallEmails: 0,
+      blockedCallHoldout: 0,
       cardTrialOffers: 0,
       skipped: 0,
     };
@@ -403,6 +401,9 @@ export class OnboardingCronService {
     await this.runActivationPass(now, out);
     await this.runTrialLifecyclePass(now, out);
     await this.runWinbackPass(now, out);
+    // After the win-back pass, so a first win-back it just sent holds this
+    // one back for a day (BLOCKED_CALLS.spacing).
+    await this.runBlockedCallPass(now, out);
     // After the lifecycle and win-back passes, so an email they just sent
     // holds this one back (12 hours; see card-trial-offer.service.ts).
     out.cardTrialOffers = (await this.cardTrialOffer?.runEmailPass(new Date(now)))?.sent ?? 0;
@@ -433,6 +434,8 @@ export class OnboardingCronService {
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
         `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} ` +
         `winbackFirstMonth=${out.winbackFirstMonth} winbackControl=${out.winbackControl} winbackHelp=${out.winbackHelp} ` +
+        `winbackHoldout=${out.winbackHoldout} blockedCallEmails=${out.blockedCallEmails} ` +
+        `blockedCallHoldout=${out.blockedCallHoldout} ` +
         `cardTrialOffers=${out.cardTrialOffers} ` +
         `skipped=${out.skipped}`,
     );
@@ -572,7 +575,10 @@ export class OnboardingCronService {
    * flagged in OrgSettings like the lifecycle emails; a stage is only sent
    * inside its window, so a late run never mails a month-old trial its
    * first offer. Skips workspaces that are or were customers, and admins who
-   * opted out of marketing email.
+   * opted out of marketing email. A workspace that used the product and is in
+   * the control group (winback-segment.ts) gets no offer: the stage is closed
+   * and counted as winbackHoldout. Each offer sent is stored as
+   * `winback_offer`. Waits a day after the blocked-call email.
    */
   private async runWinbackPass(
     now: number,
@@ -582,6 +588,7 @@ export class OnboardingCronService {
       winbackFirstMonth: number;
       winbackControl: number;
       winbackHelp: number;
+      winbackHoldout: number;
       skipped: number;
     },
   ): Promise<void> {
@@ -671,18 +678,41 @@ export class OnboardingCronService {
         continue;
       }
 
+      // Who the workspace is decides the holdout, and the first-month test.
+      // The how-to (never used) is no offer: never held out.
+      let segment: WinbackSegment = 'unused';
+      if (used) {
+        const connectors = await this.prisma.connector.findMany({
+          where: { organizationId },
+          select: { config: true },
+        });
+        segment = winbackSegment({
+          adminEmails: admins.map((a) => a.user.email),
+          connectorConfigs: connectors.map((c) => c.config),
+          successfulCalls,
+        });
+        // Not within a day of the blocked-call email: the next run inside the
+        // window sends it.
+        if (await this.winbackEmailSentWithin(organizationId, now, BLOCKED_CALLS.spacing)) {
+          out.skipped++;
+          continue;
+        }
+        if (await this.inHoldout(organizationId, segment)) {
+          await this.flag(organizationId, step.flagKey);
+          out.winbackHoldout++;
+          out.skipped++;
+          continue;
+        }
+      }
+
       let offer: WinbackOffer;
       let arm: WinbackTestArm | null = null;
       if (!used) {
         offer = { kind: 'help', trialEndedAt };
       } else {
-        if (
-          step.stage === 'first' &&
-          (await this.inFirstMonthTest(
-            organizationId,
-            admins.map((a) => a.user.email),
-          ))
-        ) {
+        // The first-month test (WINBACK_TEST): consumer mailboxes only and no
+        // business connector, which is the consumer and Telegram segments.
+        if (step.stage === 'first' && (segment === 'consumer' || segment === 'telegram')) {
           arm = winbackTestArm(organizationId);
         }
         offer =
@@ -722,6 +752,15 @@ export class OnboardingCronService {
         continue;
       }
       out.winbackOffers++;
+      await this.flag(
+        organizationId,
+        WINBACK_OFFER_KEY,
+        offerValue(
+          segment,
+          arm === WINBACK_TEST.testArm ? WINBACK_TEST.code : step.code,
+          step.stage,
+        ),
+      );
       if (arm) {
         await this.flag(organizationId, WINBACK_TEST.armKey, arm);
         if (arm === WINBACK_TEST.testArm) out.winbackFirstMonth++;
@@ -731,17 +770,214 @@ export class OnboardingCronService {
   }
 
   /**
-   * Whether a workspace takes part in the first-month test (WINBACK_TEST):
-   * every active admin on a consumer mailbox, and no business connector
-   * (BUSINESS_CONNECTORS). The caller has already checked for a successful call.
+   * Blocked-call pass (see BLOCKED_CALLS). For each workspace with at least
+   * `minEvents` blocked-call events in the last `window`: its trial ended, it
+   * never was a customer (the win-back's checks: any licence besides the free
+   * trial, then the licence site's subscription history for every admin,
+   * postponed when the site cannot answer), it used the product (the
+   * never-used get the how-to only), it has an admin who did not opt out of
+   * marketing, it is not in the control group, and no win-back email went out
+   * in the last day. The email says which app the AI tried and how often.
+   *
+   * Once per workspace: `trial_email_blocked_calls` is set when it is sent,
+   * and whenever the workspace is ruled out for good (customer, never used,
+   * nobody to mail, control group). Sending also sets the first win-back's
+   * flag. A postponed or failed send sets nothing: the next run decides again
+   * while the events are inside the window.
    */
-  private async inFirstMonthTest(organizationId: string, adminEmails: string[]): Promise<boolean> {
-    if (adminEmails.length === 0 || !adminEmails.every((e) => isConsumerEmail(e))) return false;
-    const connectors = await this.prisma.connector.findMany({
-      where: { organizationId },
-      select: { config: true },
+  private async runBlockedCallPass(
+    now: number,
+    out: { examined: number; blockedCallEmails: number; blockedCallHoldout: number; skipped: number },
+  ): Promise<void> {
+    const since = new Date(now - BLOCKED_CALLS.window);
+    const groups = await this.prisma.productEvent.groupBy({
+      by: ['organizationId'],
+      where: {
+        event: ProductEvents.TRIAL_EXPIRED_CALL_BLOCKED,
+        organizationId: { not: null },
+        createdAt: { gte: since },
+      },
+      _count: { _all: true },
     });
-    return !connectors.some((c) => isBusinessConnector(c.config));
+    const firstStage = WINBACK_STAGES[0];
+
+    for (const group of groups) {
+      const organizationId = group.organizationId;
+      if (!organizationId || group._count._all < BLOCKED_CALLS.minEvents) continue;
+      out.examined++;
+
+      const [already, customer, trial] = await Promise.all([
+        this.prisma.orgSettings.findUnique({
+          where: { organizationId_key: { organizationId, key: BLOCKED_CALLS.flagKey } },
+          select: { id: true },
+        }),
+        this.prisma.license.count({ where: { organizationId, plan: { not: 'trial' } } }),
+        this.prisma.license.findFirst({
+          where: { organizationId, plan: 'trial' },
+          orderBy: { createdAt: 'desc' },
+          select: { expiresAt: true },
+        }),
+      ]);
+      if (already) {
+        out.skipped++;
+        continue;
+      }
+      if (customer > 0) {
+        await this.flag(organizationId, BLOCKED_CALLS.flagKey);
+        out.skipped++;
+        continue;
+      }
+      // The trial must still be over: one extended or reissued since the
+      // events were recorded is not blocked any more.
+      const trialEndedAt = trial?.expiresAt ?? null;
+      if (!trialEndedAt || trialEndedAt.getTime() > now) {
+        out.skipped++;
+        continue;
+      }
+
+      const [admins, successfulCalls, connectors] = await Promise.all([
+        this.prisma.organizationMember.findMany({
+          where: { organizationId, role: 'ADMIN', deactivatedAt: null },
+          select: { user: { select: { email: true, name: true, emailMarketingOptOut: true } } },
+        }),
+        this.prisma.toolInvocation.count({ where: { organizationId, status: 'SUCCESS' } }),
+        this.prisma.connector.findMany({ where: { organizationId }, select: { config: true } }),
+      ]);
+      const segment = winbackSegment({
+        adminEmails: admins.map((a) => a.user.email),
+        connectorConfigs: connectors.map((c) => c.config),
+        successfulCalls,
+      });
+      if (segment === 'unused') {
+        await this.flag(organizationId, BLOCKED_CALLS.flagKey);
+        out.skipped++;
+        continue;
+      }
+      const recipients = admins.filter((a) => !a.user.emailMarketingOptOut).map((a) => a.user);
+      if (recipients.length === 0) {
+        await this.flag(organizationId, BLOCKED_CALLS.flagKey);
+        out.skipped++;
+        continue;
+      }
+
+      const paidPlan = await this.license.workspacesWithPaidPlan(
+        [{ organizationId, adminEmails: admins.map((a) => a.user.email) }],
+        new Date(now),
+      );
+      if (paidPlan.unknown.has(organizationId)) {
+        this.logger.warn(
+          `Blocked-call email for workspace ${organizationId} postponed: no subscription history from the licence site.`,
+        );
+        out.skipped++;
+        continue;
+      }
+      if (paidPlan.paid.has(organizationId)) {
+        await this.flag(organizationId, BLOCKED_CALLS.flagKey);
+        out.skipped++;
+        continue;
+      }
+
+      if (await this.winbackEmailSentWithin(organizationId, now, BLOCKED_CALLS.spacing)) {
+        out.skipped++;
+        continue;
+      }
+      if (await this.inHoldout(organizationId, segment)) {
+        await this.flag(organizationId, BLOCKED_CALLS.flagKey);
+        out.blockedCallHoldout++;
+        out.skipped++;
+        continue;
+      }
+
+      const attempts = await this.blockedCallSummary(organizationId, since);
+      const promoCode = process.env[firstStage.codeEnv] || firstStage.code;
+      let sentAny = false;
+      for (const r of recipients) {
+        const ok = await this.email.sendTrialBlockedCallsEmail(r.email, r.name || 'there', {
+          ...attempts,
+          percentOff: firstStage.percentOff,
+          promoCode,
+          trialEndedAt,
+        });
+        if (ok) sentAny = true;
+      }
+      if (!sentAny) {
+        out.skipped++;
+        continue;
+      }
+      await this.flag(organizationId, BLOCKED_CALLS.flagKey);
+      // It is the first win-back: that stage is not sent again.
+      const firstSent = await this.prisma.orgSettings.findUnique({
+        where: { organizationId_key: { organizationId, key: firstStage.flagKey } },
+        select: { id: true },
+      });
+      if (!firstSent) await this.flag(organizationId, firstStage.flagKey);
+      await this.flag(organizationId, WINBACK_OFFER_KEY, offerValue(segment, firstStage.code, BLOCKED_CALLS.stage));
+      out.blockedCallEmails++;
+    }
+  }
+
+  /**
+   * What the email reports from the blocked-call events since `since`: the
+   * catalog app the AI tried most and how often, and the AI client named most
+   * (null when none was recorded). Without any app, the count is of all the
+   * events. Each event stands for at least one refused call (they are
+   * throttled per tool and hour), so the number never overstates.
+   */
+  private async blockedCallSummary(
+    organizationId: string,
+    since: Date,
+  ): Promise<{ attempts: number; appName: string | null; clientName: string | null }> {
+    const rows = await this.prisma.productEvent.findMany({
+      where: { event: ProductEvents.TRIAL_EXPIRED_CALL_BLOCKED, organizationId, createdAt: { gte: since } },
+      select: { metadata: true },
+    });
+    const top = (key: 'adapterSlug' | 'client'): [string, number] | null => {
+      const counts = new Map<string, number>();
+      for (const r of rows) {
+        const v = (r.metadata as Record<string, unknown> | null)?.[key];
+        if (typeof v === 'string' && v) counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+      let best: [string, number] | null = null;
+      for (const entry of counts) if (!best || entry[1] > best[1]) best = entry;
+      return best;
+    };
+    const app = top('adapterSlug');
+    const appName = app ? (getAdapter(app[0])?.name ?? null) : null;
+    return {
+      attempts: app && appName ? app[1] : rows.length,
+      appName,
+      clientName: top('client')?.[0] ?? null,
+    };
+  }
+
+  /**
+   * Whether a workspace is in the win-back control group (winback-segment.ts).
+   * Decided once, the first time it is due an offer, and stored as
+   * `winback_holdout`; the stored decision holds even if the segment changes.
+   */
+  private async inHoldout(organizationId: string, segment: WinbackSegment): Promise<boolean> {
+    if (segment === 'unused') return false;
+    const stored = await this.prisma.orgSettings.findUnique({
+      where: { organizationId_key: { organizationId, key: WINBACK_HOLDOUT_KEY } },
+      select: { value: true },
+    });
+    if (stored) return isHoldoutValue(stored.value);
+    const held = inWinbackHoldout(organizationId, segment);
+    await this.flag(organizationId, WINBACK_HOLDOUT_KEY, holdoutValue(segment, held));
+    return held;
+  }
+
+  /** Whether any win-back email (WINBACK_EMAIL_FLAGS) was flagged in the last `ms`. */
+  private async winbackEmailSentWithin(organizationId: string, now: number, ms: number): Promise<boolean> {
+    const recent = await this.prisma.orgSettings.findFirst({
+      where: {
+        organizationId,
+        key: { in: WINBACK_EMAIL_FLAGS },
+        updatedAt: { gt: new Date(now - ms) },
+      },
+      select: { id: true },
+    });
+    return !!recent;
   }
 
   /** Stores an OrgSettings value, by default the current time (a sent-flag). */

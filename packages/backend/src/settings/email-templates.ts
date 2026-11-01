@@ -611,6 +611,84 @@ export function trialWinbackEmail(
 }
 
 /**
+ * "Claude tried to use Etsy 6 times since yesterday": sent once to a Cloud
+ * workspace whose AI kept calling its tools after the trial ended (the
+ * `trial_expired_call_blocked` events), with the first win-back's offer. The
+ * onboarding cron decides who gets it; marketing, so it carries the
+ * unsubscribe line. The client and app names come from an OAuth client's
+ * self-chosen name and the catalog, so both are escaped and capped.
+ */
+export interface TrialBlockedCallsEmailInput {
+  name: string;
+  /** The AI client's name ("Claude"); null when unknown ("Your AI"). */
+  clientName: string | null;
+  /** The app the AI tried most ("Etsy"); null when none is known. */
+  appName: string | null;
+  /** How many blocked calls the email reports (at least 1). */
+  attempts: number;
+  percentOff: number;
+  promoCode: string;
+  trialEndedAt: Date;
+  cloudUrl: string;
+  marketingUrl: string;
+  /** The recipient's address token for the pricing link (see trialLifecycleEmail). */
+  emailToken?: string | null;
+}
+
+const capName = (v: string | null | undefined, max = 40) => {
+  const t = (v ?? '').replace(/\s+/g, ' ').trim();
+  if (!t) return null;
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+};
+
+export function trialBlockedCallsEmail(input: TrialBlockedCallsEmailInput, ctx: MarketingContext): RenderedEmail {
+  const client = capName(input.clientName);
+  const who = client ?? 'Your AI';
+  const whoInline = client ?? 'your AI';
+  const app = capName(input.appName) ?? 'your apps';
+  const n = Math.max(1, Math.round(input.attempts));
+  const times = n === 1 ? 'once' : `${n.toLocaleString('en-US')} times`;
+  const percent = Math.round(input.percentOff);
+  const endedOn = dayAndMonth(input.trialEndedAt);
+  const hi = greeting(input.name);
+  const returnUrl = encodeURIComponent(`${input.cloudUrl}/settings/license/activate`);
+  const pricingUrl = withEmailLinkToken(
+    withSourceParam(
+      `${input.marketingUrl}/pricing?promo=${encodeURIComponent(input.promoCode)}&return_url=${returnUrl}`,
+      'email_blocked_calls',
+    ),
+    input.emailToken,
+  );
+  const headline = `${who} tried to use ${app} ${times} since yesterday`;
+  const replyLine = 'Not the right time, or something was missing? Reply and tell us; we read every answer.';
+  return build({
+    subject: headline,
+    preheader: `Your trial ended, so those calls were refused. Your connectors are still there.`,
+    bodyHtml:
+      h1(`${esc(headline)}.`, 'Your workspace is still there.') +
+      p(
+        `${esc(hi)} your AnythingMCP trial ended on ${endedOn}, so those calls were refused. ` +
+          `Your connectors and settings are kept: reactivate and ${esc(whoInline)} can use ${esc(app)} again right away.`,
+      ) +
+      p(
+        `If you'd like to continue, here is <strong style="font-weight:600;">${percent}% off your first 3 months</strong> on any Cloud plan. ` +
+          'The code is applied when you use the button, or enter it at checkout:',
+      ) +
+      codeBox(input.promoCode, { size: 22, spacing: 3 }) +
+      button(pricingUrl, `Reactivate with ${percent}% off`) +
+      small(replyLine),
+    bodyText:
+      `${hi}\n\n${headline}. Your AnythingMCP trial ended on ${endedOn}, so those calls were refused. ` +
+      `Your connectors and settings are kept: reactivate and ${whoInline} can use ${app} again right away.\n\n` +
+      `Here is ${percent}% off your first 3 months on any Cloud plan.\n\n` +
+      `Code: ${input.promoCode}\nReactivate: ${pricingUrl}\n\n` +
+      replyLine,
+    ctx,
+    unsubscribeUrl: ctx.unsubscribeUrl,
+  });
+}
+
+/**
  * The card-trial offer after a workspace's first successful tool call
  * (card-trial-offer.service.ts), 30 to 90 minutes after it. Value first:
  * the connection works, here is what to ask next. Then the trial's end date

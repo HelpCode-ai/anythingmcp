@@ -199,6 +199,32 @@ describe('trial win-back', () => {
   });
 });
 
+describe('blocked-call email', () => {
+  const render = (other: string) => EMAIL_SAMPLES.find((s) => s.id === 'blocked-calls')!.render(cloud, { name: 'Anna', other });
+
+  it('says which AI tried which app and how often, dated, with the offer', () => {
+    const email = render('Claude');
+    expect(email.subject).toBe('Claude tried to use Etsy 6 times since yesterday');
+    for (const part of [email.html, email.text]) {
+      expect(part).toContain('ended on 7 October');
+      expect(part).toContain('Claude can use Etsy again right away');
+      expect(part).toContain('30% off your first 3 months');
+    }
+    expect(email.html).toContain('START30');
+    expect(email.text).toContain('&source=email_blocked_calls');
+    expect(email.marketing).toBe(true);
+    expect(`${email.subject}\n${email.text}`).not.toContain('—');
+  });
+
+  it('says "Your AI" without a client name, and caps a long one', () => {
+    const none = EMAIL_SAMPLES.find((s) => s.id === 'blocked-calls')!.render(cloud, { name: 'Anna', other: '' });
+    expect(none.subject).toBe('Your AI tried to use Etsy 6 times since yesterday');
+    expect(none.text).toContain('your AI can use Etsy again right away');
+    const long = render('A'.repeat(200));
+    expect(long.subject.length).toBeLessThan(100);
+  });
+});
+
 describe('card-trial offer after the first success', () => {
   const render = (id: string, other = 'My Shopify store') =>
     EMAIL_SAMPLES.find((s) => s.id === id)!.render(cloud, { name: 'Anna', other });
