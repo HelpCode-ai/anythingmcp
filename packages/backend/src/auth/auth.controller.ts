@@ -45,6 +45,7 @@ import { EditionService } from '../ee/licensing/edition.service';
 import { SignupAttributionDto } from './signup-attribution.dto';
 import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from './disposable-email.util';
 import { emailLookupWhere, normalizeEmail, sameEmail } from '../common/email.util';
+import { maskEmail } from './mcp-email-verification';
 
 /**
  * Registration and password reset answer the same whether or not the address
@@ -294,7 +295,7 @@ export class AuthController {
 
     // Send email
     const send = this.emailService.sendVerificationEmail(email, code, verifyUrl).catch((err) => {
-      this.logger.error(`Failed to send verification email to ${email}: ${err}`);
+      this.logger.error(`Failed to send verification email to ${maskEmail(email)}: ${err}`);
       return false;
     });
     // The code exists either way; only the delivery is left running.
@@ -1057,7 +1058,7 @@ export class AuthController {
     // for which accounts are SSO-only.
     if (user.passwordLoginDisabled) {
       this.logger.warn(
-        `Password reset refused for SSO-only account: ${user.email}`,
+        `Password reset refused for SSO-only account: ${maskEmail(user.email)}`,
       );
       return answerNoSoonerThan(startedAt, NEUTRAL_PASSWORD_RESET);
     }
@@ -1084,7 +1085,7 @@ export class AuthController {
       .then((sent) => {
         if (!sent) {
           this.logger.warn(
-            `Password reset requested for ${dto.email} but email could not be sent (SMTP not configured)`,
+            `Password reset requested for ${maskEmail(dto.email)} but email could not be sent (SMTP not configured)`,
           );
         }
       })
