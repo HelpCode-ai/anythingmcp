@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：684 个连接器，其中 35 个无需 API 密钥。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 ERP、电子商务、REST、SOAP 和 SQL 系统转化为 Claude 和 ChatGPT 可用的 MCP 工具：684 个连接器，其中 34 个无需 API 密钥。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：自行托管的 MCP 网关</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将任意 REST/OpenAPI、SOAP、GraphQL、OData 或 SQL 系统转化为 Claude、ChatGPT 和 Copilot 可用的 MCP 工具。</strong><br/>
-  它自带 684 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 35 个无需 API 密钥。
+  它自带 684 个现成适配器，涵盖 SAP、Etsy、weclapp 和 Amazon Seller 等，其中 34 个无需 API 密钥。
 </p>
 
 <p align="center">

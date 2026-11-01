@@ -4,6 +4,7 @@
   "description": "Search inside a Windows file server, NAS or network share mounted into a self-hosted AnythingMCP: full-text index of PDF, Excel, Word and Outlook files, synced in the background. Self-hosted only.",
   "region": "intl",
   "category": "storage",
+  "selfHostOnly": true,
   "icon": "network-folder",
   "docsUrl": "https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md",
   "aliases": [

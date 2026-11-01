@@ -7,11 +7,12 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RAW = 'https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/';
 const GITHUB = 'https://github.com/HelpCode-ai/anythingmcp/blob/main/';
-// Contributor credits and Cloud operator internals are not product guides.
+// Contributor credits, Cloud operator internals and design plans are not product guides.
 export const EXCLUDED_DOCS = [
   'docs/AUTHORS.md',
   'docs/operations/card-trial-offer.md',
   'docs/operations/signup-attribution.md',
+  'docs/plans/file-search.md',
 ];
 const SECTIONS = [
   ['Getting started', ['README.md', 'docs/deployment.md', 'docs/guides.md']],

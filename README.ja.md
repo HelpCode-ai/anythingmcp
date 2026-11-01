@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。684 のコネクター、うち 35 は API キー不要。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。684 のコネクター、うち 34 は API キー不要。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：セルフホスト型 MCP ゲートウェイ</h1>
@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、REST/OpenAPI、SOAP、GraphQL、OData、SQL のあらゆるシステムを Claude、ChatGPT、Copilot 用の MCP ツールに変換します。</strong><br/>
-  SAP、Etsy、weclapp、Amazon Seller などを含む 684 種類の既製アダプターを同梱しており、うち 35 は API キー不要です。
+  SAP、Etsy、weclapp、Amazon Seller などを含む 684 種類の既製アダプターを同梱しており、うち 34 は API キー不要です。
 </p>
 
 <p align="center">

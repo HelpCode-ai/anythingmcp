@@ -19,7 +19,7 @@
 
 <p align="center">
   <strong>AnythingMCP is an open-source, self-hosted MCP gateway that turns any REST/OpenAPI, SOAP, GraphQL, OData or SQL system into MCP tools for Claude, ChatGPT and Copilot, without writing an MCP server.</strong><br/>
-  It ships 684 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 35 of them need no API key.
+  It ships 684 ready connectors, among them SAP, Etsy, weclapp and Amazon Seller, and 34 of them need no API key.
 </p>
 
 <p align="center">
