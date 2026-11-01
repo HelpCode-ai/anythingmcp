@@ -104,6 +104,109 @@ describe('EmailService', () => {
     });
   });
 
+  describe('retention sender (RETENTION_SMTP_*)', () => {
+    const RETENTION = [
+      'RETENTION_SMTP_HOST',
+      'RETENTION_SMTP_PORT',
+      'RETENTION_SMTP_USER',
+      'RETENTION_SMTP_PASS',
+      'RETENTION_SMTP_FROM',
+      'RETENTION_SMTP_REPLY_TO',
+    ];
+    const transports = () => (nodemailer.createTransport as jest.Mock).mock.calls;
+    const ended = new Date('2026-10-28T09:00:00Z');
+    const blocked = {
+      clientName: 'Claude',
+      appName: 'Etsy',
+      attempts: 6,
+      percentOff: 30,
+      promoCode: 'START30',
+      trialEndedAt: ended,
+    };
+    async function sendRetentionEmails(service: EmailService) {
+      await service.sendTrialLifecycleEmail('a@b.com', 'Ada', 'expired', { connectors: 1, successfulCalls: 4, daysLeft: 0 });
+      await service.sendTrialWinbackEmail('a@b.com', 'Ada', { kind: 'help', trialEndedAt: ended });
+      await service.sendTrialBlockedCallsEmail('a@b.com', 'Ada', blocked);
+    }
+    beforeEach(() => (nodemailer.createTransport as jest.Mock).mockClear());
+    afterEach(() => {
+      for (const key of RETENTION) delete process.env[key];
+    });
+
+    function configure() {
+      process.env.RETENTION_SMTP_HOST = 'smtp.resend.test';
+      process.env.RETENTION_SMTP_PORT = '2587';
+      process.env.RETENTION_SMTP_USER = 'resend';
+      process.env.RETENTION_SMTP_PASS = 'pass-1';
+      process.env.RETENTION_SMTP_FROM = 'Matteo from AnythingMCP <support@anythingmcp.com>';
+      process.env.RETENTION_SMTP_REPLY_TO = 'support@anythingmcp.com';
+    }
+
+    it('sends the lifecycle, win-back and blocked-call emails through it when configured', async () => {
+      configure();
+      const { service } = make();
+      await sendRetentionEmails(service);
+      expect(transports()).toHaveLength(3);
+      for (const [options, defaults] of transports()) {
+        // 2587 upgrades with STARTTLS: not implicit TLS.
+        expect(options).toMatchObject({ host: 'smtp.resend.test', port: 2587, secure: false, auth: { user: 'resend', pass: 'pass-1' } });
+        expect(defaults).toEqual({ replyTo: 'support@anythingmcp.com' });
+      }
+      for (const [mail] of sendMail.mock.calls) {
+        expect(mail.from).toBe('Matteo from AnythingMCP <support@anythingmcp.com>');
+        expect(mail.replyTo).toBe('support@anythingmcp.com');
+      }
+    });
+
+    it('leaves every other email on the system sender', async () => {
+      configure();
+      const { service } = make();
+      await service.sendVerificationEmail('a@b.com', '123456', 'https://cloud.anythingmcp.com/v?t=1');
+      await service.sendOnboardingReminderEmail('a@b.com', 'Ada', 1);
+      for (const [options] of transports()) expect(options.host).toBe('smtp.test');
+      for (const [mail] of sendMail.mock.calls) expect(mail.replyTo).toBeUndefined();
+    });
+
+    it('falls back to the system SMTP, with RETENTION_SMTP_REPLY_TO as Reply-To when set', async () => {
+      process.env.RETENTION_SMTP_REPLY_TO = 'support@anythingmcp.com';
+      const { service } = make();
+      await sendRetentionEmails(service);
+      expect(transports()).toHaveLength(3);
+      for (const [options] of transports()) expect(options.host).toBe('smtp.test');
+      for (const [mail] of sendMail.mock.calls) {
+        expect(mail.from).toBe('AnythingMCP <mailer@anythingmcp.com>');
+        expect(mail.replyTo).toBe('support@anythingmcp.com');
+      }
+    });
+
+    it('falls back without a Reply-To when none is set', async () => {
+      const { service } = make();
+      await sendRetentionEmails(service);
+      for (const [mail] of sendMail.mock.calls) expect(mail.replyTo).toBeUndefined();
+    });
+
+    it('uses implicit TLS on 465 and 2465', async () => {
+      configure();
+      process.env.RETENTION_SMTP_PORT = '2465';
+      const { service } = make();
+      await service.sendTrialBlockedCallsEmail('a@b.com', 'Ada', blocked);
+      expect(transports()[0][0]).toMatchObject({ port: 2465, secure: true });
+    });
+
+    it('sends the blocked-call email as marketing, with its source on the pricing link', async () => {
+      const { service } = make();
+      await expect(service.sendTrialBlockedCallsEmail('a@b.com', 'Ada', blocked)).resolves.toBe(true);
+      const mail = sent();
+      expect(mail.subject).toBe('Claude tried to use Etsy 6 times since yesterday');
+      expect(mail.headers['List-Unsubscribe']).toContain('https://cloud.anythingmcp.com/');
+      expect(mail.text).toContain(
+        'https://anythingmcp.com/pricing?promo=START30&return_url=' +
+          encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate') +
+          '&source=email_blocked_calls',
+      );
+    });
+  });
+
   describe('sender of the system SMTP', () => {
     it('keeps what the cloud and existing installs send', () => {
       expect(systemSmtpFrom({ SMTP_FROM: 'AnythingMCP <noreply@anythingmcp.com>' })).toBe(

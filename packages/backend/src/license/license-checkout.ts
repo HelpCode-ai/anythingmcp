@@ -83,7 +83,9 @@ export type PricingLinkSource =
   | 'email_trial_expired'
   | 'email_winback'
   /** The link an AI client is given when an ended trial blocks a tool call. */
-  | 'mcp_blocked';
+  | 'mcp_blocked'
+  /** The email after an ended trial's AI kept calling its tools. */
+  | 'email_blocked_calls';
 
 /** `url` with `source=<source>` added to its query (before any fragment). */
 export function withSourceParam(url: string, source: CheckoutSource | PricingLinkSource): string {
