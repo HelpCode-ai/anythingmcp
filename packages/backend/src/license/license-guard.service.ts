@@ -21,6 +21,24 @@ export interface LicenseUsage {
   isOverAny: boolean;
 }
 
+/** What an AI client is told when a Cloud workspace's free trial has ended. */
+export const TRIAL_ENDED_MESSAGE =
+  'This workspace\'s trial has ended. Ask a workspace administrator to activate a license.';
+
+/**
+ * The licence check refused a call because the workspace's free trial ended
+ * (Cloud only). A ForbiddenException like the guard's other refusals, so every
+ * caller that only reads `message` keeps working; the MCP tool path tells it
+ * apart to answer with a reactivation link and to record the blocked call.
+ * `trialEndedAt` is null only when the licence carries no end date.
+ */
+export class TrialEndedException extends ForbiddenException {
+  constructor(readonly trialEndedAt: Date | null) {
+    super(TRIAL_ENDED_MESSAGE);
+    this.name = 'TrialEndedException';
+  }
+}
+
 /** A Cloud workspace's free trial, as the setup tools report it. */
 export interface TrialState {
   endsAt: Date;
@@ -43,6 +61,17 @@ export class LicenseGuardService {
 
     const license = await this.licenseService.getCurrentLicense(organizationId);
     if (!license) {
+      // The hourly cron flips an ended trial to status 'expired' (see
+      // markExpiredTrials), after which it is no longer the current licence.
+      // Still a trial that ended, not a workspace without a licence: only the
+      // newest inactive licence counts, so a paid one revoked after the trial
+      // keeps the message below.
+      if (organizationId) {
+        const last = await this.licenseService.getLatestInactiveLicense(organizationId);
+        if (last?.plan === 'trial' && last.status === 'expired') {
+          throw new TrialEndedException(last.expiresAt ? new Date(last.expiresAt) : null);
+        }
+      }
       throw new ForbiddenException(
         'This workspace has no active license. Ask a workspace administrator to activate one.',
       );
@@ -58,10 +87,9 @@ export class LicenseGuardService {
     // its renewal payment is failing (the end of the grace period), and must
     // stop on that date even if nobody has re-verified it since.
     if (license.expiresAt && new Date(license.expiresAt) < new Date()) {
+      if (license.plan === 'trial') throw new TrialEndedException(new Date(license.expiresAt));
       throw new ForbiddenException(
-        license.plan === 'trial'
-          ? 'This workspace\'s trial has ended. Ask a workspace administrator to activate a license.'
-          : 'This workspace\'s license has expired. Ask a workspace administrator to renew it.',
+        'This workspace\'s license has expired. Ask a workspace administrator to renew it.',
       );
     }
   }
