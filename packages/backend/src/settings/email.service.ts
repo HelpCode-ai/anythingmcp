@@ -24,7 +24,9 @@ import {
   onboardingReminderEmail,
   passwordResetEmail,
   TrialBlockedCallsEmailInput,
+  TrialEndedBusinessEmailInput,
   trialBlockedCallsEmail,
+  trialEndedBusinessEmail,
   trialLifecycleEmail,
   trialWinbackEmail,
   verificationEmail,
@@ -750,6 +752,50 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(`Failed to send trial win-back email to ${maskEmail(to)}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * The day a business workspace's Cloud trial ends (onboarding cron,
+   * lifecycle `expired` stage): the plain email from Matteo with the one-click
+   * extension and the locked price. Marketing: the caller sends it only to
+   * admins who did not opt out, and it carries the unsubscribe line.
+   */
+  async sendTrialEndedBusinessEmail(
+    to: string,
+    name: string,
+    details: Omit<TrialEndedBusinessEmailInput, 'name' | 'cloudUrl' | 'marketingUrl' | 'emailToken'>,
+  ): Promise<boolean> {
+    const transport = await this.createRetentionTransporter();
+    if (!transport) {
+      this.logger.warn(`Skipping trial-ended (business) email to ${maskEmail(to)}: no SMTP configured`);
+      return false;
+    }
+
+    const { ctx, headers } = await this.marketing(to);
+    const email = trialEndedBusinessEmail(
+      {
+        ...details,
+        name,
+        cloudUrl: this.cloudUrl(),
+        marketingUrl: this.marketingUrl(),
+        emailToken: createEmailLinkToken(to),
+      },
+      ctx,
+    );
+
+    try {
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        ...(transport.replyTo ? { replyTo: transport.replyTo } : {}),
+        ...this.mail(email, headers),
+      });
+      this.logger.log(`Trial-ended (business) email sent to ${maskEmail(to)}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send trial-ended (business) email to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }

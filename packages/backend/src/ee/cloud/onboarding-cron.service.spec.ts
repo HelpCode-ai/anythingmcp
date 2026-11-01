@@ -1,4 +1,27 @@
-import { OnboardingCronService, winbackTestArm } from './onboarding-cron.service';
+import { OnboardingCronService } from './onboarding-cron.service';
+
+/** When the stub licence site's win-back codes expire. */
+const CODES_EXPIRE_AT = new Date('2026-12-04T10:00:00Z');
+
+/**
+ * RetentionLicenceClient over a stub licence site: one code per offer
+ * ("KEEP-LOCKED-MONTHLY"…), or no answer at all (`unavailable`).
+ */
+function makeCodes(unavailable = false) {
+  return {
+    winbackCode: jest.fn(async (_org: string, _segment: string, offer: string) =>
+      unavailable ? null : { code: `KEEP-${offer.toUpperCase()}`, expiresAt: CODES_EXPIRE_AT },
+    ),
+    extendTrial: jest.fn(),
+  } as any;
+}
+const LOCKED = {
+  kind: 'locked',
+  monthlyCode: 'KEEP-LOCKED-MONTHLY',
+  yearlyCode: 'KEEP-LOCKED-YEARLY',
+  codesExpireAt: CODES_EXPIRE_AT,
+};
+const PERSONAL = { kind: 'personal', code: 'KEEP-PERSONAL-MONTHLY', codesExpireAt: CODES_EXPIRE_AT };
 
 /**
  * The repair pass talks to the licence API, so every test here stubs it. Its
@@ -239,6 +262,8 @@ describe('OnboardingCronService — trial lifecycle emails', () => {
     flagged?: Array<[string, string]>;
     paid?: string[];
     unknown?: string[];
+    optedOut?: string[];
+    codesUnavailable?: boolean;
   }) {
     const prisma = {
       license: {
@@ -259,22 +284,33 @@ describe('OnboardingCronService — trial lifecycle emails', () => {
       organizationMember: {
         findMany: jest.fn(async ({ where }: any) =>
           (opts.trials.find((t) => t.organizationId === where.organizationId)?.admins ?? ['admin@example.com']).map(
-            (email) => ({ user: { email, name: 'Ada' } }),
+            (email) => ({ user: { email, name: 'Ada', emailMarketingOptOut: (opts.optedOut ?? []).includes(email) } }),
           ),
         ),
       },
-      connector: { count: jest.fn().mockResolvedValue(2) },
-      toolInvocation: { count: jest.fn().mockResolvedValue(40) },
+      connector: {
+        count: jest.fn().mockResolvedValue(2),
+        findMany: jest.fn().mockResolvedValue([{ config: {} }]),
+        findUnique: jest.fn().mockResolvedValue({ name: 'Odoo ERP' }),
+      },
+      toolInvocation: {
+        count: jest.fn().mockResolvedValue(40),
+        groupBy: jest.fn().mockResolvedValue([{ connectorId: 'conn-odoo', _count: { _all: 31 } }]),
+      },
     } as any;
-    const email = { sendTrialLifecycleEmail: jest.fn().mockResolvedValue(true) } as any;
+    const email = {
+      sendTrialLifecycleEmail: jest.fn().mockResolvedValue(true),
+      sendTrialEndedBusinessEmail: jest.fn().mockResolvedValue(true),
+    } as any;
     const license = makeLicense();
     license.workspacesWithPaidPlan = jest.fn(async () => ({
       paid: new Set(opts.paid ?? []),
       unknown: new Set(opts.unknown ?? []),
     }));
-    const service = new OnboardingCronService(prisma, email, license, makeRelease());
+    const codes = makeCodes(opts.codesUnavailable);
+    const service = new OnboardingCronService(prisma, email, license, makeRelease(), undefined, codes);
     const run = async () => {
-      const o = out();
+      const o = { ...out(), trialExpiredBusiness: 0 };
       await (service as any).runTrialLifecyclePass(NOW, o);
       return o;
     };
@@ -283,7 +319,11 @@ describe('OnboardingCronService — trial lifecycle emails', () => {
         c[0].where.organizationId_key.organizationId,
         c[0].where.organizationId_key.key,
       ]);
-    return { run, email, license, flagged };
+    const stored = () =>
+      Object.fromEntries(
+        prisma.orgSettings.upsert.mock.calls.map((c: any) => [c[0].where.organizationId_key.key, c[0].create.value]),
+      );
+    return { run, email, license, flagged, stored, codes };
   }
 
   it('sends each free trial its stage and flags it', async () => {
@@ -291,7 +331,7 @@ describe('OnboardingCronService — trial lifecycle emails', () => {
       trials: [
         { organizationId: 'org-3d', endsInHours: 60 },
         { organizationId: 'org-1d', endsInHours: 20 },
-        { organizationId: 'org-0d', endsInHours: -1 },
+        { organizationId: 'org-0d', endsInHours: -1, admins: ['ada@gmail.com'] },
       ],
     });
     const o = await run();
@@ -345,6 +385,82 @@ describe('OnboardingCronService — trial lifecycle emails', () => {
     await run();
     expect(license.workspacesWithPaidPlan).not.toHaveBeenCalled();
     expect(email.sendTrialLifecycleEmail).not.toHaveBeenCalled();
+  });
+
+  describe('the expiry day of a business workspace', () => {
+    const ORIGINAL_JWT = process.env.JWT_SECRET;
+    beforeAll(() => {
+      process.env.JWT_SECRET = 'test-jwt-secret';
+    });
+    afterAll(() => {
+      process.env.JWT_SECRET = ORIGINAL_JWT;
+    });
+    const ended = (org: string, extra: Partial<{ admins: string[] }> = {}) => ({
+      organizationId: org,
+      endsInHours: -1,
+      ...extra,
+    });
+
+    it('is the plain email from Matteo: recap, top connector, extension link and the locked price', async () => {
+      const { run, email, stored, flagged } = makeService({ trials: [ended('org-1')] });
+      const o = await run();
+      expect(email.sendTrialLifecycleEmail).not.toHaveBeenCalled();
+      const [to, name, details] = email.sendTrialEndedBusinessEmail.mock.calls[0];
+      expect([to, name]).toEqual(['admin@example.com', 'Ada']);
+      expect(details.recap).toEqual({ connectors: 2, successfulCalls: 40, topConnector: 'Odoo ERP' });
+      expect(details.offer).toEqual(LOCKED);
+      const token = decodeURIComponent(new URL(details.extendUrl).searchParams.get('token')!);
+      expect(details.extendUrl).toMatch(/^https:\/\/cloud\.anythingmcp\.com\/api\/license\/extend\?token=/);
+      const { readTrialExtensionToken } = await import('../../license/trial-extension-token');
+      expect(readTrialExtensionToken(token, 'test-jwt-secret', new Date(NOW))).toEqual({ ok: true, organizationId: 'org-1' });
+      // It stops working 7 days after the trial ended.
+      expect(readTrialExtensionToken(token, 'test-jwt-secret', new Date(NOW - HOUR + 7 * 24 * HOUR + 1000))).toEqual({
+        ok: false,
+        reason: 'expired',
+      });
+      expect(flagged().map((f: string[]) => f[1])).toEqual(['winback_holdout', 'winback_offer', 'trial_email_expired']);
+      expect(stored()).toMatchObject({ winback_holdout: 'business:treatment', winback_offer: 'business:locked:expired' });
+      expect(o).toMatchObject({ trialExpired: 1, trialExpiredBusiness: 1 });
+    });
+
+    it('keeps today\'s notice for the control group', async () => {
+      const { run, email, stored, codes } = makeService({ trials: [ended('org-h2')] });
+      await run();
+      expect(email.sendTrialEndedBusinessEmail).not.toHaveBeenCalled();
+      expect(email.sendTrialLifecycleEmail.mock.calls[0][2]).toBe('expired');
+      expect(stored().winback_holdout).toBe('business:control');
+      expect(codes.winbackCode).not.toHaveBeenCalled();
+    });
+
+    it('falls back to today\'s notice when the codes cannot be minted: this stage gets one run', async () => {
+      const { run, email, stored } = makeService({ trials: [ended('org-1')], codesUnavailable: true });
+      const o = await run();
+      expect(email.sendTrialEndedBusinessEmail).not.toHaveBeenCalled();
+      expect(email.sendTrialLifecycleEmail).toHaveBeenCalledTimes(1);
+      expect(stored().winback_offer).toBeUndefined();
+      expect(o.trialExpired).toBe(1);
+    });
+
+    it('sends today\'s notice to an admin who opted out of marketing, the personal one to the others', async () => {
+      const { run, email } = makeService({
+        trials: [ended('org-1', { admins: ['boss@acme.io', 'it@acme.io'] })],
+        optedOut: ['it@acme.io'],
+      });
+      await run();
+      expect(email.sendTrialEndedBusinessEmail.mock.calls.map((c: any[]) => c[0])).toEqual(['boss@acme.io']);
+      expect(email.sendTrialLifecycleEmail.mock.calls.map((c: any[]) => c[0])).toEqual(['it@acme.io']);
+    });
+
+    it('leaves consumer workspaces and the earlier stages unchanged', async () => {
+      const { run, email, codes } = makeService({
+        trials: [ended('org-1', { admins: ['ada@gmail.com'] }), { organizationId: 'org-2', endsInHours: 20 }],
+      });
+      // A consumer workspace: no business connector either.
+      await run();
+      expect(email.sendTrialLifecycleEmail.mock.calls.map((c: any[]) => c[2]).sort()).toEqual(['expired', 'warn1']);
+      expect(email.sendTrialEndedBusinessEmail).not.toHaveBeenCalled();
+      expect(codes.winbackCode).not.toHaveBeenCalled();
+    });
   });
 
   it('postpones a workspace the licence site could not answer for: no email, no flag', async () => {
@@ -503,14 +619,11 @@ describe('OnboardingCronService — trial win-back', () => {
   const out = () => ({
     examined: 0,
     winbackOffers: 0,
-    winbackFirstMonth: 0,
-    winbackControl: 0,
     winbackHelp: 0,
     winbackHoldout: 0,
     skipped: 0,
   });
-  // sha256 of the id: even first byte → test arm, odd → control. Both are
-  // outside the win-back holdout (first byte of the salted hash: 72 and 96).
+  // Both outside the win-back holdout (first byte of the salted hash: 72 and 96).
   const TEST_ORG = 'org-1';
   const CONTROL_ORG = 'org-4';
 
@@ -533,6 +646,7 @@ describe('OnboardingCronService — trial win-back', () => {
     /** Addresses the licence site says had a subscription; null = the site failed. */
     hadSubscription?: string[] | null;
     sendOk?: boolean;
+    codesUnavailable?: boolean;
   }) {
     const organizationId = opts.organizationId ?? 'org-1';
     const admins: Admin[] = opts.admins ?? [
@@ -585,7 +699,8 @@ describe('OnboardingCronService — trial win-back', () => {
     // The remote half of LicenseService.workspacesWithPaidPlan (its own
     // spec covers the rest): the licences are already settled by `count`.
     license.workspacesWithPaidPlan = paidPlanFromHistory(license);
-    const service = new OnboardingCronService(prisma, email, license, makeRelease());
+    const codes = makeCodes(opts.codesUnavailable);
+    const service = new OnboardingCronService(prisma, email, license, makeRelease(), undefined, codes);
     const run = async () => {
       const o = out();
       await (service as any).runWinbackPass(NOW, o);
@@ -595,14 +710,8 @@ describe('OnboardingCronService — trial win-back', () => {
       prisma.orgSettings.upsert.mock.calls.map((c: any) => c[0].where.organizationId_key.key);
     const stored = (key: string) =>
       prisma.orgSettings.upsert.mock.calls.find((c: any) => c[0].where.organizationId_key.key === key)?.[0].create.value;
-    return { run, prisma, email, license, upsertedKeys, stored };
+    return { run, prisma, email, license, upsertedKeys, stored, codes };
   }
-
-  it('tells the two arms apart by a hash of the workspace id, the same on every run', () => {
-    expect(winbackTestArm(TEST_ORG)).toBe('first_month_599');
-    expect(winbackTestArm(CONTROL_ORG)).toBe('start30_control');
-    expect(winbackTestArm(TEST_ORG)).toBe(winbackTestArm(TEST_ORG));
-  });
 
   it('only looks at trials that ended a day ago or more, and on or after the switch from the licence site', async () => {
     const { run, prisma } = makeService({ endedDaysAgo: 2, calls: 3 });
@@ -626,24 +735,24 @@ describe('OnboardingCronService — trial win-back', () => {
     }
   });
 
-  it('a day after, offers 30% to a workspace that used the product, dated, under the old flag key', async () => {
-    const { run, email, upsertedKeys, stored } = makeService({ endedDaysAgo: 1.2, calls: 12 });
+  it('a day after, offers a business workspace the locked price with its two codes, dated, under the old flag key', async () => {
+    const { run, email, upsertedKeys, stored, codes } = makeService({ endedDaysAgo: 1.2, calls: 12 });
     const o = await run();
     expect(email.sendTrialWinbackEmail).toHaveBeenCalledWith('admin@example.com', 'Ada', {
-      kind: 'discount',
-      percentOff: 30,
-      promoCode: 'START30',
+      kind: 'offer',
+      offer: LOCKED,
       stage: 'first',
       trialEndedAt: new Date(NOW - 1.2 * DAY),
       successfulCalls: 12,
     });
+    expect(codes.winbackCode.mock.calls).toEqual([
+      ['org-1', 'business', 'locked-monthly'],
+      ['org-1', 'business', 'locked-yearly'],
+    ]);
     expect(o.winbackOffers).toBe(1);
-    // A company address: outside the test, so no arm is recorded. The holdout
-    // decision and the offer are, for the report.
     expect(upsertedKeys()).toEqual(['winback_holdout', 'trial_email_winback7', 'winback_offer']);
     expect(stored('winback_holdout')).toBe('business:treatment');
-    expect(stored('winback_offer')).toBe('business:START30:first');
-    expect(o.winbackFirstMonth + o.winbackControl).toBe(0);
+    expect(stored('winback_offer')).toBe('business:locked:first');
   });
 
   it('never sends the first win-back twice: the flag of the old one-week timing counts', async () => {
@@ -652,39 +761,64 @@ describe('OnboardingCronService — trial win-back', () => {
     expect(email.sendTrialWinbackEmail).not.toHaveBeenCalled();
   });
 
-  it('a month after, offers 50%, unchanged', async () => {
-    const { run, email, upsertedKeys } = makeService({ endedDaysAgo: 31, calls: 2 });
+  it('a month after, offers the locked price again, with codes asked for afresh', async () => {
+    const { run, email, upsertedKeys, stored, codes } = makeService({ endedDaysAgo: 31, calls: 2 });
     await run();
-    expect(email.sendTrialWinbackEmail.mock.calls[0][2]).toMatchObject({
-      kind: 'discount',
-      percentOff: 50,
-      promoCode: 'WINBACK50',
-      stage: 'final',
-    });
+    expect(email.sendTrialWinbackEmail.mock.calls[0][2]).toMatchObject({ kind: 'offer', offer: LOCKED, stage: 'final' });
+    expect(codes.winbackCode).toHaveBeenCalledTimes(2);
     expect(upsertedKeys()).toEqual(['winback_holdout', 'trial_email_winback30', 'winback_offer']);
+    expect(stored('winback_offer')).toBe('business:locked:final');
   });
 
-  it('a month after, gives a consumer workspace 50% too, outside the test', async () => {
-    const { run, email, upsertedKeys, stored } = makeService({
-      endedDaysAgo: 31,
-      calls: 2,
+  it('gives a consumer workspace Personal, first and final, never 50%', async () => {
+    for (const [days, stage] of [
+      [1.2, 'first'],
+      [31, 'final'],
+    ] as const) {
+      const { run, email, stored, codes } = makeService({
+        endedDaysAgo: days,
+        calls: 2,
+        organizationId: TEST_ORG,
+        admins: [{ email: 'ada@gmail.com', name: 'Ada' }],
+      });
+      await run();
+      expect(email.sendTrialWinbackEmail.mock.calls[0][2]).toMatchObject({ kind: 'offer', offer: PERSONAL, stage });
+      expect(codes.winbackCode.mock.calls).toEqual([[TEST_ORG, 'consumer', 'personal-monthly']]);
+      expect(stored('winback_offer')).toBe(`consumer:personal:${stage}`);
+    }
+  });
+
+  it('gives a Telegram-only workspace Personal too', async () => {
+    const { run, email, stored } = makeService({
+      endedDaysAgo: 1.2,
+      calls: 4,
       organizationId: TEST_ORG,
-      admins: [{ email: 'ada@gmail.com', name: 'Ada' }],
+      admins: [{ email: 'ada@gmail.com' }],
+      connectors: [{ adapterSlug: 'telegram-bot' }],
     });
     await run();
-    expect(email.sendTrialWinbackEmail.mock.calls[0][2]).toMatchObject({ kind: 'discount', percentOff: 50 });
-    expect(upsertedKeys()).toEqual(['winback_holdout', 'trial_email_winback30', 'winback_offer']);
-    expect(stored('winback_offer')).toBe('consumer:WINBACK50:final');
+    expect(email.sendTrialWinbackEmail.mock.calls[0][2].offer).toEqual(PERSONAL);
+    expect(stored('winback_offer')).toBe('telegram:personal:first');
+  });
+
+  it('sends nothing and flags nothing but the holdout decision when the codes cannot be minted', async () => {
+    const { run, email, upsertedKeys } = makeService({ endedDaysAgo: 2, calls: 5, codesUnavailable: true });
+    const o = await run();
+    expect(email.sendTrialWinbackEmail).not.toHaveBeenCalled();
+    expect(upsertedKeys()).toEqual(['winback_holdout']);
+    expect(o.skipped).toBe(1);
   });
 
   it('a day after, sends the how-to without a discount to a workspace that never made a call', async () => {
-    const { run, email, license } = makeService({ endedDaysAgo: 1.5, calls: 0 });
+    const { run, email, license, stored } = makeService({ endedDaysAgo: 1.5, calls: 0 });
     const o = await run();
     expect(email.sendTrialWinbackEmail.mock.calls[0][2]).toEqual({
       kind: 'help',
       trialEndedAt: new Date(NOW - 1.5 * DAY),
     });
     expect(o.winbackHelp).toBe(1);
+    // No offer, no code minted.
+    expect(stored('winback_offer')).toBe('unused:help:first');
     // No discount, but it links to the pricing page: the site is asked whether
     // the admin already holds a card trial or a plan.
     expect(license.subscriptionHistory).toHaveBeenCalledWith(['admin@example.com']);
@@ -814,69 +948,19 @@ describe('OnboardingCronService — trial win-back', () => {
     }
   });
 
-  it('offers a consumer workspace without a business app the first month for €5.99 in the test arm, and records it', async () => {
-    const { run, email, prisma } = makeService({
-      endedDaysAgo: 1.2,
-      calls: 9,
-      organizationId: TEST_ORG,
-      admins: [{ email: 'ada@gmail.com', name: 'Ada' }],
-      connectors: [{ adapterSlug: 'todoist' }, {}],
-    });
-    const o = await run();
-    expect(email.sendTrialWinbackEmail).toHaveBeenCalledWith('ada@gmail.com', 'Ada', {
-      kind: 'firstMonth',
-      price: '€5.99',
-      regularPrice: '€19',
-      promoCode: 'STARTER599',
-      trialEndedAt: new Date(NOW - 1.2 * DAY),
-      successfulCalls: 9,
-    });
-    expect(o).toMatchObject({ winbackOffers: 1, winbackFirstMonth: 1, winbackControl: 0 });
-    const upserts = prisma.orgSettings.upsert.mock.calls.map((c: any) => c[0].create);
-    expect(upserts).toEqual([
-      { organizationId: TEST_ORG, key: 'winback_holdout', value: 'consumer:treatment' },
-      expect.objectContaining({ organizationId: TEST_ORG, key: 'trial_email_winback7' }),
-      { organizationId: TEST_ORG, key: 'winback_offer', value: 'consumer:STARTER599:first' },
-      { organizationId: TEST_ORG, key: 'winback_test_arm', value: 'first_month_599' },
-    ]);
-  });
-
-  it('gives the control arm START30, and records the arm', async () => {
-    const { run, email, prisma } = makeService({
-      endedDaysAgo: 1.2,
-      calls: 9,
-      organizationId: CONTROL_ORG,
-      admins: [{ email: 'ada@web.de', name: 'Ada' }],
-    });
-    const o = await run();
-    expect(email.sendTrialWinbackEmail.mock.calls[0][2]).toMatchObject({
-      kind: 'discount',
-      percentOff: 30,
-      promoCode: 'START30',
-    });
-    expect(o).toMatchObject({ winbackOffers: 1, winbackFirstMonth: 0, winbackControl: 1 });
-    expect(prisma.orgSettings.upsert.mock.calls[3][0].create).toEqual({
-      organizationId: CONTROL_ORG,
-      key: 'winback_test_arm',
-      value: 'start30_control',
-    });
-  });
-
-  it('keeps a consumer workspace with a business app (an Etsy shop) out of the test: START30, no arm', async () => {
-    const { run, email, upsertedKeys } = makeService({
+  it('counts an Etsy shop as a business, even from a Gmail address: the locked price', async () => {
+    const { run, email } = makeService({
       endedDaysAgo: 1.2,
       calls: 9,
       organizationId: TEST_ORG,
       admins: [{ email: 'shop@gmail.com' }],
       connectors: [{ adapterSlug: 'etsy' }],
     });
-    const o = await run();
-    expect(email.sendTrialWinbackEmail.mock.calls[0][2]).toMatchObject({ kind: 'discount', promoCode: 'START30' });
-    expect(upsertedKeys()).toEqual(['winback_holdout', 'trial_email_winback7', 'winback_offer']);
-    expect(o.winbackFirstMonth + o.winbackControl).toBe(0);
+    await run();
+    expect(email.sendTrialWinbackEmail.mock.calls[0][2].offer).toEqual(LOCKED);
   });
 
-  it('counts Vinted as a private seller: still in the test', async () => {
+  it('counts Vinted as a private seller: Personal', async () => {
     const { run, email } = makeService({
       endedDaysAgo: 1.2,
       calls: 9,
@@ -885,34 +969,29 @@ describe('OnboardingCronService — trial win-back', () => {
       connectors: [{ adapterSlug: 'vinted' }],
     });
     await run();
-    expect(email.sendTrialWinbackEmail.mock.calls[0][2].kind).toBe('firstMonth');
+    expect(email.sendTrialWinbackEmail.mock.calls[0][2].offer).toEqual(PERSONAL);
   });
 
-  it('keeps a workspace with one admin on a company address out of the test', async () => {
-    const { run, email, upsertedKeys } = makeService({
+  it('counts a workspace with one admin on a company address as a business', async () => {
+    const { run, email } = makeService({
       endedDaysAgo: 1.2,
       calls: 9,
       organizationId: TEST_ORG,
       admins: [{ email: 'ada@gmail.com' }, { email: 'boss@acme.io' }],
     });
     await run();
-    for (const call of email.sendTrialWinbackEmail.mock.calls) {
-      expect(call[2]).toMatchObject({ kind: 'discount', promoCode: 'START30' });
-    }
-    expect(upsertedKeys()).toEqual(['winback_holdout', 'trial_email_winback7', 'winback_offer']);
+    for (const call of email.sendTrialWinbackEmail.mock.calls) expect(call[2].offer).toEqual(LOCKED);
   });
 
-  it('records no arm when the test email could not be sent, and retries', async () => {
+  it('starts no first-month test arm any more', async () => {
     const { run, upsertedKeys } = makeService({
       endedDaysAgo: 1.2,
       calls: 9,
       organizationId: TEST_ORG,
       admins: [{ email: 'ada@gmail.com' }],
-      sendOk: false,
     });
     await run();
-    // Only the holdout decision, which is kept whatever happens next.
-    expect(upsertedKeys()).toEqual(['winback_holdout']);
+    expect(upsertedKeys()).not.toContain('winback_test_arm');
   });
 
   it('respects the marketing opt-out, and closes the stage', async () => {
@@ -928,26 +1007,6 @@ describe('OnboardingCronService — trial win-back', () => {
     expect(upsertedKeys()).toEqual(['winback_holdout']);
   });
 
-  it('takes the codes from the environment when set', async () => {
-    process.env.WINBACK_FIRST_PROMO_CODE = 'SPRING30';
-    process.env.WINBACK_CONSUMER_PROMO_CODE = 'SPRING599';
-    try {
-      const control = makeService({ endedDaysAgo: 2, calls: 1 });
-      await control.run();
-      expect(control.email.sendTrialWinbackEmail.mock.calls[0][2].promoCode).toBe('SPRING30');
-      const test = makeService({
-        endedDaysAgo: 2,
-        calls: 1,
-        organizationId: TEST_ORG,
-        admins: [{ email: 'ada@gmail.com' }],
-      });
-      await test.run();
-      expect(test.email.sendTrialWinbackEmail.mock.calls[0][2].promoCode).toBe('SPRING599');
-    } finally {
-      delete process.env.WINBACK_FIRST_PROMO_CODE;
-      delete process.env.WINBACK_CONSUMER_PROMO_CODE;
-    }
-  });
 });
 
 describe('OnboardingCronService — win-back holdout', () => {
@@ -991,9 +1050,9 @@ describe('OnboardingCronService — win-back holdout', () => {
     const email = { sendTrialWinbackEmail: jest.fn().mockResolvedValue(true) } as any;
     const license = makeLicense();
     license.workspacesWithPaidPlan = jest.fn().mockResolvedValue({ paid: new Set(), unknown: new Set() });
-    const service = new OnboardingCronService(prisma, email, license, makeRelease());
+    const service = new OnboardingCronService(prisma, email, license, makeRelease(), undefined, makeCodes());
     const run = async () => {
-      const o = { examined: 0, winbackOffers: 0, winbackFirstMonth: 0, winbackControl: 0, winbackHelp: 0, winbackHoldout: 0, skipped: 0 };
+      const o = { examined: 0, winbackOffers: 0, winbackHelp: 0, winbackHoldout: 0, skipped: 0 };
       await (service as any).runWinbackPass(NOW, o);
       return o;
     };
@@ -1017,7 +1076,7 @@ describe('OnboardingCronService — win-back holdout', () => {
 
     const business = makeService({ organizationId: HELD_CONSUMER, adminEmail: 'boss@acme.io' });
     expect((await business.run()).winbackOffers).toBe(1);
-    expect(business.stored()).toMatchObject({ winback_holdout: 'business:treatment', winback_offer: 'business:START30:first' });
+    expect(business.stored()).toMatchObject({ winback_holdout: 'business:treatment', winback_offer: 'business:locked:first' });
   });
 
   it('keeps the stored decision, even if the segment has changed since', async () => {
@@ -1074,6 +1133,7 @@ describe('OnboardingCronService — blocked-call email', () => {
     stored?: Record<string, string>;
     recentWinbackEmail?: boolean;
     sendOk?: boolean;
+    codesUnavailable?: boolean;
   } = {}) {
     const organizationId = opts.organizationId ?? ORG;
     const events = opts.events ?? [
@@ -1120,7 +1180,8 @@ describe('OnboardingCronService — blocked-call email', () => {
       paid: new Set(opts.paid ? [organizationId] : []),
       unknown: new Set(opts.unknown ? [organizationId] : []),
     });
-    const service = new OnboardingCronService(prisma, email, license, makeRelease());
+    const codes = makeCodes(opts.codesUnavailable);
+    const service = new OnboardingCronService(prisma, email, license, makeRelease(), undefined, codes);
     const run = async () => {
       const o = { examined: 0, blockedCallEmails: 0, blockedCallHoldout: 0, skipped: 0 };
       await (service as any).runBlockedCallPass(NOW, o);
@@ -1140,7 +1201,7 @@ describe('OnboardingCronService — blocked-call email', () => {
     expect(prisma.productEvent.findMany.mock.calls[0][0].where.createdAt.gte).toEqual(new Date(NOW - 48 * HOUR));
   });
 
-  it('names the client and the app, how often, with START30, and counts as the first win-back', async () => {
+  it('names the client and the app, how often, with the segment offer, and counts as the first win-back', async () => {
     const { run, email, stored } = makeService({ connectors: [{ adapterSlug: 'etsy' }] });
     const o = await run();
     expect(email.sendTrialBlockedCallsEmail).toHaveBeenCalledWith('ada@gmail.com', 'Ada', {
@@ -1148,8 +1209,7 @@ describe('OnboardingCronService — blocked-call email', () => {
       appName: 'Etsy',
       clientName: 'Claude',
       neverUsed: false,
-      percentOff: 30,
-      promoCode: 'START30',
+      offer: LOCKED,
       trialEndedAt: new Date(NOW - 72 * HOUR),
     });
     expect(o.blockedCallEmails).toBe(1);
@@ -1158,7 +1218,7 @@ describe('OnboardingCronService — blocked-call email', () => {
       winback_holdout: 'business:treatment',
       trial_email_blocked_calls: expect.any(String),
       trial_email_winback7: expect.any(String),
-      winback_offer: 'business:START30:blocked_calls',
+      winback_offer: 'business:locked:blocked_calls',
     });
   });
 
@@ -1226,9 +1286,9 @@ describe('OnboardingCronService — blocked-call email', () => {
   it('also mails a workspace that never made a successful call, in its own words', async () => {
     const { run, email, stored } = makeService({ calls: 0 });
     const o = await run();
-    expect(email.sendTrialBlockedCallsEmail.mock.calls[0][2]).toMatchObject({ neverUsed: true, promoCode: 'START30' });
+    expect(email.sendTrialBlockedCallsEmail.mock.calls[0][2]).toMatchObject({ neverUsed: true, offer: PERSONAL });
     expect(o.blockedCallEmails).toBe(1);
-    expect(stored()).toMatchObject({ winback_holdout: 'unused:treatment', winback_offer: 'unused:START30:blocked_calls' });
+    expect(stored()).toMatchObject({ winback_holdout: 'unused:treatment', winback_offer: 'unused:personal:blocked_calls' });
   });
 
   it('holds out unused workspaces in the 20% band', async () => {
@@ -1258,6 +1318,25 @@ describe('OnboardingCronService — blocked-call email', () => {
     expect(email.sendTrialBlockedCallsEmail).not.toHaveBeenCalled();
     expect(prisma.orgSettings.upsert).not.toHaveBeenCalled();
     expect(prisma.orgSettings.findFirst.mock.calls[0][0].where.updatedAt.gt).toEqual(new Date(NOW - 24 * HOUR));
+  });
+
+  it('gives consumer and Telegram workspaces Personal', async () => {
+    for (const [connectors, segment] of [
+      [[{ adapterSlug: 'todoist' }], 'consumer'],
+      [[{ adapterSlug: 'telegram-bot' }], 'telegram'],
+    ] as const) {
+      const { run, email, stored } = makeService({ connectors: [...connectors] });
+      await run();
+      expect(email.sendTrialBlockedCallsEmail.mock.calls[0][2].offer).toEqual(PERSONAL);
+      expect(stored().winback_offer).toBe(`${segment}:personal:blocked_calls`);
+    }
+  });
+
+  it('postpones when the codes cannot be minted: nothing sent, only the holdout decision stored', async () => {
+    const { run, email, stored } = makeService({ codesUnavailable: true });
+    await run();
+    expect(email.sendTrialBlockedCallsEmail).not.toHaveBeenCalled();
+    expect(Object.keys(stored())).toEqual(['winback_holdout']);
   });
 
   it('retries on the next run when no email could be sent', async () => {

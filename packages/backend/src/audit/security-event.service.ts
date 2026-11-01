@@ -107,6 +107,9 @@ export const SecurityEvents = {
   DCR_CLIENT_REGISTERED: 'DCR_CLIENT_REGISTERED',
   /** An AI client installed a catalog connector through the shared /mcp setup tools. */
   CONNECTOR_INSTALLED_VIA_MCP: 'CONNECTOR_INSTALLED_VIA_MCP',
+  // ── Licence plane ───────────────────────────────────────────────────────
+  /** Cloud: the workspace's trial was extended by 7 days from the email link. */
+  TRIAL_EXTENDED: 'TRIAL_EXTENDED',
 } as const;
 
 export type SecurityEventName =

@@ -1,13 +1,16 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
 import { getAdapter } from '../../adapters/catalog';
 import { ProductEvents } from '../../audit/product-event.service';
 import { EmailService } from '../../settings/email.service';
-import type { WinbackOffer } from '../../settings/email-templates';
+import type { RetentionOffer, WinbackOffer } from '../../settings/email-templates';
 import { LicenseService } from '../../license/license.service';
 import { LicenseReleaseService } from '../../license/license-release.service';
 import { CardTrialOfferService } from '../../license/card-trial-offer.service';
+import { RetentionLicenceClient } from '../../license/retention-licence.client';
+import { cloudFrontendOrigin } from '../../license/license-checkout';
+import { createTrialExtensionToken, trialExtensionSecret } from '../../license/trial-extension-token';
 import {
   WINBACK_HOLDOUT_KEY,
   WINBACK_OFFER_KEY,
@@ -37,9 +40,11 @@ const DAYS = (n: number) => n * 24 * 60 * 60 * 1000;
  * The site has no usage data; this cron does, so Cloud trials are won back from
  * here and the site keeps the self-hosted ones.
  *
- * Someone who made a successful call gets 30% a day after expiry and 50% a
- * month after; someone who never did gets one email on how to connect an app
- * from the chat, a day after. Only trials that ended from WINBACK_FROM on:
+ * Someone who made a successful call gets their segment's offer
+ * (winback-segment.ts, RETENTION_OFFERS) a day after expiry and again a month
+ * after, each time with fresh single-use codes, since the licence site's
+ * codes expire after 14 days; someone who never did gets one email on how to
+ * connect an app from the chat, a day after. Only trials that ended from WINBACK_FROM on:
  * earlier ones were already sent the site's win-back.
  *
  * The first stage went out a week after expiry until 8 Oct 2026, before any
@@ -65,48 +70,42 @@ const WINBACK_STAGES = [
     flagKey: 'trial_email_winback7',
     after: DAYS(1),
     until: DAYS(7),
-    percentOff: 30,
-    codeEnv: 'WINBACK_FIRST_PROMO_CODE',
-    code: 'START30',
   },
   {
     stage: 'final',
     flagKey: 'trial_email_winback30',
     after: DAYS(30),
     until: DAYS(37),
-    percentOff: 50,
-    codeEnv: 'WINBACK_FINAL_PROMO_CODE',
-    code: 'WINBACK50',
   },
 ] as const;
 
 /**
- * A/B test on the first win-back: private users may answer a low first-month
- * price better than 30% off three months. Eligible: a workspace that made a
- * successful call, whose active admins all write from a consumer mailbox
- * (gmail.com, web.de…) and that has no business connector. Half of those
- * (by a hash of the workspace id, so a re-run never switches arm) get Cloud
- * Starter for €5.99 the first month; the other half get START30 as before,
- * as the control. The arm is stored in OrgSettings `winback_test_arm` when
- * the email goes out. Everyone else gets START30, outside the test.
+ * The offer of each segment, minted per workspace by the licence site
+ * (RetentionLicenceClient.winbackCode). 12-month prices on Cloud Starter, then
+ * the list price, which every email states:
+ *
+ * - business: the locked price, €12/month for 12 months or €120 for the first
+ *   year (two codes, one per billing period);
+ * - consumer and Telegram, and never-used workspaces whose AI kept calling
+ *   after the trial: Personal, €6/month for 12 months.
+ *
+ * The STARTER599 first-month test (Oct 2026) is over: no new arms. The arms
+ * already stored in OrgSettings `winback_test_arm` stay for the history;
+ * nothing reads them.
  */
-const WINBACK_TEST = {
-  armKey: 'winback_test_arm',
-  testArm: 'first_month_599',
-  controlArm: 'start30_control',
-  codeEnv: 'WINBACK_CONSUMER_PROMO_CODE',
-  code: 'STARTER599',
-  price: '€5.99',
-  regularPrice: '€19',
-} as const;
-type WinbackTestArm = typeof WINBACK_TEST.testArm | typeof WINBACK_TEST.controlArm;
+const RETENTION_OFFERS: Record<WinbackSegment, RetentionOffer['kind']> = {
+  business: 'locked',
+  consumer: 'personal',
+  telegram: 'personal',
+  unused: 'personal',
+};
 
 /**
  * "Your AI tried to use X": an expired trial whose AI keeps calling its tools
  * (the `trial_expired_call_blocked` events the MCP tool path records, at most
  * one per workspace and tool an hour) is the warmest lead there is. Sent once
  * per workspace, to a workspace with at least `minEvents` of those in the last
- * `window`, with the first win-back's offer. It counts as the first win-back:
+ * `window`, with its segment's offer (RETENTION_OFFERS). It counts as the first win-back:
  * it also sets that stage's flag, so nobody gets two offers in a week. No two
  * win-back emails go out within `spacing` of each other, this one included.
  */
@@ -121,12 +120,6 @@ const BLOCKED_CALLS = {
 
 /** OrgSettings flags of the win-back emails, for the spacing between them. */
 const WINBACK_EMAIL_FLAGS = [...WINBACK_STAGES.map((s) => s.flagKey), BLOCKED_CALLS.flagKey];
-
-/** The test arm of a workspace: even first byte of sha256(id) gets the €5.99 offer. */
-export function winbackTestArm(organizationId: string): WinbackTestArm {
-  const firstByte = createHash('sha256').update(organizationId).digest()[0];
-  return firstByte % 2 === 0 ? WINBACK_TEST.testArm : WINBACK_TEST.controlArm;
-}
 
 /**
  * Onboarding drip — finds users who registered, verified their email,
@@ -171,6 +164,7 @@ export class OnboardingCronService {
     private readonly license: LicenseService,
     private readonly licenseRelease: LicenseReleaseService,
     @Optional() private readonly cardTrialOffer?: CardTrialOfferService,
+    @Optional() private readonly codes?: RetentionLicenceClient,
   ) {}
 
   /** run() unless another run holds the lease; null when skipped. */
@@ -224,10 +218,9 @@ export class OnboardingCronService {
     licensesDeactivated: number;
     licensesReleased: number;
     winbackOffers: number;
-    winbackFirstMonth: number;
-    winbackControl: number;
     winbackHelp: number;
     winbackHoldout: number;
+    trialExpiredBusiness: number;
     blockedCallEmails: number;
     blockedCallHoldout: number;
     cardTrialOffers: number;
@@ -249,10 +242,9 @@ export class OnboardingCronService {
       licensesDeactivated: 0,
       licensesReleased: 0,
       winbackOffers: 0,
-      winbackFirstMonth: 0,
-      winbackControl: 0,
       winbackHelp: 0,
       winbackHoldout: 0,
+      trialExpiredBusiness: 0,
       blockedCallEmails: 0,
       blockedCallHoldout: 0,
       cardTrialOffers: 0,
@@ -433,7 +425,7 @@ export class OnboardingCronService {
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
         `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} ` +
-        `winbackFirstMonth=${out.winbackFirstMonth} winbackControl=${out.winbackControl} winbackHelp=${out.winbackHelp} ` +
+        `winbackHelp=${out.winbackHelp} trialExpiredBusiness=${out.trialExpiredBusiness} ` +
         `winbackHoldout=${out.winbackHoldout} blockedCallEmails=${out.blockedCallEmails} ` +
         `blockedCallHoldout=${out.blockedCallHoldout} ` +
         `cardTrialOffers=${out.cardTrialOffers} ` +
@@ -458,6 +450,13 @@ export class OnboardingCronService {
    * from them. Such a stage is left unflagged and decided again on the next
    * run while the trial is still selected here (the expired stage gets one
    * run: markExpiredTrials flips the trial right after it).
+   *
+   * The expired stage of a business workspace (winback-segment.ts) outside
+   * the control group is the plain email from Matteo instead: what they
+   * built, the one-click 7-day extension and the locked price, with codes
+   * minted for the workspace. Admins who opted out of marketing, and every
+   * admin when the codes cannot be minted (this stage gets one run), get the
+   * standard notice. The control group gets the standard notice too.
    */
   private async runTrialLifecyclePass(
     now: number,
@@ -466,6 +465,7 @@ export class OnboardingCronService {
       trialWarn3: number;
       trialWarn1: number;
       trialExpired: number;
+      trialExpiredBusiness?: number;
       trialEmailsWithheld: number;
       skipped: number;
     },
@@ -486,7 +486,8 @@ export class OnboardingCronService {
       stage: 'warn3' | 'warn1' | 'expired';
       flagKey: string;
       daysLeft: number;
-      admins: Array<{ user: { email: string; name: string | null } }>;
+      expiresAt: Date;
+      admins: Array<{ user: { email: string; name: string | null; emailMarketingOptOut?: boolean } }>;
     }> = [];
     for (const lic of trials) {
       const organizationId = lic.organizationId!;
@@ -510,13 +511,13 @@ export class OnboardingCronService {
 
       const admins = await this.prisma.organizationMember.findMany({
         where: { organizationId, role: 'ADMIN', deactivatedAt: null },
-        select: { user: { select: { email: true, name: true } } },
+        select: { user: { select: { email: true, name: true, emailMarketingOptOut: true } } },
       });
       if (admins.length === 0) {
         out.skipped++;
         continue;
       }
-      due.push({ organizationId, stage, flagKey, daysLeft, admins });
+      due.push({ organizationId, stage, flagKey, daysLeft, expiresAt: lic.expiresAt!, admins });
     }
     if (due.length === 0) return;
 
@@ -525,7 +526,7 @@ export class OnboardingCronService {
       new Date(now),
     );
 
-    for (const { organizationId, stage, flagKey, daysLeft, admins } of due) {
+    for (const { organizationId, stage, flagKey, daysLeft, expiresAt, admins } of due) {
       if (paidPlan.paid.has(organizationId)) {
         out.trialEmailsWithheld++;
         out.skipped++;
@@ -544,15 +545,27 @@ export class OnboardingCronService {
         this.prisma.toolInvocation.count({ where: { organizationId, status: 'SUCCESS' } }),
       ]);
 
+      // Business workspaces get the personal email on the expiry day.
+      const business =
+        stage === 'expired'
+          ? await this.businessExpiryEmail(organizationId, admins, { connectors, successfulCalls }, expiresAt)
+          : null;
+
       let sentAny = false;
       for (const a of admins) {
-        const ok = await this.email.sendTrialLifecycleEmail(
-          a.user.email,
-          a.user.name || 'there',
-          stage,
-          { connectors, successfulCalls, daysLeft },
-        );
+        const ok =
+          business && !a.user.emailMarketingOptOut
+            ? await this.email.sendTrialEndedBusinessEmail(a.user.email, a.user.name || 'there', business)
+            : await this.email.sendTrialLifecycleEmail(a.user.email, a.user.name || 'there', stage, {
+                connectors,
+                successfulCalls,
+                daysLeft,
+              });
         if (ok) sentAny = true;
+      }
+      if (sentAny && business && admins.some((a) => !a.user.emailMarketingOptOut)) {
+        await this.flag(organizationId, WINBACK_OFFER_KEY, offerValue('business', 'locked', 'expired'));
+        if (out.trialExpiredBusiness !== undefined) out.trialExpiredBusiness++;
       }
 
       if (sentAny) {
@@ -585,8 +598,6 @@ export class OnboardingCronService {
     out: {
       examined: number;
       winbackOffers: number;
-      winbackFirstMonth: number;
-      winbackControl: number;
       winbackHelp: number;
       winbackHoldout: number;
       skipped: number;
@@ -678,7 +689,7 @@ export class OnboardingCronService {
         continue;
       }
 
-      // Who the workspace is decides the holdout, and the first-month test.
+      // Who the workspace is decides the holdout and the offer.
       // The how-to (never used) is no offer: never held out.
       let segment: WinbackSegment = 'unused';
       if (used) {
@@ -706,33 +717,17 @@ export class OnboardingCronService {
       }
 
       let offer: WinbackOffer;
-      let arm: WinbackTestArm | null = null;
       if (!used) {
         offer = { kind: 'help', trialEndedAt };
       } else {
-        // The first-month test (WINBACK_TEST): consumer mailboxes only and no
-        // business connector, which is the consumer and Telegram segments.
-        if (step.stage === 'first' && (segment === 'consumer' || segment === 'telegram')) {
-          arm = winbackTestArm(organizationId);
+        // Fresh codes for each stage: the first ones expire after 14 days.
+        // Without them nothing is sent or flagged: the next run asks again.
+        const retention = await this.mintOffer(organizationId, segment);
+        if (!retention) {
+          out.skipped++;
+          continue;
         }
-        offer =
-          arm === WINBACK_TEST.testArm
-            ? {
-                kind: 'firstMonth',
-                price: WINBACK_TEST.price,
-                regularPrice: WINBACK_TEST.regularPrice,
-                promoCode: process.env[WINBACK_TEST.codeEnv] || WINBACK_TEST.code,
-                trialEndedAt,
-                successfulCalls,
-              }
-            : {
-                kind: 'discount',
-                percentOff: step.percentOff,
-                promoCode: process.env[step.codeEnv] || step.code,
-                stage: step.stage,
-                trialEndedAt,
-                successfulCalls,
-              };
+        offer = { kind: 'offer', offer: retention, stage: step.stage, trialEndedAt, successfulCalls };
       }
 
       let sentAny = false;
@@ -747,26 +742,97 @@ export class OnboardingCronService {
         continue;
       }
       await this.flag(organizationId, step.flagKey);
-      if (!used) {
+      if (offer.kind === 'help') {
+        await this.flag(organizationId, WINBACK_OFFER_KEY, offerValue(segment, 'help', step.stage));
         out.winbackHelp++;
         continue;
       }
+      await this.flag(organizationId, WINBACK_OFFER_KEY, offerValue(segment, offer.offer.kind, step.stage));
       out.winbackOffers++;
-      await this.flag(
-        organizationId,
-        WINBACK_OFFER_KEY,
-        offerValue(
-          segment,
-          arm === WINBACK_TEST.testArm ? WINBACK_TEST.code : step.code,
-          step.stage,
-        ),
-      );
-      if (arm) {
-        await this.flag(organizationId, WINBACK_TEST.armKey, arm);
-        if (arm === WINBACK_TEST.testArm) out.winbackFirstMonth++;
-        else out.winbackControl++;
-      }
     }
+  }
+
+  /**
+   * What the expiry-day email of a business workspace needs, or null when the
+   * workspace gets the standard notice: not business, in the control group,
+   * no admin who takes marketing email, or no codes from the licence site.
+   */
+  private async businessExpiryEmail(
+    organizationId: string,
+    admins: Array<{ user: { email: string; emailMarketingOptOut?: boolean } }>,
+    counts: { connectors: number; successfulCalls: number },
+    trialEndedAt: Date,
+  ): Promise<{
+    recap: { connectors: number; successfulCalls: number; topConnector: string | null };
+    extendUrl: string | null;
+    offer: Extract<RetentionOffer, { kind: 'locked' }>;
+  } | null> {
+    if (!admins.some((a) => !a.user.emailMarketingOptOut)) return null;
+    const connectors = await this.prisma.connector.findMany({
+      where: { organizationId },
+      select: { config: true },
+    });
+    const segment = winbackSegment({
+      adminEmails: admins.map((a) => a.user.email),
+      connectorConfigs: connectors.map((c) => c.config),
+      successfulCalls: counts.successfulCalls,
+    });
+    if (segment !== 'business') return null;
+    if (await this.inHoldout(organizationId, segment)) return null;
+    const offer = await this.mintOffer(organizationId, segment);
+    if (offer?.kind !== 'locked') {
+      this.logger.warn(`Business expiry email for workspace ${organizationId}: no codes, the standard notice goes out.`);
+      return null;
+    }
+    const secret = trialExtensionSecret();
+    const token = secret ? createTrialExtensionToken(organizationId, trialEndedAt, secret) : null;
+    return {
+      recap: { ...counts, topConnector: await this.topConnectorName(organizationId) },
+      extendUrl: token ? `${cloudFrontendOrigin()}/api/license/extend?token=${encodeURIComponent(token)}` : null,
+      offer,
+    };
+  }
+
+  /** The connector with the most successful calls in the workspace, by name; null when none. */
+  private async topConnectorName(organizationId: string): Promise<string | null> {
+    const [top] = await this.prisma.toolInvocation.groupBy({
+      by: ['connectorId'],
+      where: { organizationId, status: 'SUCCESS', connectorId: { not: null } },
+      _count: { _all: true },
+      orderBy: { _count: { connectorId: 'desc' } },
+      take: 1,
+    });
+    if (!top?.connectorId) return null;
+    const connector = await this.prisma.connector.findUnique({
+      where: { id: top.connectorId },
+      select: { name: true },
+    });
+    return connector?.name ?? null;
+  }
+
+  /**
+   * The segment's offer (RETENTION_OFFERS) with codes minted for this
+   * workspace, or null when the licence site cannot give them now (the
+   * caller then sends nothing and retries on a later run).
+   */
+  private async mintOffer(organizationId: string, segment: WinbackSegment): Promise<RetentionOffer | null> {
+    if (!this.codes) return null;
+    if (RETENTION_OFFERS[segment] === 'locked') {
+      const [monthly, yearly] = await Promise.all([
+        this.codes.winbackCode(organizationId, segment, 'locked-monthly'),
+        this.codes.winbackCode(organizationId, segment, 'locked-yearly'),
+      ]);
+      if (!monthly || !yearly) return null;
+      return {
+        kind: 'locked',
+        monthlyCode: monthly.code,
+        yearlyCode: yearly.code,
+        codesExpireAt: monthly.expiresAt < yearly.expiresAt ? monthly.expiresAt : yearly.expiresAt,
+      };
+    }
+    const personal = await this.codes.winbackCode(organizationId, segment, 'personal-monthly');
+    if (!personal) return null;
+    return { kind: 'personal', code: personal.code, codesExpireAt: personal.expiresAt };
   }
 
   /**
@@ -801,7 +867,6 @@ export class OnboardingCronService {
       _count: { _all: true },
     });
     const firstStage = WINBACK_STAGES[0];
-
     for (const group of groups) {
       const organizationId = group.organizationId;
       if (!organizationId || group._count._all < BLOCKED_CALLS.minEvents) continue;
@@ -884,15 +949,18 @@ export class OnboardingCronService {
         continue;
       }
 
+      const offer = await this.mintOffer(organizationId, segment);
+      if (!offer) {
+        out.skipped++;
+        continue;
+      }
       const attempts = await this.blockedCallSummary(organizationId, since);
-      const promoCode = process.env[firstStage.codeEnv] || firstStage.code;
       let sentAny = false;
       for (const r of recipients) {
         const ok = await this.email.sendTrialBlockedCallsEmail(r.email, r.name || 'there', {
           ...attempts,
           neverUsed: segment === 'unused',
-          percentOff: firstStage.percentOff,
-          promoCode,
+          offer,
           trialEndedAt,
         });
         if (ok) sentAny = true;
@@ -908,7 +976,7 @@ export class OnboardingCronService {
         select: { id: true },
       });
       if (!firstSent) await this.flag(organizationId, firstStage.flagKey);
-      await this.flag(organizationId, WINBACK_OFFER_KEY, offerValue(segment, firstStage.code, BLOCKED_CALLS.stage));
+      await this.flag(organizationId, WINBACK_OFFER_KEY, offerValue(segment, offer.kind, BLOCKED_CALLS.stage));
       out.blockedCallEmails++;
     }
   }

@@ -175,6 +175,13 @@ export const ProductEvents = {
    * with which app.
    */
   TRIAL_EXPIRED_CALL_BLOCKED: 'trial_expired_call_blocked',
+  /**
+   * Cloud: a workspace took the one-click 7-day trial extension from the
+   * "your trial has ended" email (trial-extension.controller.ts).
+   * metadata.via = 'email'. Server-only. Read against the paid licences of
+   * those workspaces: does a week more lead to a purchase.
+   */
+  TRIAL_EXTENDED: 'trial_extended',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -194,6 +201,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.CARD_TRIAL_OFFER_EMAILED,
   ProductEvents.CHECKOUT_LINK_CREATED,
   ProductEvents.TRIAL_EXPIRED_CALL_BLOCKED,
+  ProductEvents.TRIAL_EXTENDED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
