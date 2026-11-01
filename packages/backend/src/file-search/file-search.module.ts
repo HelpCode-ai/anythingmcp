@@ -6,6 +6,7 @@ import { FileSearchService } from './file-search.service';
 import { FileSearchController } from './file-search.controller';
 import { FileShareController } from './file-share.controller';
 import { FileShareConnectorService } from './file-share-connector.service';
+import { FileSearchBackfillService } from './file-search-backfill.service';
 
 /**
  * File Search and File Share (#1379): the setup wizard, the Files tab and
@@ -14,7 +15,7 @@ import { FileShareConnectorService } from './file-share-connector.service';
 @Module({
   imports: [FileSearchCoreModule, McpServerModule, McpServersModule],
   controllers: [FileSearchController, FileShareController],
-  providers: [FileSearchService, FileShareConnectorService],
+  providers: [FileSearchService, FileShareConnectorService, FileSearchBackfillService],
   exports: [FileSearchService],
 })
 export class FileSearchModule {}
