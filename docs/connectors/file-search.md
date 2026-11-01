@@ -78,6 +78,10 @@ description and (Enterprise) folder permissions.
 | S3 | AWS S3, DigitalOcean Spaces, MinIO, Hetzner, Wasabi. Folders are key prefixes. |
 | Network folder | Self-hosted only: a folder below `FILE_SOURCE_ROOTS` (an SMB/CIFS or NFS share or a NAS volume mounted on the host and bound read-only into the containers). |
 
+The marketplace also lists ready-made entries that open the wizard with the
+right settings: S3 bucket, Nextcloud, ownCloud, Synology NAS, QNAP NAS,
+Fritz!Box storage and Hetzner Storage Box.
+
 SMB is not reached directly from the Cloud: port 445 does not belong on the
 internet. Use SFTP or WebDAV on the NAS, or a self-hosted install.
 

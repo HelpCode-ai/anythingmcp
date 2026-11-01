@@ -253,6 +253,7 @@ import * as freshchat from './intl/freshchat.json';
 import * as freshdesk from './intl/freshdesk.json';
 import * as freshsales from './intl/freshsales.json';
 import * as freshservice from './intl/freshservice.json';
+import * as fritzboxFileSearch from './intl/fritzbox-file-search.json';
 import * as front from './intl/front.json';
 import * as ftp from './intl/ftp.json';
 import * as fudo from './intl/fudo.json';
@@ -308,6 +309,7 @@ import * as helium10 from './intl/helium10.json';
 import * as helius from './intl/helius.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
+import * as hetznerStorageBox from './intl/hetzner-storage-box.json';
 import * as heygen from './intl/heygen.json';
 import * as heyreach from './intl/heyreach.json';
 import * as hibob from './intl/hibob.json';
@@ -419,6 +421,7 @@ import * as neverbounce from './intl/neverbounce.json';
 import * as newRelic from './intl/new-relic.json';
 import * as newsapi from './intl/newsapi.json';
 import * as nextcloud from './intl/nextcloud.json';
+import * as nextcloudFileSearch from './intl/nextcloud-file-search.json';
 import * as nimble from './intl/nimble.json';
 import * as nocodb from './intl/nocodb.json';
 import * as nominatim from './intl/nominatim.json';
@@ -449,6 +452,7 @@ import * as oracle from './intl/oracle.json';
 import * as orderful from './intl/orderful.json';
 import * as otter from './intl/otter.json';
 import * as outreach from './intl/outreach.json';
+import * as owncloudFileSearch from './intl/owncloud-file-search.json';
 import * as ozon from './intl/ozon.json';
 import * as packlink from './intl/packlink.json';
 import * as paddle from './intl/paddle.json';
@@ -486,6 +490,7 @@ import * as procore from './intl/procore.json';
 import * as productboard from './intl/productboard.json';
 import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
+import * as qnapFileSearch from './intl/qnap-file-search.json';
 import * as quaderno from './intl/quaderno.json';
 import * as quickbooksOnline from './intl/quickbooks-online.json';
 import * as railway from './intl/railway.json';
@@ -508,6 +513,7 @@ import * as rocketreach from './intl/rocketreach.json';
 import * as rollbar from './intl/rollbar.json';
 import * as rootly from './intl/rootly.json';
 import * as rozetka from './intl/rozetka.json';
+import * as s3FileSearch from './intl/s3-file-search.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
 import * as salesforce from './intl/salesforce.json';
@@ -573,6 +579,7 @@ import * as substack from './intl/substack.json';
 import * as supabase from './intl/supabase.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
+import * as synologyFileSearch from './intl/synology-file-search.json';
 import * as tabby from './intl/tabby.json';
 import * as tableau from './intl/tableau.json';
 import * as tailscale from './intl/tailscale.json';
@@ -1217,6 +1224,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   freshdesk as unknown as AdapterDefinition,
   freshsales as unknown as AdapterDefinition,
   freshservice as unknown as AdapterDefinition,
+  fritzboxFileSearch as unknown as AdapterDefinition,
   front as unknown as AdapterDefinition,
   ftp as unknown as AdapterDefinition,
   fudo as unknown as AdapterDefinition,
@@ -1272,6 +1280,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   helius as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
+  hetznerStorageBox as unknown as AdapterDefinition,
   heygen as unknown as AdapterDefinition,
   heyreach as unknown as AdapterDefinition,
   hibob as unknown as AdapterDefinition,
@@ -1383,6 +1392,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   newRelic as unknown as AdapterDefinition,
   newsapi as unknown as AdapterDefinition,
   nextcloud as unknown as AdapterDefinition,
+  nextcloudFileSearch as unknown as AdapterDefinition,
   nimble as unknown as AdapterDefinition,
   nocodb as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
@@ -1413,6 +1423,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   orderful as unknown as AdapterDefinition,
   otter as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
+  owncloudFileSearch as unknown as AdapterDefinition,
   ozon as unknown as AdapterDefinition,
   packlink as unknown as AdapterDefinition,
   paddle as unknown as AdapterDefinition,
@@ -1450,6 +1461,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   productboard as unknown as AdapterDefinition,
   promUa as unknown as AdapterDefinition,
   proxmox as unknown as AdapterDefinition,
+  qnapFileSearch as unknown as AdapterDefinition,
   quaderno as unknown as AdapterDefinition,
   quickbooksOnline as unknown as AdapterDefinition,
   railway as unknown as AdapterDefinition,
@@ -1472,6 +1484,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   rollbar as unknown as AdapterDefinition,
   rootly as unknown as AdapterDefinition,
   rozetka as unknown as AdapterDefinition,
+  s3FileSearch as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
   salesforce as unknown as AdapterDefinition,
@@ -1537,6 +1550,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   supabase as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
   synology as unknown as AdapterDefinition,
+  synologyFileSearch as unknown as AdapterDefinition,
   tabby as unknown as AdapterDefinition,
   tableau as unknown as AdapterDefinition,
   tailscale as unknown as AdapterDefinition,

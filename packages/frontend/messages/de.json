@@ -109,7 +109,8 @@
       "synology": "Synology NAS",
       "qnap": "QNAP NAS",
       "fritzbox": "Fritz!Box",
-      "hetzner": "Hetzner Storage Box"
+      "hetzner": "Hetzner Storage Box",
+      "owncloud": "ownCloud"
     },
     "ftpModes": {
       "ftps": "FTPS (explizit, Port 21)",
