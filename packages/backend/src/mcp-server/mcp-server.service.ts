@@ -429,6 +429,10 @@ export class McpServerService implements OnModuleInit {
           organizationId: user?.organizationId,
           authMethod: user?.authMethod || 'none',
           apiKeyName: user?.apiKeyName,
+          // The OAuth client the access token was issued to (`azp` on access
+          // tokens, `client_id` on refresh ones), for the blocked-trial event.
+          oauthClientId:
+            typeof (user?.azp ?? user?.client_id) === 'string' ? (user.azp ?? user.client_id) : undefined,
           mcpServerId: user?.mcpServerId,
           connectorIds: serverConnectorIds,
         };

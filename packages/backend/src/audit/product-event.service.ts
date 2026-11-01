@@ -165,6 +165,16 @@ export const ProductEvents = {
    * finish (metadata.checkout_source, the same value).
    */
   CHECKOUT_LINK_CREATED: 'checkout_link_created',
+  /**
+   * Cloud: an AI client called a tool of a workspace whose free trial had
+   * ended, and was refused with the reactivation link (dynamic-mcp-tools.ts).
+   * metadata.toolName, adapterSlug (catalog connectors only) and client (the
+   * OAuth client's name, when the call came through one). At most one row per
+   * workspace and tool an hour, so a looping agent cannot flood the table.
+   * Server-only. Answers how many workspaces come back after their trial, and
+   * with which app.
+   */
+  TRIAL_EXPIRED_CALL_BLOCKED: 'trial_expired_call_blocked',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -183,6 +193,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.CARD_TRIAL_OFFER_ELIGIBLE,
   ProductEvents.CARD_TRIAL_OFFER_EMAILED,
   ProductEvents.CHECKOUT_LINK_CREATED,
+  ProductEvents.TRIAL_EXPIRED_CALL_BLOCKED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),

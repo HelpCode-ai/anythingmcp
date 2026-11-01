@@ -29,6 +29,7 @@ import {
 } from './email-templates';
 import { buildUnsubscribeUrl, unsubscribeSecret } from './unsubscribe-token';
 import { createEmailLinkToken } from '../common/email-link-token';
+import { marketingOrigin } from '../license/license-checkout';
 import { isSocialProviderId } from '../auth/social/social-providers';
 import { maskEmail } from '../auth/mcp-email-verification';
 
@@ -95,7 +96,7 @@ export class EmailService {
   }
 
   private marketingUrl(): string {
-    return (process.env.MARKETING_URL || 'https://anythingmcp.com').replace(/\/+$/, '');
+    return marketingOrigin();
   }
 
   /**

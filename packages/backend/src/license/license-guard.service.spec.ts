@@ -1,12 +1,15 @@
 import { ForbiddenException } from '@nestjs/common';
-import { LicenseGuardService } from './license-guard.service';
+import { LicenseGuardService, TrialEndedException } from './license-guard.service';
 
 describe('LicenseGuardService.checkLicenseActive (cloud)', () => {
   const day = 24 * 60 * 60 * 1000;
 
-  function make(license: any) {
-    const licenseService = { getCurrentLicense: jest.fn().mockResolvedValue(license) };
-    const deployment = { isCloud: () => true };
+  function make(license: any, lastInactive: any = null, cloud = true) {
+    const licenseService = {
+      getCurrentLicense: jest.fn().mockResolvedValue(license),
+      getLatestInactiveLicense: jest.fn().mockResolvedValue(lastInactive),
+    };
+    const deployment = { isCloud: () => cloud };
     return new LicenseGuardService({} as any, licenseService as any, deployment as any);
   }
 
@@ -36,6 +39,45 @@ describe('LicenseGuardService.checkLicenseActive (cloud)', () => {
   it('stops a licence that is not active, and a workspace with none', async () => {
     await expect(make({ plan: 'starter', status: 'revoked' }).checkLicenseActive('o1')).rejects.toBeInstanceOf(ForbiddenException);
     await expect(make(null).checkLicenseActive('o1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('throws a TrialEndedException carrying the end date for a trial past its end', async () => {
+    const past = new Date(Date.now() - day);
+    const err = await make({ plan: 'trial', status: 'active', expiresAt: past }).checkLicenseActive('o1').catch((e) => e);
+    expect(err).toBeInstanceOf(TrialEndedException);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err.trialEndedAt).toEqual(past);
+    expect(err.message).toBe("This workspace's trial has ended. Ask a workspace administrator to activate a license.");
+  });
+
+  it('also once the cron has flipped the trial to expired', async () => {
+    const past = new Date(Date.now() - 3 * day);
+    const err = await make(null, { plan: 'trial', status: 'expired', expiresAt: past }).checkLicenseActive('o1').catch((e) => e);
+    expect(err).toBeInstanceOf(TrialEndedException);
+    expect(err.trialEndedAt).toEqual(past);
+  });
+
+  it('keeps the other messages, never as a TrialEndedException', async () => {
+    const past = new Date(Date.now() - day);
+    const cases: Array<[any, any, string]> = [
+      [null, null, 'This workspace has no active license. Ask a workspace administrator to activate one.'],
+      // The newest inactive licence is a paid one revoked after the trial.
+      [null, { plan: 'starter', status: 'revoked', expiresAt: null }, 'This workspace has no active license.'],
+      // A trial revoked by hand is not one that simply ended.
+      [null, { plan: 'trial', status: 'revoked', expiresAt: past }, 'This workspace has no active license.'],
+      [{ plan: 'team', status: 'active', expiresAt: past }, null, "This workspace's license has expired. Ask a workspace administrator to renew it."],
+    ];
+    for (const [current, last, message] of cases) {
+      const err = await make(current, last).checkLicenseActive('o1').catch((e) => e);
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(err).not.toBeInstanceOf(TrialEndedException);
+      expect(err.message).toContain(message);
+    }
+  });
+
+  it('does nothing on self-hosted', async () => {
+    const past = new Date(Date.now() - day);
+    await expect(make({ plan: 'trial', status: 'active', expiresAt: past }, null, false).checkLicenseActive('o1')).resolves.toBeUndefined();
   });
 });
 
