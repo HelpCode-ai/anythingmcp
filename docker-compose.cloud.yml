@@ -388,6 +388,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Lets a running slice finish and release its lease (scheduler waits 20 s).
+    stop_grace_period: 30s
     restart: unless-stopped
     logging:
       driver: json-file
