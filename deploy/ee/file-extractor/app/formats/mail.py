@@ -1,5 +1,5 @@
 # Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE.
-"""E-mail: Outlook .msg (extract-msg) and RFC 822 .eml (stdlib ``email``).
+"""E-mail: Outlook .msg (extract-msg), RFC 822 .eml and .mbox (stdlib ``email``).
 
 Layout of the text, in ``page: null`` segments::
 
@@ -31,7 +31,7 @@ from ..job import Job
 from .text import add_flow_text, html_to_text
 
 ATTACHMENT_TEXT_CAP = 200_000
-_NESTED_MAIL = {"msg", "eml"}
+_NESTED_MAIL = {"msg", "eml", "mbox"}
 
 
 def _ext_of(name: str) -> str:
@@ -155,15 +155,8 @@ def _walk_eml(part, found: dict) -> None:
         found["html"] = part
 
 
-def extract_eml(job: Job) -> None:
-    from email import policy
-    from email.parser import BytesParser
-
-    try:
-        with open(job.path, "rb") as fh:
-            message = BytesParser(policy=policy.default).parse(fh)
-    except Exception:
-        raise ExtractError("corrupt", "The file is not a readable e-mail message.") from None
+def _eml_message(message) -> tuple[str, str, list[str], list[tuple[str, bytes]], object, object]:
+    """Header block, body text, attachment names and files, subject, sender."""
 
     def header(name: str):
         return _safe(lambda: message.get(name))
@@ -177,18 +170,104 @@ def extract_eml(job: Job) -> None:
     else:
         body = ""
     subject = header("Subject")
-    if subject:
-        job.meta["title"] = " ".join(str(subject).split())[:500] or None
     sender = header("From")
-    if sender:
-        job.meta["author"] = " ".join(str(sender).split())[:500] or None
     head = _header_block(
         [("From", sender), ("To", header("To")), ("Cc", header("Cc")),
          ("Date", header("Date")), ("Subject", subject)],
         found["names"],
     )
-    attachments = _attachment_texts(job, found["files"])
+    return head, body, found["names"], found["files"], subject, sender
+
+
+def extract_eml(job: Job) -> None:
+    from email import policy
+    from email.parser import BytesParser
+
+    try:
+        with open(job.path, "rb") as fh:
+            message = BytesParser(policy=policy.default).parse(fh)
+    except Exception:
+        raise ExtractError("corrupt", "The file is not a readable e-mail message.") from None
+
+    head, body, _names, files, subject, sender = _eml_message(message)
+    if subject:
+        job.meta["title"] = " ".join(str(subject).split())[:500] or None
+    if sender:
+        job.meta["author"] = " ".join(str(sender).split())[:500] or None
+    attachments = _attachment_texts(job, files)
     _emit(job, head, body, attachments)
+
+
+# -- .mbox ------------------------------------------------------------------------
+
+MAX_MBOX_MESSAGES = 20_000
+# Bytes of one message that are parsed; the rest (large attachments) is skipped.
+MAX_MBOX_MESSAGE_BYTES = 16 * 1024 * 1024
+MAX_MBOX_BODY_CHARS = 100_000
+MAX_MBOX_LINE_BYTES = 1024 * 1024
+
+
+def _mbox_messages(fh):
+    """Yield the raw bytes of each message (capped) of an mbox stream.
+
+    A message starts at a ``From `` line at the start of the file or after
+    an empty line; ``>From `` quoting (mboxrd/mboxo) is undone.
+    """
+    current: list[bytes] | None = None
+    size = 0
+    previous_blank = True
+    while True:
+        line = fh.readline(MAX_MBOX_LINE_BYTES)
+        if not line:
+            break
+        if line.startswith(b"From ") and previous_blank:
+            if current is not None:
+                yield b"".join(current)
+            current, size = [], 0
+            previous_blank = False
+            continue
+        previous_blank = line in (b"\n", b"\r\n")
+        if current is None:
+            if line.strip():
+                raise ExtractError("corrupt", "The file is not a readable mailbox (mbox).")
+            continue
+        if size >= MAX_MBOX_MESSAGE_BYTES:
+            continue
+        if line.startswith(b">") and line.lstrip(b">").startswith(b"From "):
+            line = line[1:]
+        current.append(line)
+        size += len(line)
+    if current is not None:
+        yield b"".join(current)
+
+
+def extract_mbox(job: Job) -> None:
+    """Each message is one numbered item: header lines and the text body.
+    Attachments are listed by name but not read."""
+    from email import policy
+    from email.parser import BytesParser
+
+    parser = BytesParser(policy=policy.default)
+    count = 0
+    with open(job.path, "rb") as fh:
+        for raw in _mbox_messages(fh):
+            if job.out.full or count >= MAX_MBOX_MESSAGES:
+                job.out.mark_truncated()
+                break
+            count += 1
+            try:
+                message = parser.parsebytes(raw)
+                head, body, _names, _files, _subject, _sender = _eml_message(message)
+            except Exception:
+                continue  # one broken message does not spoil the mailbox
+            body = (body or "").strip()
+            # Quoted replies make long threads repetitive; one message never
+            # takes more than this (the item still counts, nothing is marked).
+            body = body[:MAX_MBOX_BODY_CHARS]
+            job.out.add_page(count, f"{head}\n\n{body}" if head else body)
+    if count == 0:
+        raise ExtractError("corrupt", "The file is not a readable mailbox (mbox).")
+    job.meta["pageCount"] = count
 
 
 # -- .msg -------------------------------------------------------------------------

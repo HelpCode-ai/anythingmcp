@@ -36,8 +36,13 @@ def test_formats(client):
     formats = response.json()
     for ext in (".pdf", ".xlsx", ".xlsm", ".xls", ".ods", ".csv", ".tsv", ".docx", ".doc",
                 ".odt", ".odp", ".pptx", ".ppt", ".rtf", ".txt", ".md", ".json", ".xml",
-                ".log", ".html", ".htm", ".msg", ".eml"):
+                ".log", ".html", ".htm", ".msg", ".eml",
+                ".docm", ".dotx", ".xltx", ".xlsb", ".pptm", ".ppsx", ".potx", ".ott", ".ots",
+                ".otp", ".epub", ".xps", ".oxps", ".svg", ".dxf", ".mbox", ".pages", ".numbers",
+                ".key", ".yaml", ".sql", ".py", ".ts", ".cs"):
         assert ext in formats
+    assert ".dwg" not in formats
+    assert len(formats) == len(set(formats))
 
 
 def test_missing_token_is_401(client):
