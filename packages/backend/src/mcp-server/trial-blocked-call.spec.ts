@@ -181,7 +181,6 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       events as any,
     );
     return { executor, restEngine, events, prisma };
