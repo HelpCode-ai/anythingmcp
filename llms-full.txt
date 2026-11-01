@@ -1262,7 +1262,7 @@ Each File Search connector gets these tools, named with its prefix:
 | `<prefix>_read` | The text of a file, by pages (`"1-3,7"`) or in windows of characters |
 | `<prefix>_grep` | Exact search with two lines of context; spreadsheet rows come with their column names |
 | `<prefix>_status` | Sync state, counts, pause reason, content summary |
-| `<prefix>_get_file` | The file itself: attached up to 4 MB, otherwise a temporary internal link |
+| `<prefix>_get_file` | The file itself as a temporary internal link (24 hours), which works in every AI client; images up to 4 MB are attached too. Without File Share on the plan, files up to 4 MB are attached and the AI names the path |
 | `<prefix>_share_file` | A temporary link (internal or public); **switched off at install** |
 
 Every tool except the share tools is read-only. The tools tell the model that
