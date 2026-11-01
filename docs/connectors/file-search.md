@@ -188,6 +188,10 @@ lets AI clients publish files they write.
   workspace. On a managed database where the application user may not create
   roles, the migration skips the role and the policies apply to the
   application user itself (as long as it is not a superuser).
+- Self-hosted with an external database: the application's database user
+  needs superuser or `BYPASSRLS` for the worker's cross-workspace jobs
+  (picking due syncs, deleting expired share files). The default Docker
+  setup already uses one; see issue #1418 for managed databases.
 - Credentials are stored encrypted and decrypted only in `files-worker`; the
   text extractor runs on an internal network with no route out, no database
   and no secrets, read-only, without capabilities.
