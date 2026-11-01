@@ -3636,6 +3636,35 @@ The selected headers are added to the tool result next to the body, and a
 - The audit log keeps storing the bare body. Headers are cached together with it when `cacheTtl` is set.
 - REST connectors only. Tools that did not set `exposeHeaders` behave exactly as before.
 
+### Slow or large responses (`timeoutMs`, `maxResponseBytes`)
+
+A REST call times out after 30 s, and the engine stops reading an upstream body
+larger than `TOOL_MAX_RESPONSE_BYTES` (10 MB by default). Image generation needs
+more of both: a 2K or 4K picture can take a minute, and its base64 inside the
+JSON can pass 10 MB before [`images`](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#images-in-the-response-images>) takes it
+out of the result. A tool can set its own values on the endpoint mapping:
+
+```json
+{
+  "method": "POST",
+  "path": "/models/{model}:generateContent",
+  "timeoutMs": 120000,
+  "maxResponseBytes": 41943040
+}
+```
+
+- `timeoutMs`: milliseconds, clamped to 1 000 – 180 000. Absent: 30 000.
+- `maxResponseBytes`: bytes of the upstream body, at most 50 MB (52 428 800), or
+  `TOOL_MAX_RESPONSE_BYTES` when that is set higher. A lower value than the
+  global one is allowed. Absent: `TOOL_MAX_RESPONSE_BYTES`.
+- `maxResponseBytes` only applies to the body the API sends. The result text the
+  client receives is still held to `TOOL_MAX_RESPONSE_BYTES`, so raise it only
+  where `responseMapping` takes the bulk out (base64 images).
+- A call that times out with a raised `timeoutMs` is not retried, whatever its
+  method; a POST, PATCH or DELETE is never retried after a timeout anyway.
+- REST connectors only. Tools without these keys behave exactly as before, on
+  Cloud and self-hosted alike.
+
 ### By Connector Type
 
 | Connector | method | path | queryParams | bodyMapping | headers |

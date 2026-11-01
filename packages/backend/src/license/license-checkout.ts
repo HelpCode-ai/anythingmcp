@@ -81,7 +81,9 @@ export type PricingLinkSource =
   | 'email_trial_warn3'
   | 'email_trial_warn1'
   | 'email_trial_expired'
-  | 'email_winback';
+  | 'email_winback'
+  /** The link an AI client is given when an ended trial blocks a tool call. */
+  | 'mcp_blocked';
 
 /** `url` with `source=<source>` added to its query (before any fragment). */
 export function withSourceParam(url: string, source: CheckoutSource | PricingLinkSource): string {
@@ -153,6 +155,23 @@ export function checkoutAdMetadata(
 export function cloudFrontendOrigin(env: NodeJS.ProcessEnv = process.env): string {
   const configured = env.FRONTEND_URL || env.CLOUD_PUBLIC_URL || 'https://cloud.anythingmcp.com';
   return configured.replace(/\/+$/, '');
+}
+
+/** The public marketing site (pricing page), as the emails link to it. */
+export function marketingOrigin(env: NodeJS.ProcessEnv = process.env): string {
+  return (env.MARKETING_URL || 'https://anythingmcp.com').replace(/\/+$/, '');
+}
+
+/**
+ * Where an administrator reactivates a Cloud workspace whose trial ended: the
+ * pricing page, sent back to the licence activation page after checkout.
+ * Given to the AI client when a tool call is blocked, so it carries no email
+ * token: the text ends up in the AI provider's logs. The checkout still
+ * refuses a second subscription for the same address.
+ */
+export function trialReactivationUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const returnUrl = encodeURIComponent(`${cloudFrontendOrigin(env)}/settings/license/activate`);
+  return withSourceParam(`${marketingOrigin(env)}/pricing?return_url=${returnUrl}`, 'mcp_blocked');
 }
 
 /** Raised when the licence site cannot give us a checkout URL. */

@@ -17,7 +17,9 @@ import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
 import { AuditService } from '../audit/audit.service';
 import { RedisService } from '../common/redis.service';
-import { LicenseGuardService } from '../license/license-guard.service';
+import { LicenseGuardService, TrialEndedException } from '../license/license-guard.service';
+import { ProductEventService } from '../audit/product-event.service';
+import { TrialBlockedCallRecorder, trialEndedToolResult } from './trial-blocked-call';
 import { DeploymentService } from '../common/deployment.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -124,7 +126,13 @@ export class DynamicMcpTools {
     @Optional() private readonly userCredentials?: UserCredentialsService,
     @Optional() private readonly emailEngine?: EmailEngine,
     @Optional() private readonly codeExecutor?: CodeExecutorService,
-  ) {}
+    @Optional() productEvents?: ProductEventService,
+  ) {
+    this.blockedCalls = new TrialBlockedCallRecorder(prisma, productEvents);
+  }
+
+  /** Records tool calls refused because the Cloud trial ended (throttled). */
+  private readonly blockedCalls: TrialBlockedCallRecorder;
 
   /**
    * Decide whether this tool call should be routed through the
@@ -255,6 +263,20 @@ export class DynamicMcpTools {
   }
 
   /**
+   * The tool a call resolves to, in the one scope the caller is entitled to
+   * (see executeTool): its server's connectors, else its organization, else
+   * (single-tenant self-hosted, no principal) any tool of that name.
+   */
+  private resolveTool(
+    toolName: string,
+    context?: { organizationId?: string; connectorIds?: string[] },
+  ): RegisteredTool | undefined {
+    if (context?.connectorIds) return this.toolRegistry.getTool(toolName, context.connectorIds);
+    if (context?.organizationId) return this.toolRegistry.getToolForOrg(toolName, context.organizationId);
+    return this.toolRegistry.getTool(toolName);
+  }
+
+  /**
    * Execute a tool by name with the given parameters.
    * Handles caching, audit logging, env interpolation, and engine dispatch.
    */
@@ -284,6 +306,8 @@ export class DynamicMcpTools {
       /** Set on calls made from inside a code run, so a code tool cannot be
        *  reached from within another (no recursion). */
       inCodeRun?: boolean;
+      /** The OAuth client the caller's access token was issued to, if any. */
+      oauthClientId?: string;
     },
   ): Promise<{
     content: ToolResultContent;
@@ -299,6 +323,26 @@ export class DynamicMcpTools {
     try {
       await this.licenseGuard.checkLicenseActive(context?.organizationId);
     } catch (err: any) {
+      // Cloud trial over: say when it ended, that nothing was deleted, and
+      // hand the AI the reactivation link to show. The blocked call is
+      // recorded in the background; it never delays or breaks this answer.
+      if (err instanceof TrialEndedException) {
+        const blocked = this.resolveTool(toolName, context);
+        if (blocked && context?.organizationId) {
+          const slug = (blocked.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+          void this.blockedCalls.record({
+            organizationId: context.organizationId,
+            userId: context.userId,
+            toolName: blocked.name,
+            adapterSlug: typeof slug === 'string' && slug ? slug : undefined,
+            oauthClientId: context.oauthClientId,
+          });
+        }
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(trialEndedToolResult(err.trialEndedAt)) }],
+          isError: true,
+        };
+      }
       return {
         content: [
           {
@@ -331,14 +375,7 @@ export class DynamicMcpTools {
     //   - organizationId — any JWT on the global /mcp. Only the caller's org.
     //   - neither — an instance-level static credential on a single-tenant
     //     self-hosted box, where "any tool" is the correct answer.
-    let tool: RegisteredTool | undefined;
-    if (context?.connectorIds) {
-      tool = this.toolRegistry.getTool(toolName, context.connectorIds);
-    } else if (context?.organizationId) {
-      tool = this.toolRegistry.getToolForOrg(toolName, context.organizationId);
-    } else {
-      tool = this.toolRegistry.getTool(toolName);
-    }
+    const tool = this.resolveTool(toolName, context);
     if (!tool) {
       return {
         content: [

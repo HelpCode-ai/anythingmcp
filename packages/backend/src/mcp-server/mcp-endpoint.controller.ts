@@ -190,6 +190,8 @@ interface InvocationContext {
   organizationId?: string;
   authMethod: string;
   apiKeyName?: string;
+  /** The OAuth client the access token was issued to (oauthClientId), if any. */
+  oauthClientId?: string;
   mcpServerId: string;
   mcpServerName: string;
   connectorIds: string[];
@@ -1232,6 +1234,7 @@ export class McpEndpointController {
       organizationId: mcpServerConfig.organizationId as string,
       authMethod: (user?.authMethod || 'none') as string,
       apiKeyName: user?.apiKeyName as string | undefined,
+      oauthClientId: user ? oauthClientId(user) : undefined,
       mcpServerId: mcpServerConfig.id,
       mcpServerName: mcpServerConfig.name,
       connectorIds,
