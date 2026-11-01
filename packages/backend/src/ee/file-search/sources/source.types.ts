@@ -2,6 +2,7 @@
 import { Transform, type Readable } from 'node:stream';
 import type { FileSearchConfig, FileSourceTestResult } from '../../../file-search/file-search.types';
 import type { FileSearchSecrets } from '../../../file-search/file-search-config';
+import { trimSlashes } from '../../../file-search/file-search-config';
 
 /** One entry of a folder listing, path relative to the connector's root ('/'-separated, no leading slash). */
 export interface RemoteEntry {
@@ -55,7 +56,7 @@ export class SourceError extends Error {
 
 /** Joins the connector root and a relative path into a remote absolute path. */
 export function remotePath(root: string, rel: string): string {
-  const r = (root || '/').replace(/\/+$/, '');
+  const r = trimSlashes(root || '/', 'end');
   const p = rel.replace(/^\/+/, '');
   return p ? `${r}/${p}` : r || '/';
 }

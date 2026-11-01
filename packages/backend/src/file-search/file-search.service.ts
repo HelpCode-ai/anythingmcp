@@ -24,6 +24,7 @@ import {
   localRootsFromEnv,
   parseFileSearchConfig,
   pickSecrets,
+  trimSlashes,
   type FileSearchSecrets,
 } from './file-search-config';
 import { buildFileSearchBuiltinTools } from './file-search-builtins';
@@ -602,7 +603,7 @@ export class FileSearchService {
         organizationId: actor.organizationId,
         connectorId: id,
         roleId: r.roleId,
-        pattern: r.pattern.trim().replace(/^\/+|\/+$/g, '').replace(/\/\*\*$/, '').slice(0, 512),
+        pattern: trimSlashes(r.pattern.trim().slice(0, 1024)).replace(/\/\*\*$/, '').slice(0, 512),
         effect: r.effect === 'deny' ? 'deny' : 'allow',
       }));
     await this.repo.withTenant(actor.organizationId, async (tx) => {

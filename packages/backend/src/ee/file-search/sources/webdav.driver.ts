@@ -14,6 +14,7 @@ import {
   type FileSourceDriver,
   type RemoteEntry,
 } from './source.types';
+import { trimSlashes } from '../../../file-search/file-search-config';
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8"?>
 <d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/><d:getetag/></d:prop></d:propfind>`;
@@ -73,10 +74,10 @@ export class WebdavDriver implements FileSourceDriver {
       if (res.status !== 207) throw new SourceError('unknown', `The server answered ${res.status} instead of a WebDAV listing. Is this the WebDAV address?`);
       const doc = parser.parse(String(res.data));
       const responses: any[] = doc?.multistatus?.response ?? [];
-      const selfPath = decodeURIComponent(new URL(urlOf(rel, true)).pathname).replace(/\/+$/, '');
+      const selfPath = trimSlashes(decodeURIComponent(new URL(urlOf(rel, true)).pathname), 'end');
       const out: RemoteEntry[] = [];
       for (const r of responses) {
-        const href = decodeURIComponent(new URL(String(r.href), base).pathname).replace(/\/+$/, '');
+        const href = trimSlashes(decodeURIComponent(new URL(String(r.href), base).pathname), 'end');
         if (href === selfPath) continue;
         const ok = (r.propstat as any[]).find((ps) => /\s200\s/.test(String(ps.status))) ?? r.propstat[0];
         const prop = ok?.prop ?? {};
