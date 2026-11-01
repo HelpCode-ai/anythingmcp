@@ -205,6 +205,8 @@ function Wizard() {
       if (c.ai.available && c.ai.allowedByPolicy) setUseAi(true);
       else setUseAi(false);
       if (c.access.allowed) setIntervalMin(Math.max(1440, c.access.quota.minIntervalMinutes));
+      // A protocol this server does not offer (a network folder on the Cloud) falls back to SFTP.
+      setForm((f) => (c.protocols.includes(f.protocol) ? f : { ...f, protocol: 'sftp' }));
     } catch (e) {
       setCapsError(errMessage(e));
     }
