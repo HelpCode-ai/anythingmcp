@@ -33,6 +33,7 @@ import { KgService } from '../knowledge-graph/kg.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
+import { envVarsForMcpTool } from '../connectors/mcp-connector-config.util';
 import { processGauges } from '../common/process-vitals';
 import { recordToolCall } from '../common/metrics';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
@@ -537,7 +538,13 @@ export class DynamicMcpTools {
 
       // Inject env vars as parameter defaults (env var values fill in params
       // that match by name, so they don't need to be provided by the caller)
-      const paramsWithEnv = this.injectEnvVars(params, envVars);
+      // A remote MCP server gets the variables as tool arguments, so only
+      // those its schema names: every variable, credentials included, used
+      // to be sent with every bridged tool call.
+      const paramsWithEnv = this.injectEnvVars(
+        params,
+        tool.connectorType === 'MCP' ? envVarsForMcpTool(envVars, tool.parameters) : envVars,
+      );
 
       // Apply JSON Schema defaults for missing params
       const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
