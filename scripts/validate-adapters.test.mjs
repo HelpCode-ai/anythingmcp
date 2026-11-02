@@ -386,6 +386,27 @@ test('setupGuide links into the user instance only through an https address aske
   assert.ok(rules({ ...base, envVarMeta: {}, setupGuide: guide([shop, key]) }).includes('setup-guide-action'));
 });
 
+test('setupGuide saves and checks the keys mid-way only when the provider can be asked, and waits right after', () => {
+  const check = { connector: { type: 'REST', authType: 'OAUTH2' }, checkBeforeAuthorization: { path: '/ping', headers: { 'x-api-key': '{{GOOD_KEY}}' } } };
+  const guide = (steps) => ({ effort: 'own_app', minutes: 10, steps });
+  const keys = { id: 'keys', title: 'Keys', fields: ['GOOD_KEY'], saveAndCheck: true };
+  const wait = { id: 'wait', title: 'Wait', waitForProvider: true };
+  const last = { id: 'sign-in', title: 'Sign in' };
+  const rules = (o) => validateAdapter(adapter(o), 'good.json', 'de').errors.map((e) => e.rule);
+  assert.deepEqual(rules({ ...check, setupGuide: guide([keys, wait, last]) }), []);
+
+  // Nothing to ask the provider with.
+  assert.ok(rules({ setupGuide: guide([keys, wait, last]) }).includes('setup-guide-save-and-check'));
+  // Nothing to save.
+  assert.ok(rules({ ...check, setupGuide: guide([{ ...keys, fields: undefined }, { id: 'k2', title: 'K2', fields: ['GOOD_KEY'] }, last]) }).includes('setup-guide-save-and-check'));
+  // The last step checks the keys anyway.
+  assert.ok(rules({ ...check, setupGuide: guide([keys]) }).includes('setup-guide-save-and-check'));
+  // A wait step needs keys saved right before it, nothing to enter, and a step after it.
+  assert.ok(rules({ ...check, setupGuide: guide([keys, last, wait]) }).includes('setup-guide-wait'));
+  assert.ok(rules({ ...check, setupGuide: guide([keys, { ...wait, confirm: 'Done' }, last]) }).includes('setup-guide-wait'));
+  assert.ok(rules({ ...check, setupGuide: guide([{ ...keys, saveAndCheck: undefined }, wait, last]) }).includes('setup-guide-wait'));
+});
+
 test('docs explain the setup guide the validator links to', () => {
   assert.match(docs, /^### Setup guide$/m);
 });

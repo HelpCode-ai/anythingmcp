@@ -950,7 +950,10 @@
       "back": "Indietro",
       "checking": "Verifica in corso…",
       "continue": "Continua",
-      "tickHint": "Spunta la casella qui sopra quando hai finito."
+      "tickHint": "Spunta la casella qui sopra quando hai finito.",
+      "saveAndCheck": "Salva e verifica con {name}",
+      "waitHint": "\"Continua\" si attiva quando {name} ha approvato la tua app.",
+      "keysFirst": "Inserisci prima le chiavi nel passaggio precedente."
     },
     "title": {
       "finish": "Completa la configurazione di {name}",
@@ -1000,6 +1003,17 @@
       "fillPrevious": "{action}: compila prima il passaggio precedente.",
       "screenshot": "Screenshot del {date}; ora la pagina potrebbe essere leggermente diversa.",
       "problems": "Problemi comuni"
+    },
+    "wait": {
+      "checking": "Chiediamo a {name} della tua app…",
+      "notYet": "{name} non ha ancora approvato la tua app",
+      "checkedAt": "Ultimo controllo alle {time}. La pagina ricontrolla ogni volta che ci torni.",
+      "checkAgain": "Controlla di nuovo",
+      "checkingShort": "Controllo in corso…",
+      "activeAlready": "Già approvata ma qui non si sblocca? Reinserisci le chiavi",
+      "saved": "Le tue chiavi sono salvate. Puoi chiudere questa pagina: quando torni, si riapre a questo passaggio.",
+      "ready": "{name} ha approvato la tua app.",
+      "readyNext": "Continua con il passaggio successivo."
     }
   },
   "setupSuccess": {

@@ -338,9 +338,21 @@ menus deep. Adapters without one keep the form.
   `capturedAt`. Leave it out rather than add a mock-up.
 - `confirm`: a checkbox the user ticks before continuing, for a step that
   happens at the provider.
+- `saveAndCheck: true`: for a provider that must approve the user's app
+  before the keys work (Etsy). Continue saves the step's `fields` on the
+  connector (unfinished, so the AI cannot use it yet) and asks the provider
+  about the keys with the adapter's `checkBeforeAuthorization`. Needs
+  `fields`, and cannot be the last step.
+- `waitForProvider: true`: the step right after a `saveAndCheck` step, shown
+  only while the provider refuses the saved keys and skipped once it accepts
+  them. It tells the user what they are waiting for; the page checks again
+  whenever they come back to it and offers "Check again", and Continue opens
+  once the keys are accepted. No `fields` or `confirm`.
 
 The guide is not part of the catalog fingerprint: rewording it does not mark
-installed connectors as out of date. Progress is kept in the browser only.
+installed connectors as out of date. Progress is kept in the browser, with
+the id of a connector saved by a `saveAndCheck` step, so a user coming back
+days later continues with the keys they entered.
 
 ### Adapter file errors
 
