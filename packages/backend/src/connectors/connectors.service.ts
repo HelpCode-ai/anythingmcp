@@ -36,7 +36,7 @@ import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { connectorPageUrl, normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
-import { mcpPathOf } from './mcp-connector-config.util';
+import { envVarsForMcpTool, mcpPathOf } from './mcp-connector-config.util';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
@@ -882,9 +882,13 @@ export class ConnectorsService {
   ): Promise<unknown> {
     // Inject env vars as parameter defaults
     const envVars = connector.envVars as Record<string, string> | undefined;
-    const withEnv = envVars
+    // A remote MCP server gets them as tool arguments: only the names its
+    // schema lists, as on a real call (DynamicMcpTools).
+    const injected =
+      envVars && connector.type === 'MCP' ? envVarsForMcpTool(envVars, parameters) : envVars;
+    const withEnv = injected
       ? { ...params, ...Object.fromEntries(
-          Object.entries(envVars).filter(([k]) => params[k] === undefined),
+          Object.entries(injected).filter(([k]) => params[k] === undefined),
         ) }
       : params;
     const mergedParams = applySchemaDefaults(parameters, withEnv);

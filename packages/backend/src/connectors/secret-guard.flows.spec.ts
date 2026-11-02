@@ -384,6 +384,7 @@ describe('tool editor', () => {
       connectorsService as any,
       { assertEnterprise: jest.fn().mockResolvedValue(undefined) } as any,
       { checkCanCreateCodeTool: jest.fn().mockResolvedValue(undefined) } as any,
+      { runSavedCodeTool: jest.fn() } as any,
     );
     return { controller, prisma, connectorsService };
   }

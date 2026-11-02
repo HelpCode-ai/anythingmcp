@@ -648,6 +648,11 @@
       "skillsAuto": "Automatic: full text while short, otherwise a list to open on demand",
       "skillsInline": "Always the full text",
       "skillsIndex": "Always a list (the AI opens a skill with skill_get)",
+      "codeMode": "Code mode",
+      "codeModeOff": "Off (no code execution)",
+      "codeModeTools": "Saved code tools only",
+      "codeModeInline": "Saved code tools + inline code",
+      "codeModeHint": "Lets AI clients run short programs that orchestrate the tools on this server in one step. Off by default and needs a configured code-runner. Inline also exposes the generic code_execute tool to roles that allow it.",
       "skillsHint": "How this server's <link>AI Skills</link> reach the AI client. A list keeps the instructions short; long procedures are always opened on demand.",
       "save": "Save"
     }
@@ -932,7 +937,10 @@
       "providerError": "{name} answered with an error.",
       "suggest": "Set up {name} instead",
       "suggestOther": "Set up the other connector instead",
-      "saveAnyway": "Save anyway"
+      "saveAnyway": "Save anyway",
+      "appPendingTitle": "{name} has not approved your app yet.",
+      "appPendingBody": "{name} reviews new apps, usually within a few days. We'll e-mail you when it's approved; nothing else to do. Your keys are saved.",
+      "appPendingOpen": "Open the connector"
     },
     "field": {
       "required": "Required",
@@ -1701,7 +1709,7 @@
     "codeProgram": "Program",
     "codeProgramHint": "An async JavaScript body. Call other tools with await amcp.run(name, args), amcp.search(query), amcp.describe(name). The tool inputs are available as args. Return the result.",
     "codeUses": "Uses (connectors)",
-    "codeUsesHint": "JSON: the connectors this code tool may call, e.g. [{\"connectorId\":\"<id>\",\"tools\":[\"tool_name\"]}]. Omit \"tools\" to allow all of a connector. Only connectors from this workspace.",
+    "codeUsesHint": "JSON array of the connectors this code tool may call. Each entry gives a connectorId and an optional list of tool names; omit the tools list to allow all of a connector. Only connectors from this workspace.",
     "codeRunAs": "Run as",
     "codeRunAsInvoker": "Invoker (the caller's own permissions)",
     "codeRunAsDefiner": "Definer (admin-curated; admins only)",

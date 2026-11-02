@@ -43,6 +43,7 @@ import { WebhookEventsService } from '../connectors/webhook-events.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
+import { envVarsForMcpTool } from '../connectors/mcp-connector-config.util';
 import { processGauges } from '../common/process-vitals';
 import { recordToolCall } from '../common/metrics';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
@@ -52,6 +53,8 @@ import { EmailEngine } from '../connectors/engines/email.engine';
 import { FileSearchEngine } from '../file-search/file-search.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { hashContent } from '../adapters/catalog-fingerprint';
+import { getAdapter } from '../adapters/catalog';
+import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { connectorErrorWhen } from '../connectors/error-when.util';
 import {
@@ -591,7 +594,13 @@ export class DynamicMcpTools {
 
       // Inject env vars as parameter defaults (env var values fill in params
       // that match by name, so they don't need to be provided by the caller)
-      const paramsWithEnv = this.injectEnvVars(params, envVars);
+      // A remote MCP server gets the variables as tool arguments, so only
+      // those its schema names: every variable, credentials included, used
+      // to be sent with every bridged tool call.
+      const paramsWithEnv = this.injectEnvVars(
+        params,
+        tool.connectorType === 'MCP' ? envVarsForMcpTool(envVars, tool.parameters) : envVars,
+      );
 
       // Apply JSON Schema defaults for missing params
       const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
@@ -648,8 +657,25 @@ export class DynamicMcpTools {
             .join('\n'),
           secretValues,
         );
+        // The remote server refused the call inside a 200 (Atlassian: "The
+        // session token is missing the scope claim…" for an API token created
+        // without scopes). Same advice as for a thrown error, after its words.
+        const mcpRawSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+        const mcpSlug = typeof mcpRawSlug === 'string' && mcpRawSlug ? mcpRawSlug : undefined;
+        const mcpHint = deriveErrorHint({
+          host: hostFromUrl(tool.connectorConfig?.baseUrl),
+          message: safeText,
+          adapterSlug: mcpSlug,
+          connectorPage: connectorPageUrl(tool.connectorId),
+          cloud: this.deployment.isCloud(),
+        });
         const errorResult: { content: ToolResultContent; isError: true } = {
-          content: [{ type: 'text', text: safeText }],
+          content: [
+            {
+              type: 'text',
+              text: mcpHint ? `${safeText}\n\n---\nHINT (from AnythingMCP): ${mcpHint}` : safeText,
+            },
+          ],
           isError: true,
         };
         const durationMs = Date.now() - startTime;
@@ -780,14 +806,36 @@ export class DynamicMcpTools {
       // response says (a refresh token refused 7 days after a Google
       // authorization, a Meta session that was logged out).
       const engineHint = typeof error?.hint === 'string' && error.hint ? error.hint : undefined;
-      const hint = engineHint ?? deriveErrorHint({
+      // A catalog connector also gets its adapter's own advice (verifyHints)
+      // for a refused credential, and the link to its page where the user
+      // fixes it: a connector saved without a passing setup check otherwise
+      // repeats the vendor's bare "API key not valid" on every call.
+      const rawSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+      const adapterSlug = typeof rawSlug === 'string' && rawSlug ? rawSlug : undefined;
+      const message = typeof error?.message === 'string' ? error.message : undefined;
+      let hint = engineHint ?? deriveErrorHint({
         host:
           hostFromAxiosConfig(error?.config) ??
           hostFromUrl(tool.connectorConfig?.baseUrl),
         status: typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
-        message: typeof error?.message === 'string' ? error.message : undefined,
+        message,
         body: errorDetail.responseBody,
+        adapterSlug,
+        verifyHints: adapterSlug ? getAdapter(adapterSlug)?.verifyHints : undefined,
+        connectorPage: connectorPageUrl(tool.connectorId),
+        cloud: this.deployment.isCloud(),
       });
+      // Odoo JSON-2 "No database is selected": ask Odoo which databases this
+      // address serves and name them, as the setup check does. One small
+      // unauthenticated request, made only for this answer.
+      if (hint && adapterSlug === 'odoo' && /No database is selected/i.test(`${message ?? ''} ${String(errorDetail.responseBody ?? '')}`)) {
+        const envVars = (tool.connectorConfig?.envVars ?? {}) as Record<string, unknown>;
+        const advice = await odooNoDatabaseAdvice(
+          tool.connectorConfig?.baseUrl ?? undefined,
+          typeof envVars.ODOO_DB === 'string' ? envVars.ODOO_DB : undefined,
+        ).catch(() => undefined);
+        if (advice) hint = `${advice} ${hint}`;
+      }
       if (hint) errorDetail.hint = hint;
 
       await this.auditService.logInvocation({
@@ -1095,6 +1143,10 @@ export class DynamicMcpTools {
     // Generic errors (database, etc.)
     const detail: Record<string, unknown> = { error: error.message };
     if (error.code) detail.code = error.code;
+    // The MCP SDK reports a refused request's HTTP status in `data.status`
+    // (its message is only the body, e.g. {"error":"invalid_token"}): keep it,
+    // so a 401 from a remote MCP server is told apart like any other.
+    if (typeof error?.data?.status === 'number') detail.status = error.data.status;
     return detail;
   }
 
@@ -1216,9 +1268,45 @@ export class DynamicMcpTools {
    * by the caller (server codeMode `inline` + the role's `inlineCode`
    * capability); this method enforces read-only and invoker rights.
    */
+  /**
+   * Run a saved code tool directly from its stored row, for the dashboard
+   * "Test" button. The admin already has the tool in hand, so this skips the
+   * name→registry lookup `executeTool` does (the tool may have just been saved
+   * and not re-registered yet) and runs the same out-of-process code path with
+   * the same governance (uses allow-list, read/write, invoker/definer). No
+   * `mcpServerId` is passed, so the per-server codeMode switch is not consulted:
+   * this is an owner testing their own tool, like any instance-level operator
+   * call. Refuses cleanly when no runner is configured.
+   */
+  async runSavedCodeTool(
+    tool: {
+      id: string;
+      name: string;
+      connectorId: string;
+      connectorType?: string;
+      organizationId: string;
+      endpointMapping: unknown;
+    },
+    params: Record<string, unknown>,
+    context?: CodeExecContext,
+  ): Promise<{ content: ToolResultContent; isError?: boolean; structured?: unknown }> {
+    return this.executeCodeTool(tool as unknown as RegisteredTool, params, context);
+  }
+
   /** Whether a code-runner is configured, so code mode can run at all. */
   codeModeAvailable(): boolean {
     return !!this.codeExecutor?.isConfigured();
+  }
+
+  /**
+   * Whether the organization's plan includes inline code (Team and above). The
+   * MCP endpoint uses it to gate `code_execute` / `code_propose_tool` exposure,
+   * on top of the per-server `codeMode` and the caller's `inlineCode` role
+   * capability. Delegates to the licence guard so the plan→feature map lives in
+   * one place.
+   */
+  async inlineCodeAllowedForOrg(organizationId?: string): Promise<boolean> {
+    return this.licenseGuard.canUseInlineCode(organizationId);
   }
 
   async executeInlineCode(

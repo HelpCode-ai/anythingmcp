@@ -3,6 +3,7 @@ import { PrismaService } from '../common/prisma.service';
 import { LicenseService } from './license.service';
 import { DeploymentService } from '../common/deployment.service';
 import { cardTrialEnd } from './license-checkout';
+import { codeToolCapForPlan, inlineCodeAllowedForPlan } from './code-mode-quotas';
 
 export interface UsageCap {
   current: number;
@@ -149,21 +150,33 @@ export class LicenseGuardService {
    * connector for the org scope.
    */
   async checkCanCreateCodeTool(organizationId?: string): Promise<void> {
-    if (!this.deployment.isCloud()) return;
+    // On Cloud an active licence is required first (and an ended trial gets the
+    // reactivation message); self-hosted self-guards this to a no-op.
     await this.checkLicenseActive(organizationId);
 
     const license = await this.licenseService.getCurrentLicense(organizationId);
-    if (license?.plan !== 'trial') return;
-
-    const maxCodeTools = (license?.features as any)?.maxCodeTools;
-    if (maxCodeTools == null || !organizationId) return;
+    const plan = license?.plan ?? 'community';
+    const cap = codeToolCapForPlan(plan, (license?.features as any)?.maxCodeTools);
+    // Unlimited (Enterprise), or no org to count against: nothing to enforce.
+    if (cap == null || !organizationId) return;
 
     const count = await this.countCodeTools(organizationId);
-    if (count >= maxCodeTools) {
+    if (count >= cap) {
       throw new ForbiddenException(
-        `Trial limit reached (${maxCodeTools} code tools). A workspace administrator can activate a license to add more.`,
+        `Plan limit reached (${cap} code tools on the ${plan} plan). Upgrade the plan to add more.`,
       );
     }
+  }
+
+  /**
+   * Whether this workspace's plan includes inline code — the generic
+   * `code_execute` and `code_propose_tool` tools (Team and above). Gates their
+   * exposure on the MCP endpoint, in addition to the per-server `codeMode` and
+   * the caller's `inlineCode` role capability. Applies on Cloud and self-hosted.
+   */
+  async canUseInlineCode(organizationId?: string): Promise<boolean> {
+    const license = await this.licenseService.getCurrentLicense(organizationId);
+    return inlineCodeAllowedForPlan(license?.plan ?? 'community');
   }
 
   /** How many saved code tools an organization has (endpoint method 'code'). */

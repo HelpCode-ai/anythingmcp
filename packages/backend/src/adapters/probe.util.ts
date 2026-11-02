@@ -1,4 +1,4 @@
-import type { AdapterDefinition } from './catalog';
+import type { AdapterDefinition, ProbeFailRule } from './catalog';
 
 /**
  * Which call proves a freshly imported connector works.
@@ -59,4 +59,79 @@ export function materialise(
     out[k] = typeof v === 'string' ? v.replaceAll('__TOMORROW__', tomorrow) : v;
   }
   return out;
+}
+
+/** What a probe that answered still says is wrong, for the setup form. */
+export interface ProbeResultFailure {
+  kind: string;
+  message: string;
+  /** The variable the message belongs under. */
+  field?: string;
+}
+
+/**
+ * The text of a probe's answer: for a remote MCP tool, the text of its
+ * content (where its JSON is, as a string), else the answer as JSON.
+ */
+export function probeResultText(raw: unknown): string {
+  const content = (raw as { content?: unknown } | null)?.content;
+  if (Array.isArray(content)) {
+    const texts = content
+      .filter((c) => c && typeof c === 'object' && (c as { type?: unknown }).type === 'text')
+      .map((c) => String((c as { text?: unknown }).text ?? ''));
+    const structured = (raw as { structuredContent?: unknown }).structuredContent;
+    if (structured !== undefined) texts.push(safeStringify(structured));
+    return texts.join('\n');
+  }
+  return typeof raw === 'string' ? raw : safeStringify(raw);
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? '';
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * A probe call that returned without throwing but cannot count as a working
+ * connector:
+ *  - an answer one of the adapter's `probe.failWhen` rules matches (Atlassian's
+ *    `discover` returns an empty product list for an API token without scopes);
+ *  - a remote MCP tool that answered `isError: true` (the server refused the
+ *    call inside a 200).
+ * A matching rule's hint comes first, the server's own words follow it.
+ */
+export function probeResultFailure(
+  adapter: { probe?: { failWhen?: ProbeFailRule[] } },
+  raw: unknown,
+): ProbeResultFailure | null {
+  const text = probeResultText(raw);
+  // The MCP tool-result shape only: a REST body with an `isError` field is data.
+  const isError =
+    (raw as { isError?: unknown } | null)?.isError === true &&
+    Array.isArray((raw as { content?: unknown }).content);
+  const excerpt = text.replace(/\s+/g, ' ').trim().slice(0, 300);
+  for (const rule of adapter.probe?.failWhen ?? []) {
+    let re: RegExp;
+    try {
+      re = new RegExp(rule.matches, 'i');
+    } catch {
+      continue;
+    }
+    if (!re.test(text)) continue;
+    return {
+      kind: rule.kind ?? 'auth_failed',
+      message: excerpt ? `${rule.hint} (${excerpt})` : rule.hint,
+      ...(rule.field ? { field: rule.field } : {}),
+    };
+  }
+  if (isError) {
+    return {
+      kind: 'upstream_error',
+      message: `The server refused the check call: ${excerpt || 'no reason given'}`,
+    };
+  }
+  return null;
 }

@@ -727,7 +727,18 @@ export interface SetupGuide extends SetupEffort {
 
 export type VerifyResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }
-  | { ok: false; kind: string; message: string; missing?: string[]; status?: number | null; suggest?: string; suggestName?: string }
+  | {
+      ok: false;
+      kind: string;
+      message: string;
+      missing?: string[];
+      fields?: Record<string, string>;
+      status?: number | null;
+      suggest?: string;
+      suggestName?: string;
+      /** The provider has not approved the app yet (Etsy: Pending): the page keeps the keys, the owner is emailed on approval. */
+      appPending?: boolean;
+    }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
 
 export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';
@@ -2011,7 +2022,7 @@ export const mcpServers = {
     request<{ calls30d: number; lastCallAt: string | null }>(`/api/mcp-servers/${id}/activity`, { token }),
   create: (data: { name: string; slug?: string; description?: string; instructions?: string }, token: string) =>
     request<any>('/api/mcp-servers', { method: 'POST', body: data, token }),
-  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: 'auto' | 'inline' | 'index' }, token: string) =>
+  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: 'auto' | 'inline' | 'index'; codeMode?: 'off' | 'tools' | 'inline' }, token: string) =>
     request<any>(`/api/mcp-servers/${id}`, { method: 'PUT', body: data, token }),
   delete: (id: string, token: string) =>
     request(`/api/mcp-servers/${id}`, { method: 'DELETE', token }),

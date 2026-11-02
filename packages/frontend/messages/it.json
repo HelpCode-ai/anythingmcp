@@ -648,6 +648,11 @@
       "skillsAuto": "Automatico: testo completo se breve, altrimenti un elenco su richiesta",
       "skillsInline": "Sempre il testo completo",
       "skillsIndex": "Sempre un elenco (l'AI apre una skill con skill_get)",
+      "codeMode": "Modalità codice",
+      "codeModeOff": "Off (nessuna esecuzione di codice)",
+      "codeModeTools": "Solo code tool salvati",
+      "codeModeInline": "Code tool salvati + codice inline",
+      "codeModeHint": "Permette ai client AI di eseguire brevi programmi che orchestrano i tool di questo server in un solo passaggio. Disattivato di default; richiede un code-runner configurato. Inline espone anche il tool generico code_execute ai ruoli abilitati.",
       "skillsHint": "Come le <link>Skill IA</link> di questo server raggiungono il client AI. Un elenco mantiene brevi le istruzioni; le procedure lunghe vengono sempre aperte su richiesta.",
       "save": "Salva"
     }
@@ -932,7 +937,10 @@
       "providerError": "{name} ha risposto con un errore.",
       "suggest": "Configura invece {name}",
       "suggestOther": "Configura invece l'altro connettore",
-      "saveAnyway": "Salva comunque"
+      "saveAnyway": "Salva comunque",
+      "appPendingTitle": "{name} non ha ancora approvato la tua app.",
+      "appPendingBody": "{name} verifica le nuove app, di solito entro pochi giorni. Ti scriveremo un'e-mail quando sarà approvata; non devi fare altro. Le tue chiavi sono salvate.",
+      "appPendingOpen": "Apri il connettore"
     },
     "field": {
       "required": "Obbligatorio",
@@ -1701,7 +1709,7 @@
     "codeProgram": "Programma",
     "codeProgramHint": "Un corpo JavaScript async. Chiama altri tool con await amcp.run(nome, args), amcp.search(query), amcp.describe(nome). Gli input del tool sono in args. Restituisci il risultato.",
     "codeUses": "Usa (connettori)",
-    "codeUsesHint": "JSON: i connettori che questo tool codice può chiamare, es. [{\"connectorId\":\"<id>\",\"tools\":[\"nome_tool\"]}]. Ometti \"tools\" per permettere tutti i tool di un connettore. Solo connettori di questo workspace.",
+    "codeUsesHint": "Array JSON dei connettori che questo tool codice può chiamare. Ogni voce indica un connectorId e un elenco opzionale di nomi di tool; senza elenco sono permessi tutti i tool del connettore. Solo connettori di questo workspace.",
     "codeRunAs": "Esegui come",
     "codeRunAsInvoker": "Invoker (permessi del chiamante)",
     "codeRunAsDefiner": "Definer (curato da admin; solo admin)",

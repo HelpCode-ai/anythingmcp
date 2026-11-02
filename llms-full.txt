@@ -1983,7 +1983,9 @@ most servers listen.
 3. Tools are registered in the local ToolRegistry
 4. When an AI client calls a bridged tool, AnythingMCP:
    - Forwards the tool call to the remote MCP server
-   - Passes parameters through
+   - Passes parameters through, and fills in from the connector's environment variables only
+     the parameters the remote tool's schema names (a variable called `owner` fills `owner`;
+     the connector's own key or token is never sent as a tool argument)
    - Returns the response
 
 ### Endpoint Mapping
@@ -2095,6 +2097,8 @@ install. Through the API they can be set on any MCP connector.
 These catalog adapters bridge a vendor's official remote MCP server. At install AnythingMCP lists
 the tools of the server (the catalog keeps a snapshot for the store and as the fallback when the
 server cannot be reached). Click **Discover tools** on the connector after the vendor adds tools.
+The setup check runs the adapter's `probe` tool, or lists the server's tools when the adapter
+declares none, so a refused token is reported on the setup form before anything is saved.
 
 | Adapter | Endpoint | Auth |
 |---------|----------|------|
@@ -3458,6 +3462,83 @@ store, on /welcome and in the chat matches them like the name; they are never
 displayed. Keep them to names that clearly mean this app, each at most 40
 characters; a misspelling needs no alias, the search tolerates typos.
 
+`envVarMeta.<VAR>.pattern` (with `patternMessage`) is enforced on every path
+that writes the variable: the setup form, the pre-save check, the install
+(also "Save anyway" and a chat install) and the connector's variable editor.
+Those paths also refuse, field by field, an address or credential still
+holding an example (`host`, `example.com`, `your-api-key`, `<...>`,
+`PASTE_KEY_HERE`) and a credential pasted more than once (the same string
+repeated). See `packages/backend/src/adapters/env-var-checks.ts`.
+
+`verifyHints` maps a status (`"401"`) or failure kind (`"auth_failed"`,
+`"unreachable"`) to what the setup check tells the user. A tool call that
+the API answers 401 uses the adapter's `"401"` (or `"auth_failed"`) hint too
+when no built-in rule matches, followed by a link to the connector's page,
+so a connector saved without a passing check hears the same advice. Hints are
+read from the catalog at call time and reach installed connectors without
+"Apply update". Declare a `probe` (a read call with fixed `params`) when no
+GET without required parameters exists; without one the setup check is
+skipped and a wrong key is only found at the first call. An adapter for a
+vendor's MCP server (`connector.type` `MCP`) without a `probe` is checked by
+listing the server's tools, which catches a refused token. A hint written as
+`{ "hint": "…", "field": "VAR" }` is also shown under that variable on the
+setup form.
+
+A probe can still fail when the call answers: an MCP tool result with
+`isError: true` fails the check, and `probe.failWhen` lists answers that mean
+the connector cannot work although nothing was refused. Each rule's `matches`
+is a case-insensitive regular expression over the answer's text (for an MCP
+tool, the text of its result); the first match fails the check with its
+`hint`, under `field` when it names one, as `kind` (default `auth_failed`):
+
+```json
+"probe": {
+  "tool": "atlassian_discover",
+  "params": { "query": "get issue details" },
+  "failWhen": [
+    {
+      "matches": "missing the scope claim|\"searchableProducts\"\\s*:\\s*\\[\\s*\\]",
+      "hint": "This API token has no scopes. Create an 'API token with scopes' …",
+      "field": "ATLASSIAN_API_TOKEN"
+    }
+  ]
+}
+```
+
+`derivedEnvVars` declares settings the user should not have to look up,
+found at setup from a host they do know. Each entry names the variable that
+holds the host (`fromHost`, declared in `optionalEnvVars` or
+`requiredEnvVars`), a public `url` starting with `https://{{<fromHost>}}/`,
+the dotted `path` of the value in its JSON answer, an optional `pattern` the
+value must match, and the `error` shown under the host field when the host
+answers without a value (`{{host}}` is replaced by it). The host is stored as
+a bare lower-case host (`https://Acme.atlassian.net/` becomes
+`acme.atlassian.net`). The lookup runs at the setup check, at install and in
+the connector's variable editor when the host changes; when the host does not
+answer at all (timeout, 5xx), the connector is saved without the value. See
+`packages/backend/src/adapters/derived-settings.ts`:
+
+```json
+"derivedEnvVars": {
+  "ATLASSIAN_CLOUD_ID": {
+    "fromHost": "ATLASSIAN_SITE",
+    "url": "https://{{ATLASSIAN_SITE}}/_edge/tenant_info",
+    "path": "cloudId",
+    "pattern": "^[0-9a-fA-F-]{36}$",
+    "error": "No Atlassian site answers at {{host}}."
+  }
+}
+```
+
+`instructionFacts` are sentences added to a catalog connector's instructions
+when they are served to a model (initialize, the workspace guide), each only
+when every `{{VAR}}` it names is set on the connector. Only non-secret
+variables (declared or derived) may be named. Stored instructions never
+resolve `{{VAR}}`, so this is how a per-workspace fact (the Atlassian site and
+its cloudId) reaches the model. Facts are read from the catalog when the
+instructions are served and reach installed connectors without "Apply
+update". See `packages/backend/src/adapters/instruction-facts.ts`.
+
 ### Tools
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its
@@ -4701,6 +4782,8 @@ AnythingMCP is listed in Claude's connector directory: [claude.ai/directory/anyt
 2. Click **Connect**.
 3. Sign in to AnythingMCP Cloud and approve access. If you have several MCP servers, choose the ones Claude may reach.
 
+If your workspace has no apps yet, the page after approving says so. You can pick one of a few quick-setup apps there (Telegram, Shopify, WooCommerce, Odoo, Printify, Google Gemini), or skip it: **Continue to Claude** works either way. A picked app is added without credentials, and you finish it in the chat. Back in Claude, you can add any catalog app by asking, for example "Connect my Telegram bot to AnythingMCP." Claude finds the connector and adds it. Passwords and keys are never typed into the chat: Claude gives you a link to a page where you enter them.
+
 The listing always connects to AnythingMCP Cloud. For a self-hosted instance, use option 2.
 
 ---
@@ -5616,7 +5699,7 @@ Two systemd timers run on the managed cloud host, installed by `.github/workflow
 | `anythingmcp-probe.timer` | `deploy/cloud/uptime-probe.sh` | every minute | `UPTIME_ALERT_TO`, on a change of state only (down, recovered) |
 | `anythingmcp-stuck-report.timer` | `deploy/cloud/stuck-users-report.sh` | Monday 07:00 Europe/Berlin | `REPORT_TO`, falling back to `UPTIME_ALERT_TO` |
 
-The weekly report lists, for the last 7 days with 30-day context: organizations whose tool calls have never succeeded (marked NEW or STILL STUCK against the previous report, whose list is kept in `/var/lib/anythingmcp-report/stuck-orgs`); catalog connectors at 0 % success, or under 20 % with at least 5 calls, across all organizations; and signups that never created a connector or never made a call. It only reads the database, never selects tool inputs, outputs or credentials, and scrubs error texts (one line, no URL query strings, e-mail addresses or long tokens, 150 characters). It does contain customer e-mail addresses, so send it to the team only.
+The weekly report lists, for the last 7 days with 30-day context: organizations whose tool calls have never succeeded (marked NEW or STILL STUCK against the previous report, whose list is kept in `/var/lib/anythingmcp-report/stuck-orgs`), grouped by the likely cause of their most frequent error (provider quota or billing, credentials, configuration, not reachable, other), with every "other" and every org whose admin has a company address listed and free-mail orgs in a known cause only counted; catalog connectors at 0 % success, or under 20 % with at least 5 calls, across all organizations; signups that never created a connector or never made a call; the funnel of the organizations created in the window (AI client connected, catalog searched from a chat or in the store, setup started and completed, has a connector, successful call) next to the previous week's cohort; and Etsy apps waiting for Etsy's approval (keys refused this week, approved this week, still pending). It only reads the database, never selects tool inputs, outputs or credentials, and scrubs error texts (one line, no URL query strings, e-mail addresses or long tokens, 150 characters). It does contain customer e-mail addresses, so send it to the team only.
 
 | Env (in the host `.env`) | Default | |
 |---|---|---|
@@ -6676,9 +6759,14 @@ where Enterprise and admin gating apply again.
 ## Governance
 
 - **Per server:** `codeMode` is `off` (default), `tools` (saved code tools
-  only) or `inline` (also `code_execute`).
+  only) or `inline` (also `code_execute`). Set it on the MCP server's settings
+  page, or with `PUT /api/mcp-servers/:id` (`codeMode`).
 - **Per role:** the `inlineCode` capability gates inline code; saved code tools
   follow the normal tool allow-list.
+- **Per plan:** saved code tools are capped per plan — Community 3, Starter 5,
+  Team 20, Enterprise unlimited (same on Cloud and self-hosted; an Enterprise
+  contract can override the cap with the licence feature `maxCodeTools`). Inline
+  code (`code_execute` / `code_propose_tool`) is Team and above.
 - **Writes** happen only in an admin-approved code tool with *Allow write
   tools* on; inline code and read-only tools can never write.
 - **Audit:** every run is recorded (a `code_runs` row), and each tool call the
@@ -6699,9 +6787,11 @@ COMPOSE_PROFILES=code-runner
 CODE_RUNNER_URL=ws://code-runner:8777
 ```
 
-Then set a server's `codeMode` to `tools` or `inline`. The runner holds no
-secrets and needs no inbound internet; it accepts only the backend's connection
-on the internal network.
+Then set a server's `codeMode` to `tools` or `inline` (on the server's settings
+page or via the API). The runner holds no secrets and needs no inbound internet;
+it accepts only the backend's connection on the internal network. A saved code
+tool's **Test** button in the tool editor runs the program through the runner,
+so you can check it before a client does.
 
 ## Limits
 

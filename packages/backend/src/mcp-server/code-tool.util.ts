@@ -22,6 +22,15 @@ import type { CodeBridge } from './code-executor.service';
 
 export const CODE_METHOD = 'code';
 
+/**
+ * Per-server code-mode switch (`McpServerConfig.codeMode`): `off` (default, no
+ * code execution), `tools` (saved code tools only) or `inline` (also the
+ * generic `code_execute` / `code_propose_tool`). Used to validate the API that
+ * sets it and to render the server-settings control.
+ */
+export const CODE_MODE_MODES = ['off', 'tools', 'inline'] as const;
+export type CodeMode = (typeof CODE_MODE_MODES)[number];
+
 export interface CodeToolUse {
   connectorId: string;
   /** Tool names allowed from this connector; omitted/empty = all of its tools. */
