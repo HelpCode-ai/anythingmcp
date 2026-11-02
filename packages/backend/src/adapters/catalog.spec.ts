@@ -2,6 +2,7 @@ import { listAdapters, getAdapter } from './catalog';
 import { REQUEST_BODY_METHODS } from '../connectors/engines/rest.engine';
 import { localMcpToolName, mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 import { EMAIL_METHODS } from '../connectors/email/email-builtins';
+import { FILE_SEARCH_METHODS } from '../file-search/file-search-builtins';
 
 const VALID_AUTH_TYPES = new Set([
   'NONE',
@@ -50,6 +51,7 @@ const VALID_ODATA_BUILTIN_METHODS = new Set([
 // EMAIL adapters speak IMAP and SMTP: their tools are the email built-ins
 // (EmailEngine) plus `static` guides. No HTTP path, so no URL rules either.
 const VALID_EMAIL_METHODS = new Set([...EMAIL_METHODS.map((m) => m.toUpperCase()), 'STATIC']);
+const VALID_FILE_SEARCH_METHODS = new Set([...FILE_SEARCH_METHODS.map((m) => m.toUpperCase()), 'STATIC']);
 
 /**
  * Declared tool arguments that are deliberately not sent anywhere, as
@@ -123,6 +125,16 @@ describe('adapter catalog', () => {
 
   it('registers at least one adapter', () => {
     expect(adapters.length).toBeGreaterThan(0);
+  });
+
+  it('gives every tool a parameters object, {} when the JSON leaves it out', () => {
+    for (const meta of listAdapters()) {
+      for (const tool of getAdapter(meta.slug)!.tools) {
+        expect(tool.parameters).toEqual(expect.any(Object));
+      }
+    }
+    const providers = getAdapter('openrouter')!.tools.find((t) => t.name === 'openrouter_list_providers');
+    expect(providers?.parameters).toEqual({});
   });
 
   it('has unique slugs', () => {
@@ -453,6 +465,13 @@ describe('adapter catalog', () => {
 
         if (adapter.connector.type === 'EMAIL') {
           expect(VALID_EMAIL_METHODS.has(String(em.method).toUpperCase())).toBe(true);
+          expect(typeof em.path).toBe('string');
+          return;
+        }
+
+        // File Search built-ins (file-search-builtins.ts): fixed methods, no HTTP.
+        if ((adapter.connector.type as string) === 'FILE_SEARCH') {
+          expect(VALID_FILE_SEARCH_METHODS.has(String(em.method).toUpperCase())).toBe(true);
           expect(typeof em.path).toBe('string');
           return;
         }

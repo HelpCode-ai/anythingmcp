@@ -283,6 +283,53 @@ export class RolesService {
   }
 
   /**
+   * The capability flags a user has in an organization: the union of their
+   * roles' `capabilities` JSON, with any `true` winning. An ADMIN of the org
+   * holds every capability (consistent with getAllowedToolIds returning `null`
+   * for an admin). Resolves the authoritative per-org role from
+   * organization_members, never the JWT cache, and fails closed (no
+   * capabilities) for an unknown, non-member or deactivated principal.
+   */
+  async getCapabilities(
+    userId: string,
+    organizationId?: string,
+  ): Promise<Record<string, boolean>> {
+    if (!userId) return {};
+    const orgId = organizationId;
+    if (!orgId) return {};
+
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId, organizationId: orgId } },
+      select: { role: true, deactivatedAt: true },
+    });
+    if (!membership || membership.deactivatedAt) return {};
+    // Admins hold every current capability.
+    if (membership.role === 'ADMIN') return { inlineCode: true };
+
+    const assignments = await this.prisma.userRoleAssignment.findMany({
+      where: { userId, OR: [{ organizationId: orgId }, { organizationId: null }] },
+      select: { roleId: true },
+    });
+    const roleIds = [...new Set(assignments.map((a) => a.roleId))];
+    if (roleIds.length === 0) return {};
+
+    const roles = await this.prisma.role.findMany({
+      where: { id: { in: roleIds } },
+      select: { capabilities: true },
+    });
+    const caps: Record<string, boolean> = {};
+    for (const role of roles) {
+      const c = role.capabilities as Record<string, unknown> | null;
+      if (c && typeof c === 'object') {
+        for (const [key, value] of Object.entries(c)) {
+          if (value === true) caps[key] = true;
+        }
+      }
+    }
+    return caps;
+  }
+
+  /**
    * Whether any role OWNED BY this organization has a tool whitelist row.
    *
    * Deliberately scoped to the org's own roles and NOT widened to `isSystem`

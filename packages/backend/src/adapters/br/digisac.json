@@ -22,7 +22,7 @@
       "kind": "address",
       "help": "DIGISAC, Conta, Informações: the address of your account, e.g. https://empresa.digisac.co. Paste it without /api/v1.",
       "example": "https://empresa.digisac.co",
-      "pattern": "^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\\.digisac\\.(co|app|com\\.br|chat|me)/?$",
+      "pattern": "^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\\.digisac\\.(co|app|io|com\\.br|chat|me)/?$",
       "patternMessage": "Use the https address of your DIGISAC account, e.g. https://empresa.digisac.co, without /api/v1 or a path."
     },
     "DIGISAC_API_TOKEN": {

@@ -89,7 +89,7 @@ function render(name, adapterLabel, keylessLabel, lang = 'en') {
     .replace(/\{\{T_SUB\}\}/g, t.sub.replace('{keyless}', String(keylessLabel)))
     .replace(/\{\{T_SYSTEMS\}\}/g, t.systems)
     .replace(/\{\{T_CLIENTS\}\}/g, t.clients)
-    .replace(/\{\{T_ANOTHER_MCP\}\}/g, t.anotherMcp)
+    .replace(/\{\{T_FILES\}\}/g, t.files)
     .replace(/\{\{ADAPTERS\}\}/g, String(adapterLabel))
     .replace(/\{\{KEYLESS\}\}/g, String(keylessLabel))
     .replace(/\{\{ICON_CLAUDE\}\}/g, icon('claude'))

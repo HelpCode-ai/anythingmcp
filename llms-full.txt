@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 681 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 693 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -8,13 +8,32 @@
 
 Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/README.md
 
-# AnythingMCP: self-hosted MCP gateway
+# AnythingMCP: the open-source MCP gateway that becomes your company brain
 
-AnythingMCP is an open-source, self-hosted MCP gateway that turns any REST/OpenAPI, SOAP, GraphQL, OData or SQL system into MCP tools for Claude, ChatGPT and Copilot, without writing an MCP server.
+AnythingMCP is an open-source, self-hosted MCP gateway that connects Claude, ChatGPT, Copilot and Gemini to the software your company runs and to the documents on your file servers, without writing an MCP server.
 
 **One question in Claude, answered from Etsy, SAP and a logistics API.**
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
+
+---
+
+## What your AI gets
+
+A gateway forwards calls. A company brain also knows where your documents are, how your systems connect and what your company has already decided. AnythingMCP gives every AI client both, through one MCP endpoint:
+
+| | What it does | Edition |
+|---|---|---|
+| **Every system, one endpoint** | 692 catalog connectors, or your own REST/OpenAPI, SOAP, GraphQL, OData, SQL, IMAP/SMTP or MCP source. Tools register at runtime. [Connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md#connect-any-api-soap-service-or-database>) | All |
+| **File Search** | Indexes SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 or a network share: every PDF page, Excel rows with their column names, Word, PowerPoint, Outlook mails with attachments. The AI answers with file, page and date. [File Search](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud, paid licence |
+| **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud, paid licence |
+| **Company memory** | Facts and preferences saved from one AI client and found again in any other: said once in Claude, used by Copilot. Personal and company scopes, with folders and role limits. [Memory](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>) | Enterprise |
+| **AI skills** | The procedures your agents follow, written by hand or learned from real requests and fixed errors, approved by an admin. [AI skills](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#ai-skills>) | All |
+| **Knowledge graph** | How your systems connect, so the agent links a customer in one system to their orders in another without being told. [Knowledge Graph](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md>) | All |
+| **Code Mode** | One short program that calls several tools in an isolated sandbox with no secrets and no network, so a five-step lookup becomes one call. [Code Mode](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md>) | All; write access Enterprise |
+| **Governance** | Roles and per-tool permissions, response mapping that drops fields before they reach the model, an audit log of every call. SSO and SCIM from your directory. [Security](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md#security-and-governance>) | All; SSO/SCIM Enterprise |
+
+The self-hosted Community edition is free for up to 3 active users. Paid licences and the 30-day trial are under **Settings → License**; for Enterprise, write to [info@helpcode.ai](<mailto:info@helpcode.ai>) or see [anythingmcp.com/enterprise](<https://anythingmcp.com/enterprise>).
 
 ---
 
@@ -40,7 +59,7 @@ The quickstart binds to `127.0.0.1` on purpose, because nothing in front of it t
 
 ### Other ways to run it: managed cloud, Railway, DigitalOcean
 
-[**AnythingMCP Cloud**](<https://cloud.anythingmcp.com>) is the same AGPL code, operated by us in **Frankfurt, Germany**, with a 7-day free trial. Start there to try it on your own APIs, and move it in-house when you want the credentials to stop travelling; the connectors are the same either way. DPA/AVV on request via [info@helpcode.ai](<mailto:info@helpcode.ai>). SSO and SCIM are self-hosted only.
+[**AnythingMCP Cloud**](<https://cloud.anythingmcp.com>) is the same AGPL code, operated by us in **Frankfurt, Germany**, with a 7-day free trial. Start there to try it on your own APIs, and move it in-house when you want the credentials to stop travelling; the connectors are the same either way. DPA/AVV on request via [info@helpcode.ai](<mailto:info@helpcode.ai>). SSO and SCIM are self-hosted only, with an Enterprise licence.
 
 ---
 
@@ -73,7 +92,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-681 adapters, exposing 2,400+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages.
+693 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages.
 
 | Category | Examples |
 |---|---|
@@ -142,13 +161,13 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Security and governance
 
-Everything runs on your infrastructure, so you decide what leaves it. OAuth2, RBAC, SSO and SCIM are in the self-hosted build, not held back for a paid tier.
+Everything runs on your infrastructure, so you decide what leaves it. OAuth2, roles, per-tool permissions, response mapping and the audit log are in every edition; SSO and SCIM need an Enterprise licence (a 30-day trial is built in).
 
 - **Response mapping.** Each tool declares exactly which fields reach the model: drop a customer's IBAN or an employee's salary, or name the fields to keep. The editor shows the before/after on a real response; a shipped adapter goes from 12,172 B to 1,072 B (−91%), so you also stop paying for those fields in the context window. A broken mapping returns the raw response by default; set `"fallbackToRaw": false` on tools whose fields must never travel, and the call fails instead.
 - **Read-only where it matters.** Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`), derived from the operation and overridable per tool. Role-based tool whitelisting lets you publish an MCP server that can only read, which is how most people should start with an ERP. Database query tools run a single SELECT and block writes and stacked statements.
 - **Every auth scheme you will meet.** OAuth2 (PKCE and Client Credentials), Bearer, API key, Basic, HMAC request signing, [LOGIN_TOKEN](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md>) and OAuth 1.0a. Credentials are encrypted at rest with AES-256-GCM.
 - **Audit log.** Every tool call is recorded with input, output, duration and status in your own database, including the full upstream response the model never saw.
-- **[SSO](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/sso.md>) and [SCIM](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/scim-entra-setup.md>).** Entra ID, Google, Okta, Auth0 or any OIDC provider. Roles sync from your directory groups on every sign-in; disable someone in the directory and their workspace access and MCP API keys go with it.
+- **[SSO](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/sso.md>) and [SCIM](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/scim-entra-setup.md>)** (Enterprise). Entra ID, Google, Okta, Auth0 or any OIDC provider. Roles sync from your directory groups on every sign-in; disable someone in the directory and their workspace access and MCP API keys go with it.
 
 ```json
 {
@@ -176,12 +195,15 @@ The same MCP server works in every client that speaks MCP, so you build a connec
 
 ---
 
-## Knowledge Graph and AI skills
+## Company brain: knowledge graph, AI skills and memory
 
 Forwarding calls leaves the hard part to the agent: knowing which tool to call next, and what your business means by "open order". AnythingMCP learns both and hands them back as context, not as extra tool calls.
 
 - **Knowledge Graph.** A per-workspace map of entities (customers, orders, products) and how they relate across connectors, built from tool definitions and real calls, and editable by hand. It stores field names and relationships, never values. Each server exposes it through a `kg_how_to_obtain` tool, so the agent can ask how to get from a Shopware order to a DHL tracking number.
-- **AI skills.** Recurring usage turned into small rules ("today's revenue includes order statuses 2, 3 and 4") that you apply, edit or dismiss, and that are composed into the server's instructions.
+- **AI skills.** Recurring usage turned into small rules ("today's revenue includes order statuses 2, 3 and 4") and step-by-step procedures, written by hand or learned from real requests and fixed errors, versioned, and approved by an admin before they are composed into the server's instructions.
+- **Company memory** (Enterprise). AI clients save facts, preferences and notes with `memory_save` and find them again with `memory_search`, in any client connected to the workspace. *My memory* stays private to one user; *company memory* ("STAMMKUNDE means a customer with a framework agreement") is for everyone, in folders limited by role. It is served as information written by people, never as instructions. [Memory guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>)
+
+Change the assistant, keep the brain: Copilot today, Claude tomorrow, an n8n agent tonight all find the same graph, skills and memory.
 
 The AI passes are off by default and use your own OpenAI, OpenRouter or Anthropic key; the graph, the editor and the MCP tool work without one. [Knowledge Graph guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md>)
 
@@ -210,6 +232,18 @@ Yes. AnythingMCP parses the WSDL, turns each operation into a tool and builds th
 ### Can Claude query my SQL Server, Oracle or PostgreSQL database safely?
 Query tools are read-only by default. On top of that, use a database user with SELECT rights only, prefer static queries where the model supplies just the parameters, and whitelist the tools per role. Response mapping drops the columns that must not reach the model, and every query lands in your audit log.
 
+### How do I let Claude or ChatGPT search the documents on our file server?
+Add a **File Search** connector and point it at the folder over SFTP, FTP/FTPS, WebDAV (Nextcloud, ownCloud, Synology or QNAP NAS), S3 or a mounted network share. AnythingMCP indexes PDFs page by page, Excel rows with their column names, Word, PowerPoint and Outlook mails, keeps the index in sync, and gives every AI client `search`, `find`, `grep` and `read` tools that answer with file, page and date. Folder permissions per role are available on Enterprise. [File Search docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>)
+
+### Can ChatGPT, Claude and Copilot share the same company memory?
+Yes. With workspace memory (Enterprise), anything saved from one AI client is found by the others, because the memory lives in AnythingMCP, not in the client. Personal items stay private to their author; company items are shared within folder and role limits. [Memory docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>)
+
+### What is a company brain for AI agents?
+The knowledge an AI needs beyond tool access: where your documents are, how your systems link (the knowledge graph), how your company works (AI skills) and what it has decided (company memory). AnythingMCP keeps all of it in your own instance and serves it to every MCP client within each user's role.
+
+### Can an AI agent run code against my tools safely?
+With Code Mode, a short JavaScript program calls several tools in one step. It runs in a separate code-runner container with no filesystem, network, environment or secrets; it can only call the tools the user may already use, and every inner call is governed and audited like a direct one. It is off until an operator enables it. [Code Mode docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md>)
+
 ### How do I connect Shopware, WooCommerce or Amazon Seller Central to Claude?
 Install the [e-commerce adapter](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md#e-commerce--marketplace-connectors>) for your shop or marketplace and authorise it. WooCommerce comes with 49 tools, Amazon Seller Central uses the official Selling Partner API, and the Shopware 6 adapter reads the storefront catalog through the Store API.
 
@@ -233,7 +267,7 @@ Read the [Contributing guide](<https://github.com/HelpCode-ai/anythingmcp/blob/m
 
 ## License
 
-**Open source** under the [GNU Affero General Public License v3](<https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE>) (AGPL-3.0-only). Commercial use inside your own company is included and always was; the copyleft obligation only starts if you modify AnythingMCP and offer the modified version to others over a network. Cloud-operator code under `ee/` is separately licensed and is not required for self-hosting; see the [License FAQ](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/license-faq.md>).
+**Open source** under the [GNU Affero General Public License v3](<https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE>) (AGPL-3.0-only). Commercial use inside your own company is included and always was; the copyleft obligation only starts if you modify AnythingMCP and offer the modified version to others over a network. Code under `ee/` (Cloud operations, the File Search sync engine, edition licensing) is under the AnythingMCP Commercial License and is not required to run the gateway; see the [License FAQ](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/license-faq.md>).
 
 ---
 
@@ -617,6 +651,12 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `SMTP_PASS` | No | SMTP password |
 | `SMTP_FROM` | No | Sender address (default: `AnythingMCP <SMTP_USER>`) |
 | `SMTP_REPLY_TO` | No | Reply-To address, for when `SMTP_FROM` is a noreply address |
+| `RETENTION_SMTP_HOST` | No | Cloud only: a second SMTP server for the trial lifecycle, win-back and blocked-call emails. Without it they go through the SMTP above, with `RETENTION_SMTP_REPLY_TO` as Reply-To when set. Self-hosted sends none of these emails |
+| `RETENTION_SMTP_PORT` | No | Its port (default: 587). 465 or 2465 use implicit TLS, any other port STARTTLS |
+| `RETENTION_SMTP_USER` | No | Its username |
+| `RETENTION_SMTP_PASS` | No | Its password |
+| `RETENTION_SMTP_FROM` | No | Its sender, e.g. `Your Name <support@example.com>` (default: the `SMTP_FROM` sender) |
+| `RETENTION_SMTP_REPLY_TO` | No | Reply-To of those emails, with either sender |
 | `COMPOSE_PROFILES` | No | Set to `proxy` to enable Caddy reverse proxy |
 | `DOMAIN` | No | Domain for Caddy SSL certificate (e.g., `example.com`) |
 | `ACME_EMAIL` | No | Email for Let's Encrypt certificate notifications |
@@ -743,6 +783,7 @@ On an MCP server's page, the **Share this server** card gives you "Add to Cursor
 | **GraphQL** | GraphQL endpoints with introspection | [Guide →](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/graphql.md>) |
 | **Database** | PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite | [Guide →](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/database.md>) |
 | **Email (IMAP/SMTP)** | Any mailbox: IONOS, Strato, GMX, T-Online, Gmail (app password), self-hosted Dovecot | [Guide →](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/email.md>) |
+| **File Search** | Search inside the documents of a folder: SFTP, FTP/FTPS, WebDAV/Nextcloud, S3, network folders; plus File Share links | [Guide →](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) |
 | **MCP Bridge** | Aggregate multiple MCP servers into one | [Guide →](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md>) |
 | **LOGIN_TOKEN auth** | APIs that POST credentials → return long-lived bearer | [Guide →](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md>) |
 
@@ -1148,6 +1189,288 @@ The guard resolves the host once and the connection goes to exactly the address 
 ## Tests
 
 `packages/backend/src/connectors/engines/email.engine.spec.ts` covers the engine against a scripted client (criteria, truncation, attachment cap, reply headers, Sent rules, the SSRF guard on Cloud and self-hosted, scrubbed errors). `email.engine.integration.spec.ts` runs the same flows against a real IMAP server ([ImapKit](<https://github.com/postalsys/imapkit>), in memory) and SMTP server ([smtp-server](<https://github.com/nodemailer/smtp-server>)) inside Jest, including TLS with a self-signed certificate. `adapters/intl/imap-smtp.live.spec.ts` can check a real mailbox read-only when `RUN_IMAP_SMTP_LIVE=1` is set.
+
+---
+
+## docs/connectors/file-search.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/file-search.md
+
+# File Search and File Share
+
+File Search lets an AI client search inside the documents of a folder: PDF,
+Excel, Word, PowerPoint, Outlook `.msg`, `.eml` and text files on an SFTP,
+FTP/FTPS, WebDAV (Nextcloud, ownCloud, NAS) or S3 server, or in a folder
+mounted into a self-hosted install. AnythingMCP indexes the file names and
+the text of every page, keeps the index in sync, and gives the AI tools to
+search, read pages, find exact codes and hand the file to the person.
+
+File Share turns files into temporary download links: a file from a File
+Search connector, or a file an AI client wrote (a CSV, a report).
+
+- [What you need](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#what-you-need>)
+- [Set up a folder](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#set-up-a-folder>)
+- [Sources](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#sources>)
+- [The tools](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#the-tools>)
+- [Syncing](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#syncing>)
+- [Limits and pauses](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#limits-and-pauses>)
+- [File Share](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#file-share>)
+- [Permissions and governance](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#permissions-and-governance>)
+- [Security](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#security>)
+- [Self-hosted setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#self-hosted-setup>)
+- [Troubleshooting](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#troubleshooting>)
+
+## What you need
+
+| | AnythingMCP Cloud | Self-hosted |
+|---|---|---|
+| Plan | Every plan, the free trial included, within its limits | A paid licence (Starter, Team, Enterprise) or the 30-day trial. Community has no File Search after the trial. |
+| Sources | SFTP, FTP/FTPS, WebDAV, S3 on the internet | The same, plus folders mounted into the install |
+| Services | Run by us | `COMPOSE_PROFILES=files` starts `files-worker` and `file-extractor` (see [Self-hosted setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#self-hosted-setup>)) |
+
+Only workspace administrators set up File Search connectors.
+
+## Set up a folder
+
+**Connectors → New → File Search** opens a five-step wizard:
+
+1. **Source.** Pick the protocol and fill in the server, account and folder.
+   Shortcuts preset Nextcloud, Synology, QNAP, Fritz!Box and Hetzner Storage
+   Box.
+2. **Test.** AnythingMCP connects, signs in and lists the folder before
+   anything is saved. The result is a checklist (address, reachability,
+   encryption, server identity, login, folder) with what to fix when a step
+   fails. SFTP host keys and self-signed FTPS certificates are shown as a
+   fingerprint to confirm; from then on a different key or certificate is
+   refused before the password is sent.
+3. **Scan.** A dry run lists the whole folder without indexing it: files per
+   folder, types, years. Folders that look like archives (`Alt`, `Old`,
+   `Archive…`, `Backup`) are unticked. A budget bar compares the selection
+   with your plan while you tick folders, file types or an age limit. When the
+   selection is larger than the plan, you cannot continue until it fits or you
+   upgrade.
+4. **Describe.** The connector's instructions (passed on by every MCP server
+   it is on) and a one-line summary that appears in every tool description,
+   drafted from the scan. With an AI model configured on the server
+   (`KG_LLM_ENABLED`), the wizard can draft them with AI; it states exactly
+   what is sent (folder names, file names, the first 2,000 characters of up to
+   20 sample files, personal data masked). Without AI the draft is built from
+   the folder structure: naming patterns of the folders, recurring
+   subfolders, file types, years, language, frequent terms. Edit it before
+   saving.
+5. **Activate.** Tool prefix, sync interval, MCP servers. The first sync
+   starts at once.
+
+The connector's **Files** panel shows the state, progress, counts against the
+plan, recent syncs, files that could not be read, the folder tree, the
+description and (Enterprise) folder permissions.
+
+## Sources
+
+| Protocol | Notes |
+|---|---|
+| SFTP | Password or private key. Host key pinned on first use. |
+| FTPS (explicit, port 21) / FTPS (implicit, port 990) | A certificate from a public authority is accepted; a self-signed one only by its confirmed fingerprint. Passive data connections go only to the server's own address. |
+| FTP (plain) | Sends the password unencrypted; must be acknowledged, and an Enterprise policy can forbid it. |
+| WebDAV | Nextcloud and ownCloud (`https://host/remote.php/dav/files/USER/`, with an app password), Synology and QNAP WebDAV, any RFC 4918 server. |
+| S3 | AWS S3, DigitalOcean Spaces, MinIO, Hetzner, Wasabi. Folders are key prefixes. |
+| Network folder | Self-hosted only: a folder below `FILE_SOURCE_ROOTS` (an SMB/CIFS or NFS share or a NAS volume mounted on the host and bound read-only into the containers). |
+
+The marketplace also lists ready-made entries that open the wizard with the
+right settings: S3 bucket, Nextcloud, ownCloud, Synology NAS, QNAP NAS,
+Fritz!Box storage and Hetzner Storage Box.
+
+A search for a storage system or for documents in the marketplace, on the
+welcome page or from a chat (`setup_find_connectors`) also brings these
+entries, next to the system's own API connector: "synology" shows the
+Synology DSM connector and Synology NAS (File Search), "nas", "file server",
+"Netzlaufwerk" or "pdf" show the File Search entries that fit. The marketplace
+and the welcome page add a short hint with a link to the wizard; in a chat the
+model gets the wizard link, since File Search is never installed from a chat.
+The network folder is suggested on self-hosted installs only. SharePoint,
+OneDrive, Google Drive and Dropbox searches get no File Search suggestion:
+those have connectors of their own.
+
+The wizard records anonymous funnel events (`file_search_wizard_opened`,
+`file_search_test_passed` / `file_search_test_failed`,
+`file_search_scan_finished`, `file_search_activated`,
+`file_search_locked_shown`) in the `product_events` table, on the Cloud and
+self-hosted alike. They carry the protocol, the product preset, the catalog
+entry, the test's error kind and the file count as a range (`101-500`), never
+a host, path, user name or file name.
+
+SMB is not reached directly from the Cloud: port 445 does not belong on the
+internet. Use SFTP or WebDAV on the NAS, or a self-hosted install.
+
+## The tools
+
+Each File Search connector gets these tools, named with its prefix:
+
+| Tool | What it does |
+|---|---|
+| `<prefix>_guide` | How to search this folder (static) |
+| `<prefix>_search` | Full-text search; files with the best page, other matching pages, a snippet and the date; filters for folder, type and dates; newest first on request |
+| `<prefix>_find` | Files by name (typo-tolerant) or glob |
+| `<prefix>_list` | One folder: subfolders with counts, files with size and date |
+| `<prefix>_read` | The text of a file, by pages (`"1-3,7"`) or in windows of characters |
+| `<prefix>_grep` | Exact search with two lines of context; spreadsheet rows come with their column names |
+| `<prefix>_status` | Sync state, counts, pause reason, content summary |
+| `<prefix>_view_page` | One page of a PDF, or an image file (PNG, JPEG, GIF, WebP, TIFF, BMP), as a picture the AI can see: for drawings, stamps, signatures and title blocks that are not in the text. Parameters `path` and `page` (default 1); the answer names the page count. Rendered at most 1600 pixels on the longest side, as JPEG up to 1.5 MB |
+| `<prefix>_get_file` | The file itself as a temporary internal link (24 hours), which works in every AI client; images up to 4 MB are attached too. Without File Share on the plan, files up to 4 MB are attached and the AI names the path |
+| `<prefix>_share_file` | A temporary link (internal or public); **switched off at install** |
+
+Every tool except the share tools is read-only. The tools tell the model that
+file content is data and that instructions inside files are never followed.
+
+`_view_page` reads the file live from your server through `files-worker`,
+like `_get_file`, and renders it in the isolated text extractor; on Cloud and
+self-hosted alike nothing is stored. Clients such as Claude.ai show the
+picture but not an attached PDF. Connectors activated before this tool
+existed get it automatically when the backend starts; tools you switched off
+or edited stay as they are.
+
+Text extraction: PDF and XPS page by page; Excel (including templates,
+macro workbooks and `.xlsb`), ODS and CSV row by row with the header
+(`Sheet "Preise" row 2: Artikel=NO-10000 · Breite=750 · Preis=412`); Word and
+ODT including templates and macro documents; PowerPoint and ODP slide by
+slide, including slide shows and templates; Outlook `.msg` and `.eml` with
+the text of their attachments, and `.mbox` mailboxes message by message;
+EPUB chapter by chapter; the visible text of SVG drawings; the text, notes
+and title-block attributes of ASCII DXF drawings; Apple Pages, Numbers and
+Keynote files through their PDF preview, when they were saved with one;
+RTF, legacy `.doc`/`.ppt`/`.xls`, and text formats: Markdown, JSON, XML,
+HTML, logs, configuration files (YAML, TOML, INI, properties), SQL, LaTeX,
+subtitles, calendars and contacts (`.ics`, `.vcf`), GPS tracks (KML, GPX),
+and source code in common languages. Other files, such as images, archives,
+binary DXF and DWG drawings, are found by name. Scanned PDFs are read with
+OCR on Enterprise when the OCR extractor image is used.
+
+## Syncing
+
+Syncing runs in its own service, `files-worker`, never in the process that
+answers MCP calls: a slow server or a large first sync does not slow down your
+AI clients, and search keeps working on the last index during a sync.
+
+- New and changed files are found by size and modification time (ETag on
+  WebDAV and S3); unchanged content is recognised by its SHA-256 and not read
+  again; deleted files leave the index.
+- A big first sync runs in slices of 25 files, so other workspaces get their
+  turn.
+- A file that cannot be read is retried on the next syncs and, after three
+  failures (at once for password-protected files), stays findable by name
+  until it changes.
+- **Sync now** queues a sync at once (a number per day depending on the plan).
+
+## Limits and pauses
+
+| | Trial (Cloud) | Starter | Team | Enterprise |
+|---|---|---|---|---|
+| File Search connectors | 1 | 1 | 3 | by contract (self-hosted: unlimited) |
+| Indexed files, all connectors together | 500 | 500 | 2,000 | by contract (self-hosted: unlimited) |
+| Largest file (Cloud) | 10 MB | 25 MB | 50 MB | 200 MB |
+| Automatic sync | daily | daily | daily | down to every 15 minutes (self-hosted: 5) |
+| Manual syncs per day | 1 | 1 | 3 | unlimited |
+| OCR, folder permissions, workspace policy | – | – | – | ✓ |
+
+Self-hosted: the self-hosted 30-day trial has the Team limits; file size is
+set by `FILES_MAX_FILE_BYTES` (default 100 MB).
+
+When a sync finds more files than the plan includes, it **pauses before
+downloading anything**. The index stays as it was and the AI keeps searching
+it (and is told that newer files may be missing). Administrators get one
+e-mail; the Files panel shows the numbers with **Upgrade**, **Edit
+selection** and **Resume**. A paused folder is checked again once a day and
+resumes by itself when it fits.
+
+When no plan includes File Search any more (a trial ended), syncing stops and
+the tools answer that a licence is needed. The index is kept for 30 days.
+
+## File Share
+
+**Settings → File Share** lists the active links (file, access, expiry,
+downloads, who created them) with **Revoke**, the plan's limits, and adds the
+**File Share** connector (`share_upload`, `share_list`, `share_revoke`) that
+lets AI clients publish files they write.
+
+- **Internal** links open for signed-in members of the workspace; **public**
+  links for anyone with the link. Links show an interstitial page with the
+  file name, size, workspace and expiry, then download through a 60-second
+  signed URL with `Content-Disposition: attachment`.
+- Only a hash of each link token is stored. Expired and revoked files are
+  deleted by the worker.
+- Limits: Starter links last at most 24 hours, with 100 MB for the files of
+  all active links together and 10 MB per file; Team 7 days, 2 GB, 50 MB. The
+  Cloud trial has no File Share. On the Cloud, program files (`.exe`, `.msi`,
+  `.js`, …) cannot be shared.
+
+## Permissions and governance
+
+- Who sees the tools follows the MCP roles, as for every connector.
+- **Folder permissions (Enterprise):** allow or deny folders per role inside
+  one connector.
+  - A role without rules sees everything. Adding a rule for one role never
+    changes what other roles see.
+  - Allow rules limit a role to those folders (and their subfolders). A user
+    with several roles sees the folders any of their roles allows.
+  - Deny rules hide a folder and always win, also over an allow.
+  - Workspace administrators see every folder.
+  - Calls with an MCP API key are not tied to a user, so folder rules do not
+    apply to them: give such keys only to servers whose folders everyone with
+    the key may see.
+
+  Without Enterprise, connect each folder as its own connector and give it to
+  the right roles.
+- **Workspace policy (Enterprise):** public links on/off, longest link
+  validity, AI drafting on/off, plain FTP on/off.
+- Every tool call is in the audit log as usual.
+
+## Security
+
+- Every query on the index is filtered by workspace and connector, and the
+  `file_*` tables have Row-Level Security enforced through a dedicated
+  database role, so a query that forgot its filter returns nothing of another
+  workspace. On a managed database where the application user may not create
+  roles, the migration skips the role and the policies apply to the
+  application user itself (as long as it is not a superuser).
+- Self-hosted with an external database: the application's database user
+  needs superuser or `BYPASSRLS` for the worker's cross-workspace jobs
+  (picking due syncs, deleting expired share files). The default Docker
+  setup already uses one; see issue #1418 for managed databases.
+- Credentials are stored encrypted and decrypted only in `files-worker`; the
+  text extractor runs on an internal network with no route out, no database
+  and no secrets, read-only, without capabilities.
+- On the Cloud, hosts must be public (the SSRF policy also checks redirects
+  and the resolved address).
+
+## Self-hosted setup
+
+1. Generate the secrets and add them to `.env`:
+   ```bash
+   echo "FILES_WORKER_URL=http://files-worker:8891" >> .env
+   echo "FILES_WORKER_TOKEN=$(openssl rand -hex 24)" >> .env
+   echo "FILE_EXTRACTOR_TOKEN=$(openssl rand -hex 24)" >> .env
+   echo "COMPOSE_PROFILES=files" >> .env
+   ```
+2. For network folders, mount the share on the host (read-only), bind it into
+   `app` and `files-worker` (see the comment in `docker-compose.yml`) and set
+   `FILE_SOURCE_ROOTS=/mnt/knowledge`.
+3. `docker compose up -d`. **Connectors → New → File Search** shows whether the
+   worker and the extractor are reachable.
+
+The sync engine (`packages/backend/src/ee/file-search`) and the extractor
+(`deploy/ee/file-extractor`) are under the AnythingMCP Commercial License.
+All environment variables are listed in `.env.example` under "File Search
+and File Share".
+
+## Troubleshooting
+
+| Message | What to do |
+|---|---|
+| "File Search is not running on this server" | Start the `files` profile; check `FILES_WORKER_URL` and that both tokens are set. |
+| "This address is in a private network" | The Cloud cannot reach internal hosts. Self-hosted: add the host to the outbound allowlist (Admin → Settings or `SSRF_ALLOWED_HOSTS`). |
+| "The server presented a different host key/certificate" | The server was reinstalled or someone is in between. Check with the server's administrator before confirming the new fingerprint (Files panel → Edit selection → back to Test). |
+| "Sync paused: the folder outgrew your plan" | Untick folders or file types (Edit selection) or upgrade. |
+| A file "could not be read" | Password-protected, damaged or a scan without OCR. It stays findable by name. |
 
 ---
 
@@ -1660,7 +1983,9 @@ most servers listen.
 3. Tools are registered in the local ToolRegistry
 4. When an AI client calls a bridged tool, AnythingMCP:
    - Forwards the tool call to the remote MCP server
-   - Passes parameters through
+   - Passes parameters through, and fills in from the connector's environment variables only
+     the parameters the remote tool's schema names (a variable called `owner` fills `owner`;
+     the connector's own key or token is never sent as a tool argument)
    - Returns the response
 
 ### Endpoint Mapping
@@ -1772,6 +2097,8 @@ install. Through the API they can be set on any MCP connector.
 These catalog adapters bridge a vendor's official remote MCP server. At install AnythingMCP lists
 the tools of the server (the catalog keeps a snapshot for the store and as the fallback when the
 server cannot be reached). Click **Discover tools** on the connector after the vendor adds tools.
+The setup check runs the adapter's `probe` tool, or lists the server's tools when the adapter
+declares none, so a refused token is reported on the setup form before anything is saved.
 
 | Adapter | Endpoint | Auth |
 |---------|----------|------|
@@ -3135,6 +3462,83 @@ store, on /welcome and in the chat matches them like the name; they are never
 displayed. Keep them to names that clearly mean this app, each at most 40
 characters; a misspelling needs no alias, the search tolerates typos.
 
+`envVarMeta.<VAR>.pattern` (with `patternMessage`) is enforced on every path
+that writes the variable: the setup form, the pre-save check, the install
+(also "Save anyway" and a chat install) and the connector's variable editor.
+Those paths also refuse, field by field, an address or credential still
+holding an example (`host`, `example.com`, `your-api-key`, `<...>`,
+`PASTE_KEY_HERE`) and a credential pasted more than once (the same string
+repeated). See `packages/backend/src/adapters/env-var-checks.ts`.
+
+`verifyHints` maps a status (`"401"`) or failure kind (`"auth_failed"`,
+`"unreachable"`) to what the setup check tells the user. A tool call that
+the API answers 401 uses the adapter's `"401"` (or `"auth_failed"`) hint too
+when no built-in rule matches, followed by a link to the connector's page,
+so a connector saved without a passing check hears the same advice. Hints are
+read from the catalog at call time and reach installed connectors without
+"Apply update". Declare a `probe` (a read call with fixed `params`) when no
+GET without required parameters exists; without one the setup check is
+skipped and a wrong key is only found at the first call. An adapter for a
+vendor's MCP server (`connector.type` `MCP`) without a `probe` is checked by
+listing the server's tools, which catches a refused token. A hint written as
+`{ "hint": "…", "field": "VAR" }` is also shown under that variable on the
+setup form.
+
+A probe can still fail when the call answers: an MCP tool result with
+`isError: true` fails the check, and `probe.failWhen` lists answers that mean
+the connector cannot work although nothing was refused. Each rule's `matches`
+is a case-insensitive regular expression over the answer's text (for an MCP
+tool, the text of its result); the first match fails the check with its
+`hint`, under `field` when it names one, as `kind` (default `auth_failed`):
+
+```json
+"probe": {
+  "tool": "atlassian_discover",
+  "params": { "query": "get issue details" },
+  "failWhen": [
+    {
+      "matches": "missing the scope claim|\"searchableProducts\"\\s*:\\s*\\[\\s*\\]",
+      "hint": "This API token has no scopes. Create an 'API token with scopes' …",
+      "field": "ATLASSIAN_API_TOKEN"
+    }
+  ]
+}
+```
+
+`derivedEnvVars` declares settings the user should not have to look up,
+found at setup from a host they do know. Each entry names the variable that
+holds the host (`fromHost`, declared in `optionalEnvVars` or
+`requiredEnvVars`), a public `url` starting with `https://{{<fromHost>}}/`,
+the dotted `path` of the value in its JSON answer, an optional `pattern` the
+value must match, and the `error` shown under the host field when the host
+answers without a value (`{{host}}` is replaced by it). The host is stored as
+a bare lower-case host (`https://Acme.atlassian.net/` becomes
+`acme.atlassian.net`). The lookup runs at the setup check, at install and in
+the connector's variable editor when the host changes; when the host does not
+answer at all (timeout, 5xx), the connector is saved without the value. See
+`packages/backend/src/adapters/derived-settings.ts`:
+
+```json
+"derivedEnvVars": {
+  "ATLASSIAN_CLOUD_ID": {
+    "fromHost": "ATLASSIAN_SITE",
+    "url": "https://{{ATLASSIAN_SITE}}/_edge/tenant_info",
+    "path": "cloudId",
+    "pattern": "^[0-9a-fA-F-]{36}$",
+    "error": "No Atlassian site answers at {{host}}."
+  }
+}
+```
+
+`instructionFacts` are sentences added to a catalog connector's instructions
+when they are served to a model (initialize, the workspace guide), each only
+when every `{{VAR}}` it names is set on the connector. Only non-secret
+variables (declared or derived) may be named. Stored instructions never
+resolve `{{VAR}}`, so this is how a per-workspace fact (the Atlassian site and
+its cloudId) reaches the model. Facts are read from the catalog when the
+instructions are served and reach installed connectors without "Apply
+update". See `packages/backend/src/adapters/instruction-facts.ts`.
+
 ### Tools
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its
@@ -3207,6 +3611,16 @@ at the token endpoint: `client_secret_post` (default), `client_secret_basic`,
 or `private_key_jwt`, which signs a short-lived client assertion with a private
 key instead of sending a secret (see
 [REST connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/rest.md#signed-client-assertion-private_key_jwt>)).
+
+The browser sign-in ("Authorize with Provider") sends this server's callback
+URL (`<SERVER_URL>/api/mcp-oauth/callback`) as `redirect_uri`. A provider that
+wants something else there names it in `authConfig.providerRedirectUri`, which
+is then sent on the authorization request and on the code exchange alike.
+eBay is the case: its `redirect_uri` is the app's RuName, and the RuName's
+"Auth Accepted URL" in eBay's developer portal points at the callback URL.
+Use a variable (`"providerRedirectUri": "{{EBAY_RUNAME}}"`); until it has a
+value, the sign-in asks for it instead of starting. `authConfig.pkce: false`
+leaves out the PKCE challenge and verifier for providers that do not use them.
 
 A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
 connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
@@ -3432,9 +3846,21 @@ menus deep. Adapters without one keep the form.
   `capturedAt`. Leave it out rather than add a mock-up.
 - `confirm`: a checkbox the user ticks before continuing, for a step that
   happens at the provider.
+- `saveAndCheck: true`: for a provider that must approve the user's app
+  before the keys work (Etsy). Continue saves the step's `fields` on the
+  connector (unfinished, so the AI cannot use it yet) and asks the provider
+  about the keys with the adapter's `checkBeforeAuthorization`. Needs
+  `fields`, and cannot be the last step.
+- `waitForProvider: true`: the step right after a `saveAndCheck` step, shown
+  only while the provider refuses the saved keys and skipped once it accepts
+  them. It tells the user what they are waiting for; the page checks again
+  whenever they come back to it and offers "Check again", and Continue opens
+  once the keys are accepted. No `fields` or `confirm`.
 
 The guide is not part of the catalog fingerprint: rewording it does not mark
-installed connectors as out of date. Progress is kept in the browser only.
+installed connectors as out of date. Progress is kept in the browser, with
+the id of a connector saved by a `saveAndCheck` step, so a user coming back
+days later continues with the keys they entered.
 
 ### Adapter file errors
 
@@ -3635,6 +4061,35 @@ The selected headers are added to the tool result next to the body, and a
 - A response transform (`responseMapping.transform`) runs on the body first; the extras are attached afterwards, so a `select` cannot drop them.
 - The audit log keeps storing the bare body. Headers are cached together with it when `cacheTtl` is set.
 - REST connectors only. Tools that did not set `exposeHeaders` behave exactly as before.
+
+### Slow or large responses (`timeoutMs`, `maxResponseBytes`)
+
+A REST call times out after 30 s, and the engine stops reading an upstream body
+larger than `TOOL_MAX_RESPONSE_BYTES` (10 MB by default). Image generation needs
+more of both: a 2K or 4K picture can take a minute, and its base64 inside the
+JSON can pass 10 MB before [`images`](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#images-in-the-response-images>) takes it
+out of the result. A tool can set its own values on the endpoint mapping:
+
+```json
+{
+  "method": "POST",
+  "path": "/models/{model}:generateContent",
+  "timeoutMs": 120000,
+  "maxResponseBytes": 41943040
+}
+```
+
+- `timeoutMs`: milliseconds, clamped to 1 000 – 180 000. Absent: 30 000.
+- `maxResponseBytes`: bytes of the upstream body, at most 50 MB (52 428 800), or
+  `TOOL_MAX_RESPONSE_BYTES` when that is set higher. A lower value than the
+  global one is allowed. Absent: `TOOL_MAX_RESPONSE_BYTES`.
+- `maxResponseBytes` only applies to the body the API sends. The result text the
+  client receives is still held to `TOOL_MAX_RESPONSE_BYTES`, so raise it only
+  where `responseMapping` takes the bulk out (base64 images).
+- A call that times out with a raised `timeoutMs` is not retried, whatever its
+  method; a POST, PATCH or DELETE is never retried after a timeout anyway.
+- REST connectors only. Tools without these keys behave exactly as before, on
+  Cloud and self-hosted alike.
 
 ### By Connector Type
 
@@ -4326,6 +4781,8 @@ AnythingMCP is listed in Claude's connector directory: [claude.ai/directory/anyt
 1. Open [the AnythingMCP listing](<https://claude.ai/directory/anythingmcp>), or in Claude open **Customize → Connectors**, browse the connectors and search for AnythingMCP.
 2. Click **Connect**.
 3. Sign in to AnythingMCP Cloud and approve access. If you have several MCP servers, choose the ones Claude may reach.
+
+If your workspace has no apps yet, the page after approving says so. You can pick one of a few quick-setup apps there (Telegram, Shopify, WooCommerce, Odoo, Printify, Google Gemini), or skip it: **Continue to Claude** works either way. A picked app is added without credentials, and you finish it in the chat. Back in Claude, you can add any catalog app by asking, for example "Connect my Telegram bot to AnythingMCP." Claude finds the connector and adds it. Passwords and keys are never typed into the chat: Claude gives you a link to a page where you enter them.
 
 The listing always connects to AnythingMCP Cloud. For a self-hosted instance, use option 2.
 
@@ -5242,7 +5699,7 @@ Two systemd timers run on the managed cloud host, installed by `.github/workflow
 | `anythingmcp-probe.timer` | `deploy/cloud/uptime-probe.sh` | every minute | `UPTIME_ALERT_TO`, on a change of state only (down, recovered) |
 | `anythingmcp-stuck-report.timer` | `deploy/cloud/stuck-users-report.sh` | Monday 07:00 Europe/Berlin | `REPORT_TO`, falling back to `UPTIME_ALERT_TO` |
 
-The weekly report lists, for the last 7 days with 30-day context: organizations whose tool calls have never succeeded (marked NEW or STILL STUCK against the previous report, whose list is kept in `/var/lib/anythingmcp-report/stuck-orgs`); catalog connectors at 0 % success, or under 20 % with at least 5 calls, across all organizations; and signups that never created a connector or never made a call. It only reads the database, never selects tool inputs, outputs or credentials, and scrubs error texts (one line, no URL query strings, e-mail addresses or long tokens, 150 characters). It does contain customer e-mail addresses, so send it to the team only.
+The weekly report lists, for the last 7 days with 30-day context: organizations whose tool calls have never succeeded (marked NEW or STILL STUCK against the previous report, whose list is kept in `/var/lib/anythingmcp-report/stuck-orgs`), grouped by the likely cause of their most frequent error (provider quota or billing, credentials, configuration, not reachable, other), with every "other" and every org whose admin has a company address listed and free-mail orgs in a known cause only counted; catalog connectors at 0 % success, or under 20 % with at least 5 calls, across all organizations; signups that never created a connector or never made a call; the funnel of the organizations created in the window (AI client connected, catalog searched from a chat or in the store, setup started and completed, has a connector, successful call) next to the previous week's cohort; and Etsy apps waiting for Etsy's approval (keys refused this week, approved this week, still pending). It only reads the database, never selects tool inputs, outputs or credentials, and scrubs error texts (one line, no URL query strings, e-mail addresses or long tokens, 150 characters). It does contain customer e-mail addresses, so send it to the team only.
 
 | Env (in the host `.env`) | Default | |
 |---|---|---|
@@ -5368,6 +5825,21 @@ scrape_configs:
 ### Cloud vs self-hosted
 
 On Cloud, metrics are instance-wide only: no series may carry an organization id, connector name, tool name or user, which is why `METRICS_TOOL_LABELS` has no effect there. Per-organization usage already exists in the database (`AuditService.getBreakdowns`) and is unaffected by this endpoint. On self-hosted, the operator who sets `METRICS_TOOL_LABELS=true` is the only consumer of their own instance's metrics, so per-connector/per-tool labels are allowed. `METRICS_TOKEN` is required on both: the listener's default bind host is `0.0.0.0`.
+
+## 7. Inbound webhook ingestion (opt-in per connector)
+
+Any connector may opt in (`webhookEnabled`, regardless of its type) to receive inbound webhook deliveries at `POST /api/webhooks/:connectorId`. Stripe is the only verified provider today (`Stripe-Signature`: HMAC-SHA256 over `timestamp.body`, with a 300 s replay tolerance); other providers each need their own verification scheme and are a follow-up. Nothing is stored before the signature checks out. An unknown connector id, a disabled hook, and a bad signature all answer identically, so the endpoint cannot be used to probe which connector ids exist.
+
+Stored payloads are returned to the model exactly as received by the connector's `<prefix>_recent_events` tool — including whatever personal data the provider's event carries (a Stripe payload can include a customer's name, e-mail and address). They are kept for `WEBHOOK_EVENT_RETENTION_DAYS` (7 days by default) and a single call returns at most 50 events, regardless of the `limit` requested.
+
+| Env | Default | |
+|---|---|---|
+| `WEBHOOK_EVENT_RETENTION_DAYS` | `7` | A periodic sweep (hourly, like the connector-auth-status sweep) deletes received events older than this. |
+| `WEBHOOK_EVENT_MAX_PER_CONNECTOR` | `500` | Enforced on every insert, deleting the oldest rows first — bounds storage for one connector even between sweeps, during a burst of deliveries. |
+
+### Cloud vs self-hosted
+
+Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch.
 
 ## Fatal crash reports (always on in the Docker image)
 
@@ -6204,6 +6676,128 @@ writes no per-user event.
 
 - [Single sign-on](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/sso.md>) — providers, role mappings, enforcement, recovery codes
 - [Deployment](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md>) — running your own instance
+
+---
+
+## docs/code-mode.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/code-mode.md
+
+# Code mode
+
+Code mode lets an AI client run a short JavaScript program that orchestrates
+several of a workspace's MCP tools in one step, instead of making the tool
+calls one at a time. A program that filters, joins or loops over tool results
+turns dozens of round trips and megabytes of intermediate data into a single
+call that returns only what matters.
+
+> **Off by default, everywhere.** Code mode does nothing until an operator runs
+> the code-runner service (`CODE_RUNNER_URL`) **and** a workspace turns it on
+> per MCP server (`codeMode`). With either missing, code runs are refused —
+> never executed in the main process.
+
+## How code runs safely
+
+Code is untrusted by construction: a prompt-injected tool result can steer what
+the model writes. So it never runs in the AnythingMCP backend. It runs in a
+separate **code-runner** container, one locked-down subprocess per run, with no
+filesystem, no network, no environment and no subprocess access. The only thing
+a program can do is call the MCP tools the caller is already allowed to use,
+through an `amcp` bridge the backend answers under that caller's role. The full
+containment model and its verification are in
+[`deploy/code-runner/README.md`](<https://github.com/HelpCode-ai/anythingmcp/blob/main/deploy/code-runner/README.md>).
+
+Inside a program you have one capability:
+
+```js
+// Discover tools, read their schema, and call them.
+const tools = await amcp.search('invoice');
+const schema = await amcp.describe('list_invoices');
+const invoices = await amcp.run('list_invoices', { customerId: args.customerId });
+return invoices.filter((i) => i.status === 'open').map((i) => i.id);
+```
+
+`amcp.run` is governed exactly like a direct tool call: the caller's role
+decides what it may reach, and read/write rules still apply.
+
+## Two forms
+
+**Saved code tools.** A reusable tool whose body is a stored program. It is an
+ordinary MCP tool (it shows up in `tools/list`, obeys role access, is audited
+and can be exported), created in the dashboard under a connector's tools with
+the **Code** tool type. A saved code tool declares:
+
+- **Uses** — the connectors (optionally specific tools) the program may call.
+  Only connectors from the same workspace.
+- **Run as** — `invoker` re-checks the calling user's own permissions on every
+  inner call; `definer` runs with the author's curation instead (like a stored
+  procedure), still limited to *Uses* and the write setting. Definer is
+  admin-only.
+- **Allow write tools** — off means the program may call only read-only tools.
+  Turning it on needs AnythingMCP Enterprise.
+
+**Inline code (`code_execute`).** A generic tool the model can call with a
+program it writes on the spot. Always read-only and with the caller's own
+permissions, over the connectors they can reach on that server. It appears only
+when the server's `codeMode` is `inline` and the caller's role carries the
+`inlineCode` capability.
+
+## Proposing a tool (`code_propose_tool`)
+
+When an agent finds a multi-step pattern worth keeping, it can **propose** a
+saved code tool instead of an admin writing one by hand. `code_propose_tool`
+appears under the same gate as inline code (`codeMode` `inline` + the
+`inlineCode` capability + a configured runner). It **does not run code and does
+not create a tool** — it records an inert proposal that shows up for admins
+under **Knowledge → Skills**. A proposal is always `invoker` and read-only and
+can only reference the proposer's own connectors, so an agent can never raise
+its own authority. An admin reviews the program and clicks **Create tool**,
+which runs the normal tool-creation checks (same-workspace connectors, plan
+cap); writes or `definer` rights are added only afterwards by editing the tool,
+where Enterprise and admin gating apply again.
+
+## Governance
+
+- **Per server:** `codeMode` is `off` (default), `tools` (saved code tools
+  only) or `inline` (also `code_execute`). Set it on the MCP server's settings
+  page, or with `PUT /api/mcp-servers/:id` (`codeMode`).
+- **Per role:** the `inlineCode` capability gates inline code; saved code tools
+  follow the normal tool allow-list.
+- **Per plan:** saved code tools are capped per plan — Community 3, Starter 5,
+  Team 20, Enterprise unlimited (same on Cloud and self-hosted; an Enterprise
+  contract can override the cap with the licence feature `maxCodeTools`). Inline
+  code (`code_execute` / `code_propose_tool`) is Team and above.
+- **Writes** happen only in an admin-approved code tool with *Allow write
+  tools* on; inline code and read-only tools can never write.
+- **Audit:** every run is recorded (a `code_runs` row), and each tool call the
+  program makes is recorded like any other tool call.
+- **Shared endpoint:** code tools are never served on the shared `/mcp`
+  endpoint used by directory AI clients; they run only on a workspace's own MCP
+  servers.
+
+## Deployment
+
+Code mode is the same feature on Cloud and self-hosted; both run the runner as
+a separate service and refuse code runs when it is unreachable.
+
+Self-hosted, with Docker Compose:
+
+```env
+COMPOSE_PROFILES=code-runner
+CODE_RUNNER_URL=ws://code-runner:8777
+```
+
+Then set a server's `codeMode` to `tools` or `inline` (on the server's settings
+page or via the API). The runner holds no secrets and needs no inbound internet;
+it accepts only the backend's connection on the internal network. A saved code
+tool's **Test** button in the tool editor runs the program through the runner,
+so you can check it before a client does.
+
+## Limits
+
+A run is bounded by a wall-clock deadline, a memory ceiling, a cap on how many
+tool calls it may make, and limits on output size. A program that exceeds a
+limit fails with a clear error; it never affects other runs or the backend.
 
 ---
 
@@ -8536,55 +9130,66 @@ Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/ROAD
 
 This is a **living document**. We publish it so users and contributors can see where AnythingMCP is going and propose changes. Pull requests welcome.
 
+AnythingMCP started as an MCP gateway: one governed endpoint in front of the APIs, ERPs and databases a company already runs. It is growing into a **company brain** for AI agents: the same endpoint also knows where the documents are, how the systems connect, how the company works and what it has decided, and serves that to every AI client within each user's role.
+
 For the current shipped state, see the [latest release](<https://github.com/HelpCode-ai/anythingmcp/releases>).
 
 ---
 
+## Shipped recently
+
+- **File Search and File Share** (v0.52.0): a searchable index of SFTP, FTP/FTPS, WebDAV, S3 and network-share folders, with search, find, grep and read tools for every AI client, and temporary download links. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>)
+- **Code Mode** (v0.52.0): one short program that calls several tools, in an isolated runner with no secrets and no network; saved code tools turn a recurring chain into a single tool, which answers most of [tool composition (#986)](<https://github.com/HelpCode-ai/anythingmcp/issues/986>). [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md>)
+- **Company memory** (Enterprise): facts and preferences saved from one AI client and found by every other, personal or company-wide, in folders with role limits. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>)
+- **AI skills v2**: on-demand skills and procedures with versions, folders and usage, learned from real requests and fixed errors and approved by an admin. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#ai-skills>)
+- **MCP resources** on per-server endpoints. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/mcp-resources.md>)
+- **Inbound webhooks**, first slice: Stripe events stored per connector and readable as a tool ([#988](<https://github.com/HelpCode-ai/anythingmcp/issues/988>) stays open for other providers).
+- **Per-user sign-in** for OAuth2 connectors, so each user calls the upstream system as themselves. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/per-user-sign-in.md>)
+- **E-mail connector** (IMAP/SMTP), connector export and import as JSON/YAML, Prometheus `/metrics` for tool calls, and the app in German and Italian.
+- **691 catalog connectors** (from 561 in v0.51).
+
 ## Now (in active development)
 
-- More pre-built adapters — community-requested SaaS connectors prioritised in [GitHub Discussions](<https://github.com/HelpCode-ai/anythingmcp/discussions>)
-- Improved adapter authoring DX — better validation errors, scaffolding CLI
-- Tool-level rate limiting per role
-- Sharper observability: per-tool latency histograms, error-rate dashboards
+- More pre-built adapters, prioritised by the searches that found nothing and by [adapter requests](<https://github.com/HelpCode-ai/anythingmcp/issues?q=is%3Aissue+is%3Aopen+label%3Aadapter-request>)
+- File Search: more sources and file types, and folder permissions synced from the source system
+- [Tool-level rate limiting per role (#983)](<https://github.com/HelpCode-ai/anythingmcp/issues/983>)
+- [Per-tool latency histograms and an error-rate view (#984)](<https://github.com/HelpCode-ai/anythingmcp/issues/984>), on top of the Prometheus metrics
 
 ## Next (planned, not yet started)
 
-- **Streaming tool responses** — for long-running tool calls (DB queries, file generation)
-- **Tool composition** — declaratively chain tools without leaving the gateway
-- **Multi-tenant Cloud parity** — feature parity between self-hosted and [cloud.anythingmcp.com](<https://cloud.anythingmcp.com>)
-- **Adapter marketplace** — install community adapters from a curated index, similar to a plugin registry
-- **gRPC connector type** — first-class support for gRPC services alongside REST/SOAP/GraphQL
-- **Webhook ingestion** — register webhooks as MCP "events" consumable by clients
-- **Fine-grained tool versioning** — pin AI agents to specific tool versions
-- **Native MCP elicitation & resources** — beyond tools, full MCP spec coverage
+- [Streaming tool responses for long-running calls (#985)](<https://github.com/HelpCode-ai/anythingmcp/issues/985>)
+- [Webhook ingestion beyond Stripe (#988)](<https://github.com/HelpCode-ai/anythingmcp/issues/988>)
+- [Cloud ↔ self-host export and import of a whole workspace (#992)](<https://github.com/HelpCode-ai/anythingmcp/issues/992>)
+- [Adapter marketplace: install community adapters from a curated index (#993)](<https://github.com/HelpCode-ai/anythingmcp/issues/993>)
+- [gRPC connector type (#987)](<https://github.com/HelpCode-ai/anythingmcp/issues/987>)
+- [Fine-grained tool versioning (#989)](<https://github.com/HelpCode-ai/anythingmcp/issues/989>)
+- A Helm chart for Kubernetes installs
 
 ## Later (under consideration)
 
-- **Tool A/B testing** — version-flag tool definitions and route per-user
-- **Self-tuning rate limits** based on AI client behavior
-- **OpenTelemetry exporter** for traces and metrics
-- **Plugin SDK in TypeScript and Python** for custom auth/transformations
+- [OpenTelemetry metrics exporter (#990)](<https://github.com/HelpCode-ai/anythingmcp/issues/990>); traces are already exported over OTLP ([observability](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/observability.md>))
+- [Plugin SDK for custom auth and transformations (#991)](<https://github.com/HelpCode-ai/anythingmcp/issues/991>)
+- Tool A/B testing: version-flag tool definitions and route per user
+- Self-tuning rate limits based on AI client behaviour
 
 ## Out of scope (for now)
 
-- Building our own LLM client
-- Code-execution sandbox (use [E2B](<https://e2b.dev>) or similar instead)
-- Replacing Postman/Insomnia as a general API client
+- Building our own LLM client or chat app: AnythingMCP serves the AI clients you already use
+- Replacing Postman or Insomnia as a general API client
 
 ---
 
 ## Every item here is an issue
 
-Each line above has an issue you can read, argue with, or pick up:
+Most lines above link to an issue you can read, argue with, or pick up:
 **[label:roadmap](<https://github.com/HelpCode-ai/anythingmcp/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap>)**.
 Several are deliberately open design questions rather than tasks — say so in the
 comments before writing code, and we will not merge an implementation of a
 design that has not been settled.
 
 New here? **[good first issue](<https://github.com/HelpCode-ai/anythingmcp/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22>)**
-is the short list: a scaffolding CLI, better validation messages, live catalog
-badges, a translated README, `ADOPTERS.md`. None of them need you to understand
-the whole codebase.
+is the short list, mostly single-file catalog adapters. None of them need you to
+understand the whole codebase.
 
 ## Suggest a feature
 

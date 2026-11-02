@@ -87,7 +87,7 @@ Two systemd timers run on the managed cloud host, installed by `.github/workflow
 | `anythingmcp-probe.timer` | `deploy/cloud/uptime-probe.sh` | every minute | `UPTIME_ALERT_TO`, on a change of state only (down, recovered) |
 | `anythingmcp-stuck-report.timer` | `deploy/cloud/stuck-users-report.sh` | Monday 07:00 Europe/Berlin | `REPORT_TO`, falling back to `UPTIME_ALERT_TO` |
 
-The weekly report lists, for the last 7 days with 30-day context: organizations whose tool calls have never succeeded (marked NEW or STILL STUCK against the previous report, whose list is kept in `/var/lib/anythingmcp-report/stuck-orgs`); catalog connectors at 0 % success, or under 20 % with at least 5 calls, across all organizations; and signups that never created a connector or never made a call. It only reads the database, never selects tool inputs, outputs or credentials, and scrubs error texts (one line, no URL query strings, e-mail addresses or long tokens, 150 characters). It does contain customer e-mail addresses, so send it to the team only.
+The weekly report lists, for the last 7 days with 30-day context: organizations whose tool calls have never succeeded (marked NEW or STILL STUCK against the previous report, whose list is kept in `/var/lib/anythingmcp-report/stuck-orgs`), grouped by the likely cause of their most frequent error (provider quota or billing, credentials, configuration, not reachable, other), with every "other" and every org whose admin has a company address listed and free-mail orgs in a known cause only counted; catalog connectors at 0 % success, or under 20 % with at least 5 calls, across all organizations; signups that never created a connector or never made a call; the funnel of the organizations created in the window (AI client connected, catalog searched from a chat or in the store, setup started and completed, has a connector, successful call) next to the previous week's cohort; and Etsy apps waiting for Etsy's approval (keys refused this week, approved this week, still pending). It only reads the database, never selects tool inputs, outputs or credentials, and scrubs error texts (one line, no URL query strings, e-mail addresses or long tokens, 150 characters). It does contain customer e-mail addresses, so send it to the team only.
 
 | Env (in the host `.env`) | Default | |
 |---|---|---|
@@ -213,6 +213,21 @@ scrape_configs:
 ### Cloud vs self-hosted
 
 On Cloud, metrics are instance-wide only: no series may carry an organization id, connector name, tool name or user, which is why `METRICS_TOOL_LABELS` has no effect there. Per-organization usage already exists in the database (`AuditService.getBreakdowns`) and is unaffected by this endpoint. On self-hosted, the operator who sets `METRICS_TOOL_LABELS=true` is the only consumer of their own instance's metrics, so per-connector/per-tool labels are allowed. `METRICS_TOKEN` is required on both: the listener's default bind host is `0.0.0.0`.
+
+## 7. Inbound webhook ingestion (opt-in per connector)
+
+Any connector may opt in (`webhookEnabled`, regardless of its type) to receive inbound webhook deliveries at `POST /api/webhooks/:connectorId`. Stripe is the only verified provider today (`Stripe-Signature`: HMAC-SHA256 over `timestamp.body`, with a 300 s replay tolerance); other providers each need their own verification scheme and are a follow-up. Nothing is stored before the signature checks out. An unknown connector id, a disabled hook, and a bad signature all answer identically, so the endpoint cannot be used to probe which connector ids exist.
+
+Stored payloads are returned to the model exactly as received by the connector's `<prefix>_recent_events` tool — including whatever personal data the provider's event carries (a Stripe payload can include a customer's name, e-mail and address). They are kept for `WEBHOOK_EVENT_RETENTION_DAYS` (7 days by default) and a single call returns at most 50 events, regardless of the `limit` requested.
+
+| Env | Default | |
+|---|---|---|
+| `WEBHOOK_EVENT_RETENTION_DAYS` | `7` | A periodic sweep (hourly, like the connector-auth-status sweep) deletes received events older than this. |
+| `WEBHOOK_EVENT_MAX_PER_CONNECTOR` | `500` | Enforced on every insert, deleting the oldest rows first — bounds storage for one connector even between sweeps, during a burst of deliveries. |
+
+### Cloud vs self-hosted
+
+Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch.
 
 ## Fatal crash reports (always on in the Docker image)
 

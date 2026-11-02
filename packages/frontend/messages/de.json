@@ -648,6 +648,11 @@
       "skillsAuto": "Automatisch: voller Text, solange kurz, sonst eine Liste bei Bedarf",
       "skillsInline": "Immer der volle Text",
       "skillsIndex": "Immer eine Liste (die KI öffnet einen Skill mit skill_get)",
+      "codeMode": "Code-Modus",
+      "codeModeOff": "Aus (keine Code-Ausführung)",
+      "codeModeTools": "Nur gespeicherte Code-Tools",
+      "codeModeInline": "Gespeicherte Code-Tools + Inline-Code",
+      "codeModeHint": "Lässt KI-Clients kurze Programme ausführen, die die Tools dieses Servers in einem Schritt orchestrieren. Standardmäßig aus; benötigt einen konfigurierten Code-Runner. Inline stellt zusätzlich das generische Tool code_execute für berechtigte Rollen bereit.",
       "skillsHint": "Wie die <link>KI-Skills</link> dieses Servers den KI-Client erreichen. Eine Liste hält die Anweisungen kurz; lange Abläufe werden immer bei Bedarf geöffnet.",
       "save": "Speichern"
     }
@@ -932,7 +937,10 @@
       "providerError": "{name} hat mit einem Fehler geantwortet.",
       "suggest": "Stattdessen {name} einrichten",
       "suggestOther": "Stattdessen den anderen Connector einrichten",
-      "saveAnyway": "Trotzdem speichern"
+      "saveAnyway": "Trotzdem speichern",
+      "appPendingTitle": "{name} akzeptiert diese Schlüssel noch nicht.",
+      "appPendingBody": "Ist Ihre App neu, prüft {name} sie, meist innerhalb weniger Tage: Wir schreiben Ihnen eine E-Mail, sobald sie freigegeben ist, sonst ist nichts zu tun. Ist Ihre App bereits aktiv, kopieren Sie das Shared Secret erneut von der Seite Ihrer App. Ihre Schlüssel sind gespeichert.",
+      "appPendingOpen": "Connector öffnen"
     },
     "field": {
       "required": "Pflichtfeld",
@@ -950,7 +958,10 @@
       "back": "Zurück",
       "checking": "Wird geprüft…",
       "continue": "Weiter",
-      "tickHint": "Setzen Sie oben das Häkchen, sobald das erledigt ist."
+      "tickHint": "Setzen Sie oben das Häkchen, sobald das erledigt ist.",
+      "saveAndCheck": "Speichern und bei {name} prüfen",
+      "waitHint": "„Weiter“ wird aktiv, sobald {name} Ihre App freigegeben hat.",
+      "keysFirst": "Geben Sie zuerst im Schritt davor Ihre Schlüssel ein."
     },
     "title": {
       "finish": "Einrichtung von {name} abschließen",
@@ -1000,6 +1011,17 @@
       "fillPrevious": "{action}: Füllen Sie zuerst den vorherigen Schritt aus.",
       "screenshot": "Screenshot vom {date}; die Seite kann inzwischen etwas anders aussehen.",
       "problems": "Häufige Probleme"
+    },
+    "wait": {
+      "checking": "Wir fragen {name} nach Ihrer App…",
+      "notYet": "{name} hat Ihre App noch nicht freigegeben",
+      "checkedAt": "Zuletzt geprüft um {time}. Die Seite prüft erneut, sobald Sie zurückkommen.",
+      "checkAgain": "Erneut prüfen",
+      "checkingShort": "Wird geprüft…",
+      "activeAlready": "Schon freigegeben, aber hier geht es nicht weiter? Schlüssel neu eingeben",
+      "saved": "Ihre Schlüssel sind gespeichert. Sie können diese Seite schließen: Wenn Sie zurückkommen, öffnet sie sich bei diesem Schritt.",
+      "ready": "{name} hat Ihre App freigegeben.",
+      "readyNext": "Weiter mit dem nächsten Schritt."
     }
   },
   "setupSuccess": {
@@ -1682,7 +1704,17 @@
     "cacheTtl": "Cache-TTL der Antwort",
     "cacheSeconds": "Sekunden (0 = kein Caching)",
     "cacheHint": "Identische Anfragen werden in Redis zwischengespeichert, um API-Aufrufe zu sparen. Übliche Werte: 60 (1 Min.), 300 (5 Min.), 3600 (1 Stunde).",
-    "preview": "Vorschau des erzeugten Mappings (JSON)"
+    "preview": "Vorschau des erzeugten Mappings (JSON)",
+    "codeText": "Code-Tool",
+    "codeProgram": "Programm",
+    "codeProgramHint": "Ein async-JavaScript-Rumpf. Andere Tools mit await amcp.run(name, args), amcp.search(query), amcp.describe(name) aufrufen. Die Tool-Eingaben stehen in args. Gib das Ergebnis zurück.",
+    "codeUses": "Nutzt (Konnektoren)",
+    "codeUsesHint": "JSON-Array der Konnektoren, die dieses Code-Tool aufrufen darf. Jeder Eintrag nennt eine connectorId und optional eine Liste von Tool-Namen; ohne Tool-Liste sind alle Tools des Konnektors erlaubt. Nur Konnektoren dieses Workspace.",
+    "codeRunAs": "Ausführen als",
+    "codeRunAsInvoker": "Invoker (Rechte des Aufrufers)",
+    "codeRunAsDefiner": "Definer (admin-kuratiert; nur Admins)",
+    "codeAllowWrites": "Schreib-Tools erlauben",
+    "codeAllowWritesHint": "Aus = das Programm darf nur lesende Tools aufrufen. Schreiben erfordert Enterprise."
   },
   "responseMapping": {
     "title": "Response-Mapping",
@@ -1787,6 +1819,10 @@
       "admin": {
         "label": "Verwaltung",
         "description": "SMTP, Benachrichtigungen, Footer-Links"
+      },
+      "fileShare": {
+        "label": "Dateifreigabe",
+        "description": "Befristete Download-Links"
       }
     }
   },
@@ -2620,6 +2656,799 @@
       "envHosts": "Aus der Umgebungsvariable <code>SSRF_ALLOWED_HOSTS</code> (schreibgeschützt):",
       "list": "Von Admins bearbeitbare Liste (ein Host pro Zeile)",
       "save": "Allowlist speichern"
+    }
+  },
+  "knowledgeGraph": {
+    "title": "Knowledge Graph",
+    "counts": "{nodes, plural, one {# Entität} other {# Entitäten}} · {edges, plural, one {# Beziehung} other {# Beziehungen}}",
+    "countsBuilt": "{nodes, plural, one {# Entität} other {# Entitäten}} · {edges, plural, one {# Beziehung} other {# Beziehungen}} · erstellt am {date}",
+    "status": {
+      "loadFailed": "Graph konnte nicht geladen werden",
+      "enriching": "Das Modell wird nach Vorschlägen für Beziehungen gefragt…",
+      "noChanges": "Keine Änderungen seit der letzten Anreicherung.",
+      "suggested": "Die KI hat {count, plural, one {# Beziehung} other {# Beziehungen}} vorgeschlagen{hasModel, select, yes { ({model})} other {}}. Prüfen Sie sie bei den vorgeschlagenen Beziehungen.",
+      "enrichFailed": "Anreicherung fehlgeschlagen",
+      "rebuilding": "Graph wird neu aufgebaut…",
+      "rebuilt": "Neu aufgebaut: {nodes, plural, one {# Entität} other {# Entitäten}}, {edges, plural, one {# Beziehung} other {# Beziehungen}} aus {connectors, plural, one {# Connector} other {# Connectors}}.",
+      "rebuildFailed": "Neuaufbau fehlgeschlagen",
+      "saved": "Gespeichert",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "entityDeleted": "Entität gelöscht",
+      "deleteFailed": "Löschen fehlgeschlagen",
+      "connectionAdded": "Verbindung hinzugefügt",
+      "entityAdded": "Entität hinzugefügt",
+      "createFailed": "Erstellen fehlgeschlagen"
+    },
+    "enriching": "Wird angereichert…",
+    "enrich": "Mit KI anreichern",
+    "rebuilding": "Wird neu aufgebaut…",
+    "rebuild": "Graph neu aufbauen",
+    "layer": "Ebene",
+    "sources": {
+      "STATIC": "statisch",
+      "OBSERVED": "beobachtet",
+      "MANUAL": "manuell",
+      "LLM": "KI"
+    },
+    "showSuggested": "Vorschläge anzeigen",
+    "minConfidence": "Mindestkonfidenz",
+    "skillsLink": "Skills →",
+    "loading": "Graph wird geladen…",
+    "disabled": "Der Knowledge Graph ist für diesen Workspace deaktiviert.",
+    "disabledHint": "Ein Admin kann ihn unter Einstellungen → Organisation → Funktionen aktivieren.",
+    "emptyAdmin": "Noch kein Graph. Klicken Sie auf „Graph neu aufbauen“, um ihn aus Ihren Connectors und deren Nutzung zu erstellen.",
+    "emptyMember": "Noch kein Graph. Bitten Sie einen Admin, den Graph aufzubauen.",
+    "explore": "Erkunden",
+    "exploreHint": "Klicken Sie auf eine Entität, um ihre Felder und Verknüpfungen zu sehen, oder auf eine Kante, um eine Beziehung anzusehen (und zu bearbeiten).",
+    "kinds": {
+      "references": "Referenz",
+      "produces_consumes": "Datenfluss",
+      "parent_child": "über- / untergeordnet",
+      "same_identity": "gleiche Identität",
+      "related": "verwandt"
+    },
+    "edgeStatus": {
+      "suggested": "vorgeschlagen",
+      "active": "aktiv",
+      "rejected": "abgelehnt"
+    },
+    "node": {
+      "connector": "Connector",
+      "labelPlaceholder": "Bezeichnung",
+      "descriptionPlaceholder": "Beschreibung (für KI-Clients sichtbar, die den Graph lesen)",
+      "deleteTitle": "Diese Entität und ihre Verknüpfungen löschen",
+      "fields": "Felder ({count})",
+      "connections": "Verbindungen ({count})",
+      "tools": "Tools ({count})"
+    },
+    "edge": {
+      "kind": "Art",
+      "matchKey": "Abgleichsschlüssel",
+      "confidence": "Konfidenz",
+      "observations": "Beobachtungen",
+      "note": "Beschreibung (wird an KI-Clients übergeben)",
+      "notePlaceholder": "Warum diese Entitäten verknüpft sind…",
+      "saveChanges": "Änderungen speichern",
+      "confirm": "Bestätigen",
+      "reject": "Ablehnen"
+    },
+    "addNode": {
+      "open": "+ Entität hinzufügen",
+      "title": "Neue Entität",
+      "labelPlaceholder": "Bezeichnung (z. B. Treuestufe)",
+      "connector": "Gehört zum Connector…",
+      "description": "Beschreibung (optional, wird an KI-Clients übergeben)",
+      "submit": "Entität hinzufügen"
+    },
+    "addEdge": {
+      "open": "+ Verbindung hinzufügen",
+      "title": "Neue Verbindung",
+      "from": "Von Entität…",
+      "to": "Zu Entität…",
+      "submit": "Hinzufügen"
+    },
+    "graph": {
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "fit": "Graph an die Ansicht anpassen",
+      "fitTitle": "An Ansicht anpassen"
+    },
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen"
+  },
+  "aiSkills": {
+    "title": "KI-Skills",
+    "tabs": {
+      "all": "Alle",
+      "pending": "Vorgeschlagen",
+      "applied": "Aktiv",
+      "dismissed": "Verworfen"
+    },
+    "badge": {
+      "pending": "Vorgeschlagen",
+      "applied": "Aktiv",
+      "dismissed": "Verworfen"
+    },
+    "codeProposal": {
+      "badge": "Code-Tool-Vorschlag",
+      "created": "Erstellt",
+      "meta": "{scope} · von einem Agenten vorgeschlagen · nur lesend, läuft mit den Berechtigungen des Aufrufers",
+      "createTool": "Tool erstellen",
+      "dismiss": "Verwerfen",
+      "deleteAria": "Vorschlag löschen",
+      "why": "Warum:",
+      "does": "Funktion:",
+      "program": "Programm ({count, number} Zeichen)",
+      "note": "Beim Erstellen wird ein nur lesendes Code-Tool für {connector} angelegt. Damit es Daten schreiben oder mit den Rechten des Autors laufen kann, bearbeiten Sie es anschließend auf der Tool-Seite des Connectors.",
+      "theConnector": "den Connector",
+      "createFailed": "Das Tool konnte nicht erstellt werden."
+    },
+    "status": {
+      "loadFailed": "Laden fehlgeschlagen",
+      "analyzingServer": "Der Kontext des Servers wird analysiert…",
+      "analyzingIntents": "Erfasste Absichten werden analysiert…",
+      "generated": "{count, plural, one {# Vorschlag} other {# Vorschläge}} erstellt.",
+      "noPatterns": "Noch keine neuen Muster gefunden.",
+      "generationFailed": "Erstellen fehlgeschlagen",
+      "consolidating": "Aktive Skills werden mit KI zusammengeführt…",
+      "proposedMerge": "{proposed, plural, one {# zusammengeführter Skill} other {# zusammengeführte Skills}} als Ersatz für {replaced, plural, one {# aktiven} other {# aktive}} vorgeschlagen. Prüfen Sie sie unter „Vorgeschlagen“: Wenn Sie einen übernehmen, werden die Skills deaktiviert, die er ersetzt.",
+      "nothingToMerge": "Nichts zusammenzuführen ({before, plural, one {# aktiver Skill} other {# aktive Skills}}).",
+      "consolidationFailed": "Zusammenführen fehlgeschlagen",
+      "lookingForErrors": "Es wird nach Aufrufen gesucht, die fehlgeschlagen sind und dann behoben wurden…",
+      "proposedFromErrors": "{count, plural, one {# Skill} other {# Skills}} aus behobenen Fehlern vorgeschlagen. Prüfen Sie sie unter „Vorgeschlagen“.",
+      "noFixedErrors": "Noch keine wiederkehrenden behobenen Fehler. Es werden nur Aufrufe von Benutzern verwendet, die zum Skill-Lernen beitragen.",
+      "errorsFailed": "Die Fehler konnten nicht ausgewertet werden",
+      "created": "Skill erstellt (live für MCP)."
+    },
+    "scopeThisServer": "diesen Server",
+    "scopeConnectors": "Connectors",
+    "scopeTitle": "Bereich für Erstellen / Zusammenführen",
+    "scopeAria": "Bereich für Erstellen und Zusammenführen",
+    "fromConnectors": "Aus Connectors",
+    "forServer": "Für Server: {name}",
+    "consolidateTitle": "Die aktiven Skills in diesem Bereich zu weniger, nicht redundanten Skills zusammenführen",
+    "consolidating": "Wird zusammengeführt…",
+    "consolidate": "Zusammenführen",
+    "generating": "Wird erstellt…",
+    "generate": "Mit KI erstellen",
+    "actionsLabel": "Skill-Aktionen",
+    "generateScope": "Mit KI erstellen · {scope}",
+    "consolidateScope": "Zusammenführen · {scope}",
+    "looking": "Wird gesucht…",
+    "learn": "Aus behobenen Fehlern lernen",
+    "learnHint": "Schlägt eine Regel vor, wenn Aufrufe fehlgeschlagen sind und funktioniert haben, nachdem ein Argument sein Format geändert hat. Kein KI-Modell nötig.",
+    "close": "Schließen",
+    "newSkill": "Neuer Skill",
+    "intro": "Regeln und Abläufe für wiederkehrende Aufgaben, für einen Connector oder einen ganzen MCP-Server. <hl>Aktive</hl> Skills erreichen die KI-Clients dieses Servers beim Verbinden, als vollständiger Text oder als Liste, die sie mit <code>skill_get</code> öffnen (pro Server einstellbar). Lange Abläufe werden immer erst bei Bedarf geöffnet.",
+    "emptyTitle": "Noch keine Skills",
+    "emptyAdmin": "Skills werden aus erfassten Absichten erstellt. Aktivieren Sie <link>Absicht der Benutzer erfassen und KI-Anreicherung</link>, lassen Sie einige Tool-Aufrufe laufen und verwenden Sie dann „Mit KI erstellen“.",
+    "emptyMember": "Sie werden aus den erfassten Absichten von Tool-Aufrufen erstellt. Bitten Sie einen Admin, sie zu erstellen.",
+    "searchPlaceholder": "Skills durchsuchen…",
+    "loading": "Wird geladen…",
+    "noMatch": "Keine Skills entsprechen diesem Filter.",
+    "pager": {
+      "range": "{from}–{to} von {total}",
+      "prev": "← Zurück",
+      "page": "Seite {page} / {total}",
+      "next": "Weiter →"
+    },
+    "card": {
+      "historyFailed": "Der Verlauf konnte nicht geladen werden",
+      "server": "Server: {name}",
+      "connector": "Connector: {name}",
+      "workspace": "Workspace",
+      "confidence": "Konfidenz {value}",
+      "examples": "{count, plural, one {# Beispiel} other {# Beispiele}}",
+      "opened": "{count}× geöffnet",
+      "openedLast": "{count}× geöffnet, zuletzt am {date}",
+      "notOpened": "noch nicht geöffnet",
+      "activate": "Aktivieren",
+      "apply": "Übernehmen",
+      "deactivate": "Deaktivieren",
+      "deleteAria": "Skill löschen",
+      "when": "Wann:",
+      "do": "Tun:",
+      "replaces": "Ersetzt {count, plural, one {# aktiven Skill} other {# aktive Skills}}: Wenn Sie ihn übernehmen, werden diese deaktiviert (sie bleiben mit ihrem Verlauf erhalten).",
+      "procedure": "Ablauf ({count, plural, one {# Zeichen} other {# Zeichen}})",
+      "hideHistory": "Verlauf ausblenden",
+      "history": "Verlauf ({count, plural, one {# frühere Version} other {# frühere Versionen}})",
+      "replaced": "ersetzt am {date}",
+      "historyProcedure": "Ablauf: {count, plural, one {# Zeichen} other {# Zeichen}}"
+    },
+    "sources": {
+      "llm": "von KI erstellt",
+      "mergeProposal": "Vorschlag zum Zusammenführen",
+      "mergedByAi": "von KI zusammengeführt",
+      "errors": "aus behobenen Fehlern gelernt",
+      "finder": "aus dem Skills Finder",
+      "manual": "von Hand geschrieben"
+    },
+    "form": {
+      "titlePlaceholder": "Titel",
+      "whenPlaceholder": "Wann verwenden",
+      "instructionPlaceholder": "Anweisung",
+      "procedurePlaceholder": "Vollständiger Ablauf (optional, Markdown): Schritte, Feldregeln, Ausgabeformat. Wird bei Bedarf mit skill_get geöffnet.",
+      "folder": "Ordner",
+      "folderOption": "Ordner: {name}",
+      "noFolder": "Kein Ordner",
+      "noFolderTop": "Kein Ordner (oberste Ebene)",
+      "createFailed": "Erstellen fehlgeschlagen",
+      "newTitlePlaceholder": "Titel (z. B. Lieferadresse immer bestätigen)",
+      "newWhenPlaceholder": "Wann verwenden (optional)",
+      "newInstructionPlaceholder": "Anweisung für den Agenten (im Imperativ)",
+      "newProcedurePlaceholder": "Vollständiger Ablauf (optional, Markdown): Schritte, Feldregeln, Ausgabeformat. Die KI öffnet ihn mit skill_get, wenn der Skill passt.",
+      "scopePlaceholder": "Bereich… (wo dieser Skill gilt)",
+      "mcpServers": "MCP-Server",
+      "connectors": "Connectors",
+      "serverOption": "Server: {name}",
+      "connectorOption": "Connector: {name}",
+      "creating": "Wird erstellt…",
+      "create": "Skill erstellen",
+      "createdHint": "Wird als aktiv erstellt → sofort für den MCP-Server verfügbar."
+    },
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen"
+  },
+  "memory": {
+    "title": "Gedächtnis",
+    "loadFailed": "Gedächtnis konnte nicht geladen werden",
+    "loading": "Wird geladen…",
+    "access": {
+      "none": "Kein Zugriff",
+      "read": "Firmengedächtnis lesen",
+      "personal": "Persönliches Gedächtnis + Firmengedächtnis lesen",
+      "contribute": "Persönliches Gedächtnis + Vorschläge für das Firmengedächtnis"
+    },
+    "tabs": {
+      "personal": "Mein Gedächtnis",
+      "organization": "Firmengedächtnis",
+      "pending": "Zu prüfen"
+    },
+    "intro": "Fakten, Vorlieben und Notizen, die Ihre KI-Clients speichern und wiederfinden, in jedem Client, der mit einem Server dieses Workspace verbunden ist. <hl>Mein Gedächtnis</hl> sehen nur Sie. <hl>Firmengedächtnis</hl> wird mit allen geteilt; KI-Clients können Ergänzungen vorschlagen, die Admins und Editoren prüfen, sofern der Workspace sie nicht automatisch speichert.",
+    "accessAdmin": "Ihr Zugriff in diesem Workspace: <hl>{level}</hl> · pro Benutzer einstellbar unter <link>Einstellungen → Benutzer</link>",
+    "accessMember": "Ihr Zugriff in diesem Workspace: <hl>{level}</hl> · von Ihrem Admin festgelegt",
+    "searchPlaceholder": "Gedächtnis durchsuchen…",
+    "saved": "Gespeichert.",
+    "empty": {
+      "personal": "Noch nichts gespeichert. Bitten Sie Ihren KI-Client, sich etwas zu merken, oder fügen Sie es oben hinzu.",
+      "pending": "Nichts zu prüfen.",
+      "organization": "Das Firmengedächtnis ist leer."
+    },
+    "pager": {
+      "range": "{from}–{to} von {total}",
+      "prev": "← Zurück",
+      "page": "Seite {page} / {total}",
+      "next": "Weiter →"
+    },
+    "form": {
+      "saveFailed": "Speichern fehlgeschlagen",
+      "placeholderOrganization": "Zum Firmengedächtnis hinzufügen, z. B. „STAMMKUNDE bedeutet ein Kunde mit Rahmenvertrag“",
+      "placeholderPersonal": "Zu Ihrem Gedächtnis hinzufügen, z. B. „Antworte mir auf Englisch, Zahlen als Tabellen“",
+      "kind": "Art",
+      "folder": "Ordner",
+      "noFolder": "Kein Ordner",
+      "tagsPlaceholder": "Tags, durch Komma getrennt (optional)",
+      "aboutPlaceholder": "Betrifft (optional), z. B. customer",
+      "aboutTitle": "Worum es geht, so wie der Knowledge Graph es benennt. KI-Clients erhalten den Eintrag, wenn sie diese Entität nachschlagen.",
+      "saving": "Wird gespeichert…",
+      "addCompany": "Zum Firmengedächtnis hinzufügen",
+      "remember": "Merken",
+      "noSecrets": "Speichern Sie niemals Passwörter, Tokens oder Schlüssel: Sie werden abgelehnt."
+    },
+    "kinds": {
+      "fact": "Fakt",
+      "preference": "Vorliebe",
+      "note": "Notiz"
+    },
+    "kindBadges": {
+      "fact": "Fakt",
+      "preference": "Vorliebe",
+      "note": "Notiz"
+    },
+    "card": {
+      "actionFailed": "Aktion fehlgeschlagen",
+      "viaAi": "von einem KI-Client gespeichert",
+      "viaAiClient": "von einem KI-Client gespeichert ({client})",
+      "viaDashboard": "im Dashboard hinzugefügt",
+      "pending": "wartet auf Prüfung",
+      "rejected": "abgelehnt",
+      "about": "betrifft {about}",
+      "approve": "Freigeben",
+      "reject": "Ablehnen",
+      "deleteAria": "Eintrag löschen"
+    },
+    "settings": {
+      "title": "Workspace-Einstellungen",
+      "writeMode": "Firmengedächtnis aus KI-Clients",
+      "approval": "Muss von einem Admin oder Editor freigegeben werden",
+      "auto": "Wird automatisch gespeichert",
+      "writeModeHint": "Gilt für Benutzer, die Ergänzungen zum Firmengedächtnis vorschlagen dürfen. In beiden Fällen sehen Sie, wer was gespeichert hat, und können es hier bearbeiten oder löschen.",
+      "defaultAccess": "Standardzugriff für Benutzer",
+      "defaultAccessHint": "Für Benutzer, die unter Einstellungen → Benutzer auf „Standard“ stehen, auch für neue.",
+      "saving": "Wird gespeichert…",
+      "save": "Einstellungen speichern"
+    },
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen"
+  },
+  "knowledgeFolders": {
+    "title": "Ordner",
+    "createFailed": "Der Ordner konnte nicht erstellt werden",
+    "newInside": "Neuer Ordner in {path}",
+    "newTop": "Neuer Ordner auf oberster Ebene",
+    "new": "+ Neu",
+    "inside": "In {path}",
+    "name": "Ordnername",
+    "create": "Erstellen",
+    "allSkills": "Alle Skills",
+    "allMemory": "Gesamtes Firmengedächtnis",
+    "notInFolder": "In keinem Ordner",
+    "limited": "Auf Rollen beschränkt:",
+    "lockTitle": "Auf Rollen beschränkt",
+    "editAria": "Ordner {path} bearbeiten",
+    "emptyHint": "Ordner gruppieren Skills und Firmengedächtnis nach Thema, für Menschen und für KI-Clients.",
+    "saveFailed": "Speichern fehlgeschlagen",
+    "confirmDeleteUp": "Den Ordner „{path}“ löschen?\n\nSeine Unterordner, Skills und Gedächtniseinträge werden in den übergeordneten Ordner verschoben. Sonst wird nichts gelöscht.",
+    "confirmDeleteTop": "Den Ordner „{path}“ löschen?\n\nSeine Unterordner, Skills und Gedächtniseinträge werden auf die oberste Ebene verschoben. Sonst wird nichts gelöscht.",
+    "deleteFailed": "Löschen fehlgeschlagen",
+    "descriptionPlaceholder": "Was hierher gehört (für KI-Clients sichtbar)",
+    "parent": "Übergeordneter Ordner",
+    "topLevel": "Oberste Ebene",
+    "visibleTo": "Sichtbar für",
+    "noneChecked": "Nichts ausgewählt: der ganze Workspace. Admins sehen immer alle Ordner.",
+    "noRoles": "Noch keine Rollen: Erstellen Sie sie unter Einstellungen → Rollen.",
+    "visibleToList": "Sichtbar für: {roles}",
+    "aRole": "eine Rolle",
+    "enterprise": "Ordner auf Rollen zu beschränken ist Teil von Enterprise.",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen"
+  },
+  "fileSearch": {
+    "title": "Dateisuche",
+    "subtitle": "Lassen Sie die KI in den Dokumenten eines Ordners suchen: PDF, Excel, Word, PowerPoint, Outlook",
+    "back": "Neuer Connector",
+    "loading": "Wird geladen…",
+    "cancel": "Abbrechen",
+    "backStep": "Zurück",
+    "upgrade": "Upgrade",
+    "adminOnly": "Nur Administratoren des Workspaces können Dateisuche-Connectoren einrichten.",
+    "defaultName": "Dokumente",
+    "worker": {
+      "down": "Die Dateisuche läuft auf diesem Server nicht.",
+      "downHint": "Der Files-Worker oder der Textextraktor ist nicht erreichbar. Ein Administrator startet beide mit dem Compose-Profil \"files\" (siehe Dokumentation zur Dateisuche)."
+    },
+    "steps": {
+      "label": "Einrichtungsschritte",
+      "source": "Quelle",
+      "test": "Test",
+      "scan": "Scan",
+      "describe": "Beschreibung",
+      "activate": "Aktivieren"
+    },
+    "source": {
+      "protocol": "Wo liegen die Dateien?",
+      "cloudNote": "AnythingMCP Cloud erreicht Server im Internet. Für eine Freigabe im Firmennetz nutzen Sie SFTP oder WebDAV auf dem NAS oder betreiben AnythingMCP selbst daneben.",
+      "presets": "Schnellauswahl",
+      "name": "Name",
+      "namePlaceholder": "Preislisten der Lieferanten",
+      "nameHint": "Wird der KI und in den Tool-Namen angezeigt: benennen Sie den Inhalt, nicht den Server.",
+      "ftpMode": "Verschlüsselung",
+      "host": "Server",
+      "port": "Port",
+      "webdavUrl": "WebDAV-Adresse",
+      "s3Endpoint": "S3-Endpunkt",
+      "webdavHint": "Nextcloud: Dateien → Einstellungen → WebDAV zeigt die Adresse. Synology: WebDAV Server installieren und HTTPS nutzen (Port 5006).",
+      "bucket": "Bucket",
+      "region": "Region",
+      "accessKey": "Access Key",
+      "secretKey": "Secret Key",
+      "username": "Benutzername",
+      "authMode": "Anmelden mit",
+      "privateKey": "Privater Schlüssel",
+      "passphrase": "Passphrase des Schlüssels (falls vorhanden)",
+      "password": "Passwort",
+      "passwordKeep": "Leer lassen, um das gespeicherte Passwort zu behalten",
+      "appPasswordHint": "Nextcloud und ownCloud: Legen Sie unter Sicherheit → Geräte & Sitzungen ein App-Passwort an.",
+      "localFolder": "Ordner",
+      "folder": "Zu indexierender Ordner",
+      "localRoots": "Erlaubte Ordner: {roots}",
+      "noLocalRoots": "Noch kein Ordner erlaubt. Ein Administrator setzt FILE_SOURCE_ROOTS auf die eingebundenen Ordner, die AnythingMCP lesen darf.",
+      "folderHint": "Alles unterhalb dieses Ordners wird berücksichtigt. Unterordner wählen Sie nach dem Scan.",
+      "plainFtpWarning": "Unverschlüsseltes FTP überträgt das Passwort im Klartext über das Internet. Ich habe das verstanden und akzeptiere es (besser: FTPS oder SFTP).",
+      "next": "Verbindung testen"
+    },
+    "protocols": {
+      "sftp": {
+        "title": "SFTP",
+        "description": "Dateiübertragung über SSH. Die meisten NAS und Linux-Server, Hetzner Storage Box."
+      },
+      "ftp": {
+        "title": "FTP / FTPS",
+        "description": "FTP mit TLS (explizit oder implizit), z. B. Fritz!Box, Webhosting."
+      },
+      "webdav": {
+        "title": "WebDAV / Nextcloud",
+        "description": "Nextcloud, ownCloud, WebDAV auf Synology und QNAP."
+      },
+      "local": {
+        "title": "Netzwerkordner",
+        "description": "Eine Freigabe oder ein Volume, das in diese selbst gehostete Installation eingebunden ist (SMB, NFS)."
+      },
+      "s3": {
+        "title": "S3-Bucket",
+        "description": "AWS S3, DigitalOcean Spaces, MinIO, Hetzner, Wasabi."
+      }
+    },
+    "presets": {
+      "nextcloud": "Nextcloud",
+      "synology": "Synology NAS",
+      "qnap": "QNAP NAS",
+      "fritzbox": "Fritz!Box",
+      "hetzner": "Hetzner Storage Box",
+      "owncloud": "ownCloud"
+    },
+    "ftpModes": {
+      "ftps": "FTPS (explizit, Port 21)",
+      "ftps-implicit": "FTPS (implizit, Port 990)",
+      "ftp": "FTP (unverschlüsselt)"
+    },
+    "authModes": {
+      "password": "Passwort",
+      "key": "SSH-Schlüssel"
+    },
+    "test": {
+      "checklist": "Verbindungstest",
+      "steps": {
+        "resolve": "Serveradresse",
+        "connect": "Server erreichbar",
+        "handshake": "Verschlüsselte Verbindung",
+        "fingerprint": "Identität des Servers",
+        "login": "Anmeldung",
+        "folder": "Ordner lesbar"
+      },
+      "intro": "AnythingMCP verbindet sich mit dem Server, meldet sich an und listet den Ordner auf. Gespeichert wird erst, wenn der Test erfolgreich ist.",
+      "running": "Verbindung wird getestet…",
+      "ok": "Verbunden. {n} Einträge im Ordner.",
+      "again": "Erneut testen",
+      "next": "Speichern und weiter"
+    },
+    "fingerprint": {
+      "title": "Identität des Servers bestätigen",
+      "ssh": "Dies ist der Fingerabdruck des SSH-Hostschlüssels. Vergleichen Sie ihn mit dem, den Ihr Administrator oder das NAS anzeigt. Nach der Bestätigung verweigert AnythingMCP die Verbindung, falls er sich ändert: Das schützt vor einem Server, der sich als Ihrer ausgibt.",
+      "tls": "Der Server nutzt ein Zertifikat, für das keine öffentliche Stelle bürgt, was bei NAS und Routern üblich ist. Vergleichen Sie den Fingerabdruck mit dem auf dem Gerät; nach der Bestätigung wird nur dieses Zertifikat akzeptiert.",
+      "confirmLabel": "Ich habe den Fingerabdruck geprüft, er gehört zu unserem Server.",
+      "confirm": "Bestätigen und erneut testen"
+    },
+    "scan": {
+      "intro": "Der Scan listet den ganzen Ordner auf, ohne etwas zu indexieren: wie viele Dateien in jedem Unterordner liegen, welche Typen und Jahre. Außerdem liest er einige kleine Beispieldokumente, um den Inhalt zu beschreiben. Danach wählen Sie aus, was aufgenommen wird.",
+      "useAi": "Beschreibung mit KI erstellen",
+      "aiConsent": "Ordnernamen, Dateinamen und die ersten 2.000 Zeichen von bis zu 20 Beispieldateien werden an {provider} gesendet. Personenbezogene Daten in den Beispielen werden maskiert.",
+      "aiPolicyOff": "KI-Entwürfe sind durch die Richtlinie Ihres Workspaces abgeschaltet; die Beschreibung entsteht aus der Ordnerstruktur.",
+      "aiUnavailable": "Auf diesem Server ist kein KI-Modell eingerichtet; die Beschreibung entsteht aus der Ordnerstruktur.",
+      "start": "Ordner scannen",
+      "phase": {
+        "connecting": "Verbindung wird aufgebaut…",
+        "listing": "Ordner wird aufgelistet…",
+        "sampling": "Beispieldokumente werden gelesen…",
+        "describing": "Beschreibung wird erstellt…",
+        "done": "Fertig"
+      },
+      "progress": "Bisher {files} Dateien in {dirs} Ordnern",
+      "cancel": "Scan abbrechen",
+      "retry": "Erneut scannen",
+      "stats": {
+        "files": "Dateien",
+        "folders": "Ordner",
+        "size": "Größe",
+        "years": "Jahre"
+      },
+      "truncated": "Der Ordner ist sehr groß, der Scan hat das Zählen abgebrochen. Wählen Sie in Schritt 1 einen Unterordner für eine genaue Zahl.",
+      "folders": "Aufzunehmende Ordner",
+      "archivesUnticked": "{n} Archivordner abgewählt",
+      "types": "Dateitypen",
+      "typesHint": "Kein Typ gewählt = alle Typen. Andere Dateien werden weiterhin über den Namen gefunden.",
+      "age": "Geändert in",
+      "ageAll": "Beliebig",
+      "ageYears": "Den letzten {n} Jahren",
+      "again": "Erneut scannen",
+      "next": "Weiter"
+    },
+    "typeGroups": {
+      "pdf": "PDF",
+      "excel": "Excel / CSV",
+      "word": "Word",
+      "powerpoint": "PowerPoint",
+      "email": "E-Mail",
+      "text": "Text",
+      "drawing": "Zeichnungen (SVG, DXF)",
+      "code": "Code & Konfiguration"
+    },
+    "describe": {
+      "intro": "Dieser Text sagt der KI, was der Ordner enthält und wie sie darin sucht. Jeder MCP-Server mit diesem Connector gibt ihn weiter. Prüfen Sie ihn und ergänzen Sie, was nur Sie wissen.",
+      "writing": "Beschreibung wird erstellt…",
+      "byAi": "Von KI geschrieben ({model}). Bitte vor dem Speichern prüfen.",
+      "byRules": "Aus der Ordnerstruktur und den Beispieldokumenten erstellt.",
+      "summary": "Zusammenfassung in einer Zeile",
+      "summaryHint": "Erscheint in jeder Tool-Beschreibung. Noch {n} Zeichen.",
+      "instructions": "Anweisungen für die KI",
+      "instructionsHint": "Was die Dokumente sind, wie Ordner benannt sind, worauf zu achten ist.",
+      "terms": "Häufige Begriffe (klicken, um sie zur Zusammenfassung hinzuzufügen)",
+      "preview": "Was die KI sieht",
+      "previewText": "Durchsucht den Text aller Dokumente im Ordner \"{name}\" ({summary})…",
+      "prompts": "Fragen, die sie beantworten kann",
+      "withAi": "Mit KI",
+      "regenerate": "Neu schreiben",
+      "next": "Weiter"
+    },
+    "activate": {
+      "prefix": "Tool-Präfix",
+      "prefixHint": "Die Tools heißen dann z. B. {example}.",
+      "interval": "Synchronisierung",
+      "higherPlan": "höherer Plan",
+      "intervalHint": "Neue und geänderte Dateien werden bei jeder Synchronisierung übernommen. Die Suche funktioniert auch während einer Synchronisierung.",
+      "servers": "Zu MCP-Servern hinzufügen",
+      "noServers": "Es gibt noch keinen MCP-Server. Sie können den Connector später einem hinzufügen.",
+      "serversHint": "Nur Rollen mit diesen Tools können sie nutzen.",
+      "summary": "{files} Dateien ({size}) werden indexiert und dann {interval} synchronisiert.",
+      "activating": "Wird aktiviert…",
+      "cta": "Aktivieren und erste Synchronisierung starten",
+      "ocr": "Gescannte Seiten lesen (OCR)",
+      "ocrHint": "Gescannte PDFs ohne Textebene werden per Texterkennung gelesen. Langsamer; mit Enterprise verfügbar."
+    },
+    "interval": {
+      "weekly": "wöchentlich",
+      "daily": "täglich",
+      "hourly": "stündlich",
+      "hours": "alle {n} Stunden",
+      "minutes": "alle {n} Minuten"
+    },
+    "budget": {
+      "selected": "Ausgewählt: {files} Dateien, {size}",
+      "unlimited": "Keine Begrenzung in Ihrem Plan",
+      "plan": "Plan {plan}: {max} Dateien",
+      "textFiles": "{n} mit lesbarem Text",
+      "nameOnly": "{n} nur über den Namen auffindbar",
+      "tooLarge": "{n} größer als {max} (gelistet, nicht gelesen)",
+      "others": "+ {n} in Ihren anderen Dateisuche-Connectoren",
+      "bytes": "Volumen {used} von {max}",
+      "overWithNext": "Die Auswahl ist größer als Ihr Plan. Wählen Sie Ordner oder Dateitypen ab oder machen Sie ein Upgrade: Der Plan {plan} umfasst {max} Dateien.",
+      "over": "Die Auswahl ist größer als Ihr Plan. Wählen Sie Ordner oder Dateitypen ab."
+    },
+    "tree": {
+      "collapse": "{name} zuklappen",
+      "expand": "{name} aufklappen",
+      "include": "{name} aufnehmen",
+      "archive": "Archiv",
+      "files": "{n} Dateien",
+      "filter": "Ordner filtern",
+      "label": "Ordner",
+      "empty": "Keine passenden Ordner."
+    },
+    "locked": {
+      "title": "Die Dateisuche ist Teil der kostenpflichtigen Editionen",
+      "point1": "In PDF-, Excel-, Word- und Outlook-Dateien suchen, aus Claude, ChatGPT, Copilot und anderen KI-Clients.",
+      "point2": "SFTP, FTP/FTPS, WebDAV und Netzwerkordner, im Hintergrund synchronisiert.",
+      "point3": "Befristete Download-Links, Berechtigungen pro Rolle, Audit-Log.",
+      "startTrial": "Kostenlose 30-Tage-Testphase starten",
+      "buy": "Lizenz kaufen",
+      "activate": "Lizenz aktivieren"
+    },
+    "card": {
+      "title": "Dateisuche",
+      "description": "In den Dokumenten eines Ordners suchen: SFTP, FTP, WebDAV, NAS oder Netzwerkfreigabe."
+    },
+    "shareConnector": {
+      "title": "Dateifreigabe",
+      "text": "Lässt KI-Clients erstellte Dateien als befristete Download-Links bereitstellen. Links, Limits und die Workspace-Richtlinie verwalten Sie in den Einstellungen.",
+      "manage": "Einstellungen der Dateifreigabe öffnen"
+    },
+    "panel": {
+      "draftTitle": "Einrichtung nicht abgeschlossen",
+      "draftText": "Dieser Connector wurde getestet, aber noch nicht aktiviert: Er hat keine Tools und synchronisiert nicht.",
+      "continueSetup": "Einrichtung fortsetzen",
+      "paused": {
+        "paused_quota": "Synchronisierung angehalten: Der Ordner übersteigt Ihren Plan",
+        "paused_licence": "Synchronisierung angehalten: Die Dateisuche benötigt eine Lizenz",
+        "paused_error": "Synchronisierung angehalten: Der Server war nicht erreichbar",
+        "paused_admin": "Synchronisierung von einem Administrator angehalten",
+        "stillSearching": "Die KI durchsucht weiterhin die bis {date} indexierten Dateien."
+      },
+      "upgradeTo": "Upgrade auf {plan}",
+      "editSelection": "Auswahl bearbeiten",
+      "resume": "Fortsetzen",
+      "resumed": "Fortgesetzt. Die nächste Synchronisierung startet innerhalb einer Minute.",
+      "indexed": "Indexiert",
+      "ofFiles": "von {n} Dateien",
+      "size": "Größe",
+      "chars": "{n} Zeichen Text",
+      "lastSync": "Letzte Synchronisierung",
+      "nextSync": "Nächste Synchronisierung",
+      "now": "läuft gerade",
+      "planUsage": "{used} von {max} Dateien im Plan {plan} (alle Dateisuche-Connectoren)",
+      "nearLimit": "{pct} % genutzt",
+      "syncQueued": "Synchronisierung gestartet.",
+      "syncing": "Synchronisiert…",
+      "syncNow": "Jetzt synchronisieren",
+      "pause": "Anhalten",
+      "pausedMsg": "Synchronisierung angehalten.",
+      "scheduleSaved": "Zeitplan gespeichert.",
+      "manualLeft": "Heute verbleibende manuelle Synchronisierungen: {n}",
+      "description": "Was die KI über diesen Ordner erfährt",
+      "edit": "Bearbeiten",
+      "newDraft": "Der letzte Scan hat eine neue Beschreibung erstellt.",
+      "reviewDraft": "Prüfen",
+      "save": "Speichern",
+      "descriptionSaved": "Beschreibung gespeichert; die Tools wurden aktualisiert.",
+      "noDescription": "Noch keine Beschreibung.",
+      "runs": "Letzte Synchronisierungen",
+      "runCounters": "{listed} Dateien gelistet, {added} neu oder geändert, {extracted} gelesen, {deleted} entfernt",
+      "noRuns": "Es lief noch keine Synchronisierung.",
+      "problems": "{n} Dateien brauchen Aufmerksamkeit",
+      "problemsHint": "Sie werden weiterhin über den Namen gefunden. Dateien, die dreimal scheitern, werden erst nach einer Änderung erneut versucht.",
+      "folders": "Ordner im Index",
+      "hide": "Ausblenden",
+      "show": "Anzeigen"
+    },
+    "states": {
+      "active": "Aktiv",
+      "syncing": "Synchronisiert",
+      "draft": "Entwurf",
+      "paused_quota": "Angehalten: Planlimit",
+      "paused_licence": "Angehalten: Lizenz",
+      "paused_error": "Angehalten: Verbindung",
+      "paused_admin": "Angehalten"
+    },
+    "runStatus": {
+      "running": "Läuft",
+      "succeeded": "Fertig",
+      "partial": "In Arbeit",
+      "paused": "Angehalten",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen"
+    },
+    "entryStatus": {
+      "failed": "Nicht lesbar (wird erneut versucht)",
+      "gave_up": "Nicht lesbar",
+      "skipped_size": "Größer als im Plan erlaubt",
+      "pending": "Wartet auf Lesen",
+      "name_only": "Nur über den Namen auffindbar",
+      "indexed": "Indexiert"
+    },
+    "rules": {
+      "title": "Ordnerberechtigungen",
+      "intro": "Beschränken Sie Rollen auf einzelne Ordner dieses Connectors. Eine Rolle ohne Regeln sieht alles; mit Regeln nur die erlaubten Ordner, Verbote haben Vorrang.",
+      "enterprise": "Ordnerberechtigungen pro Rolle gibt es mit AnythingMCP Enterprise. Bis dahin verbinden Sie jeden Ordner als eigenen Connector und geben ihn den passenden Rollen.",
+      "role": "Rolle",
+      "effect": "Erlauben oder verbieten",
+      "allow": "Erlauben",
+      "deny": "Verbieten",
+      "folder": "Ordner",
+      "remove": "Entfernen",
+      "add": "Regel hinzufügen",
+      "saved": "Ordnerberechtigungen gespeichert."
+    },
+    "limit": {
+      "title": "Alle Dateisuche-Connectoren Ihres Plans sind belegt",
+      "text": "Der Plan {plan} umfasst {max} Dateisuche-Connector(en), alle sind eingerichtet. Machen Sie ein Upgrade oder löschen Sie einen, den Sie nicht mehr brauchen.",
+      "next": "Der Plan {plan} umfasst {max}.",
+      "manage": "Connectoren verwalten"
+    },
+    "pager": {
+      "label": "Seiten",
+      "range": "{from}–{to} von {total}",
+      "prev": "Zurück",
+      "next": "Weiter"
+    },
+    "searchHint": {
+      "title": "Soll Ihre KI in den Dokumenten selbst suchen?",
+      "body": "Die Dateisuche indexiert die PDF-, Word-, Excel- und Outlook-Dateien auf Ihrem NAS, Server oder Speicher und hält den Index aktuell. So findet die KI, was in den Dateien steht, nicht nur ihre Namen.",
+      "cta": "Dateisuche einrichten",
+      "for": "Öffnet den Assistenten für {name}."
+    }
+  },
+  "fileShare": {
+    "title": "Dateifreigabe",
+    "subtitle": "Befristete Download-Links für Dateien aus Ihren Ordnern oder von der KI erstellte Dateien. Links laufen von selbst ab und die Datei wird gelöscht.",
+    "locked": {
+      "title": "Die Dateifreigabe ist in diesem Plan nicht enthalten",
+      "text": "Mit einem Upgrade können KI-Clients Dateien als befristete Links weitergeben.",
+      "cta": "Pläne ansehen"
+    },
+    "usage": {
+      "title": "Ihre Limits ({plan})",
+      "stored": "In aktiven Links gespeichert",
+      "today": "Neue Links heute",
+      "validity": "Längste Gültigkeit",
+      "hours": "{n} Stunden",
+      "noLimit": "Kein Limit",
+      "fileSize": "Größte Datei",
+      "publicOn": "Öffentliche Links sind erlaubt.",
+      "publicOff": "Öffentliche Links sind abgeschaltet; Links öffnen sich nur für angemeldete Mitglieder.",
+      "days": "{n} Tage"
+    },
+    "connector": {
+      "title": "Links aus KI-Chats",
+      "on": "Der Connector \"{name}\" lässt KI-Clients erstellte Dateien (CSV, Berichte) als Links bereitstellen.",
+      "off": "Fügen Sie den Dateifreigabe-Connector hinzu, damit KI-Clients erstellte Dateien (CSV, Berichte) als Links bereitstellen können.",
+      "add": "Dateifreigabe-Connector hinzufügen",
+      "added": "Dateifreigabe-Connector wurde Ihrem Standard-MCP-Server hinzugefügt."
+    },
+    "links": {
+      "title": "Links",
+      "empty": "Keine aktiven Links.",
+      "loading": "Wird geladen…",
+      "public": "öffentlich",
+      "internal": "intern",
+      "until": "bis {date}",
+      "noExpiry": "ohne Ablauf",
+      "downloads": "{n, plural, one {# Download} other {# Downloads}}",
+      "by": "von {name}",
+      "revoke": "Widerrufen",
+      "revoked": "Link widerrufen und Datei gelöscht.",
+      "count": "{n, plural, one {# aktiver Link} other {# aktive Links}}",
+      "search": "Nach Dateiname suchen",
+      "searchLabel": "Links durchsuchen",
+      "allAccess": "Alle Links",
+      "onlyPublic": "Nur öffentliche",
+      "onlyInternal": "Nur interne",
+      "mine": "Nur meine",
+      "noMatch": "Kein Link passt zu diesen Filtern.",
+      "confirm": "Diesen Link widerrufen und die Datei löschen?",
+      "confirmYes": "Widerrufen",
+      "cancel": "Abbrechen",
+      "expiresIn": "läuft in {time} ab"
+    },
+    "policy": {
+      "title": "Richtlinie für File Search und File Share",
+      "intro": "Gilt für alle Dateisuche-Connectoren und Links in diesem Workspace.",
+      "enterprise": "Workspace-Richtlinien gibt es mit AnythingMCP Enterprise.",
+      "saved": "Richtlinie gespeichert.",
+      "maxTtl": "Längste Gültigkeit eines Links (Stunden)",
+      "maxTtlPlaceholder": "Standard des Plans",
+      "publicLinks": {
+        "label": "Öffentliche Links erlauben",
+        "hint": "Aus: Links öffnen sich nur für angemeldete Mitglieder dieses Workspaces."
+      },
+      "aiDrafting": {
+        "label": "KI-Entwürfe von Ordnerbeschreibungen erlauben",
+        "hint": "Aus: Die Einrichtung sendet nie Ordnernamen oder Beispiele an ein KI-Modell."
+      },
+      "allowPlainFtp": {
+        "label": "Unverschlüsseltes FTP erlauben",
+        "hint": "Aus: Nur SFTP und FTPS können verbunden werden."
+      },
+      "locked": "Mit AnythingMCP Enterprise kann ein Administrator öffentliche Links, KI-Entwürfe und unverschlüsseltes FTP abschalten und die Gültigkeit von Links begrenzen.",
+      "on": "an",
+      "off": "aus",
+      "planDefault": "laut Plan"
+    },
+    "link": {
+      "loading": "Wird geladen…",
+      "notFound": "Diesen Link gibt es nicht.",
+      "unavailable": "Dieser Link ist nicht verfügbar",
+      "sharedBy": "Geteilt von",
+      "access": "Zugriff",
+      "internal": "Mitglieder des Workspaces",
+      "public": "Alle mit dem Link",
+      "expires": "Läuft ab",
+      "never": "Nie",
+      "state": {
+        "expired": "Dieser Link ist abgelaufen.",
+        "revoked": "Dieser Link wurde widerrufen.",
+        "exhausted": "Dieser Link hat sein Download-Limit erreicht."
+      },
+      "signIn": "Zum Herunterladen anmelden",
+      "download": "Herunterladen",
+      "preparing": "Wird vorbereitet…",
+      "warning": "Öffnen Sie nur Dateien von Personen, denen Sie vertrauen. AnythingMCP prüft Dateien nicht auf Viren."
     }
   }
 }

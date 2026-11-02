@@ -1,1 +1,1 @@
-MCP gateway for AI agents: turn any REST/OpenAPI, GraphQL, SOAP or SQL API into MCP tools. {adapters} ready-made connectors (SAP, ERP, e-commerce) with RBAC, SSO, audit logs and a knowledge graph.
+Self-hosted MCP gateway and company brain for AI agents: connect Claude, ChatGPT and Copilot to your ERP, APIs, databases and file servers, with company memory, skills, knowledge graph, SSO/RBAC and audit. {adapters} connectors (SAP, Odoo, SQL…). Open source, EU cloud.

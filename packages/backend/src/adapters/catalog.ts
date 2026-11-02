@@ -253,7 +253,9 @@ import * as freshchat from './intl/freshchat.json';
 import * as freshdesk from './intl/freshdesk.json';
 import * as freshsales from './intl/freshsales.json';
 import * as freshservice from './intl/freshservice.json';
+import * as fritzboxFileSearch from './intl/fritzbox-file-search.json';
 import * as front from './intl/front.json';
+import * as ftp from './intl/ftp.json';
 import * as fudo from './intl/fudo.json';
 import * as fxmacrodata from './intl/fxmacrodata.json';
 import * as gamma from './intl/gamma.json';
@@ -307,6 +309,7 @@ import * as helium10 from './intl/helium10.json';
 import * as helius from './intl/helius.json';
 import * as helpScout from './intl/help-scout.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
+import * as hetznerStorageBox from './intl/hetzner-storage-box.json';
 import * as heygen from './intl/heygen.json';
 import * as heyreach from './intl/heyreach.json';
 import * as hibob from './intl/hibob.json';
@@ -413,10 +416,12 @@ import * as neon from './intl/neon.json';
 import * as netlify from './intl/netlify.json';
 import * as netskope from './intl/netskope.json';
 import * as netsuite from './intl/netsuite.json';
+import * as networkFolder from './intl/network-folder.json';
 import * as neverbounce from './intl/neverbounce.json';
 import * as newRelic from './intl/new-relic.json';
 import * as newsapi from './intl/newsapi.json';
 import * as nextcloud from './intl/nextcloud.json';
+import * as nextcloudFileSearch from './intl/nextcloud-file-search.json';
 import * as nimble from './intl/nimble.json';
 import * as nocodb from './intl/nocodb.json';
 import * as nominatim from './intl/nominatim.json';
@@ -447,6 +452,7 @@ import * as oracle from './intl/oracle.json';
 import * as orderful from './intl/orderful.json';
 import * as otter from './intl/otter.json';
 import * as outreach from './intl/outreach.json';
+import * as owncloudFileSearch from './intl/owncloud-file-search.json';
 import * as ozon from './intl/ozon.json';
 import * as packlink from './intl/packlink.json';
 import * as paddle from './intl/paddle.json';
@@ -465,6 +471,7 @@ import * as pinecone from './intl/pinecone.json';
 import * as pinkConnect from './intl/pink-connect.json';
 import * as pinterest from './intl/pinterest.json';
 import * as pipedrive from './intl/pipedrive.json';
+import * as pipefy from './intl/pipefy.json';
 import * as plaid from './intl/plaid.json';
 import * as planeSo from './intl/plane-so.json';
 import * as playtomic from './intl/playtomic.json';
@@ -484,6 +491,7 @@ import * as procore from './intl/procore.json';
 import * as productboard from './intl/productboard.json';
 import * as promUa from './intl/prom-ua.json';
 import * as proxmox from './intl/proxmox.json';
+import * as qnapFileSearch from './intl/qnap-file-search.json';
 import * as quaderno from './intl/quaderno.json';
 import * as quickbooksOnline from './intl/quickbooks-online.json';
 import * as railway from './intl/railway.json';
@@ -506,6 +514,7 @@ import * as rocketreach from './intl/rocketreach.json';
 import * as rollbar from './intl/rollbar.json';
 import * as rootly from './intl/rootly.json';
 import * as rozetka from './intl/rozetka.json';
+import * as s3FileSearch from './intl/s3-file-search.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
 import * as salesforce from './intl/salesforce.json';
@@ -535,6 +544,7 @@ import * as serply from './intl/serply.json';
 import * as servicem8 from './intl/servicem8.json';
 import * as servicenow from './intl/servicenow.json';
 import * as servicetitan from './intl/servicetitan.json';
+import * as sftp from './intl/sftp.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
 import * as shopee from './intl/shopee.json';
@@ -571,6 +581,7 @@ import * as sumup from './intl/sumup.json';
 import * as supabase from './intl/supabase.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
+import * as synologyFileSearch from './intl/synology-file-search.json';
 import * as tabby from './intl/tabby.json';
 import * as tableau from './intl/tableau.json';
 import * as tailscale from './intl/tailscale.json';
@@ -614,6 +625,7 @@ import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
 import * as wati from './intl/wati.json';
 import * as waveAccounting from './intl/wave-accounting.json';
+import * as webdav from './intl/webdav.json';
 import * as webex from './intl/webex.json';
 import * as webflow from './intl/webflow.json';
 import * as weeek from './intl/weeek.json';
@@ -702,12 +714,32 @@ import {
   wantsODataBuiltins,
 } from '../connectors/odata/odata-builtins';
 import { buildEmailBuiltinTools } from '../connectors/email/email-builtins';
+import { buildFileSearchBuiltinTools } from '../file-search/file-search-builtins';
 import { emailToolPrefix } from '../connectors/email/email-settings';
 import { computeAdapterVersion } from './catalog-fingerprint';
 import type { EnvVarMeta, SetupKind } from './env-var-meta';
 import type { SetupEffort, SetupGuide } from './setup-guide';
+import type { DerivedEnvVar } from './derived-settings';
 
-export type VerifyHint = string | { hint: string; suggest?: string };
+/** What the setup check says for a failure. `field` puts the hint under that
+ *  variable on the setup form (a token Atlassian refuses). */
+export type VerifyHint = string | { hint: string; suggest?: string; field?: string };
+
+/**
+ * A result the probe call returned without failing that still means the
+ * connector cannot work: Atlassian's `discover` answers an API token created
+ * without scopes with an empty product list instead of an error. `matches`
+ * is a case-insensitive regular expression over the result's text (for an
+ * MCP bridge, the text of the tool result; an `isError` result fails anyway).
+ */
+export interface ProbeFailRule {
+  matches: string;
+  hint: string;
+  /** The variable the hint is shown under. */
+  field?: string;
+  /** Failure kind reported to the form (default `auth_failed`). */
+  kind?: string;
+}
 
 export interface AdapterMeta {
   slug: string;
@@ -763,7 +795,18 @@ export interface AdapterMeta {
    *  by the agent days later, and by scripts/probe-keyless.mjs in CI. Params
    *  may use the literal `__TOMORROW__` for a date. Without one, the first
    *  GET tool with no required parameters is used. */
-  probe?: { tool: string; params?: Record<string, unknown> };
+  probe?: { tool: string; params?: Record<string, unknown>; failWhen?: ProbeFailRule[] };
+  /** Non-secret settings looked up at setup from another variable, never
+   *  typed by the user: Atlassian's cloudId from the site's public
+   *  tenant_info. Stored with the connector's variables at install and when
+   *  the source variable changes in the variable editor (derived-settings.ts). */
+  derivedEnvVars?: Record<string, DerivedEnvVar>;
+  /** Sentences added to the connector's instructions when they are served to
+   *  a model, each only when every non-secret `{{VAR}}` it names is set on
+   *  the connector: per-workspace facts such as the Atlassian site and its
+   *  cloudId. Read from the catalog at serve time, so they reach installed
+   *  connectors without "Apply update" (instruction-facts.ts). */
+  instructionFacts?: string[];
   /** How each variable is presented when someone sets the connector up
    *  (label, secret or not, where to find it). Optional and partial: what is
    *  left out is derived from the name, see env-var-meta.ts. */
@@ -935,6 +978,20 @@ function withEmailBuiltins(adapter: AdapterDefinition): AdapterDefinition {
     prefix: emailToolPrefix({ toolPrefix: email.toolPrefix, name: adapter.slug }),
     displayName: adapter.name,
   }) as unknown as AdapterDefinition['tools'];
+  const own = new Set(adapter.tools.map((t) => t.name));
+  return { ...adapter, tools: [...adapter.tools, ...builtins.filter((t) => !own.has(t.name))] };
+}
+
+/**
+ * File Search catalog entries (#1379) show the fixed File Search tools; the
+ * connector itself is created by the File Search wizard, never by the
+ * generic import (AdaptersService.importAdapter refuses FILE_SEARCH).
+ */
+function withFileSearchBuiltins(adapter: AdapterDefinition): AdapterDefinition {
+  if ((adapter.connector.type as string) !== 'FILE_SEARCH') return adapter;
+  const fs = (adapter.connector.config?.fileSearch ?? {}) as { toolPrefix?: unknown };
+  const prefix = typeof fs.toolPrefix === 'string' && fs.toolPrefix ? fs.toolPrefix : adapter.slug.replace(/-/g, '_');
+  const builtins = buildFileSearchBuiltinTools({ prefix, displayName: adapter.name }) as unknown as AdapterDefinition['tools'];
   const own = new Set(adapter.tools.map((t) => t.name));
   return { ...adapter, tools: [...adapter.tools, ...builtins.filter((t) => !own.has(t.name))] };
 }
@@ -1199,7 +1256,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   freshdesk as unknown as AdapterDefinition,
   freshsales as unknown as AdapterDefinition,
   freshservice as unknown as AdapterDefinition,
+  fritzboxFileSearch as unknown as AdapterDefinition,
   front as unknown as AdapterDefinition,
+  ftp as unknown as AdapterDefinition,
   fudo as unknown as AdapterDefinition,
   fxmacrodata as unknown as AdapterDefinition,
   gamma as unknown as AdapterDefinition,
@@ -1253,6 +1312,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   helius as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
+  hetznerStorageBox as unknown as AdapterDefinition,
   heygen as unknown as AdapterDefinition,
   heyreach as unknown as AdapterDefinition,
   hibob as unknown as AdapterDefinition,
@@ -1359,10 +1419,12 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   netlify as unknown as AdapterDefinition,
   netskope as unknown as AdapterDefinition,
   netsuite as unknown as AdapterDefinition,
+  networkFolder as unknown as AdapterDefinition,
   neverbounce as unknown as AdapterDefinition,
   newRelic as unknown as AdapterDefinition,
   newsapi as unknown as AdapterDefinition,
   nextcloud as unknown as AdapterDefinition,
+  nextcloudFileSearch as unknown as AdapterDefinition,
   nimble as unknown as AdapterDefinition,
   nocodb as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
@@ -1393,6 +1455,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   orderful as unknown as AdapterDefinition,
   otter as unknown as AdapterDefinition,
   outreach as unknown as AdapterDefinition,
+  owncloudFileSearch as unknown as AdapterDefinition,
   ozon as unknown as AdapterDefinition,
   packlink as unknown as AdapterDefinition,
   paddle as unknown as AdapterDefinition,
@@ -1411,6 +1474,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   pinkConnect as unknown as AdapterDefinition,
   pinterest as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
+  pipefy as unknown as AdapterDefinition,
   plaid as unknown as AdapterDefinition,
   planeSo as unknown as AdapterDefinition,
   playtomic as unknown as AdapterDefinition,
@@ -1430,6 +1494,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   productboard as unknown as AdapterDefinition,
   promUa as unknown as AdapterDefinition,
   proxmox as unknown as AdapterDefinition,
+  qnapFileSearch as unknown as AdapterDefinition,
   quaderno as unknown as AdapterDefinition,
   quickbooksOnline as unknown as AdapterDefinition,
   railway as unknown as AdapterDefinition,
@@ -1452,6 +1517,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   rollbar as unknown as AdapterDefinition,
   rootly as unknown as AdapterDefinition,
   rozetka as unknown as AdapterDefinition,
+  s3FileSearch as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
   salesforce as unknown as AdapterDefinition,
@@ -1481,6 +1547,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   servicem8 as unknown as AdapterDefinition,
   servicenow as unknown as AdapterDefinition,
   servicetitan as unknown as AdapterDefinition,
+  sftp as unknown as AdapterDefinition,
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
   shopee as unknown as AdapterDefinition,
@@ -1517,6 +1584,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   supabase as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
   synology as unknown as AdapterDefinition,
+  synologyFileSearch as unknown as AdapterDefinition,
   tabby as unknown as AdapterDefinition,
   tableau as unknown as AdapterDefinition,
   tailscale as unknown as AdapterDefinition,
@@ -1560,6 +1628,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wassenger as unknown as AdapterDefinition,
   wati as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
+  webdav as unknown as AdapterDefinition,
   webex as unknown as AdapterDefinition,
   webflow as unknown as AdapterDefinition,
   weeek as unknown as AdapterDefinition,
@@ -1643,9 +1712,25 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
 ];
 // === AUTOGEN-ARRAY-END ===
 
-const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(withGraphqlBuiltins)
+/**
+ * A tool with no arguments may leave `parameters` out of its JSON, but the
+ * `mcp_tools.parameters` column is required: the install dropped every such
+ * tool ("Argument `parameters` is missing", OpenRouter on 2 Nov 2026). `{}`
+ * is what the catalog fingerprint already assumes, so versions do not change.
+ */
+function withDefaultParameters(adapter: AdapterDefinition): AdapterDefinition {
+  if (adapter.tools.every((t) => t.parameters != null)) return adapter;
+  return {
+    ...adapter,
+    tools: adapter.tools.map((t) => (t.parameters != null ? t : { ...t, parameters: {} })),
+  };
+}
+
+const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(withDefaultParameters)
+  .map(withGraphqlBuiltins)
   .map(withODataBuiltins)
   .map(withEmailBuiltins)
+  .map(withFileSearchBuiltins)
   .map((adapter) => ({
   ...adapter,
   // Computed after withGraphqlBuiltins so generated GraphQL helper tools are

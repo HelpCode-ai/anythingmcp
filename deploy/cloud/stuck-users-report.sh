@@ -9,12 +9,22 @@
 # Monday morning:
 #
 #   1. organizations that made tool calls in the window and have NEVER had a
-#      successful one, marked NEW or STILL STUCK against the previous report;
+#      successful one, marked NEW or STILL STUCK against the previous report,
+#      grouped by the likely cause of their most frequent error (provider
+#      quota or billing, credentials, configuration, not reachable, other).
+#      Listed in full: every "other", and every org whose admin has a company
+#      address; free-mail orgs in a known cause are only counted;
 #   2. catalog connectors whose success rate in the window is 0 %, or under
 #      REPORT_CONNECTOR_MAX_RATE % with at least REPORT_CONNECTOR_MIN_CALLS
 #      calls, across all organizations — i.e. broken adapters;
 #   3. signups in the window that never created a connector or never made a
-#      call — the onboarding signal.
+#      call — the onboarding signal;
+#   4. the funnel of the organizations created in the window, step by step
+#      (AI client connected, searched, setup started and completed, has a
+#      connector, successful call), next to the previous window's cohort;
+#   5. Etsy apps waiting for Etsy's approval: orgs whose app keys Etsy
+#      refused as not active yet this week, approved this week (a successful
+#      Etsy call after that error), still pending.
 #
 # Read-only: every query runs in a read-only transaction (PGOPTIONS below)
 # through `docker exec` into the Postgres container, as the operators do by
@@ -156,7 +166,31 @@ oneline() { printf "regexp_replace(coalesce(%s, ''), '[[:space:][:cntrl:]]+', ' 
 fmt_ts() { printf "to_char((%s at time zone 'UTC') at time zone :'tz', 'YYYY-MM-DD HH24:MI')" "$1"; }
 fmt_day() { printf "to_char((%s at time zone 'UTC') at time zone :'tz', 'YYYY-MM-DD')" "$1"; }
 WIN="((now() at time zone 'UTC') - make_interval(days => :days))"
+WIN2="((now() at time zone 'UTC') - make_interval(days => 2 * :days))"
 WIN30="((now() at time zone 'UTC') - make_interval(days => 30))"
+
+# The likely cause of an error text, by simple rules checked in this order:
+# quota (the provider wants money or rate-limits: 402, 429, quota, credits,
+# billing), credentials (401/403, invalid key or token), config (404/405, no
+# database selected, unknown host), unreachable (connection refused, aborted,
+# timed out), other. Applied to a column name.
+cause() {
+  cat <<EOF
+(case
+  when $1 ~* '(\m402\M|\m429\M|quota|credits|credit balance|billing|payment required|insufficient.balance)' then 'quota'
+  when $1 ~* '(\m40[13]\M|unauthori[sz]ed|forbidden|api key not valid|invalid.{0,20}(key|token|credential|secret)|bad credentials|invalid_grant|invalid_client|authenticat)' then 'credentials'
+  when $1 ~* '(\m40[45]\M|no database is selected|host not found|enotfound|getaddrinfo|method not allowed)' then 'config'
+  when $1 ~* '(econnaborted|etimedout|econnrefused|econnreset|ehostunreach|timed? ?out|socket hang up)' then 'unreachable'
+  else 'other' end)
+EOF
+}
+# Whether an e-mail address is on a free-mail domain. Applied to a column name.
+freemail() {
+  cat <<EOF
+(lower(split_part($1, '@', 2)) ~ '^(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|icloud|proton|protonmail|naver|qq|163|yandex|gmx)\.[a-z.]+$'
+ or lower(split_part($1, '@', 2)) in ('mail.ru', 'web.de', 'me.com', 'mac.com', 'msn.com', 'pm.me'))
+EOF
+}
 
 # ── State: the orgs listed last time ─────────────────────────────────────────
 STATE_FILE="$STATE_DIR/stuck-orgs"
@@ -218,6 +252,21 @@ people as (
       and not exists (select 1 from organization_members m
                       where m.user_id = u.id and m.organization_id = u.organization_id and m.deactivated_at is not null)
   ) p group by 1
+),
+-- Whether the admins of the org use a company address (any admin not on a
+-- free-mail domain); an org without an active admin is judged by any member.
+biz as (
+  select org_id, coalesce(bool_or(not free) filter (where admin), bool_or(not free), false) as biz from (
+    select m.organization_id as org_id, m.role::text = 'ADMIN' as admin, $(freemail u.email) as free
+    from organization_members m join users u on u.id = m.user_id
+    where m.deactivated_at is null and m.organization_id in (select org_id from never)
+    union all
+    select u.organization_id, u.role::text = 'ADMIN', $(freemail u.email)
+    from users u
+    where u.organization_id in (select org_id from never)
+      and not exists (select 1 from organization_members m
+                      where m.user_id = u.id and m.organization_id = u.organization_id)
+  ) a group by 1
 )
 select s.org_id,
        $(fmt_ts s.last_call),
@@ -228,12 +277,15 @@ select s.org_id,
        (select count(*) from tool_invocations t where t.organization_id = s.org_id and t.created_at >= $WIN30),
        $(fmt_day "(select min(t.created_at) from tool_invocations t where t.organization_id = s.org_id)"),
        coalesce(e.n, 0),
-       coalesce(e.e, '')
+       coalesce(e.e, ''),
+       $(cause "coalesce(e.e, '')"),
+       case when coalesce(b.biz, false) then 1 else 0 end
 from never s
 join organizations o on o.id = s.org_id
 left join people p on p.org_id = s.org_id
 left join conns c on c.org_id = s.org_id
 left join errs e on e.org_id = s.org_id
+left join biz b on b.org_id = s.org_id
 order by s.last_call desc, s.org_id;
 SQL
 ) || fail "stuck organizations query"
@@ -322,20 +374,120 @@ order by u.created_at desc, u.email;
 SQL
 ) || fail "signups query"
 
+# ── 4. Funnel of the organizations created in the window ─────────────────────
+# One row per cohort: 'cur' = created in the window, 'prev' = created in the
+# window before it. Every step counts what the org has done up to now, so the
+# previous cohort has had one window longer to get there.
+funnel=$(q <<SQL
+with o as (
+  select o.id, case when o.created_at >= $WIN then 'cur' else 'prev' end as cohort
+  from organizations o where o.created_at >= $WIN2
+),
+f as (
+  select o.cohort,
+    exists (select 1 from product_events e where e.organization_id = o.id and e.event = 'ai_client_connected') as ai,
+    exists (select 1 from product_events e where e.organization_id = o.id and e.event = 'catalog_search') as searched,
+    exists (select 1 from product_events e where e.organization_id = o.id and e.event = 'catalog_search'
+            and e.metadata->>'via' = 'mcp') as s_mcp,
+    exists (select 1 from product_events e where e.organization_id = o.id and e.event = 'catalog_search'
+            and e.metadata->>'via' in ('store', 'welcome')) as s_ui,
+    exists (select 1 from product_events e where e.organization_id = o.id and e.event = 'setup_started') as started,
+    exists (select 1 from product_events e where e.organization_id = o.id and e.event = 'setup_completed') as completed,
+    exists (select 1 from connectors c where c.organization_id = o.id) as conn,
+    exists (select 1 from tool_invocations t where t.organization_id = o.id and t.status = 'SUCCESS') as ok
+  from o
+)
+select cohort, count(*),
+       count(*) filter (where ai), count(*) filter (where searched),
+       count(*) filter (where s_mcp), count(*) filter (where s_ui),
+       count(*) filter (where started), count(*) filter (where completed),
+       count(*) filter (where conn), count(*) filter (where ok)
+from f group by cohort;
+SQL
+) || fail "funnel query"
+
+# ── 5. Etsy apps waiting for Etsy's approval ─────────────────────────────────
+# Etsy answers 403 to the app keys of an app it has not approved yet (and to
+# a shared secret that does not belong to the keystring). That answer is seen
+# by the key check of the guided setup (setup_verify_failed, adapterSlug etsy,
+# status 403), by the approval watcher (etsy_app_pending_seen) and by tool
+# calls that fail with the adapter's "does not accept these app keys" hint.
+# Looked back 30 days; approved = first successful Etsy call after the error.
+etsy=$(q <<SQL
+with pend as (
+  select pe.organization_id as org_id, pe.created_at
+  from product_events pe
+  where pe.organization_id is not null and pe.created_at >= $WIN30
+    and ((pe.event = 'setup_verify_failed' and pe.metadata->>'adapterSlug' = 'etsy'
+          and (pe.metadata->>'status' = '403' or pe.metadata->>'error' ilike '%does not accept these app keys%'))
+         or pe.event = 'etsy_app_pending_seen')
+  union all
+  select ti.organization_id, ti.created_at
+  from tool_invocations ti join connectors c on c.id = ti.connector_id
+  where ti.organization_id is not null and ti.created_at >= $WIN30
+    and c.config->>'adapterSlug' = 'etsy' and ti.status <> 'SUCCESS'
+    and ti.error ilike '%does not accept these app keys%'
+),
+orgs as (
+  select org_id, min(created_at) as first_at, bool_or(created_at >= $WIN) as this_week
+  from pend group by org_id
+),
+res as (
+  select o.*, (select min(ti.created_at) from tool_invocations ti join connectors c on c.id = ti.connector_id
+               where ti.organization_id = o.org_id and c.config->>'adapterSlug' = 'etsy'
+                 and ti.status = 'SUCCESS' and ti.created_at > o.first_at) as ok_at
+  from orgs o
+)
+select count(*) filter (where this_week),
+       count(*) filter (where ok_at >= $WIN),
+       count(*) filter (where ok_at is null),
+       coalesce(round(percentile_cont(0.5) within group (order by extract(epoch from ok_at - first_at) / 86400)
+                      filter (where ok_at >= $WIN))::int::text, ''),
+       (select count(*) from product_events pe where pe.event = 'etsy_app_approved_notified' and pe.created_at >= $WIN)
+from res;
+SQL
+) || fail "Etsy pending query"
+
 # ── Render ───────────────────────────────────────────────────────────────────
 NL=$'\n'
-s1=""; n_new=0; n_still=0; CUR_IDS=""
-while IFS="$US" read -r org last signup emails cl calls calls30 first errn err; do
+CAUSES="credentials config quota unreachable other"
+cause_title() {
+  case "$1" in
+    credentials) echo "Credentials (401/403, invalid key or token)" ;;
+    config)      echo "Configuration (404/405, no database selected, unknown host)" ;;
+    quota)       echo "Provider quota or billing (402, 429, quota, credits)" ;;
+    unreachable) echo "Not reachable (connection refused, aborted, timed out)" ;;
+    *)           echo "Other" ;;
+  esac
+}
+for c in $CAUSES; do eval "c_n_$c=0; c_free_$c=0; c_list_$c=''"; done
+n_new=0; n_still=0; CUR_IDS=""
+while IFS="$US" read -r org last signup emails cl calls calls30 first errn err cause biz; do
   [ -n "$org" ] || continue
   CUR_IDS+="$org$NL"
   if is_prev "$org"; then tag="STILL STUCK"; n_still=$((n_still + 1)); else tag="NEW"; n_new=$((n_new + 1)); fi
-  s1+="  [$tag] $emails$NL"
-  s1+="    last call $last, signed up $signup, first call $first$NL"
-  s1+="    $calls calls this week, $calls30 in 30 days: $cl$NL"
-  [ -n "$err" ] && s1+="    most frequent error (${errn}×): $err$NL"
-  s1+="$NL"
+  case " $CAUSES " in *" $cause "*) ;; *) cause=other ;; esac
+  eval "c_n_$cause=\$((c_n_$cause + 1))"
+  # Free-mail orgs whose error has a known cause are counted, not listed.
+  if [ "$cause" != other ] && [ "$biz" != 1 ]; then eval "c_free_$cause=\$((c_free_$cause + 1))"; continue; fi
+  e="    [$tag] $emails$NL"
+  e+="      last call $last, signed up $signup, first call $first$NL"
+  e+="      $calls calls this week, $calls30 in 30 days: $cl$NL"
+  [ -n "$err" ] && e+="      most frequent error (${errn}×): $err$NL"
+  eval "c_list_$cause+=\$e\$NL"
 done <<< "$orgs"
 n_orgs=$((n_new + n_still))
+
+s1=""; bycause=""
+for c in $CAUSES; do
+  eval "cn=\$c_n_$c; cf=\$c_free_$c; cl=\$c_list_$c"
+  bycause+="${bycause:+, }$cn $c"
+  [ "$cn" -gt 0 ] || continue
+  s1+="  $(cause_title "$c"): $cn"
+  [ "$cf" -gt 0 ] && s1+=" ($cf on free-mail addresses, counted only)"
+  s1+="$NL$cl"
+  [ -n "$cl" ] || s1+="$NL"
+done
 
 s2=""; n_dead=0; n_weak=0
 while IFS="$US" read -r key label calls orgs ok calls30 ok30 lastok errs; do
@@ -380,6 +532,8 @@ if [ "$FIRST_RUN" = 1 ]; then
 else
   out+="   Since the last report: $UNSTUCK of the $PREV_COUNT orgs listed then have had a successful call.$NL"
 fi
+[ "$n_orgs" -gt 0 ] && out+="   By the cause of their most frequent error: $bycause.$NL"
+[ "$n_orgs" -gt 0 ] && out+="   Listed: every \"other\", and every org whose admin has a company address.$NL"
 out+="$NL"
 [ -n "$s1" ] && out+="$s1" || out+="  None.$NL$NL"
 
@@ -399,6 +553,40 @@ for which in 1 2; do
   if [ "$cnt" -le "$LIST_MAX" ]; then out+="  $title ($cnt):$NL$list$NL"
   else out+="  $title: $cnt, more than REPORT_LIST_MAX=$LIST_MAX, not listed.$NL$NL"; fi
 done
+
+f_cur="cur 0 0 0 0 0 0 0 0 0"; f_prev="prev 0 0 0 0 0 0 0 0 0"
+while IFS="$US" read -r cohort rest; do
+  case "$cohort" in cur) f_cur="cur ${rest//$US/ }" ;; prev) f_prev="prev ${rest//$US/ }" ;; esac
+done <<< "$funnel"
+read -r _ fc_total fc_ai fc_search fc_mcp fc_ui fc_started fc_done fc_conn fc_ok <<< "$f_cur"
+read -r _ fp_total fp_ai fp_search fp_mcp fp_ui fp_started fp_done fp_conn fp_ok <<< "$f_prev"
+pct() { [ "$2" -gt 0 ] && printf '%d %%' $(($1 * 100 / $2)) || printf -- '-'; }
+frow() {
+  local label="$1" cur prev; eval "cur=\$fc_$2; prev=\$fp_$2"
+  printf '  %-32s %6s %6s   %6s %6s\n' "$label" "$cur" "$(pct "$cur" "$fc_total")" "$prev" "$(pct "$prev" "$fp_total")"
+}
+out+="4. FUNNEL OF THE ORGANIZATIONS CREATED THIS WEEK (previous week's cohort next to it)$NL"
+out+="   Each step counts what the org has done up to now; percentages of those signed up.$NL$NL"
+out+="$(printf '  %-32s %13s   %13s' '' 'this week' 'last week')$NL"
+out+="$(frow "signed up" total)$NL"
+out+="$(frow "AI client connected" ai)$NL"
+out+="$(frow "searched the catalog" search)$NL"
+out+="$(frow "  from a chat (via=mcp)" mcp)$NL"
+out+="$(frow "  in the store or on /welcome" ui)$NL"
+out+="$(frow "setup started" started)$NL"
+out+="$(frow "setup completed" done)$NL"
+out+="$(frow "has a connector" conn)$NL"
+out+="$(frow "successful call" ok)$NL$NL"
+
+IFS="$US" read -r etsy_hit etsy_ok etsy_wait etsy_days etsy_mailed <<< "$etsy"
+out+="5. ETSY APPS WAITING FOR ETSY'S APPROVAL (Etsy refuses the app keys with 403)$NL"
+out+="  ${etsy_hit:-0} org(s) hit the \"not accepted yet\" error this week$NL"
+out+="  ${etsy_ok:-0} approved this week (first successful Etsy call after the error)"
+[ -n "$etsy_days" ] && out+=", after $etsy_days day(s) on median"
+out+="$NL"
+out+="  ${etsy_wait:-0} still pending (error in the last 30 days, no successful Etsy call since)$NL"
+out+="  ${etsy_mailed:-0} approval e-mail(s) sent this week (etsy_app_approved_notified)$NL"
+out+="  A shared secret that does not belong to the keystring gets the same 403, so \"pending\" includes it.$NL$NL"
 
 out+="--$NL"
 out+="Generated by deploy/cloud/stuck-users-report.sh on $(hostname) for ${DOMAIN}.$NL"

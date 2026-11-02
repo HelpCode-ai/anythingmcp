@@ -605,4 +605,41 @@ describe('RolesService', () => {
       );
     });
   });
+
+  describe('getCapabilities', () => {
+    it('returns {} for a non-member', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({});
+    });
+
+    it('returns {} for a deactivated member', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: new Date() });
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({});
+    });
+
+    it('grants every capability to an org ADMIN', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'ADMIN', deactivatedAt: null });
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({ inlineCode: true });
+    });
+
+    it('unions capabilities of the assigned roles, only true wins', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: null });
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([{ roleId: 'r1' }, { roleId: 'r2' }]);
+      mockPrisma.role.findMany.mockResolvedValue([
+        { capabilities: { inlineCode: true, other: false } },
+        { capabilities: null },
+      ]);
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({ inlineCode: true });
+    });
+
+    it('returns {} for a member with no assigned roles', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: null });
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([]);
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({});
+    });
+
+    it('returns {} without an organization', async () => {
+      expect(await service.getCapabilities('u1', undefined)).toEqual({});
+    });
+  });
 });

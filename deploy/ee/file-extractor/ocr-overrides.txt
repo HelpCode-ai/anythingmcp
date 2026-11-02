@@ -1,0 +1,5 @@
+# Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE.
+# rapidocr-onnxruntime depends on opencv-python, which needs X11/OpenGL system
+# libraries. The never-true marker drops it; opencv-python-headless provides
+# the same cv2 module without them.
+opencv-python ; sys_platform == 'never'

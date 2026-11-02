@@ -852,6 +852,96 @@ describe('RestEngine', () => {
       expect(mockedAxios).toHaveBeenCalledTimes(4);
     });
 
+    // endpointMapping.timeoutMs / maxResponseBytes: Gemini 2K/4K pictures
+    // took more than 30 s and sent bodies over 10 MB, both after billing.
+    describe('per-tool timeout and response size', () => {
+      const MB = 1024 * 1024;
+      const send = async (mapping: Record<string, unknown>) => {
+        mockedAxios.mockResolvedValue({ data: {} });
+        await engine.execute(
+          { baseUrl: 'https://api.example.com', authType: 'NONE' },
+          { method: 'POST', path: '/generate', ...mapping },
+          {},
+        );
+        const cfg = mockedAxios.mock.calls[0][0] as any;
+        return { timeout: cfg.timeout, maxContentLength: cfg.maxContentLength };
+      };
+      const savedLimit = process.env.TOOL_MAX_RESPONSE_BYTES;
+      beforeEach(() => delete process.env.TOOL_MAX_RESPONSE_BYTES);
+      afterAll(() => {
+        if (savedLimit === undefined) delete process.env.TOOL_MAX_RESPONSE_BYTES;
+        else process.env.TOOL_MAX_RESPONSE_BYTES = savedLimit;
+      });
+
+      it('keeps 30 s and the global cap when the tool sets neither', async () => {
+        expect(await send({})).toEqual({ timeout: 30_000, maxContentLength: 10 * MB });
+      });
+
+      it('follows TOOL_MAX_RESPONSE_BYTES when the tool sets no size', async () => {
+        process.env.TOOL_MAX_RESPONSE_BYTES = String(20 * MB);
+        expect((await send({ timeoutMs: 120_000 })).maxContentLength).toBe(20 * MB);
+      });
+
+      it('passes the tool\'s own timeout and size to the request', async () => {
+        expect(await send({ timeoutMs: 120_000, maxResponseBytes: 40 * MB })).toEqual({
+          timeout: 120_000,
+          maxContentLength: 40 * MB,
+        });
+      });
+
+      it('clamps values that would switch the limits off', async () => {
+        expect(await send({ timeoutMs: 86_400_000, maxResponseBytes: 10 * 1024 * MB })).toEqual({
+          timeout: 180_000,
+          maxContentLength: 50 * MB,
+        });
+        mockedAxios.mockClear();
+        expect(await send({ timeoutMs: 0, maxResponseBytes: -1 })).toEqual({
+          timeout: 30_000,
+          maxContentLength: 10 * MB,
+        });
+        mockedAxios.mockClear();
+        expect((await send({ timeoutMs: 5 })).timeout).toBe(1_000);
+      });
+
+      it('does not resend even an idempotent call that ran past a raised timeout', async () => {
+        mockedAxios.mockRejectedValue(err(undefined, 'ECONNABORTED'));
+        await expect(
+          engine.execute(
+            { baseUrl: 'https://api.example.com', authType: 'NONE' },
+            { method: 'GET', path: '/slow', timeoutMs: 120_000 },
+            {},
+          ),
+        ).rejects.toThrow(/\(ECONNABORTED\)/);
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+
+      it('sends a slow POST that timed out exactly once', async () => {
+        mockedAxios.mockRejectedValue(err(undefined, 'ECONNABORTED'));
+        await expect(
+          engine.execute(
+            { baseUrl: 'https://api.example.com', authType: 'NONE' },
+            { method: 'POST', path: '/generate', timeoutMs: 120_000 },
+            {},
+          ),
+        ).rejects.toThrow(/The API may still have run this POST/);
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+
+      it('still retries a raised-timeout call that never left (ECONNREFUSED)', async () => {
+        mockedAxios
+          .mockRejectedValueOnce(err(undefined, 'ECONNREFUSED'))
+          .mockResolvedValueOnce({ data: { ok: true } });
+        await expect(
+          engine.execute(
+            { baseUrl: 'https://api.example.com', authType: 'NONE' },
+            { method: 'POST', path: '/generate', timeoutMs: 120_000 },
+            {},
+          ),
+        ).resolves.toEqual({ ok: true });
+        expect(mockedAxios).toHaveBeenCalledTimes(2);
+      });
+    });
+
     // A POST that timed out may have run: retrying a 30 s timeout used to
     // create (and bill) a Replicate prediction up to four times.
     describe('non-idempotent methods', () => {

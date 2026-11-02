@@ -1,0 +1,7 @@
+# Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE.
+# Optional OCR dependencies (image build arg OCR=1). Compiled together with
+# requirements.in into requirements-ocr.txt, constrained to requirements.txt.
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.31.0
+opencv-python-headless==5.0.0.93
+numpy==2.5.4

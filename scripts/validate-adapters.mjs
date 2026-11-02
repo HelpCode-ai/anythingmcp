@@ -26,7 +26,7 @@ export const REGIONS = [
   'de', 'gb', 'intl', 'br', 'in', 'jp', 'ng',
   'it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk',
 ];
-const ALLOWED_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'DATABASE', 'ODATA', 'EMAIL', 'LOGIN_TOKEN']);
+const ALLOWED_CONNECTOR_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'DATABASE', 'ODATA', 'EMAIL', 'LOGIN_TOKEN', 'FILE_SEARCH']);
 export const ALLOWED_AUTH_TYPES = new Set(['NONE', 'API_KEY', 'BEARER_TOKEN', 'BASIC', 'BASIC_AUTH', 'OAUTH2', 'OAUTH1', 'LOGIN_TOKEN', 'QUERY_AUTH', 'CONNECTION_STRING', 'HMAC']);
 const REQUIRED_TOP_LEVEL = ['slug', 'name', 'description', 'region', 'category', 'icon', 'docsUrl', 'requiredEnvVars', 'connector', 'tools'];
 const MIN_INSTRUCTIONS_LEN = 800;
@@ -93,6 +93,11 @@ export function adapterResult(loaded, file, region) {
     };
   }
   return { region, file, ...validateAdapter(loaded.adapter, file, region) };
+}
+
+/** The variables the user enters: required and optional. */
+function declaredVars(adapter) {
+  return [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
 }
 
 // `{{VAR}}` is resolved into auth/base URL/headers; `${VAR}` inside a tool's
@@ -241,7 +246,7 @@ export function errorWhenProblems(value) {
 
 const SETUP_EFFORTS = new Set(['none', 'one_click', 'api_key', 'own_app', 'admin_needed']);
 const GUIDE_FIELDS = new Set(['effort', 'minutes', 'examples', 'needs', 'why', 'steps']);
-const STEP_FIELDS = new Set(['id', 'title', 'body', 'action', 'values', 'image', 'fields', 'problems', 'confirm']);
+const STEP_FIELDS = new Set(['id', 'title', 'body', 'action', 'values', 'image', 'fields', 'problems', 'confirm', 'saveAndCheck', 'waitForProvider']);
 const FRONTEND_PUBLIC = join(REPO_ROOT, 'packages/frontend/public');
 const nonEmpty = (v) => typeof v === 'string' && v.trim() !== '';
 
@@ -327,6 +332,20 @@ export function validateSetupGuide(adapter, publicDir = FRONTEND_PUBLIC) {
       bad('setup-guide-problems', `${at}.problems`, 'problems must be a non-empty array of { q, a }', 'Write the question and its answer, or remove the field.');
     }
     if (step.confirm !== undefined && !nonEmpty(step.confirm)) bad('setup-guide-confirm', `${at}.confirm`, 'confirm must be a non-empty string', 'Say what the user confirms, or remove the field.');
+    // Saving the keys mid-guide only helps when the provider can be asked
+    // about them; the wait step needs keys saved by the step before it.
+    if (step.saveAndCheck !== undefined) {
+      if (step.saveAndCheck !== true) bad('setup-guide-save-and-check', `${at}.saveAndCheck`, 'saveAndCheck must be true', 'Remove the field, or set it to true.');
+      else if (!Array.isArray(step.fields) || step.fields.length === 0) bad('setup-guide-save-and-check', `${at}.saveAndCheck`, 'A saveAndCheck step needs fields', 'Ask for the keys in this step.');
+      else if (!adapter.checkBeforeAuthorization) bad('setup-guide-save-and-check', `${at}.saveAndCheck`, 'saveAndCheck needs the adapter to have checkBeforeAuthorization', 'Add checkBeforeAuthorization, or remove saveAndCheck.');
+      else if (i === g.steps.length - 1) bad('setup-guide-save-and-check', `${at}.saveAndCheck`, 'The last step already checks the keys', 'Remove saveAndCheck from the last step.');
+    }
+    if (step.waitForProvider !== undefined) {
+      if (step.waitForProvider !== true) bad('setup-guide-wait', `${at}.waitForProvider`, 'waitForProvider must be true', 'Remove the field, or set it to true.');
+      else if (g.steps[i - 1]?.saveAndCheck !== true) bad('setup-guide-wait', `${at}.waitForProvider`, 'A waitForProvider step must follow a saveAndCheck step', 'Put it right after the step that saves the keys.');
+      else if (step.fields !== undefined || step.confirm !== undefined) bad('setup-guide-wait', `${at}.waitForProvider`, 'A waitForProvider step cannot have fields or confirm', 'It moves on by itself once the provider accepts the keys.');
+      else if (i === g.steps.length - 1) bad('setup-guide-wait', `${at}.waitForProvider`, 'A waitForProvider step cannot be the last step', 'Add the step that follows the approval.');
+    }
   });
   // A required variable the guide never asks for blocks the last step.
   // Advanced ones (a token the sign-in fills in) stay out of the steps.
@@ -444,7 +463,52 @@ export function validateAdapter(adapter, file, region) {
         const ok = typeof h === 'string' ? h.trim() : h && typeof h === 'object' && typeof h.hint === 'string' && h.hint.trim() && (h.suggest === undefined || typeof h.suggest === 'string');
         if (!ok) errors.push(error('verify-hints-shape', `verifyHints.${key}`, 'each hint is a string or { hint, suggest? }', 'Write the hint as text; suggest is another adapter slug.', 'adapter-fields'));
         if (!/^(\d{3}|[a-z_]+)$/.test(key)) errors.push(error('verify-hints-key', `verifyHints.${key}`, `"${key}" is neither an HTTP status nor a failure kind`, 'Key by "401", "404", … or by a kind such as "auth_failed".', 'adapter-fields'));
+        if (h && typeof h === 'object' && h.field !== undefined && !declaredVars(adapter).includes(h.field)) errors.push(error('verify-hints-field', `verifyHints.${key}.field`, `field "${h.field}" is not a declared variable`, 'Name the variable the hint belongs under.', 'adapter-fields'));
       }
+    }
+  }
+
+  if (adapter.probe?.failWhen !== undefined) {
+    const rules = adapter.probe.failWhen;
+    if (!Array.isArray(rules)) {
+      errors.push(error('probe-fail-when', 'probe.failWhen', 'probe.failWhen must be a list of rules', 'Use [{ "matches": "…", "hint": "…" }].', 'adapter-fields'));
+    } else {
+      rules.forEach((r, i) => {
+        const at = `probe.failWhen[${i}]`;
+        let validRe = false;
+        try { new RegExp(r?.matches, 'i'); validRe = typeof r?.matches === 'string' && r.matches.trim() !== ''; } catch { /* reported below */ }
+        if (!validRe || typeof r?.hint !== 'string' || !r.hint.trim()) errors.push(error('probe-fail-when', at, 'each rule needs a valid regular expression in matches and a hint', 'Use { "matches": "…", "hint": "…" }.', 'adapter-fields'));
+        if (r?.field !== undefined && !declaredVars(adapter).includes(r.field)) errors.push(error('probe-fail-when', `${at}.field`, `field "${r.field}" is not a declared variable`, 'Name the variable the hint belongs under.', 'adapter-fields'));
+      });
+    }
+  }
+
+  if (adapter.derivedEnvVars !== undefined) {
+    const derived = adapter.derivedEnvVars;
+    if (!derived || typeof derived !== 'object' || Array.isArray(derived)) {
+      errors.push(error('derived-env-vars', 'derivedEnvVars', 'derivedEnvVars must map a variable name to its lookup', 'Use { "X_ID": { "fromHost": "X_SITE", "url": "https://{{X_SITE}}/…", "path": "id", "error": "…" } }.', 'adapter-fields'));
+    } else {
+      for (const [name, d] of Object.entries(derived)) {
+        const at = `derivedEnvVars.${name}`;
+        if (declaredVars(adapter).includes(name)) errors.push(error('derived-env-vars', at, `"${name}" is looked up, so it must not be a variable the user enters`, 'Remove it from requiredEnvVars and optionalEnvVars.', 'adapter-fields'));
+        const ok = d && typeof d === 'object' && declaredVars(adapter).includes(d.fromHost) && typeof d.url === 'string' && d.url.startsWith(`https://{{${d.fromHost}}}/`) && typeof d.path === 'string' && d.path && typeof d.error === 'string' && d.error.trim();
+        if (!ok) errors.push(error('derived-env-vars', at, 'a derived variable needs a declared fromHost, an https url starting with {{fromHost}}, a path and an error', 'See docs/tool-definition.md.', 'adapter-fields'));
+      }
+    }
+  }
+
+  if (adapter.instructionFacts !== undefined) {
+    const facts = adapter.instructionFacts;
+    const known = new Set([...declaredVars(adapter), ...Object.keys(adapter.derivedEnvVars ?? {})]);
+    if (!Array.isArray(facts) || facts.some((f) => typeof f !== 'string' || !f.trim())) {
+      errors.push(error('instruction-facts', 'instructionFacts', 'instructionFacts must be a list of sentences', 'Use ["This workspace\'s site is {{X_SITE}}."].', 'adapter-fields'));
+    } else {
+      facts.forEach((f, i) => {
+        for (const [, name] of f.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)) {
+          const secret = adapter.envVarMeta?.[name]?.secret === true || adapter.envVarMeta?.[name]?.kind === 'credential';
+          if (!known.has(name) || secret) errors.push(error('instruction-facts', `instructionFacts[${i}]`, `"${name}" is not a non-secret variable of this adapter`, 'Name only settings the adapter declares or looks up; secrets are never rendered.', 'adapter-fields'));
+        }
+      });
     }
   }
 
@@ -461,6 +525,13 @@ export function validateAdapter(adapter, file, region) {
   }
 
   const slugUnderscored = adapter.slug.replace(/-/g, '_');
+  // File Search entries are set up by the File Search wizard; their tools are
+  // the fixed built-ins the catalog adds (catalog.ts withFileSearchBuiltins).
+  if (adapter.connector?.type === 'FILE_SEARCH') {
+    if (!Array.isArray(adapter.tools)) errors.push(error('tools', 'tools', 'tools must be an array (empty for File Search)', 'Use "tools": [].', 'tools'));
+    if (!adapter.connector?.config?.fileSearch?.protocol) errors.push(error('file-search', 'connector.config.fileSearch.protocol', 'File Search adapters name their protocol', 'Set connector.config.fileSearch.protocol (sftp, ftps, webdav, local, s3).', 'adapter-fields'));
+    return { errors, warnings };
+  }
   if (!Array.isArray(adapter.tools) || adapter.tools.length === 0) {
     errors.push(error('tools', 'tools', 'tools array is empty', 'Add at least one tool definition to the tools array.', 'tools'));
     return { errors, warnings };

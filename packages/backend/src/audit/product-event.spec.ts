@@ -113,6 +113,43 @@ describe('POST /api/product-events — /start-trial funnel', () => {
   });
 });
 
+describe('POST /api/product-events — File Search wizard', () => {
+  it('records the funnel with protocol, preset, adapter and coarse counts', async () => {
+    const { controller, req, stored } = build();
+    const base = { protocol: 'sftp', preset: 'synology', adapterSlug: 'synology-file-search' };
+    await controller.record(req, { event: 'file_search_wizard_opened', metadata: { ...base, via: 'store_hint' } });
+    await controller.record(req, { event: 'file_search_test_failed', metadata: { ...base, kind: 'auth' } });
+    await controller.record(req, { event: 'file_search_test_passed', metadata: base });
+    await controller.record(req, { event: 'file_search_scan_finished', metadata: { ...base, kind: 'fits', files: '101-500' } });
+    await controller.record(req, { event: 'file_search_activated', metadata: { ...base, files: '101-500' } });
+    await controller.record(req, { event: 'file_search_locked_shown', metadata: { kind: 'connector_limit' } });
+    expect(stored().map((e: any) => [e.event, e.metadata])).toEqual([
+      ['file_search_wizard_opened', { adapterSlug: 'synology-file-search', via: 'store_hint', protocol: 'sftp', preset: 'synology' }],
+      ['file_search_test_failed', { adapterSlug: 'synology-file-search', kind: 'auth', protocol: 'sftp', preset: 'synology' }],
+      ['file_search_test_passed', { adapterSlug: 'synology-file-search', protocol: 'sftp', preset: 'synology' }],
+      ['file_search_scan_finished', { adapterSlug: 'synology-file-search', kind: 'fits', protocol: 'sftp', preset: 'synology', files: '101-500' }],
+      ['file_search_activated', { adapterSlug: 'synology-file-search', protocol: 'sftp', preset: 'synology', files: '101-500' }],
+      ['file_search_locked_shown', { kind: 'connector_limit' }],
+    ]);
+  });
+
+  it('drops an unknown protocol or preset and an exact file count', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, {
+      event: 'file_search_scan_finished',
+      metadata: { protocol: 'nas.example.com', preset: '/volume1/share', files: 1234, kind: 'fits' },
+    });
+    await controller.record(req, { event: 'file_search_activated', metadata: { protocol: 'webdav', files: '1234' } });
+    expect(stored().map((e: any) => e.metadata)).toEqual([{ kind: 'fits' }, { protocol: 'webdav' }]);
+  });
+
+  it('keeps a search whose first result is a File Search suggestion', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, { event: 'catalog_search', metadata: { query: 'Dateiserver', results: 2, match: 'suggested', via: 'welcome' } });
+    expect(stored()[0].metadata).toEqual({ via: 'welcome', query: 'Dateiserver', results: 2, match: 'suggested' });
+  });
+});
+
 describe('scrubProviderMessage', () => {
   it('drops query strings, masks given secrets and token-like runs, caps the length', () => {
     expect(scrubProviderMessage('GET https://x.example/api?appid=abc failed', [])).toBe('GET https://x.example/api failed');
@@ -156,5 +193,34 @@ describe('ProductEventService.log — server-written metadata', () => {
       metadata: { client: 'Claude', cardTrialOffered: true },
     });
     expect(create.mock.calls[0][0].data.metadata).toEqual({ client: 'Claude', cardTrialOffered: true });
+  });
+});
+
+describe('ProductEventService — the Claude setup discoverability events', () => {
+  it('keeps the shared tool call metadata, and only known profiles and setup tools', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    await service.log({
+      event: 'shared_tool_called',
+      organizationId: 'org-1',
+      metadata: { tool: 'anythingmcp_run_read_tool', profile: 'default', setupTool: 'setup_find_connectors', client: 'Claude' },
+    });
+    await service.log({
+      event: 'shared_tool_called',
+      organizationId: 'org-1',
+      metadata: { tool: 'anythingmcp_search_tools', profile: 'other', setupTool: 'drop_tables' },
+    });
+    expect(create.mock.calls.map(([{ data }]) => data.metadata)).toEqual([
+      { client: 'Claude', tool: 'anythingmcp_run_read_tool', profile: 'default', setupTool: 'setup_find_connectors' },
+      { tool: 'anythingmcp_search_tools' },
+    ]);
+  });
+
+  it('refuses both events from a page: only the server writes them', async () => {
+    const { controller, req, stored } = build();
+    for (const event of ['shared_tool_called', 'post_approve_app_picked']) {
+      await controller.record(req as any, { event, metadata: { adapterSlug: 'telegram-bot' } } as any);
+    }
+    expect(stored()).toEqual([]);
   });
 });

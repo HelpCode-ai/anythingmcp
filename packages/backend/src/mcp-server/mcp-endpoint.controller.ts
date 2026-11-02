@@ -32,7 +32,10 @@ import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
 import { slugifyForPrefix } from '../connectors/graphql-builtins';
-import { SharedSetupRegistry } from './shared-setup';
+import { SharedSetupRegistry, type SetupCallOptions } from './shared-setup';
+import { SharedToolCallRecorder } from './shared-tool-calls';
+import { ProductEventService } from '../audit/product-event.service';
+import { PrismaService } from '../common/prisma.service';
 import {
   McpConnectionGrantService,
   ResolvedGrant,
@@ -178,6 +181,10 @@ interface ToolSetParams {
   memory?: MemoryCaller;
   /** Which knowledge folders the caller may see in the server's workspace. */
   folders?: FolderAccess | null;
+  /** Set when the caller may run inline code on this server (codeMode 'inline'
+   *  + the inlineCode role capability + a configured runner): offers
+   *  code_execute over these connectors. */
+  inlineCode?: { connectorIds: string[] };
 }
 
 interface InvocationContext {
@@ -186,6 +193,8 @@ interface InvocationContext {
   organizationId?: string;
   authMethod: string;
   apiKeyName?: string;
+  /** The OAuth client the access token was issued to (oauthClientId), if any. */
+  oauthClientId?: string;
   mcpServerId: string;
   mcpServerName: string;
   connectorIds: string[];
@@ -210,6 +219,10 @@ const INTENT_DESCRIPTION =
 
 /** Built-in companion of the Agent Skills Finder adapter. */
 const SKILLS_SAVE_TOOL = 'skills_save_to_workspace';
+/** Built-in inline code execution tool (per-server endpoint, codeMode 'inline'). */
+const CODE_EXECUTE_TOOL = 'code_execute';
+/** Built-in tool to propose a saved code tool for admin approval (codeMode 'inline'). */
+const CODE_PROPOSE_TOOL = 'code_propose_tool';
 /** Built-in workspace memory tools (per-server endpoint, Enterprise). */
 const MEMORY_SEARCH_TOOL = 'memory_search';
 const MEMORY_SAVE_TOOL = 'memory_save';
@@ -257,11 +270,44 @@ export class McpEndpointController {
     @Optional() private readonly sharedSetup?: SharedSetupRegistry,
     @Optional() private readonly memory?: MemoryService,
     @Optional() private readonly folders?: KnowledgeFoldersService,
-  ) {}
+    @Optional() productEvents?: ProductEventService,
+    @Optional() prisma?: PrismaService,
+  ) {
+    this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
+  }
+
+  /** Records which shared /mcp tools a workspace calls (once a day per tool). */
+  private readonly sharedCalls: SharedToolCallRecorder | null;
 
   /** The caller's knowledge-folder access in a workspace (null without the module). */
   private async folderAccessFor(organizationId: string, userId?: string | null) {
     return this.folders ? this.folders.accessFor(organizationId, userId) : null;
+  }
+
+  /**
+   * Whether this caller may run inline code on this server, and over which
+   * connectors. All four must hold: the server opts in (codeMode 'inline'), a
+   * runner is configured, the caller is an identified user whose role carries
+   * the inlineCode capability, and at least one connector is in reach. Returns
+   * the connector scope for code_execute, or undefined to not offer it.
+   */
+  private async resolveInlineCode(
+    mcpServerConfig: { organizationId: string; codeMode?: string },
+    userId: string | undefined,
+    visibleConnectorIds: string[],
+  ): Promise<{ connectorIds: string[] } | undefined> {
+    if (mcpServerConfig.codeMode !== 'inline') return undefined;
+    if (!userId) return undefined;
+    if (!this.toolExecutor.codeModeAvailable()) return undefined;
+    if (!visibleConnectorIds || visibleConnectorIds.length === 0) return undefined;
+    const caps = await this.rolesService.getCapabilities(userId, mcpServerConfig.organizationId);
+    if (!caps.inlineCode) return undefined;
+    // Plan gate: inline code (code_execute / code_propose_tool) is Team and
+    // above. Saved code tools are gated separately at creation time.
+    if (!(await this.toolExecutor.inlineCodeAllowedForOrg(mcpServerConfig.organizationId))) {
+      return undefined;
+    }
+    return { connectorIds: visibleConnectorIds };
   }
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
@@ -463,15 +509,29 @@ export class McpEndpointController {
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
       connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
+      ...(this.sharedCalls && (setupOrg || organizationId) && variant === 'shared'
+        ? {
+            called: ({ tool, setupTool }) => {
+              void this.sharedCalls!.record({
+                organizationId: (setupOrg || organizationId) as string,
+                userId: user.sub,
+                tool,
+                ...(setupTool ? { setupTool } : {}),
+                profile,
+                oauthClientId: oauthClientId(user),
+              });
+            },
+          }
+        : {}),
       ...(canSetUp && setupProvider && setupCtx
         ? {
             setup: {
               organizationId: setupCtx.organizationId,
-              run: (name: string, args: Record<string, unknown>) =>
+              run: (name: string, args: Record<string, unknown>, opts?: SetupCallOptions) =>
                 name === 'setup_find_connectors'
-                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number })
+                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number }, opts)
                   : name === 'setup_install_connector'
-                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> })
+                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> }, opts)
                     : setupProvider.status(setupCtx),
             },
           }
@@ -1203,6 +1263,7 @@ export class McpEndpointController {
       organizationId: mcpServerConfig.organizationId as string,
       authMethod: (user?.authMethod || 'none') as string,
       apiKeyName: user?.apiKeyName as string | undefined,
+      oauthClientId: user ? oauthClientId(user) : undefined,
       mcpServerId: mcpServerConfig.id,
       mcpServerName: mcpServerConfig.name,
       connectorIds,
@@ -1241,6 +1302,15 @@ export class McpEndpointController {
     // The same per-member decision marks this caller's calls as learnable.
     invocationContext.learnable = captureIntent;
 
+    // Inline code execution: the server opts in (codeMode 'inline'), the caller's
+    // role carries the inlineCode capability, a runner is configured, and there
+    // is at least one connector in reach for the code to call.
+    const inlineCode = await this.resolveInlineCode(
+      mcpServerConfig,
+      user?.sub,
+      visibleConnectorIds,
+    );
+
     const params: ToolSetParams = {
       serverTools,
       allowedToolIds,
@@ -1252,6 +1322,7 @@ export class McpEndpointController {
       // Memory belongs to the server's organization and its member levels.
       memory: withFolders(await this.memory?.caller(mcpServerConfig.organizationId, user?.sub), folderAccess),
       folders: folderAccess,
+      inlineCode,
     };
 
     // Register this server's tool surface onto the per-request McpServer.
@@ -1677,6 +1748,11 @@ export class McpEndpointController {
       const skillHints = skillsVisible
         ? await this.kgSkills.toolHints(serverOrganizationId, serverId, visibleIds, folderAccess)
         : undefined;
+      // Re-read the server's codeMode so toggling it applies on the next rebuild.
+      const serverCfg = await this.mcpServersService.findById(serverId);
+      const inlineCode = serverCfg
+        ? await this.resolveInlineCode(serverCfg, user?.sub, visibleIds)
+        : undefined;
       const entries = this.planToolSet({
         serverTools,
         allowedToolIds,
@@ -1687,6 +1763,7 @@ export class McpEndpointController {
         skillHints,
         memory: withFolders(await this.memory?.caller(serverOrganizationId, user?.sub), folderAccess),
         folders: folderAccess,
+        inlineCode,
       });
       const signature = this.aggregateSig(entries);
       if (signature === session.signature) return; // nothing changed here
@@ -1854,7 +1931,10 @@ export class McpEndpointController {
             const result = await this.toolExecutor.executeTool(
               tool.name,
               toolArgs,
-              { ...ctx, connectorIds: [tool.connectorId] },
+              // allowedToolIds lets a code tool in `invoker` mode re-check the
+              // caller's role on every inner call; the role filter above already
+              // gated listing and this top-level call.
+              { ...ctx, connectorIds: [tool.connectorId], allowedToolIds },
             );
             // When an outputSchema is advertised, the SDK requires
             // structuredContent on success. Provide the result object
@@ -2178,6 +2258,135 @@ export class McpEndpointController {
               return {
                 content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
               };
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+
+    // Inline code execution (code_execute): offered only when the server's
+    // codeMode is 'inline' and the caller's role has the inlineCode capability
+    // (resolved in handleMcpRequest). Read-only, invoker rights, over exactly
+    // the connectors visible to this caller on this server.
+    if (params.inlineCode && !registeredNames.has(CODE_EXECUTE_TOOL)) {
+      registeredNames.add(CODE_EXECUTE_TOOL);
+      const inlineConnectorIds = params.inlineCode.connectorIds;
+      const inlineAllowed = allowedToolIds;
+      entries.push({
+        name: CODE_EXECUTE_TOOL,
+        sig: `${CODE_EXECUTE_TOOL}:v1:${inlineConnectorIds.length}`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            CODE_EXECUTE_TOOL,
+            {
+              description:
+                'Run a short JavaScript program that orchestrates several of this ' +
+                'workspace\'s tools in one step, instead of many separate tool calls. ' +
+                'Write an async function body. Discover and call tools with ' +
+                '`await amcp.search(query)`, `await amcp.describe(name)` and ' +
+                '`await amcp.run(name, args)`, and `return` the result. Read-only: ' +
+                'only tools that do not change data can be called, with your own ' +
+                'permissions. No filesystem, network or environment access.',
+              inputSchema: {
+                code: z
+                  .string()
+                  .min(1)
+                  .max(100_000)
+                  .describe('The async JavaScript program body to run.'),
+              },
+              annotations: { title: 'Run code', readOnlyHint: true, openWorldHint: false },
+            },
+            async (args: { code: string }) => {
+              const result = await this.toolExecutor.executeInlineCode(
+                String(args?.code ?? ''),
+                { ...invocationContext, allowedToolIds: inlineAllowed },
+                { connectorIds: inlineConnectorIds, allowedToolIds: inlineAllowed },
+              );
+              const { structured: _s, ...rest } = result;
+              return rest;
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+
+    // Propose a saved code tool for an admin to approve. Gated exactly like
+    // inline code (codeMode 'inline' + capability + runner). Records an inert
+    // proposal — it never runs code and grants no authority; the tool is always
+    // invoker + read-only until an admin approves it through the normal
+    // tool-creation path, where definer / writes are re-gated.
+    if (params.inlineCode && !registeredNames.has(CODE_PROPOSE_TOOL)) {
+      registeredNames.add(CODE_PROPOSE_TOOL);
+      const proposeConnectorIds = params.inlineCode.connectorIds;
+      entries.push({
+        name: CODE_PROPOSE_TOOL,
+        sig: `${CODE_PROPOSE_TOOL}:v1`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            CODE_PROPOSE_TOOL,
+            {
+              description:
+                'Propose saving a reusable code tool (a short JavaScript program that ' +
+                'orchestrates several of this workspace\'s tools) for a workspace admin ' +
+                'to review and approve. Use this after you have found a multi-step pattern ' +
+                'worth keeping. It does NOT run the code and does NOT create the tool: it ' +
+                'records a proposal. The admin decides whether it becomes a tool. Propose ' +
+                'read-only programs using the same `amcp.run` / `amcp.search` tools you can ' +
+                'call with code_execute.',
+              inputSchema: {
+                name: z.string().min(1).max(160).describe('A short, descriptive tool name.'),
+                description: z
+                  .string()
+                  .min(1)
+                  .max(2000)
+                  .describe('What the tool does, for the admin and future callers.'),
+                code: z
+                  .string()
+                  .min(1)
+                  .max(100_000)
+                  .describe('The async JavaScript program body, same contract as code_execute.'),
+                rationale: z
+                  .string()
+                  .max(2000)
+                  .optional()
+                  .describe('Why this is worth saving (shown to the admin reviewing it).'),
+                inputSchema: z
+                  .record(z.string(), z.any())
+                  .optional()
+                  .describe('Optional JSON Schema for the tool\'s own input parameters.'),
+              },
+              annotations: { title: 'Propose a code tool', readOnlyHint: true, openWorldHint: false },
+            },
+            async (args: { name: string; description: string; code: string; rationale?: string; inputSchema?: unknown }) => {
+              const org = invocationContext.organizationId;
+              const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true });
+              if (!org) return fail('Proposing a code tool requires an identified workspace.');
+              if (!proposeConnectorIds.length) return fail('No connectors are available to propose a tool for.');
+              try {
+                const s = await this.kgSkills.proposeCodeTool(org, {
+                  connectorId: proposeConnectorIds[0],
+                  usesConnectorIds: proposeConnectorIds,
+                  name: String(args?.name ?? ''),
+                  description: String(args?.description ?? ''),
+                  code: String(args?.code ?? ''),
+                  parameters: args?.inputSchema,
+                  rationale: String(args?.rationale ?? ''),
+                  mcpServerId: invocationContext.mcpServerId ?? null,
+                });
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: JSON.stringify({
+                        ok: true,
+                        proposalId: s.id,
+                        message:
+                          'Proposal recorded for admin review. It will not run or become a tool until an admin approves it.',
+                      }),
+                    },
+                  ],
+                };
+              } catch (e: any) {
+                return fail(e?.message ? String(e.message) : 'Could not record the proposal.');
+              }
             },
           ) as unknown as ToolHandle,
       });

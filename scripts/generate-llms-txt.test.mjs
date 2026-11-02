@@ -185,7 +185,7 @@ test('full text has no images or relative inline/reference Markdown links', () =
   for (const [, url] of full.matchAll(/^ {0,3}\[[^\]\n]+\]:\s*<?([^\s>]+)/gm)) {
     assert.match(url, /^(?:[a-z][a-z\d+.-]*:|\/\/)/i, url);
   }
-  assert.match(full, /# AnythingMCP: self-hosted MCP gateway/);
+  assert.match(full, /# AnythingMCP: the open-source MCP gateway that becomes your company brain/);
   assert.match(full, /AnythingMCP is an open-source, self-hosted MCP gateway/);
   assert.match(full, /### How do I create a custom connector for Claude\?/);
   assert.match(full, /## docs\/memory\.md\n/);

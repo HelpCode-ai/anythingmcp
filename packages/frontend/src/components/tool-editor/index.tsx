@@ -65,6 +65,14 @@ export interface ToolEditorData {
   bodyEncoding?: string;
   /** Static text response (returned directly without any API/DB call) */
   staticResponse?: string;
+  /** Code tool: the async JS program body (method === 'code'). */
+  code?: string;
+  /** Code tool: JSON string of `uses` — connectors/tools the program may call. */
+  codeUsesJson?: string;
+  /** Code tool: whose permissions inner calls run with. */
+  runAs?: 'invoker' | 'definer';
+  /** Code tool: whether the program may call write tools. */
+  allowWrites?: boolean;
   /** Optional shaping of the API response before it reaches the AI client */
   responseMapping?: ResponseMappingState;
   /**
@@ -358,8 +366,13 @@ function parseExistingTool(
     params,
     graphqlQuery: connectorType === 'GRAPHQL' ? em.path : undefined,
     soapOperation: connectorType === 'SOAP' ? em.method : undefined,
-    sqlTemplate: connectorType === 'DATABASE' && em.method !== 'static' ? em.path : undefined,
+    sqlTemplate: connectorType === 'DATABASE' && em.method !== 'static' && em.method !== 'code' ? em.path : undefined,
     staticResponse: em.staticResponse || undefined,
+    code: em.method === 'code' ? ((em.code as string) || '') : undefined,
+    codeUsesJson:
+      em.method === 'code' ? JSON.stringify((em.uses as unknown) ?? [], null, 2) : undefined,
+    runAs: em.method === 'code' ? ((em.runAs as 'invoker' | 'definer') || 'invoker') : undefined,
+    allowWrites: em.method === 'code' ? em.allowWrites === true : undefined,
     cacheTtl: (rm.cacheTtl as number) || 0,
     responseMapping: parseTransformToState(transform as ResponseTransform | undefined),
     responseMappingExtra,
@@ -451,6 +464,30 @@ function buildToolPayload(data: ToolEditorData, connectorType: string) {
         // SQL params are interpolated via $param in the SQL template
         break;
     }
+  }
+
+  // Code tools carry their own endpointMapping shape and ignore the
+  // path/query/body plumbing above. Params still describe the tool's inputs,
+  // which the program reads as `args`.
+  if (data.method === 'code') {
+    let uses: unknown = [];
+    try {
+      uses = data.codeUsesJson ? JSON.parse(data.codeUsesJson) : [];
+    } catch {
+      uses = [];
+    }
+    return {
+      name: data.name,
+      description: data.description,
+      parameters,
+      endpointMapping: {
+        method: 'code',
+        code: data.code ?? '',
+        uses,
+        runAs: data.runAs ?? 'invoker',
+        allowWrites: data.allowWrites === true,
+      },
+    };
   }
 
   let method = data.method;
@@ -563,6 +600,10 @@ export function ToolEditor({
   const [useBodyMappingJson, setUseBodyMappingJson] = useState(false);
   const [bodyEncoding, setBodyEncoding] = useState('json');
   const [staticResponse, setStaticResponse] = useState('');
+  const [code, setCode] = useState('');
+  const [codeUsesJson, setCodeUsesJson] = useState('[]');
+  const [runAs, setRunAs] = useState<'invoker' | 'definer'>('invoker');
+  const [allowWrites, setAllowWrites] = useState(false);
   const [responseMapping, setResponseMapping] =
     useState<ResponseMappingState>(EMPTY_MAPPING_STATE);
   const [responseMappingExtra, setResponseMappingExtra] = useState<Record<string, unknown>>({});
@@ -587,6 +628,12 @@ export function ToolEditor({
       }
       if (parsed.bodyEncoding) setBodyEncoding(parsed.bodyEncoding);
       if (parsed.staticResponse) setStaticResponse(parsed.staticResponse);
+      if (parsed.method === 'code') {
+        setCode(parsed.code ?? '');
+        setCodeUsesJson(parsed.codeUsesJson ?? '[]');
+        setRunAs(parsed.runAs ?? 'invoker');
+        setAllowWrites(parsed.allowWrites === true);
+      }
       setResponseMapping(parsed.responseMapping ?? EMPTY_MAPPING_STATE);
       setResponseMappingExtra(parsed.responseMappingExtra ?? {});
     }
@@ -680,8 +727,12 @@ export function ToolEditor({
       path,
       params,
       graphqlQuery: type === 'GRAPHQL' ? graphqlQuery : undefined,
-      sqlTemplate: type === 'DATABASE' && method !== 'static' ? sqlTemplate : undefined,
+      sqlTemplate: type === 'DATABASE' && method !== 'static' && method !== 'code' ? sqlTemplate : undefined,
       staticResponse: method === 'static' ? staticResponse : undefined,
+      code: method === 'code' ? code : undefined,
+      codeUsesJson: method === 'code' ? codeUsesJson : undefined,
+      runAs: method === 'code' ? runAs : undefined,
+      allowWrites: method === 'code' ? allowWrites : undefined,
       cacheTtl,
       bodyTemplate: useBodyTemplate ? bodyTemplate : undefined,
       useBodyTemplate,
@@ -698,11 +749,25 @@ export function ToolEditor({
     useBodyMappingJson &&
     !!bodyMappingJson.trim() &&
     !safeParseJsonObject(bodyMappingJson);
+  // A code tool needs a program and a well-formed, non-empty uses array.
+  const codeUsesParsed = (() => {
+    if (method !== 'code') return null;
+    try {
+      const v = JSON.parse(codeUsesJson);
+      return Array.isArray(v) ? v : null;
+    } catch {
+      return null;
+    }
+  })();
+  const codeInvalid =
+    method === 'code' &&
+    (!code.trim() || codeUsesParsed === null || codeUsesParsed.length === 0);
   const isValid =
     name.trim() &&
     description.trim() &&
     params.every((p) => p.name.trim()) &&
     !bodyMappingJsonInvalid &&
+    !codeInvalid &&
     !mappingStateInvalid(responseMapping);
 
   return (
@@ -768,12 +833,14 @@ export function ToolEditor({
         <div>
           <label className="block text-xs font-medium mb-1">{t('toolType')}</label>
           <AppSelect
-            value={method === 'static' ? 'static' : 'native'}
+            value={method === 'static' ? 'static' : method === 'code' ? 'code' : 'native'}
             onValueChange={v => {
               if (v === 'static') {
                 setMethod('static');
+              } else if (v === 'code') {
+                setMethod('code');
               } else {
-                const nativeMethods = methods.filter(m => m !== 'static');
+                const nativeMethods = methods.filter(m => m !== 'static' && m !== 'code');
                 setMethod(nativeMethods[0] || methods[0]);
               }
             }}
@@ -781,11 +848,68 @@ export function ToolEditor({
             options={[
               { value: 'native', label: t(`native.${nativeLabelKey(type)}`) },
               { value: 'static', label: t('staticText') },
+              { value: 'code', label: t('codeText') },
             ]}
           />
         </div>
 
-        {method === 'static' ? (
+        {method === 'code' ? (
+          /* Code tool — a program that orchestrates other tools via amcp.* */
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium mb-1">{t('codeProgram')}</label>
+              <textarea
+                value={code}
+                onChange={e => setCode(e.target.value)}
+                rows={12}
+                spellCheck={false}
+                placeholder={'const orders = await amcp.run("list_orders", { customerId: args.customerId });\nreturn orders.filter(o => o.status === "open");'}
+                className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono"
+              />
+              <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
+                {t('codeProgramHint')}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">{t('codeUses')}</label>
+              <textarea
+                value={codeUsesJson}
+                onChange={e => setCodeUsesJson(e.target.value)}
+                rows={4}
+                spellCheck={false}
+                className={`w-full border rounded-md px-3 py-2 text-sm bg-[var(--background)] font-mono ${codeUsesParsed === null ? 'border-[var(--destructive)]' : 'border-[var(--input)]'}`}
+              />
+              <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
+                {t('codeUsesHint')}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-medium mb-1">{t('codeRunAs')}</label>
+                <AppSelect
+                  value={runAs}
+                  onValueChange={v => setRunAs(v as 'invoker' | 'definer')}
+                  className="w-full border border-[var(--input)] rounded-md px-3 py-2 text-sm bg-[var(--background)]"
+                  options={[
+                    { value: 'invoker', label: t('codeRunAsInvoker') },
+                    { value: 'definer', label: t('codeRunAsDefiner') },
+                  ]}
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={allowWrites}
+                    onChange={e => setAllowWrites(e.target.checked)}
+                  />
+                  <span>{t('codeAllowWrites')}</span>
+                </label>
+              </div>
+            </div>
+            <p className="text-[10px] text-[var(--muted-foreground)]">{t('codeAllowWritesHint')}</p>
+          </div>
+        ) : method === 'static' ? (
           /* Static Response — same for all connector types */
           <div>
             <label className="block text-xs font-medium mb-1">{t('staticResponse')}</label>
@@ -1226,7 +1350,7 @@ export function ToolEditor({
       </div>
 
       {/* Response Mapping */}
-      {method !== 'static' && (
+      {method !== 'static' && method !== 'code' && (
         <ResponseMappingPanel
           state={responseMapping}
           onChange={setResponseMapping}
@@ -1243,7 +1367,7 @@ export function ToolEditor({
           </summary>
           <pre className="mt-2 p-3 bg-[var(--muted)] rounded text-[10px] font-mono overflow-x-auto max-h-48 overflow-y-auto">
             {JSON.stringify(
-              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, staticResponse: method === 'static' ? staticResponse : undefined, cacheTtl, bodyTemplate: useBodyTemplate ? bodyTemplate : undefined, useBodyTemplate, bodyMappingJson: useBodyMappingJson ? bodyMappingJson : undefined, useBodyMappingJson, bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined, responseMapping, responseMappingExtra }, type),
+              buildToolPayload({ name, description, method, path, params, graphqlQuery, sqlTemplate, staticResponse: method === 'static' ? staticResponse : undefined, code: method === 'code' ? code : undefined, codeUsesJson: method === 'code' ? codeUsesJson : undefined, runAs: method === 'code' ? runAs : undefined, allowWrites: method === 'code' ? allowWrites : undefined, cacheTtl, bodyTemplate: useBodyTemplate ? bodyTemplate : undefined, useBodyTemplate, bodyMappingJson: useBodyMappingJson ? bodyMappingJson : undefined, useBodyMappingJson, bodyEncoding: !useBodyTemplate ? bodyEncoding : undefined, responseMapping, responseMappingExtra }, type),
               null,
               2,
             )}

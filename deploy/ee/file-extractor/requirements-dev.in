@@ -1,0 +1,6 @@
+# Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE.
+# Test-only dependencies (never installed in the runtime image).
+pytest==9.1.1
+httpx==0.28.1
+fpdf2==2.8.9
+xlwt==1.3.0

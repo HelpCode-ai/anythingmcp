@@ -1,4 +1,4 @@
-import { extractSsrfBlockedHostname } from './ssrf.util';
+import { CONNECT_ATTEMPT_TIMEOUT_MS, createSsrfGuardedAgents, extractSsrfBlockedHostname } from './ssrf.util';
 
 describe('extractSsrfBlockedHostname', () => {
   // The allowlist is checked before the IP / loopback / DNS checks, so every
@@ -80,5 +80,18 @@ describe('the public-address rule', () => {
     await expect(
       assertSafeOutboundUrl('http://[fd00::1]/', { ...env, SSRF_ALLOWED_HOSTS: 'fd00::1' }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('createSsrfGuardedAgents', () => {
+  it('gives each address of a dual-stack host time for two SYN retransmissions', () => {
+    const { httpAgent, httpsAgent } = createSsrfGuardedAgents({});
+    for (const agent of [httpAgent, httpsAgent]) {
+      const options = (agent as unknown as { options: Record<string, unknown> }).options;
+      expect(options.autoSelectFamilyAttemptTimeout).toBe(CONNECT_ATTEMPT_TIMEOUT_MS);
+      expect(options.timeout).toBe(5000);
+    }
+    expect(CONNECT_ATTEMPT_TIMEOUT_MS).toBeGreaterThan(3000);
+    expect(CONNECT_ATTEMPT_TIMEOUT_MS).toBeLessThan(5000);
   });
 });

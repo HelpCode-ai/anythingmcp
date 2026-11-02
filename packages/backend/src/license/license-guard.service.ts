@@ -3,6 +3,7 @@ import { PrismaService } from '../common/prisma.service';
 import { LicenseService } from './license.service';
 import { DeploymentService } from '../common/deployment.service';
 import { cardTrialEnd } from './license-checkout';
+import { codeToolCapForPlan, inlineCodeAllowedForPlan } from './code-mode-quotas';
 
 export interface UsageCap {
   current: number;
@@ -19,6 +20,24 @@ export interface LicenseUsage {
   // soft-warn upgrade banner. Caps on paid tiers are advisory only — we no
   // longer throw 403 when exceeded (per product decision May 2026).
   isOverAny: boolean;
+}
+
+/** What an AI client is told when a Cloud workspace's free trial has ended. */
+export const TRIAL_ENDED_MESSAGE =
+  'This workspace\'s trial has ended. Ask a workspace administrator to activate a license.';
+
+/**
+ * The licence check refused a call because the workspace's free trial ended
+ * (Cloud only). A ForbiddenException like the guard's other refusals, so every
+ * caller that only reads `message` keeps working; the MCP tool path tells it
+ * apart to answer with a reactivation link and to record the blocked call.
+ * `trialEndedAt` is null only when the licence carries no end date.
+ */
+export class TrialEndedException extends ForbiddenException {
+  constructor(readonly trialEndedAt: Date | null) {
+    super(TRIAL_ENDED_MESSAGE);
+    this.name = 'TrialEndedException';
+  }
 }
 
 /** A Cloud workspace's free trial, as the setup tools report it. */
@@ -43,6 +62,17 @@ export class LicenseGuardService {
 
     const license = await this.licenseService.getCurrentLicense(organizationId);
     if (!license) {
+      // The hourly cron flips an ended trial to status 'expired' (see
+      // markExpiredTrials), after which it is no longer the current licence.
+      // Still a trial that ended, not a workspace without a licence: only the
+      // newest inactive licence counts, so a paid one revoked after the trial
+      // keeps the message below.
+      if (organizationId) {
+        const last = await this.licenseService.getLatestInactiveLicense(organizationId);
+        if (last?.plan === 'trial' && last.status === 'expired') {
+          throw new TrialEndedException(last.expiresAt ? new Date(last.expiresAt) : null);
+        }
+      }
       throw new ForbiddenException(
         'This workspace has no active license. Ask a workspace administrator to activate one.',
       );
@@ -58,10 +88,9 @@ export class LicenseGuardService {
     // its renewal payment is failing (the end of the grace period), and must
     // stop on that date even if nobody has re-verified it since.
     if (license.expiresAt && new Date(license.expiresAt) < new Date()) {
+      if (license.plan === 'trial') throw new TrialEndedException(new Date(license.expiresAt));
       throw new ForbiddenException(
-        license.plan === 'trial'
-          ? 'This workspace\'s trial has ended. Ask a workspace administrator to activate a license.'
-          : 'This workspace\'s license has expired. Ask a workspace administrator to renew it.',
+        'This workspace\'s license has expired. Ask a workspace administrator to renew it.',
       );
     }
   }
@@ -110,6 +139,55 @@ export class LicenseGuardService {
         `Trial limit reached (${maxMcpServers} MCP servers). A workspace administrator can activate a license to add more.`,
       );
     }
+  }
+
+  /**
+   * Saved code tools are capped like connectors/servers: a hard cap on the
+   * Cloud trial (abuse control), soft elsewhere (paid tiers do not block). The
+   * number is a licence feature (`features.maxCodeTools`), set per plan on the
+   * licensing site, so no plan→number mapping is hardcoded here. Self-hosted is
+   * never capped. Counting is by the tool's endpoint method, joined to the
+   * connector for the org scope.
+   */
+  async checkCanCreateCodeTool(organizationId?: string): Promise<void> {
+    // On Cloud an active licence is required first (and an ended trial gets the
+    // reactivation message); self-hosted self-guards this to a no-op.
+    await this.checkLicenseActive(organizationId);
+
+    const license = await this.licenseService.getCurrentLicense(organizationId);
+    const plan = license?.plan ?? 'community';
+    const cap = codeToolCapForPlan(plan, (license?.features as any)?.maxCodeTools);
+    // Unlimited (Enterprise), or no org to count against: nothing to enforce.
+    if (cap == null || !organizationId) return;
+
+    const count = await this.countCodeTools(organizationId);
+    if (count >= cap) {
+      throw new ForbiddenException(
+        `Plan limit reached (${cap} code tools on the ${plan} plan). Upgrade the plan to add more.`,
+      );
+    }
+  }
+
+  /**
+   * Whether this workspace's plan includes inline code — the generic
+   * `code_execute` and `code_propose_tool` tools (Team and above). Gates their
+   * exposure on the MCP endpoint, in addition to the per-server `codeMode` and
+   * the caller's `inlineCode` role capability. Applies on Cloud and self-hosted.
+   */
+  async canUseInlineCode(organizationId?: string): Promise<boolean> {
+    const license = await this.licenseService.getCurrentLicense(organizationId);
+    return inlineCodeAllowedForPlan(license?.plan ?? 'community');
+  }
+
+  /** How many saved code tools an organization has (endpoint method 'code'). */
+  private async countCodeTools(organizationId: string): Promise<number> {
+    const rows = await this.prisma.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(*)::int AS count
+      FROM mcp_tools t
+      JOIN connectors c ON c.id = t.connector_id
+      WHERE c.organization_id = ${organizationId}
+        AND t.endpoint_mapping->>'method' = 'code'`;
+    return rows[0]?.count ?? 0;
   }
 
   /**

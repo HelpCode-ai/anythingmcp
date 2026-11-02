@@ -32,7 +32,7 @@ jobs:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/cloud/stuck-users-report.sh,deploy/cloud/systemd/anythingmcp-stuck-report.service,deploy/cloud/systemd/anythingmcp-stuck-report.timer,deploy/cloud/trial-report.sh,deploy/cloud/systemd/anythingmcp-trial-report.service,deploy/cloud/systemd/anythingmcp-trial-report.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh,deploy/cloud/certs/extra-ca.pem"
+          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/cloud/stuck-users-report.sh,deploy/cloud/systemd/anythingmcp-stuck-report.service,deploy/cloud/systemd/anythingmcp-stuck-report.timer,deploy/cloud/trial-report.sh,deploy/cloud/systemd/anythingmcp-trial-report.service,deploy/cloud/systemd/anythingmcp-trial-report.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh,deploy/cloud/certs/extra-ca.pem,deploy/ee/LICENSE,deploy/ee/file-extractor"
           target: /tmp/anythingmcp-deploy
           overwrite: true
 
@@ -115,6 +115,16 @@ jobs:
 
             mkdir -p ./deploy/motis
             cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
+
+            # Build context of the File Search text extractor (ee/, Compose
+            # profile `files`). Like MOTIS, `docker compose up` builds it only
+            # when the pinned FILE_EXTRACTOR_IMAGE tag is missing, so a change
+            # to the extractor needs a new tag. Nothing runs unless .env sets
+            # COMPOSE_PROFILES=files.
+            mkdir -p ./deploy/ee
+            rm -rf ./deploy/ee/file-extractor
+            cp -r /tmp/anythingmcp-deploy/deploy/ee/file-extractor ./deploy/ee/
+            install -m 644 /tmp/anythingmcp-deploy/deploy/ee/LICENSE ./deploy/ee/LICENSE
             rm -rf ./deploy/cloud/db-rest
 
             # Keep CRON_SECRET in the server .env in sync with the repo

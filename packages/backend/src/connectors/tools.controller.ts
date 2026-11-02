@@ -28,6 +28,7 @@ import { MAX_TOOL_NAME_LENGTH } from './parsers/tool-name.util';
 import { Type } from 'class-transformer';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
+import { DynamicMcpTools } from '../mcp-server/dynamic-mcp-tools';
 import { ConnectorsService } from './connectors.service';
 import { inferJsonSchema } from './output-schema.util';
 import { classifyToolExecutionError } from './connector-error.util';
@@ -56,6 +57,13 @@ import {
   type SecretMoveSummary,
   type ToolDraft,
 } from './secret-extraction.util';
+import {
+  isCodeMethod,
+  parseCodeToolMapping,
+  validateCodeToolMapping,
+} from '../mcp-server/code-tool.util';
+import { EditionService } from '../ee/licensing/edition.service';
+import { LicenseGuardService } from '../license/license-guard.service';
 
 const RESPONSE_MAPPING_DESC =
   'Optional response handling for this tool. Keys: `cacheTtl` (seconds), ' +
@@ -303,7 +311,51 @@ export class ToolsController {
     private readonly prisma: PrismaService,
     private readonly mcpServer: McpServerService,
     private readonly connectorsService: ConnectorsService,
+    private readonly edition: EditionService,
+    private readonly licenseGuard: LicenseGuardService,
+    private readonly toolExecutor: DynamicMcpTools,
   ) {}
+
+  /**
+   * Validate and authorize a code tool at save time (shape + authority gates).
+   * Shape: validateCodeToolMapping. Authority: `definer` is admin-only;
+   * `allowWrites` is Enterprise-only; and every connector in `uses` must belong
+   * to this connector's organization, or a code tool could reach another
+   * tenant's tools at call time (the registry is global, scoped by the ids the
+   * tool carries).
+   */
+  private async assertValidCodeTool(
+    endpointMapping: unknown,
+    connector: { organizationId: string },
+    req: any,
+  ): Promise<void> {
+    const error = validateCodeToolMapping(endpointMapping);
+    if (error) throw new BadRequestException(error);
+    const spec = parseCodeToolMapping(endpointMapping);
+    if (!spec) return;
+
+    if (spec.runAs === 'definer' && req.user.role !== 'ADMIN') {
+      throw new ForbiddenException('Only an admin can save a code tool that runs with definer rights.');
+    }
+    if (spec.allowWrites) {
+      await this.edition.assertEnterprise(connector.organizationId, 'Code tools that write');
+    }
+
+    const usesIds = [...new Set(spec.uses.map((u) => u.connectorId))];
+    if (usesIds.length > 0) {
+      const found = await this.prisma.connector.findMany({
+        where: { id: { in: usesIds }, organizationId: connector.organizationId },
+        select: { id: true },
+      });
+      const okIds = new Set(found.map((c) => c.id));
+      const foreign = usesIds.filter((id) => !okIds.has(id));
+      if (foreign.length > 0) {
+        throw new BadRequestException(
+          `A code tool can only use connectors from its own workspace. Unknown or foreign connector(s): ${foreign.join(', ')}.`,
+        );
+      }
+    }
+  }
 
   private async assertConnectorOrgMatch(connectorId: string, req: any) {
     const connector = await this.connectorsService.findById(connectorId);
@@ -473,10 +525,19 @@ export class ToolsController {
     const connector = await this.assertCanWriteConnector(connectorId, req);
     this.assertKnownCallerContextVars(dto.endpointMapping);
     this.assertValidResponseMapping(dto.responseMapping);
+    const isCode = isCodeMethod(dto.endpointMapping);
+    if (isCode) {
+      await this.assertValidCodeTool(dto.endpointMapping, connector, req);
+      await this.licenseGuard.checkCanCreateCodeTool(connector.organizationId);
+    }
+    // A code tool's program is not an upstream request, so the secret-extraction
+    // pass (which rewrites paths/headers) must not touch it.
     const {
       tools: [guarded],
       summary,
-    } = await this.guardToolSecrets(connector, [{ ...dto }]);
+    } = isCode
+      ? { tools: [{ ...dto }], summary: {} as SecretMoveSummary }
+      : await this.guardToolSecrets(connector, [{ ...dto }]);
     const tool = await this.prisma.mcpTool
       .create({
         data: {
@@ -580,6 +641,9 @@ export class ToolsController {
     if (dto.responseMapping !== undefined) {
       this.assertValidResponseMapping(dto.responseMapping);
     }
+    if (dto.endpointMapping !== undefined && isCodeMethod(dto.endpointMapping)) {
+      await this.assertValidCodeTool(dto.endpointMapping, connector, req);
+    }
 
     const data: Record<string, unknown> = { ...(dto as Record<string, unknown>) };
 
@@ -590,7 +654,10 @@ export class ToolsController {
       select: { name: true, description: true, parameters: true, endpointMapping: true },
     });
     let summary: SecretMoveSummary = {};
-    if (stored) {
+    // A code tool's program is not an upstream request; skip secret extraction,
+    // which rewrites paths/headers and has nothing to do here.
+    const effectiveMapping = dto.endpointMapping ?? stored?.endpointMapping;
+    if (stored && !isCodeMethod(effectiveMapping)) {
       const draft = {
         name: dto.name ?? stored.name,
         description: dto.description ?? stored.description,
@@ -935,6 +1002,42 @@ export class ToolsController {
     // MCP standard uses `arguments`; we historically accepted `params`. Take
     // `arguments` first, fall back to `params` so old clients keep working.
     const inputs = body.arguments ?? body.params ?? {};
+
+    // Code tools run their stored program in the out-of-process runner, not the
+    // REST/engine path. Route them there so the Test button exercises the real
+    // code-mode path instead of trying to HTTP-call the connector's base URL.
+    if (isCodeMethod(tool.endpointMapping)) {
+      const codeStart = Date.now();
+      const uses = parseCodeToolMapping(tool.endpointMapping)?.uses ?? [];
+      const codeRes = await this.toolExecutor.runSavedCodeTool(
+        {
+          id: tool.id,
+          name: tool.name,
+          connectorId: tool.connectorId,
+          connectorType: tool.connector.type,
+          organizationId: tool.connector.organizationId,
+          endpointMapping: tool.endpointMapping,
+        },
+        inputs,
+        {
+          userId: req.user?.sub,
+          userEmail: req.user?.email,
+          organizationId: tool.connector.organizationId,
+          authMethod: 'dashboard-test',
+          // The dashboard tester is an admin on this connector, so run
+          // unrestricted (invoker mode then behaves like ADMIN). The run is
+          // still bounded by the tool's `uses` and its write setting inside the
+          // bridge.
+          allowedToolIds: null,
+          connectorIds: uses.map((u) => u.connectorId),
+        },
+      );
+      return {
+        ok: !codeRes.isError,
+        durationMs: Date.now() - codeStart,
+        result: codeRes.structured ?? codeRes.content,
+      };
+    }
 
     // This runs from the admin UI, not through an authenticated MCP session,
     // so {{amcp.*}} resolves to empty here and the result can differ from a

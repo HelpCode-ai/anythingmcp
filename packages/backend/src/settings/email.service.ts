@@ -16,6 +16,7 @@ import {
   WinbackOffer,
   activationReminderEmail,
   cardTrialOfferEmail,
+  appApprovedEmail,
   cloudPageUrl,
   connectorAuthEmail,
   existingAccountEmail,
@@ -23,12 +24,17 @@ import {
   licenseKeyEmail,
   onboardingReminderEmail,
   passwordResetEmail,
+  TrialBlockedCallsEmailInput,
+  TrialEndedBusinessEmailInput,
+  trialBlockedCallsEmail,
+  trialEndedBusinessEmail,
   trialLifecycleEmail,
   trialWinbackEmail,
   verificationEmail,
 } from './email-templates';
 import { buildUnsubscribeUrl, unsubscribeSecret } from './unsubscribe-token';
 import { createEmailLinkToken } from '../common/email-link-token';
+import { marketingOrigin } from '../license/license-checkout';
 import { isSocialProviderId } from '../auth/social/social-providers';
 import { maskEmail } from '../auth/mcp-email-verification';
 
@@ -95,7 +101,7 @@ export class EmailService {
   }
 
   private marketingUrl(): string {
-    return (process.env.MARKETING_URL || 'https://anythingmcp.com').replace(/\/+$/, '');
+    return marketingOrigin();
   }
 
   /**
@@ -225,6 +231,54 @@ export class EmailService {
   }
 
   /**
+   * The retention sender, from ENV (RETENTION_SMTP_HOST/PORT/USER/PASS/FROM
+   * and RETENTION_SMTP_REPLY_TO): the trial lifecycle, win-back and
+   * blocked-call emails go out from it, so they can come from a person on the
+   * product's own domain while every other email keeps the system sender. Port
+   * 465 or 2465 means implicit TLS; any other port upgrades with STARTTLS
+   * (2587 too, for hosts that block the standard SMTP ports). Read only here,
+   * never returned by any API. Null when not configured.
+   */
+  private retentionSmtp() {
+    const host = process.env.RETENTION_SMTP_HOST?.trim();
+    if (!host) return null;
+    const port = Number(process.env.RETENTION_SMTP_PORT) || 587;
+    return this.normalizeSmtp({
+      host,
+      port,
+      secure: port === 465 || port === 2465,
+      user: process.env.RETENTION_SMTP_USER || '',
+      pass: process.env.RETENTION_SMTP_PASS || '',
+      from: process.env.RETENTION_SMTP_FROM?.trim() || undefined,
+      replyTo: process.env.RETENTION_SMTP_REPLY_TO?.trim() || undefined,
+    });
+  }
+
+  /**
+   * The transport for retention emails: the retention sender when it is
+   * configured, else the instance/system one (createTransporter), with
+   * RETENTION_SMTP_REPLY_TO as the Reply-To when set. Null when neither exists.
+   */
+  private async createRetentionTransporter(): Promise<{
+    transporter: nodemailer.Transporter;
+    from: string;
+    replyTo?: string;
+  } | null> {
+    const own = this.retentionSmtp();
+    if (own) {
+      return {
+        transporter: this.buildTransport(own),
+        from: own.from || systemSmtpFrom(process.env),
+        replyTo: own.replyTo,
+      };
+    }
+    const main = await this.createTransporter();
+    if (!main) return null;
+    const replyTo = process.env.RETENTION_SMTP_REPLY_TO?.trim();
+    return replyTo ? { ...main, replyTo } : main;
+  }
+
+  /**
    * The org's own SMTP config, or null. Never falls back — callers decide
    * what to do when the workspace hasn't configured (or has broken) SMTP.
    */
@@ -293,12 +347,12 @@ export class EmailService {
     }
     if (!licenseKey) {
       this.logger.warn(
-        `SMTP not configured and no license key available — cannot send password reset to ${to}`,
+        `SMTP not configured and no license key available — cannot send password reset to ${maskEmail(to)}`,
       );
       return false;
     }
     this.logger.log(
-      `SMTP not configured, using external API fallback for password reset to ${to}`,
+      `SMTP not configured, using external API fallback for password reset to ${maskEmail(to)}`,
     );
     return this.sendViaExternalApi('/api/email/password-reset', {
       email: to,
@@ -381,7 +435,7 @@ export class EmailService {
         };
       } catch (err: any) {
         this.logger.error(
-          `Failed to send invitation via ${transport.source} SMTP to ${to}: ${err}`,
+          `Failed to send invitation via ${transport.source} SMTP to ${maskEmail(to)}: ${err}`,
         );
         if (transport.source === 'workspace') {
           workspaceError = err.message || 'SMTP delivery failed';
@@ -471,7 +525,7 @@ export class EmailService {
       // (cloud provider, sysadmin, leaked dump). The fallback path below
       // delivers the code via Mailgun.
       this.logger.debug(
-        `Local SMTP not configured for ${to}; delegating verification email to external API.`,
+        `Local SMTP not configured for ${maskEmail(to)}; delegating verification email to external API.`,
       );
     }
 
@@ -487,7 +541,7 @@ export class EmailService {
         return true;
       } catch (err) {
         this.logger.error(
-          `Failed to send verification email via SMTP to ${to}: ${err}`,
+          `Failed to send verification email via SMTP to ${maskEmail(to)}: ${err}`,
         );
       }
     }
@@ -537,13 +591,16 @@ export class EmailService {
     to: string,
     name: string,
     dayNumber: 1 | 2,
-    /** Set when the user already connected an AI client to the empty workspace. */
-    opts?: { aiClient?: string },
+    /**
+     * aiClient: set when the user already connected an AI client to the empty
+     * workspace. quickSetups: reminder 1's variant B (one-click Claude chats).
+     */
+    opts?: { aiClient?: string; quickSetups?: ReadonlyArray<{ label: string; url: string }> },
   ): Promise<boolean> {
     const transport = await this.createTransporter();
     if (!transport) {
       this.logger.warn(
-        `Skipping onboarding-reminder email to ${to}: no SMTP configured`,
+        `Skipping onboarding-reminder email to ${maskEmail(to)}: no SMTP configured`,
       );
       return false;
     }
@@ -554,6 +611,7 @@ export class EmailService {
         name,
         dayNumber,
         aiClient: opts?.aiClient,
+        quickSetups: opts?.quickSetups,
         cloudUrl: this.cloudUrl(),
         signInWith: await this.signInProvider(to),
       },
@@ -567,12 +625,12 @@ export class EmailService {
         ...this.mail(email, headers),
       });
       this.logger.log(
-        `Onboarding-reminder email (day ${dayNumber}${opts?.aiClient ? ', AI client connected' : ''}) sent to ${to}`,
+        `Onboarding-reminder email (day ${dayNumber}${opts?.aiClient ? ', AI client connected' : ''}${opts?.quickSetups?.length && !opts?.aiClient ? ', one-click setups' : ''}) sent to ${maskEmail(to)}`,
       );
       return true;
     } catch (err) {
       this.logger.error(
-        `Failed to send onboarding-reminder email to ${to}: ${err}`,
+        `Failed to send onboarding-reminder email to ${maskEmail(to)}: ${err}`,
       );
       return false;
     }
@@ -592,7 +650,7 @@ export class EmailService {
     stage: 'warn3' | 'warn1' | 'expired',
     recap: { connectors: number; successfulCalls: number; daysLeft: number },
   ): Promise<boolean> {
-    const transport = await this.createTransporter();
+    const transport = await this.createRetentionTransporter();
     if (!transport) {
       this.logger.warn(`Skipping trial-${stage} email to ${maskEmail(to)}: no SMTP configured`);
       return false;
@@ -611,7 +669,12 @@ export class EmailService {
     );
 
     try {
-      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email) });
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        ...(transport.replyTo ? { replyTo: transport.replyTo } : {}),
+        ...this.mail(email),
+      });
       this.logger.log(`Trial-${stage} email sent to ${maskEmail(to)}`);
       return true;
     } catch (err) {
@@ -634,7 +697,7 @@ export class EmailService {
     const transport = await this.createTransporter();
     if (!transport) {
       this.logger.warn(
-        `Skipping activation-reminder email to ${to}: no SMTP configured`,
+        `Skipping activation-reminder email to ${maskEmail(to)}: no SMTP configured`,
       );
       return false;
     }
@@ -653,7 +716,7 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(
-        `Failed to send activation-reminder email to ${to}: ${err}`,
+        `Failed to send activation-reminder email to ${maskEmail(to)}: ${err}`,
       );
       return false;
     }
@@ -671,7 +734,7 @@ export class EmailService {
     name: string,
     offer: WinbackOffer,
   ): Promise<boolean> {
-    const transport = await this.createTransporter();
+    const transport = await this.createRetentionTransporter();
     if (!transport) {
       this.logger.warn(`Skipping trial win-back email to ${maskEmail(to)}: no SMTP configured`);
       return false;
@@ -687,12 +750,101 @@ export class EmailService {
       await transport.transporter.sendMail({
         from: transport.from,
         to,
+        ...(transport.replyTo ? { replyTo: transport.replyTo } : {}),
         ...this.mail(email, headers),
       });
       this.logger.log(`Trial win-back (${offer.kind}) email sent to ${maskEmail(to)}`);
       return true;
     } catch (err) {
       this.logger.error(`Failed to send trial win-back email to ${maskEmail(to)}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * The day a business workspace's Cloud trial ends (onboarding cron,
+   * lifecycle `expired` stage): the plain email from Matteo with the one-click
+   * extension and the locked price. Marketing: the caller sends it only to
+   * admins who did not opt out, and it carries the unsubscribe line.
+   */
+  async sendTrialEndedBusinessEmail(
+    to: string,
+    name: string,
+    details: Omit<TrialEndedBusinessEmailInput, 'name' | 'cloudUrl' | 'marketingUrl' | 'emailToken'>,
+  ): Promise<boolean> {
+    const transport = await this.createRetentionTransporter();
+    if (!transport) {
+      this.logger.warn(`Skipping trial-ended (business) email to ${maskEmail(to)}: no SMTP configured`);
+      return false;
+    }
+
+    const { ctx, headers } = await this.marketing(to);
+    const email = trialEndedBusinessEmail(
+      {
+        ...details,
+        name,
+        cloudUrl: this.cloudUrl(),
+        marketingUrl: this.marketingUrl(),
+        emailToken: createEmailLinkToken(to),
+      },
+      ctx,
+    );
+
+    try {
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        ...(transport.replyTo ? { replyTo: transport.replyTo } : {}),
+        ...this.mail(email, headers),
+      });
+      this.logger.log(`Trial-ended (business) email sent to ${maskEmail(to)}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send trial-ended (business) email to ${maskEmail(to)}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * After a Cloud trial ended, the workspace's AI kept calling its tools
+   * (onboarding cron, runBlockedCallPass): what it tried, and the offer.
+   * Marketing: the caller honours the opt-out, and the email carries the
+   * unsubscribe line.
+   */
+  async sendTrialBlockedCallsEmail(
+    to: string,
+    name: string,
+    details: Omit<TrialBlockedCallsEmailInput, 'name' | 'cloudUrl' | 'marketingUrl' | 'emailToken'>,
+  ): Promise<boolean> {
+    const transport = await this.createRetentionTransporter();
+    if (!transport) {
+      this.logger.warn(`Skipping blocked-calls email to ${maskEmail(to)}: no SMTP configured`);
+      return false;
+    }
+
+    const { ctx, headers } = await this.marketing(to);
+    const email = trialBlockedCallsEmail(
+      {
+        ...details,
+        name,
+        cloudUrl: this.cloudUrl(),
+        marketingUrl: this.marketingUrl(),
+        emailToken: createEmailLinkToken(to),
+      },
+      ctx,
+    );
+
+    try {
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        ...(transport.replyTo ? { replyTo: transport.replyTo } : {}),
+        ...this.mail(email, headers),
+      });
+      this.logger.log(`Blocked-calls email sent to ${maskEmail(to)}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send blocked-calls email to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }
@@ -763,6 +915,44 @@ export class EmailService {
     }
   }
 
+  /**
+   * The provider approved the app behind a connector (Etsy: the app left
+   * Pending); see AppApprovalWatcherService. Transactional, once per
+   * connector, through the workspace's SMTP or the system one, like the
+   * connector sign-in email. False when none is configured (self-hosted
+   * without SMTP) or the send failed.
+   */
+  async sendAppApprovedEmail(
+    to: string,
+    input: { name: string | null; providerName: string; connectorPath: string; prompt: string; promptUrl: string },
+    organizationId?: string,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter(organizationId);
+    if (!transport) {
+      this.logger.warn(`Skipping app-approved email to ${maskEmail(to)}: no SMTP configured`);
+      return false;
+    }
+    const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '') || this.cloudUrl();
+    const email = appApprovedEmail(
+      {
+        name: input.name,
+        providerName: input.providerName,
+        connectorUrl: cloudPageUrl(base, input.connectorPath, await this.signInProvider(to)),
+        prompt: input.prompt,
+        promptUrl: input.promptUrl,
+      },
+      await this.brand(),
+    );
+    try {
+      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email) });
+      this.logger.log(`App-approved email sent to ${maskEmail(to)}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send app-approved email to ${maskEmail(to)}: ${err}`);
+      return false;
+    }
+  }
+
   // ── External API Fallback ─────────────────────────────────────────────────
 
   private async sendViaExternalApi(
@@ -774,7 +964,7 @@ export class EmailService {
         timeout: 10000,
       });
       this.logger.log(
-        `Email sent via external API: ${endpoint} to ${body.email}`,
+        `Email sent via external API: ${endpoint} to ${maskEmail(body.email)}`,
       );
       return true;
     } catch (err: any) {
@@ -797,7 +987,7 @@ export class EmailService {
         timeout: 10000,
       });
       this.logger.log(
-        `Email sent via external API: ${endpoint} to ${body.email}`,
+        `Email sent via external API: ${endpoint} to ${maskEmail(body.email)}`,
       );
       return { sent: true };
     } catch (err: any) {

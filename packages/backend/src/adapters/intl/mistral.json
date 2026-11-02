@@ -24,7 +24,7 @@
       "help": "console.mistral.ai, API Keys, Create new key. Calls are billed to this key's workspace.",
       "link": "https://console.mistral.ai/home?profile_dialog=api-keys",
       "example": "aBcD1234...",
-      "pattern": "^[A-Za-z0-9]{20,}$",
+      "pattern": "^\\S{20,}$",
       "patternMessage": "Paste only the key as Mistral shows it, without spaces and without the word Bearer."
     }
   },

@@ -300,6 +300,16 @@ describe('shared /mcp tool set', () => {
     expect(sharedEndpointAccess('sorare', 'default')).toBe('none');
     expect(sharedEndpointAccess('etsy', 'default')).toBe('all');
 
+    // Code tools are never served on the shared endpoint (no per-server
+    // codeMode switch applies here).
+    const CODE_TOOL = tool({
+      name: 'summary',
+      connectorId: 'c-code',
+      endpointMapping: { method: 'code', path: '' } as any,
+    });
+    expect(excludedOnSharedEndpoint(CODE_TOOL, 'default')).toBe(true);
+    expect(excludedOnSharedEndpoint(CODE_TOOL, 'chatgpt')).toBe(true);
+
     const { client, deps } = await connect([CRM_READ, WISE_PAY, WISE_READ, BINANCE_READ]);
     const search = await call(client, 'anythingmcp_search_tools', {});
     const names = search.body.tools.map((t: any) => t.name);
