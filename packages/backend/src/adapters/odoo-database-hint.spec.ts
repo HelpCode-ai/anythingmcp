@@ -1,4 +1,4 @@
-import { diagnoseOdooJson2NotFound, odooDatabaseHint, odooOrigin } from './odoo-database-hint';
+import { diagnoseOdooJson2NotFound, odooDatabaseHint, odooNoDatabaseAdvice, odooOrigin } from './odoo-database-hint';
 import { outboundRequest } from '../common/outbound-http';
 
 jest.mock('../common/outbound-http', () => ({ outboundRequest: jest.fn() }));
@@ -83,6 +83,30 @@ describe('odooDatabaseHint', () => {
     expect(request).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'https://binikit.odoo.com/web/database/list' }),
     );
+  });
+});
+
+describe('odooNoDatabaseAdvice (a tool call answered "No database is selected")', () => {
+  beforeEach(() => request.mockReset());
+
+  it('names a path after the host and the databases the address serves', async () => {
+    request.mockResolvedValue({ data: { result: ['acme-main-123'] } } as any);
+    const advice = await odooNoDatabaseAdvice('https://erp.acme.de/web/json/2', 'acme');
+    expect(advice).toBe(
+      'ODOO_URL has "/web" after the host, so the calls go to the wrong address: set it to https://erp.acme.de. ' +
+        'This Odoo\'s database is called "acme-main-123": enter that as the database name.',
+    );
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://erp.acme.de/web/database/list' }));
+  });
+
+  it('says nothing when the address is right and the list is not available', async () => {
+    request.mockRejectedValue(new Error('403'));
+    await expect(odooNoDatabaseAdvice('https://erp.acme.de/json/2', 'acme')).resolves.toBeUndefined();
+  });
+
+  it('does not ask an address that is still a placeholder', async () => {
+    await expect(odooNoDatabaseAdvice('{{ODOO_URL}}/json/2', undefined)).resolves.toBeUndefined();
+    expect(request).not.toHaveBeenCalled();
   });
 });
 

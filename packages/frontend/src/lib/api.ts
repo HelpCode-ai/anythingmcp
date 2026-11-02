@@ -712,6 +712,10 @@ export interface SetupGuideStep {
   fields?: string[];
   problems?: Array<{ q: string; a: string }>;
   confirm?: string;
+  /** Continue saves the values on the connector and asks the provider whether it accepts the keys. */
+  saveAndCheck?: boolean;
+  /** Shown while the provider refuses the saved keys (an Etsy app awaiting approval); skipped once it accepts them. */
+  waitForProvider?: boolean;
 }
 
 export interface SetupGuide extends SetupEffort {
@@ -723,7 +727,18 @@ export interface SetupGuide extends SetupEffort {
 
 export type VerifyResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }
-  | { ok: false; kind: string; message: string; missing?: string[]; status?: number | null; suggest?: string; suggestName?: string }
+  | {
+      ok: false;
+      kind: string;
+      message: string;
+      missing?: string[];
+      fields?: Record<string, string>;
+      status?: number | null;
+      suggest?: string;
+      suggestName?: string;
+      /** The provider has not approved the app yet (Etsy: Pending): the page keeps the keys, the owner is emailed on approval. */
+      appPending?: boolean;
+    }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
 
 export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';

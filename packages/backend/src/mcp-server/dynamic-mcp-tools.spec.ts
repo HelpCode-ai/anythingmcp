@@ -3,6 +3,14 @@ import type { RegisteredTool } from './tool-registry';
 import { Logger } from '@nestjs/common';
 import * as metrics from '../common/metrics';
 import { processGauges } from '../common/process-vitals';
+import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
+
+// The Odoo lookup on "No database is selected" makes a request; none here may.
+jest.mock('../adapters/odoo-database-hint', () => ({
+  ...jest.requireActual('../adapters/odoo-database-hint'),
+  odooNoDatabaseAdvice: jest.fn().mockResolvedValue(undefined),
+}));
+const odooAdvice = odooNoDatabaseAdvice as jest.MockedFunction<typeof odooNoDatabaseAdvice>;
 
 /**
  * Runtime behaviour of response shaping, the response cache and the workflow
@@ -221,6 +229,65 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
     const res = await executor.executeTool('list_devices', {});
     expect(res.isError).toBe(true);
     expect(JSON.parse(res.content[0].text).hint).toBeUndefined();
+  });
+
+  describe('catalog connectors', () => {
+    const frontendUrl = process.env.FRONTEND_URL;
+    beforeEach(() => {
+      process.env.FRONTEND_URL = 'https://cloud.example.com';
+      odooAdvice.mockReset().mockResolvedValue(undefined);
+    });
+    afterAll(() => {
+      process.env.FRONTEND_URL = frontendUrl;
+    });
+
+    const catalogTool = (slug: string, baseUrl: string, envVars?: Record<string, string>) => {
+      const tool = makeTool();
+      tool.connectorConfig = { baseUrl, authType: 'NONE', config: { adapterSlug: slug }, envVars } as any;
+      return tool;
+    };
+    const axiosFailure = async (status: number, data: unknown, baseURL: string) => {
+      const { AxiosError } = await import('axios');
+      return new AxiosError(`Request failed with status code ${status}`, String(status), { url: '/x', baseURL } as any, undefined, {
+        status,
+        statusText: '',
+        headers: {},
+        config: {} as any,
+        data,
+      });
+    };
+
+    it("repeats the adapter's setup advice for a 401, with the connector's page", async () => {
+      // No built-in rule covers a Bitrix24 401: the adapter's verifyHints speak.
+      const { executor, restEngine } = build(catalogTool('bitrix24', 'https://acme.bitrix24.com/rest/1/abc123def456ghi7'));
+      restEngine.execute.mockRejectedValueOnce(
+        await axiosFailure(401, { error: 'INVALID_CREDENTIALS' }, 'https://acme.bitrix24.com/rest/1/abc123def456ghi7'),
+      );
+      const detail = JSON.parse((await executor.executeTool('list_devices', {})).content[0].text);
+      expect(detail.hint).toMatch(/^The API refused the connector's credentials \(401\)\. Bitrix24 refused the webhook/);
+      expect(detail.hint).toMatch(/settings are at https:\/\/cloud\.example\.com\/connectors\/conn-1$/);
+    });
+
+    it('tells a Cloud user an on-premises TallyPrime must be reachable from the internet', async () => {
+      const { executor, restEngine } = build(catalogTool('tallyprime', 'http://192.168.1.20:9000'), { cloud: true });
+      restEngine.execute.mockRejectedValueOnce(
+        new Error('Could not reach the API: the request was aborted before the API responded (ECONNABORTED).'),
+      );
+      const detail = JSON.parse((await executor.executeTool('list_devices', {})).content[0].text);
+      expect(detail.hint).toMatch(/AnythingMCP Cloud calls TallyPrime over the internet/);
+    });
+
+    it('asks Odoo which databases it serves when a call says "No database is selected"', async () => {
+      odooAdvice.mockResolvedValue('ODOO_URL has "/web" after the host, so the calls go to the wrong address: set it to https://erp.acme.de.');
+      const base = 'https://erp.acme.de/web/json/2';
+      const { executor, restEngine } = build(catalogTool('odoo', base, { ODOO_DB: 'acme' }));
+      restEngine.execute.mockRejectedValueOnce(
+        await axiosFailure(404, '<!DOCTYPE html><title>404 Not Found</title><p>No database is selected</p>', base),
+      );
+      const detail = JSON.parse((await executor.executeTool('list_devices', {})).content[0].text);
+      expect(odooAdvice).toHaveBeenCalledWith(base, 'acme');
+      expect(detail.hint).toMatch(/^ODOO_URL has "\/web" after the host.*No database is selected/);
+    });
   });
 });
 

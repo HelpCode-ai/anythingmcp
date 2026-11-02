@@ -9,8 +9,11 @@
 #   KEEP_MAIL=1 bash deploy/cloud/stuck-users-report.test.sh   # print the mail
 #
 # Scenarios:
-#   1. --print renders all three sections, marks every org NEW on a first run,
-#      scrubs error texts, and touches neither the state nor the mailbox;
+#   1. --print renders all five sections, marks every org NEW on a first run,
+#      groups stuck orgs by cause and lists only "other" and company-address
+#      orgs, counts the funnel of this week's and last week's cohorts and the
+#      Etsy apps waiting for approval, scrubs error texts, and touches neither
+#      the state nor the mailbox;
 #   2. with no recipient configured the report goes to stdout and the state
 #      file records the stuck orgs;
 #   3. the next run calls them STILL STUCK, and counts the one that has since
@@ -67,7 +70,17 @@ select v.id, v.id, t0.now - v.age, t0.now from t0, (values
   ('org_old',     interval '60 days'),  -- stuck, but quiet this week
   ('org_lapsed',  interval '120 days'), -- only errors now, but succeeded once
   ('org_new1',    interval '1 day'),    -- signed up, no connector
-  ('org_new2',    interval '2 days')    -- signed up, connector, no call
+  ('org_new2',    interval '2 days'),   -- signed up, connector, no call
+  ('org_prev1',   interval '10 days'),  -- last week's cohort, went all the way
+  -- stuck this week, one per cause, older than 30 days (outside the signups)
+  ('org_stuck_c', interval '45 days'),  -- configuration, free mail: counted only
+  ('org_stuck_d', interval '46 days'),  -- quota, free mail: counted only
+  ('org_stuck_e', interval '47 days'),  -- other, free mail: listed anyway
+  ('org_stuck_f', interval '48 days'),  -- not reachable, company address: listed
+  -- Etsy apps
+  ('org_etsy_wait', interval '40 days'), -- refused this week, still pending
+  ('org_etsy_ok',   interval '50 days'), -- refused 9 days ago, approved this week
+  ('org_etsy_old',  interval '60 days')  -- seen pending by the watcher 20 days ago
 ) v(id, age);
 
 insert into users (id, email, organization_id, email_marketing_opt_out, created_at, updated_at)
@@ -79,7 +92,15 @@ from (values
   ('org_old',     'dave@example.com', false),
   ('org_lapsed',  'erin@example.com', false),
   ('org_new1',    'frank@example.com', false),
-  ('org_new2',    'grace@example.com', false)
+  ('org_new2',    'grace@example.com', false),
+  ('org_prev1',   'nina@example.com', false),
+  ('org_stuck_c', 'henry@gmail.com', false),
+  ('org_stuck_d', 'ivan@yahoo.co.uk', false),
+  ('org_stuck_e', 'judy@gmail.com', false),
+  ('org_stuck_f', 'kim@acme.example', false),
+  ('org_etsy_wait', 'lena@example.com', false),
+  ('org_etsy_ok',   'mike@example.com', false),
+  ('org_etsy_old',  'olga@example.com', false)
 ) v(org, email, optout) join organizations o on o.id = v.org;
 
 insert into organization_members (id, user_id, organization_id, role)
@@ -97,7 +118,14 @@ from t0, (values
   ('c_h_buffer', 'org_happy',   'Buffer', 'buffer'),
   ('c_o_vinted', 'org_old',     'Vinted', 'vinted'),
   ('c_l_github', 'org_lapsed',  'GitHub', 'github'),
-  ('c_g_notion', 'org_new2',    'Notion', 'notion')
+  ('c_g_notion', 'org_new2',    'Notion', 'notion'),
+  ('c_p_api',    'org_prev1',   'Prev API', null),
+  ('c_c_db',     'org_stuck_c', 'Shop DB', null),
+  ('c_d_ai',     'org_stuck_d', 'AI Proxy', null),
+  ('c_e_odd',    'org_stuck_e', 'Odd API', null),
+  ('c_f_lan',    'org_stuck_f', 'Intranet', null),
+  ('c_w_etsy',   'org_etsy_wait', 'Etsy', 'etsy'),
+  ('c_k_etsy',   'org_etsy_ok',   'Etsy', 'etsy')
 ) v(id, org, name, slug);
 
 insert into mcp_tools (id, connector_id, name, description, parameters, endpoint_mapping, updated_at)
@@ -117,13 +145,42 @@ insert into plan values
   ('c_h_buffer',  1, 'SUCCESS', null, 240),   -- 10 days ago
   ('c_o_vinted',  4, 'ERROR', 'Request failed with status 429', 480),  -- 20 days ago
   ('c_l_github',  1, 'SUCCESS', null, 2400),  -- 100 days ago
-  ('c_l_github',  2, 'ERROR', 'Bad credentials', 3);
+  ('c_l_github',  2, 'ERROR', 'Bad credentials', 3),
+  ('c_p_api',     1, 'SUCCESS', null, 120),
+  ('c_c_db',      2, 'ERROR', 'No database is selected', 4),
+  ('c_d_ai',      2, 'ERROR', 'Insufficient credits: request failed with status 402', 4),
+  ('c_e_odd',     2, 'ERROR', 'The provider answered something odd', 4),
+  ('c_f_lan',     2, 'ERROR', 'connect ECONNREFUSED 10.0.0.1:443', 4),
+  ('c_k_etsy',    1, 'SUCCESS', null, 24);
 
 insert into tool_invocations (id, tool_id, user_id, organization_id, connector_id, input, output, status, error, created_at)
 select 'ti_' || p.c || '_' || p.h0 || '_' || g, 't_' || p.c, c.user_id, c.organization_id, p.c,
        '{"query":"INPUT-SECRET"}', '{"data":"OUTPUT-SECRET"}', p.s::"InvocationStatus", p.e,
        t0.now - make_interval(hours => p.h0 + g)
 from plan p join connectors c on c.id = p.c cross join t0 cross join generate_series(0, p.n - 1) g;
+
+-- Product events: the funnel and the Etsy key check (fake metadata).
+insert into product_events (id, event, organization_id, metadata, created_at)
+select 'pe_' || row_number() over (), v.event, v.org, v.meta::jsonb, t0.now - v.age
+from t0, (values
+  ('ai_client_connected', 'org_stuck_a', '{"client":"Claude"}', interval '3 days'),
+  ('catalog_search',      'org_stuck_a', '{"via":"mcp","query":"reddit","results":1}', interval '3 days'),
+  ('setup_started',       'org_stuck_a', '{"adapterSlug":"reddit"}', interval '3 days'),
+  ('setup_completed',     'org_stuck_a', '{"adapterSlug":"reddit"}', interval '3 days'),
+  ('catalog_search',      'org_new2',    '{"via":"store","query":"notion","results":1}', interval '2 days'),
+  ('setup_started',       'org_new2',    '{"adapterSlug":"notion"}', interval '2 days'),
+  ('ai_client_connected', 'org_prev1',   '{"client":"Claude"}', interval '10 days'),
+  ('catalog_search',      'org_prev1',   '{"via":"welcome","query":"api","results":3}', interval '10 days'),
+  ('setup_started',       'org_prev1',   '{"adapterSlug":"x"}', interval '10 days'),
+  ('setup_completed',     'org_prev1',   '{"adapterSlug":"x"}', interval '10 days'),
+  ('setup_verify_failed', 'org_etsy_wait', '{"adapterSlug":"etsy","kind":"auth_failed","status":403,"error":"Etsy does not accept these app keys yet. (403: API key not found or not active)"}', interval '2 days'),
+  ('setup_verify_failed', 'org_etsy_ok',   '{"adapterSlug":"etsy","kind":"auth_failed","status":403,"error":"Etsy does not accept these app keys yet. (403)"}', interval '9 days'),
+  ('etsy_app_pending_seen', 'org_etsy_old', '{"connectorId":"c_gone"}', interval '20 days'),
+  ('etsy_app_approved_notified', 'org_etsy_ok', '{"connectorId":"c_k_etsy"}', interval '1 day'),
+  -- not the pending answer: another status, another adapter
+  ('setup_verify_failed', 'org_happy',   '{"adapterSlug":"etsy","kind":"invalid_input","status":400}', interval '1 day'),
+  ('setup_verify_failed', 'org_happy',   '{"adapterSlug":"shopify","kind":"auth_failed","status":403}', interval '1 day')
+) v(event, org, meta, age);
 SQL
 
 ENVF="$WORK/.env"
@@ -134,10 +191,22 @@ echo "1. --print on a first run"
 printf 'DOMAIN=cloud.example.test\n' > "$ENVF"
 run --print > "$WORK/r1.txt" 2>/dev/null
 R="$WORK/r1.txt"
-has   "$R" "SUMMARY: 2 new stuck orgs (0 still stuck), 1 connector failing for everyone (+1 under 20 %), 1 of 3 signups without a connector." "summary line"
+has   "$R" "SUMMARY: 6 new stuck orgs (0 still stuck), 1 connector failing for everyone (+1 under 20 %), 1 of 3 signups without a connector." "summary line"
 has   "$R" "[NEW] alice@example.com [opt-out]" "stuck org A, NEW, opt-out flagged"
 has   "$R" "[NEW] bob@example.org" "stuck org B, NEW"
-has   "$R" "Active this week: 2 (2 new, 0 still stuck). Active in the last 30 days: 3. All time: 3." "30-day and all-time context"
+has   "$R" "Active this week: 6 (6 new, 0 still stuck). Active in the last 30 days: 7. All time: 7." "30-day and all-time context"
+has   "$R" "By the cause of their most frequent error: 1 credentials, 1 config, 1 quota, 1 unreachable, 2 other." "stuck orgs counted per cause"
+has   "$R" "Credentials (401/403, invalid key or token): 1" "403 counted as credentials"
+has   "$R" "Configuration (404/405, no database selected, unknown host): 1 (1 on free-mail addresses, counted only)" "configuration, free mail counted only"
+has   "$R" "Provider quota or billing (402, 429, quota, credits): 1 (1 on free-mail addresses, counted only)" "quota, free mail counted only"
+has   "$R" "Not reachable (connection refused, aborted, timed out): 1" "not reachable"
+has   "$R" "Other: 2" "other"
+hasnt "$R" "henry@gmail.com" "free-mail org with a known cause not listed"
+hasnt "$R" "ivan@yahoo.co.uk" "free-mail (country domain) org with a known cause not listed"
+has   "$R" "[NEW] judy@gmail.com" "free-mail org with an unknown cause listed"
+has   "$R" "[NEW] kim@acme.example" "company-address org listed"
+if sed -n '/^  Other: /,/^2\. /p' "$R" | grep -q "bob@example.org"; then ok "unknown error grouped under Other"; else bad "unknown error grouped under Other"; fi
+if sed -n '/^  Credentials /,/^  Not reachable/p' "$R" | grep -q "alice@example.com"; then ok "403 org grouped under Credentials"; else bad "403 org grouped under Credentials"; fi
 has   "$R" "12 calls this week, 12 in 30 days: Reddit ×12" "calls and connector per org"
 has   "$R" "most frequent error (10×): Request failed with status 403: GET https://oauth.reddit.com/r/test/search?… failed for <email> with bearer <token>" "error scrubbed: query string, e-mail, token"
 hasnt "$R" "SEEKRIT" "no query-string secret"
@@ -157,16 +226,34 @@ if sed -n '/^2\. /,/^3\. /p' "$R" | grep -q "My ERP"; then bad "... but a single
 hasnt "$R" "GitHub (github)" "healthy connector not listed"
 hasnt "$R" "Vinted" "connector quiet this week not listed"
 hasnt "$R" "erin@" "org that once succeeded is not stuck"
-has   "$R" "3 signed up [3]" "signup count"
+has   "$R" "3 signed up [4]" "signup count"
 has   "$R" "frank@example.com" "signup without connector listed"
 has   "$R" "grace@example.com" "signup without calls listed"
 has   "$R" "First report: nothing to compare with" "first-run note"
+# Funnel: this week org_stuck_a, org_new1, org_new2; last week org_prev1.
+frow() { grep -F -- "  $1 " "$R" | head -1 | tr -s ' ' | sed 's/^ //'; }
+fis()  { [ "$(frow "$1")" = "$1 $2" ] && ok "funnel: $1" || bad "funnel: $1 is '$(frow "$1")', expected '$1 $2'"; }
+has "$R" "4. FUNNEL OF THE ORGANIZATIONS CREATED THIS WEEK" "funnel section"
+fis "signed up" "3 100 % 1 100 %"
+fis "AI client connected" "1 33 % 1 100 %"
+fis "searched the catalog" "2 66 % 1 100 %"
+fis "from a chat (via=mcp)" "1 33 % 0 0 %"
+fis "in the store or on /welcome" "1 33 % 1 100 %"
+fis "setup started" "2 66 % 1 100 %"
+fis "setup completed" "1 33 % 1 100 %"
+fis "has a connector" "2 66 % 1 100 %"
+fis "successful call" "0 0 % 1 100 %"
+# Etsy: wait refused this week, ok approved after 8 days, old seen by the watcher.
+has "$R" "1 org(s) hit the \"not accepted yet\" error this week" "Etsy: refused this week"
+has "$R" "1 approved this week (first successful Etsy call after the error), after 8 day(s) on median" "Etsy: approved this week"
+has "$R" "2 still pending (error in the last 30 days, no successful Etsy call since)" "Etsy: still pending"
+has "$R" "1 approval e-mail(s) sent this week (etsy_app_approved_notified)" "Etsy: approval e-mails"
 [ ! -e "$STATE/stuck-orgs" ] && ok "--print writes no state" || bad "--print wrote state"
 
 echo "2. no recipient: report on stdout, state written"
 run > "$WORK/r2.txt" 2>/dev/null
 has "$WORK/r2.txt" "[NEW] alice@example.com" "report on stdout (the journal under systemd)"
-[ "$(sort "$STATE/stuck-orgs" | tr '\n' ' ')" = "org_stuck_a org_stuck_b " ] && ok "state lists the two stuck orgs" || bad "state: $(cat "$STATE/stuck-orgs" 2>/dev/null)"
+[ "$(sort "$STATE/stuck-orgs" | tr '\n' ' ')" = "org_stuck_a org_stuck_b org_stuck_c org_stuck_d org_stuck_e org_stuck_f " ] && ok "state lists every stuck org, listed or only counted" || bad "state: $(cat "$STATE/stuck-orgs" 2>/dev/null)"
 
 echo "3. next week: still stuck, and one unstuck"
 psql_in -c "insert into tool_invocations (id, tool_id, organization_id, connector_id, input, status, created_at)
@@ -175,8 +262,8 @@ run --print > "$WORK/r3.txt" 2>/dev/null
 R="$WORK/r3.txt"
 has   "$R" "[STILL STUCK] alice@example.com" "org A now STILL STUCK"
 hasnt "$R" "bob@example.org" "org B, now working, gone"
-has   "$R" "Since the last report: 1 of the 2 orgs listed then have had a successful call." "unstuck count"
-has   "$R" "SUMMARY: 0 new stuck orgs (1 still stuck)" "summary counts still-stuck"
+has   "$R" "Since the last report: 1 of the 6 orgs listed then have had a successful call." "unstuck count"
+has   "$R" "SUMMARY: 0 new stuck orgs (5 still stuck)" "summary counts still-stuck"
 [ "${KEEP_MAIL:-0}" = 1 ] && { echo "──── second-week report ────"; cat "$R"; echo "────────────────────────────"; }
 
 echo "3b. daily trial report (deploy/cloud/trial-report.sh) on the same schema"
@@ -224,7 +311,7 @@ ENV
 rm -f "$STATE/stuck-orgs"
 if CURL_CA_BUNDLE="$WORK/cert.pem" run > "$WORK/r4.log" 2>&1; then ok "script exits 0 after sending"; else bad "script failed: $(cat "$WORK/r4.log")"; fi
 curl -s "http://127.0.0.1:$WEB_PORT/api/v1/message/latest/raw" > "$WORK/mail.eml"
-has "$WORK/mail.eml" "Subject: [AnythingMCP] Weekly stuck users: 1 new stuck org (0 still stuck)" "mail arrived with the summary as subject"
+has "$WORK/mail.eml" "Subject: [AnythingMCP] Weekly stuck users: 5 new stuck orgs (0 still stuck)" "mail arrived with the summary as subject"
 has "$WORK/mail.eml" "To: ops@example.test, second@example.test" "REPORT_TO wins over UPTIME_ALERT_TO, two recipients"
 has "$WORK/mail.eml" "[NEW] alice@example.com [opt-out]" "report in the body"
 [ -s "$STATE/stuck-orgs" ] && ok "state written after a successful send" || bad "no state after sending"

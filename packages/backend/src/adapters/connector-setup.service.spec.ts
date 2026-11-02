@@ -79,7 +79,7 @@ describe('ConnectorSetupService — find', () => {
     const etsy = out.results.find((r: any) => r.adapter === 'etsy');
     expect(etsy.setup).toMatch(/sign-in at the provider/);
     expect(etsy.settingsYouMayPass.map((s: any) => s.name)).toEqual(['ETSY_CLIENT_ID']);
-    expect(etsy.enteredByTheUserOnTheLinkedPage).toContain('Shared secret');
+    expect(etsy.enteredByTheUserOnTheLinkedPage).toContain('Shared Secret');
     expect(out.connectorsLeftOnThisPlan).toBe(4);
   });
 
@@ -285,7 +285,7 @@ describe('ConnectorSetupService — install', () => {
     const { service, ctx } = build();
     const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2' } });
     expect(out.body.status).toBe('needs_input'); // the shared secret still has to be entered on the page
-    expect(out.body.whatTheUserDoes).toMatch(/enter Shared secret, then sign in to .+ and approve\./);
+    expect(out.body.whatTheUserDoes).toMatch(/enter Shared Secret, then sign in to .+ and approve\./);
     expect(out.body.finishSetupUrl).toBeDefined();
   });
 
