@@ -4,7 +4,7 @@ import { encrypt } from '../common/crypto/encryption.util';
 
 const KEY = 'k'.repeat(32);
 
-function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any } = {}) {
+function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any; cloud?: boolean } = {}) {
   process.env.ENCRYPTION_KEY = KEY;
   const links: any[] = [];
   const serverConnectors: any[] = [];
@@ -28,7 +28,9 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
   const realAdapters = new AdaptersService(
     { connector: {}, mcpTool: {} } as any,
     { reloadConnectorTools: jest.fn() } as any,
-    { get: (k: string) => (k === 'ENCRYPTION_KEY' ? KEY : undefined) } as any,
+    {
+      get: (k: string) => (k === 'ENCRYPTION_KEY' ? KEY : k === 'DEPLOYMENT_MODE' && opts.cloud ? 'cloud' : undefined),
+    } as any,
     {} as any,
   );
   const adapters: any = {
@@ -178,6 +180,55 @@ describe('ConnectorSetupService — find', () => {
       expect.arrayContaining([expect.stringMatching(/^(binance|coinbase|sorare)$/)]),
     );
     expect((await service.install(claude, { adapter: 'binance' })).isError).toBe(true);
+  });
+});
+
+describe('ConnectorSetupService — File Search from the chat', () => {
+  it('suggests Synology File Search next to the DSM API connector, with the wizard link', async () => {
+    const { service, ctx } = build();
+    const out: any = (await service.find(ctx, { query: 'synology' })).body;
+    expect(out.results.slice(0, 2).map((r: any) => r.adapter)).toEqual(['synology', 'synology-file-search']);
+    const fs = out.results[1];
+    expect(fs.fileSearch).toBe(true);
+    expect(fs.setupUrl).toBe(
+      'https://cloud.example.com/connectors/new/file-search?protocol=sftp&preset=synology&adapter=synology-file-search&from=chat',
+    );
+    expect(fs.settingsYouMayPass).toBeUndefined();
+    expect(out.fileSearch.adapters).toContain('synology-file-search');
+    expect(out.fileSearch.whatItAdds).toMatch(/inside the documents/);
+    expect(out.next).toMatch(/setupUrl/);
+    // The DSM API connector keeps its normal answer.
+    expect(out.results[0].fileSearch).toBeUndefined();
+  });
+
+  it('offers the network folder on self-hosted only', async () => {
+    const selfHosted: any = (await build().service.find(build().ctx, { query: 'Netzlaufwerk' })).body;
+    expect(selfHosted.fileSearch.adapters).toContain('network-folder');
+
+    const { service, ctx } = build({ cloud: true });
+    const cloud: any = (await service.find(ctx, { query: 'Netzlaufwerk' })).body;
+    expect(cloud.results.map((r: any) => r.adapter)).not.toContain('network-folder');
+    expect(cloud.fileSearch.adapters).toEqual(['sftp', 'webdav']);
+  });
+
+  it('suggests nothing for SharePoint, OneDrive, Google Drive or Dropbox', async () => {
+    const { service, ctx } = build();
+    for (const query of ['sharepoint', 'onedrive', 'google drive', 'dropbox']) {
+      const out: any = (await service.find(ctx, { query })).body;
+      expect({ query, fileSearch: out.fileSearch }).toEqual({ query, fileSearch: undefined });
+      expect(out.results.some((r: any) => r.fileSearch)).toBe(false);
+    }
+  });
+
+  it('answers an install of a File Search entry with the wizard link, and installs nothing', async () => {
+    const { service, ctx, adapters, licenseGuard } = build({ role: 'ADMIN' });
+    const out: any = await service.install(ctx, { adapter: 'qnap-file-search' });
+    expect(out.isError).toBe(true);
+    expect(out.body.setupUrl).toBe(
+      'https://cloud.example.com/connectors/new/file-search?protocol=sftp&preset=qnap&adapter=qnap-file-search&from=chat',
+    );
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
+    expect(licenseGuard.checkCanCreateConnector).not.toHaveBeenCalled();
   });
 });
 

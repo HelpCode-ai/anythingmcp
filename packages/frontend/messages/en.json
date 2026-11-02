@@ -363,6 +363,12 @@
       "range": "{from}–{to} of {total}",
       "prev": "Previous",
       "next": "Next"
+    },
+    "searchHint": {
+      "title": "Want your AI to search inside the documents?",
+      "body": "File Search indexes the PDF, Word, Excel and Outlook files on your NAS, server or storage and keeps the index in sync, so the AI finds what is written in them, not only the file names.",
+      "cta": "Set up File Search",
+      "for": "Opens the wizard for {name}."
     }
   },
   "fileShare": {

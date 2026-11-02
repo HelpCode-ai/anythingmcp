@@ -363,6 +363,12 @@
       "range": "{from}–{to} von {total}",
       "prev": "Zurück",
       "next": "Weiter"
+    },
+    "searchHint": {
+      "title": "Soll Ihre KI in den Dokumenten selbst suchen?",
+      "body": "Die Dateisuche indexiert die PDF-, Word-, Excel- und Outlook-Dateien auf Ihrem NAS, Server oder Speicher und hält den Index aktuell. So findet die KI, was in den Dateien steht, nicht nur ihre Namen.",
+      "cta": "Dateisuche einrichten",
+      "for": "Öffnet den Assistenten für {name}."
     }
   },
   "fileShare": {

@@ -334,7 +334,7 @@ export default function NewConnectorPage() {
   const fileSearchCard = (
     <Link
       key="FILE_SEARCH"
-      href="/connectors/new/file-search"
+      href="/connectors/new/file-search?from=connectors_new"
       className={cn(
         typeCardClass,
         'group border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]'
