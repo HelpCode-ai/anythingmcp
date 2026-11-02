@@ -439,6 +439,11 @@ function SetupContent() {
         if (check.missing?.length) {
           setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, 'Required'])));
           showStepOf(check.missing);
+        } else if (check.fields && Object.keys(check.fields).length > 0) {
+          // A value the server refused (an example left in the field, a key
+          // pasted twice): the message goes under that field.
+          setFieldErrors(check.fields);
+          showStepOf(Object.keys(check.fields));
         }
         setVerifyFailed(check);
         setPhase('form');
