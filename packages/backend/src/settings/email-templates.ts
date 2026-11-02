@@ -191,6 +191,48 @@ export function connectorAuthEmail(
   });
 }
 
+/**
+ * The provider approved the app the user created for a connector (Etsy: an
+ * app leaves Pending), so the sign-in that was refused works now. Sent once
+ * per connector (AppApprovalWatcherService). Transactional: the user asked to
+ * connect the app and is waiting for this.
+ */
+export function appApprovedEmail(
+  input: {
+    name: string | null;
+    /** The provider, e.g. "Etsy". */
+    providerName: string;
+    connectorUrl: string;
+    /** A first request to try once signed in, and its claude.ai link. */
+    prompt: string;
+    promptUrl: string;
+  },
+  ctx: EmailBrandContext,
+): RenderedEmail {
+  const hi = greeting(input.name);
+  const provider = input.providerName.trim() || 'The provider';
+  return build({
+    subject: `${provider} approved your app`,
+    preheader: `Finish the ${provider} sign-in to connect it to your AI client.`,
+    bodyHtml:
+      h1(`${esc(provider)} approved your app.`, 'One step is left: the sign-in.') +
+      p(
+        `${esc(hi)} ${esc(provider)} now accepts the app keys you entered in AnythingMCP. ` +
+          `Sign in to ${esc(provider)} from the connector page and approve the access; it takes a minute.`,
+      ) +
+      button(input.connectorUrl, `Finish the ${provider} sign-in`) +
+      p(`Then ask Claude: ${link(input.promptUrl, `&ldquo;${esc(input.prompt)}&rdquo;`)}`) +
+      small(`This is the only email about it. We checked your app keys with ${esc(provider)} until it approved them.`),
+    bodyText:
+      `${hi}\n\n${provider} now accepts the app keys you entered in AnythingMCP. ` +
+      `Sign in to ${provider} from the connector page and approve the access; it takes a minute.\n\n` +
+      `Finish the ${provider} sign-in: ${input.connectorUrl}\n\n` +
+      `Then ask Claude: "${input.prompt}" ${input.promptUrl}\n\n` +
+      `This is the only email about it. We checked your app keys with ${provider} until it approved them.`,
+    ctx,
+  });
+}
+
 export function licenseKeyEmail(
   input: { name: string; licenseKey: string },
   ctx: EmailBrandContext,

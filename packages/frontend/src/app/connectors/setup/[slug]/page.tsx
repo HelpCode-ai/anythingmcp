@@ -91,6 +91,14 @@ function SetupContent() {
   const [phase, setPhase] = useState<Phase>(backFromProvider ? 'working' : 'form');
   const [error, setError] = useState('');
   const [verifyFailed, setVerifyFailed] = useState<VerifyResult | null>(null);
+  /**
+   * The connector that keeps the keys of an app the provider has not approved
+   * yet (Etsy: Pending), saved on the check's answer: the backend checks the
+   * keys again and emails the owner on approval. A retry stores the new values
+   * on it instead of installing a second connector.
+   */
+  const [keptId, setKeptId] = useState<string | null>(null);
+  const targetId = existingId ?? keptId;
   const [result, setResult] = useState<{ connectorId: string; sample?: string; verified: boolean } | null>(null);
   const [redirectUri, setRedirectUri] = useState<string | null>(null);
   /** Secrets the existing connector already holds: shown as set, may stay empty. */
@@ -249,7 +257,7 @@ function SetupContent() {
     Object.fromEntries(
       fields
         .map((f) => [f.name, (values[f.name] ?? '').trim()] as const)
-        .filter(([name, v]) => existingId || v !== '' || !fields.find((f) => f.name === name)?.required),
+        .filter(([name, v]) => targetId || v !== '' || !fields.find((f) => f.name === name)?.required),
     ) as Record<string, string>;
 
   /** Client-side checks: required fields and patterns (of `only`, in a guide step). */
@@ -276,9 +284,9 @@ function SetupContent() {
   /** Create the connector, or store the values on the existing one. Returns its id. */
   const save = async (): Promise<string> => {
     const creds = credentials();
-    if (existingId) {
-      await connectors.updateEnvVars(existingId, creds, token!);
-      return existingId;
+    if (targetId) {
+      await connectors.updateEnvVars(targetId, creds, token!);
+      return targetId;
     }
     const out = await adapters.import(slug, token!, creds);
     return out.connectorId;
@@ -300,12 +308,25 @@ function SetupContent() {
       // shared secret) used to send the user to an error page at the
       // provider that they never came back from.
       const check =
-        info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), existingId ?? undefined);
+        info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), targetId ?? undefined);
       if (check && check.ok === false) {
         // setup_verify_failed is recorded by the server, with the provider's message.
         if (check.missing?.length) {
           setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, t('field.required')])));
           showStepOf(check.missing);
+        }
+        // The app waits for the provider's approval: keep the keys on a draft
+        // connector (hidden from MCP until signed in), so the backend can check
+        // them again and email the owner once they are accepted. When it cannot
+        // be saved (plan limit), the page shows the provider's answer as before.
+        if (check.appPending) {
+          try {
+            const id = await save();
+            setKeptId(id);
+            productEvents.track('setup_saved_draft', token, { adapterSlug: slug, kind: 'app_pending' });
+          } catch {
+            setKeptId(null);
+          }
         }
         setVerifyFailed(check);
         setPhase('form');
@@ -405,7 +426,17 @@ function SetupContent() {
   /** What the check or the save said, under the fields. */
   const checkOutcome = (
     <>
-      {verifyFailed && verifyFailed.ok === false && (
+      {verifyFailed && verifyFailed.ok === false && verifyFailed.appPending && keptId && (
+        <div role="status" className="rounded-[9px] bg-[var(--t-info-bg)] px-3 py-2 text-sm text-[var(--t-info-fg)]">
+          <p className="font-medium">{t('verify.appPendingTitle', { name: info.name })}</p>
+          <p className="mt-1">{t('verify.appPendingBody', { name: info.name })}</p>
+          <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
+          <Link href={`/connectors/${encodeURIComponent(keptId)}`} className="mt-2 inline-block text-xs font-medium underline">
+            {t('verify.appPendingOpen')}
+          </Link>
+        </div>
+      )}
+      {verifyFailed && verifyFailed.ok === false && !(verifyFailed.appPending && keptId) && (
         <div role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">
           <p className="font-medium">
             {verifyFailed.kind === 'auth_failed'

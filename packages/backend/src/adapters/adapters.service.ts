@@ -49,6 +49,7 @@ import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 import { matchCatalogUrl, UrlMatch, UrlMatchCandidate } from './catalog-url-match';
+import { APP_APPROVAL_ADAPTERS } from './app-approval-watch';
 
 @Injectable()
 export class AdaptersService {
@@ -591,34 +592,19 @@ export class AdaptersService {
    * provider down, a timeout) as nothing, so the sign-in goes ahead as before.
    * On 7 Oct 2026 every Etsy user who started the sign-in and never came back
    * had keys Etsy refused: an app still Pending, or the wrong shared secret.
+   *
+   * For an adapter whose approval is watched (APP_APPROVAL_ADAPTERS), a 403 is
+   * also flagged `appPending`: the setup page then keeps the keys and says the
+   * owner will be emailed when the provider accepts them.
    */
   private async checkAppKeys(
     adapter: AdapterDefinition,
     baseUrl: string,
     credentials?: Record<string, string>,
   ): Promise<VerifyResult | undefined> {
-    const check = adapter.checkBeforeAuthorization;
-    if (!check) return undefined;
-    const headers = Object.fromEntries(
-      Object.entries(check.headers ?? {}).map(([k, v]) => [k, this.resolveString(v, credentials)]),
-    );
-    if (Object.values(headers).some((v) => /\{\{\w+\}\}/.test(v))) return undefined;
-    let status: number;
-    let body = '';
-    try {
-      const response = await outboundRequest({
-        method: 'GET',
-        url: `${baseUrl.replace(/\/+$/, '')}/${check.path.replace(/^\/+/, '')}`,
-        headers,
-        timeout: 10000,
-        validateStatus: () => true,
-        responseType: 'text',
-      });
-      status = response.status;
-      body = String(response.data ?? '').slice(0, 200);
-    } catch {
-      return undefined;
-    }
+    const answer = await this.pingAppKeys(adapter, baseUrl, credentials);
+    if (!answer) return undefined;
+    const { status, body } = answer;
     if (status !== 401 && status !== 403) return undefined;
     const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.auth_failed;
     const hint = typeof own === 'string' ? own : own?.hint;
@@ -628,7 +614,55 @@ export class AdaptersService {
       kind: 'auth_failed',
       status,
       message: hint ? `${hint} (${upstream})` : `The provider refused the app keys (${upstream}).`,
+      ...(status === 403 && APP_APPROVAL_ADAPTERS.has(adapter.slug) ? { appPending: true } : {}),
     };
+  }
+
+  /**
+   * The same call as the setup check, with a connector's stored variables:
+   * 'accepted' when the provider answers 2xx, 'refused' on 401/403, 'unknown'
+   * for anything else (provider down, timeout, no check for this adapter).
+   * Used by AppApprovalWatcherService to notice an app the provider approved.
+   */
+  async recheckAppKeys(
+    slug: string,
+    baseUrl: string,
+    envVars: Record<string, string>,
+  ): Promise<'accepted' | 'refused' | 'unknown'> {
+    const adapter = getAdapter(slug);
+    if (!adapter?.checkBeforeAuthorization) return 'unknown';
+    const answer = await this.pingAppKeys(adapter, baseUrl, envVars);
+    if (!answer) return 'unknown';
+    if (answer.status >= 200 && answer.status < 300) return 'accepted';
+    if (answer.status === 401 || answer.status === 403) return 'refused';
+    return 'unknown';
+  }
+
+  /** One GET of the adapter's checkBeforeAuthorization; null when it cannot be sent or did not answer. */
+  private async pingAppKeys(
+    adapter: AdapterDefinition,
+    baseUrl: string,
+    credentials?: Record<string, string>,
+  ): Promise<{ status: number; body: string } | null> {
+    const check = adapter.checkBeforeAuthorization;
+    if (!check) return null;
+    const headers = Object.fromEntries(
+      Object.entries(check.headers ?? {}).map(([k, v]) => [k, this.resolveString(v, credentials)]),
+    );
+    if (Object.values(headers).some((v) => /\{\{\w+\}\}/.test(v))) return null;
+    try {
+      const response = await outboundRequest({
+        method: 'GET',
+        url: `${baseUrl.replace(/\/+$/, '')}/${check.path.replace(/^\/+/, '')}`,
+        headers,
+        timeout: 10000,
+        validateStatus: () => true,
+        responseType: 'text',
+      });
+      return { status: response.status, body: String(response.data ?? '').slice(0, 200) };
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -1133,6 +1167,12 @@ export type VerifyResult =
       /** Another adapter to offer instead, from the adapter's verifyHints. */
       suggest?: string;
       suggestName?: string;
+      /**
+       * The provider refused the app keys of an adapter whose approval is
+       * watched (an Etsy app still Pending, or a wrong shared secret): the
+       * setup page keeps the keys and the owner is emailed on approval.
+       */
+      appPending?: boolean;
     }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
 

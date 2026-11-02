@@ -723,7 +723,17 @@ export interface SetupGuide extends SetupEffort {
 
 export type VerifyResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }
-  | { ok: false; kind: string; message: string; missing?: string[]; status?: number | null; suggest?: string; suggestName?: string }
+  | {
+      ok: false;
+      kind: string;
+      message: string;
+      missing?: string[];
+      status?: number | null;
+      suggest?: string;
+      suggestName?: string;
+      /** The provider has not approved the app yet (Etsy: Pending): the page keeps the keys, the owner is emailed on approval. */
+      appPending?: boolean;
+    }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
 
 export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';

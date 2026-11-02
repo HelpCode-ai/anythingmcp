@@ -4,6 +4,7 @@ import {
   RenderedEmail,
   type RetentionOffer,
   activationReminderEmail,
+  appApprovedEmail,
   cardTrialOfferEmail,
   connectorAuthEmail,
   existingAccountEmail,
@@ -87,6 +88,20 @@ export const EMAIL_SAMPLES: EmailSample[] = [
           message:
             "Google revoked the sign-in 7 days after it was granted. This happens when the OAuth app in your Google Cloud project is in 'Testing'. Publish it ('In production') under APIs & Services → OAuth consent screen, then click Authorize with Provider again.",
           connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector`,
+        },
+        ctx,
+      ),
+  },
+  {
+    id: 'app-approved-etsy',
+    render: (ctx, n) =>
+      appApprovedEmail(
+        {
+          name: n.name,
+          providerName: 'Etsy',
+          connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector`,
+          prompt: 'Show my last 10 Etsy orders',
+          promptUrl: 'https://claude.ai/new?q=Show%20my%20last%2010%20Etsy%20orders',
         },
         ctx,
       ),
