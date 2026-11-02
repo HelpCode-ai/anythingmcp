@@ -331,7 +331,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
 
     let imported: Awaited<ReturnType<AdaptersService['importAdapter']>>;
     try {
-      imported = await this.adapters.importAdapter(slug, ctx.userId, ctx.organizationId, settings);
+      // A value that forms part of the API address may still be missing (a
+      // bot token is never taken here): the setup link asks for it.
+      imported = await this.adapters.importAdapter(slug, ctx.userId, ctx.organizationId, settings, {
+        addressMayWait: true,
+      });
     } catch (err: any) {
       return { isError: true, body: { error: String(err?.message ?? err) } };
     }

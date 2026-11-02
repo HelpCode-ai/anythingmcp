@@ -495,6 +495,53 @@ describe('AdaptersService install — a variable the operator provides (Deutsche
   });
 });
 
+describe('AdaptersService install — part of the address still to come', () => {
+  function build(execute = jest.fn()) {
+    const prisma = {
+      connector: {
+        create: jest.fn().mockResolvedValue({ id: 'c1' }),
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      mcpTool: {
+        create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn(async ({ data }: any) => ({ count: data.length })),
+      },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, prisma, execute };
+  }
+
+  it('still refuses an install without them by default', async () => {
+    const { service, prisma } = build();
+    await expect(service.importAdapter('telegram-bot', 'u1', 'org1', {})).rejects.toThrow(
+      /TELEGRAM_BOT_TOKEN is required to install "telegram-bot"/,
+    );
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+  });
+
+  it('creates the connector waiting for them with addressMayWait, and calls nothing', async () => {
+    const { service, prisma, execute } = build();
+    const out = await service.importAdapter('shopify', 'u1', 'org1', {}, { addressMayWait: true });
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.baseUrl).toContain('{{SHOPIFY_STORE}}');
+    expect(out.probe).toBeNull();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a whole URL pasted into an address part with addressMayWait', async () => {
+    const { service } = build();
+    await expect(
+      service.importAdapter('insightly', 'u1', 'org1', { INSIGHTLY_POD: 'https://api.na1.insightly.com/v3.1' }, { addressMayWait: true }),
+    ).rejects.toThrow();
+  });
+});
+
 describe('AdaptersService starter pack', () => {
   const { STARTER_PACK } = jest.requireActual('./starter-pack');
   const { getAdapter } = jest.requireActual('./catalog');

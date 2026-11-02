@@ -268,6 +268,24 @@ describe('ConnectorSetupService — install', () => {
     expect(JSON.stringify(links)).not.toContain(token);
   });
 
+  it('installs Telegram and Shopify without the values in their API address, and asks for them', async () => {
+    // The bot token is part of Telegram's address and is never taken from the
+    // chat; the post-approve picker sends no values at all. Both installs
+    // used to be refused outright.
+    const { service, ctx, adapters } = build();
+    const telegram: any = await service.install(ctx, { adapter: 'telegram-bot' }, { via: 'post_approve' });
+    expect(adapters.importAdapter).toHaveBeenLastCalledWith('telegram-bot', 'u1', 'org-1', {}, { addressMayWait: true });
+    expect(telegram.isError).toBeUndefined();
+    expect(telegram.body.status).toBe('needs_input');
+    expect(telegram.body.whatTheUserDoes).toMatch(/bot token/i);
+    expect(telegram.body.finishSetupUrl).toMatch(/\/s\//);
+
+    const shopify: any = await service.install(ctx, { adapter: 'shopify' });
+    expect(shopify.isError).toBeUndefined();
+    expect(shopify.body.status).toBe('needs_input');
+    expect(shopify.body.finishSetupUrl).toMatch(/\/s\//);
+  });
+
   it('asks for the key of an Odoo JSON-RPC connector, which only its tools use', async () => {
     // The key lives in the request body. Before, the install answered "ready"
     // without a link and every call came back "Access Denied".

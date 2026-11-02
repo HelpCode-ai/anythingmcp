@@ -329,6 +329,7 @@ export class AdaptersService {
   private prepareConnector(
     adapter: AdapterDefinition,
     input?: Record<string, string>,
+    options: ImportAdapterOptions = {},
   ) {
     let credentials = input;
     // Values the operator provides for everyone (e.g. the cloud's own MOTIS
@@ -395,6 +396,7 @@ export class AdaptersService {
       adapter.slug,
       adapter.connector.baseUrl,
       resolvedBaseUrl,
+      options.addressMayWait === true,
     );
     // What the connector stores: a secret in the address (Telegram's bot
     // token, a Bitrix24 webhook URL) stays `{{VAR}}` and is resolved per call
@@ -821,6 +823,7 @@ export class AdaptersService {
     userId: string,
     organizationId: string,
     credentials?: Record<string, string>,
+    options: ImportAdapterOptions = {},
   ): Promise<{
     connectorId: string;
     toolsCreated: number;
@@ -845,7 +848,12 @@ export class AdaptersService {
       storedBaseUrl,
       resolvedHeaders,
       envVarsToPersist,
-    } = this.prepareConnector(adapter, credentials);
+    } = this.prepareConnector(adapter, credentials, options);
+    // Only with addressMayWait: part of the API address is still to come, so
+    // there is nothing to call yet.
+    const addressPending = /\{\{\w+\}\}/.test(
+      this.resolveString(adapter.connector.baseUrl, prepared ?? {}),
+    );
     // Same field checks as the verification: "Save anyway" and a chat
     // install skip the check, and a placeholder saved there fails every call.
     const fields = checkAdapterEnvValues(adapter, prepared ?? {});
@@ -913,7 +921,7 @@ export class AdaptersService {
     // A bridge that needs a sign-in at the provider has no token yet: listing
     // could only return a 401. It installs the snapshot, and the tools are
     // listed again, through the same policy, once the authorization completes.
-    if (adapter.connector.type === 'MCP' && !needsBrowserAuthorization(adapter)) {
+    if (adapter.connector.type === 'MCP' && !needsBrowserAuthorization(adapter) && !addressPending) {
       const started = Date.now();
       try {
         const discovered = await this.connectors.discoverRemoteMcpTools(connector);
@@ -1000,8 +1008,9 @@ export class AdaptersService {
       `Imported adapter "${slug}" as connector ${connector.id} with ${toolsCreated} tools`,
     );
 
-    const probe =
-      adapter.connector.type === 'MCP'
+    const probe = addressPending
+      ? null
+      : adapter.connector.type === 'MCP'
         ? mcpProbe
         : await this.runImportProbe(
             adapter,
@@ -1131,6 +1140,7 @@ export class AdaptersService {
     slug: string,
     template: string,
     resolved: string,
+    addressMayWait = false,
   ): void {
     const names = [
       ...new Set([...resolved.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1])),
@@ -1157,6 +1167,12 @@ export class AdaptersService {
       }
       return;
     }
+    // A chat or one-click install never has these values: a secret (Telegram's
+    // bot token) is never taken from the chat, and the post-approve picker
+    // sends none. The connector is created waiting for them, its setup state
+    // names them, and the setup link asks for them; saving them rebuilds the
+    // address from the catalog template.
+    if (addressMayWait) return;
     const plural = names.length > 1;
     // The hint shows the adapter's own template, never `resolved`. They differ
     // precisely in the parts the user supplied, and those can be secrets —
@@ -1254,6 +1270,17 @@ export type ExerciseResult =
   | { tool: string; outcome: 'ok'; durationMs: number; shape: string }
   | { tool: string; outcome: 'error'; durationMs: number; status: number | null; message: string }
   | { tool: string; outcome: 'skipped'; reason: string };
+
+export interface ImportAdapterOptions {
+  /**
+   * Create the connector even when a variable that forms part of the API
+   * address (Telegram's bot token, a Shopify store name) is not given yet.
+   * For installs that cannot carry it: the chat never takes a secret, and the
+   * post-approve picker sends no values. The setup link asks for it. Without
+   * this option such an install is refused, as before.
+   */
+  addressMayWait?: boolean;
+}
 
 export type ImportProbeResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }
