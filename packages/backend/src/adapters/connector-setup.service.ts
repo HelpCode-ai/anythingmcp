@@ -562,7 +562,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     token: string,
     userId: string,
     from?: unknown,
-  ): Promise<{ redirect: string } | { error: string }> {
+  ): Promise<{ redirect: string; organizationId: string } | { error: string }> {
     const row = await this.prisma.connectorSetupLink.findUnique({ where: { tokenHash: this.hash(String(token || '')) } });
     if (!row || row.expiresAt.getTime() < Date.now()) {
       return { error: 'This link has expired. Ask your AI client for a new one, or open the connector in the dashboard.' };
@@ -570,10 +570,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     if (row.userId !== userId) {
       return { error: 'This link was made for another account. Sign in as that account.' };
     }
-    if (row.usedAt) {
-      return { error: 'This link was already used. Ask your AI client for a new one, or open the connector in the dashboard.' };
+    // Opened again by the same user (a second click, a reload, a link
+    // preview) it still works until it expires: it is bound to that user and
+    // needs their session, so a second opening gives nobody else anything.
+    // usedAt records the first opening.
+    if (!row.usedAt) {
+      await this.prisma.connectorSetupLink.update({ where: { id: row.id }, data: { usedAt: new Date() } });
     }
-    await this.prisma.connectorSetupLink.update({ where: { id: row.id }, data: { usedAt: new Date() } });
     const connector = await this.prisma.connector.findFirst({
       where: { id: row.connectorId, organizationId: row.organizationId },
       select: { id: true, config: true },
@@ -588,6 +591,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       redirect: slug
         ? `/connectors/setup/${encodeURIComponent(slug)}?connector=${encodeURIComponent(connector.id)}&from=${back}`
         : `/connectors/${encodeURIComponent(connector.id)}`,
+      // The workspace the connector is in: the dashboard switches to it when
+      // its session is on another one, or every save would be refused.
+      organizationId: row.organizationId,
     };
   }
 

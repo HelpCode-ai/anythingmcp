@@ -145,7 +145,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'];
     // /f/<token>: File Share links decide themselves whether a sign-in is needed.
-    if (!isLoading && !token && !publicPaths.includes(pathname) && !pathname.startsWith('/f/')) {
+    // /s/<token>: setup links first try the sign-in the browser just made to
+    // connect an AI client, then send to /login themselves.
+    if (!isLoading && !token && !publicPaths.includes(pathname) && !pathname.startsWith('/f/') && !pathname.startsWith('/s/')) {
       const currentUrl = typeof window !== 'undefined' ? window.location.pathname + window.location.search : pathname;
       router.push(`/login?redirect=${encodeURIComponent(currentUrl)}`);
     }

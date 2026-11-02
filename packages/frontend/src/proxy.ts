@@ -53,6 +53,9 @@ export function proxy(request: NextRequest) {
     // File Share links (#1387): public links open for anyone with the token;
     // the page itself asks internal-link visitors to sign in.
     pathname.startsWith('/f/') ||
+    // Setup links from an AI client: the page opens a session from the
+    // sign-in just made to connect that client, or sends to /login itself.
+    pathname.startsWith('/s/') ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/.well-known') ||
     pathname === '/authorize' ||
