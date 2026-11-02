@@ -4679,6 +4679,8 @@ AnythingMCP is listed in Claude's connector directory: [claude.ai/directory/anyt
 2. Click **Connect**.
 3. Sign in to AnythingMCP Cloud and approve access. If you have several MCP servers, choose the ones Claude may reach.
 
+If your workspace has no apps yet, the page after approving says so. You can pick one of a few quick-setup apps there (Telegram, Shopify, WooCommerce, Odoo, Printify, Google Gemini), or skip it: **Continue to Claude** works either way. A picked app is added without credentials, and you finish it in the chat. Back in Claude, you can add any catalog app by asking, for example "Connect my Telegram bot to AnythingMCP." Claude finds the connector and adds it. Passwords and keys are never typed into the chat: Claude gives you a link to a page where you enter them.
+
 The listing always connects to AnythingMCP Cloud. For a self-hosted instance, use option 2.
 
 ---
