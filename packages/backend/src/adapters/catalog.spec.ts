@@ -127,6 +127,16 @@ describe('adapter catalog', () => {
     expect(adapters.length).toBeGreaterThan(0);
   });
 
+  it('gives every tool a parameters object, {} when the JSON leaves it out', () => {
+    for (const meta of listAdapters()) {
+      for (const tool of getAdapter(meta.slug)!.tools) {
+        expect(tool.parameters).toEqual(expect.any(Object));
+      }
+    }
+    const providers = getAdapter('openrouter')!.tools.find((t) => t.name === 'openrouter_list_providers');
+    expect(providers?.parameters).toEqual({});
+  });
+
   it('has unique slugs', () => {
     const slugs = adapters.map((a) => a.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
