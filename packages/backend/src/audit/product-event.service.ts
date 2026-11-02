@@ -230,6 +230,23 @@ export const ProductEvents = {
    */
   TRIAL_EXTENDED: 'trial_extended',
   /**
+   * Etsy refused a new app's keys with 403 (the app is still Pending, or the
+   * shared secret is wrong). metadata.adapterSlug, metadata.via = 'setup'
+   * (the guided setup's key check; metadata.connectorId when it finishes an
+   * existing connector) or 'watcher' (AppApprovalWatcherService started
+   * watching a connector, metadata.connectorId). Server-only. Answers how many
+   * Etsy setups wait for Etsy, read against the next one.
+   */
+  ETSY_APP_PENDING_SEEN: 'etsy_app_pending_seen',
+  /**
+   * Etsy accepted keys it had refused, and the connector's owner was told
+   * once (app-approval-watch.ts). metadata.connectorId, metadata.adapterSlug,
+   * metadata.kind = 'emailed', or 'not_sent' (no SMTP configured, or the
+   * send failed; never retried). Server-only. Its presence is what stops a
+   * second email for that connector.
+   */
+  ETSY_APP_APPROVED_NOTIFIED: 'etsy_app_approved_notified',
+  /**
    * Cloud: the onboarding cron sent a user with an empty workspace reminder 1
    * or 2 (ee/cloud/onboarding-reminder.ts). metadata.reminder = 1 or 2,
    * metadata.arm = the user's reminder-1 arm ('A', 'B' or 'holdout'),
@@ -266,6 +283,8 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.CHECKOUT_LINK_CREATED,
   ProductEvents.TRIAL_EXPIRED_CALL_BLOCKED,
   ProductEvents.TRIAL_EXTENDED,
+  ProductEvents.ETSY_APP_PENDING_SEEN,
+  ProductEvents.ETSY_APP_APPROVED_NOTIFIED,
   ProductEvents.ONBOARDING_REMINDER_SENT,
   ProductEvents.ONBOARDING_REMINDER_HOLDOUT,
 ]);

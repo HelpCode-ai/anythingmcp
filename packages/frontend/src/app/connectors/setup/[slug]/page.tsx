@@ -445,6 +445,20 @@ function SetupContent() {
           setFieldErrors(check.fields);
           showStepOf(Object.keys(check.fields));
         }
+        // The app waits for the provider's approval: keep the keys on a draft
+        // connector (hidden from MCP until signed in), so the backend can check
+        // them again and email the owner once they are accepted. When it cannot
+        // be saved (plan limit), the page shows the provider's answer as before.
+        if (check.appPending) {
+          // save() remembers the new connector (savedId), so a retry stores
+          // the new values on it instead of installing a second one.
+          try {
+            await save();
+            productEvents.track('setup_saved_draft', token, { adapterSlug: slug, kind: 'app_pending' });
+          } catch {
+            // Not saved (plan limit): the provider's answer is shown as before.
+          }
+        }
         setVerifyFailed(check);
         setPhase('form');
         return;
@@ -543,7 +557,17 @@ function SetupContent() {
   /** What the check or the save said, under the fields. */
   const checkOutcome = (
     <>
-      {verifyFailed && verifyFailed.ok === false && (
+      {verifyFailed && verifyFailed.ok === false && verifyFailed.appPending && connectorId && (
+        <div role="status" className="rounded-[9px] bg-[var(--t-info-bg)] px-3 py-2 text-sm text-[var(--t-info-fg)]">
+          <p className="font-medium">{info.name} has not approved your app yet.</p>
+          <p className="mt-1">{info.name} reviews new apps, usually within a few days. We&apos;ll e-mail you when it&apos;s approved; nothing else to do. Your keys are saved.</p>
+          <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
+          <Link href={`/connectors/${encodeURIComponent(connectorId)}`} className="mt-2 inline-block text-xs font-medium underline">
+            Open the connector
+          </Link>
+        </div>
+      )}
+      {verifyFailed && verifyFailed.ok === false && !(verifyFailed.appPending && connectorId) && (
         <div role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">
           <p className="font-medium">
             {verifyFailed.kind === 'auth_failed'
