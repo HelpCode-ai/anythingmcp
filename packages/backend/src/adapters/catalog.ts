@@ -1680,7 +1680,22 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
 ];
 // === AUTOGEN-ARRAY-END ===
 
-const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(withGraphqlBuiltins)
+/**
+ * A tool with no arguments may leave `parameters` out of its JSON, but the
+ * `mcp_tools.parameters` column is required: the install dropped every such
+ * tool ("Argument `parameters` is missing", OpenRouter on 2 Nov 2026). `{}`
+ * is what the catalog fingerprint already assumes, so versions do not change.
+ */
+function withDefaultParameters(adapter: AdapterDefinition): AdapterDefinition {
+  if (adapter.tools.every((t) => t.parameters != null)) return adapter;
+  return {
+    ...adapter,
+    tools: adapter.tools.map((t) => (t.parameters != null ? t : { ...t, parameters: {} })),
+  };
+}
+
+const ALL_ADAPTERS: AdapterDefinition[] = RAW_ADAPTERS.map(withDefaultParameters)
+  .map(withGraphqlBuiltins)
   .map(withODataBuiltins)
   .map(withEmailBuiltins)
   .map(withFileSearchBuiltins)

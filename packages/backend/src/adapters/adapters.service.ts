@@ -44,6 +44,7 @@ import {
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { storableBaseUrl } from '../connectors/catalog-env-rebuild.util';
 import { setupEffort } from './setup-guide';
+import { fileSearchSetupPath } from './file-search-setup';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
@@ -741,13 +742,14 @@ export class AdaptersService {
     probe: ImportProbeResult | null;
   }> {
     const adapter = this.getBySlug(slug);
-    if ((adapter.connector.type as string) === 'FILE_SEARCH') {
+    const fileSearchPath = fileSearchSetupPath(adapter);
+    if (fileSearchPath) {
       // Tested, scanned and checked against the plan by the File Search wizard;
       // a direct install would skip all three.
       throw new BadRequestException({
         statusCode: 400,
         code: 'file_search_wizard',
-        setupPath: `/connectors/new/file-search?protocol=${(adapter.connector.config as any)?.fileSearch?.protocol ?? 'sftp'}`,
+        setupPath: fileSearchPath,
         message: 'File Search connectors are set up with the File Search wizard: Connectors → New → File Search.',
       });
     }

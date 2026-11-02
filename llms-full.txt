@@ -1280,6 +1280,25 @@ The marketplace also lists ready-made entries that open the wizard with the
 right settings: S3 bucket, Nextcloud, ownCloud, Synology NAS, QNAP NAS,
 Fritz!Box storage and Hetzner Storage Box.
 
+A search for a storage system or for documents in the marketplace, on the
+welcome page or from a chat (`setup_find_connectors`) also brings these
+entries, next to the system's own API connector: "synology" shows the
+Synology DSM connector and Synology NAS (File Search), "nas", "file server",
+"Netzlaufwerk" or "pdf" show the File Search entries that fit. The marketplace
+and the welcome page add a short hint with a link to the wizard; in a chat the
+model gets the wizard link, since File Search is never installed from a chat.
+The network folder is suggested on self-hosted installs only. SharePoint,
+OneDrive, Google Drive and Dropbox searches get no File Search suggestion:
+those have connectors of their own.
+
+The wizard records anonymous funnel events (`file_search_wizard_opened`,
+`file_search_test_passed` / `file_search_test_failed`,
+`file_search_scan_finished`, `file_search_activated`,
+`file_search_locked_shown`) in the `product_events` table, on the Cloud and
+self-hosted alike. They carry the protocol, the product preset, the catalog
+entry, the test's error kind and the file count as a range (`101-500`), never
+a host, path, user name or file name.
+
 SMB is not reached directly from the Cloud: port 445 does not belong on the
 internet. Use SFTP or WebDAV on the NAS, or a self-hosted install.
 
