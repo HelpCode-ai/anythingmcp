@@ -10,6 +10,7 @@ interface RequestOptions {
   body?: unknown;
   token?: string;
   skipAutoLogout?: boolean;
+  headers?: Record<string, string>;
 }
 
 // Emitted when any authenticated request gets a 401 — auth-context listens for this.
@@ -49,6 +50,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(options.headers ?? {}),
   };
 
   if (token) {
@@ -657,6 +659,12 @@ export interface SetupLinkSession {
 }
 
 /**
+ * Sent on the requests that turn the recent sign-in cookie into a session:
+ * another origin cannot add it without a CORS preflight it does not pass.
+ */
+const DASHBOARD_HEADER = { 'X-AMCP-Dashboard': '1' };
+
+/**
  * The account this browser signed in with on the authorization page a short
  * while ago (connecting Claude, ChatGPT, …): the sign-in page offers
  * "Continue as …" instead of asking for the password again.
@@ -672,7 +680,8 @@ export const recentSignIn = {
       return null;
     }
   },
-  continue: () => request<SetupLinkSession>('/api/auth/recent-sign-in', { method: 'POST' }),
+  continue: () =>
+    request<SetupLinkSession>('/api/auth/recent-sign-in', { method: 'POST', headers: DASHBOARD_HEADER }),
   /** On sign-out: the next sign-in page offers nothing. */
   forget: () => fetch(`${API_BASE}/api/auth/recent-sign-in`, { method: 'DELETE' }).then(() => undefined, () => undefined),
 };
@@ -692,6 +701,7 @@ export const setupLinks = {
   open: (token: string, from?: string) =>
     request<{ redirect: string; session: SetupLinkSession }>('/api/setup-links/open', {
       method: 'POST',
+      headers: DASHBOARD_HEADER,
       body: { token, ...(from ? { from } : {}) },
     }),
 };

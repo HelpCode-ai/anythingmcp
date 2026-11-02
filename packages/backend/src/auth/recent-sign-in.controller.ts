@@ -13,7 +13,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { RecentSignInService, type RecentSignInSession } from './recent-sign-in.service';
-import { RECENT_SIGN_IN_COOKIE } from './recent-sign-in.util';
+import { RECENT_SIGN_IN_COOKIE, hasDashboardHeader } from './recent-sign-in.util';
 
 /**
  * "Continue as …" on the dashboard sign-in page, for a browser that signed in
@@ -42,6 +42,7 @@ export class RecentSignInController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Open a dashboard session from the recent sign-in' })
   async continue(@Req() req: Request): Promise<RecentSignInSession> {
+    if (!hasDashboardHeader(req)) throw new UnauthorizedException('Sign in to continue.');
     const user = await this.recent.user(req);
     const session = user ? await this.recent.session(user.id) : null;
     if (!session) throw new UnauthorizedException('Sign in to continue.');

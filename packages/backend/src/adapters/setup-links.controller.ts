@@ -15,6 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { ConnectorSetupService } from './connector-setup.service';
 import { RecentSignInService, type RecentSignInSession } from '../auth/recent-sign-in.service';
+import { hasDashboardHeader } from '../auth/recent-sign-in.util';
 
 const SIGN_IN_AGAIN = 'Sign in to open this link.';
 
@@ -70,7 +71,8 @@ export class SetupLinksController {
     @Req() req: Request,
     @Body() body: { token?: string; from?: string },
   ): Promise<{ redirect: string; session: RecentSignInSession }> {
-    const user = await this.recent.user(req);
+    // Only from the dashboard page itself (see RECENT_SIGN_IN_HEADER).
+    const user = hasDashboardHeader(req) ? await this.recent.user(req) : null;
     if (!user) throw new UnauthorizedException(SIGN_IN_AGAIN);
 
     const out = await this.setup.resolveLink(String(body?.token ?? ''), user.id, body?.from);
