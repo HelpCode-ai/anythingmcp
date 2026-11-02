@@ -176,3 +176,16 @@ test('a draft that is ready, or of the same adapter, is kept', async ({ page }) 
   await page.waitForTimeout(300);
   expect(calls.deleted).toEqual([]);
 });
+
+test('a hand-made replaces= link never deletes a draft of another adapter', async ({ page }) => {
+  const calls = await setup(page, {
+    draft: { id: 'c-draft', setupStatus: 'needs_input', config: { adapterSlug: 'shopify' }, envVars: {}, maskedEnvVars: [] },
+  });
+  await page.goto('/connectors/setup/odoo-jsonrpc?prefill.ODOO_URL=https%3A%2F%2Facme.odoo.com&prefill.ODOO_DB=acme&replaces=c-draft');
+  await page.getByLabel('User ID').fill('2');
+  await page.getByLabel('API key').fill('typed-key');
+  await page.getByRole('button', { name: 'Check and install' }).click();
+  await expect.poll(() => calls.imports.length).toBe(1);
+  await page.waitForTimeout(300);
+  expect(calls.deleted).toEqual([]);
+});
