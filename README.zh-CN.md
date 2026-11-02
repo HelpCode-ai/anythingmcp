@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 Claude、ChatGPT、Copilot 和 Gemini 连接到 ERP、电子商务、REST、SOAP 和 SQL 系统以及你的文件服务器：693 个连接器，还有企业记忆、技能和文件搜索。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 Claude、ChatGPT、Copilot 和 Gemini 连接到 ERP、电子商务、REST、SOAP 和 SQL 系统以及你的文件服务器：694 个连接器，还有企业记忆、技能和文件搜索。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：成为你企业大脑的开源 MCP 网关</h1>
@@ -20,7 +20,7 @@
 <p align="center">
   <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将 Claude、ChatGPT、Copilot 和 Gemini 连接到你公司运行的软件以及文件服务器上的文档。</strong><br/>
   在网关之上，它还为你维护企业大脑：一张描述各系统如何关联的知识图谱、AI 技能和企业记忆，由所有 AI 客户端共享，并按每个用户的角色限制访问。<br/>
-  693 个现成连接器，提供 12,000 多个工具，涵盖 SAP、Odoo、weclapp 和 Amazon Seller 等；其中 34 个无需 API 密钥。
+  694 个现成连接器，提供 12,000 多个工具，涵盖 SAP、Odoo、weclapp 和 Amazon Seller 等；其中 35 个无需 API 密钥。
 </p>
 
 <p align="center">
@@ -138,7 +138,7 @@ docker compose up -d
 
 ## 连接器目录
 
-共 693 个适配器，提供 12,000 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
+共 694 个适配器，提供 12,000 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
 
 | 类别 | 示例 |
 |---|---|
