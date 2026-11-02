@@ -35,7 +35,24 @@ const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 const BARE_ADDRESS = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d{1,5})?(?:[/?#]\S*)?$/;
 
 /** The scheme and host (with port), then everything after the host. */
-const HOST_AND_REST = /^((?:[a-z][a-z0-9+.-]*:\/\/)?[^/?#]+)(.*)$/i;
+/**
+ * An address split into scheme + host and what follows the host. A scan, not
+ * a regular expression: a pasted value can be long, and backtracking over it
+ * must not cost more than one pass.
+ */
+function splitHost(text: string): { head: string; rest: string } {
+  const scheme = HAS_SCHEME.exec(text)?.[0] ?? '';
+  let end = scheme.length;
+  while (end < text.length && text[end] !== '/' && text[end] !== '?' && text[end] !== '#') end++;
+  return { head: text.slice(0, end), rest: text.slice(end) };
+}
+
+/** Without trailing slashes, in one pass. */
+function trimTrailingSlashes(text: string): string {
+  let end = text.length;
+  while (end > 0 && text[end - 1] === '/') end--;
+  return text.slice(0, end);
+}
 
 function matches(pattern: string, value: string): boolean {
   try {
@@ -81,8 +98,8 @@ function applyChanges(text: string, changes: Set<AddressChange>): string {
   let v = text;
   if (changes.has('scheme')) v = `https://${v}`;
   if (changes.has('https')) v = v.replace(/^http:\/\//i, 'https://');
-  if (changes.has('path')) v = v.replace(HOST_AND_REST, '$1');
-  if (changes.has('slash')) v = v.replace(/\/+$/, '');
+  if (changes.has('path')) v = splitHost(v).head;
+  if (changes.has('slash')) v = trimTrailingSlashes(v);
   if (changes.has('www')) v = v.replace(/^((?:[a-z][a-z0-9+.-]*:\/\/)?)www\./i, '$1');
   return v;
 }
@@ -99,7 +116,7 @@ export function addressFix(pattern: string, value: string): AddressFix | undefin
   if (!text || /\s/.test(text) || matches(pattern, text)) return undefined;
   const hasScheme = HAS_SCHEME.test(text);
   if (!hasScheme && !BARE_ADDRESS.test(text)) return undefined;
-  const rest = HOST_AND_REST.exec(text)?.[2] ?? '';
+  const { rest } = splitHost(text);
   const possible = CHANGE_ORDER.filter((c) => {
     switch (c) {
       case 'scheme':
