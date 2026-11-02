@@ -29,6 +29,8 @@
     }
   },
   "signIn": {
+    "continueAs": "Weiter als {email}",
+    "continueAsHint": "Sie haben sich hier gerade angemeldet, um Ihren KI-Assistenten zu verbinden.",
     "title": "Anmelden",
     "subtitle": "Erstellen Sie eigene Connectors für Claude, ChatGPT, Copilot, Meta Muse und jeden KI-Agenten",
     "emailVerified": "E-Mail-Adresse erfolgreich bestätigt! Sie können sich jetzt anmelden.",
