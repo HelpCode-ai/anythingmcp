@@ -16,6 +16,7 @@ interface FakeRes extends Response {
   _cleared: string[];
   _headers: Record<string, string>;
   _sent?: string;
+  _json?: any;
   _redirect?: string;
   _status: number;
 }
@@ -44,6 +45,10 @@ function makeRes(): FakeRes {
     },
     send(payload: string) {
       this._sent = payload;
+      return this;
+    },
+    json(payload: unknown) {
+      this._json = payload;
       return this;
     },
     redirect(url: string) {
@@ -679,7 +684,7 @@ describe('LoginController', () => {
       arrange();
       const page = (await login())._sent as string;
 
-      expect(page).toContain('<span id="example-request">Connect my Etsy shop to AnythingMCP.</span>');
+      expect(page).toContain('<span id="example-request">Connect my Telegram bot to AnythingMCP.</span>');
       expect(page).toContain('<button type="button" class="copy" id="copy-request">Copy</button>');
       // The button sits inside the example, never in the form that continues the authorization.
       expect(page).toContain("navigator.clipboard.writeText(request.textContent || '')");
@@ -837,6 +842,323 @@ describe('LoginController', () => {
 
       expect(res._redirect).toBe('http://mcp.test/callback');
       expect(cloudPrisma.connector.count).not.toHaveBeenCalled();
+    });
+
+    describe('the optional app picker', () => {
+      let provider: { canSetUp: jest.Mock; install: jest.Mock; find: jest.Mock; status: jest.Mock };
+      let picking: LoginController;
+      const LOGIN_USER = Buffer.from(JSON.stringify({ id: 'u1', email: 'a@b.com' })).toString('base64url');
+
+      const make = (deployment: object, withProvider = true) =>
+        new LoginController(
+          authService as unknown as AuthService,
+          cloudPrisma as unknown as PrismaService,
+          config as unknown as ConfigService,
+          store as unknown as PrismaOAuthStore,
+          sso as unknown as SsoService,
+          deployment as any,
+          grants as any,
+          productEvents as any,
+          licenseGuard as any,
+          eligibility as any,
+          undefined,
+          { get: () => ({ get: () => (withProvider ? provider : null) }) } as any,
+        );
+      const CLOUD = { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false };
+
+      beforeEach(() => {
+        provider = {
+          canSetUp: jest.fn().mockResolvedValue(true),
+          install: jest.fn().mockResolvedValue({ body: { installed: 'Telegram Bot', status: 'needs_input', finishSetupUrl: 'https://cloud.example/s/x' } }),
+          find: jest.fn(),
+          status: jest.fn(),
+        };
+        (grants as any).resolve = jest.fn().mockResolvedValue({ mode: 'servers', servers: [{ id: 'srv-1', organizationId: 'org-1' }] });
+        picking = make(CLOUD);
+      });
+
+      const showPage = async (c: LoginController = picking) => {
+        const res = makeRes();
+        await c.handleLogin(
+          makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: 'tok' }, headers: { host: 'mcp.test' } } as any),
+          { email: 'a@b.com', password: 'pw', csrf: 'tok', action: 'approve' },
+          res,
+        );
+        return res;
+      };
+
+      const pick = async (
+        body: Record<string, unknown>,
+        signedCookies: Record<string, string> = { first_app_csrf: 'pick-tok', login_user: LOGIN_USER },
+        c: LoginController = picking,
+      ) => {
+        const res = makeRes();
+        await c.pickFirstApp(
+          makeReq({ cookies: { oauth_session: 's1' }, signedCookies, headers: { host: 'mcp.test' } } as any),
+          body,
+          res,
+        );
+        return res;
+      };
+
+      it('is offered, hidden until its script runs, with its own CSRF cookie', async () => {
+        arrange();
+        const res = await showPage();
+        const page = res._sent as string;
+        const token = res._cookies['first_app_csrf'];
+
+        expect(token.options).toEqual(expect.objectContaining({ httpOnly: true, signed: true }));
+        expect(token.options.maxAge).toBe(res._cookies['login_user'].options.maxAge);
+        expect(page).toContain(`<section class="quick" id="quick-apps" hidden data-csrf="${token.value}"`);
+        for (const [slug, name] of [
+          ['telegram-bot', 'Telegram'],
+          ['shopify', 'Shopify'],
+          ['woocommerce', 'WooCommerce'],
+          ['odoo', 'Odoo'],
+          ['printify', 'Printify'],
+          ['gemini', 'Google Gemini'],
+        ]) {
+          expect(page).toContain(`data-adapter="${slug}" data-name="${name}">${name}</button>`);
+        }
+        expect(page).toContain('<label class="other-label" for="other-app">Another app</label>');
+        expect(page).toContain('role="status" aria-live="polite"');
+        // Optional: Continue is still the one button, straight to the callback.
+        expect(page.match(/class="button"/g)).toHaveLength(1);
+        expect(page).toContain('href="http://mcp.test/callback" data-open-chat="https://claude.ai/new"');
+        expect(page.indexOf('id="quick-apps"')).toBeLessThan(page.indexOf('Continue to Claude'));
+      });
+
+      describe('its script', () => {
+        type El = {
+          textContent: string;
+          hidden: boolean;
+          disabled: boolean;
+          value: string;
+          attrs: Record<string, string>;
+          listeners: Record<string, (e: unknown) => void>;
+          getAttribute(n: string): string | null;
+          setAttribute(n: string, v: string): void;
+          addEventListener(t: string, f: (e: unknown) => void): void;
+          querySelectorAll(): El[];
+        };
+        const el = (attrs: Record<string, string> = {}, text = ''): El => ({
+          textContent: text,
+          hidden: false,
+          disabled: false,
+          value: '',
+          attrs,
+          listeners: {},
+          getAttribute(n) {
+            return n in this.attrs ? this.attrs[n] : null;
+          },
+          setAttribute(n, v) {
+            this.attrs[n] = v;
+          },
+          addEventListener(t, f) {
+            this.listeners[t] = f;
+          },
+          querySelectorAll() {
+            return [];
+          },
+        });
+        const flush = () => new Promise((r) => setImmediate(r));
+
+        /** Runs the page's scripts against a minimal DOM built from the page. */
+        const run = async (fetchAnswer: () => Promise<unknown>) => {
+          arrange();
+          const page = (await showPage())._sent as string;
+          const script = page.slice(page.indexOf('<script>') + 8, page.indexOf('</script>'));
+          const chips = [...page.matchAll(/data-adapter="([^"]+)" data-name="([^"]+)"/g)].map((m) =>
+            el({ 'data-adapter': m[1], 'data-name': m[2], 'aria-pressed': 'false' }),
+          );
+          const picker = el({ 'data-csrf': /data-csrf="([^"]+)"/.exec(page)![1] });
+          picker.hidden = true;
+          picker.querySelectorAll = () => chips;
+          const nodes: Record<string, El> = {
+            'copy-request': el(),
+            'example-request': el({}, 'Connect my Telegram bot to AnythingMCP.'),
+            'quick-apps': picker,
+            'quick-status': el(),
+            'other-app': el(),
+            continue: el({ 'data-client': 'Claude', 'data-open-chat': 'https://claude.ai/new' }),
+          };
+          const fetch = jest.fn(async () => ({ json: async () => fetchAnswer() }));
+          const open = jest.fn();
+          const window = { fetch, JSON, open };
+          require('vm').runInNewContext(script, {
+            document: { getElementById: (id: string) => nodes[id] ?? null },
+            navigator: {},
+            window,
+            fetch,
+            JSON,
+            encodeURIComponent,
+          });
+          return { nodes, chips, fetch, open };
+        };
+
+        it('shows the picker, adds a picked app and changes the request', async () => {
+          const { nodes, chips, fetch } = await run(async () => ({
+            ok: true,
+            name: 'Telegram',
+            request: 'Finish setting up my Telegram connector.',
+          }));
+          expect(nodes['quick-apps'].hidden).toBe(false);
+          chips[0].listeners.click({ currentTarget: chips[0] });
+          await flush();
+          await flush();
+
+          expect(fetch).toHaveBeenCalledWith('/auth/first-app', expect.objectContaining({ method: 'POST', credentials: 'same-origin' }));
+          expect(JSON.parse((fetch.mock.calls[0] as any)[1].body)).toEqual({
+            adapter: 'telegram-bot',
+            csrf: nodes['quick-apps'].attrs['data-csrf'],
+          });
+          expect(nodes['example-request'].textContent).toBe('Finish setting up my Telegram connector.');
+          expect(nodes['quick-status'].textContent).toBe('Telegram added — you’ll finish it in Claude.');
+          expect(chips[0].attrs['aria-pressed']).toBe('true');
+          // The other apps stay unavailable after a pick, without losing focus.
+          expect(chips.every((c) => c.attrs['aria-disabled'] === 'true' && !c.disabled)).toBe(true);
+        });
+
+        it('keeps everything usable when the pick fails', async () => {
+          const { nodes, chips } = await run(async () => ({ ok: false, error: 'Shopify could not be added right now.' }));
+          chips[1].listeners.click({ currentTarget: chips[1] });
+          await flush();
+          await flush();
+          expect(nodes['quick-status'].textContent).toBe('Shopify could not be added right now.');
+          expect(nodes['example-request'].textContent).toBe('Connect my Telegram bot to AnythingMCP.');
+          // aria-disabled, never disabled: keyboard focus stays on the chip.
+          expect(chips.every((c) => c.attrs['aria-disabled'] === 'false' && !c.disabled)).toBe(true);
+        });
+
+        it('turns another app into the request, and opens Claude with it on Continue', async () => {
+          const { nodes, open } = await run(async () => ({}));
+          nodes['other-app'].value = '  HubSpot   CRM ';
+          nodes['other-app'].listeners.input({});
+          expect(nodes['example-request'].textContent).toBe('Connect my HubSpot CRM to AnythingMCP.');
+          nodes['other-app'].value = '';
+          nodes['other-app'].listeners.input({});
+          expect(nodes['example-request'].textContent).toBe('Connect my Telegram bot to AnythingMCP.');
+
+          nodes.continue.listeners.click({});
+          expect(open).toHaveBeenCalledWith(
+            'https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP.',
+            '_blank',
+            'noopener',
+          );
+        });
+      });
+
+      it('opens a new chat only for a code sent to claude.ai', async () => {
+        arrange();
+        store.getOAuthSession.mockResolvedValue({
+          sessionId: 's1',
+          state: 'x',
+          clientId: 'client-abc',
+          redirectUri: 'https://chatgpt.com/connector_platform_oauth_redirect',
+          expiresAt: Date.now() + 20 * 60_000,
+        } as any);
+        store.getClient.mockResolvedValue({ client_id: 'client-abc', client_name: 'ChatGPT' } as any);
+        const page = (await showPage())._sent as string;
+        expect(page).toContain('Continue to ChatGPT');
+        expect(page).not.toContain('data-open-chat="');
+      });
+
+      it('is left out, with its cookie, when this instance cannot add connectors', async () => {
+        arrange();
+        const res = await showPage(make(CLOUD, false));
+        expect(res._sent).toContain('Claude is connected');
+        expect(res._sent).not.toContain('id="quick-apps"');
+        expect(res._cookies['first_app_csrf']).toBeUndefined();
+      });
+
+      it('adds the picked app for the user\'s workspace, without secrets, and records it', async () => {
+        arrange();
+        const res = await pick({ adapter: 'telegram-bot', csrf: 'pick-tok' });
+
+        expect(res._json).toEqual({
+          ok: true,
+          adapter: 'telegram-bot',
+          name: 'Telegram',
+          request: 'Finish setting up my Telegram connector.',
+        });
+        const ctx = {
+          userId: 'u1',
+          organizationId: 'org-1',
+          serverIds: ['srv-1'],
+          dashboardBase: 'https://cloud.example',
+          assistant: 'claude',
+          profile: 'default',
+        };
+        expect((grants as any).resolve).toHaveBeenCalledWith('client-abc', 'u1');
+        expect(provider.canSetUp).toHaveBeenCalledWith(ctx);
+        // Recorded apart from chat installs (setup_completed via 'post_approve').
+        expect(provider.install).toHaveBeenCalledWith(ctx, { adapter: 'telegram-bot' }, { via: 'post_approve' });
+        expect(productEvents.log).toHaveBeenCalledWith({
+          event: 'post_approve_app_picked',
+          userId: 'u1',
+          organizationId: 'org-1',
+          metadata: { adapterSlug: 'telegram-bot', client: 'Claude', status: 'added' },
+        });
+      });
+
+      it.each([
+        ['no token', {}],
+        ['a wrong token', { csrf: 'other' }],
+      ])('refuses a pick with %s (CSRF)', async (_label, extra) => {
+        arrange();
+        const res = await pick({ adapter: 'telegram-bot', ...extra });
+        expect(res._status).toBe(403);
+        expect(res._json.ok).toBe(false);
+        expect(provider.install).not.toHaveBeenCalled();
+      });
+
+      it('refuses a pick without the signed login cookie of the paused authorization', async () => {
+        arrange();
+        const res = await pick({ adapter: 'telegram-bot', csrf: 'pick-tok' }, { first_app_csrf: 'pick-tok' });
+        expect(res._status).toBe(403);
+        expect(provider.install).not.toHaveBeenCalled();
+      });
+
+      it('refuses a user who may not add connectors', async () => {
+        arrange({ role: 'VIEWER' });
+        provider.canSetUp.mockResolvedValue(false);
+        const res = await pick({ adapter: 'telegram-bot', csrf: 'pick-tok' });
+        expect(res._status).toBe(403);
+        expect(res._json.error).toContain('admins and editors');
+        expect(provider.install).not.toHaveBeenCalled();
+      });
+
+      it('installs only the page\'s own apps', async () => {
+        arrange();
+        const res = await pick({ adapter: 'etsy', csrf: 'pick-tok' });
+        expect(res._status).toBe(400);
+        expect(provider.install).not.toHaveBeenCalled();
+      });
+
+      it('lets the user continue when the install fails, and records why', async () => {
+        arrange();
+        provider.install.mockResolvedValue({ isError: true, body: { error: 'Connector limit reached' } });
+        const res = await pick({ adapter: 'shopify', csrf: 'pick-tok' });
+        expect(res._status).toBe(200);
+        expect(res._json).toEqual({ ok: false, error: expect.stringContaining('You can still continue') });
+        expect(productEvents.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: 'post_approve_app_picked',
+            metadata: { adapterSlug: 'shopify', client: 'Claude', status: 'failed', error: 'Connector limit reached' },
+          }),
+        );
+      });
+
+      it('does not exist on self-hosted', async () => {
+        arrange();
+        const res = await pick(
+          { adapter: 'telegram-bot', csrf: 'pick-tok' },
+          undefined,
+          make({ mode: 'self-hosted', isCloud: () => false, isSelfHosted: () => true }),
+        );
+        expect(res._status).toBe(404);
+        expect(provider.install).not.toHaveBeenCalled();
+      });
     });
   });
 
