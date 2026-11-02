@@ -932,7 +932,10 @@
       "providerError": "{name} ha risposto con un errore.",
       "suggest": "Configura invece {name}",
       "suggestOther": "Configura invece l'altro connettore",
-      "saveAnyway": "Salva comunque"
+      "saveAnyway": "Salva comunque",
+      "appPendingTitle": "{name} non ha ancora approvato la tua app.",
+      "appPendingBody": "{name} verifica le nuove app, di solito entro pochi giorni. Ti scriveremo un'e-mail quando sarà approvata; non devi fare altro. Le tue chiavi sono salvate.",
+      "appPendingOpen": "Apri il connettore"
     },
     "field": {
       "required": "Obbligatorio",
