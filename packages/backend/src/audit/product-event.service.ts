@@ -83,9 +83,32 @@ export const ProductEvents = {
    */
   EMPTY_WORKSPACE_PROMPT: 'empty_workspace_prompt',
   /**
+   * Cloud: on that page the user picked one of the quick-setup apps, and it
+   * was added to the workspace as a connector waiting for its credentials
+   * (login.controller.ts). metadata.adapterSlug, metadata.client (the OAuth
+   * client's name), metadata.status = 'added' or 'failed' (then
+   * metadata.error says why). Server-only. Read against
+   * empty_workspace_prompt (how many pick). The install also writes
+   * setup_completed with via 'post_approve' (verified as the chat's), so it is not
+   * counted as a setup made in the chat (via 'mcp') or the dashboard.
+   */
+  POST_APPROVE_APP_PICKED: 'post_approve_app_picked',
+  /**
+   * A tool of the shared /mcp tool set was called (shared-tool-calls.ts):
+   * metadata.tool = the listed tool, metadata.profile = 'default' (Claude and
+   * other clients) or 'chatgpt', metadata.client = the OAuth client's name
+   * when known, and metadata.setupTool = the AnythingMCP Setup tool when a
+   * run tool ran one (setup_find_connectors…). At most one row per
+   * workspace, tool and setup tool per UTC day. Server-only. Answers whether
+   * a newly connected workspace ever calls us, and which step it stops at.
+   */
+  SHARED_TOOL_CALLED: 'shared_tool_called',
+  /**
    * A search of the connector catalog: metadata.query, metadata.results (how
-   * many connectors matched), metadata.via (where: 'store', 'welcome', or
-   * 'mcp' when the model searched from a chat), metadata.missing (the words no
+   * many connectors matched), metadata.via (where: 'store', 'welcome', 'mcp'
+   * when the model searched from a chat, or 'mcp_search_fallback' when
+   * anythingmcp_search_tools looked the app up in the catalog because nothing
+   * in the workspace matched), metadata.missing (the words no
    * connector matches) and, when there are results, metadata.match: 'direct',
    * or 'fuzzy' (found only with a typo forgiven, "telgram") or 'partial'
    * (only some of the words matched) or 'suggested' (the first result is a
@@ -276,6 +299,8 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
+  ProductEvents.POST_APPROVE_APP_PICKED,
+  ProductEvents.SHARED_TOOL_CALLED,
   ProductEvents.ADS_ACTIVATION_REPORTED,
   ProductEvents.ADS_SIGNUP_REPORTED,
   ProductEvents.CARD_TRIAL_OFFER_ELIGIBLE,
@@ -391,12 +416,16 @@ export class ProductEventService {
 // start_trial_checkout_started); only the CHECKOUT_SOURCES values are kept.
 // `device`: 'mobile' (a touch screen) or 'desktop', on start_trial_viewed;
 // nothing finer, and any other value is dropped.
+// `tool`, `profile`, `setupTool`: shared_tool_called (a tool of the shared
+// /mcp set, the tool set's profile, the setup tool a run tool ran); the last
+// two only from a fixed set.
 // `protocol`, `preset`, `files`: the File Search wizard (FILE_SEARCH_*):
 // a known protocol, a known product preset and a file count bucket; any
 // other value is dropped, so no host, path or exact count can be stored.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
+  'tool', 'profile', 'setupTool',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
@@ -413,6 +442,8 @@ const KNOWN_FILE_BUCKETS = new Set(FILE_COUNT_BUCKETS);
 /** Keys whose value must be one of a fixed set; anything else is dropped. */
 const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<string>>> = {
   device: DEVICE_KINDS,
+  profile: new Set(['default', 'chatgpt']),
+  setupTool: new Set(['setup_find_connectors', 'setup_install_connector', 'setup_get_status']),
   protocol: KNOWN_PROTOCOLS,
   preset: KNOWN_PRESETS,
   files: KNOWN_FILE_BUCKETS,
