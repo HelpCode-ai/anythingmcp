@@ -7,6 +7,7 @@ import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
 import { FIRST_SUCCESS_KEY } from './card-trial-offer';
+import { parseUnclaimedLicences, type UnclaimedLicence, type UnclaimedSkipReason } from './license-unclaimed';
 import { Prisma } from '../generated/prisma/client';
 import { maskEmail } from '../auth/mcp-email-verification';
 
@@ -712,6 +713,124 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       );
     }
     return out;
+  }
+
+  /**
+   * Bind paid Cloud licences that never reached a workspace (see
+   * license-unclaimed.ts). Runs from the onboarding cron (hourly on the Cloud
+   * host). The licence site lists them; each one is bound like a key the
+   * customer pasted (setLicenseKey) to:
+   *   - the workspace the checkout named, if it still exists; otherwise
+   *   - the workspace of the verified account with the licence's address, if
+   *     that account is the workspace's administrator.
+   *
+   * A workspace that already holds a live paid licence is left alone: that is
+   * a second subscription, which the licence site already reports to us, and
+   * a person decides which one to keep. A key bound here to the same workspace
+   * whose activation never reached the site is activated again.
+   */
+  async bindUnclaimedPaidLicences(
+    now: Date = new Date(),
+  ): Promise<{ listed: number; bound: number; skipped: number; failed: number }> {
+    const out = { listed: 0, bound: 0, skipped: 0, failed: 0 };
+    if (!this.deployment.isCloud()) return out;
+    const headers = this.serviceHeaders();
+    if (!headers['x-amcp-service-token']) return out;
+
+    let licences: UnclaimedLicence[] | null;
+    try {
+      const { data } = await axios.post(`${this.apiBase}/api/license/unclaimed`, {}, { timeout: 15000, headers });
+      licences = parseUnclaimedLicences(data);
+    } catch (err: any) {
+      this.logger.warn(
+        `Unclaimed licence check failed (${err?.response?.status ?? 'no response'}): ${err?.message ?? err}`,
+      );
+      return out;
+    }
+    if (!licences) {
+      this.logger.warn('Unclaimed licence check: the licence site sent no list.');
+      return out;
+    }
+
+    for (const licence of licences) {
+      out.listed++;
+      const tail = licence.key.slice(-4);
+      try {
+        const target = await this.unclaimedLicenceTarget(licence, now);
+        if ('skip' in target) {
+          out.skipped++;
+          const log = `Unclaimed licence …${tail} (${maskEmail(licence.email)}) left unbound: ${target.skip}.`;
+          if (target.skip === 'already_paid' || target.skip === 'bound_elsewhere') this.logger.warn(log);
+          else this.logger.debug(log);
+          continue;
+        }
+        if (target.retryActivation) {
+          if (!(await this.activateLicense(licence.key, target.organizationId))) {
+            out.failed++;
+            continue;
+          }
+        } else {
+          await this.setLicenseKey(licence.key, target.organizationId);
+        }
+        out.bound++;
+        this.logger.log(
+          `Bound paid licence …${tail} (${licence.plan}, ${maskEmail(licence.email)}) to workspace ${target.organizationId}.`,
+        );
+      } catch (err: any) {
+        out.failed++;
+        this.logger.warn(`Could not bind unclaimed licence …${tail}: ${err?.message ?? err}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    if (out.listed > 0) {
+      this.logger.log(
+        `Unclaimed licences: listed=${out.listed} bound=${out.bound} skipped=${out.skipped} failed=${out.failed}`,
+      );
+    }
+    return out;
+  }
+
+  /** Where an unclaimed licence goes, or why it stays where it is. */
+  private async unclaimedLicenceTarget(
+    licence: UnclaimedLicence,
+    now: Date,
+  ): Promise<{ organizationId: string; retryActivation: boolean } | { skip: UnclaimedSkipReason }> {
+    let organizationId: string | null = null;
+    if (licence.organizationId) {
+      const org = await this.prisma.organization.findUnique({
+        where: { id: licence.organizationId },
+        select: { id: true },
+      });
+      if (!org) return { skip: 'no_workspace' };
+      organizationId = org.id;
+    } else {
+      const user = await this.prisma.user.findFirst({
+        where: {
+          email: { equals: licence.email, mode: 'insensitive' },
+          emailVerified: true,
+          organizationId: { not: null },
+        },
+        select: { role: true, organizationId: true },
+      });
+      if (!user?.organizationId) return { skip: 'no_account' };
+      if (user.role !== 'ADMIN') return { skip: 'not_admin' };
+      organizationId = user.organizationId;
+    }
+
+    const local = await this.prisma.license.findUnique({
+      where: { licenseKey: licence.key },
+      select: { organizationId: true },
+    });
+    if (local?.organizationId && local.organizationId !== organizationId) return { skip: 'bound_elsewhere' };
+    if (local?.organizationId === organizationId) return { organizationId, retryActivation: true };
+
+    const paid = await this.prisma.license.findMany({
+      where: { organizationId, plan: { not: 'trial' } },
+      select: { plan: true, status: true, expiresAt: true, billing: true },
+    });
+    if (paid.some((l) => isLivePaidLicence(l, now))) return { skip: 'already_paid' };
+    return { organizationId, retryActivation: false };
   }
 
   // ── License Activation ─────────────────────────────────────────────────────
