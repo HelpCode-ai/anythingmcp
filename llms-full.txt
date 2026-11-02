@@ -1280,6 +1280,25 @@ The marketplace also lists ready-made entries that open the wizard with the
 right settings: S3 bucket, Nextcloud, ownCloud, Synology NAS, QNAP NAS,
 Fritz!Box storage and Hetzner Storage Box.
 
+A search for a storage system or for documents in the marketplace, on the
+welcome page or from a chat (`setup_find_connectors`) also brings these
+entries, next to the system's own API connector: "synology" shows the
+Synology DSM connector and Synology NAS (File Search), "nas", "file server",
+"Netzlaufwerk" or "pdf" show the File Search entries that fit. The marketplace
+and the welcome page add a short hint with a link to the wizard; in a chat the
+model gets the wizard link, since File Search is never installed from a chat.
+The network folder is suggested on self-hosted installs only. SharePoint,
+OneDrive, Google Drive and Dropbox searches get no File Search suggestion:
+those have connectors of their own.
+
+The wizard records anonymous funnel events (`file_search_wizard_opened`,
+`file_search_test_passed` / `file_search_test_failed`,
+`file_search_scan_finished`, `file_search_activated`,
+`file_search_locked_shown`) in the `product_events` table, on the Cloud and
+self-hosted alike. They carry the protocol, the product preset, the catalog
+entry, the test's error kind and the file count as a range (`101-500`), never
+a host, path, user name or file name.
+
 SMB is not reached directly from the Cloud: port 445 does not belong on the
 internet. Use SFTP or WebDAV on the NAS, or a self-hosted install.
 
@@ -3511,6 +3530,16 @@ at the token endpoint: `client_secret_post` (default), `client_secret_basic`,
 or `private_key_jwt`, which signs a short-lived client assertion with a private
 key instead of sending a secret (see
 [REST connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/rest.md#signed-client-assertion-private_key_jwt>)).
+
+The browser sign-in ("Authorize with Provider") sends this server's callback
+URL (`<SERVER_URL>/api/mcp-oauth/callback`) as `redirect_uri`. A provider that
+wants something else there names it in `authConfig.providerRedirectUri`, which
+is then sent on the authorization request and on the code exchange alike.
+eBay is the case: its `redirect_uri` is the app's RuName, and the RuName's
+"Auth Accepted URL" in eBay's developer portal points at the callback URL.
+Use a variable (`"providerRedirectUri": "{{EBAY_RUNAME}}"`); until it has a
+value, the sign-in asks for it instead of starting. `authConfig.pkce: false`
+leaves out the PKCE challenge and verifier for providers that do not use them.
 
 A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
 connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
