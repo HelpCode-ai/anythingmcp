@@ -3460,6 +3460,24 @@ store, on /welcome and in the chat matches them like the name; they are never
 displayed. Keep them to names that clearly mean this app, each at most 40
 characters; a misspelling needs no alias, the search tolerates typos.
 
+`envVarMeta.<VAR>.pattern` (with `patternMessage`) is enforced on every path
+that writes the variable: the setup form, the pre-save check, the install
+(also "Save anyway" and a chat install) and the connector's variable editor.
+Those paths also refuse, field by field, an address or credential still
+holding an example (`host`, `example.com`, `your-api-key`, `<...>`,
+`PASTE_KEY_HERE`) and a credential pasted more than once (the same string
+repeated). See `packages/backend/src/adapters/env-var-checks.ts`.
+
+`verifyHints` maps a status (`"401"`) or failure kind (`"auth_failed"`,
+`"unreachable"`) to what the setup check tells the user. A tool call that
+the API answers 401 uses the adapter's `"401"` (or `"auth_failed"`) hint too
+when no built-in rule matches, followed by a link to the connector's page,
+so a connector saved without a passing check hears the same advice. Hints are
+read from the catalog at call time and reach installed connectors without
+"Apply update". Declare a `probe` (a read call with fixed `params`) when no
+GET without required parameters exists; without one the setup check is
+skipped and a wrong key is only found at the first call.
+
 ### Tools
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its

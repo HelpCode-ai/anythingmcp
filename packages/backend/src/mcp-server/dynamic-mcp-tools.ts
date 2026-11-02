@@ -53,6 +53,8 @@ import { EmailEngine } from '../connectors/engines/email.engine';
 import { FileSearchEngine } from '../file-search/file-search.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { hashContent } from '../adapters/catalog-fingerprint';
+import { getAdapter } from '../adapters/catalog';
+import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { connectorErrorWhen } from '../connectors/error-when.util';
 import {
@@ -787,14 +789,36 @@ export class DynamicMcpTools {
       // response says (a refresh token refused 7 days after a Google
       // authorization, a Meta session that was logged out).
       const engineHint = typeof error?.hint === 'string' && error.hint ? error.hint : undefined;
-      const hint = engineHint ?? deriveErrorHint({
+      // A catalog connector also gets its adapter's own advice (verifyHints)
+      // for a refused credential, and the link to its page where the user
+      // fixes it: a connector saved without a passing setup check otherwise
+      // repeats the vendor's bare "API key not valid" on every call.
+      const rawSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+      const adapterSlug = typeof rawSlug === 'string' && rawSlug ? rawSlug : undefined;
+      const message = typeof error?.message === 'string' ? error.message : undefined;
+      let hint = engineHint ?? deriveErrorHint({
         host:
           hostFromAxiosConfig(error?.config) ??
           hostFromUrl(tool.connectorConfig?.baseUrl),
         status: typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
-        message: typeof error?.message === 'string' ? error.message : undefined,
+        message,
         body: errorDetail.responseBody,
+        adapterSlug,
+        verifyHints: adapterSlug ? getAdapter(adapterSlug)?.verifyHints : undefined,
+        connectorPage: connectorPageUrl(tool.connectorId),
+        cloud: this.deployment.isCloud(),
       });
+      // Odoo JSON-2 "No database is selected": ask Odoo which databases this
+      // address serves and name them, as the setup check does. One small
+      // unauthenticated request, made only for this answer.
+      if (hint && adapterSlug === 'odoo' && /No database is selected/i.test(`${message ?? ''} ${String(errorDetail.responseBody ?? '')}`)) {
+        const envVars = (tool.connectorConfig?.envVars ?? {}) as Record<string, unknown>;
+        const advice = await odooNoDatabaseAdvice(
+          tool.connectorConfig?.baseUrl ?? undefined,
+          typeof envVars.ODOO_DB === 'string' ? envVars.ODOO_DB : undefined,
+        ).catch(() => undefined);
+        if (advice) hint = `${advice} ${hint}`;
+      }
       if (hint) errorDetail.hint = hint;
 
       await this.auditService.logInvocation({
