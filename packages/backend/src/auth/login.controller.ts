@@ -710,9 +710,11 @@ export class LoginController {
       var chips = picker.querySelectorAll('button[data-adapter]');
       var added = false;
       var busy = false;
+      // aria-disabled rather than disabled: a disabled button drops the
+      // keyboard focus to the page, and the picked one must stay readable.
       var setDisabled = function (on) {
-        for (var i = 0; i < chips.length; i++) chips[i].disabled = on;
-        other.disabled = on;
+        for (var i = 0; i < chips.length; i++) chips[i].setAttribute('aria-disabled', on ? 'true' : 'false');
+        other.readOnly = on;
       };
       var failed = function (name, message) {
         status.textContent = message || ('Could not add ' + name + ' right now. You can still continue and add it in the chat.');
@@ -784,12 +786,13 @@ export class LoginController {
   .chips button.chip:hover { background: var(--surface-2); border-color: var(--brand); }
   .chips button.chip:focus-visible, .example button.copy:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
   .chips button.chip[aria-pressed="true"] { background: var(--brand); color: #fff; border-color: var(--brand); }
-  .chips button.chip:disabled { cursor: default; opacity: .7; }
-  .chips button.chip[aria-pressed="true"]:disabled { opacity: 1; }
+  .chips button.chip[aria-disabled="true"] { cursor: default; }
+  .chips button.chip[aria-disabled="true"]:not([aria-pressed="true"]) { color: var(--text-3); background: #fff; border-color: var(--border); }
   .other-label { font-size: 12.5px; color: var(--text-2); font-weight: 500; }
   input.other { width: 100%; height: 38px; border: 1px solid var(--border); border-radius: 9px; padding: 0 12px;
              font: inherit; font-size: 14px; background: #fff; color: var(--text); margin: 0 0 8px; }
-  .quick-status { font-size: 13px; color: var(--text-2); margin: 0 0 8px; min-height: 1em; line-height: 1.45; }
+  .quick-status { font-size: 13px; color: var(--text-2); margin: 0 0 8px; line-height: 1.45; }
+  .quick-status:empty { margin: 0; }
   .trial { font-size: 13px; color: var(--text-2); margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); line-height: 1.5; }
   .trial a { color: var(--brand); }`,
     });
@@ -1042,7 +1045,8 @@ export class LoginController {
 
     let out: { body: unknown; isError?: boolean };
     try {
-      out = await provider.install(ctx, { adapter: app.slug });
+      // Recorded as via 'post_approve', apart from installs the chat makes.
+      out = await provider.install(ctx, { adapter: app.slug }, { via: 'post_approve' });
     } catch (err: any) {
       out = { isError: true, body: { error: String(err?.message ?? err) } };
     }

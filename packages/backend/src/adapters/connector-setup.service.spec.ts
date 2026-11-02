@@ -470,3 +470,30 @@ describe('ConnectorSetupService — links', () => {
     await expect(b.service.resolveLink('made-up', 'u1')).resolves.toEqual({ error: expect.stringContaining('expired') });
   });
 });
+
+describe('ConnectorSetupService — where a setup call comes from', () => {
+  const logged = (productEvents: { log: jest.Mock }, event: string) =>
+    productEvents.log.mock.calls.map(([e]) => e).filter((e) => e.event === event);
+
+  it('records the chat\'s own calls as via mcp, as before', async () => {
+    const { service, ctx, productEvents } = build({ role: 'ADMIN' });
+    await service.find(ctx, { query: 'telegram' });
+    await service.install(ctx, { adapter: 'telegram-bot' });
+    expect(logged(productEvents, 'catalog_search')[0].metadata.via).toBe('mcp');
+    expect(logged(productEvents, 'setup_completed')[0].metadata).toEqual(
+      expect.objectContaining({ adapterSlug: 'telegram-bot', via: 'mcp' }),
+    );
+  });
+
+  it('records the search fallback and a post-approve pick apart', async () => {
+    const { service, ctx, productEvents } = build({ role: 'ADMIN' });
+    await service.find(ctx, { query: 'telegram' }, { via: 'mcp_search_fallback' });
+    await service.install(ctx, { adapter: 'telegram-bot' }, { via: 'post_approve' });
+    expect(logged(productEvents, 'catalog_search')[0].metadata.via).toBe('mcp_search_fallback');
+    expect(logged(productEvents, 'setup_completed')[0].metadata).toEqual({
+      adapterSlug: 'telegram-bot',
+      via: 'post_approve',
+      verified: false,
+    });
+  });
+});

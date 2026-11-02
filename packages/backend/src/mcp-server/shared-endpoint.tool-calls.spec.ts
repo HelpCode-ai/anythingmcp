@@ -72,6 +72,28 @@ describe('shared /mcp: shared_tool_called', () => {
     register.mockRestore();
   });
 
+  it('hands the server-set origin of a setup call through to the setup service', async () => {
+    const register = jest.spyOn(toolset, 'registerSharedToolset').mockImplementation(() => undefined);
+    const provider = {
+      canSetUp: jest.fn().mockResolvedValue(true),
+      find: jest.fn().mockResolvedValue({ body: {} }),
+      install: jest.fn().mockResolvedValue({ body: {} }),
+      status: jest.fn(),
+    };
+    const { controller } = build(true);
+    (controller as any).sharedSetup = { get: () => provider };
+    await controller.handleGlobalPost(
+      { user: { sub: 'u1', organizationId: 'org-1', authMethod: 'oauth', azp: 'client-claude' }, body: { method: 'initialize' }, headers: { host: 'x' } } as any,
+      {} as any,
+    );
+    const setup = register.mock.calls[0][2].setup!;
+    await setup.run('setup_find_connectors', { query: 'telegram' }, { via: 'mcp_search_fallback' });
+    await setup.run('setup_install_connector', { adapter: 'telegram-bot' });
+    expect(provider.find).toHaveBeenCalledWith(expect.anything(), { query: 'telegram' }, { via: 'mcp_search_fallback' });
+    expect(provider.install).toHaveBeenCalledWith(expect.anything(), { adapter: 'telegram-bot' }, undefined);
+    register.mockRestore();
+  });
+
   it('reports nothing when the events service is not there', async () => {
     const register = jest.spyOn(toolset, 'registerSharedToolset').mockImplementation(() => undefined);
     const { controller } = build(false);

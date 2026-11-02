@@ -7,6 +7,7 @@ import { flattenToolSchema, jsonSchemaToZodShape, stripEnvVarParams } from './to
 import type { ToolResultContent } from './dynamic-mcp-tools';
 import { isMuseHost, knownClientFor } from '../auth/auth-page';
 import { searchTerms } from '../adapters/catalog-search';
+import type { SetupCallOptions } from './shared-setup';
 
 /**
  * The fixed tool set of the shared `/mcp` endpoint.
@@ -276,6 +277,16 @@ export function isSetupToolName(name: unknown): name is SetupToolName {
   return typeof name === 'string' && (SETUP_TOOL_NAMES as readonly string[]).includes(name);
 }
 
+/**
+ * The catalog's size for the setup tools' descriptions, rounded down to ten
+ * ("690+"), so it stays true as adapters are added and does not change the
+ * text with every single one. Read from the catalog when the module loads.
+ */
+function catalogSizeText(): string {
+  const n = listAdapters().length;
+  return n >= 20 ? `${Math.floor(n / 10) * 10}+` : String(n);
+}
+
 const SETUP_TOOL_SPECS: Array<{
   name: SetupToolName;
   title: string;
@@ -287,7 +298,7 @@ const SETUP_TOOL_SPECS: Array<{
     name: 'setup_find_connectors',
     title: 'Find a connector to add',
     description:
-      'Search the AnythingMCP catalog (265 ready connectors: ERPs, online shops, accounting, CRM, messaging, data APIs) for an app the user wants to connect. Returns each connector id, what setting it up involves, and which non-secret settings may be passed when installing.',
+      `Search the AnythingMCP catalog (${catalogSizeText()} ready connectors: ERPs, online shops, accounting, CRM, messaging, data APIs) for an app the user wants to connect. Returns each connector id, what setting it up involves, and which non-secret settings may be passed when installing.`,
     parameters: {
       type: 'object',
       properties: {
@@ -373,7 +384,11 @@ export interface SharedToolsetDeps {
    */
   setup?: {
     organizationId: string;
-    run(name: string, args: Record<string, unknown>): Promise<{ body: unknown; isError?: boolean }>;
+    run(
+      name: string,
+      args: Record<string, unknown>,
+      opts?: SetupCallOptions,
+    ): Promise<{ body: unknown; isError?: boolean }>;
   };
   /**
    * Told about every call of a tool of this set, before it runs: `tool` is
@@ -647,7 +662,12 @@ export function registerSharedToolset(
     }
     if (searchTerms(query).length === 0) return {};
     try {
-      const out = await deps.setup.run('setup_find_connectors', { query, limit: CAN_BE_ADDED_LIMIT });
+      const out = await deps.setup.run(
+        'setup_find_connectors',
+        { query, limit: CAN_BE_ADDED_LIMIT },
+        // Recorded apart from the model's own setup_find_connectors searches.
+        { via: 'mcp_search_fallback' },
+      );
       const results = (out.body as { results?: unknown } | null)?.results;
       if (out.isError || !Array.isArray(results)) return {};
       const canBeAdded = results

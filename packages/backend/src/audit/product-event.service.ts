@@ -88,8 +88,9 @@ export const ProductEvents = {
    * (login.controller.ts). metadata.adapterSlug, metadata.client (the OAuth
    * client's name), metadata.status = 'added' or 'failed' (then
    * metadata.error says why). Server-only. Read against
-   * empty_workspace_prompt (how many pick) and setup_completed with verified
-   * (how many finish the picked app in the chat).
+   * empty_workspace_prompt (how many pick). The install also writes
+   * setup_completed with via 'post_approve' (verified as the chat's), so it is not
+   * counted as a setup made in the chat (via 'mcp') or the dashboard.
    */
   POST_APPROVE_APP_PICKED: 'post_approve_app_picked',
   /**
@@ -104,8 +105,10 @@ export const ProductEvents = {
   SHARED_TOOL_CALLED: 'shared_tool_called',
   /**
    * A search of the connector catalog: metadata.query, metadata.results (how
-   * many connectors matched), metadata.via (where: 'store', 'welcome', or
-   * 'mcp' when the model searched from a chat), metadata.missing (the words no
+   * many connectors matched), metadata.via (where: 'store', 'welcome', 'mcp'
+   * when the model searched from a chat, or 'mcp_search_fallback' when
+   * anythingmcp_search_tools looked the app up in the catalog because nothing
+   * in the workspace matched), metadata.missing (the words no
    * connector matches) and, when there are results, metadata.match: 'direct',
    * or 'fuzzy' (found only with a typo forgiven, "telgram") or 'partial'
    * (only some of the words matched) or 'suggested' (the first result is a

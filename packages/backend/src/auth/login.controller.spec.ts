@@ -1015,6 +1015,8 @@ describe('LoginController', () => {
           expect(nodes['example-request'].textContent).toBe('Finish setting up my Telegram connector.');
           expect(nodes['quick-status'].textContent).toBe('Telegram added — you’ll finish it in Claude.');
           expect(chips[0].attrs['aria-pressed']).toBe('true');
+          // The other apps stay unavailable after a pick, without losing focus.
+          expect(chips.every((c) => c.attrs['aria-disabled'] === 'true' && !c.disabled)).toBe(true);
         });
 
         it('keeps everything usable when the pick fails', async () => {
@@ -1024,7 +1026,8 @@ describe('LoginController', () => {
           await flush();
           expect(nodes['quick-status'].textContent).toBe('Shopify could not be added right now.');
           expect(nodes['example-request'].textContent).toBe('Connect my Telegram bot to AnythingMCP.');
-          expect(chips.every((c) => !c.disabled)).toBe(true);
+          // aria-disabled, never disabled: keyboard focus stays on the chip.
+          expect(chips.every((c) => c.attrs['aria-disabled'] === 'false' && !c.disabled)).toBe(true);
         });
 
         it('turns another app into the request, and opens Claude with it on Continue', async () => {
@@ -1088,7 +1091,8 @@ describe('LoginController', () => {
         };
         expect((grants as any).resolve).toHaveBeenCalledWith('client-abc', 'u1');
         expect(provider.canSetUp).toHaveBeenCalledWith(ctx);
-        expect(provider.install).toHaveBeenCalledWith(ctx, { adapter: 'telegram-bot' });
+        // Recorded apart from chat installs (setup_completed via 'post_approve').
+        expect(provider.install).toHaveBeenCalledWith(ctx, { adapter: 'telegram-bot' }, { via: 'post_approve' });
         expect(productEvents.log).toHaveBeenCalledWith({
           event: 'post_approve_app_picked',
           userId: 'u1',

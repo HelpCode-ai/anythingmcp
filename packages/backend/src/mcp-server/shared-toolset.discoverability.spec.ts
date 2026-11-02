@@ -12,6 +12,7 @@ import {
 import { ConnectorSetupService } from '../adapters/connector-setup.service';
 import { AdaptersService } from '../adapters/adapters.service';
 import { listAdapters } from '../adapters/catalog';
+import type { SetupCallOptions } from './shared-setup';
 
 /**
  * How a new user finds out that apps are added from the chat: the default
@@ -161,6 +162,20 @@ describe('default profile: adding apps is said up front', () => {
     expect(describe('anythingmcp_search_tools')).toContain('catalog apps that can still be added');
     expect(describe('anythingmcp_get_configuration_url')).toContain('Apps can also be added from the chat');
   });
+
+  it('states the catalog size from the catalog, not a hard-coded number', async () => {
+    const size = `${Math.floor(listAdapters().length / 10) * 10}+`;
+    const run = jest.fn(async () => ({ body: {} }));
+    for (const profile of ['default', 'chatgpt'] as const) {
+      const client = await connect([], withSetup(run), profile);
+      const search = await call(client, 'anythingmcp_search_tools', { query: 'connector app', limit: 50 });
+      const find = search.body.tools.find((t: any) => t.name === 'setup_find_connectors');
+      const described = await call(client, 'anythingmcp_describe_tool', { tool: 'setup_find_connectors' });
+      expect(described.body.description).toContain(`(${size} ready connectors:`);
+      expect(described.body.description).not.toContain('265');
+      expect(find).toBeDefined();
+    }
+  });
 });
 
 describe('search: an app that is not connected yet', () => {
@@ -169,7 +184,11 @@ describe('search: an app that is not connected yet', () => {
     const client = await connect([CRM_READ], withSetup(run));
     const out = await call(client, 'anythingmcp_search_tools', { query: 'help with my etsy shop' });
 
-    expect(run).toHaveBeenCalledWith('setup_find_connectors', { query: 'help with my etsy shop', limit: 3 });
+    expect(run).toHaveBeenCalledWith(
+      'setup_find_connectors',
+      { query: 'help with my etsy shop', limit: 3 },
+      { via: 'mcp_search_fallback' },
+    );
     expect(out.body.canBeAdded).toEqual([
       {
         adapter: 'etsy',
@@ -277,8 +296,8 @@ describe('search fallback over the real catalog: what each profile may offer', (
       productEvents as any,
     );
     const ctx = { userId: 'u1', organizationId: 'org-A', serverIds: [], dashboardBase: 'https://cloud.example.com', profile };
-    const run = jest.fn((name: string, args: Record<string, unknown>) =>
-      name === 'setup_find_connectors' ? service.find(ctx, args) : Promise.resolve({ body: {} }),
+    const run = jest.fn((name: string, args: Record<string, unknown>, opts?: SetupCallOptions) =>
+      name === 'setup_find_connectors' ? service.find(ctx, args, opts) : Promise.resolve({ body: {} }),
     );
     return { run, productEvents };
   }
@@ -309,7 +328,7 @@ describe('search fallback over the real catalog: what each profile may offer', (
     expect(productEvents.log).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'catalog_search',
-        metadata: expect.objectContaining({ query: 'telegram', via: 'mcp', match: 'direct' }),
+        metadata: expect.objectContaining({ query: 'telegram', via: 'mcp_search_fallback', match: 'direct' }),
       }),
     );
   });

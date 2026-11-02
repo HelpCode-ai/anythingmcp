@@ -32,7 +32,7 @@ import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
 import { slugifyForPrefix } from '../connectors/graphql-builtins';
-import { SharedSetupRegistry } from './shared-setup';
+import { SharedSetupRegistry, type SetupCallOptions } from './shared-setup';
 import { SharedToolCallRecorder } from './shared-tool-calls';
 import { ProductEventService } from '../audit/product-event.service';
 import { PrismaService } from '../common/prisma.service';
@@ -522,11 +522,11 @@ export class McpEndpointController {
         ? {
             setup: {
               organizationId: setupCtx.organizationId,
-              run: (name: string, args: Record<string, unknown>) =>
+              run: (name: string, args: Record<string, unknown>, opts?: SetupCallOptions) =>
                 name === 'setup_find_connectors'
-                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number })
+                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number }, opts)
                   : name === 'setup_install_connector'
-                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> })
+                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> }, opts)
                     : setupProvider.status(setupCtx),
             },
           }
