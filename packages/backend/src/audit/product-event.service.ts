@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { AttributionClickId, clickIdFromAttribution, sanitizeSignupAttribution } from './signup-attribution';
 import { CHECKOUT_SOURCES } from '../license/license-checkout';
+import { FILE_SEARCH_PROTOCOLS } from '../file-search/file-search.types';
 
 /**
  * Product-usage events the UI reports so the activation funnel can be read
@@ -87,13 +88,59 @@ export const ProductEvents = {
    * 'mcp' when the model searched from a chat), metadata.missing (the words no
    * connector matches) and, when there are results, metadata.match: 'direct',
    * or 'fuzzy' (found only with a typo forgiven, "telgram") or 'partial'
-   * (only some of the words matched). Answers: which apps people look for that
+   * (only some of the words matched) or 'suggested' (the first result is a
+   * File Search entry offered for a storage query, "Dateiserver", that the
+   * words did not match by themselves). Answers: which apps people look for that
    * we have no connector for (results = 0, or missing set), and which we have
    * but they did not take (read against catalog_search_picked).
    */
   CATALOG_SEARCH: 'catalog_search',
   /** A result was picked after a search. metadata.query, adapterSlug, via. */
   CATALOG_SEARCH_PICKED: 'catalog_search_picked',
+  /**
+   * The File Search wizard (/connectors/new/file-search), read in order:
+   * opened → connection test passed or failed → scan finished → activated.
+   * On all of them: metadata.protocol (sftp, ftps, webdav, s3, local…),
+   * metadata.preset (the product preset: synology, nextcloud…) and
+   * metadata.adapterSlug (the catalog entry it was opened from), when known.
+   * Never a host, path, file name or user name. Answers where File Search
+   * setups are abandoned, and with which kind of storage.
+   *
+   * Opened: once per page load; metadata.via = where from ('store',
+   * 'welcome', 'store_hint' / 'welcome_hint' for the File Search hint under
+   * the search box, 'connectors_new', 'chat').
+   */
+  FILE_SEARCH_WIZARD_OPENED: 'file_search_wizard_opened',
+  /**
+   * The connection test passed (fingerprint confirmed where there is one), or
+   * failed: metadata.kind = the test's error kind ('auth', 'unreachable',
+   * 'timeout', 'tls', 'not_found', 'permission'…; 'request_failed' when the
+   * test could not run). A first test that only asks to confirm the server
+   * fingerprint is neither.
+   */
+  FILE_SEARCH_TEST_PASSED: 'file_search_test_passed',
+  FILE_SEARCH_TEST_FAILED: 'file_search_test_failed',
+  /**
+   * A folder scan started on the page ended: metadata.kind = 'fits' (the
+   * folder fits the plan), 'over_plan' (it does not, the upgrade bar shows),
+   * 'done' (no plan check came back) or 'failed';
+   * metadata.files = the folder's file count as a bucket ('1-100',
+   * '101-500'…, see FILE_COUNT_BUCKETS), never the number.
+   */
+  FILE_SEARCH_SCAN_FINISHED: 'file_search_scan_finished',
+  /**
+   * The connector was activated (first sync queued); metadata.files = the
+   * selected file count as a bucket. Read against opened for the whole funnel.
+   */
+  FILE_SEARCH_ACTIVATED: 'file_search_activated',
+  /**
+   * The wizard showed a wall instead of the form: metadata.kind = why
+   * ('no_licence', 'expired', 'community', 'plan_without_feature' for File
+   * Search not in the plan, 'connector_limit' for the plan's File Search
+   * connectors used up). Once per page load and kind. Answers how many
+   * setups stop at the plan, read against opened.
+   */
+  FILE_SEARCH_LOCKED_SHOWN: 'file_search_locked_shown',
   /**
    * Cloud: the workspace's first successful tool call was handed to the
    * licence site, to be uploaded to Google Ads as an activation conversion
@@ -306,15 +353,36 @@ export class ProductEventService {
 // start_trial_checkout_started); only the CHECKOUT_SOURCES values are kept.
 // `device`: 'mobile' (a touch screen) or 'desktop', on start_trial_viewed;
 // nothing finer, and any other value is dropped.
+// `protocol`, `preset`, `files`: the File Search wizard (FILE_SEARCH_*):
+// a known protocol, a known product preset and a file count bucket; any
+// other value is dropped, so no host, path or exact count can be stored.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
-  'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device',
+  'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
+const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
+/** The File Search wizard's product presets. */
+const KNOWN_PRESETS = new Set(['nextcloud', 'owncloud', 'synology', 'qnap', 'fritzbox', 'hetzner']);
+/**
+ * File counts as the File Search events carry them; the frontend's
+ * fileCountBucket (lib/file-search-catalog.ts) produces exactly these.
+ */
+export const FILE_COUNT_BUCKETS: readonly string[] = [
+  '0', '1-100', '101-500', '501-2000', '2001-10000', '10001-100000', '100001+',
+];
+const KNOWN_FILE_BUCKETS = new Set(FILE_COUNT_BUCKETS);
+/** Keys whose value must be one of a fixed set; anything else is dropped. */
+const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<string>>> = {
+  device: DEVICE_KINDS,
+  protocol: KNOWN_PROTOCOLS,
+  preset: KNOWN_PRESETS,
+  files: KNOWN_FILE_BUCKETS,
+};
 const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
 /** The values of `match` (see catalog-search.ts). */
-const SEARCH_MATCH_KINDS = new Set(['direct', 'fuzzy', 'partial']);
+const SEARCH_MATCH_KINDS = new Set(['direct', 'fuzzy', 'partial', 'suggested']);
 
 function boundMetadata(
   metadata: Record<string, unknown> | null | undefined,
@@ -329,8 +397,8 @@ function boundMetadata(
           ? (SEARCH_MATCH_KINDS.has(metadata[key] as string) ? metadata[key] : null)
           : key === 'source'
             ? (KNOWN_CHECKOUT_SOURCES.has(metadata[key] as string) ? metadata[key] : null)
-            : key === 'device'
-              ? (DEVICE_KINDS.has(metadata[key] as string) ? metadata[key] : null)
+            : ENUM_KEYS[key]
+              ? (ENUM_KEYS[key]!.has(metadata[key] as string) ? metadata[key] : null)
               : metadata[key];
     if (typeof v === 'string') entries.push([key, v.slice(0, 200)]);
     else if (typeof v === 'number' || typeof v === 'boolean') entries.push([key, v]);
