@@ -289,6 +289,56 @@ describe('catalog search — File Search suggestions', () => {
     }
   });
 
+  it.each([
+    ['lexware dokumente', 'lexware-office'],
+    ['lexware pdf', 'lexware-office'],
+    ['excel files', 'microsoft-excel'],
+    ['telegram send document', 'telegram-bot'],
+  ])('"%s": a word about documents next to an app suggests nothing, the app comes first', (query, slug) => {
+    const result = searchCatalog(cloud, query);
+    expect(result.fileSearch).toEqual([]);
+    expect(result.hits[0].entry.slug).toBe(slug);
+    expect(result.hits.some((h) => h.suggested)).toBe(false);
+  });
+
+  it('keeps a word about documents when the query names more than one other thing', () => {
+    // "gmail attachments pdf": no suggestion, but "pdf" still counts for the match.
+    const result = searchCatalog(cloud, 'gmail attachments pdf');
+    expect(result.fileSearch).toEqual([]);
+    expect(result.terms).toContain('pdf');
+  });
+
+  it.each([
+    ['amazon', ['amazon-ads', 'amazon-seller'], 's3-file-search'],
+    ['cloudflare', ['cloudflare'], 's3-file-search'],
+    ['digitalocean', ['digitalocean'], 's3-file-search'],
+    ['hetzner', ['hetzner-cloud', 'hetzner-storage-box'], 'sftp'],
+  ])('"%s" puts the apps it names before a File Search entry met only through an alias', (query, apps, alias) => {
+    const all = slugs(query);
+    expect(all).toContain(alias);
+    for (const app of apps) expect(all.indexOf(app)).toBeLessThan(all.indexOf(alias));
+    // ...and below every other direct result too.
+    const hits = searchCatalog(cloud, query).hits;
+    const at = hits.findIndex((h) => h.entry.slug === alias);
+    expect(hits.slice(at + 1).every((h) => fileSearchSlugs.has(h.entry.slug) || h.match !== 'direct')).toBe(true);
+  });
+
+  it('still finds a File Search entry by an alias alone: "aws" is S3', () => {
+    expect(slugs('aws')[0]).toBe('s3-file-search');
+  });
+
+  it('ranks a typo above a File Search entry met only through an alias: "hero"', () => {
+    const all = slugs('hero');
+    expect(all.indexOf('here-geocoding')).toBeLessThan(all.indexOf('qnap-file-search'));
+  });
+
+  it.each(['excel', 'word', 'outlook'])(
+    '"%s" leaves out File Search entries that only mention the file type in their description',
+    (query) => {
+      expect(slugs(query).filter((s) => fileSearchSlugs.has(s))).toEqual([]);
+    },
+  );
+
   it('caps the suggestions and lists none twice', () => {
     const result = searchCatalog(catalog, 'synology nas file server documents');
     expect(result.fileSearch.length).toBeLessThanOrEqual(MAX_FILE_SEARCH);
