@@ -1089,6 +1089,7 @@ describe('LoginController', () => {
         expect(token.options.maxAge).toBe(res._cookies['login_user'].options.maxAge);
         expect(page).toContain(`<section class="quick" id="quick-apps" hidden data-csrf="${token.value}"`);
         for (const [slug, name] of [
+          ['etsy', 'Etsy'],
           ['telegram-bot', 'Telegram'],
           ['shopify', 'Shopify'],
           ['woocommerce', 'WooCommerce'],
@@ -1181,7 +1182,7 @@ describe('LoginController', () => {
             request: 'Finish setting up my Telegram connector.',
           }));
           expect(nodes['quick-apps'].hidden).toBe(false);
-          chips[0].listeners.click({ currentTarget: chips[0] });
+          chips[1].listeners.click({ currentTarget: chips[1] });
           await flush();
           await flush();
 
@@ -1192,14 +1193,14 @@ describe('LoginController', () => {
           });
           expect(nodes['example-request'].textContent).toBe('Finish setting up my Telegram connector.');
           expect(nodes['quick-status'].textContent).toBe('Telegram added — you’ll finish it in Claude.');
-          expect(chips[0].attrs['aria-pressed']).toBe('true');
+          expect(chips[1].attrs['aria-pressed']).toBe('true');
           // The other apps stay unavailable after a pick, without losing focus.
           expect(chips.every((c) => c.attrs['aria-disabled'] === 'true' && !c.disabled)).toBe(true);
         });
 
         it('keeps everything usable when the pick fails', async () => {
           const { nodes, chips } = await run(async () => ({ ok: false, error: 'Shopify could not be added right now.' }));
-          chips[1].listeners.click({ currentTarget: chips[1] });
+          chips[2].listeners.click({ currentTarget: chips[2] });
           await flush();
           await flush();
           expect(nodes['quick-status'].textContent).toBe('Shopify could not be added right now.');
@@ -1356,7 +1357,7 @@ describe('LoginController', () => {
 
       it('installs only the page\'s own apps', async () => {
         arrange();
-        const res = await pick({ adapter: 'etsy', csrf: 'pick-tok' });
+        const res = await pick({ adapter: 'hubspot', csrf: 'pick-tok' });
         expect(res._status).toBe(400);
         expect(provider.install).not.toHaveBeenCalled();
       });
