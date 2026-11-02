@@ -17,6 +17,7 @@ import { PaginationQueryDto } from '../common/pagination.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { IsString, IsOptional, IsBoolean, IsArray, IsIn } from 'class-validator';
 import { SKILLS_DELIVERY_MODES, type SkillsDelivery } from '../knowledge-graph/kg-skill.service';
+import { CODE_MODE_MODES, type CodeMode } from '../mcp-server/code-tool.util';
 import { McpServersService } from './mcp-servers.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { PrismaService } from '../common/prisma.service';
@@ -83,6 +84,15 @@ class UpdateMcpServerDto {
   @IsOptional()
   @IsIn(SKILLS_DELIVERY_MODES as unknown as string[])
   skillsDelivery?: SkillsDelivery;
+
+  @ApiPropertyOptional({
+    enum: CODE_MODE_MODES,
+    description:
+      'Code mode for this server: off (default, no code execution), tools (saved code tools only), inline (also the generic code_execute / code_propose_tool). Needs a configured code-runner to actually run.',
+  })
+  @IsOptional()
+  @IsIn(CODE_MODE_MODES as unknown as string[])
+  codeMode?: CodeMode;
 }
 
 class AssignConnectorsDto {

@@ -2011,7 +2011,7 @@ export const mcpServers = {
     request<{ calls30d: number; lastCallAt: string | null }>(`/api/mcp-servers/${id}/activity`, { token }),
   create: (data: { name: string; slug?: string; description?: string; instructions?: string }, token: string) =>
     request<any>('/api/mcp-servers', { method: 'POST', body: data, token }),
-  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: 'auto' | 'inline' | 'index' }, token: string) =>
+  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: 'auto' | 'inline' | 'index'; codeMode?: 'off' | 'tools' | 'inline' }, token: string) =>
     request<any>(`/api/mcp-servers/${id}`, { method: 'PUT', body: data, token }),
   delete: (id: string, token: string) =>
     request(`/api/mcp-servers/${id}`, { method: 'DELETE', token }),

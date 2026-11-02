@@ -28,6 +28,7 @@ import { MAX_TOOL_NAME_LENGTH } from './parsers/tool-name.util';
 import { Type } from 'class-transformer';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
+import { DynamicMcpTools } from '../mcp-server/dynamic-mcp-tools';
 import { ConnectorsService } from './connectors.service';
 import { inferJsonSchema } from './output-schema.util';
 import { classifyToolExecutionError } from './connector-error.util';
@@ -312,6 +313,7 @@ export class ToolsController {
     private readonly connectorsService: ConnectorsService,
     private readonly edition: EditionService,
     private readonly licenseGuard: LicenseGuardService,
+    private readonly toolExecutor: DynamicMcpTools,
   ) {}
 
   /**
@@ -1000,6 +1002,42 @@ export class ToolsController {
     // MCP standard uses `arguments`; we historically accepted `params`. Take
     // `arguments` first, fall back to `params` so old clients keep working.
     const inputs = body.arguments ?? body.params ?? {};
+
+    // Code tools run their stored program in the out-of-process runner, not the
+    // REST/engine path. Route them there so the Test button exercises the real
+    // code-mode path instead of trying to HTTP-call the connector's base URL.
+    if (isCodeMethod(tool.endpointMapping)) {
+      const codeStart = Date.now();
+      const uses = parseCodeToolMapping(tool.endpointMapping)?.uses ?? [];
+      const codeRes = await this.toolExecutor.runSavedCodeTool(
+        {
+          id: tool.id,
+          name: tool.name,
+          connectorId: tool.connectorId,
+          connectorType: tool.connector.type,
+          organizationId: tool.connector.organizationId,
+          endpointMapping: tool.endpointMapping,
+        },
+        inputs,
+        {
+          userId: req.user?.sub,
+          userEmail: req.user?.email,
+          organizationId: tool.connector.organizationId,
+          authMethod: 'dashboard-test',
+          // The dashboard tester is an admin on this connector, so run
+          // unrestricted (invoker mode then behaves like ADMIN). The run is
+          // still bounded by the tool's `uses` and its write setting inside the
+          // bridge.
+          allowedToolIds: null,
+          connectorIds: uses.map((u) => u.connectorId),
+        },
+      );
+      return {
+        ok: !codeRes.isError,
+        durationMs: Date.now() - codeStart,
+        result: codeRes.structured ?? codeRes.content,
+      };
+    }
 
     // This runs from the admin UI, not through an authenticated MCP session,
     // so {{amcp.*}} resolves to empty here and the result can differ from a

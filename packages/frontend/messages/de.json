@@ -648,6 +648,11 @@
       "skillsAuto": "Automatisch: voller Text, solange kurz, sonst eine Liste bei Bedarf",
       "skillsInline": "Immer der volle Text",
       "skillsIndex": "Immer eine Liste (die KI öffnet einen Skill mit skill_get)",
+      "codeMode": "Code-Modus",
+      "codeModeOff": "Aus (keine Code-Ausführung)",
+      "codeModeTools": "Nur gespeicherte Code-Tools",
+      "codeModeInline": "Gespeicherte Code-Tools + Inline-Code",
+      "codeModeHint": "Lässt KI-Clients kurze Programme ausführen, die die Tools dieses Servers in einem Schritt orchestrieren. Standardmäßig aus; benötigt einen konfigurierten Code-Runner. Inline stellt zusätzlich das generische Tool code_execute für berechtigte Rollen bereit.",
       "skillsHint": "Wie die <link>KI-Skills</link> dieses Servers den KI-Client erreichen. Eine Liste hält die Anweisungen kurz; lange Abläufe werden immer bei Bedarf geöffnet.",
       "save": "Speichern"
     }
@@ -1701,7 +1706,7 @@
     "codeProgram": "Programm",
     "codeProgramHint": "Ein async-JavaScript-Rumpf. Andere Tools mit await amcp.run(name, args), amcp.search(query), amcp.describe(name) aufrufen. Die Tool-Eingaben stehen in args. Gib das Ergebnis zurück.",
     "codeUses": "Nutzt (Konnektoren)",
-    "codeUsesHint": "JSON: die Konnektoren, die dieses Code-Tool aufrufen darf, z. B. [{\"connectorId\":\"<id>\",\"tools\":[\"tool_name\"]}]. \"tools\" weglassen, um alle Tools eines Konnektors zu erlauben. Nur Konnektoren dieses Workspace.",
+    "codeUsesHint": "JSON-Array der Konnektoren, die dieses Code-Tool aufrufen darf. Jeder Eintrag nennt eine connectorId und optional eine Liste von Tool-Namen; ohne Tool-Liste sind alle Tools des Konnektors erlaubt. Nur Konnektoren dieses Workspace.",
     "codeRunAs": "Ausführen als",
     "codeRunAsInvoker": "Invoker (Rechte des Aufrufers)",
     "codeRunAsDefiner": "Definer (admin-kuratiert; nur Admins)",
