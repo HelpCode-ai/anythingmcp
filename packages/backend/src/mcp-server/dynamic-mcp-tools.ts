@@ -1298,6 +1298,17 @@ export class DynamicMcpTools {
     return !!this.codeExecutor?.isConfigured();
   }
 
+  /**
+   * Whether the organization's plan includes inline code (Team and above). The
+   * MCP endpoint uses it to gate `code_execute` / `code_propose_tool` exposure,
+   * on top of the per-server `codeMode` and the caller's `inlineCode` role
+   * capability. Delegates to the licence guard so the plan→feature map lives in
+   * one place.
+   */
+  async inlineCodeAllowedForOrg(organizationId?: string): Promise<boolean> {
+    return this.licenseGuard.canUseInlineCode(organizationId);
+  }
+
   async executeInlineCode(
     code: string,
     context: CodeExecContext,

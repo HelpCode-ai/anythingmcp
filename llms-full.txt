@@ -6763,6 +6763,10 @@ where Enterprise and admin gating apply again.
   page, or with `PUT /api/mcp-servers/:id` (`codeMode`).
 - **Per role:** the `inlineCode` capability gates inline code; saved code tools
   follow the normal tool allow-list.
+- **Per plan:** saved code tools are capped per plan — Community 3, Starter 5,
+  Team 20, Enterprise unlimited (same on Cloud and self-hosted; an Enterprise
+  contract can override the cap with the licence feature `maxCodeTools`). Inline
+  code (`code_execute` / `code_propose_tool`) is Team and above.
 - **Writes** happen only in an admin-approved code tool with *Allow write
   tools* on; inline code and read-only tools can never write.
 - **Audit:** every run is recorded (a `code_runs` row), and each tool call the

@@ -302,6 +302,11 @@ export class McpEndpointController {
     if (!visibleConnectorIds || visibleConnectorIds.length === 0) return undefined;
     const caps = await this.rolesService.getCapabilities(userId, mcpServerConfig.organizationId);
     if (!caps.inlineCode) return undefined;
+    // Plan gate: inline code (code_execute / code_propose_tool) is Team and
+    // above. Saved code tools are gated separately at creation time.
+    if (!(await this.toolExecutor.inlineCodeAllowedForOrg(mcpServerConfig.organizationId))) {
+      return undefined;
+    }
     return { connectorIds: visibleConnectorIds };
   }
 
