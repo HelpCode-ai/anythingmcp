@@ -29,6 +29,8 @@
     }
   },
   "signIn": {
+    "continueAs": "Continua come {email}",
+    "continueAsHint": "Hai appena effettuato l'accesso qui per collegare il tuo assistente AI.",
     "title": "Accedi",
     "subtitle": "Crea connettori personalizzati per Claude, ChatGPT, Copilot, Meta Muse e qualsiasi agente AI",
     "emailVerified": "Email verificata con successo! Ora puoi accedere.",
