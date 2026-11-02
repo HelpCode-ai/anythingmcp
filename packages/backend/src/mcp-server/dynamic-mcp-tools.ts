@@ -601,8 +601,25 @@ export class DynamicMcpTools {
             .join('\n'),
           secretValues,
         );
+        // The remote server refused the call inside a 200 (Atlassian: "The
+        // session token is missing the scope claim…" for an API token created
+        // without scopes). Same advice as for a thrown error, after its words.
+        const mcpRawSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+        const mcpSlug = typeof mcpRawSlug === 'string' && mcpRawSlug ? mcpRawSlug : undefined;
+        const mcpHint = deriveErrorHint({
+          host: hostFromUrl(tool.connectorConfig?.baseUrl),
+          message: safeText,
+          adapterSlug: mcpSlug,
+          connectorPage: connectorPageUrl(tool.connectorId),
+          cloud: this.deployment.isCloud(),
+        });
         const errorResult: { content: ToolResultContent; isError: true } = {
-          content: [{ type: 'text', text: safeText }],
+          content: [
+            {
+              type: 'text',
+              text: mcpHint ? `${safeText}\n\n---\nHINT (from AnythingMCP): ${mcpHint}` : safeText,
+            },
+          ],
           isError: true,
         };
         const durationMs = Date.now() - startTime;
@@ -1070,6 +1087,10 @@ export class DynamicMcpTools {
     // Generic errors (database, etc.)
     const detail: Record<string, unknown> = { error: error.message };
     if (error.code) detail.code = error.code;
+    // The MCP SDK reports a refused request's HTTP status in `data.status`
+    // (its message is only the body, e.g. {"error":"invalid_token"}): keep it,
+    // so a 401 from a remote MCP server is told apart like any other.
+    if (typeof error?.data?.status === 'number') detail.status = error.data.status;
     return detail;
   }
 

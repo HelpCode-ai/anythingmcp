@@ -4,6 +4,17 @@ import { McpOAuthService } from './mcp-oauth.service';
 import { encrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
 
+// The Atlassian site lookup (tenant_info) answers from here; no test may reach Atlassian.
+const mockSiteLookup = jest.fn();
+jest.mock('../adapters/derived-settings', () => {
+  const actual = jest.requireActual('../adapters/derived-settings');
+  return {
+    ...actual,
+    resolveDerivedEnvVars: (adapter: unknown, values: unknown, opts: Record<string, unknown> = {}) =>
+      actual.resolveDerivedEnvVars(adapter, values, { ...opts, fetch: mockSiteLookup }),
+  };
+});
+
 const VALID_ENCRYPTION_KEY = 'a'.repeat(48);
 
 function buildController(overrides: {
@@ -878,6 +889,51 @@ describe('PUT :id/env-vars and PUT :id — the checks of the install form', () =
     await expect(
       controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkm' } }),
     ).rejects.toMatchObject({ response: { fields: { ETSY_CLIENT_ID: expect.any(String) } } });
+  });
+
+  describe('the Atlassian site and its looked-up cloudId', () => {
+    const CLOUD_ID = '1324a887-45db-1bf4-1e99-ef0ff456d421';
+    const keys = { ATLASSIAN_EMAIL: 'jane.doe@acme.test', ATLASSIAN_API_TOKEN: 'ATATT' + 'Zq9'.repeat(40) };
+    const atlassian = (envVars: Record<string, string>) => ({
+      ...odoo(envVars),
+      type: 'MCP',
+      authType: 'BASIC_AUTH',
+      baseUrl: 'https://mcp.atlassian.com/v2/mcp',
+      config: { adapterSlug: 'atlassian' },
+    });
+    beforeEach(() => mockSiteLookup.mockReset());
+
+    it('stores the cloudId when the site is set on an installed connector', async () => {
+      mockSiteLookup.mockResolvedValue({ status: 200, data: { cloudId: CLOUD_ID } });
+      const { controller, connectorsService } = build(atlassian(keys));
+      await controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...keys, ATLASSIAN_SITE: 'https://acme.atlassian.net/' } });
+      expect(mockSiteLookup).toHaveBeenCalledWith('https://acme.atlassian.net/_edge/tenant_info');
+      expect(connectorsService.update.mock.calls[0][1].envVars).toMatchObject({
+        ATLASSIAN_SITE: 'acme.atlassian.net',
+        ATLASSIAN_CLOUD_ID: CLOUD_ID,
+      });
+    });
+
+    it('refuses a site without a cloudId on its field, saving nothing', async () => {
+      mockSiteLookup.mockResolvedValue({ status: 404, data: 'not found' });
+      const { controller, connectorsService } = build(atlassian(keys));
+      await expect(
+        controller.update(req('ADMIN'), 'c1', { envVars: { ...keys, ATLASSIAN_SITE: 'acme-typo.atlassian.net' } } as any),
+      ).rejects.toMatchObject({ response: { fields: { ATLASSIAN_SITE: expect.stringMatching(/No Atlassian site answers/) } } });
+      expect(connectorsService.update).not.toHaveBeenCalled();
+    });
+
+    it('does not ask again when the site is unchanged, and drops the cloudId with the site', async () => {
+      const stored = { ...keys, ATLASSIAN_SITE: 'acme.atlassian.net', ATLASSIAN_CLOUD_ID: CLOUD_ID };
+      const first = build(atlassian(stored));
+      await first.controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ATLASSIAN_EMAIL: 'john@acme.test' } });
+      expect(mockSiteLookup).not.toHaveBeenCalled();
+      expect(first.connectorsService.update.mock.calls[0][1].envVars.ATLASSIAN_CLOUD_ID).toBe(CLOUD_ID);
+
+      const second = build(atlassian(stored));
+      await second.controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ATLASSIAN_SITE: '' } });
+      expect(second.connectorsService.update.mock.calls[0][1].envVars.ATLASSIAN_CLOUD_ID).toBeUndefined();
+    });
   });
 
   it('does not let a stored bad value block an edit of another variable', async () => {

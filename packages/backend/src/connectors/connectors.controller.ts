@@ -61,6 +61,7 @@ import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
 import { checkAdapterEnvValues, describeFieldProblems, normalizeAdapterEnvValues } from '../adapters/env-var-checks';
+import { resolveDerivedEnvVars, withDerivedValues } from '../adapters/derived-settings';
 import { resolvePkce } from './oauth-authorize-settings';
 import { isMachineGrant } from './oauth-grant.util';
 import { mcpPathOf } from './mcp-connector-config.util';
@@ -964,6 +965,34 @@ export class ConnectorsController {
     }
   }
 
+  /**
+   * The variables with the adapter's derived settings (derived-settings.ts)
+   * looked up again for each source this edit changes: Atlassian's cloudId
+   * when the site changes, removed when the site is cleared. A site that
+   * answers without one is refused on its field, as in the setup form.
+   */
+  private async withDerivedSettings(
+    connector: { envVars?: unknown; config?: unknown },
+    next: Record<string, string>,
+  ): Promise<Record<string, string>> {
+    const slug = (connector.config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
+    const adapter = typeof slug === 'string' ? getAdapter(slug) : undefined;
+    if (!adapter?.derivedEnvVars) return next;
+    const stored = (connector.envVars as Record<string, unknown> | null) ?? {};
+    const changed = Object.keys({ ...stored, ...next }).filter((name) => next[name] !== stored[name]);
+    if (changed.length === 0) return next;
+    const derived = await resolveDerivedEnvVars(adapter, next, { only: changed });
+    if (Object.keys(derived.fields).length > 0) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'invalid_values',
+        fields: derived.fields,
+        message: describeFieldProblems(derived.fields),
+      });
+    }
+    return (withDerivedValues(next, derived) ?? {}) as Record<string, string>;
+  }
+
   private normalizeVariables(
     connector: { baseUrl: string | null; type: string; config?: unknown },
     values: Record<string, string>,
@@ -1234,6 +1263,7 @@ export class ConnectorsController {
         mergeMaskedEnvVars(dto.envVars, connector.envVars, ctx),
       );
       this.assertCatalogValues(connector, data.envVars);
+      data.envVars = await this.withDerivedSettings(connector, data.envVars);
     }
     if (dto.headers) {
       data.headers = mergeMaskedHeaders(dto.headers, connector.headers, ctx);
@@ -2203,11 +2233,14 @@ export class ConnectorsController {
     // A tenant field (`{{FRESHDESK_DOMAIN}}.freshdesk.com`) pasted as the
     // whole address keeps only the label it stands for, as at install;
     // without it the edit stored `acme.freshdesk.com/api/v2.freshdesk.com/…`.
-    const envVars = this.normalizeVariables(connector, kept);
+    const normalized = this.normalizeVariables(connector, kept);
     // The same field checks as the install form: this editor used to store
     // what the form would have refused (an Odoo address with /web after the
     // host, a CRM page where the Bitrix24 webhook URL goes).
-    this.assertCatalogValues(connector, envVars);
+    this.assertCatalogValues(connector, normalized);
+    // Settings looked up from a changed value (Atlassian's cloudId when the
+    // site changes) are stored, or dropped, with it.
+    const envVars = (await this.withDerivedSettings(connector, normalized)) as Record<string, string>;
 
     const updateData: {
       envVars: Record<string, string>;
