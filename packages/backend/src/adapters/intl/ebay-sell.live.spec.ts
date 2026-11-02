@@ -27,6 +27,26 @@ describe('ebay-sell adapter — static spec conformance', () => {
     expect(a.connector.authConfig?.tokenAuthMethod).toBe('basic');
   });
 
+  it('gets that refresh token from a sign-in at eBay, with the RuName as redirect_uri', () => {
+    const auth = a.connector.authConfig ?? {};
+    expect(auth.authorizationUrl).toBe('https://auth.ebay.com/oauth2/authorize');
+    expect(auth.tokenUrl).toBe('https://api.ebay.com/identity/v1/oauth2/token');
+    expect(auth.providerRedirectUri).toBe('{{EBAY_RUNAME}}');
+    // eBay documents no PKCE: neither a challenge nor a verifier is sent.
+    expect(auth.pkce).toBe(false);
+    expect(auth.grant).toBe('refresh_token');
+    expect(a.requiredEnvVars).toEqual(['EBAY_CLIENT_ID', 'EBAY_CLIENT_SECRET', 'EBAY_RUNAME', 'EBAY_MARKETPLACE_ID']);
+    // Filled in by the sign-in; a token pasted earlier still works.
+    expect(a.optionalEnvVars).toEqual(['EBAY_REFRESH_TOKEN']);
+  });
+
+  it('asks for the scopes every tool needs, as full eBay scope URLs', () => {
+    const scopes = String(a.connector.authConfig?.scopes).split(' ');
+    for (const s of ['sell.inventory', 'sell.fulfillment', 'sell.account', 'sell.payment.dispute']) {
+      expect(scopes).toContain(`https://api.ebay.com/oauth/api_scope/${s}`);
+    }
+  });
+
   it("names the marketplace, which changes what eBay answers", () => {
     expect(a.connector.headers?.['X-EBAY-C-MARKETPLACE-ID']).toBe('{{EBAY_MARKETPLACE_ID}}');
   });
