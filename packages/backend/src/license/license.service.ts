@@ -8,6 +8,7 @@ import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
 import { FIRST_SUCCESS_KEY } from './card-trial-offer';
 import { Prisma } from '../generated/prisma/client';
+import { maskEmail } from '../auth/mcp-email-verification';
 
 // Production always talks to anythingmcp.com. The licence site decides
 // which plan an installation runs; a URL taken from the environment would let
@@ -452,7 +453,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
           headers: this.serviceHeaders(),
         });
         if (attempt > 1) {
-          this.logger.log(`Trial licence obtained for ${payload.email} on attempt ${attempt}.`);
+          this.logger.log(`Trial licence obtained for ${maskEmail(payload.email)} on attempt ${attempt}.`);
         }
         return data;
       } catch (err: any) {
@@ -463,7 +464,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         const base = trialRetryBaseMs();
         const delay = base * 2 ** (attempt - 1) + Math.floor(Math.random() * (base / 2));
         this.logger.warn(
-          `Trial licence attempt ${attempt} for ${payload.email} failed (${err?.response?.status ?? err.code ?? 'no response'}), retrying in ${delay}ms.`,
+          `Trial licence attempt ${attempt} for ${maskEmail(payload.email)} failed (${err?.response?.status ?? err.code ?? 'no response'}), retrying in ${delay}ms.`,
         );
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
@@ -582,10 +583,10 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
           user.organizationId ?? undefined,
         );
         out.repaired++;
-        this.logger.log(`Repaired missing trial for org ${user.organizationId} (${user.email}).`);
+        this.logger.log(`Repaired missing trial for org ${user.organizationId} (${maskEmail(user.email)}).`);
       } catch (err: any) {
         out.failed++;
-        this.logger.warn(`Trial repair failed for ${user.email}: ${err.message}`);
+        this.logger.warn(`Trial repair failed for ${maskEmail(user.email)}: ${err.message}`);
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }

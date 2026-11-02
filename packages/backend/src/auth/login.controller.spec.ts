@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 // `openid-client` is ESM-only and this suite reaches it transitively through
 // LoginController -> SsoService. Nothing here exercises the network half.
 jest.mock('openid-client', () => ({}));
@@ -351,6 +352,36 @@ describe('LoginController', () => {
 
       expect(res._cookies['login_user']).toBeUndefined();
       expect(res._redirect).toContain('/auth/login?error=');
+    });
+
+    it('logs the address masked on failed and successful logins', async () => {
+      const lines: string[] = [];
+      const spies = (['log', 'warn'] as const).map((level) =>
+        jest.spyOn(Logger.prototype, level).mockImplementation((message: unknown) => {
+          lines.push(String(message));
+        }),
+      );
+      try {
+        prisma.user.findMany.mockResolvedValue([]);
+        await controller.handleLogin(
+          okReq(),
+          { email: 'ada.lovelace@example.com', password: 'pw', csrf: 'tok', action: 'approve' },
+          makeRes(),
+        );
+        prisma.user.findMany.mockResolvedValue([{ id: 'u1', email: 'ada.lovelace@example.com', passwordHash: 'hash' }]);
+        authService.comparePassword.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+        for (const password of ['bad', 'pw']) {
+          await controller.handleLogin(
+            okReq(),
+            { email: 'ada.lovelace@example.com', password, csrf: 'tok', action: 'approve' },
+            makeRes(),
+          );
+        }
+        expect(lines.filter((line) => line.includes('ad***@example.com'))).toHaveLength(3);
+        for (const line of lines) expect(line).not.toContain('ada.lovelace@');
+      } finally {
+        spies.forEach((spy) => spy.mockRestore());
+      }
     });
   });
 

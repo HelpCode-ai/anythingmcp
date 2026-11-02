@@ -73,6 +73,7 @@ function build(tool: RegisteredTool, opts: { engineResult?: unknown; cached?: st
     mcpClientEngine as any,
     databaseEngine as any,
     kg as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any,
     odataEngine as any,
   );
   const engines = { REST: restEngine, MCP: mcpClientEngine, GRAPHQL: graphqlEngine, SOAP: soapEngine, DATABASE: databaseEngine, ODATA: odataEngine };
@@ -116,6 +117,7 @@ describe('DynamicMcpTools — response shaping', () => {
       {} as any,
       {} as any,
       { scheduleObservationalIngest: jest.fn() } as any,
+      { recentEvents: jest.fn().mockResolvedValue([]) } as any,
     );
     const res = await executor.executeTool('list_devices', {});
     expect(soapEngine.execute).toHaveBeenCalled();
@@ -348,6 +350,7 @@ describe('DynamicMcpTools — tool resolution is scoped to the caller', () => {
       {} as any,
       {} as any,
       { scheduleObservationalIngest: jest.fn() } as any,
+      { recentEvents: jest.fn().mockResolvedValue([]) } as any,
     );
     return { executor, restEngine };
   }
@@ -722,6 +725,7 @@ describe('DynamicMcpTools: the connector id reaches the engine', () => {
       mcpClientEngine as any,
       {} as any,
       { scheduleObservationalIngest: jest.fn() } as any,
+      { recentEvents: jest.fn().mockResolvedValue([]) } as any,
     );
     return { executor, mcpClientEngine };
   }

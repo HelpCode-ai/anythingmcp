@@ -33,6 +33,8 @@ export interface BinaryBody {
   filename?: string;
   /** Standard, padded base64 of the whole body. */
   base64: string;
+  /** Extra fields for the text part (e.g. a download link next to the attachment). */
+  extra?: Record<string, unknown>;
 }
 
 /** Bytes handed to the client per file by default, and at most. */
@@ -209,6 +211,12 @@ export interface RenderedBinary {
  * never put in the text unless the tool asked for `binary.as: "base64"`.
  */
 export function renderBinaryBody(body: BinaryBody, config: BinaryConfig, uriHint = 'response'): RenderedBinary {
+  const r = renderBinaryParts(body, config, uriHint);
+  if (body.extra) Object.assign(r.value as Record<string, unknown>, body.extra);
+  return r;
+}
+
+function renderBinaryParts(body: BinaryBody, config: BinaryConfig, uriHint: string): RenderedBinary {
   const describe: Record<string, unknown> = {
     file: {
       contentType: body.contentType,

@@ -21,6 +21,8 @@ import { McpClientEngine } from './engines/mcp-client.engine';
 import { UserCredentialError, UserCredentialsService } from './user-credentials.service';
 import { withoutUserTokens } from './user-credential.util';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
+import { FilesWorkerClient } from '../file-search/files-worker.client';
+import { localRootsFromEnv, parseFileSearchConfig, pickSecrets } from '../file-search/file-search-config';
 import { openEnvVarsStrict, sealEnvVars } from '../common/crypto/env-vars-at-rest';
 import { getRequiredSecret } from '../common/secrets.util';
 import { describeInvalidHeaderNames, invalidConnectorHeaderNames } from '../common/http-header-name.util';
@@ -74,6 +76,7 @@ export class ConnectorsService {
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
     @Optional() private readonly userCredentials?: UserCredentialsService,
     @Optional() private readonly emailEngine?: EmailEngine,
+    @Optional() private readonly filesWorker?: FilesWorkerClient,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -146,6 +149,9 @@ export class ConnectorsService {
       config?: Record<string, unknown>;
       envVars?: Record<string, string>;
       instructions?: string;
+      webhookEnabled?: boolean;
+      webhookProvider?: string;
+      webhookSecret?: string;
     },
   ): Promise<Connector> {
     assertValidHeaderNames(data.headers, data.authConfig);
@@ -169,8 +175,23 @@ export class ConnectorsService {
         config: data.config as any,
         envVars: data.envVars as any,
         instructions: data.instructions,
+        webhookEnabled: data.webhookEnabled ?? false,
+        webhookProvider: data.webhookProvider,
+        webhookSecret: data.webhookSecret
+          ? encrypt(data.webhookSecret, this.encryptionKey)
+          : null,
       },
     });
+  }
+
+  /**
+   * The connector's decrypted webhook secret, or null when webhooks are not
+   * enabled for it. Internal use only (webhook-ingest.controller.ts): never
+   * return this value from any API or tool response.
+   */
+  decryptWebhookSecret(connector: Connector): string | null {
+    if (!connector.webhookSecret) return null;
+    return decrypt(connector.webhookSecret, this.encryptionKey);
   }
 
   async update(
@@ -185,6 +206,9 @@ export class ConnectorsService {
       config: Record<string, unknown>;
       envVars: Record<string, string>;
       instructions: string;
+      webhookEnabled: boolean;
+      webhookProvider: string;
+      webhookSecret: string;
     }>,
   ): Promise<Connector> {
     const existing = await this.findById(id);
@@ -196,6 +220,15 @@ export class ConnectorsService {
         JSON.stringify(data.authConfig),
         this.encryptionKey,
       );
+    }
+    // webhookSecret is write-only, like authConfig: never returned by any
+    // API, so a client has nothing to echo back. Omit it entirely unless a
+    // real value is given, rather than let a falsy/absent one overwrite the
+    // stored secret with an empty value.
+    if (data.webhookSecret) {
+      updateData.webhookSecret = encrypt(data.webhookSecret, this.encryptionKey);
+    } else {
+      delete updateData.webhookSecret;
     }
     if (data.baseUrl !== undefined) {
       updateData.baseUrl = normalizeConnectorBaseUrl(data.baseUrl, existing.type);
@@ -369,6 +402,31 @@ export class ConnectorsService {
     suggestedFix?: { action: string; hostname?: string; url?: string };
   }> {
     const connector = await this.findById(id);
+
+    // File Search: the worker connects and lists the folder; this process never does.
+    if ((connector.type as string) === 'FILE_SEARCH') {
+      const cfg = (connector.config as { fileSearch?: unknown; fileShare?: boolean } | null) ?? {};
+      if (cfg.fileShare) return { ok: true, kind: 'ok', message: 'File Share needs no connection.' };
+      if (!this.filesWorker?.configured) {
+        return { ok: false, kind: 'unsupported', message: 'The files worker is not configured (FILES_WORKER_URL).' };
+      }
+      try {
+        const config = parseFileSearchConfig(cfg.fileSearch, {
+          cloud: process.env.DEPLOYMENT_MODE === 'cloud',
+          localRoots: localRootsFromEnv(),
+          connectorName: connector.name,
+        });
+        const secrets = connector.authConfig ? pickSecrets(JSON.parse(decrypt(connector.authConfig, this.encryptionKey))) : {};
+        const r = await this.filesWorker.test(config, secrets, { cloud: process.env.DEPLOYMENT_MODE === 'cloud' });
+        return {
+          ok: r.ok,
+          kind: r.ok ? 'ok' : r.errorKind === 'auth' ? 'auth_failed' : r.errorKind === 'not_found' ? 'not_found' : 'unreachable',
+          message: r.ok ? `Connection successful — ${r.rootEntries ?? 0} entries in the folder` : (r.message ?? 'The connection failed.'),
+        };
+      } catch (err) {
+        return { ok: false, kind: 'error', message: (err as Error).message };
+      }
+    }
 
     try {
       // Same substitution the tool path does, so Test connection exercises the

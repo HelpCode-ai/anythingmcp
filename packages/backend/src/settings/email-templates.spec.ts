@@ -1,4 +1,4 @@
-import { EMAIL_SAMPLES, MARKETING_SAMPLE_IDS, SAMPLE_TRUST_STATS } from './email-samples';
+import { EMAIL_SAMPLES, MARKETING_SAMPLE_IDS, OFFER_SAMPLE_IDS, PLAIN_SAMPLE_IDS, SAMPLE_TRUST_STATS } from './email-samples';
 import { formatTrustStats, EMPTY_TRUST_STATS } from '../public-stats/trust-stats.format';
 import type { EmailBrandContext } from './email-layout';
 
@@ -62,8 +62,8 @@ describe.each([
     });
 
     it('sells the product, not the price: no card, charge or price talk', () => {
-      // The win-back offers are about a discount by design.
-      if (id.startsWith('winback-discount')) return;
+      // The win-back offers are about a price by design.
+      if (OFFER_SAMPLE_IDS.has(id)) return;
       expect(`${email.subject}\n${email.text}`).not.toMatch(/charged|payment method|your card|€\s?\d|\d\s?€/i);
     });
 
@@ -99,6 +99,12 @@ describe.each([
     });
 
     it('has a preheader and every image has width, height and alt', () => {
+      if (PLAIN_SAMPLE_IDS.has(id)) {
+        // A personal email: its preheader, and no images at all.
+        expect(email.html).toMatch(/<div style="display:none;[^"]*">[^<]{10,}/);
+        expect(email.html).not.toMatch(/<img /);
+        return;
+      }
       expect(email.html).toMatch(/<div style="display:none;[^"]*">[^<]{10,}/);
       for (const img of email.html.match(/<img [^>]*>/g) ?? []) {
         expect(img).toMatch(/ width="\d+"/);
@@ -113,6 +119,8 @@ describe.each([
     });
 
     it('makes Cloud-only claims only on Cloud', () => {
+      // A personal email has no trust band at all, on either deployment.
+      if (PLAIN_SAMPLE_IDS.has(id)) return;
       const claims = /Frankfurt|DPA included|Claude Directory|workspaces on AnythingMCP Cloud|AI tool calls last month/;
       if (ctx.cloud) {
         expect(email.html).toMatch(/Frankfurt/);
@@ -157,9 +165,10 @@ describe('trust band', () => {
 
 describe('trial win-back', () => {
   const render = (id: string) => EMAIL_SAMPLES.find((s) => s.id === id)!.render(cloud, { name: 'Anna', other: '' });
+  const OFFER_IDS = ['winback-locked-first', 'winback-locked-final', 'winback-personal-first', 'winback-personal-final'];
 
   it('dates the trial instead of saying it ended a week ago', () => {
-    for (const id of ['winback-discount-first', 'winback-discount-first-month', 'winback-help']) {
+    for (const id of ['winback-locked-first', 'winback-personal-first', 'winback-help']) {
       const email = render(id);
       for (const part of [email.html, email.text]) {
         expect(part).toContain('ended on 7 October');
@@ -167,35 +176,115 @@ describe('trial win-back', () => {
       }
     }
     // The final offer goes out a month after.
-    expect(render('winback-discount-final').text).toContain('ended a month ago');
+    expect(render('winback-locked-final').text).toContain('ended a month ago');
   });
 
-  it('offers the first month at a fixed price, then the regular one, with the code in the link', () => {
-    const email = render('winback-discount-first-month');
-    expect(email.subject).toBe('Your first month of AnythingMCP Cloud for €5.99');
-    expect(email.html).toContain('STARTER599');
-    expect(email.html).toContain('Continue for €5.99');
+  it('gives a business workspace the locked price, monthly and yearly, each on its own checkout', () => {
+    const email = render('winback-locked-first');
+    expect(email.subject).toBe('Keep AnythingMCP Cloud for €12/month for your first year');
     for (const part of [email.html, email.text]) {
-      expect(part).toContain('€5.99 for the first month');
-      expect(part).toContain('then €19/month');
-      expect(part).toContain('cancel anytime from the billing portal');
-      expect(part).toContain('37 successful tool calls');
+      expect(part).toContain('€12/month for your first 12 months, then €19/month');
+      expect(part).toContain('€120 for the first year, then €190/year');
+      expect(part).toContain('until 22 October');
     }
+    const returnUrl = encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate');
     expect(email.text).toContain(
-      'https://anythingmcp.com/pricing?promo=STARTER599&return_url=' +
-        encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate') +
-        '&source=email_winback',
+      `https://anythingmcp.com/pricing?buy=starter&hosting=cloud&period=monthly&promo=KEEP-7F3K9Q&return_url=${returnUrl}&source=email_winback`,
     );
-    expect(email.marketing).toBe(true);
+    expect(email.text).toContain(
+      `https://anythingmcp.com/pricing?buy=starter&hosting=cloud&period=yearly&promo=KEEP-Y4M8RT&return_url=${returnUrl}&source=email_winback`,
+    );
+    // A yearly code never rides on a monthly link, and the other way round.
+    expect(email.text).not.toMatch(/period=monthly&promo=KEEP-Y4M8RT|period=yearly&promo=KEEP-7F3K9Q/);
+  });
+
+  it('gives consumer and Telegram workspaces Personal, monthly, with the price after 12 months', () => {
+    for (const id of ['winback-personal-first', 'winback-personal-final']) {
+      const email = render(id);
+      expect(email.subject).toMatch(/€6\/month for your first year/);
+      for (const part of [email.html, email.text]) {
+        expect(part).toContain('€6/month for your first 12 months, then €19/month');
+      }
+      expect(email.text).toContain('period=monthly&promo=KEEP-P6W2XN');
+      expect(email.text).not.toContain('period=yearly');
+    }
+  });
+
+  it('states the price after the first 12 months in every offer, and no forever price', () => {
+    for (const id of [...OFFER_IDS, 'blocked-calls', 'blocked-calls-never-used', 'trial-ended-business']) {
+      const email = render(id);
+      expect(email.text).toMatch(/then €19\/month/);
+      expect(`${email.subject}\n${email.text}`).not.toMatch(/forever|for as long as/i);
+    }
   });
 
   it('uses no em dashes in the win-back copy', () => {
-    for (const id of ['winback-discount-first', 'winback-discount-first-month', 'winback-discount-final', 'winback-help']) {
+    for (const id of [...OFFER_IDS, 'winback-help']) {
       const email = render(id);
       expect(`${email.subject}\n${email.text}`).not.toContain('—');
-      // The card trial ends with the free trial: no length is promised.
       expect(`${email.subject}\n${email.text}`).not.toMatch(/7-day|seven days/i);
     }
+  });
+});
+
+describe('business expiry email', () => {
+  const render = (other = 'Odoo') =>
+    EMAIL_SAMPLES.find((s) => s.id === 'trial-ended-business')!.render(cloud, { name: 'Anna', other });
+
+  it('is a plain personal email: what they built, the extension and the locked price', () => {
+    const email = render();
+    expect(email.subject).toBe('Your AnythingMCP trial ended today');
+    expect(email.html).not.toMatch(/<table|<img /);
+    for (const part of [email.html, email.text]) {
+      expect(part).toContain("I'm Matteo");
+      expect(part).toContain('3 connectors');
+      expect(part).toContain('412 successful tool calls');
+      expect(part).toContain('most of them through Odoo');
+      expect(part).toContain('€12/month for your first 12 months, then €19/month');
+      expect(part).toContain('€120 for the first year, then €190/year');
+    }
+    expect(email.text).toContain('https://cloud.anythingmcp.com/api/license/extend?token=');
+    expect(email.text).toContain('period=monthly&promo=KEEP-7F3K9Q');
+    expect(email.text).toContain('period=yearly&promo=KEEP-Y4M8RT');
+    expect(email.text).toContain('&source=email_trial_expired');
+    expect(email.marketing).toBe(true);
+    expect(`${email.subject}\n${email.text}`).not.toContain('—');
+  });
+});
+
+describe('blocked-call email', () => {
+  const render = (other: string) => EMAIL_SAMPLES.find((s) => s.id === 'blocked-calls')!.render(cloud, { name: 'Anna', other });
+
+  it('says which AI tried which app and how often, dated, with the offer', () => {
+    const email = render('Claude');
+    expect(email.subject).toBe('Claude tried to use Etsy 6 times since yesterday');
+    for (const part of [email.html, email.text]) {
+      expect(part).toContain('ended on 7 October');
+      expect(part).toContain('Claude can use Etsy again right away');
+      expect(part).toContain('€12/month for your first 12 months, then €19/month');
+    }
+    expect(email.html).toContain('KEEP-7F3K9Q');
+    expect(email.text).toContain('&source=email_blocked_calls');
+    expect(email.marketing).toBe(true);
+    expect(`${email.subject}\n${email.text}`).not.toContain('—');
+  });
+
+  it('speaks to the person when the workspace never made a successful call', () => {
+    const email = EMAIL_SAMPLES.find((s) => s.id === 'blocked-calls-never-used')!.render(cloud, { name: 'Anna', other: 'Claude' });
+    expect(email.subject).toBe('You tried to use Etsy 3 times since yesterday');
+    for (const part of [email.html, email.text]) {
+      expect(part).toContain('before your first successful call');
+      expect(part).toContain('€6/month for your first 12 months, then €19/month');
+    }
+    expect(email.marketing).toBe(true);
+  });
+
+  it('says "Your AI" without a client name, and caps a long one', () => {
+    const none = EMAIL_SAMPLES.find((s) => s.id === 'blocked-calls')!.render(cloud, { name: 'Anna', other: '' });
+    expect(none.subject).toBe('Your AI tried to use Etsy 6 times since yesterday');
+    expect(none.text).toContain('your AI can use Etsy again right away');
+    const long = render('A'.repeat(200));
+    expect(long.subject.length).toBeLessThan(100);
   });
 });
 

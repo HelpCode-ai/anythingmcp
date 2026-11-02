@@ -17,7 +17,9 @@ import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
 import { AuditService } from '../audit/audit.service';
 import { RedisService } from '../common/redis.service';
-import { LicenseGuardService } from '../license/license-guard.service';
+import { LicenseGuardService, TrialEndedException } from '../license/license-guard.service';
+import { ProductEventService } from '../audit/product-event.service';
+import { TrialBlockedCallRecorder, trialEndedToolResult } from './trial-blocked-call';
 import { DeploymentService } from '../common/deployment.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -37,6 +39,7 @@ import {
   type ResponseMeta,
 } from '../connectors/engines/response-headers.util';
 import { KgService } from '../knowledge-graph/kg.service';
+import { WebhookEventsService } from '../connectors/webhook-events.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
@@ -46,6 +49,7 @@ import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { EmailEngine } from '../connectors/engines/email.engine';
+import { FileSearchEngine } from '../file-search/file-search.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { hashContent } from '../adapters/catalog-fingerprint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
@@ -120,11 +124,19 @@ export class DynamicMcpTools {
     private readonly mcpClientEngine: McpClientEngine,
     private readonly databaseEngine: DatabaseEngine,
     private readonly kgService: KgService,
+    private readonly webhookEvents: WebhookEventsService,
     @Optional() private readonly odataEngine?: ODataEngine,
     @Optional() private readonly userCredentials?: UserCredentialsService,
     @Optional() private readonly emailEngine?: EmailEngine,
     @Optional() private readonly codeExecutor?: CodeExecutorService,
-  ) {}
+    @Optional() productEvents?: ProductEventService,
+    @Optional() private readonly fileSearchEngine?: FileSearchEngine,
+  ) {
+    this.blockedCalls = new TrialBlockedCallRecorder(prisma, productEvents);
+  }
+
+  /** Records tool calls refused because the Cloud trial ended (throttled). */
+  private readonly blockedCalls: TrialBlockedCallRecorder;
 
   /**
    * Decide whether this tool call should be routed through the
@@ -255,6 +267,20 @@ export class DynamicMcpTools {
   }
 
   /**
+   * The tool a call resolves to, in the one scope the caller is entitled to
+   * (see executeTool): its server's connectors, else its organization, else
+   * (single-tenant self-hosted, no principal) any tool of that name.
+   */
+  private resolveTool(
+    toolName: string,
+    context?: { organizationId?: string; connectorIds?: string[] },
+  ): RegisteredTool | undefined {
+    if (context?.connectorIds) return this.toolRegistry.getTool(toolName, context.connectorIds);
+    if (context?.organizationId) return this.toolRegistry.getToolForOrg(toolName, context.organizationId);
+    return this.toolRegistry.getTool(toolName);
+  }
+
+  /**
    * Execute a tool by name with the given parameters.
    * Handles caching, audit logging, env interpolation, and engine dispatch.
    */
@@ -284,6 +310,8 @@ export class DynamicMcpTools {
       /** Set on calls made from inside a code run, so a code tool cannot be
        *  reached from within another (no recursion). */
       inCodeRun?: boolean;
+      /** The OAuth client the caller's access token was issued to, if any. */
+      oauthClientId?: string;
     },
   ): Promise<{
     content: ToolResultContent;
@@ -299,6 +327,26 @@ export class DynamicMcpTools {
     try {
       await this.licenseGuard.checkLicenseActive(context?.organizationId);
     } catch (err: any) {
+      // Cloud trial over: say when it ended, that nothing was deleted, and
+      // hand the AI the reactivation link to show. The blocked call is
+      // recorded in the background; it never delays or breaks this answer.
+      if (err instanceof TrialEndedException) {
+        const blocked = this.resolveTool(toolName, context);
+        if (blocked && context?.organizationId) {
+          const slug = (blocked.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+          void this.blockedCalls.record({
+            organizationId: context.organizationId,
+            userId: context.userId,
+            toolName: blocked.name,
+            adapterSlug: typeof slug === 'string' && slug ? slug : undefined,
+            oauthClientId: context.oauthClientId,
+          });
+        }
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(trialEndedToolResult(err.trialEndedAt)) }],
+          isError: true,
+        };
+      }
       return {
         content: [
           {
@@ -331,14 +379,7 @@ export class DynamicMcpTools {
     //   - organizationId — any JWT on the global /mcp. Only the caller's org.
     //   - neither — an instance-level static credential on a single-tenant
     //     self-hosted box, where "any tool" is the correct answer.
-    let tool: RegisteredTool | undefined;
-    if (context?.connectorIds) {
-      tool = this.toolRegistry.getTool(toolName, context.connectorIds);
-    } else if (context?.organizationId) {
-      tool = this.toolRegistry.getToolForOrg(toolName, context.organizationId);
-    } else {
-      tool = this.toolRegistry.getTool(toolName);
-    }
+    const tool = this.resolveTool(toolName, context);
     if (!tool) {
       return {
         content: [
@@ -575,6 +616,16 @@ export class DynamicMcpTools {
               (tool.connectorConfig.config as { email?: unknown } | undefined)?.email,
               envVars,
             ),
+            connectorId: tool.connectorId,
+            organizationId: tool.organizationId,
+            // File Search reads its index per workspace and connector; the
+            // caller decides the folder scope (Enterprise folder rules).
+            fileSearch: {
+              organizationId: tool.organizationId,
+              connectorId: tool.connectorId,
+              connectorName: tool.connectorName,
+              userId: context?.userId,
+            },
           },
         );
       } finally {
@@ -1337,8 +1388,29 @@ export class DynamicMcpTools {
     config: any,
     endpointMapping: any,
     params: Record<string, unknown>,
-    extra?: { connectorConfig?: Record<string, unknown>; odataSettings?: unknown; emailSettings?: unknown },
+    extra?: {
+      connectorConfig?: Record<string, unknown>;
+      odataSettings?: unknown;
+      emailSettings?: unknown;
+      connectorId?: string;
+      organizationId?: string;
+      fileSearch?: { organizationId: string; connectorId: string; connectorName?: string; userId?: string };
+    },
   ): Promise<{ body: unknown; meta?: ResponseMeta }> {
+    // Recent webhook events — a read of our own storage, never an outbound
+    // call, so it bypasses every engine (same shape as the static branch
+    // below).
+    if (endpointMapping.method === 'webhook_recent_events') {
+      if (!extra?.connectorId || !extra?.organizationId) {
+        throw new Error('webhook_recent_events requires connectorId and organizationId');
+      }
+      const events = await this.webhookEvents.recentEvents(extra.connectorId, extra.organizationId, {
+        limit: params.limit as number | undefined,
+        since: params.since as string | undefined,
+      });
+      return { body: { events } };
+    }
+
     // Static response tools — return text immediately without engine dispatch.
     //
     // The `method` alone decides this, not `method && staticResponse`. With the
@@ -1407,6 +1479,12 @@ export class DynamicMcpTools {
             params,
             extra?.emailSettings ?? (extra?.connectorConfig as { email?: unknown } | undefined)?.email,
           ),
+        };
+      }
+      case 'FILE_SEARCH': {
+        if (!this.fileSearchEngine || !extra?.fileSearch) throw new Error('File Search is not available on this server.');
+        return {
+          body: await this.fileSearchEngine.execute(endpointMapping.method, params, extra.fileSearch),
         };
       }
       case 'DATABASE': {

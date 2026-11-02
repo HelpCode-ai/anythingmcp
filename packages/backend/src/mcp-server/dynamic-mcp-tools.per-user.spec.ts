@@ -63,6 +63,7 @@ function build(tool: RegisteredTool, tokensByUser: Record<string, Record<string,
     mcpClientEngine as any,
     {} as any,
     { scheduleObservationalIngest: jest.fn() } as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any,
     undefined,
     userCredentials as any,
   );

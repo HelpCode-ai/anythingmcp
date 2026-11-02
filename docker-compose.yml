@@ -127,7 +127,27 @@ services:
       - METRICS_HOST=${METRICS_HOST:-0.0.0.0}
       - METRICS_TOKEN=${METRICS_TOKEN:-}
       - METRICS_TOOL_LABELS=${METRICS_TOOL_LABELS:-false}
+      # File Search (#1379), off unless the `files` profile runs: the internal
+      # address and token of files-worker, which does every sync and every
+      # connection to a file server. See docs/connectors/file-search.md.
+      - FILES_WORKER_URL=${FILES_WORKER_URL:-}
+      - FILES_WORKER_TOKEN=${FILES_WORKER_TOKEN:-}
+      # Folders mounted into this install that File Search may read
+      # (comma-separated, absolute). Mount them read-only into app AND files-worker.
+      - FILE_SOURCE_ROOTS=${FILE_SOURCE_ROOTS:-}
+      - FILES_MAX_FILE_BYTES=${FILES_MAX_FILE_BYTES:-}
+      # File Share storage: a volume by default (/data/files), or S3.
+      - FILES_STORAGE=${FILES_STORAGE:-local}
+      - FILES_STORAGE_DIR=/data/files
+      - FILES_S3_ENDPOINT=${FILES_S3_ENDPOINT:-}
+      - FILES_S3_REGION=${FILES_S3_REGION:-}
+      - FILES_S3_BUCKET=${FILES_S3_BUCKET:-}
+      - FILES_S3_ACCESS_KEY_ID=${FILES_S3_ACCESS_KEY_ID:-}
+      - FILES_S3_SECRET_ACCESS_KEY=${FILES_S3_SECRET_ACCESS_KEY:-}
+      - FILES_DOWNLOAD_BASE_URL=${FILES_DOWNLOAD_BASE_URL:-}
 
+    volumes:
+      - file_share_data:/data/files
     depends_on:
       postgres:
         condition: service_healthy
@@ -224,6 +244,97 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # File Search (#1379, AnythingMCP Commercial License, ee/): enable with
+  # COMPOSE_PROFILES=files and set FILES_WORKER_URL=http://files-worker:8891,
+  # FILES_WORKER_TOKEN and FILE_EXTRACTOR_TOKEN (each: openssl rand -hex 24).
+  # Needs a paid licence or the 30-day trial. The worker does every sync and
+  # every connection to a file server, so a slow server or a big first sync
+  # never slows down the MCP endpoint in `app`.
+  files-worker:
+    image: helpcodeai/anythingmcp:latest
+    profiles: ["files"]
+    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-files-worker
+    command: ["./start.sh", "files-worker"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD:-amcp}@postgres:5432/anythingmcp
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production-min-32-chars}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-in-production-exactly-32}
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-}
+      - FILES_WORKER_TOKEN=${FILES_WORKER_TOKEN:-}
+      - FILES_WORKER_HOST=0.0.0.0
+      - FILES_WORKER_PORT=8891
+      - FILES_WORKER_MAX_OLD_SPACE_MB=${FILES_WORKER_MAX_OLD_SPACE_MB:-512}
+      - FILES_WORKER_CONCURRENCY=${FILES_WORKER_CONCURRENCY:-2}
+      - FILE_EXTRACTOR_URL=http://file-extractor:8890
+      - FILE_EXTRACTOR_TOKEN=${FILE_EXTRACTOR_TOKEN:-}
+      - FILE_SOURCE_ROOTS=${FILE_SOURCE_ROOTS:-}
+      - FILES_MAX_FILE_BYTES=${FILES_MAX_FILE_BYTES:-}
+      - FILES_STORAGE=${FILES_STORAGE:-local}
+      - FILES_STORAGE_DIR=/data/files
+      - FILES_S3_ENDPOINT=${FILES_S3_ENDPOINT:-}
+      - FILES_S3_REGION=${FILES_S3_REGION:-}
+      - FILES_S3_BUCKET=${FILES_S3_BUCKET:-}
+      - FILES_S3_ACCESS_KEY_ID=${FILES_S3_ACCESS_KEY_ID:-}
+      - FILES_S3_SECRET_ACCESS_KEY=${FILES_S3_SECRET_ACCESS_KEY:-}
+      - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-}
+      - KG_LLM_ENABLED=${KG_LLM_ENABLED:-}
+      - KG_LLM_PROVIDER=${KG_LLM_PROVIDER:-}
+      - KG_LLM_MODEL=${KG_LLM_MODEL:-}
+      - KG_LLM_BASE_URL=${KG_LLM_BASE_URL:-}
+      - KG_LLM_API_KEY=${KG_LLM_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - file_share_data:/data/files
+      # Network folders: mount the share on the host, then bind it read-only
+      # here and in `app`, and list it in FILE_SOURCE_ROOTS, e.g.
+      # - /mnt/knowledge:/mnt/knowledge:ro
+    networks: [default, files_internal]
+    mem_limit: ${FILES_WORKER_MEM_LIMIT:-1g}
+    cpus: ${FILES_WORKER_CPUS:-1.0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    # Lets a running slice finish and release its lease (scheduler waits 20 s).
+    stop_grace_period: 30s
+    # The image's own healthcheck probes the backend on :4000; the worker
+    # answers on its internal port.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 -O /dev/null --header \"X-Worker-Token: $${FILES_WORKER_TOKEN}\" http://127.0.0.1:8891/internal/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Text extraction for File Search (ee/): no route to the internet, no
+  # database, no secrets. Reached only by files-worker on files_internal.
+  # deploy/ee/file-extractor/README.md describes the formats and limits.
+  file-extractor:
+    build:
+      context: ./deploy/ee/file-extractor
+    image: anythingmcp-file-extractor:2
+    profiles: ["files"]
+    container_name: ${COMPOSE_PROJECT_NAME:-amcp}-file-extractor
+    environment:
+      - EXTRACTOR_TOKEN=${FILE_EXTRACTOR_TOKEN:-}
+    networks: [files_internal]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: ${FILE_EXTRACTOR_MEM_LIMIT:-2g}
+    cpus: ${FILE_EXTRACTOR_CPUS:-1.0}
+    pids_limit: 128
+    restart: unless-stopped
+
   # Redis Cache (optional — uncomment to enable response caching and rate limiting)
   # redis:
   #   image: redis:7-alpine
@@ -243,3 +354,10 @@ volumes:
   caddy_data:     # Let's Encrypt certificates (used when Caddy proxy is enabled)
   caddy_config:   # Caddy configuration cache
   # redis_data:   # Uncomment if Redis is enabled
+  file_share_data: # File Share links (File Search, `files` profile)
+
+networks:
+  # No route out: the text extractor parses untrusted files and must not be
+  # able to reach anything but files-worker.
+  files_internal:
+    internal: true

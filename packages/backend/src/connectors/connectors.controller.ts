@@ -94,6 +94,7 @@ import {
 import { parseODataTools } from './parsers/odata.parser';
 import { normalizeSettings } from './engines/odata.engine';
 import { buildEmailBuiltinTools } from './email/email-builtins';
+import { buildWebhookBuiltinTools, wantsWebhookBuiltins, webhookToolPrefix } from './webhook-builtins';
 import { EmailConnectorError, emailToolPrefix, resolveEmailSettings } from './email/email-settings';
 import { computeSetupState } from './connector-setup-status.util';
 import { EditionService } from '../ee/licensing/edition.service';
@@ -219,6 +220,30 @@ class CreateConnectorDto {
   @IsOptional()
   @IsString()
   instructions?: string;
+
+  @ApiPropertyOptional({
+    description: 'Opt this connector into inbound webhook ingestion, regardless of its type.',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  webhookEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Which signature scheme verifies inbound deliveries. Only "stripe" is supported today.',
+    enum: ['stripe'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['stripe'])
+  webhookProvider?: string;
+
+  @ApiPropertyOptional({
+    description: 'The signing secret for the chosen webhookProvider. Encrypted at rest; never returned by any API.',
+  })
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string;
 }
 
 class UpdateConnectorDto {
@@ -292,6 +317,28 @@ class UpdateConnectorDto {
   @IsOptional()
   @IsString()
   instructions?: string;
+
+  @ApiPropertyOptional({ description: 'Opt this connector into inbound webhook ingestion, regardless of its type.' })
+  @IsOptional()
+  @IsBoolean()
+  webhookEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Which signature scheme verifies inbound deliveries. Only "stripe" is supported today.',
+    enum: ['stripe'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['stripe'])
+  webhookProvider?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The signing secret for the chosen webhookProvider. Write-only like authConfig: never returned by any API, and omitting it (or sending empty) leaves the stored secret unchanged.',
+  })
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string;
 }
 
 class UpdateOAuthConfigDto {
@@ -757,6 +804,10 @@ export class ConnectorsController {
   @ApiOperation({ summary: 'Create a new connector' })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
     this.assertCanCreate(req);
+    if ((dto.type as string) === 'FILE_SEARCH') {
+      // Set up through the File Search wizard: test, scan, describe, activate.
+      throw new BadRequestException('File Search connectors are set up with the File Search wizard (POST /api/file-search/connectors).');
+    }
     this.assertUsableBaseUrl(dto.baseUrl, dto.type);
     if (dto.type === 'EMAIL') this.assertUsableEmailSettings(dto.config, dto.baseUrl);
     // A key typed into the URL or a header (`https://api.telegram.org/bot<token>`)
@@ -903,6 +954,36 @@ export class ConnectorsController {
       }
       await this.mcpServer.reloadConnectorTools(connector.id);
       this.logger.log(`Auto-created ${builtinTools.length} email tools for connector ${connector.id}`);
+    }
+
+    // Webhook-enabled connectors get the one builtin tool that reads back
+    // what webhook-ingest.controller.ts stored for them. Any connector type
+    // may opt in (dto.webhookEnabled), not just a dedicated connector type.
+    if (wantsWebhookBuiltins(dto.webhookEnabled)) {
+      const builtinTools = buildWebhookBuiltinTools({
+        prefix: webhookToolPrefix({
+          toolPrefix: (dto.config as { webhook?: { toolPrefix?: unknown } } | undefined)?.webhook?.toolPrefix,
+          name: dto.name,
+        }),
+        displayName: dto.name,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: connector.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // skip duplicates
+        }
+      }
+      await this.mcpServer.reloadConnectorTools(connector.id);
+      this.logger.log(`Auto-created ${builtinTools.length} webhook tool(s) for connector ${connector.id}`);
     }
 
     // Put the connector on a server straight away. Assigning it was a separate
@@ -1170,6 +1251,9 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
+    if ((connector.type as string) === 'FILE_SEARCH' && (dto.config !== undefined || dto.baseUrl !== undefined || dto.authConfig !== undefined)) {
+      throw new BadRequestException('Change the source of a File Search connector on its Files tab.');
+    }
     if (dto.baseUrl !== undefined) {
       this.assertUsableBaseUrl(dto.baseUrl, connector.type);
     }
@@ -1247,6 +1331,60 @@ export class ConnectorsController {
       data.config = Object.fromEntries(merged);
     }
     const updated = await this.connectorsService.update(id, data);
+
+    // webhookEnabled flipping off -> on or on -> off creates/removes the one
+    // builtin tool a webhook-enabled connector ships with (webhook-builtins.ts).
+    // Create only ran at connector creation (see POST above); without this, a
+    // connector that opted in later via this route got no tool, and one that
+    // opted out kept serving a tool for an endpoint that now answers 401 to
+    // everything.
+    if (!connector.webhookEnabled && updated.webhookEnabled) {
+      const builtinTools = buildWebhookBuiltinTools({
+        prefix: webhookToolPrefix({
+          toolPrefix: (updated.config as { webhook?: { toolPrefix?: unknown } } | null)?.webhook
+            ?.toolPrefix,
+          name: updated.name,
+        }),
+        displayName: updated.name,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: updated.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // already exists
+        }
+      }
+      this.logger.log(
+        `Auto-created ${builtinTools.length} webhook tool(s) for connector ${updated.id} (webhookEnabled turned on)`,
+      );
+    } else if (connector.webhookEnabled && !updated.webhookEnabled) {
+      // Matched by endpointMapping.method, not by recomputing the tool's
+      // name: a rename or toolPrefix change in the same request must not
+      // leave the old tool behind under its original name.
+      const connectorTools =
+        (connector as { tools?: Array<{ id: string; endpointMapping: unknown }> }).tools ?? [];
+      const webhookToolIds = connectorTools
+        .filter(
+          (t: { endpointMapping: unknown }) =>
+            (t.endpointMapping as { method?: string } | null)?.method === 'webhook_recent_events',
+        )
+        .map((t: { id: string }) => t.id);
+      if (webhookToolIds.length > 0) {
+        await this.prisma.mcpTool.deleteMany({ where: { id: { in: webhookToolIds } } });
+        this.logger.log(
+          `Removed ${webhookToolIds.length} webhook tool(s) for connector ${updated.id} (webhookEnabled turned off)`,
+        );
+      }
+    }
+
     // The registry keeps its own copy of the connector — base URL, headers,
     // auth — and reads it on every call. Without this, a changed base URL
     // showed in the form and was ignored by every tool until the next

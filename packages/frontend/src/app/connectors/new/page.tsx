@@ -60,6 +60,7 @@ export default function NewConnectorPage() {
   const { token, deploymentMode } = useAuth();
   const isCloud = deploymentMode === 'cloud';
   const t = useTranslations('connectorNew');
+  const tfs = useTranslations('fileSearch');
   // What to register in the provider's app, as the server will send it.
   const [oauthRedirectUri, setOauthRedirectUri] = useState<string | null>(null);
   useEffect(() => {
@@ -332,6 +333,29 @@ export default function NewConnectorPage() {
     }
   };
 
+
+  const fileSearchCard = (
+    <Link
+      key="FILE_SEARCH"
+      href="/connectors/new/file-search"
+      className={cn(
+        typeCardClass,
+        'group border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]'
+      )}
+    >
+      <div className="mb-[9px] flex w-full items-center gap-[11px]">
+        <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-[var(--t-info-bg)] text-[var(--t-info-fg)]">
+          <FolderSearchIcon />
+        </span>
+        <span className="text-[14px] font-semibold text-[var(--text)]">{tfs('card.title')}</span>
+        <span className="ml-auto text-[var(--text-3)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--brand)]">
+          <ArrowRightIcon />
+        </span>
+      </div>
+      <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">{tfs('card.description')}</p>
+    </Link>
+  );
+
   return (
     <AppShell
       backTo={{ label: t('back'), href: '/connectors' }}
@@ -367,7 +391,7 @@ export default function NewConnectorPage() {
               {t('marketplace.description')}
             </p>
           </Link>
-          {CONNECTOR_TYPES.map((type) => (
+          {CONNECTOR_TYPES.map((type) => [
             <button
               key={type.id}
               type="button"
@@ -390,8 +414,12 @@ export default function NewConnectorPage() {
                 <span className="text-[14px] font-semibold text-[var(--text)]">{t(`types.${type.id}.name`)}</span>
               </div>
               <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">{t(`types.${type.id}.description`)}</p>
-            </button>
-          ))}
+            </button>,
+            // File Search sits next to Database, its closest relative. It runs its
+            // own guided setup (test, scan, describe), so it navigates away like
+            // the marketplace card instead of opening the form below.
+            type.id === 'DATABASE' ? fileSearchCard : null,
+          ])}
         </div>
 
         {selectedType && (
@@ -1025,6 +1053,16 @@ function ArrowRightIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 12h14" />
       <path d="m12 5 7 7-7 7" />
+    </svg>
+  );
+}
+
+function FolderSearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1" />
+      <circle cx="17" cy="17" r="3" />
+      <path d="m21 21-1.9-1.9" />
     </svg>
   );
 }

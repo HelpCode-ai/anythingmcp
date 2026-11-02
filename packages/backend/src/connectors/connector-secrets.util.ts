@@ -268,16 +268,19 @@ export function toPublicConnector<
   T extends ConnectorLike & { envVars?: unknown; authConfig?: unknown },
 >(
   connector: T,
-): Omit<T, 'authConfig' | 'authStatusRef'> & { maskedEnvVars: string[]; maskedHeaders: string[] } {
+): Omit<T, 'authConfig' | 'authStatusRef' | 'webhookSecret'> & { maskedEnvVars: string[]; maskedHeaders: string[] } {
   const ctx = secretContext(connector);
   const env = maskEnvVars(connector.envVars, ctx);
   const hdr = maskHeaders(connector.headers, ctx);
   // authStatusRef is a hash of a credential: of no use to a client.
+  // webhookSecret: never returned, same as authConfig — the dashboard shows
+  // only whether webhooks are enabled, not the secret itself.
   const {
     authConfig: _authConfig,
     authStatusRef: _authStatusRef,
+    webhookSecret: _webhookSecret,
     ...rest
-  } = connector as T & { authStatusRef?: unknown };
+  } = connector as T & { authStatusRef?: unknown; webhookSecret?: unknown };
   return {
     ...rest,
     envVars: env.envVars,
