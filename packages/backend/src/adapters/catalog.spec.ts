@@ -404,6 +404,18 @@ describe('adapter catalog', () => {
           expect(typeof cfg.username).toBe('string');
           expect(typeof cfg.password).toBe('string');
         }
+        if (cfg.loginBasicAuth !== undefined) {
+          // Same refusals as loginBasicAuthHeader(): the engine owns the
+          // login Authorization header and the password stays out of the body.
+          expect(typeof cfg.loginBasicAuth).toBe('boolean');
+          if (cfg.loginBasicAuth) {
+            expect(cfg.signedJwt).toBeUndefined();
+            expect((cfg.passwordHashing as { scheme?: string } | undefined)?.scheme ?? 'none').toBe('none');
+            const headers = Object.keys((cfg.loginHeaders as Record<string, string>) ?? {});
+            expect(headers.map((h) => h.toLowerCase())).not.toContain('authorization');
+            expect(JSON.stringify([cfg.loginBody ?? null, cfg.loginBodyTemplate ?? null, cfg.loginHeaders ?? null])).not.toMatch(/\$\{password(Hashed)?\}/);
+          }
+        }
         if (cfg.passwordHashing) {
           const ph = cfg.passwordHashing as Record<string, unknown>;
           expect(VALID_PASSWORD_HASHING_SCHEMES.has(String(ph.scheme))).toBe(true);
