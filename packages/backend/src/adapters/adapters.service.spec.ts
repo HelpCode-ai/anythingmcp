@@ -664,7 +664,7 @@ describe('AdaptersService.verifyCredentials', () => {
   it('flags only a 403 of a watched adapter as waiting for approval', async () => {
     outbound.mockReset().mockResolvedValue({ status: 401, data: 'nope' } as any);
     const { service } = build(jest.fn());
-    const out = await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' });
+    const out = await service.verifyCredentials('etsy', 'org1', ETSY_KEYS);
     expect(out).toMatchObject({ ok: false, status: 401 });
     expect((out as any).appPending).toBeUndefined();
   });
