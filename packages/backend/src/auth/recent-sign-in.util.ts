@@ -14,8 +14,25 @@ import type { Request, Response } from 'express';
  */
 export const RECENT_SIGN_IN_COOKIE = 'amcp_signin';
 
-/** As long as a dashboard session lasts (auth-context keeps its token 7 days). */
-export const RECENT_SIGN_IN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Two hours: enough to finish the setup the chat hands out right after
+ * connecting, and short enough that a shared or borrowed browser, where
+ * someone only connected an AI client and never opened (or signed out of)
+ * the dashboard, does not keep a password-free sign-in for days.
+ */
+export const RECENT_SIGN_IN_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Header the dashboard sends on the requests that turn this cookie into a
+ * session. A page on another origin, a sibling subdomain included, cannot
+ * add a custom header without a CORS preflight, which only the dashboard's
+ * own origin passes: a blind cross-site POST carrying the cookie is refused.
+ */
+export const RECENT_SIGN_IN_HEADER = 'x-amcp-dashboard';
+
+export function hasDashboardHeader(req: Request): boolean {
+  return req.headers?.[RECENT_SIGN_IN_HEADER] === '1';
+}
 
 export interface RecentSignIn {
   userId: string;

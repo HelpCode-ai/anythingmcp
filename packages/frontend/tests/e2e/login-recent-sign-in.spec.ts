@@ -19,6 +19,7 @@ async function mockApi(page: Page, who: { status: number; body?: unknown }) {
         return route.fulfill({ status: who.status, contentType: 'application/json', body: who.body ? JSON.stringify(who.body) : '' });
       }
       if (req.method() === 'POST') {
+        expect(req.headers()['x-amcp-dashboard']).toBe('1');
         return route.fulfill({
           status: 200,
           contentType: 'application/json',

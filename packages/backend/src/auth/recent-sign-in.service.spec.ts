@@ -95,10 +95,11 @@ describe('RecentSignInController', () => {
   it('continues into a session, or refuses', async () => {
     const session = { accessToken: 't', user: { id: 'u1' } };
     const ok = new RecentSignInController({ user: jest.fn(async () => ({ id: 'u1' })), session: jest.fn(async () => session) } as any);
-    await expect(ok.continue({} as any)).resolves.toBe(session);
+    await expect(ok.continue({ headers: { 'x-amcp-dashboard': '1' } } as any)).resolves.toBe(session);
+    await expect(ok.continue({ headers: {} } as any)).rejects.toBeInstanceOf(UnauthorizedException);
 
     const no = new RecentSignInController({ user: jest.fn(async () => null), session: jest.fn() } as any);
-    await expect(no.continue({} as any)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(no.continue({ headers: { 'x-amcp-dashboard': '1' } } as any)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('forgets the recent sign-in on sign-out', () => {
