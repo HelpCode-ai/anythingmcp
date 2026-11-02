@@ -12,9 +12,10 @@ import { LicenseModule } from '../license/license.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { ConnectorsModule } from '../connectors/connectors.module';
 import { SettingsModule } from '../settings/settings.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 
 @Module({
-  imports: [McpServerModule, LicenseModule, McpServersModule, ConnectorsModule, SettingsModule],
+  imports: [McpServerModule, LicenseModule, McpServersModule, ConnectorsModule, SettingsModule, OrganizationsModule],
   controllers: [AdaptersPublicController, AdaptersController, SetupLinksController],
   providers: [AdaptersService, ConnectorSetupService, AppApprovalWatcherService],
 })
