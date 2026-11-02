@@ -657,6 +657,38 @@ describe('AdaptersService.verifyCredentials', () => {
     expect(out).toMatchObject({ ok: false, kind: 'auth_failed', status: 403 });
     expect((out as any).message).toContain('stays Pending Personal Approval until Etsy approves it');
     expect((out as any).message).toContain('API key not found or not active');
+    // Watched: the page keeps the keys and the owner hears when Etsy approves.
+    expect(out).toMatchObject({ appPending: true });
+  });
+
+  it('flags only a 403 of a watched adapter as waiting for approval', async () => {
+    outbound.mockReset().mockResolvedValue({ status: 401, data: 'nope' } as any);
+    const { service } = build(jest.fn());
+    const out = await service.verifyCredentials('etsy', 'org1', ETSY_KEYS);
+    expect(out).toMatchObject({ ok: false, status: 401 });
+    expect((out as any).appPending).toBeUndefined();
+  });
+
+  it('re-checks stored app keys with the same call: accepted, refused or unknown', async () => {
+    const { service } = build(jest.fn());
+    const env = { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' };
+    const base = 'https://openapi.etsy.com/v3/application';
+    outbound.mockReset().mockResolvedValue({ status: 200, data: '{}' } as any);
+    expect(await service.recheckAppKeys('etsy', base, env)).toBe('accepted');
+    expect(outbound).toHaveBeenCalledWith(
+      expect.objectContaining({ url: `${base}/openapi-ping`, headers: { 'x-api-key': 'ks:ss' } }),
+    );
+    outbound.mockReset().mockResolvedValue({ status: 403, data: 'pending' } as any);
+    expect(await service.recheckAppKeys('etsy', base, env)).toBe('refused');
+    outbound.mockReset().mockResolvedValue({ status: 503, data: 'down' } as any);
+    expect(await service.recheckAppKeys('etsy', base, env)).toBe('unknown');
+    outbound.mockReset().mockRejectedValue(new Error('ETIMEDOUT'));
+    expect(await service.recheckAppKeys('etsy', base, env)).toBe('unknown');
+    // A key missing: nothing is sent.
+    outbound.mockReset();
+    expect(await service.recheckAppKeys('etsy', base, { ETSY_CLIENT_ID: 'ks' })).toBe('unknown');
+    expect(outbound).not.toHaveBeenCalled();
+    expect(await service.recheckAppKeys('google-search-console', base, env)).toBe('unknown');
   });
 
   it('does not hold the sign-in back when Etsy cannot be reached or answers something else', async () => {

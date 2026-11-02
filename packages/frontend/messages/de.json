@@ -937,7 +937,10 @@
       "providerError": "{name} hat mit einem Fehler geantwortet.",
       "suggest": "Stattdessen {name} einrichten",
       "suggestOther": "Stattdessen den anderen Connector einrichten",
-      "saveAnyway": "Trotzdem speichern"
+      "saveAnyway": "Trotzdem speichern",
+      "appPendingTitle": "{name} hat Ihre App noch nicht freigegeben.",
+      "appPendingBody": "{name} prüft neue Apps, meist innerhalb weniger Tage. Wir schreiben Ihnen eine E-Mail, sobald sie freigegeben ist; sonst ist nichts zu tun. Ihre Schlüssel sind gespeichert.",
+      "appPendingOpen": "Connector öffnen"
     },
     "field": {
       "required": "Pflichtfeld",
