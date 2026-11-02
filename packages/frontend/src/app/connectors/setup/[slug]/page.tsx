@@ -357,7 +357,11 @@ function SetupContent() {
     try {
       const old = await connectors.get(replaces, token);
       const oldSlug = (old?.config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
-      if (old?.id !== replaces || old.setupStatus === 'ready' || typeof oldSlug !== 'string' || oldSlug === slug) return;
+      // Only the draft the switch was offered on: an `odoo` connector replaced
+      // by `odoo-jsonrpc`. A hand-made ?replaces= link must never delete
+      // another connector of this user.
+      if (old?.id !== replaces || old.setupStatus === 'ready' || typeof oldSlug !== 'string') return;
+      if (REPLACEABLE_DRAFTS[oldSlug] !== slug) return;
       await connectors.delete(replaces, token);
     } catch {
       // Kept: it stays visible under Connectors, where it can be deleted.
@@ -976,6 +980,9 @@ function SetupContent() {
     </div>
   );
 }
+
+/** A setup page's draft that the "Switch to …" button may replace: old adapter → new adapter. */
+const REPLACEABLE_DRAFTS: Readonly<Record<string, string>> = { odoo: 'odoo-jsonrpc' };
 
 export default function ConnectorSetupPage() {
   const t = useTranslations('connectorSetup');
