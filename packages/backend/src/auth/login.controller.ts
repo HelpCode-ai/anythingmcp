@@ -11,6 +11,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomBytes, timingSafeEqual } from 'crypto';
@@ -42,6 +43,8 @@ import {
   type TrustRowOptions,
 } from './auth-page';
 import { maskEmail } from './mcp-email-verification';
+import { SharedSetupRegistry, type SetupContext, type SharedSetupProvider } from '../mcp-server/shared-setup';
+import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
 
 /**
  * Carries the VERIFIED identity across the second step of the authorize flow.
@@ -70,6 +73,37 @@ interface ConsentContext {
 /** The longest an authorization may stay paused on the first-connector page. */
 const FIRST_CONNECTOR_PAUSE_MAX_MS = 30 * 60 * 1000;
 
+/**
+ * CSRF token of the first-connector page's app picker (double submit: signed
+ * cookie + the value the page sends back). Its own cookie, so it never
+ * collides with the sign-in form's `login_csrf`, which is spent by then.
+ */
+const FIRST_APP_CSRF_COOKIE = 'first_app_csrf';
+
+/**
+ * The quick-setup apps the first-connector page offers: catalog connectors
+ * whose setups complete most often and that need no approval of an app by
+ * the provider (an Etsy app, for one, stays pending for days). Picking one
+ * only adds it as a connector waiting for its credentials; the user finishes
+ * it in the chat, through the link the setup tools hand out.
+ */
+export const QUICK_SETUP_APPS: ReadonlyArray<{ slug: string; name: string }> = [
+  { slug: 'telegram-bot', name: 'Telegram' },
+  { slug: 'shopify', name: 'Shopify' },
+  { slug: 'woocommerce', name: 'WooCommerce' },
+  { slug: 'odoo', name: 'Odoo' },
+  { slug: 'printify', name: 'Printify' },
+  { slug: 'gemini', name: 'Google Gemini' },
+];
+
+/** The request the first-connector page suggests typing into the chat. */
+export const FIRST_CONNECTOR_EXAMPLE = 'Connect my Telegram bot to AnythingMCP.';
+
+/** Its text once an app was picked on the page. */
+export function finishSetupRequest(appName: string): string {
+  return `Finish setting up my ${appName} connector.`;
+}
+
 @Controller('auth')
 export class LoginController {
   private readonly logger = new Logger(LoginController.name);
@@ -86,7 +120,20 @@ export class LoginController {
     @Optional() private readonly licenseGuard?: LicenseGuardService,
     @Optional() private readonly cardTrialEligibility?: CardTrialEligibilityService,
     @Optional() private readonly social?: SocialAuthService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
+
+  /**
+   * Connector setup (the provider behind the chat's setup tools), resolved
+   * lazily: it lives in the adapters' module, which this one does not import.
+   */
+  private setupProvider(): SharedSetupProvider | null {
+    try {
+      return this.moduleRef?.get(SharedSetupRegistry, { strict: false })?.get() ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   /** Cloud social sign-in buttons, when this deployment has any. */
   private socialProviders(): { id: string; name: string }[] {
@@ -510,6 +557,18 @@ export class LoginController {
       sameSite: isSecure ? 'none' : 'lax',
       signed: true,
     });
+    // The optional app picker, when this instance can install connectors: a
+    // CSRF token for its one request, valid as long as the pause.
+    const pickerCsrf = this.setupProvider() ? randomBytes(32).toString('base64url') : null;
+    if (pickerCsrf) {
+      res.cookie(FIRST_APP_CSRF_COOKIE, pickerCsrf, {
+        httpOnly: true,
+        secure: isSecure,
+        maxAge: pauseMs,
+        sameSite: isSecure ? 'none' : 'lax',
+        signed: true,
+      });
+    }
 
     // An admin on the free trial is told when it ends and that a card keeps
     // the workspace running, as a small line under "Continue". Never before
@@ -550,6 +609,7 @@ export class LoginController {
         redirectHost: consent.redirectHost,
         callbackUrl,
         welcomeUrl: dashboardLink('/welcome'),
+        ...(pickerCsrf ? { pickerCsrf } : {}),
         ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}`) } } : {}),
       }),
     );
@@ -577,6 +637,8 @@ export class LoginController {
     callbackUrl: string;
     welcomeUrl: string;
     cardTrial?: { endsAt: Date; url: string };
+    /** CSRF token of the optional app picker; no picker without it. */
+    pickerCsrf?: string;
   }): string {
     const client = this.escapeHtml(params.clientName);
     // "October 13", kept on one line.
@@ -585,13 +647,33 @@ export class LoginController {
           params.cardTrial.endsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }),
         ).replace(' ', '&nbsp;')
       : '';
+    // Back in Claude, a new chat opens with the request typed in. Only for a
+    // code sent to claude.ai itself, where /new?q= is known to work.
+    const host = (params.redirectHost ?? '').toLowerCase();
+    const opensChat = host === 'claude.ai';
+    // Hidden until the script shows it: without JavaScript the page is the
+    // same as before, and never more than one click from the chat.
+    const picker = params.pickerCsrf
+      ? `
+    <section class="quick" id="quick-apps" hidden data-csrf="${this.escapeHtml(params.pickerCsrf)}" aria-labelledby="quick-title">
+      <p class="quick-title" id="quick-title">Optional: add an app to start with</p>
+      <div class="chips" role="group" aria-labelledby="quick-title">${QUICK_SETUP_APPS.map(
+        (app) => `
+        <button type="button" class="chip" aria-pressed="false" data-adapter="${this.escapeHtml(app.slug)}" data-name="${this.escapeHtml(app.name)}">${this.escapeHtml(app.name)}</button>`,
+      ).join('')}
+      </div>
+      <label class="other-label" for="other-app">Another app</label>
+      <input type="text" id="other-app" class="other" maxlength="60" autocomplete="off" spellcheck="false" placeholder="e.g. HubSpot">
+      <p class="quick-status" id="quick-status" role="status" aria-live="polite"></p>
+    </section>`
+      : '';
     const card = `
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
     <h1>${client} is connected</h1>
     <p class="sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
-    <div class="example"><span>“<span id="example-request">Connect my Etsy shop to AnythingMCP.</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
-    <p class="body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>
-    <a class="button" href="${this.escapeHtml(params.callbackUrl)}">Continue to ${client}</a>
+    <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
+    <p class="body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}
+    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}"${opensChat ? ' data-open-chat="https://claude.ai/new"' : ''} data-client="${client}">Continue to ${client}</a>
     <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
       params.cardTrial
         ? `
@@ -613,6 +695,75 @@ export class LoginController {
         });
       });
     })();
+    // The optional app picker: one click adds the app (it waits for its
+    // credentials) and the example request becomes "finish setting it up".
+    // Any failure leaves the page as it was; Continue always works.
+    (function () {
+      var picker = document.getElementById('quick-apps');
+      var request = document.getElementById('example-request');
+      var status = document.getElementById('quick-status');
+      var other = document.getElementById('other-app');
+      var cont = document.getElementById('continue');
+      if (!picker || !request || !status || !other || !cont || !window.fetch || !window.JSON) return;
+      var fallback = request.textContent;
+      var clientName = cont.getAttribute('data-client') || 'the chat';
+      var chips = picker.querySelectorAll('button[data-adapter]');
+      var added = false;
+      var busy = false;
+      var setDisabled = function (on) {
+        for (var i = 0; i < chips.length; i++) chips[i].disabled = on;
+        other.disabled = on;
+      };
+      var failed = function (name, message) {
+        status.textContent = message || ('Could not add ' + name + ' right now. You can still continue and add it in the chat.');
+        busy = false;
+        setDisabled(false);
+      };
+      for (var i = 0; i < chips.length; i++) {
+        chips[i].addEventListener('click', function (event) {
+          var chip = event.currentTarget;
+          var name = chip.getAttribute('data-name') || '';
+          if (added || busy) return;
+          busy = true;
+          setDisabled(true);
+          status.textContent = 'Adding ' + name + '…';
+          fetch('/auth/first-app', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ adapter: chip.getAttribute('data-adapter'), csrf: picker.getAttribute('data-csrf') }),
+          }).then(function (r) {
+            return r.json().catch(function () { return {}; });
+          }).then(function (out) {
+            if (!out || out.ok !== true) return failed(name, out && out.error);
+            added = true;
+            busy = false;
+            chip.setAttribute('aria-pressed', 'true');
+            request.textContent = out.request;
+            status.textContent = out.name + ' added — you’ll finish it in ' + clientName + '.';
+          }, function () { failed(name); });
+        });
+      }
+      other.addEventListener('input', function () {
+        if (added) return;
+        var app = other.value.replace(/\\s+/g, ' ').trim().slice(0, 60);
+        request.textContent = app ? 'Connect my ' + app + ' to AnythingMCP.' : fallback;
+      });
+      picker.hidden = false;
+    })();
+    // Continue still goes back through the authorization; for Claude, the
+    // same click also opens a new chat with the request typed in.
+    (function () {
+      var cont = document.getElementById('continue');
+      var request = document.getElementById('example-request');
+      var chat = cont && cont.getAttribute('data-open-chat');
+      if (!chat || !request) return;
+      cont.addEventListener('click', function () {
+        try {
+          window.open(chat + '?q=' + encodeURIComponent(request.textContent || ''), '_blank', 'noopener');
+        } catch (e) { /* the authorization goes on regardless */ }
+      });
+    })();
     </script>`;
     return renderAuthPage({
       title: `${params.clientName} is connected`,
@@ -625,6 +776,20 @@ export class LoginController {
              background: #fff; color: var(--text); border-color: var(--border-strong); }
   .example button.copy:hover { background: var(--surface); border-color: var(--brand); }
   .body { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+  .quick { border: 1px solid var(--border); border-radius: 12px; padding: 12px 12px 4px; margin: 0 0 18px; }
+  .quick-title { font-size: 13px; font-weight: 500; color: var(--text); margin: 0 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  .chips button.chip { width: auto; min-height: 34px; padding: 0 12px; font-size: 13.5px; font-weight: 500;
+             background: #fff; color: var(--text); border-color: var(--border-strong); }
+  .chips button.chip:hover { background: var(--surface-2); border-color: var(--brand); }
+  .chips button.chip:focus-visible, .example button.copy:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .chips button.chip[aria-pressed="true"] { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .chips button.chip:disabled { cursor: default; opacity: .7; }
+  .chips button.chip[aria-pressed="true"]:disabled { opacity: 1; }
+  .other-label { font-size: 12.5px; color: var(--text-2); font-weight: 500; }
+  input.other { width: 100%; height: 38px; border: 1px solid var(--border); border-radius: 9px; padding: 0 12px;
+             font: inherit; font-size: 14px; background: #fff; color: var(--text); margin: 0 0 8px; }
+  .quick-status { font-size: 13px; color: var(--text-2); margin: 0 0 8px; min-height: 1em; line-height: 1.45; }
   .trial { font-size: 13px; color: var(--text-2); margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); line-height: 1.5; }
   .trial a { color: var(--brand); }`,
     });
@@ -799,6 +964,123 @@ export class LoginController {
     res.redirect(`${this.getBaseUrl(req)}/callback`);
   }
 
+  /**
+   * The first-connector page's optional app picker (Cloud only): adds one of
+   * QUICK_SETUP_APPS to the workspace as a connector waiting for its
+   * credentials, through the same setup service as the chat's
+   * setup_install_connector (role, plan limit, hourly cap, security event).
+   * Nothing secret is taken here; the user finishes the setup in the chat.
+   *
+   * Nothing from the request is trusted: the CSRF token must match its
+   * signed cookie, the identity is the signed login cookie the paused
+   * authorization already relies on, the authorization must still be pending,
+   * and the app must be one of the page's own. The OAuth flow is untouched:
+   * this answers JSON, and "Continue" goes to the callback as before.
+   */
+  @Post('first-app')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async pickFirstApp(
+    @Req() req: Request,
+    @Body() body: { adapter?: unknown; csrf?: unknown },
+    @Res() res: Response,
+  ) {
+    if (!this.deployment.isCloud()) return res.status(404).json({ ok: false, error: 'Not found.' });
+    const expired = 'This page has expired. Continue, and add the app in the chat.';
+    if (!this.verifySignedToken(req, FIRST_APP_CSRF_COOKIE, body?.csrf)) {
+      this.logger.warn('Rejected a first-app pick with a missing/invalid CSRF token');
+      return res.status(403).json({ ok: false, error: expired });
+    }
+    const app = QUICK_SETUP_APPS.find((a) => a.slug === body?.adapter);
+    if (!app) return res.status(400).json({ ok: false, error: 'Unknown app.' });
+
+    const userId = this.pendingLoginUserId(req);
+    const consent = await this.loadConsentContext(req);
+    const requestedServerId = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[MCP_RESOURCE_COOKIE];
+    if (!userId || !consent || (typeof requestedServerId === 'string' && requestedServerId)) {
+      return res.status(403).json({ ok: false, error: expired });
+    }
+    const provider = this.setupProvider();
+    if (!provider) {
+      return res
+        .status(503)
+        .json({ ok: false, error: `${app.name} cannot be added here right now. Continue, and add it in the chat.` });
+    }
+
+    // The workspace the connection reaches, as the shared endpoint resolves it.
+    const [grant, account] = await Promise.all([
+      this.grants.resolve(consent.clientId, userId).catch(() => null),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } }),
+    ]);
+    if (grant?.mode === 'none') return res.status(403).json({ ok: false, error: expired });
+    const organizationId =
+      grant?.mode === 'organization'
+        ? grant.organizationId
+        : grant?.mode === 'servers'
+          ? grant.servers[0]?.organizationId
+          : account?.organizationId;
+    if (!organizationId) return res.status(403).json({ ok: false, error: expired });
+    const redirectUris = [consent.redirectUri];
+    const ctx: SetupContext = {
+      userId,
+      organizationId,
+      // So the connector lands on the server(s) this connection was granted.
+      serverIds:
+        grant?.mode === 'servers'
+          ? grant.servers.filter((s) => s.organizationId === organizationId).map((s) => s.id)
+          : [],
+      dashboardBase: this.frontendUrl(),
+      assistant: assistantForRedirectUris(redirectUris),
+      profile: profileForRedirectUris(redirectUris),
+    };
+    if (!(await provider.canSetUp(ctx).catch(() => false))) {
+      return res.status(403).json({
+        ok: false,
+        error: 'Only workspace admins and editors can add apps. Continue, and ask an admin to add it.',
+      });
+    }
+
+    let out: { body: unknown; isError?: boolean };
+    try {
+      out = await provider.install(ctx, { adapter: app.slug });
+    } catch (err: any) {
+      out = { isError: true, body: { error: String(err?.message ?? err) } };
+    }
+    const reason = out.isError ? (out.body as { error?: unknown } | null)?.error : undefined;
+    await this.productEvents
+      ?.log({
+        event: ProductEvents.POST_APPROVE_APP_PICKED,
+        userId,
+        organizationId,
+        metadata: {
+          adapterSlug: app.slug,
+          client: consent.clientName,
+          status: out.isError ? 'failed' : 'added',
+          ...(typeof reason === 'string' ? { error: reason.slice(0, 160) } : {}),
+        },
+      })
+      .catch(() => undefined);
+    if (out.isError) {
+      return res.json({
+        ok: false,
+        error: `${app.name} could not be added right now. You can still continue and add it in the chat.`,
+      });
+    }
+    return res.json({ ok: true, adapter: app.slug, name: app.name, request: finishSetupRequest(app.name) });
+  }
+
+  /** The user id in the signed login cookie of a paused authorization, or null. */
+  private pendingLoginUserId(req: Request): string | null {
+    const raw = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.login_user;
+    if (typeof raw !== 'string' || !raw) return null;
+    try {
+      const profile = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as { id?: unknown };
+      return typeof profile?.id === 'string' && profile.id ? profile.id : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** The user behind this browser's dashboard session, or null (see resolveDashboardSessionUser). */
   private async resolveDashboardSession(
     req: Request,
@@ -854,8 +1136,13 @@ export class LoginController {
   }
 
   private verifyCsrf(req: Request, formToken: unknown): boolean {
+    return this.verifySignedToken(req, 'login_csrf', formToken);
+  }
+
+  /** Double submit: the signed cookie `cookieName` must equal `formToken`. */
+  private verifySignedToken(req: Request, cookieName: string, formToken: unknown): boolean {
     const cookieToken = (req as Request & { signedCookies?: Record<string, unknown> })
-      .signedCookies?.login_csrf;
+      .signedCookies?.[cookieName];
     if (typeof cookieToken !== 'string' || typeof formToken !== 'string') {
       return false;
     }
