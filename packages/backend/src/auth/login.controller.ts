@@ -54,6 +54,14 @@ import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/
 const PENDING_GRANT_COOKIE = 'pending_grant';
 
 /**
+ * The social provider (Google, Microsoft, GitHub) the user signed in with on
+ * the login page, carried across the server picker so the first-connector
+ * page after it can link to the dashboard the same way. Signed, and checked
+ * against the enabled providers when read.
+ */
+const PENDING_SOCIAL_COOKIE = 'pending_grant_social';
+
+/**
  * Context describing the OAuth client that initiated the current authorize
  * flow. Rendered on the login page so the user can see — and thereby approve —
  * exactly which client and callback destination they are authorizing before
@@ -492,7 +500,7 @@ export class LoginController {
 
     // Between "who you are" and "what this client may reach". Returns true when
     // it has taken over the response with the picker.
-    if (await this.maybeAskWhichServers(req, res, user.id)) return;
+    if (await this.maybeAskWhichServers(req, res, user.id, socialProvider)) return;
 
     // Derive callback URL from the request origin (works behind proxy/tunnel)
     const baseUrl = this.getBaseUrl(req);
@@ -531,8 +539,11 @@ export class LoginController {
       where: { id: userId },
       select: { organizationId: true, email: true },
     });
-    const organizationId = account?.organizationId;
-    if (!organizationId) return false;
+    // The workspace this connection was granted, which is not the user's
+    // primary one when they picked another on "Choose what to connect".
+    const workspace = await this.grantedWorkspace(consent.clientId, userId, account?.organizationId);
+    if (!workspace) return false;
+    const { organizationId } = workspace;
     const [member, connectors] = await Promise.all([
       this.prisma.organizationMember.findFirst({
         where: { userId, organizationId, deactivatedAt: null },
@@ -629,6 +640,35 @@ export class LoginController {
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500).unref?.()),
     ]);
     return answer === true;
+  }
+
+  /**
+   * The one workspace this client reaches for this user, as the shared
+   * endpoint resolves it: the granted workspace, or the workspace of the
+   * granted servers (with their ids). Without any grant (a connection from
+   * before grants existed), the user's own organization, `fallback`. Null
+   * when the grant reaches nothing, or servers in more than one workspace:
+   * there is then no single workspace to add an app to.
+   */
+  private async grantedWorkspace(
+    clientId: string,
+    userId: string,
+    fallback: string | null | undefined,
+  ): Promise<{ organizationId: string; serverIds: string[] } | null> {
+    let grant: Awaited<ReturnType<McpConnectionGrantService['resolve']>> = null;
+    try {
+      grant = await this.grants.resolve(clientId, userId);
+    } catch {
+      grant = null;
+    }
+    if (!grant) return fallback ? { organizationId: fallback, serverIds: [] } : null;
+    if (grant.mode === 'organization') return { organizationId: grant.organizationId, serverIds: [] };
+    if (grant.mode === 'servers') {
+      const organizations = new Set(grant.servers.map((s) => s.organizationId));
+      if (organizations.size !== 1) return null;
+      return { organizationId: grant.servers[0].organizationId, serverIds: grant.servers.map((s) => s.id) };
+    }
+    return null;
   }
 
   private renderFirstConnectorOffer(params: {
@@ -816,6 +856,7 @@ export class LoginController {
     req: Request,
     res: Response,
     userId: string,
+    socialProvider?: string,
   ): Promise<boolean> {
     const consent = await this.loadConsentContext(req);
     // Not an authorize flow — a bare visit to the login page. Nothing to grant.
@@ -862,6 +903,17 @@ export class LoginController {
       sameSite: isSecure ? 'none' : 'lax',
       signed: true,
     });
+    if (socialProvider) {
+      res.cookie(PENDING_SOCIAL_COOKIE, socialProvider, {
+        httpOnly: true,
+        secure: isSecure,
+        maxAge: 10 * 60 * 1000,
+        sameSite: isSecure ? 'none' : 'lax',
+        signed: true,
+      });
+    } else {
+      res.clearCookie(PENDING_SOCIAL_COOKIE);
+    }
     const csrfToken = randomBytes(32).toString('base64url');
     res.cookie('login_csrf', csrfToken, {
       httpOnly: true,
@@ -963,8 +1015,17 @@ export class LoginController {
     });
     res.clearCookie('login_csrf');
     res.clearCookie(PENDING_GRANT_COOKIE);
+    const social = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[PENDING_SOCIAL_COOKIE];
+    res.clearCookie(PENDING_SOCIAL_COOKIE);
+    const socialProvider =
+      typeof social === 'string' && this.socialProviders().some((p) => p.id === social) ? social : undefined;
 
-    res.redirect(`${this.getBaseUrl(req)}/callback`);
+    // Picking an empty workspace gets the same first-connector page as
+    // signing in to one, for the workspace just granted (Cloud only).
+    const callbackUrl = `${this.getBaseUrl(req)}/callback`;
+    if (await this.maybeOfferFirstConnector(req, res, user.id, encoded, callbackUrl, socialProvider)) return;
+    res.redirect(callbackUrl);
   }
 
   /**
@@ -1010,28 +1071,19 @@ export class LoginController {
         .json({ ok: false, error: `${app.name} cannot be added here right now. Continue, and add it in the chat.` });
     }
 
-    // The workspace the connection reaches, as the shared endpoint resolves it.
-    const [grant, account] = await Promise.all([
-      this.grants.resolve(consent.clientId, userId).catch(() => null),
-      this.prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } }),
-    ]);
-    if (grant?.mode === 'none') return res.status(403).json({ ok: false, error: expired });
-    const organizationId =
-      grant?.mode === 'organization'
-        ? grant.organizationId
-        : grant?.mode === 'servers'
-          ? grant.servers[0]?.organizationId
-          : account?.organizationId;
-    if (!organizationId) return res.status(403).json({ ok: false, error: expired });
+    // The workspace the connection was granted, the same one the page was
+    // offered for: a user in several workspaces may have picked another one
+    // than their own on "Choose what to connect".
+    const account = await this.prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } });
+    const workspace = await this.grantedWorkspace(consent.clientId, userId, account?.organizationId);
+    if (!workspace) return res.status(403).json({ ok: false, error: expired });
+    const { organizationId } = workspace;
     const redirectUris = [consent.redirectUri];
     const ctx: SetupContext = {
       userId,
       organizationId,
       // So the connector lands on the server(s) this connection was granted.
-      serverIds:
-        grant?.mode === 'servers'
-          ? grant.servers.filter((s) => s.organizationId === organizationId).map((s) => s.id)
-          : [],
+      serverIds: workspace.serverIds,
       dashboardBase: this.frontendUrl(),
       assistant: assistantForRedirectUris(redirectUris),
       profile: profileForRedirectUris(redirectUris),
