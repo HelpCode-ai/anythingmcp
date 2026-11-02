@@ -114,6 +114,16 @@ or `private_key_jwt`, which signs a short-lived client assertion with a private
 key instead of sending a secret (see
 [REST connectors](connectors/rest.md#signed-client-assertion-private_key_jwt)).
 
+The browser sign-in ("Authorize with Provider") sends this server's callback
+URL (`<SERVER_URL>/api/mcp-oauth/callback`) as `redirect_uri`. A provider that
+wants something else there names it in `authConfig.providerRedirectUri`, which
+is then sent on the authorization request and on the code exchange alike.
+eBay is the case: its `redirect_uri` is the app's RuName, and the RuName's
+"Auth Accepted URL" in eBay's developer portal points at the callback URL.
+Use a variable (`"providerRedirectUri": "{{EBAY_RUNAME}}"`); until it has a
+value, the sign-in asks for it instead of starting. `authConfig.pkce: false`
+leaves out the PKCE challenge and verifier for providers that do not use them.
+
 A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
 connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
 also sent on the token requests: the authorization-code exchange, refreshes
@@ -338,9 +348,21 @@ menus deep. Adapters without one keep the form.
   `capturedAt`. Leave it out rather than add a mock-up.
 - `confirm`: a checkbox the user ticks before continuing, for a step that
   happens at the provider.
+- `saveAndCheck: true`: for a provider that must approve the user's app
+  before the keys work (Etsy). Continue saves the step's `fields` on the
+  connector (unfinished, so the AI cannot use it yet) and asks the provider
+  about the keys with the adapter's `checkBeforeAuthorization`. Needs
+  `fields`, and cannot be the last step.
+- `waitForProvider: true`: the step right after a `saveAndCheck` step, shown
+  only while the provider refuses the saved keys and skipped once it accepts
+  them. It tells the user what they are waiting for; the page checks again
+  whenever they come back to it and offers "Check again", and Continue opens
+  once the keys are accepted. No `fields` or `confirm`.
 
 The guide is not part of the catalog fingerprint: rewording it does not mark
-installed connectors as out of date. Progress is kept in the browser only.
+installed connectors as out of date. Progress is kept in the browser, with
+the id of a connector saved by a `saveAndCheck` step, so a user coming back
+days later continues with the keys they entered.
 
 ### Adapter file errors
 

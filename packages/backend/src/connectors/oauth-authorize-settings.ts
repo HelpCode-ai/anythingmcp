@@ -1,4 +1,4 @@
-import { interpolateDeep } from '../common/env-interpolation.util';
+import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import { findUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
 import {
   clientAssertionSettingsFrom,
@@ -42,6 +42,12 @@ export interface RestAuthorizeSettings {
    * see resolvePkce.
    */
   pkce: boolean;
+  /**
+   * The `redirect_uri` value to send to the provider in place of this
+   * server's callback URL, resolved; undefined sends the callback URL as
+   * always. See resolveProviderRedirectUri.
+   */
+  providerRedirectUri?: string;
   /**
    * Settings taken from the catalog because the row lacked them, to be
    * written to the row's authConfig once the authorization succeeds, so the
@@ -96,6 +102,41 @@ export function resolvePkce(
   );
 }
 
+/**
+ * `authConfig.providerRedirectUri`: what the authorization request and the
+ * code exchange send as `redirect_uri`, when the provider wants something
+ * other than the callback URL there.
+ *
+ * eBay does: its `redirect_uri` is the app's RuName, a name eBay assigns
+ * (`Jane_Doe-JaneDoe-MyApp-abcdef`). The RuName's "auth accepted URL", set
+ * in eBay's developer portal, is what sends the browser back to this
+ * server's callback; the callback route and the state check are the same
+ * as for every other provider.
+ *
+ * Usually a placeholder (`{{EBAY_RUNAME}}`), resolved from the connector's
+ * env vars. The row's own value wins; a row without one takes the catalog
+ * adapter's, like `pkce`, because a connector installed before its adapter
+ * set it would otherwise send the callback URL and be refused.
+ */
+export function resolveProviderRedirectUri(
+  storedAuthConfig: Record<string, unknown> | null | undefined,
+  catalogAuthConfig: Record<string, unknown> | null | undefined,
+  envVars: Record<string, string> | null | undefined,
+): {
+  /** As written in the config, placeholders included. */
+  raw?: string;
+  /** Resolved; absent while a variable it uses has no value. */
+  value?: string;
+  fromCatalog: boolean;
+} {
+  const own = str(storedAuthConfig?.providerRedirectUri);
+  const raw = own ?? str(catalogAuthConfig?.providerRedirectUri);
+  if (!raw) return { fromCatalog: false };
+  const value = interpolateString(raw, envVars ?? {}).trim();
+  const resolved = value !== '' && findUnresolvedPlaceholders(value).length === 0;
+  return { raw, ...(resolved ? { value } : {}), fromCatalog: !own };
+}
+
 export function resolveRestAuthorizeSettings(
   storedAuthConfig: Record<string, unknown>,
   envVars: Record<string, string> | null | undefined,
@@ -139,6 +180,12 @@ export function resolveRestAuthorizeSettings(
   );
   if (widened && !adopted.scopes) adopted.scopes = widened;
 
+  // 4. A redirect value the provider wants instead of the callback URL
+  //    (eBay's RuName). Kept as written (placeholder included) when adopted,
+  //    so an edit of the env var later still reaches it.
+  const redirect = resolveProviderRedirectUri(storedAuthConfig, catalogAuthConfig, envVars);
+  if (redirect.fromCatalog && redirect.raw) adopted.providerRedirectUri = redirect.raw;
+
   const merged = { ...cfg, ...adopted };
   const clientId = str(merged.clientId) ?? '';
   const clientSecret = str(merged.clientSecret);
@@ -161,11 +208,17 @@ export function resolveRestAuthorizeSettings(
     tokenAuthMethod,
     clientAssertion,
     pkce: resolvePkce(cfg, catalogAuthConfig),
+    ...(redirect.value ? { providerRedirectUri: redirect.value } : {}),
     adopted,
     missingVars: findUnresolvedPlaceholders(
-      clientAssertion
-        ? [clientId, clientAssertion.privateKey, clientAssertion.claims ?? {}]
-        : [clientId, clientSecret ?? ''],
+      [
+        ...(clientAssertion
+          ? [clientId, clientAssertion.privateKey, clientAssertion.claims ?? {}]
+          : [clientId, clientSecret ?? '']),
+        // An empty RuName would send eBay `redirect_uri=` and an error page:
+        // until it resolves, its variables count as missing.
+        ...(redirect.raw && !redirect.value ? [redirect.raw] : []),
+      ],
     ),
   };
 }
