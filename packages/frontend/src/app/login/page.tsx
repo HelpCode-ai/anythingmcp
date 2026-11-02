@@ -276,7 +276,8 @@ function LoginForm() {
   const [recent, setRecent] = useState<{ email: string; name: string | null } | null>(null);
   const [recentContinuing, setRecentContinuing] = useState(false);
   useEffect(() => {
-    if (sessionLoading || sessionToken || ssoCode || socialCode || isRegister) return;
+    // Not on sign-up: isRegister is only set from ?mode after the first render.
+    if (sessionLoading || sessionToken || ssoCode || socialCode || isRegister || modeParam === 'register') return;
     let cancelled = false;
     void recentSignIn.who().then((who) => {
       if (!cancelled) setRecent(who);
