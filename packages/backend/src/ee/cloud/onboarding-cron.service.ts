@@ -234,6 +234,7 @@ export class OnboardingCronService {
     licensesReverified: number;
     licensesDeactivated: number;
     licensesReleased: number;
+    licensesBound: number;
     winbackOffers: number;
     winbackHelp: number;
     winbackHoldout: number;
@@ -260,6 +261,7 @@ export class OnboardingCronService {
       licensesReverified: 0,
       licensesDeactivated: 0,
       licensesReleased: 0,
+      licensesBound: 0,
       winbackOffers: 0,
       winbackHelp: 0,
       winbackHoldout: 0,
@@ -441,6 +443,12 @@ export class OnboardingCronService {
       out.skipped++;
     }
 
+    // First: a paid licence that never reached its workspace (the buyer's
+    // browser did not come back to the activation page) leaves a paying
+    // customer on an ended trial. Bound before any email pass looks at the
+    // workspace's plan.
+    out.licensesBound = (await this.license.bindUnclaimedPaidLicences(new Date(now)).catch(() => null))?.bound ?? 0;
+
     await this.runActivationPass(now, out);
     await this.runTrialLifecyclePass(now, out);
     await this.runWinbackPass(now, out);
@@ -476,7 +484,7 @@ export class OnboardingCronService {
         `trialEmailsWithheld=${out.trialEmailsWithheld} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
-        `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} ` +
+        `licensesReleased=${out.licensesReleased} licensesBound=${out.licensesBound} winbackOffers=${out.winbackOffers} ` +
         `winbackHelp=${out.winbackHelp} trialExpiredBusiness=${out.trialExpiredBusiness} ` +
         `winbackHoldout=${out.winbackHoldout} blockedCallEmails=${out.blockedCallEmails} ` +
         `blockedCallHoldout=${out.blockedCallHoldout} ` +
