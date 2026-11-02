@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { fileSearchSetupPath } from '@/lib/file-search-catalog';
 import { copyText } from '@/lib/clipboard';
 import { returnAssistant } from '@/lib/return-assistant';
-import { GuideIntro, GuideStepper, GuideStepView, StuckLink } from '@/components/connector-setup/setup-guide';
+import { GuideIntro, GuideStepper, GuideStepView, GuideWaitPanel, StuckLink } from '@/components/connector-setup/setup-guide';
 import { SetupSuccess } from '@/components/connector-setup/setup-success';
 
 /**
@@ -50,7 +50,10 @@ import { SetupSuccess } from '@/components/connector-setup/setup-success';
  * intro, the steps, then the success screen); "Enter everything on one page"
  * switches to the form. The step reached is kept in localStorage so a setup
  * interrupted at the provider (an Etsy app still Pending) reopens there;
- * values never are.
+ * values never are. A `saveAndCheck` step saves the keys on the connector
+ * (and its id in the address and the saved progress), so a user who waits
+ * days for the provider's approval never types them again; the
+ * `waitForProvider` step after it checks again whenever they come back.
  */
 
 type Phase = 'form' | 'working' | 'done';
@@ -103,6 +106,28 @@ function SetupContent() {
   const [resume, setResume] = useState<{ index: number; title: string } | null>(null);
   const viewedSteps = useRef(new Set<number>());
   const progressKey = `amcp:setup_guide:${slug}`;
+  /** The connector a `saveAndCheck` step created; also put in the address as ?connector=. */
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const connectorId = existingId ?? savedId;
+  /** Whether the provider accepts the saved keys (an Etsy app approved): null until asked. */
+  const [providerReady, setProviderReady] = useState<boolean | null>(null);
+  const [providerCheck, setProviderCheck] = useState<{ checking: boolean; at: Date | null; error: string }>({
+    checking: false,
+    at: null,
+    error: '',
+  });
+  const lastProviderCheck = useRef(0);
+
+  /** This setup's address for a saved connector, keeping the other parameters (from=…). */
+  const withConnector = useCallback(
+    (id: string) => {
+      const q = new URLSearchParams(params.toString());
+      q.set('connector', id);
+      q.delete('step');
+      return `/connectors/setup/${encodeURIComponent(slug)}?${q.toString()}`;
+    },
+    [params, slug],
+  );
 
   /** In a guide, a refused value may belong to an earlier step: go there. */
   const showStepOf = (names: string[]) => {
@@ -118,11 +143,22 @@ function SetupContent() {
     // A setup left halfway reopens at its step; one back from the provider
     // with a refusal opens at the last step, where the keys are.
     const restoreProgress = (steps: SetupGuideStep[]) => {
-      let saved: { step?: string; confirmed?: string[] } | null = null;
+      let saved: { step?: string; confirmed?: string[]; connectorId?: string } | null = null;
       try {
         saved = JSON.parse(localStorage.getItem(progressKey) ?? 'null');
       } catch {}
       if (Array.isArray(saved?.confirmed)) setConfirmed(Object.fromEntries(saved.confirmed.map((id) => [id, true])));
+      // Keys saved on an earlier visit: carry on with that connector, if it
+      // still exists, instead of creating a second one.
+      const keep = !existingId && typeof saved?.connectorId === 'string' ? saved.connectorId : null;
+      if (keep) {
+        connectors
+          .get(keep, token)
+          .then((c) => {
+            if (c?.id === keep) router.replace(withConnector(keep));
+          })
+          .catch(() => {});
+      }
       if (backFromProvider) {
         setStepIndex(steps.length - 1);
         return;
@@ -164,7 +200,7 @@ function SetupContent() {
         })
         .catch(() => {});
     }
-  }, [token, slug, existingId, progressKey, backFromProvider, t, handed]);
+  }, [token, slug, existingId, progressKey, backFromProvider, t, handed, router, withConnector]);
 
   useEffect(() => {
     if (!token || info?.setupKind !== 'oauth_browser') return;
@@ -217,14 +253,18 @@ function SetupContent() {
     try {
       localStorage.setItem(
         progressKey,
-        JSON.stringify({ step: step.id, confirmed: Object.keys(confirmed).filter((k) => confirmed[k]) }),
+        JSON.stringify({
+          step: step.id,
+          confirmed: Object.keys(confirmed).filter((k) => confirmed[k]),
+          ...(connectorId ? { connectorId } : {}),
+        }),
       );
     } catch {}
     if (!viewedSteps.current.has(stepIndex)) {
       viewedSteps.current.add(stepIndex);
       productEvents.track('setup_step_viewed', token, { adapterSlug: slug, step: step.id, index: stepIndex + 1 });
     }
-  }, [guide, stepIndex, confirmed, token, slug, progressKey]);
+  }, [guide, stepIndex, confirmed, token, slug, progressKey, connectorId]);
 
   useEffect(() => {
     if (phase !== 'done') return;
@@ -249,7 +289,7 @@ function SetupContent() {
     Object.fromEntries(
       fields
         .map((f) => [f.name, (values[f.name] ?? '').trim()] as const)
-        .filter(([name, v]) => existingId || v !== '' || !fields.find((f) => f.name === name)?.required),
+        .filter(([name, v]) => connectorId || v !== '' || !fields.find((f) => f.name === name)?.required),
     ) as Record<string, string>;
 
   /** Client-side checks: required fields and patterns (of `only`, in a guide step). */
@@ -276,13 +316,95 @@ function SetupContent() {
   /** Create the connector, or store the values on the existing one. Returns its id. */
   const save = async (): Promise<string> => {
     const creds = credentials();
-    if (existingId) {
-      await connectors.updateEnvVars(existingId, creds, token!);
-      return existingId;
+    if (connectorId) {
+      await connectors.updateEnvVars(connectorId, creds, token!);
+      return connectorId;
     }
     const out = await adapters.import(slug, token!, creds);
+    setSavedId(out.connectorId);
     return out.connectorId;
   };
+
+  /** The guide's waitForProvider step, if it has one. */
+  const waitStepAt = mode === 'guide' ? (info?.setupGuide?.steps.findIndex((st) => st.waitForProvider) ?? -1) : -1;
+
+  /** A guide step shown from code: the refusal of one step does not follow to another. */
+  const showStep = (i: number) => {
+    setError('');
+    setVerifyFailed(null);
+    setStepIndex(i);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  /**
+   * A `saveAndCheck` step: keep the keys on the connector, then ask the
+   * provider about them. Accepted: on past the wait step. Refused (an Etsy
+   * app still awaiting approval, or a wrong shared secret): the wait step,
+   * which explains both. A value wrong in itself stays on this step.
+   */
+  const saveAndCheck = async (at: number) => {
+    if (!token || !info?.setupGuide) return;
+    setError('');
+    setVerifyFailed(null);
+    setPhase('working');
+    try {
+      const id = await save();
+      if (!existingId) router.replace(withConnector(id));
+      const check = await adapters.verify(slug, token, credentials(), id);
+      if (check.ok === false && check.kind !== 'auth_failed') {
+        if (check.missing?.length) {
+          setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, t('field.required')])));
+          showStepOf(check.missing);
+        }
+        setVerifyFailed(check);
+        setPhase('form');
+        return;
+      }
+      const ready = check.ok !== false;
+      lastProviderCheck.current = Date.now();
+      setProviderReady(ready);
+      setProviderCheck({ checking: false, at: new Date(), error: '' });
+      setPhase('form');
+      const steps = info.setupGuide.steps;
+      showStep(ready && steps[at + 1]?.waitForProvider ? at + 2 : at + 1);
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  /** The wait step's check: does the provider accept the saved keys now? */
+  const recheck = useCallback(async () => {
+    if (!token || !connectorId) return;
+    lastProviderCheck.current = Date.now();
+    setProviderCheck((c) => ({ ...c, checking: true, error: '' }));
+    try {
+      const check = await adapters.verify(slug, token, {}, connectorId);
+      setProviderReady(check.ok !== false);
+      // Not a refusal of the keys (a value missing, the provider down): say so.
+      setProviderCheck({ checking: false, at: new Date(), error: check.ok === false && check.kind !== 'auth_failed' ? check.message : '' });
+    } catch (e: any) {
+      setProviderCheck((c) => ({ checking: false, at: c.at, error: e?.message || t('genericError') }));
+    }
+  }, [token, connectorId, slug, t]);
+
+  // On the wait step: check when it opens and whenever the user comes back
+  // to the tab (from Etsy's page, or the next day), at most once a minute.
+  // No timer: an approval takes hours, and each check is a call to the provider.
+  const onWaitStep = mode === 'guide' && stepIndex >= 0 && stepIndex === waitStepAt;
+  useEffect(() => {
+    if (!onWaitStep || providerReady === true || !connectorId) return;
+    const maybe = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - lastProviderCheck.current < 60_000) return;
+      void recheck();
+    };
+    maybe();
+    document.addEventListener('visibilitychange', maybe);
+    window.addEventListener('focus', maybe);
+    return () => {
+      document.removeEventListener('visibilitychange', maybe);
+      window.removeEventListener('focus', maybe);
+    };
+  }, [onWaitStep, providerReady, connectorId, recheck]);
 
   const fail = (e: any) => {
     setPhase('form');
@@ -300,12 +422,29 @@ function SetupContent() {
       // shared secret) used to send the user to an error page at the
       // provider that they never came back from.
       const check =
-        info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), existingId ?? undefined);
+        info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), connectorId ?? undefined);
+      // Keys refused at the end of a guide with a wait step (a connector
+      // finished from the chat, a step skipped): keep them and wait there.
+      if (check && check.ok === false && check.kind === 'auth_failed' && waitStepAt >= 0) {
+        const id = await save();
+        if (!existingId) router.replace(withConnector(id));
+        lastProviderCheck.current = Date.now();
+        setProviderReady(false);
+        setProviderCheck({ checking: false, at: new Date(), error: '' });
+        setPhase('form');
+        showStep(waitStepAt);
+        return;
+      }
       if (check && check.ok === false) {
         // setup_verify_failed is recorded by the server, with the provider's message.
         if (check.missing?.length) {
           setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, t('field.required')])));
           showStepOf(check.missing);
+        } else if (check.fields && Object.keys(check.fields).length > 0) {
+          // A value the server refused (an example left in the field, a key
+          // pasted twice): the message goes under that field.
+          setFieldErrors(check.fields);
+          showStepOf(Object.keys(check.fields));
         }
         setVerifyFailed(check);
         setPhase('form');
@@ -544,24 +683,28 @@ function SetupContent() {
     const extraFields = isLast ? unguidedFields.filter((f) => !f.advanced) : [];
     const extraAdvanced = isLast ? unguidedFields.filter((f) => f.advanced) : [];
     const needsTick = !!step.confirm && !confirmed[step.id];
+    const waiting = !!step.waitForProvider;
+    const waitBlocks = waiting && providerReady !== true;
     // A link into the user's own instance starts with a value from an earlier
     // step (the WooCommerce shop address); until it is a usable https address
     // there is nothing to open.
     const actionUrl = step.action
       ? step.action.url.replace(/^\{\{([A-Z0-9_]+)\}\}/, (_, name: string) => (values[name] ?? '').trim().replace(/\/+$/, ''))
       : null;
-    const goTo = (i: number) => {
-      // A refusal belongs to the step that ran the check.
-      setError('');
-      setVerifyFailed(null);
-      setStepIndex(i);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
+    // A refusal belongs to the step that ran the check.
+    const goTo = showStep;
+    // Back past a wait step the provider has already cleared.
+    const previous = at > 0 && guide.steps[at - 1]?.waitForProvider && providerReady === true ? at - 2 : at - 1;
     const next = () => {
       if (!validate(step.fields ?? [])) return;
+      if (waitBlocks) return;
       if (token) productEvents.track('setup_step_completed', token, { adapterSlug: slug, step: step.id, index: at + 1 });
       if (isLast) {
         void verifyAndSave();
+        return;
+      }
+      if (step.saveAndCheck) {
+        void saveAndCheck(at);
         return;
       }
       setVerifyFailed(null);
@@ -598,6 +741,16 @@ function SetupContent() {
               <div className="mt-3 space-y-3">{extraAdvanced.map(renderField)}</div>
             </details>
           )}
+          {waiting && (
+            <GuideWaitPanel
+              name={short}
+              status={providerCheck.checking ? 'checking' : providerReady === true ? 'ready' : connectorId ? 'waiting' : 'checking'}
+              checkedAt={providerCheck.at}
+              error={connectorId ? providerCheck.error : t('guide.keysFirst')}
+              onCheck={() => void recheck()}
+              onReenterKeys={() => goTo(at - 1)}
+            />
+          )}
           {isLast && isOAuth && (
             <p className="text-xs text-[var(--text-3)]">
               {t('guide.oauthNext', { name: short })}
@@ -608,17 +761,24 @@ function SetupContent() {
 
         <div className="space-y-2 border-t border-[var(--border)] pt-4">
           <div className="flex flex-wrap items-center gap-3">
-            <Button variant="secondary" onClick={() => goTo(at - 1)} disabled={working}>
+            <Button variant="secondary" onClick={() => goTo(previous)} disabled={working}>
               {t('guide.back')}
             </Button>
-            <Button onClick={next} disabled={working || needsTick}>
-              {working ? t('guide.checking') : isLast ? finishLabel : t('guide.continue')}
+            <Button onClick={next} disabled={working || needsTick || waitBlocks}>
+              {working
+                ? t('guide.checking')
+                : isLast
+                  ? finishLabel
+                  : step.saveAndCheck
+                    ? t('guide.saveAndCheck', { name: short })
+                    : t('guide.continue')}
             </Button>
             <span className="ml-auto">
               <StuckLink name={info.name} />
             </span>
           </div>
           {needsTick && <p className="text-xs text-[var(--text-3)]">{t('guide.tickHint')}</p>}
+          {waitBlocks && <p className="text-xs text-[var(--text-3)]">{t('guide.waitHint', { name: short })}</p>}
         </div>
       </Card>
     );

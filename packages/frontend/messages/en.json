@@ -950,7 +950,10 @@
       "back": "Back",
       "checking": "Checking…",
       "continue": "Continue",
-      "tickHint": "Tick the box above once it is done."
+      "tickHint": "Tick the box above once it is done.",
+      "saveAndCheck": "Save and check with {name}",
+      "waitHint": "Continue opens once {name} has approved your app.",
+      "keysFirst": "Enter your keys in the step before first."
     },
     "title": {
       "finish": "Finish setting up {name}",
@@ -1000,6 +1003,17 @@
       "fillPrevious": "{action}: fill in the previous step first.",
       "screenshot": "Screenshot from {date}; the page may look slightly different now.",
       "problems": "Common problems"
+    },
+    "wait": {
+      "checking": "Asking {name} about your app…",
+      "notYet": "{name} has not approved your app yet",
+      "checkedAt": "Last checked at {time}. This page checks again whenever you come back to it.",
+      "checkAgain": "Check again",
+      "checkingShort": "Checking…",
+      "activeAlready": "Already approved, but this still waits? Enter the keys again",
+      "saved": "Your keys are saved. You can close this page: when you come back, it opens at this step.",
+      "ready": "{name} approved your app.",
+      "readyNext": "Continue with the next step."
     }
   },
   "setupSuccess": {

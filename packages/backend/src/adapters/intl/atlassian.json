@@ -2,7 +2,7 @@
   "slug": "atlassian",
   "name": "Atlassian (Jira, Confluence)",
   "description": "Work with Jira and Confluence from Claude, ChatGPT or Copilot through Atlassian's official Rovo MCP server: search and update work items, read and write pages, run JQL and CQL, and ask Rovo search across your Atlassian apps.",
-  "instructions": "This connector bridges the **Atlassian Rovo MCP Server**, Atlassian's official remote MCP server at `https://mcp.atlassian.com/v2/mcp`. Atlassian's server provides the tools: Jira work items, boards and sprints, Confluence pages and spaces, Rovo search across Jira, Confluence and connected apps, Teamwork Graph and, where your organization has them, Jira Service Management, Bitbucket Cloud, Loom and Goals. AnythingMCP signs in with your personal API token and puts the tools behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**The tools come from the server.** At install AnythingMCP asks Atlassian's server which tools it offers your token, so you get exactly what your organization and token allow. Atlassian lists a small set of *primary* tools directly (`getJiraIssue`, `searchJiraIssuesUsingJql`, `createJiraIssue`, `getConfluenceContent`, `search` and a few more) and reaches the rest of its catalogue through `discover` (find an operation by describing it) and `executeRead` / `executeWrite` / `executeDestructive` (run it by name). When Atlassian adds tools or your admin enables another permission group, open the connector and click **Discover tools**.\n\n**Setup (about 10 minutes, step 1 needs an Atlassian organization admin)**:\n1. An organization admin enables API-token authentication for the MCP server: **Atlassian Administration > Rovo > Rovo MCP server settings**, turn on authentication via API token. Without it every call is refused and only OAuth clients can connect. The same settings control the permission groups; `delete_jira` and `manage_jira` are off by default.\n2. Signed in as the person the AI should act as, open https://id.atlassian.com/manage-profile/security/api-tokens and choose **Create API token with scopes**. Pick the `agent-interface` scopes of the apps you want, for example `read:jira:agent-interface`, `write:jira:agent-interface`, `search:jira:agent-interface`, `read:confluence:agent-interface`, `write:confluence:agent-interface`, `search:confluence:agent-interface` and `search:rovo:agent-interface`. Copy the token: Atlassian shows it once.\n3. Fill in the variables and install:\n   - `ATLASSIAN_EMAIL`: the email address of the Atlassian account that owns the token.\n   - `ATLASSIAN_API_TOKEN`: the token from step 2, stored encrypted. AnythingMCP sends both as `Authorization: Basic base64(email:token)`, which is how Atlassian takes personal API tokens.\n4. **A service account instead of a person**: an admin creates a service account and an API key with the same scopes. Atlassian takes that key as `Authorization: Bearer`, so after installing open the connector editor, change the auth type to **Bearer token** and paste the key there (the email is then not used).\n\n**Network**: if your organization restricts access with an IP allow list, add the address AnythingMCP calls from (on AnythingMCP Cloud, ask support for the current egress IP). With API tokens the IP allow list is the only network check, because there is no OAuth redirect domain to validate.\n\n**Safety**: every call runs with the token owner's Jira, Confluence and Bitbucket permissions, so use an account (or service account) that sees only what the AI should, and give the token only the scopes you need. Installed switched off: `executeWrite` and `executeDestructive` (Atlassian's default endpoint lists only the main tools and reaches every other operation through them, so `executeWrite` alone could merge a pull request or change permissions; turn it on when the AI should write beyond the main tools), the Jira delete tools, space and screen administration, sprint and version management, entity properties, Confluence permission, restriction, public-link and space-instruction changes, the Confluence Remix tools (15 to 30 Rovo credits each), Bitbucket merge, approve, commit and pipeline runs, Loom visibility changes and Jira Service Management alert actions. Turn any of them on per tool when you need it. Rovo `search` and the Teamwork Graph tools use up to 10 Rovo credits per call from your organization's shared pool.\n\n**Working with it**: start with `atlassian_getAccessibleAtlassianResources`. API tokens are not bound to one site, so almost every tool needs a `cloudId`, and this call returns it for each site you can reach. Then use `atlassian_search` for questions in plain language, `atlassian_searchJiraIssuesUsingJql` or `atlassian_searchConfluence` for exact filters, and `atlassian_getJiraIssue` or `atlassian_getConfluenceContent` (with `detail` set to `full` for the body) to read one item. Not every tool works with an API token: code search, Teams and some Compass tools need OAuth 2.1, while the Jira Service Management tools work only with API tokens. A 401 means API-token authentication is off for your organization, or the email and token do not belong together; a permission or scope error on one tool means the token lacks that app's `agent-interface` scope, so create a new token with it and replace it here.",
+  "instructions": "This connector bridges the **Atlassian Rovo MCP Server**, Atlassian's official remote MCP server at `https://mcp.atlassian.com/v2/mcp`. Atlassian's server provides the tools: Jira work items, boards and sprints, Confluence pages and spaces, Rovo search across Jira, Confluence and connected apps, Teamwork Graph and, where your organization has them, Jira Service Management, Bitbucket Cloud, Loom and Goals. AnythingMCP signs in with your personal API token and puts the tools behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles, the audit log and response mapping, next to your other systems.\n\n**The tools come from the server.** At install AnythingMCP asks Atlassian's server which tools it offers your token, so you get exactly what your organization and token allow. Atlassian lists a small set of *primary* tools directly (`getJiraIssue`, `searchJiraIssuesUsingJql`, `createJiraIssue`, `getConfluenceContent`, `search` and a few more) and reaches the rest of its catalogue through `discover` (find an operation by describing it) and `executeRead` / `executeWrite` / `executeDestructive` (run it by name). When Atlassian adds tools or your admin enables another permission group, open the connector and click **Discover tools**.\n\n**Setup (about 10 minutes, step 1 needs an Atlassian organization admin)**:\n1. An organization admin enables API-token authentication for the MCP server: **Atlassian Administration > Rovo > Rovo MCP server settings**, turn on authentication via API token. Without it every call is refused and only OAuth clients can connect. The same settings control the permission groups; `delete_jira` and `manage_jira` are off by default.\n2. Signed in as the person the AI should act as, open https://id.atlassian.com/manage-profile/security/api-tokens and choose **Create API token with scopes** (not the plain \"Create API token\": a token without scopes connects, but Atlassian refuses every Jira and Confluence tool with \"missing the scope claim\"). Pick the `agent-interface` scopes of the apps you want, for example `read:jira:agent-interface`, `write:jira:agent-interface`, `search:jira:agent-interface`, `read:confluence:agent-interface`, `write:confluence:agent-interface`, `search:confluence:agent-interface` and `search:rovo:agent-interface`. Copy the token once: Atlassian shows it once, and a token pasted twice is refused.\n3. Fill in the variables and install:\n   - `ATLASSIAN_EMAIL`: the email address of the Atlassian account that owns the token.\n   - `ATLASSIAN_API_TOKEN`: the token from step 2, stored encrypted. AnythingMCP sends both as `Authorization: Basic base64(email:token)`, which is how Atlassian takes personal API tokens.\n   - `ATLASSIAN_SITE` (strongly recommended): your Atlassian site, for example `mycompany.atlassian.net`. API tokens are not bound to a site, so almost every tool needs the site's `cloudId`; AnythingMCP looks it up from the site when you save and tells the AI to use it.\n\n   The setup check signs in, then asks Atlassian's `discover` which products the token can search: a refused email and token, or a token without scopes, is reported on the form before anything is saved.\n4. **A service account instead of a person**: an admin creates a service account and an API key with the same scopes. Atlassian takes that key as `Authorization: Bearer`, so after installing open the connector editor, change the auth type to **Bearer token** and paste the key there (the email is then not used).\n\n**Network**: if your organization restricts access with an IP allow list, add the address AnythingMCP calls from (on AnythingMCP Cloud, ask support for the current egress IP). With API tokens the IP allow list is the only network check, because there is no OAuth redirect domain to validate.\n\n**Safety**: every call runs with the token owner's Jira, Confluence and Bitbucket permissions, so use an account (or service account) that sees only what the AI should, and give the token only the scopes you need. Installed switched off: `executeWrite` and `executeDestructive` (Atlassian's default endpoint lists only the main tools and reaches every other operation through them, so `executeWrite` alone could merge a pull request or change permissions; turn it on when the AI should write beyond the main tools), the Jira delete tools, space and screen administration, sprint and version management, entity properties, Confluence permission, restriction, public-link and space-instruction changes, the Confluence Remix tools (15 to 30 Rovo credits each), Bitbucket merge, approve, commit and pipeline runs, Loom visibility changes and Jira Service Management alert actions. Turn any of them on per tool when you need it. Rovo `search` and the Teamwork Graph tools use up to 10 Rovo credits per call from your organization's shared pool.\n\n**Working with it**: API tokens are not bound to one site, so almost every tool needs a `cloudId`, passed on every call. When the site is set on the connector, the workspace guide names it with its cloudId: use that one. Only when no cloudId is given there, try `atlassian_getAccessibleAtlassianResources` (it may not work with an API token); if it fails or lists nothing, ask the user for their site name (for example `mycompany.atlassian.net`), try that host as the `cloudId`, and suggest setting the Atlassian site on the connector so AnythingMCP looks the cloudId up. Then use `atlassian_search` for questions in plain language, `atlassian_searchJiraIssuesUsingJql` or `atlassian_searchConfluence` for exact filters, and `atlassian_getJiraIssue` or `atlassian_getConfluenceContent` (with `detail` set to `full` for the body) to read one item. Not every tool works with an API token: code search, Teams and some Compass tools need OAuth 2.1, while the Jira Service Management tools work only with API tokens. A 401 or `invalid_token` means API-token authentication is off for your organization, the email and token do not belong together, or the token was pasted twice or revoked. \"Unable to resolve user scopes\" or \"missing the scope claim\" on every tool means the token was created without scopes: create an API token with scopes and replace it here. A permission or scope error on one tool means the token lacks that app's `agent-interface` scope, so create a new token with it and replace it here.",
   "region": "intl",
   "category": "project-management",
   "icon": "atlassian",
@@ -10,6 +10,9 @@
   "requiredEnvVars": [
     "ATLASSIAN_EMAIL",
     "ATLASSIAN_API_TOKEN"
+  ],
+  "optionalEnvVars": [
+    "ATLASSIAN_SITE"
   ],
   "envVarMeta": {
     "ATLASSIAN_EMAIL": {
@@ -26,14 +29,54 @@
       "label": "API token",
       "kind": "credential",
       "secret": true,
-      "help": "Atlassian account > Security > API tokens > Create API token with scopes, with the agent-interface scopes of the apps you want.",
+      "help": "Atlassian account > Security > API tokens > Create API token with scopes, with the agent-interface scopes of the apps you want. A token created without scopes is refused by every tool.",
       "link": "https://id.atlassian.com/manage-profile/security/api-tokens",
       "example": "ATATT..._AbCdEfGhIjKlMnOpQrStUvWxYz=A1B2C3D4",
-      "pattern": "^[A-Za-z0-9_=+/.\\-]{20,}$",
-      "patternMessage": "Paste the API token alone (it usually starts with ATATT), without your email, spaces or a colon."
+      "pattern": "^[A-Za-z0-9_=+/.\\-]{20,300}$",
+      "patternMessage": "Paste the API token alone and only once (it usually starts with ATATT and is about 190 characters), without your email, spaces or a colon."
+    },
+    "ATLASSIAN_SITE": {
+      "label": "Atlassian site (strongly recommended)",
+      "kind": "setting",
+      "secret": false,
+      "help": "The address you open Jira or Confluence at, for example mycompany.atlassian.net. API tokens are not bound to a site, so almost every tool needs the site's cloudId: AnythingMCP looks it up from this address and gives it to the AI. Without it the AI has to find the cloudId itself, which often fails with an API token.",
+      "example": "mycompany.atlassian.net",
+      "pattern": "^(https?://)?[A-Za-z0-9][A-Za-z0-9-]*\\.atlassian\\.net/?$",
+      "patternMessage": "Enter your Atlassian site address, for example mycompany.atlassian.net."
     }
   },
-  "prerequisites": "- An Atlassian Cloud site with Jira and/or Confluence, and an account that can see the data the AI should work with.\n- An organization admin has turned on API-token authentication for the Rovo MCP server (Atlassian Administration > Rovo > Rovo MCP server settings).\n- If your organization uses an IP allow list, it includes the address AnythingMCP calls from.",
+  "derivedEnvVars": {
+    "ATLASSIAN_CLOUD_ID": {
+      "fromHost": "ATLASSIAN_SITE",
+      "url": "https://{{ATLASSIAN_SITE}}/_edge/tenant_info",
+      "path": "cloudId",
+      "pattern": "^[0-9a-fA-F-]{36}$",
+      "error": "No Atlassian site answers at {{host}}. Enter the address you open Jira or Confluence at, for example mycompany.atlassian.net."
+    }
+  },
+  "instructionFacts": [
+    "This workspace's Atlassian site is {{ATLASSIAN_SITE}}, cloudId {{ATLASSIAN_CLOUD_ID}}: pass it as cloudId on every call (and as the top-level cloudId of executeRead and executeWrite)."
+  ],
+  "probe": {
+    "tool": "atlassian_discover",
+    "params": {
+      "query": "get issue details"
+    },
+    "failWhen": [
+      {
+        "matches": "missing the scope claim|Unable to resolve user scopes|\"searchableProducts\"\\s*:\\s*\\[\\s*\\]",
+        "hint": "This API token has no scopes. Create an 'API token with scopes' at id.atlassian.com > Security > API tokens and select the agent-interface scopes (read:jira:agent-interface, search:jira:agent-interface, read:confluence:agent-interface, search:confluence:agent-interface, and the write scopes you want), then paste it here.",
+        "field": "ATLASSIAN_API_TOKEN"
+      }
+    ]
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Atlassian refused the email and token together: check the email is the token owner's, the token is pasted once, not revoked, and that API-token authentication is enabled for the Rovo MCP server (Atlassian Administration > Rovo > Rovo MCP server settings).",
+      "field": "ATLASSIAN_API_TOKEN"
+    }
+  },
+  "prerequisites": "- An Atlassian Cloud site with Jira and/or Confluence, and an account that can see the data the AI should work with.\n- An organization admin has turned on API-token authentication for the Rovo MCP server (Atlassian Administration > Rovo > Rovo MCP server settings).\n- A personal API token created with **Create API token with scopes** and the `agent-interface` scopes (a token without scopes is refused by every Jira and Confluence tool).\n- If your organization uses an IP allow list, it includes the address AnythingMCP calls from.",
   "connector": {
     "name": "Atlassian",
     "type": "MCP",
@@ -68,7 +111,7 @@
     },
     {
       "name": "atlassian_getAccessibleAtlassianResources",
-      "description": "List all Atlassian sites and apps accessible to the authenticated user, including their cloudId values. Call it first: every other tool call needs a cloudId.",
+      "description": "List the Atlassian sites and apps the authenticated user can reach, with their cloudId values. Use it only when the workspace guide names no cloudId for this connector: it may not work with an API token. If it fails or lists nothing, ask the user for their site (for example mycompany.atlassian.net).",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -122,7 +165,7 @@
           },
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the site, a top-level argument next to name and inputs (never inside inputs). Omit it for operations that take none, such as getContentFormatGuide."
+            "description": "The cloudId of the site (the one the workspace guide names for this connector), a top-level argument next to name and inputs (never inside inputs). Omit it for operations that take none, such as getContentFormatGuide."
           },
           "inputs": {
             "type": "object",
@@ -157,7 +200,7 @@
           },
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the site, a top-level argument next to name and inputs (never inside inputs). Omit it for operations that take none, such as getContentFormatGuide."
+            "description": "The cloudId of the site (the one the workspace guide names for this connector), a top-level argument next to name and inputs (never inside inputs). Omit it for operations that take none, such as getContentFormatGuide."
           },
           "inputs": {
             "type": "object",
@@ -193,7 +236,7 @@
           },
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the site, a top-level argument next to name and inputs (never inside inputs). Omit it for operations that take none, such as getContentFormatGuide."
+            "description": "The cloudId of the site (the one the workspace guide names for this connector), a top-level argument next to name and inputs (never inside inputs). Omit it for operations that take none, such as getContentFormatGuide."
           },
           "inputs": {
             "type": "object",
@@ -251,7 +294,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "issueIdOrKey": {
             "type": "string",
@@ -282,7 +325,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "jql": {
             "type": "string",
@@ -328,7 +371,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "projectKey": {
             "type": "string",
@@ -390,7 +433,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "issueIdOrKey": {
             "type": "string",
@@ -421,7 +464,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "issueIdOrKey": {
             "type": "string",
@@ -452,7 +495,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "issueIdOrKey": {
             "type": "string",
@@ -488,7 +531,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "action": {
             "type": "string",
@@ -518,7 +561,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "projectIdOrKey": {
             "type": "string",
@@ -549,7 +592,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "projectIdOrKey": {
             "type": "string",
@@ -585,7 +628,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -611,7 +654,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -637,7 +680,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -663,7 +706,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -689,7 +732,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "query": {
             "type": "string",
@@ -720,7 +763,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -746,7 +789,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "issueIdOrKey": {
             "type": "string",
@@ -785,7 +828,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -811,7 +854,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -837,7 +880,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -863,7 +906,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -889,7 +932,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -915,7 +958,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -941,7 +984,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -967,7 +1010,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -993,7 +1036,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1019,7 +1062,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1045,7 +1088,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1071,7 +1114,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1097,7 +1140,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1123,7 +1166,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1149,7 +1192,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1175,7 +1218,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1201,7 +1244,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1227,7 +1270,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1253,7 +1296,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1280,7 +1323,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1306,7 +1349,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1333,7 +1376,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1359,7 +1402,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1385,7 +1428,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1411,7 +1454,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1438,7 +1481,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1464,7 +1507,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1490,7 +1533,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1517,7 +1560,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1544,7 +1587,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1571,7 +1614,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1597,7 +1640,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1623,7 +1666,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1649,7 +1692,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1676,7 +1719,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1703,7 +1746,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1730,7 +1773,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "content_id": {
             "type": "string",
@@ -1773,7 +1816,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "cql": {
             "type": "string",
@@ -1804,7 +1847,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "contentType": {
             "type": "string",
@@ -1868,7 +1911,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "contentId": {
             "type": "string",
@@ -1926,7 +1969,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1952,7 +1995,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -1978,7 +2021,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "spaceIdOrKey": {
             "type": "string",
@@ -2009,7 +2052,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2035,7 +2078,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2061,7 +2104,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2087,7 +2130,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2113,7 +2156,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2139,7 +2182,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2165,7 +2208,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2191,7 +2234,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2217,7 +2260,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2243,7 +2286,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2269,7 +2312,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2295,7 +2338,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2321,7 +2364,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2347,7 +2390,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2373,7 +2416,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2399,7 +2442,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2425,7 +2468,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2451,7 +2494,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2477,7 +2520,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2503,7 +2546,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2529,7 +2572,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2555,7 +2598,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2581,7 +2624,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2608,7 +2651,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2634,7 +2677,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2660,7 +2703,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2686,7 +2729,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2712,7 +2755,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2738,7 +2781,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2764,7 +2807,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2790,7 +2833,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2816,7 +2859,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2842,7 +2885,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2868,7 +2911,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2894,7 +2937,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2920,7 +2963,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2946,7 +2989,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -2973,7 +3016,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3000,7 +3043,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3027,7 +3070,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3054,7 +3097,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3081,7 +3124,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3108,7 +3151,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3134,7 +3177,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3160,7 +3203,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3186,7 +3229,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3212,7 +3255,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3238,7 +3281,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3264,7 +3307,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3290,7 +3333,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3316,7 +3359,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3342,7 +3385,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3368,7 +3411,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3394,7 +3437,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3420,7 +3463,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3447,7 +3490,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3474,7 +3517,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3501,7 +3544,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3528,7 +3571,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           },
           "query": {
             "type": "string",
@@ -3559,7 +3602,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3585,7 +3628,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3611,7 +3654,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3637,7 +3680,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3663,7 +3706,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3689,7 +3732,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3716,7 +3759,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3742,7 +3785,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3768,7 +3811,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3794,7 +3837,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3820,7 +3863,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3846,7 +3889,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3872,7 +3915,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3898,7 +3941,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3924,7 +3967,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3950,7 +3993,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -3976,7 +4019,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4002,7 +4045,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4028,7 +4071,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4054,7 +4097,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4080,7 +4123,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4106,7 +4149,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4132,7 +4175,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4158,7 +4201,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4184,7 +4227,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4210,7 +4253,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4236,7 +4279,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4262,7 +4305,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4288,7 +4331,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4314,7 +4357,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4340,7 +4383,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4366,7 +4409,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4392,7 +4435,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4418,7 +4461,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4445,7 +4488,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4472,7 +4515,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4498,7 +4541,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4524,7 +4567,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4550,7 +4593,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4576,7 +4619,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4602,7 +4645,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4628,7 +4671,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4654,7 +4697,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4681,7 +4724,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4708,7 +4751,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4734,7 +4777,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4760,7 +4803,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4786,7 +4829,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4812,7 +4855,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4838,7 +4881,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4864,7 +4907,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4890,7 +4933,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4916,7 +4959,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4942,7 +4985,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4968,7 +5011,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -4995,7 +5038,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5021,7 +5064,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5047,7 +5090,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5073,7 +5116,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5099,7 +5142,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5125,7 +5168,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5151,7 +5194,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5177,7 +5220,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5203,7 +5246,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5229,7 +5272,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5255,7 +5298,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5281,7 +5324,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
@@ -5307,7 +5350,7 @@
         "properties": {
           "cloudId": {
             "type": "string",
-            "description": "The cloudId of the Atlassian site to work on, as returned by getAccessibleAtlassianResources. API tokens are not bound to one site, so pass it on every call."
+            "description": "The cloudId of the Atlassian site to work on. Use the cloudId the workspace guide names for this connector; without one, try getAccessibleAtlassianResources, and if that fails, ask the user for their site (for example mycompany.atlassian.net) and pass that host instead. API tokens are not bound to one site, so pass it on every call."
           }
         },
         "required": [
