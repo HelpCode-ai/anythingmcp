@@ -327,3 +327,25 @@ describe('card-trial offer after the first success', () => {
     }
   });
 });
+
+describe('onboarding reminder 1, one-click variant', () => {
+  const render = (id: string) => EMAIL_SAMPLES.find((s) => s.id === id)!.render(cloud, { name: 'Anna', other: 'Claude' });
+
+  it('links each quick setup to a new Claude chat, and keeps the dashboard link', () => {
+    const email = render('onboarding-day1-quick');
+    for (const app of ['Telegram%20bot', 'Odoo', 'Shopify%20store']) {
+      const url = `https://claude.ai/new?q=Connect%20my%20${app}%20to%20AnythingMCP`;
+      expect(email.html).toContain(`href="${url}"`);
+      expect(email.text).toContain(url);
+    }
+    expect(email.text).toContain('Or pick an app in the dashboard: https://cloud.anythingmcp.com/welcome');
+    expect(email.marketing).toBe(true);
+  });
+
+  it('replaces the generic how-to, and leaves the other reminders as they were', () => {
+    expect(render('onboarding-day1-quick').text).not.toContain('Two ways to add one');
+    expect(render('onboarding-day1').text).toContain('Two ways to add one');
+    expect(render('onboarding-day1').text).not.toContain('claude.ai/new');
+    expect(render('onboarding-client-connected').text).not.toContain('claude.ai/new');
+  });
+});
