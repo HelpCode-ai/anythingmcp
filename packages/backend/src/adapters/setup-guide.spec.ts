@@ -34,9 +34,14 @@ describe('setupGuide in the catalog', () => {
     expect(computeAdapterVersion(withoutGuide as any)).toBe(computeAdapterVersion(etsy));
   });
 
-  it('asks for the Etsy keys in the step that signs in, and fills in the callback URL', () => {
+  it('follows Etsy: keys saved while the app is pending, the wait, then the callback URL and the sign-in', () => {
     const steps = getAdapter('etsy')!.setupGuide!.steps;
-    expect(steps[steps.length - 1].fields).toEqual(['ETSY_CLIENT_ID', 'ETSY_CLIENT_SECRET']);
-    expect(steps.some((s) => s.values?.some((v) => v.value === '{{redirectUri}}'))).toBe(true);
+    expect(steps.map((s) => s.id)).toEqual(['create-app', 'keys', 'approval', 'callback', 'sign-in']);
+    // Etsy shows the keys before it approves the app: they are asked for, and kept, first.
+    expect(steps[1]).toMatchObject({ fields: ['ETSY_CLIENT_ID', 'ETSY_CLIENT_SECRET'], saveAndCheck: true });
+    expect(steps[2].waitForProvider).toBe(true);
+    // The app's page, where the callback URL goes, opens only once Etsy approved it.
+    expect(steps[3].values).toEqual([{ label: 'Callback URL', value: '{{redirectUri}}' }]);
+    expect(steps[4].fields).toBeUndefined();
   });
 });

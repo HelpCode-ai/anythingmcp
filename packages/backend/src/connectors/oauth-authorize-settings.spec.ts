@@ -1,4 +1,4 @@
-import { resolveRestAuthorizeSettings } from './oauth-authorize-settings';
+import { resolveProviderRedirectUri, resolveRestAuthorizeSettings } from './oauth-authorize-settings';
 import { getAdapter } from '../adapters/catalog';
 
 const etsyCatalog = getAdapter('etsy')!.connector.authConfig!;
@@ -200,3 +200,61 @@ describe('resolveRestAuthorizeSettings', () => {
   });
 });
 
+
+describe('providerRedirectUri (eBay RuName)', () => {
+  const own = {
+    clientId: 'cid',
+    clientSecret: 'sec',
+    authorizationUrl: 'https://auth.ebay.com/oauth2/authorize',
+    tokenUrl: 'https://api.ebay.com/identity/v1/oauth2/token',
+  };
+
+  it('is absent when neither the row nor the catalog sets it', () => {
+    const settings = resolveRestAuthorizeSettings(own, null, etsyCatalog);
+    expect(settings.providerRedirectUri).toBeUndefined();
+    expect('providerRedirectUri' in settings.adopted).toBe(false);
+  });
+
+  it("resolves the row's own value from the env vars and adopts nothing", () => {
+    const settings = resolveRestAuthorizeSettings(
+      { ...own, providerRedirectUri: '{{RUNAME}}' },
+      { RUNAME: 'Jane_Doe-JaneDoe-MyApp-abcdef' },
+      { providerRedirectUri: '{{OTHER}}' },
+    );
+    expect(settings.providerRedirectUri).toBe('Jane_Doe-JaneDoe-MyApp-abcdef');
+    expect(settings.adopted).toEqual({});
+    expect(settings.missingVars).toEqual([]);
+  });
+
+  it("takes the catalog's when the row has none, and adopts it as written", () => {
+    const settings = resolveRestAuthorizeSettings(
+      own,
+      { RUNAME: 'Jane_Doe-JaneDoe-MyApp-abcdef' },
+      { providerRedirectUri: '{{RUNAME}}' },
+    );
+    expect(settings.providerRedirectUri).toBe('Jane_Doe-JaneDoe-MyApp-abcdef');
+    expect(settings.adopted.providerRedirectUri).toBe('{{RUNAME}}');
+  });
+
+  it('reports the variable as missing while it has no value', () => {
+    for (const env of [{}, { RUNAME: '' }, { RUNAME: '   ' }] as Record<string, string>[]) {
+      const settings = resolveRestAuthorizeSettings({ ...own, providerRedirectUri: '{{RUNAME}}' }, env);
+      expect(settings.providerRedirectUri).toBeUndefined();
+      expect(settings.missingVars).toEqual(['RUNAME']);
+    }
+  });
+
+  it('resolveProviderRedirectUri says where the value came from', () => {
+    expect(resolveProviderRedirectUri({ providerRedirectUri: 'Own_Name' }, { providerRedirectUri: 'Cat' }, {})).toEqual({
+      raw: 'Own_Name',
+      value: 'Own_Name',
+      fromCatalog: false,
+    });
+    expect(resolveProviderRedirectUri({}, { providerRedirectUri: '{{R}}' }, { R: 'X_Y' })).toEqual({
+      raw: '{{R}}',
+      value: 'X_Y',
+      fromCatalog: true,
+    });
+    expect(resolveProviderRedirectUri(null, null, null)).toEqual({ fromCatalog: false });
+  });
+});

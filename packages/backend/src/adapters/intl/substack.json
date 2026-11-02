@@ -14,7 +14,7 @@
       "help": "The publication's home address, nothing after the domain: https://yourname.substack.com or its custom domain. A profile (substack.com/@handle) links to the publication: open it there and copy the address bar up to the domain.",
       "example": "https://yourname.substack.com",
       "pattern": "^https://(?!(?:www\\.|open\\.)?substack\\.com/?$)[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+/?$",
-      "patternMessage": "Use the publication's home address with https:// and nothing after the domain, e.g. https://yourname.substack.com or https://www.yournewsletter.com. A profile (substack.com/@handle), note or post link does not work: open the publication from the profile and copy its address up to the domain."
+      "patternMessage": "Use the publication's home address with https:// and nothing after the domain, e.g. https://yourname.substack.com or https://www.yournewsletter.com. A profile link (substack.com/@handle) is a person, not a publication: the tools read posts from the publication's own address, so a profile, note or post link does not work. Open the publication shown on the profile and copy its address up to the domain."
     }
   },
   "verifyHints": {

@@ -303,6 +303,59 @@ describe('AdaptersService install — a base URL variable without https://', () 
   });
 });
 
+describe('AdaptersService — values that cannot be the real ones', () => {
+  function build() {
+    const execute = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      connector: { create: jest.fn().mockResolvedValue({ id: 'c1' }), findUnique: jest.fn().mockResolvedValue(null) },
+      mcpTool: { create: jest.fn(), createMany: jest.fn(async ({ data }: any) => ({ count: data.length })) },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, prisma, execute };
+  }
+  const mysql = { MYSQL_PORT: '3306', MYSQL_DATABASE: 'shop', MYSQL_USER: 'reader', MYSQL_PASSWORD: 'pw-123456' };
+
+  it('the check names a MySQL host left as "host" and sends nothing', async () => {
+    const { service, execute } = build();
+    const out: any = await service.verifyCredentials('mysql', 'org1', { ...mysql, MYSQL_HOST: 'host' });
+    expect(out).toMatchObject({ ok: false, kind: 'invalid_input', fields: { MYSQL_HOST: expect.stringMatching(/not the real address/) } });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('the check applies the adapter pattern the form applies (Odoo address with /web)', async () => {
+    const { service } = build();
+    const out: any = await service.verifyCredentials('odoo', 'org1', {
+      ODOO_URL: 'https://erp.acme.de/web',
+      ODOO_DB: 'acme',
+      ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e',
+    });
+    expect(Object.keys(out.fields)).toEqual(['ODOO_URL']);
+  });
+
+  it('"Save anyway" (the install) refuses them too, before anything is written', async () => {
+    const { service, prisma } = build();
+    const key = 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e';
+    await expect(
+      service.importAdapter('odoo', 'u1', 'org1', { ODOO_URL: 'https://erp.acme.de', ODOO_DB: 'acme', ODOO_API_KEY: key + key }),
+    ).rejects.toMatchObject({
+      response: { code: 'invalid_values', fields: { ODOO_API_KEY: expect.stringMatching(/Paste it once/) } },
+    });
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+  });
+
+  it('real values still go through', async () => {
+    const { service, execute } = build();
+    const out: any = await service.verifyCredentials('mysql', 'org1', { ...mysql, MYSQL_HOST: 'db.acme.internal' });
+    expect(out.fields).toBeUndefined();
+    expect(execute).toHaveBeenCalled();
+  });
+});
+
 describe('AdaptersService install — weclapp tenant pasted as an address (#733)', () => {
   function build() {
     const prisma = {
@@ -502,6 +555,8 @@ describe('AdaptersService starter pack', () => {
 });
 
 describe('AdaptersService.verifyCredentials', () => {
+  // Shaped like real Etsy app keys: the check enforces the adapter's patterns too.
+  const ETSY_KEYS = { ETSY_CLIENT_ID: 'abcdefghij0123456789wxyz', ETSY_CLIENT_SECRET: 'sharedsecret01' };
   function build(execute: jest.Mock) {
     const prisma = { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } };
     const service = new AdaptersService(
@@ -578,14 +633,14 @@ describe('AdaptersService.verifyCredentials', () => {
     outbound.mockReset().mockResolvedValue({ status: 200, data: '{"application_id":1}' } as any);
     const execute = jest.fn();
     const { service } = build(execute);
-    const out = await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' });
+    const out = await service.verifyCredentials('etsy', 'org1', ETSY_KEYS);
     expect(out).toEqual({ ok: null, skipped: 'authorization' });
     expect(execute).not.toHaveBeenCalled();
     expect(outbound).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
         url: 'https://openapi.etsy.com/v3/application/openapi-ping',
-        headers: { 'x-api-key': 'ks:ss' },
+        headers: { 'x-api-key': `${ETSY_KEYS.ETSY_CLIENT_ID}:${ETSY_KEYS.ETSY_CLIENT_SECRET}` },
       }),
     );
   });
@@ -598,21 +653,21 @@ describe('AdaptersService.verifyCredentials', () => {
       data: '{"error":"API key not found or not active, or incorrect shared secret for API key."}',
     } as any);
     const { service } = build(jest.fn());
-    const out = await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' });
+    const out = await service.verifyCredentials('etsy', 'org1', ETSY_KEYS);
     expect(out).toMatchObject({ ok: false, kind: 'auth_failed', status: 403 });
-    expect((out as any).message).toContain('stays Pending until Etsy approves it');
+    expect((out as any).message).toContain('stays Pending Personal Approval until Etsy approves it');
     expect((out as any).message).toContain('API key not found or not active');
   });
 
   it('does not hold the sign-in back when Etsy cannot be reached or answers something else', async () => {
     const { service } = build(jest.fn());
     outbound.mockReset().mockRejectedValue(new Error('ETIMEDOUT'));
-    expect(await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' })).toEqual({
+    expect(await service.verifyCredentials('etsy', 'org1', ETSY_KEYS)).toEqual({
       ok: null,
       skipped: 'authorization',
     });
     outbound.mockReset().mockResolvedValue({ status: 503, data: 'down' } as any);
-    expect(await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' })).toEqual({
+    expect(await service.verifyCredentials('etsy', 'org1', ETSY_KEYS)).toEqual({
       ok: null,
       skipped: 'authorization',
     });
@@ -622,7 +677,7 @@ describe('AdaptersService.verifyCredentials', () => {
     outbound.mockReset();
     const { service } = build(jest.fn());
     const out = await service.verifyCredentials('google-search-console', 'org1', {
-      GOOGLE_CLIENT_ID: 'id',
+      GOOGLE_CLIENT_ID: '1234567890-abc.apps.googleusercontent.com',
       GOOGLE_CLIENT_SECRET: 'secret',
     });
     expect(out).toEqual({ ok: null, skipped: 'authorization' });
@@ -823,7 +878,7 @@ describe('AdaptersService popular connectors', () => {
     const { svc } = service({ rows: [{ slug: 'etsy', workspaces: 40n }] });
     const etsy = (await svc.popularConnectors('org1')).find((i) => i.slug === 'etsy')!;
     expect(etsy.setupKind).toBe('oauth_browser');
-    expect(etsy.needs).toEqual(['Keystring', 'Shared secret']);
+    expect(etsy.needs).toEqual(['Keystring', 'Shared Secret']);
   });
 
   it('marks what the workspace already has', async () => {

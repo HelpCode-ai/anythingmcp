@@ -39,7 +39,17 @@ export interface PendingOAuthFlow {
   codeVerifier?: string;
   connectorId: string;
   userId: string;
+  /**
+   * The `redirect_uri` sent with the authorization request, and therefore
+   * with the code exchange: the callback URL, or the provider's own redirect
+   * name when the connector sets `providerRedirectUri` (eBay's RuName).
+   */
   redirectUri: string;
+  /**
+   * This server's callback URL, set only when `redirectUri` is not it: the
+   * provider-side setting (the RuName's accepted URL) must point here.
+   */
+  callbackUrl?: string;
   clientId: string;
   clientSecret?: string;
   tokenUrl: string;

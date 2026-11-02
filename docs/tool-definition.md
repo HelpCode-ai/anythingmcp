@@ -41,6 +41,83 @@ store, on /welcome and in the chat matches them like the name; they are never
 displayed. Keep them to names that clearly mean this app, each at most 40
 characters; a misspelling needs no alias, the search tolerates typos.
 
+`envVarMeta.<VAR>.pattern` (with `patternMessage`) is enforced on every path
+that writes the variable: the setup form, the pre-save check, the install
+(also "Save anyway" and a chat install) and the connector's variable editor.
+Those paths also refuse, field by field, an address or credential still
+holding an example (`host`, `example.com`, `your-api-key`, `<...>`,
+`PASTE_KEY_HERE`) and a credential pasted more than once (the same string
+repeated). See `packages/backend/src/adapters/env-var-checks.ts`.
+
+`verifyHints` maps a status (`"401"`) or failure kind (`"auth_failed"`,
+`"unreachable"`) to what the setup check tells the user. A tool call that
+the API answers 401 uses the adapter's `"401"` (or `"auth_failed"`) hint too
+when no built-in rule matches, followed by a link to the connector's page,
+so a connector saved without a passing check hears the same advice. Hints are
+read from the catalog at call time and reach installed connectors without
+"Apply update". Declare a `probe` (a read call with fixed `params`) when no
+GET without required parameters exists; without one the setup check is
+skipped and a wrong key is only found at the first call. An adapter for a
+vendor's MCP server (`connector.type` `MCP`) without a `probe` is checked by
+listing the server's tools, which catches a refused token. A hint written as
+`{ "hint": "…", "field": "VAR" }` is also shown under that variable on the
+setup form.
+
+A probe can still fail when the call answers: an MCP tool result with
+`isError: true` fails the check, and `probe.failWhen` lists answers that mean
+the connector cannot work although nothing was refused. Each rule's `matches`
+is a case-insensitive regular expression over the answer's text (for an MCP
+tool, the text of its result); the first match fails the check with its
+`hint`, under `field` when it names one, as `kind` (default `auth_failed`):
+
+```json
+"probe": {
+  "tool": "atlassian_discover",
+  "params": { "query": "get issue details" },
+  "failWhen": [
+    {
+      "matches": "missing the scope claim|\"searchableProducts\"\\s*:\\s*\\[\\s*\\]",
+      "hint": "This API token has no scopes. Create an 'API token with scopes' …",
+      "field": "ATLASSIAN_API_TOKEN"
+    }
+  ]
+}
+```
+
+`derivedEnvVars` declares settings the user should not have to look up,
+found at setup from a host they do know. Each entry names the variable that
+holds the host (`fromHost`, declared in `optionalEnvVars` or
+`requiredEnvVars`), a public `url` starting with `https://{{<fromHost>}}/`,
+the dotted `path` of the value in its JSON answer, an optional `pattern` the
+value must match, and the `error` shown under the host field when the host
+answers without a value (`{{host}}` is replaced by it). The host is stored as
+a bare lower-case host (`https://Acme.atlassian.net/` becomes
+`acme.atlassian.net`). The lookup runs at the setup check, at install and in
+the connector's variable editor when the host changes; when the host does not
+answer at all (timeout, 5xx), the connector is saved without the value. See
+`packages/backend/src/adapters/derived-settings.ts`:
+
+```json
+"derivedEnvVars": {
+  "ATLASSIAN_CLOUD_ID": {
+    "fromHost": "ATLASSIAN_SITE",
+    "url": "https://{{ATLASSIAN_SITE}}/_edge/tenant_info",
+    "path": "cloudId",
+    "pattern": "^[0-9a-fA-F-]{36}$",
+    "error": "No Atlassian site answers at {{host}}."
+  }
+}
+```
+
+`instructionFacts` are sentences added to a catalog connector's instructions
+when they are served to a model (initialize, the workspace guide), each only
+when every `{{VAR}}` it names is set on the connector. Only non-secret
+variables (declared or derived) may be named. Stored instructions never
+resolve `{{VAR}}`, so this is how a per-workspace fact (the Atlassian site and
+its cloudId) reaches the model. Facts are read from the catalog when the
+instructions are served and reach installed connectors without "Apply
+update". See `packages/backend/src/adapters/instruction-facts.ts`.
+
 ### Tools
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its
@@ -113,6 +190,16 @@ at the token endpoint: `client_secret_post` (default), `client_secret_basic`,
 or `private_key_jwt`, which signs a short-lived client assertion with a private
 key instead of sending a secret (see
 [REST connectors](connectors/rest.md#signed-client-assertion-private_key_jwt)).
+
+The browser sign-in ("Authorize with Provider") sends this server's callback
+URL (`<SERVER_URL>/api/mcp-oauth/callback`) as `redirect_uri`. A provider that
+wants something else there names it in `authConfig.providerRedirectUri`, which
+is then sent on the authorization request and on the code exchange alike.
+eBay is the case: its `redirect_uri` is the app's RuName, and the RuName's
+"Auth Accepted URL" in eBay's developer portal points at the callback URL.
+Use a variable (`"providerRedirectUri": "{{EBAY_RUNAME}}"`); until it has a
+value, the sign-in asks for it instead of starting. `authConfig.pkce: false`
+leaves out the PKCE challenge and verifier for providers that do not use them.
 
 A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
 connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
@@ -338,9 +425,21 @@ menus deep. Adapters without one keep the form.
   `capturedAt`. Leave it out rather than add a mock-up.
 - `confirm`: a checkbox the user ticks before continuing, for a step that
   happens at the provider.
+- `saveAndCheck: true`: for a provider that must approve the user's app
+  before the keys work (Etsy). Continue saves the step's `fields` on the
+  connector (unfinished, so the AI cannot use it yet) and asks the provider
+  about the keys with the adapter's `checkBeforeAuthorization`. Needs
+  `fields`, and cannot be the last step.
+- `waitForProvider: true`: the step right after a `saveAndCheck` step, shown
+  only while the provider refuses the saved keys and skipped once it accepts
+  them. It tells the user what they are waiting for; the page checks again
+  whenever they come back to it and offers "Check again", and Continue opens
+  once the keys are accepted. No `fields` or `confirm`.
 
 The guide is not part of the catalog fingerprint: rewording it does not mark
-installed connectors as out of date. Progress is kept in the browser only.
+installed connectors as out of date. Progress is kept in the browser, with
+the id of a connector saved by a `saveAndCheck` step, so a user coming back
+days later continues with the keys they entered.
 
 ### Adapter file errors
 
