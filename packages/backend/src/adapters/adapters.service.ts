@@ -643,7 +643,10 @@ export class AdaptersService {
    *
    * For an adapter whose approval is watched (APP_APPROVAL_ADAPTERS), a 403 is
    * also flagged `appPending`: the setup page then keeps the keys and says the
-   * owner will be emailed when the provider accepts them.
+   * owner will be emailed when the provider accepts them. Etsy answers the
+   * same 403 for an app still Pending and for an active app with a wrong
+   * shared secret, so the flag means "maybe pending": the page's wording
+   * covers both, and the hint names both.
    */
   private async checkAppKeys(
     adapter: AdapterDefinition,

@@ -559,8 +559,8 @@ function SetupContent() {
     <>
       {verifyFailed && verifyFailed.ok === false && verifyFailed.appPending && connectorId && (
         <div role="status" className="rounded-[9px] bg-[var(--t-info-bg)] px-3 py-2 text-sm text-[var(--t-info-fg)]">
-          <p className="font-medium">{info.name} has not approved your app yet.</p>
-          <p className="mt-1">{info.name} reviews new apps, usually within a few days. We&apos;ll e-mail you when it&apos;s approved; nothing else to do. Your keys are saved.</p>
+          <p className="font-medium">{info.name} does not accept these keys yet.</p>
+          <p className="mt-1">If your app is new, {info.name} reviews it, usually within a few days: we&apos;ll e-mail you when it&apos;s approved, nothing else to do. If your app is already active, copy the shared secret again from your app page. Your keys are saved.</p>
           <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
           <Link href={`/connectors/${encodeURIComponent(connectorId)}`} className="mt-2 inline-block text-xs font-medium underline">
             Open the connector
