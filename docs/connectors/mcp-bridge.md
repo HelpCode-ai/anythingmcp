@@ -193,6 +193,8 @@ install. Through the API they can be set on any MCP connector.
 These catalog adapters bridge a vendor's official remote MCP server. At install AnythingMCP lists
 the tools of the server (the catalog keeps a snapshot for the store and as the fallback when the
 server cannot be reached). Click **Discover tools** on the connector after the vendor adds tools.
+The setup check runs the adapter's `probe` tool, or lists the server's tools when the adapter
+declares none, so a refused token is reported on the setup form before anything is saved.
 
 | Adapter | Endpoint | Auth |
 |---------|----------|------|

@@ -218,4 +218,40 @@ describe('deriveErrorHint: stuck-connector errors', () => {
       ).toMatch(/@BotFather/);
     });
   });
+
+  describe("Atlassian's Rovo MCP server with an API token", () => {
+    const page = 'https://app.example.test/connectors/c1';
+    const unscoped =
+      'Unable to resolve user scopes from the user-context token for "getJiraIssue". The session token is ' +
+      'missing the scope claim required to authorize this operation.';
+
+    it('tells a token without scopes to be replaced by one with scopes, not re-authorized', () => {
+      const hint = deriveErrorHint({ adapterSlug: 'atlassian', message: unscoped, connectorPage: page })!;
+      expect(hint).toMatch(/has no scopes/);
+      expect(hint).toMatch(/API token with scopes/);
+      expect(hint).toMatch(/read:jira:agent-interface/);
+      expect(hint).not.toMatch(/Authorize with Provider/);
+      expect(hint).toContain(page);
+    });
+
+    it('explains invalid_token and a 401 as the email and token not belonging together', () => {
+      for (const input of [
+        { message: 'Error POSTing to endpoint: {"error":"invalid_token"}' },
+        { status: 401, message: 'Unauthorized' },
+      ]) {
+        const hint = deriveErrorHint({ adapterSlug: 'atlassian', connectorPage: page, ...input })!;
+        expect(hint).toMatch(/Atlassian refused the email and token together/);
+        expect(hint).toMatch(/pasted once/);
+        expect(hint).toMatch(/Rovo MCP server settings/);
+        expect(hint).toContain(page);
+      }
+    });
+
+    it('keeps the OAuth advice for a missing scope on other connectors', () => {
+      expect(deriveErrorHint({ message: 'insufficient_scope', status: 403 })).toMatch(/Authorize with Provider/);
+      expect(
+        deriveErrorHint({ host: 'mcp.atlassian.com', message: 'Error POSTing to endpoint: {"error":"invalid_token"}' }),
+      ).toBeUndefined();
+    });
+  });
 });
