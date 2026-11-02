@@ -49,6 +49,22 @@ const MISSING_SCOPE_HINT =
   'Retrying will not help: ask the user to open this connector in AnythingMCP and click ' +
   '"Authorize with Provider" again, which requests the missing permission, then retry.';
 
+// Atlassian's Rovo MCP server with a personal API token (Basic email:token).
+// Two setups the old form accepted failed every call this way on Cloud: a
+// token pasted twice (initialize answers 401 invalid_token) and a token
+// created without scopes (every tool says it cannot resolve the user scopes).
+const ATLASSIAN_TOKEN_REFUSED_HINT =
+  'Atlassian refused the email and token together. Retrying will not help: ask the user to check, ' +
+  "in this connector's settings in AnythingMCP, that the email is the token owner's, the token is " +
+  'pasted once and not revoked, and that an Atlassian organization admin has enabled API-token ' +
+  'authentication for the Rovo MCP server (Atlassian Administration > Rovo > Rovo MCP server settings).';
+const ATLASSIAN_UNSCOPED_TOKEN_HINT =
+  'This Atlassian API token has no scopes, so every Jira and Confluence tool is refused. Retrying will ' +
+  "not help: ask the user to create an 'API token with scopes' at id.atlassian.com > Security > API " +
+  'tokens with the agent-interface scopes (read:jira:agent-interface, search:jira:agent-interface, ' +
+  'read:confluence:agent-interface, search:confluence:agent-interface, and the write scopes they ' +
+  "want), and paste it into this connector's API token setting in AnythingMCP.";
+
 const ODOO_FIELD_HINT =
   'That field does not exist on this model in this Odoo database; field names differ between ' +
   'Odoo versions and installed apps. Do not guess another spelling: list the model\'s fields ' +
@@ -524,6 +540,8 @@ const CREDENTIAL_HINTS = new Set<string>([
   BITRIX24_WEBHOOK_URL_HINT,
   ETSY_NO_SHOP_HINT,
   MISSING_SCOPE_HINT,
+  ATLASSIAN_TOKEN_REFUSED_HINT,
+  ATLASSIAN_UNSCOPED_TOKEN_HINT,
 ]);
 
 function bodyText(body: unknown): string {
@@ -587,6 +605,19 @@ function ruleHint(input: ErrorHintInput, text: string): string | undefined {
   }
   if (/Falsche Syntax in der Nähe von|Incorrect syntax near/i.test(text)) {
     return SQL_SYNTAX_HINT;
+  }
+
+  // Atlassian's MCP server, before the generic scope rule below: its "missing
+  // the scope claim" is an API token without scopes, which no re-authorization
+  // fixes. Only the catalog adapter, which signs in with an API token: a
+  // hand-built connector to the same server may use OAuth, where it would.
+  if (input.adapterSlug === 'atlassian') {
+    if (/missing the scope claim|Unable to resolve user scopes/i.test(text)) {
+      return ATLASSIAN_UNSCOPED_TOKEN_HINT;
+    }
+    if (input.status === 401 || /invalid_token/i.test(text)) {
+      return ATLASSIAN_TOKEN_REFUSED_HINT;
+    }
   }
 
   // OAuth tokens granted before an adapter gained a scope (Etsy's listings_w

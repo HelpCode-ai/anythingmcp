@@ -95,6 +95,11 @@ export function adapterResult(loaded, file, region) {
   return { region, file, ...validateAdapter(loaded.adapter, file, region) };
 }
 
+/** The variables the user enters: required and optional. */
+function declaredVars(adapter) {
+  return [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
+}
+
 // `{{VAR}}` is resolved into auth/base URL/headers; `${VAR}` inside a tool's
 // mapping reads the same connector variable at call time (and leaves an
 // endpoint header out when it is empty, which is how an optional key works).
@@ -458,7 +463,52 @@ export function validateAdapter(adapter, file, region) {
         const ok = typeof h === 'string' ? h.trim() : h && typeof h === 'object' && typeof h.hint === 'string' && h.hint.trim() && (h.suggest === undefined || typeof h.suggest === 'string');
         if (!ok) errors.push(error('verify-hints-shape', `verifyHints.${key}`, 'each hint is a string or { hint, suggest? }', 'Write the hint as text; suggest is another adapter slug.', 'adapter-fields'));
         if (!/^(\d{3}|[a-z_]+)$/.test(key)) errors.push(error('verify-hints-key', `verifyHints.${key}`, `"${key}" is neither an HTTP status nor a failure kind`, 'Key by "401", "404", … or by a kind such as "auth_failed".', 'adapter-fields'));
+        if (h && typeof h === 'object' && h.field !== undefined && !declaredVars(adapter).includes(h.field)) errors.push(error('verify-hints-field', `verifyHints.${key}.field`, `field "${h.field}" is not a declared variable`, 'Name the variable the hint belongs under.', 'adapter-fields'));
       }
+    }
+  }
+
+  if (adapter.probe?.failWhen !== undefined) {
+    const rules = adapter.probe.failWhen;
+    if (!Array.isArray(rules)) {
+      errors.push(error('probe-fail-when', 'probe.failWhen', 'probe.failWhen must be a list of rules', 'Use [{ "matches": "…", "hint": "…" }].', 'adapter-fields'));
+    } else {
+      rules.forEach((r, i) => {
+        const at = `probe.failWhen[${i}]`;
+        let validRe = false;
+        try { new RegExp(r?.matches, 'i'); validRe = typeof r?.matches === 'string' && r.matches.trim() !== ''; } catch { /* reported below */ }
+        if (!validRe || typeof r?.hint !== 'string' || !r.hint.trim()) errors.push(error('probe-fail-when', at, 'each rule needs a valid regular expression in matches and a hint', 'Use { "matches": "…", "hint": "…" }.', 'adapter-fields'));
+        if (r?.field !== undefined && !declaredVars(adapter).includes(r.field)) errors.push(error('probe-fail-when', `${at}.field`, `field "${r.field}" is not a declared variable`, 'Name the variable the hint belongs under.', 'adapter-fields'));
+      });
+    }
+  }
+
+  if (adapter.derivedEnvVars !== undefined) {
+    const derived = adapter.derivedEnvVars;
+    if (!derived || typeof derived !== 'object' || Array.isArray(derived)) {
+      errors.push(error('derived-env-vars', 'derivedEnvVars', 'derivedEnvVars must map a variable name to its lookup', 'Use { "X_ID": { "fromHost": "X_SITE", "url": "https://{{X_SITE}}/…", "path": "id", "error": "…" } }.', 'adapter-fields'));
+    } else {
+      for (const [name, d] of Object.entries(derived)) {
+        const at = `derivedEnvVars.${name}`;
+        if (declaredVars(adapter).includes(name)) errors.push(error('derived-env-vars', at, `"${name}" is looked up, so it must not be a variable the user enters`, 'Remove it from requiredEnvVars and optionalEnvVars.', 'adapter-fields'));
+        const ok = d && typeof d === 'object' && declaredVars(adapter).includes(d.fromHost) && typeof d.url === 'string' && d.url.startsWith(`https://{{${d.fromHost}}}/`) && typeof d.path === 'string' && d.path && typeof d.error === 'string' && d.error.trim();
+        if (!ok) errors.push(error('derived-env-vars', at, 'a derived variable needs a declared fromHost, an https url starting with {{fromHost}}, a path and an error', 'See docs/tool-definition.md.', 'adapter-fields'));
+      }
+    }
+  }
+
+  if (adapter.instructionFacts !== undefined) {
+    const facts = adapter.instructionFacts;
+    const known = new Set([...declaredVars(adapter), ...Object.keys(adapter.derivedEnvVars ?? {})]);
+    if (!Array.isArray(facts) || facts.some((f) => typeof f !== 'string' || !f.trim())) {
+      errors.push(error('instruction-facts', 'instructionFacts', 'instructionFacts must be a list of sentences', 'Use ["This workspace\'s site is {{X_SITE}}."].', 'adapter-fields'));
+    } else {
+      facts.forEach((f, i) => {
+        for (const [, name] of f.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)) {
+          const secret = adapter.envVarMeta?.[name]?.secret === true || adapter.envVarMeta?.[name]?.kind === 'credential';
+          if (!known.has(name) || secret) errors.push(error('instruction-facts', `instructionFacts[${i}]`, `"${name}" is not a non-secret variable of this adapter`, 'Name only settings the adapter declares or looks up; secrets are never rendered.', 'adapter-fields'));
+        }
+      });
     }
   }
 
