@@ -1,9 +1,12 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { listAdapters } from './catalog';
+import { getAdapter, listAdapters } from './catalog';
 import {
   CatalogSearchEntry,
   editDistance,
+  FILE_SEARCH_INTENTS,
+  fileSearchIntent,
+  MAX_FILE_SEARCH,
   MAX_FUZZY,
   searchCatalog,
   searchTerms,
@@ -165,7 +168,7 @@ describe('catalog search — no false positives', () => {
   });
 
   it('a word nothing resembles finds nothing and is reported missing', () => {
-    expect(searchCatalog(catalog, 'zzqx')).toEqual({ hits: [], terms: ['zzqx'], missing: ['zzqx'], match: 'none' });
+    expect(searchCatalog(catalog, 'zzqx')).toEqual({ hits: [], terms: ['zzqx'], missing: ['zzqx'], match: 'none', fileSearch: [] });
     expect(searchCatalog(catalog, '   ').hits).toEqual([]);
   });
 
@@ -214,5 +217,106 @@ describe('catalog search — ranking', () => {
   it('breaks ties by priority', () => {
     const tied = [entry('acme-b', 'Acme B'), entry('acme-a', 'Acme A', { priority: 5 })];
     expect(searchCatalog(tied, 'acme').hits.map((h) => h.entry.slug)).toEqual(['acme-a', 'acme-b']);
+  });
+});
+
+describe('catalog search — File Search suggestions', () => {
+  /** The catalog as the Cloud offers it: self-hosted-only adapters left out too. */
+  const cloud = catalog.filter((a) => !a.selfHostOnly);
+  const fileSearchSlugs = new Set(
+    listAdapters()
+      .filter((a) => (getAdapter(a.slug)?.connector.type as string) === 'FILE_SEARCH')
+      .map((a) => a.slug),
+  );
+  const top = (entries: typeof catalog, query: string, n = 3) =>
+    searchCatalog(entries, query).hits.slice(0, n).map((h) => h.entry.slug);
+  const suggested = (entries: typeof catalog, query: string) =>
+    searchCatalog(entries, query).fileSearch.map((e) => e.slug);
+
+  it('names only File Search entries that exist in the catalog', () => {
+    for (const intent of FILE_SEARCH_INTENTS) {
+      for (const slug of intent.slugs) expect({ slug, fileSearch: fileSearchSlugs.has(slug) }).toEqual({ slug, fileSearch: true });
+    }
+  });
+
+  it.each([
+    ['synology', ['synology', 'synology-file-search']],
+    ['nextcloud', ['nextcloud', 'nextcloud-file-search', 'webdav']],
+    ['qnap', ['qnap-file-search']],
+    ['owncloud', ['owncloud-file-search', 'webdav']],
+    ['fritzbox', ['fritzbox-file-search']],
+    ['Fritz!Box', ['fritzbox-file-search']],
+    ['sftp', ['sftp']],
+    ['ftp', ['ftp']],
+    ['webdav', ['webdav']],
+    ['minio', ['s3-file-search']],
+    ['storage box', ['hetzner-storage-box']],
+  ])('"%s" puts File Search at the top, next to the API connector: %j', (query, expected) => {
+    expect(top(cloud, query, expected.length)).toEqual(expected);
+  });
+
+  it.each(['nas', 'file server', 'Dateiserver', 'Netzlaufwerk', 'documents', 'Dokumente', 'pdf', 'dateiablage'])(
+    '"%s" suggests File Search among the first results',
+    (query) => {
+      const result = searchCatalog(cloud, query);
+      expect(result.fileSearch.length).toBeGreaterThan(0);
+      const first = result.hits.slice(0, 4).map((h) => h.entry.slug);
+      expect(first.filter((s) => fileSearchSlugs.has(s)).length).toBeGreaterThan(0);
+      expect(result.missing).toEqual([]);
+    },
+  );
+
+  it('suggests the network folder on self-hosted only', () => {
+    expect(suggested(catalog, 'Netzlaufwerk')).toContain('network-folder');
+    expect(suggested(catalog, 'file server')[0]).toBe('network-folder');
+    for (const q of ['Netzlaufwerk', 'file server', 'nas', 'smb', 'documents']) {
+      expect({ q, slugs: suggested(cloud, q) }).toEqual({ q, slugs: expect.not.arrayContaining(['network-folder']) });
+      expect(searchCatalog(cloud, q).hits.map((h) => h.entry.slug)).not.toContain('network-folder');
+    }
+    expect(suggested(cloud, 'Netzlaufwerk')).toEqual(['sftp', 'webdav']);
+  });
+
+  it('suggests nothing for cloud drives, which File Search does not read', () => {
+    for (const q of ['sharepoint', 'onedrive', 'google drive', 'my google drive files', 'dropbox', 'sharepoint documents', 'icloud']) {
+      expect({ q, slugs: suggested(catalog, q) }).toEqual({ q, slugs: [] });
+      expect({ q, flagged: searchCatalog(catalog, q).hits.some((h) => h.suggested) }).toEqual({ q, flagged: false });
+    }
+  });
+
+  it('suggests nothing for a query about another app', () => {
+    for (const q of ['etsy', 'telegram', 'sap', 'excel', 'box', 'hubspot', 'zzqx']) {
+      expect({ q, slugs: suggested(catalog, q) }).toEqual({ q, slugs: [] });
+    }
+  });
+
+  it('caps the suggestions and lists none twice', () => {
+    const result = searchCatalog(catalog, 'synology nas file server documents');
+    expect(result.fileSearch.length).toBeLessThanOrEqual(MAX_FILE_SEARCH);
+    expect(result.fileSearch[0].slug).toBe('synology-file-search');
+    const all = result.hits.map((h) => h.entry.slug);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('marks an entry the query did not match by itself as suggested', () => {
+    const result = searchCatalog(cloud, 'dateiablage');
+    expect(result.match).toBe('suggested');
+    expect(result.hits.every((h) => h.suggested && h.match === 'suggested')).toBe(true);
+    // An entry that matched keeps how it matched.
+    const synology = searchCatalog(cloud, 'synology').hits.find((h) => h.entry.slug === 'synology-file-search')!;
+    expect(synology).toEqual(expect.objectContaining({ match: 'direct', suggested: true }));
+  });
+
+  it('matches several words written apart or together', () => {
+    expect(fileSearchIntent('File-Server').slugs[0]).toBe('network-folder');
+    expect(fileSearchIntent('fileserver').slugs[0]).toBe('network-folder');
+    expect(fileSearchIntent('Hetzner Storage Box').slugs).toEqual(['hetzner-storage-box']);
+    expect(fileSearchIntent('cartella di rete').slugs[0]).toBe('network-folder');
+  });
+
+  it('suggests only entries the caller passed in', () => {
+    const entries = [{ slug: 'synology', name: 'Synology' }];
+    const result = searchCatalog(entries, 'synology');
+    expect(result.fileSearch).toEqual([]);
+    expect(result.hits.map((h) => h.entry.slug)).toEqual(['synology']);
   });
 });
