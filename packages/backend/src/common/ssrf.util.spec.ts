@@ -84,13 +84,14 @@ describe('the public-address rule', () => {
 });
 
 describe('createSsrfGuardedAgents', () => {
-  it('gives each address of a dual-stack host a full second to connect', () => {
+  it('gives each address of a dual-stack host time for two SYN retransmissions', () => {
     const { httpAgent, httpsAgent } = createSsrfGuardedAgents({});
     for (const agent of [httpAgent, httpsAgent]) {
       const options = (agent as unknown as { options: Record<string, unknown> }).options;
       expect(options.autoSelectFamilyAttemptTimeout).toBe(CONNECT_ATTEMPT_TIMEOUT_MS);
       expect(options.timeout).toBe(5000);
     }
-    expect(CONNECT_ATTEMPT_TIMEOUT_MS).toBeGreaterThan(250);
+    expect(CONNECT_ATTEMPT_TIMEOUT_MS).toBeGreaterThan(3000);
+    expect(CONNECT_ATTEMPT_TIMEOUT_MS).toBeLessThan(5000);
   });
 });
