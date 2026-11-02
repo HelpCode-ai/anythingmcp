@@ -6759,7 +6759,8 @@ where Enterprise and admin gating apply again.
 ## Governance
 
 - **Per server:** `codeMode` is `off` (default), `tools` (saved code tools
-  only) or `inline` (also `code_execute`).
+  only) or `inline` (also `code_execute`). Set it on the MCP server's settings
+  page, or with `PUT /api/mcp-servers/:id` (`codeMode`).
 - **Per role:** the `inlineCode` capability gates inline code; saved code tools
   follow the normal tool allow-list.
 - **Per plan:** saved code tools are capped per plan — Community 3, Starter 5,
@@ -6786,9 +6787,11 @@ COMPOSE_PROFILES=code-runner
 CODE_RUNNER_URL=ws://code-runner:8777
 ```
 
-Then set a server's `codeMode` to `tools` or `inline`. The runner holds no
-secrets and needs no inbound internet; it accepts only the backend's connection
-on the internal network.
+Then set a server's `codeMode` to `tools` or `inline` (on the server's settings
+page or via the API). The runner holds no secrets and needs no inbound internet;
+it accepts only the backend's connection on the internal network. A saved code
+tool's **Test** button in the tool editor runs the program through the runner,
+so you can check it before a client does.
 
 ## Limits
 

@@ -43,6 +43,6 @@ const ENGINES = [
   imports: [McpServersModule, LicenseModule, SettingsModule, FileSearchCoreModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
   providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, GraphqlSchemaService, WebhookEventsService, ...ENGINES],
-  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, WebhookEventsService],
+  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, DynamicMcpTools, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, WebhookEventsService],
 })
 export class McpServerModule {}

@@ -1268,6 +1268,31 @@ export class DynamicMcpTools {
    * by the caller (server codeMode `inline` + the role's `inlineCode`
    * capability); this method enforces read-only and invoker rights.
    */
+  /**
+   * Run a saved code tool directly from its stored row, for the dashboard
+   * "Test" button. The admin already has the tool in hand, so this skips the
+   * name→registry lookup `executeTool` does (the tool may have just been saved
+   * and not re-registered yet) and runs the same out-of-process code path with
+   * the same governance (uses allow-list, read/write, invoker/definer). No
+   * `mcpServerId` is passed, so the per-server codeMode switch is not consulted:
+   * this is an owner testing their own tool, like any instance-level operator
+   * call. Refuses cleanly when no runner is configured.
+   */
+  async runSavedCodeTool(
+    tool: {
+      id: string;
+      name: string;
+      connectorId: string;
+      connectorType?: string;
+      organizationId: string;
+      endpointMapping: unknown;
+    },
+    params: Record<string, unknown>,
+    context?: CodeExecContext,
+  ): Promise<{ content: ToolResultContent; isError?: boolean; structured?: unknown }> {
+    return this.executeCodeTool(tool as unknown as RegisteredTool, params, context);
+  }
+
   /** Whether a code-runner is configured, so code mode can run at all. */
   codeModeAvailable(): boolean {
     return !!this.codeExecutor?.isConfigured();
