@@ -938,8 +938,8 @@
       "suggest": "Set up {name} instead",
       "suggestOther": "Set up the other connector instead",
       "saveAnyway": "Save anyway",
-      "appPendingTitle": "{name} has not approved your app yet.",
-      "appPendingBody": "{name} reviews new apps, usually within a few days. We'll e-mail you when it's approved; nothing else to do. Your keys are saved.",
+      "appPendingTitle": "{name} does not accept these keys yet.",
+      "appPendingBody": "If your app is new, {name} reviews it, usually within a few days: we'll e-mail you when it's approved, nothing else to do. If your app is already active, copy the shared secret again from your app page. Your keys are saved.",
       "appPendingOpen": "Open the connector"
     },
     "field": {

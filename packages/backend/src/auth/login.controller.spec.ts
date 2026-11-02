@@ -83,6 +83,7 @@ describe('LoginController', () => {
     grantServers: jest.Mock;
     grantWholeOrganization: jest.Mock;
     listSelectableTargets: jest.Mock;
+    resolve: jest.Mock;
   };
 
   beforeEach(() => {
@@ -100,6 +101,8 @@ describe('LoginController', () => {
       grantServers: jest.fn().mockResolvedValue([]),
       grantWholeOrganization: jest.fn().mockResolvedValue(true),
       listSelectableTargets: jest.fn().mockResolvedValue([]),
+      // No grant: the user's own organization, as before grants existed.
+      resolve: jest.fn().mockResolvedValue(null),
     };
 
     controller = new LoginController(
@@ -844,6 +847,173 @@ describe('LoginController', () => {
       expect(cloudPrisma.connector.count).not.toHaveBeenCalled();
     });
 
+    describe('a user in several workspaces', () => {
+      // org-1 is the user's primary workspace and has connectors; org-2 is
+      // another workspace of theirs, empty, where they are an admin.
+      const arrangeWorkspaces = (roles: Record<string, string> = { 'org-1': 'ADMIN', 'org-2': 'ADMIN' }) => {
+        arrange();
+        cloudPrisma.organizationMember.findFirst.mockImplementation(({ where }: any) =>
+          roles[where.organizationId] ? { role: roles[where.organizationId] } : null,
+        );
+        cloudPrisma.connector.count.mockImplementation(({ where }: any) => (where.organizationId === 'org-1' ? 3 : 0));
+      };
+
+      const choose = async (body: Record<string, unknown>, c: LoginController = cloud, signed: Record<string, string> = {}) => {
+        const res = makeRes();
+        await c.handleServerSelection(
+          makeReq({
+            cookies: { oauth_session: 's1' },
+            signedCookies: { login_csrf: 'tok', pending_grant: 'u1', ...signed },
+            headers: { host: 'mcp.test' },
+          } as any),
+          { csrf: 'tok', ...body } as any,
+          res,
+        );
+        return res;
+      };
+
+      it('offers the first app for an empty workspace picked on "Choose what to connect"', async () => {
+        arrangeWorkspaces();
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-2' });
+        const res = await choose({ workspace: 'org-2' });
+
+        expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-abc', 'u1', 'org-2');
+        expect(res._redirect).toBeUndefined();
+        expect(res._sent).toContain('Claude is connected');
+        expect(res._sent).toContain('href="http://mcp.test/callback"');
+        expect(cloudPrisma.connector.count).toHaveBeenCalledWith({ where: { organizationId: 'org-2' } });
+        expect(res._cookies['login_user'].options.maxAge).toBeGreaterThan(60 * 1000);
+        expect(res._cleared).toEqual(expect.arrayContaining(['login_csrf', 'pending_grant']));
+        expect(productEvents.log).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'empty_workspace_prompt', organizationId: 'org-2' }),
+        );
+      });
+
+      it('offers it too for servers picked in an empty workspace', async () => {
+        arrangeWorkspaces();
+        grants.grantServers.mockResolvedValue(['srv-2']);
+        grants.resolve.mockResolvedValue({ mode: 'servers', servers: [{ id: 'srv-2', organizationId: 'org-2' }] });
+        const res = await choose({ servers: 'srv-2' });
+
+        expect(res._sent).toContain('Claude is connected');
+        expect(cloudPrisma.connector.count).toHaveBeenCalledWith({ where: { organizationId: 'org-2' } });
+      });
+
+      it('goes straight to /callback for a workspace that has connectors', async () => {
+        arrangeWorkspaces();
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-1' });
+        const res = await choose({ workspace: 'org-1' });
+
+        expect(res._redirect).toBe('http://mcp.test/callback');
+        expect(res._sent).toBeUndefined();
+        expect(productEvents.log).not.toHaveBeenCalled();
+      });
+
+      it('goes straight to /callback for an empty workspace where the user is a viewer', async () => {
+        arrangeWorkspaces({ 'org-1': 'ADMIN', 'org-2': 'VIEWER' });
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-2' });
+        const res = await choose({ workspace: 'org-2' });
+
+        expect(res._redirect).toBe('http://mcp.test/callback');
+      });
+
+      it('goes straight to /callback for servers in more than one workspace', async () => {
+        arrangeWorkspaces();
+        grants.grantServers.mockResolvedValue(['srv-1', 'srv-2']);
+        grants.resolve.mockResolvedValue({
+          mode: 'servers',
+          servers: [
+            { id: 'srv-1', organizationId: 'org-1' },
+            { id: 'srv-2', organizationId: 'org-2' },
+          ],
+        });
+        const res = await choose({ servers: ['srv-1', 'srv-2'] });
+
+        expect(res._redirect).toBe('http://mcp.test/callback');
+        expect(cloudPrisma.connector.count).not.toHaveBeenCalled();
+      });
+
+      it('never offers it on self-hosted', async () => {
+        arrangeWorkspaces();
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-2' });
+        const selfHosted = new LoginController(
+          authService as unknown as AuthService,
+          cloudPrisma as unknown as PrismaService,
+          config as unknown as ConfigService,
+          store as unknown as PrismaOAuthStore,
+          sso as unknown as SsoService,
+          { mode: 'self-hosted', isCloud: () => false, isSelfHosted: () => true } as any,
+          grants as any,
+          productEvents as any,
+        );
+        const res = await choose({ workspace: 'org-2' }, selfHosted);
+
+        expect(res._redirect).toBe('http://mcp.test/callback');
+        expect(cloudPrisma.connector.count).not.toHaveBeenCalled();
+      });
+
+      it('counts the granted workspace, not the primary one, on sign-in too', async () => {
+        arrangeWorkspaces();
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-2' });
+        const res = await login();
+
+        expect(res._sent).toContain('Claude is connected');
+        expect(cloudPrisma.connector.count).toHaveBeenCalledWith({ where: { organizationId: 'org-2' } });
+        expect(cloudPrisma.connector.count).not.toHaveBeenCalledWith({ where: { organizationId: 'org-1' } });
+      });
+
+      it('carries a social sign-in across the picker to the dashboard links', async () => {
+        arrangeWorkspaces();
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-2' });
+        const social = { enabledProviders: () => [{ id: 'google', name: 'Google' }] };
+        const withSocial = new LoginController(
+          authService as unknown as AuthService,
+          cloudPrisma as unknown as PrismaService,
+          config as unknown as ConfigService,
+          store as unknown as PrismaOAuthStore,
+          sso as unknown as SsoService,
+          { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false } as any,
+          grants as any,
+          productEvents as any,
+          licenseGuard as any,
+          eligibility as any,
+          social as any,
+        );
+        // Signing in with Google lands on the picker, which keeps the provider.
+        grants.listSelectableTargets.mockResolvedValue([
+          { organizationId: 'org-1', organizationName: 'Primary', servers: [{ id: 'srv-1', name: 'A', connectorCount: 3 }] },
+          { organizationId: 'org-2', organizationName: 'Other', servers: [{ id: 'srv-2', name: 'B', connectorCount: 0 }] },
+        ]);
+        const picker = makeRes();
+        await (withSocial as any).completeSignIn(
+          makeReq({ cookies: { oauth_session: 's1' }, headers: { host: 'mcp.test' } } as any),
+          picker,
+          { id: 'u1', email: 'a@b.com', name: 'A' },
+          'google',
+        );
+        expect(picker._sent).toContain('Choose what to connect');
+        expect(picker._cookies['pending_grant_social']).toEqual({
+          value: 'google',
+          options: expect.objectContaining({ httpOnly: true, signed: true }),
+        });
+
+        const res = await choose({ workspace: 'org-2' }, withSocial, { pending_grant_social: 'google' });
+        expect(res._sent).toContain(
+          `href="https://cloud.example/login?continueWith=google&amp;redirect=${encodeURIComponent('/welcome')}"`,
+        );
+        expect(res._cleared).toContain('pending_grant_social');
+      });
+
+      it('ignores a provider this deployment does not offer', async () => {
+        arrangeWorkspaces();
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-2' });
+        const res = await choose({ workspace: 'org-2' }, cloud, { pending_grant_social: 'evil' });
+
+        expect(res._sent).toContain('href="https://cloud.example/welcome"');
+        expect(res._sent).not.toContain('continueWith');
+      });
+    });
+
     describe('the optional app picker', () => {
       let provider: { canSetUp: jest.Mock; install: jest.Mock; find: jest.Mock; status: jest.Mock };
       let picking: LoginController;
@@ -873,7 +1043,7 @@ describe('LoginController', () => {
           find: jest.fn(),
           status: jest.fn(),
         };
-        (grants as any).resolve = jest.fn().mockResolvedValue({ mode: 'servers', servers: [{ id: 'srv-1', organizationId: 'org-1' }] });
+        grants.resolve.mockResolvedValue({ mode: 'servers', servers: [{ id: 'srv-1', organizationId: 'org-1' }] });
         picking = make(CLOUD);
       });
 
@@ -1089,7 +1259,7 @@ describe('LoginController', () => {
           assistant: 'claude',
           profile: 'default',
         };
-        expect((grants as any).resolve).toHaveBeenCalledWith('client-abc', 'u1');
+        expect(grants.resolve).toHaveBeenCalledWith('client-abc', 'u1');
         expect(provider.canSetUp).toHaveBeenCalledWith(ctx);
         // Recorded apart from chat installs (setup_completed via 'post_approve').
         expect(provider.install).toHaveBeenCalledWith(ctx, { adapter: 'telegram-bot' }, { via: 'post_approve' });
@@ -1099,6 +1269,54 @@ describe('LoginController', () => {
           organizationId: 'org-1',
           metadata: { adapterSlug: 'telegram-bot', client: 'Claude', status: 'added' },
         });
+      });
+
+      it('adds the app to the workspace this connection was granted, not the primary one', async () => {
+        arrange();
+        // The user's own organization is org-1; they picked org-2 on "Choose what to connect".
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-2' });
+        const res = await pick({ adapter: 'shopify', csrf: 'pick-tok' });
+
+        expect(res._json.ok).toBe(true);
+        const ctx = expect.objectContaining({ userId: 'u1', organizationId: 'org-2', serverIds: [] });
+        expect(provider.canSetUp).toHaveBeenCalledWith(ctx);
+        expect(provider.install).toHaveBeenCalledWith(ctx, { adapter: 'shopify' }, { via: 'post_approve' });
+        expect(productEvents.log).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'post_approve_app_picked', organizationId: 'org-2' }),
+        );
+      });
+
+      it('adds the app to the user\'s own workspace when the client has no grant', async () => {
+        arrange();
+        grants.resolve.mockResolvedValue(null);
+        await pick({ adapter: 'shopify', csrf: 'pick-tok' });
+
+        expect(provider.install).toHaveBeenCalledWith(
+          expect.objectContaining({ organizationId: 'org-1', serverIds: [] }),
+          { adapter: 'shopify' },
+          { via: 'post_approve' },
+        );
+      });
+
+      it.each([
+        ['a grant that reaches nothing', { mode: 'none' }],
+        [
+          'servers in two workspaces',
+          {
+            mode: 'servers',
+            servers: [
+              { id: 'srv-1', organizationId: 'org-1' },
+              { id: 'srv-2', organizationId: 'org-2' },
+            ],
+          },
+        ],
+      ])('refuses a pick for %s: there is no one workspace to add it to', async (_label, grant) => {
+        arrange();
+        grants.resolve.mockResolvedValue(grant);
+        const res = await pick({ adapter: 'shopify', csrf: 'pick-tok' });
+
+        expect(res._status).toBe(403);
+        expect(provider.install).not.toHaveBeenCalled();
       });
 
       it.each([

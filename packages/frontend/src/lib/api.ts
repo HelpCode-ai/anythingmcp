@@ -736,7 +736,12 @@ export type VerifyResult =
       status?: number | null;
       suggest?: string;
       suggestName?: string;
-      /** The provider has not approved the app yet (Etsy: Pending): the page keeps the keys, the owner is emailed on approval. */
+      /**
+       * The provider refused the app keys in a way that may be an app awaiting
+       * its approval (Etsy: Pending) or a wrong secret of an active app (Etsy
+       * answers both with the same 403): the page keeps the keys, and the owner
+       * is emailed once they are accepted.
+       */
       appPending?: boolean;
     }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
