@@ -241,7 +241,7 @@ export function errorWhenProblems(value) {
 
 const SETUP_EFFORTS = new Set(['none', 'one_click', 'api_key', 'own_app', 'admin_needed']);
 const GUIDE_FIELDS = new Set(['effort', 'minutes', 'examples', 'needs', 'why', 'steps']);
-const STEP_FIELDS = new Set(['id', 'title', 'body', 'action', 'values', 'image', 'fields', 'problems', 'confirm']);
+const STEP_FIELDS = new Set(['id', 'title', 'body', 'action', 'values', 'image', 'fields', 'problems', 'confirm', 'saveAndCheck', 'waitForProvider']);
 const FRONTEND_PUBLIC = join(REPO_ROOT, 'packages/frontend/public');
 const nonEmpty = (v) => typeof v === 'string' && v.trim() !== '';
 
@@ -327,6 +327,20 @@ export function validateSetupGuide(adapter, publicDir = FRONTEND_PUBLIC) {
       bad('setup-guide-problems', `${at}.problems`, 'problems must be a non-empty array of { q, a }', 'Write the question and its answer, or remove the field.');
     }
     if (step.confirm !== undefined && !nonEmpty(step.confirm)) bad('setup-guide-confirm', `${at}.confirm`, 'confirm must be a non-empty string', 'Say what the user confirms, or remove the field.');
+    // Saving the keys mid-guide only helps when the provider can be asked
+    // about them; the wait step needs keys saved by the step before it.
+    if (step.saveAndCheck !== undefined) {
+      if (step.saveAndCheck !== true) bad('setup-guide-save-and-check', `${at}.saveAndCheck`, 'saveAndCheck must be true', 'Remove the field, or set it to true.');
+      else if (!Array.isArray(step.fields) || step.fields.length === 0) bad('setup-guide-save-and-check', `${at}.saveAndCheck`, 'A saveAndCheck step needs fields', 'Ask for the keys in this step.');
+      else if (!adapter.checkBeforeAuthorization) bad('setup-guide-save-and-check', `${at}.saveAndCheck`, 'saveAndCheck needs the adapter to have checkBeforeAuthorization', 'Add checkBeforeAuthorization, or remove saveAndCheck.');
+      else if (i === g.steps.length - 1) bad('setup-guide-save-and-check', `${at}.saveAndCheck`, 'The last step already checks the keys', 'Remove saveAndCheck from the last step.');
+    }
+    if (step.waitForProvider !== undefined) {
+      if (step.waitForProvider !== true) bad('setup-guide-wait', `${at}.waitForProvider`, 'waitForProvider must be true', 'Remove the field, or set it to true.');
+      else if (g.steps[i - 1]?.saveAndCheck !== true) bad('setup-guide-wait', `${at}.waitForProvider`, 'A waitForProvider step must follow a saveAndCheck step', 'Put it right after the step that saves the keys.');
+      else if (step.fields !== undefined || step.confirm !== undefined) bad('setup-guide-wait', `${at}.waitForProvider`, 'A waitForProvider step cannot have fields or confirm', 'It moves on by itself once the provider accepts the keys.');
+      else if (i === g.steps.length - 1) bad('setup-guide-wait', `${at}.waitForProvider`, 'A waitForProvider step cannot be the last step', 'Add the step that follows the approval.');
+    }
   });
   // A required variable the guide never asks for blocks the last step.
   // Advanced ones (a token the sign-in fills in) stay out of the steps.
