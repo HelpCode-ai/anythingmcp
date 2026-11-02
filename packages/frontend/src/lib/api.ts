@@ -723,7 +723,7 @@ export interface SetupGuide extends SetupEffort {
 
 export type VerifyResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }
-  | { ok: false; kind: string; message: string; missing?: string[]; status?: number | null; suggest?: string; suggestName?: string }
+  | { ok: false; kind: string; message: string; missing?: string[]; fields?: Record<string, string>; status?: number | null; suggest?: string; suggestName?: string }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
 
 export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';

@@ -8,6 +8,14 @@
   "icon": "youtube",
   "docsUrl": "https://developers.google.com/youtube/v3/docs",
   "requiredEnvVars": ["YOUTUBE_API_KEY"],
+  "verifyHints": {
+    "400": "Google refused the API key (\"API key not valid\"): it is wrong, was deleted, or has extra characters. Copy it again from the Google Cloud console (APIs & Services → Credentials) and paste only the key.",
+    "403": "Google refused the request for this key: the YouTube Data API v3 is not enabled in the key's project (APIs & Services → Library → YouTube Data API v3 → Enable), or the key is restricted to other APIs or apps."
+  },
+  "probe": {
+    "tool": "youtube_list_categories",
+    "params": { "part": "snippet", "regionCode": "US" }
+  },
   "connector": {
     "name": "YouTube Data v3",
     "type": "REST",

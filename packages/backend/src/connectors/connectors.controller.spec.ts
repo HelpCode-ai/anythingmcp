@@ -822,6 +822,53 @@ describe('PUT :id/env-vars — a base URL variable without https://', () => {
   });
 });
 
+describe('PUT :id/env-vars and PUT :id — the checks of the install form', () => {
+  const odoo = (envVars: Record<string, string>) => ({
+    id: 'c1',
+    type: 'REST',
+    authType: 'BEARER_TOKEN',
+    userId: 'u1',
+    organizationId: 'org1',
+    baseUrl: 'https://erp.acme.de/json/2',
+    headers: null,
+    authConfig: null,
+    envVars,
+    config: { adapterSlug: 'odoo' },
+  });
+  const stored = { ODOO_URL: 'https://erp.acme.de', ODOO_DB: 'acme', ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e' };
+  const build = (connector: any) =>
+    buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(connector),
+        update: jest.fn().mockImplementation(async (_id: string, data: any) => ({ ...connector, ...data })),
+      },
+    });
+
+  it('refuses an Odoo address with /web after the host, naming the field and saving nothing', async () => {
+    const { controller, connectorsService } = build(odoo(stored));
+    await expect(
+      controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ODOO_URL: 'https://erp.acme.de/web' } }),
+    ).rejects.toMatchObject({ response: { code: 'invalid_values', fields: { ODOO_URL: expect.stringMatching(/nothing after the host/) } } });
+    expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a key pasted twice through the connector form (PUT :id) too', async () => {
+    const { controller, connectorsService } = build(odoo(stored));
+    await expect(
+      controller.update(req('ADMIN'), 'c1', { envVars: { ...stored, ODOO_API_KEY: stored.ODOO_API_KEY.repeat(2) } } as any),
+    ).rejects.toMatchObject({ response: { fields: { ODOO_API_KEY: expect.stringMatching(/Paste it once/) } } });
+    expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('does not let a stored bad value block an edit of another variable', async () => {
+    const { controller, connectorsService } = build(odoo({ ...stored, ODOO_URL: 'https://erp.acme.de/web' }));
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { ...stored, ODOO_URL: 'https://erp.acme.de/web', ODOO_DB: 'acme2' },
+    });
+    expect(connectorsService.update).toHaveBeenCalled();
+  });
+});
+
 describe('weclapp tenant pasted as an address after install (#733)', () => {
   const weclapp = (envVars: Record<string, string>) => ({
     id: 'c1',

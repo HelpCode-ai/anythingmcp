@@ -19,6 +19,7 @@ import {
 import { pickProbe } from './probe.util';
 import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
 import { odooCheckAdvice } from './odoo-database-hint';
+import { checkAdapterEnvValues, describeFieldProblems } from './env-var-checks';
 import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
 import { normalizeAddressVariables } from '../common/base-url-variable.util';
@@ -487,6 +488,14 @@ export class AdaptersService {
     } catch (err: any) {
       return { ok: false, kind: 'invalid_input', message: String(err?.message ?? err) };
     }
+    // A value that cannot be the real one (the example `host`, an address
+    // the adapter's pattern refuses, a key pasted twice) is named before any
+    // request: the provider's answer to it ("could not be resolved") does not
+    // say which field to fix.
+    const fields = checkAdapterEnvValues(adapter, prepared.credentials ?? {});
+    if (Object.keys(fields).length > 0) {
+      return { ok: false, kind: 'invalid_input', fields, message: describeFieldProblems(fields) };
+    }
     const state = computeSetupState({
       authType: adapter.connector.authType,
       authConfig: prepared.resolvedAuthConfig,
@@ -754,12 +763,24 @@ export class AdaptersService {
       });
     }
     const {
+      credentials: prepared,
       resolvedAuthConfig,
       encryptedAuth,
       storedBaseUrl,
       resolvedHeaders,
       envVarsToPersist,
     } = this.prepareConnector(adapter, credentials);
+    // Same field checks as the verification: "Save anyway" and a chat
+    // install skip the check, and a placeholder saved there fails every call.
+    const fields = checkAdapterEnvValues(adapter, prepared ?? {});
+    if (Object.keys(fields).length > 0) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'invalid_values',
+        fields,
+        message: describeFieldProblems(fields),
+      });
+    }
 
     const connector = await this.prisma.connector.create({
       data: {
@@ -1128,6 +1149,8 @@ export type VerifyResult =
       kind: string;
       message: string;
       missing?: string[];
+      /** Values refused field by field (a placeholder, a pattern miss, a key pasted twice). */
+      fields?: Record<string, string>;
       toolName?: string;
       status?: number | null;
       /** Another adapter to offer instead, from the adapter's verifyHints. */
