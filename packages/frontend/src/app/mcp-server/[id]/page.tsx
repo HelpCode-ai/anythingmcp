@@ -48,6 +48,7 @@ export default function McpServerDetailPage() {
   const [editDescription, setEditDescription] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [editSkillsDelivery, setEditSkillsDelivery] = useState<'auto' | 'inline' | 'index'>('auto');
+  const [editCodeMode, setEditCodeMode] = useState<'off' | 'tools' | 'inline'>('off');
   // `error` colours the line; it used to be read from an "Error" prefix,
   // which a translated message does not have.
   const [saveMsg, setSaveMsg] = useState<{ text: string; error: boolean } | null>(null);
@@ -108,6 +109,7 @@ export default function McpServerDetailPage() {
       setEditDescription(srv.description || '');
       setEditInstructions(srv.instructions || '');
       setEditSkillsDelivery(srv.skillsDelivery || 'auto');
+      setEditCodeMode(srv.codeMode || 'off');
       setAllConnectors(conns);
       const ids = new Set<string>(srv.connectors?.map((c: any) => c.connector.id) || []);
       currentIds.current = ids;
@@ -130,6 +132,7 @@ export default function McpServerDetailPage() {
         description: editDescription.trim() || undefined,
         instructions: editInstructions.trim() || undefined,
         skillsDelivery: editSkillsDelivery,
+        codeMode: editCodeMode,
       }, token);
       setServer((prev: any) => ({ ...prev, ...updated }));
       setSaveMsg({ text: t('saved'), error: false });
@@ -1195,6 +1198,24 @@ Auth: OAuth`;
                     </Link>
                   ),
                 })}
+              </p>
+            </div>
+            <div>
+              <label htmlFor="code-mode" className="mb-1.5 block text-[12.5px] font-medium">
+                {t('settings.codeMode')}
+              </label>
+              <select
+                id="code-mode"
+                value={editCodeMode}
+                onChange={(e) => setEditCodeMode(e.target.value as 'off' | 'tools' | 'inline')}
+                className="h-[38px] w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13.5px] outline-none focus:border-[var(--brand)]"
+              >
+                <option value="off">{t('settings.codeModeOff')}</option>
+                <option value="tools">{t('settings.codeModeTools')}</option>
+                <option value="inline">{t('settings.codeModeInline')}</option>
+              </select>
+              <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
+                {t('settings.codeModeHint')}
               </p>
             </div>
             {saveMsg && (

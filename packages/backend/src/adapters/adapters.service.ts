@@ -16,9 +16,11 @@ import {
   withOperatorProvided,
   withoutOperatorProvided,
 } from './cloud-managed-env';
-import { pickProbe } from './probe.util';
+import { pickProbe, probeResultFailure } from './probe.util';
+import { resolveDerivedEnvVars, withDerivedValues } from './derived-settings';
 import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
 import { odooCheckAdvice } from './odoo-database-hint';
+import { checkAdapterEnvValues, describeFieldProblems, normalizeAdapterEnvValues } from './env-var-checks';
 import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
 import { normalizeAddressVariables } from '../common/base-url-variable.util';
@@ -49,6 +51,7 @@ import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 import { matchCatalogUrl, UrlMatch, UrlMatchCandidate } from './catalog-url-match';
+import { APP_APPROVAL_ADAPTERS } from './app-approval-watch';
 
 @Injectable()
 export class AdaptersService {
@@ -369,7 +372,9 @@ export class AdaptersService {
       // on another domain is refused, naming the variable.
       credentials = normalizeAddressVariables(
         adapter.connector.baseUrl,
-        credentials,
+        // Per-adapter clean-ups first (a bot token with spaces, a Bitrix24
+        // webhook URL with a method name after it): env-var-checks.ts.
+        normalizeAdapterEnvValues(adapter.slug, credentials),
         adapter.connector.type,
         { singleLabel: true },
       );
@@ -487,6 +492,25 @@ export class AdaptersService {
     } catch (err: any) {
       return { ok: false, kind: 'invalid_input', message: String(err?.message ?? err) };
     }
+    // A value that cannot be the real one (the example `host`, an address
+    // the adapter's pattern refuses, a key pasted twice) is named before any
+    // request: the provider's answer to it ("could not be resolved") does not
+    // say which field to fix.
+    const fields = checkAdapterEnvValues(adapter, prepared.credentials ?? {});
+    if (Object.keys(fields).length > 0) {
+      return { ok: false, kind: 'invalid_input', fields, message: describeFieldProblems(fields) };
+    }
+    // Settings looked up from a value the user typed (Atlassian's cloudId
+    // from the site): a site that answers without one is named on its field.
+    const derived = await resolveDerivedEnvVars(adapter, prepared.credentials ?? {});
+    if (Object.keys(derived.fields).length > 0) {
+      return {
+        ok: false,
+        kind: 'invalid_input',
+        fields: derived.fields,
+        message: describeFieldProblems(derived.fields),
+      };
+    }
     const state = computeSetupState({
       authType: adapter.connector.authType,
       authConfig: prepared.resolvedAuthConfig,
@@ -515,34 +539,56 @@ export class AdaptersService {
 
     const call = pickProbe(adapter);
     const tool = call ? adapter.tools.find((t) => t.name === call.toolName) : undefined;
-    if (!call || !tool) return { ok: null, skipped: 'no_probe' };
-
     const transient = this.transientConnector(adapter, prepared, organizationId);
+    // A vendor's MCP server without a declared probe: listing its tools is
+    // what the install does next, and it fails the same way for a refused
+    // token, so the form hears it before anything is saved.
+    const viaToolList = (!call || !tool) && adapter.connector.type === 'MCP';
+    if ((!call || !tool) && !viaToolList) return { ok: null, skipped: 'no_probe' };
+    const toolName = viaToolList ? 'tools/list' : call!.toolName;
 
     const started = Date.now();
     try {
+      if (viaToolList) {
+        const discovered = await this.connectors.discoverRemoteMcpTools(transient);
+        return {
+          ok: true,
+          toolName,
+          durationMs: Date.now() - started,
+          sample: describeDiscoveredTools(discovered),
+        };
+      }
       const raw = await this.connectors.executeConnectorCall(
         transient,
-        tool.endpointMapping as any,
-        call.params,
-        call.toolName,
-        tool.parameters,
-        { useProxy: tool.useProxy === true },
+        tool!.endpointMapping as any,
+        call!.params,
+        toolName,
+        tool!.parameters,
+        { useProxy: tool!.useProxy === true },
       );
-      const shaped = applyResponseTransform(raw, tool.responseMapping as any).value;
+      // Answered, but not with something a working connector answers: an MCP
+      // tool result with isError, or what the adapter's probe.failWhen names
+      // (Atlassian: a token without scopes finds no product to search).
+      const refused = probeResultFailure(adapter, raw);
+      if (refused) {
+        return {
+          ok: false,
+          kind: refused.kind,
+          toolName,
+          status: null,
+          message: refused.message,
+          ...(refused.field ? { fields: { [refused.field]: refused.message } } : {}),
+        };
+      }
+      const shaped = applyResponseTransform(raw, tool!.responseMapping as any).value;
       return {
         ok: true,
-        toolName: call.toolName,
+        toolName,
         durationMs: Date.now() - started,
         sample: truncateSample(shaped),
       };
     } catch (err: any) {
-      const status: number | undefined =
-        typeof err?.status === 'number'
-          ? err.status
-          : typeof err?.response?.status === 'number'
-            ? err.response.status
-            : undefined;
+      const status = errorStatus(err);
       const upstream = withResponseExcerpt(String(err?.message ?? err ?? 'unknown error'), err).slice(0, 400);
       const classified = classifyToolExecutionError({
         status,
@@ -573,13 +619,16 @@ export class AdaptersService {
         : typeof own === 'object' && own?.suggest
           ? own.suggest
           : undefined;
+      // A hint about one value (Atlassian: the token) goes under that field.
+      const field = !odoo && typeof own === 'object' && own?.field ? own.field : undefined;
       return {
         ok: false,
         kind: classified.kind,
-        toolName: call.toolName,
+        toolName,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
         message: odoo ? odoo.message : message,
+        ...(field ? { fields: { [field]: message } } : {}),
         ...(suggest ? { suggest, suggestName: getAdapter(suggest)?.name ?? suggest } : {}),
       };
     }
@@ -591,34 +640,19 @@ export class AdaptersService {
    * provider down, a timeout) as nothing, so the sign-in goes ahead as before.
    * On 7 Oct 2026 every Etsy user who started the sign-in and never came back
    * had keys Etsy refused: an app still Pending, or the wrong shared secret.
+   *
+   * For an adapter whose approval is watched (APP_APPROVAL_ADAPTERS), a 403 is
+   * also flagged `appPending`: the setup page then keeps the keys and says the
+   * owner will be emailed when the provider accepts them.
    */
   private async checkAppKeys(
     adapter: AdapterDefinition,
     baseUrl: string,
     credentials?: Record<string, string>,
   ): Promise<VerifyResult | undefined> {
-    const check = adapter.checkBeforeAuthorization;
-    if (!check) return undefined;
-    const headers = Object.fromEntries(
-      Object.entries(check.headers ?? {}).map(([k, v]) => [k, this.resolveString(v, credentials)]),
-    );
-    if (Object.values(headers).some((v) => /\{\{\w+\}\}/.test(v))) return undefined;
-    let status: number;
-    let body = '';
-    try {
-      const response = await outboundRequest({
-        method: 'GET',
-        url: `${baseUrl.replace(/\/+$/, '')}/${check.path.replace(/^\/+/, '')}`,
-        headers,
-        timeout: 10000,
-        validateStatus: () => true,
-        responseType: 'text',
-      });
-      status = response.status;
-      body = String(response.data ?? '').slice(0, 200);
-    } catch {
-      return undefined;
-    }
+    const answer = await this.pingAppKeys(adapter, baseUrl, credentials);
+    if (!answer) return undefined;
+    const { status, body } = answer;
     if (status !== 401 && status !== 403) return undefined;
     const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.auth_failed;
     const hint = typeof own === 'string' ? own : own?.hint;
@@ -628,7 +662,55 @@ export class AdaptersService {
       kind: 'auth_failed',
       status,
       message: hint ? `${hint} (${upstream})` : `The provider refused the app keys (${upstream}).`,
+      ...(status === 403 && APP_APPROVAL_ADAPTERS.has(adapter.slug) ? { appPending: true } : {}),
     };
+  }
+
+  /**
+   * The same call as the setup check, with a connector's stored variables:
+   * 'accepted' when the provider answers 2xx, 'refused' on 401/403, 'unknown'
+   * for anything else (provider down, timeout, no check for this adapter).
+   * Used by AppApprovalWatcherService to notice an app the provider approved.
+   */
+  async recheckAppKeys(
+    slug: string,
+    baseUrl: string,
+    envVars: Record<string, string>,
+  ): Promise<'accepted' | 'refused' | 'unknown'> {
+    const adapter = getAdapter(slug);
+    if (!adapter?.checkBeforeAuthorization) return 'unknown';
+    const answer = await this.pingAppKeys(adapter, baseUrl, envVars);
+    if (!answer) return 'unknown';
+    if (answer.status >= 200 && answer.status < 300) return 'accepted';
+    if (answer.status === 401 || answer.status === 403) return 'refused';
+    return 'unknown';
+  }
+
+  /** One GET of the adapter's checkBeforeAuthorization; null when it cannot be sent or did not answer. */
+  private async pingAppKeys(
+    adapter: AdapterDefinition,
+    baseUrl: string,
+    credentials?: Record<string, string>,
+  ): Promise<{ status: number; body: string } | null> {
+    const check = adapter.checkBeforeAuthorization;
+    if (!check) return null;
+    const headers = Object.fromEntries(
+      Object.entries(check.headers ?? {}).map(([k, v]) => [k, this.resolveString(v, credentials)]),
+    );
+    if (Object.values(headers).some((v) => /\{\{\w+\}\}/.test(v))) return null;
+    try {
+      const response = await outboundRequest({
+        method: 'GET',
+        url: `${baseUrl.replace(/\/+$/, '')}/${check.path.replace(/^\/+/, '')}`,
+        headers,
+        timeout: 10000,
+        validateStatus: () => true,
+        responseType: 'text',
+      });
+      return { status: response.status, body: String(response.data ?? '').slice(0, 200) };
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -754,12 +836,33 @@ export class AdaptersService {
       });
     }
     const {
+      credentials: prepared,
       resolvedAuthConfig,
       encryptedAuth,
       storedBaseUrl,
       resolvedHeaders,
       envVarsToPersist,
     } = this.prepareConnector(adapter, credentials);
+    // Same field checks as the verification: "Save anyway" and a chat
+    // install skip the check, and a placeholder saved there fails every call.
+    const fields = checkAdapterEnvValues(adapter, prepared ?? {});
+    if (Object.keys(fields).length > 0) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'invalid_values',
+        fields,
+        message: describeFieldProblems(fields),
+      });
+    }
+    // Settings looked up from what was typed (Atlassian's cloudId from the
+    // site) are stored with the variables. A lookup that finds nothing does
+    // not stop the install ("Save anyway" got here past the check): the
+    // connector's instructions then tell the model how to do without.
+    const derived = await resolveDerivedEnvVars(adapter, prepared ?? {});
+    if (Object.keys(derived.fields).length > 0) {
+      this.logger.warn(`Installed "${slug}" without a looked-up setting: ${describeFieldProblems(derived.fields)}`);
+    }
+    const envVarsToStore = withDerivedValues(envVarsToPersist, derived);
 
     const connector = await this.prisma.connector.create({
       data: {
@@ -777,7 +880,7 @@ export class AdaptersService {
         healthcheckPath:
           (adapter.connector as { healthcheckPath?: string }).healthcheckPath ||
           null,
-        envVars: envVarsToPersist as any,
+        envVars: envVarsToStore as any,
         instructions: adapter.instructions || null,
         // Persist the source adapter slug (brand-logo resolution survives a
         // rename) plus the catalog version + instructions baseline at install
@@ -1128,11 +1231,19 @@ export type VerifyResult =
       kind: string;
       message: string;
       missing?: string[];
+      /** Values refused field by field (a placeholder, a pattern miss, a key pasted twice). */
+      fields?: Record<string, string>;
       toolName?: string;
       status?: number | null;
       /** Another adapter to offer instead, from the adapter's verifyHints. */
       suggest?: string;
       suggestName?: string;
+      /**
+       * The provider refused the app keys of an adapter whose approval is
+       * watched (an Etsy app still Pending, or a wrong shared secret): the
+       * setup page keeps the keys and the owner is emailed on approval.
+       */
+      appPending?: boolean;
     }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
 
@@ -1150,6 +1261,24 @@ export type ImportProbeResult =
       status: number | null;
       message: string;
     };
+
+/**
+ * The HTTP status of a failed call: axios puts it on `response.status`, the
+ * MCP SDK on `data.status` (an SdkHttpError whose message is only the body,
+ * e.g. `{"error":"invalid_token"}`), and an error explained on top of either
+ * keeps the original as its `cause`.
+ */
+export function errorStatus(err: unknown, depth = 0): number | undefined {
+  const e = err as
+    | { status?: unknown; response?: { status?: unknown }; data?: { status?: unknown }; cause?: unknown }
+    | null
+    | undefined;
+  if (!e || typeof e !== 'object') return undefined;
+  for (const value of [e.status, e.response?.status, e.data?.status]) {
+    if (typeof value === 'number' && value >= 100 && value <= 599) return value;
+  }
+  return depth < 3 && e.cause !== undefined && e.cause !== err ? errorStatus(e.cause, depth + 1) : undefined;
+}
 
 /** Set, and not a `{{VAR}}` placeholder left over from the template. */
 function hasUsableValue(value: unknown): boolean {

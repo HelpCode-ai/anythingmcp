@@ -244,6 +244,23 @@ export class OAuth2TokenService {
             `Open the connector in AnythingMCP${page ? ` (${page})` : ''} and click Authorize with Provider.`,
         );
       }
+      // A connector whose refresh token is pasted by hand (eBay: no browser
+      // sign-in in the catalog) and was saved without one. Sending
+      // `Authorization: Bearer ` earned eBay's "Missing access token" eleven
+      // times in a row on one connector, which reads like our bug. A
+      // connector without a refreshToken field at all is left as it was.
+      if (
+        'refreshToken' in authConfig &&
+        !String(authConfig.refreshToken ?? '').trim() &&
+        !authConfig.authorizationUrl
+      ) {
+        const page = connectorPageUrl(connectorId);
+        throw unauthorized(
+          'OAuth2: this connector has no access token and no refresh token yet. No request was sent to the API. ' +
+            `Open the connector in AnythingMCP${page ? ` (${page})` : ''} and enter the refresh token (or ` +
+            'click Authorize with Provider when the page offers it), then retry.',
+        );
+      }
     }
     return stored;
   }

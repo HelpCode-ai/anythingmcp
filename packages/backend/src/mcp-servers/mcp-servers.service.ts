@@ -6,6 +6,7 @@ import {
   type SkillsDelivery,
 } from '../knowledge-graph/kg-skill.service';
 import { KnowledgeFoldersService } from '../knowledge-folders/knowledge-folders.service';
+import { connectorInstructions } from '../adapters/instruction-facts';
 import { McpSessionManager } from './mcp-session.manager';
 
 /** What the per-server endpoint may serve as text to one caller. */
@@ -239,7 +240,7 @@ export class McpServersService {
     );
   }
 
-  async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: string }) {
+  async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: string; codeMode?: string }) {
     return this.withSlugConflict(data.slug, () =>
       this.prisma.mcpServerConfig.update({
         where: { id },
@@ -453,7 +454,7 @@ export class McpServersService {
           ),
       this.prisma.connector.findMany({
         where: { id: { in: connectorIds } },
-        select: { id: true, name: true, instructions: true, organizationId: true },
+        select: { id: true, name: true, instructions: true, organizationId: true, envVars: true, config: true },
         orderBy: { name: 'asc' },
       }),
     ]);
@@ -463,7 +464,8 @@ export class McpServersService {
       if (s.instructions) parts.push(`## ${s.name}\n${s.instructions}`);
     }
     for (const c of connectors) {
-      if (c.instructions) parts.push(`## ${c.name}\n${c.instructions}`);
+      const text = connectorInstructions(c);
+      if (text) parts.push(`## ${c.name}\n${text}`);
     }
     // A shared connection can reach several workspaces: read each one's
     // skills with its own organization and only its own server/connector ids.
@@ -578,7 +580,7 @@ export class McpServersService {
     const visible = [...new Set(visibleConnectorIds)];
     if (!server || visible.length === 0) return { server, serverConnectors: [] };
 
-    const serverConnectors = await this.prisma.mcpServerConnector.findMany({
+    const rows = await this.prisma.mcpServerConnector.findMany({
       where: {
         mcpServerId: serverId,
         connectorId: { in: visible },
@@ -586,10 +588,20 @@ export class McpServersService {
       },
       include: {
         connector: {
-          select: { id: true, name: true, instructions: true },
+          select: { id: true, name: true, instructions: true, envVars: true, config: true },
         },
       },
     });
+    // The instructions as the model gets them (with the adapter's facts this
+    // connector fills in); the variables themselves go no further.
+    const serverConnectors = rows.map((sc) => ({
+      connectorId: sc.connectorId,
+      connector: {
+        id: sc.connector.id,
+        name: sc.connector.name,
+        instructions: connectorInstructions(sc.connector),
+      },
+    }));
     return { server, serverConnectors };
   }
 

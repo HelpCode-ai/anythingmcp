@@ -55,7 +55,7 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
   };
   const licenseGuard: any = {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
-    getUsage: jest.fn().mockResolvedValue({ connectors: { current: 1, max: 5 } }),
+    getUsage: jest.fn().mockResolvedValue({ plan: 'trial', connectors: { current: 1, max: 5 } }),
     getTrialState: jest.fn().mockResolvedValue(opts.trial ?? null),
   };
   const securityEvents: any = { log: jest.fn() };
@@ -79,7 +79,7 @@ describe('ConnectorSetupService — find', () => {
     const etsy = out.results.find((r: any) => r.adapter === 'etsy');
     expect(etsy.setup).toMatch(/sign-in at the provider/);
     expect(etsy.settingsYouMayPass.map((s: any) => s.name)).toEqual(['ETSY_CLIENT_ID']);
-    expect(etsy.enteredByTheUserOnTheLinkedPage).toContain('Shared secret');
+    expect(etsy.enteredByTheUserOnTheLinkedPage).toContain('Shared Secret');
     expect(out.connectorsLeftOnThisPlan).toBe(4);
   });
 
@@ -285,7 +285,7 @@ describe('ConnectorSetupService — install', () => {
     const { service, ctx } = build();
     const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2' } });
     expect(out.body.status).toBe('needs_input'); // the shared secret still has to be entered on the page
-    expect(out.body.whatTheUserDoes).toMatch(/enter Shared secret, then sign in to .+ and approve\./);
+    expect(out.body.whatTheUserDoes).toMatch(/enter Shared Secret, then sign in to .+ and approve\./);
     expect(out.body.finishSetupUrl).toBeDefined();
   });
 
@@ -331,6 +331,25 @@ describe('ConnectorSetupService — install', () => {
     licenseGuard.getUsage.mockResolvedValueOnce({ plan: 'cloud_starter', connectors: { current: 5, max: 5 } });
     const out: any = await service.install(ctx, { adapter: 'openplz' });
     expect(out.body.upgradeUrl).toBe('https://cloud.example.com/settings/license?source=chat_setup');
+  });
+
+  it('without any licence, sends an admin to the licence page and does not suggest removing a connector', async () => {
+    const { service, ctx, licenseGuard } = build({ role: 'ADMIN' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('No active license.'));
+    licenseGuard.getUsage.mockResolvedValueOnce({ plan: null, connectors: { current: 0, max: null } });
+    const out: any = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.body.upgradeUrl).toBe('https://cloud.example.com/settings/license?source=chat_setup');
+    expect(out.body.whatTheUserCanDo).toMatch(/no active licence/);
+    expect(out.body.whatTheUserCanDo).not.toMatch(/remove a connector/);
+  });
+
+  it('without any licence, tells an editor to ask an admin to activate one', async () => {
+    const { service, ctx, licenseGuard } = build({ role: 'EDITOR' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('No active license.'));
+    licenseGuard.getUsage.mockResolvedValueOnce({ plan: null, connectors: { current: 0, max: null } });
+    const out: any = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.body.upgradeUrl).toBeUndefined();
+    expect(out.body.whatTheUserCanDo).toMatch(/activate a licence/);
   });
 
   it('at the limit, tells an editor who can lift it, without a billing link', async () => {
@@ -468,5 +487,32 @@ describe('ConnectorSetupService — links', () => {
     b.links[0].expiresAt = new Date(Date.now() - 1000);
     await expect(b.service.resolveLink(token, 'u1')).resolves.toEqual({ error: expect.stringContaining('expired') });
     await expect(b.service.resolveLink('made-up', 'u1')).resolves.toEqual({ error: expect.stringContaining('expired') });
+  });
+});
+
+describe('ConnectorSetupService — where a setup call comes from', () => {
+  const logged = (productEvents: { log: jest.Mock }, event: string) =>
+    productEvents.log.mock.calls.map(([e]) => e).filter((e) => e.event === event);
+
+  it('records the chat\'s own calls as via mcp, as before', async () => {
+    const { service, ctx, productEvents } = build({ role: 'ADMIN' });
+    await service.find(ctx, { query: 'telegram' });
+    await service.install(ctx, { adapter: 'telegram-bot' });
+    expect(logged(productEvents, 'catalog_search')[0].metadata.via).toBe('mcp');
+    expect(logged(productEvents, 'setup_completed')[0].metadata).toEqual(
+      expect.objectContaining({ adapterSlug: 'telegram-bot', via: 'mcp' }),
+    );
+  });
+
+  it('records the search fallback and a post-approve pick apart', async () => {
+    const { service, ctx, productEvents } = build({ role: 'ADMIN' });
+    await service.find(ctx, { query: 'telegram' }, { via: 'mcp_search_fallback' });
+    await service.install(ctx, { adapter: 'telegram-bot' }, { via: 'post_approve' });
+    expect(logged(productEvents, 'catalog_search')[0].metadata.via).toBe('mcp_search_fallback');
+    expect(logged(productEvents, 'setup_completed')[0].metadata).toEqual({
+      adapterSlug: 'telegram-bot',
+      via: 'post_approve',
+      verified: false,
+    });
   });
 });

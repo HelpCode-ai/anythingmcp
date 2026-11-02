@@ -4,6 +4,7 @@ import {
   RenderedEmail,
   type RetentionOffer,
   activationReminderEmail,
+  appApprovedEmail,
   cardTrialOfferEmail,
   connectorAuthEmail,
   existingAccountEmail,
@@ -92,6 +93,20 @@ export const EMAIL_SAMPLES: EmailSample[] = [
       ),
   },
   {
+    id: 'app-approved-etsy',
+    render: (ctx, n) =>
+      appApprovedEmail(
+        {
+          name: n.name,
+          providerName: 'Etsy',
+          connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector`,
+          prompt: 'Show my last 10 Etsy orders',
+          promptUrl: 'https://claude.ai/new?q=Show%20my%20last%2010%20Etsy%20orders',
+        },
+        ctx,
+      ),
+  },
+  {
     id: 'license-key',
     render: (ctx, n) => licenseKeyEmail({ name: n.name, licenseKey: 'AMCP-7Q2K-9XWD-4MRT-HB3N' }, ctx),
   },
@@ -103,6 +118,23 @@ export const EMAIL_SAMPLES: EmailSample[] = [
   {
     id: 'onboarding-day1',
     render: (ctx, n) => onboardingReminderEmail({ name: n.name, dayNumber: 1, cloudUrl: SAMPLE_CLOUD_URL }, unsub(ctx)),
+  },
+  {
+    id: 'onboarding-day1-quick',
+    render: (ctx, n) =>
+      onboardingReminderEmail(
+        {
+          name: n.name,
+          dayNumber: 1,
+          cloudUrl: SAMPLE_CLOUD_URL,
+          quickSetups: [
+            { label: 'Telegram bot', url: 'https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP' },
+            { label: 'Odoo', url: 'https://claude.ai/new?q=Connect%20my%20Odoo%20to%20AnythingMCP' },
+            { label: 'Shopify store', url: 'https://claude.ai/new?q=Connect%20my%20Shopify%20store%20to%20AnythingMCP' },
+          ],
+        },
+        unsub(ctx),
+      ),
   },
   {
     id: 'onboarding-day2',
@@ -317,6 +349,7 @@ export const EMAIL_SAMPLES: EmailSample[] = [
 /** Ids of the samples that must carry an unsubscribe line. */
 export const MARKETING_SAMPLE_IDS = new Set([
   'onboarding-day1',
+  'onboarding-day1-quick',
   'onboarding-day2',
   'onboarding-client-connected',
   'activation-connect-client',

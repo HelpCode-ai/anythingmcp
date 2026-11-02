@@ -195,3 +195,32 @@ describe('ProductEventService.log — server-written metadata', () => {
     expect(create.mock.calls[0][0].data.metadata).toEqual({ client: 'Claude', cardTrialOffered: true });
   });
 });
+
+describe('ProductEventService — the Claude setup discoverability events', () => {
+  it('keeps the shared tool call metadata, and only known profiles and setup tools', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    await service.log({
+      event: 'shared_tool_called',
+      organizationId: 'org-1',
+      metadata: { tool: 'anythingmcp_run_read_tool', profile: 'default', setupTool: 'setup_find_connectors', client: 'Claude' },
+    });
+    await service.log({
+      event: 'shared_tool_called',
+      organizationId: 'org-1',
+      metadata: { tool: 'anythingmcp_search_tools', profile: 'other', setupTool: 'drop_tables' },
+    });
+    expect(create.mock.calls.map(([{ data }]) => data.metadata)).toEqual([
+      { client: 'Claude', tool: 'anythingmcp_run_read_tool', profile: 'default', setupTool: 'setup_find_connectors' },
+      { tool: 'anythingmcp_search_tools' },
+    ]);
+  });
+
+  it('refuses both events from a page: only the server writes them', async () => {
+    const { controller, req, stored } = build();
+    for (const event of ['shared_tool_called', 'post_approve_app_picked']) {
+      await controller.record(req as any, { event, metadata: { adapterSlug: 'telegram-bot' } } as any);
+    }
+    expect(stored()).toEqual([]);
+  });
+});

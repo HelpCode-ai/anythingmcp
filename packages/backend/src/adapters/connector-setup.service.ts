@@ -7,6 +7,7 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { SecurityEvents, SecurityEventService } from '../audit/security-event.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 import {
+  SetupCallOptions,
   SetupCallResult,
   SetupContext,
   SharedSetupProvider,
@@ -121,7 +122,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
 
   // ── Find ──────────────────────────────────────────────────────────────
 
-  async find(ctx: SetupContext, args: { query?: string; limit?: number }): Promise<SetupCallResult> {
+  async find(
+    ctx: SetupContext,
+    args: { query?: string; limit?: number },
+    opts: SetupCallOptions = {},
+  ): Promise<SetupCallResult> {
     const query = String(args.query ?? '');
     const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
     const installed = new Set(
@@ -163,7 +168,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         metadata: {
           query,
           results: scored.length,
-          via: 'mcp',
+          via: opts.via ?? 'mcp',
           ...(search.missing.length ? { missing: search.missing.join(' ') } : {}),
           ...(scored.length ? { match: search.match, adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
         },
@@ -251,6 +256,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   async install(
     ctx: SetupContext,
     args: { adapter?: string; settings?: Record<string, unknown> },
+    opts: SetupCallOptions = {},
   ): Promise<SetupCallResult> {
     const slug = String(args.adapter ?? '').trim();
     let definition: ReturnType<AdaptersService['describe']>;
@@ -343,7 +349,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       organizationId: ctx.organizationId,
       // A chat install checks nothing but the import probe; `verified` keeps
       // these apart from setups that made a successful call.
-      metadata: { adapterSlug: slug, via: 'mcp', verified: imported.probe?.ok === true },
+      metadata: { adapterSlug: slug, via: opts.via ?? 'mcp', verified: imported.probe?.ok === true },
     });
 
     const state = await this.connectorState(imported.connectorId);
@@ -395,10 +401,25 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         select: { role: true },
       })
       .catch(() => null);
-    if (member?.role !== 'ADMIN') {
-      return { error: reason, whatTheUserCanDo: 'Ask a workspace administrator to upgrade the plan, or remove a connector they no longer need.' };
-    }
     const usage = await this.licenseGuard.getUsage(ctx.userId, ctx.organizationId).catch(() => null);
+    // No licence at all (an ended trial, a lapsed plan): a bigger plan or one
+    // connector fewer would not help, so say what would.
+    const noLicence = usage != null && usage.plan == null;
+    if (member?.role !== 'ADMIN') {
+      return {
+        error: reason,
+        whatTheUserCanDo: noLicence
+          ? 'Ask a workspace administrator to activate a licence for this workspace.'
+          : 'Ask a workspace administrator to upgrade the plan, or remove a connector they no longer need.',
+      };
+    }
+    if (noLicence) {
+      return {
+        error: reason,
+        whatTheUserCanDo: 'This workspace has no active licence, so no app can be added yet. Choose a plan on the licence page, then try again.',
+        upgradeUrl: `${ctx.dashboardBase}/settings/license?source=${CHAT_SETUP_SOURCE}`,
+      };
+    }
     const onTrial = usage?.plan === 'trial';
     return {
       error: reason,

@@ -41,14 +41,18 @@ function buildController(
   const licenseGuard = (overrides as { licenseGuard?: any }).licenseGuard ?? {
     checkCanCreateCodeTool: jest.fn().mockResolvedValue(undefined),
   };
+  const toolExecutor = (overrides as { toolExecutor?: any }).toolExecutor ?? {
+    runSavedCodeTool: jest.fn().mockResolvedValue({ content: [{ type: 'text', text: '{}' }] }),
+  };
   const controller = new ToolsController(
     prisma as any,
     mcpServer as any,
     connectorsService as any,
     edition as any,
     licenseGuard as any,
+    toolExecutor as any,
   );
-  return { controller, prisma, connectorsService, mcpServer, edition, licenseGuard };
+  return { controller, prisma, connectorsService, mcpServer, edition, licenseGuard, toolExecutor };
 }
 
 const req = (role = 'ADMIN') => ({ user: { sub: 'u1', organizationId: 'org1', role } });

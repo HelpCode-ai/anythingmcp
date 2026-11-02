@@ -718,8 +718,27 @@ import { emailToolPrefix } from '../connectors/email/email-settings';
 import { computeAdapterVersion } from './catalog-fingerprint';
 import type { EnvVarMeta, SetupKind } from './env-var-meta';
 import type { SetupEffort, SetupGuide } from './setup-guide';
+import type { DerivedEnvVar } from './derived-settings';
 
-export type VerifyHint = string | { hint: string; suggest?: string };
+/** What the setup check says for a failure. `field` puts the hint under that
+ *  variable on the setup form (a token Atlassian refuses). */
+export type VerifyHint = string | { hint: string; suggest?: string; field?: string };
+
+/**
+ * A result the probe call returned without failing that still means the
+ * connector cannot work: Atlassian's `discover` answers an API token created
+ * without scopes with an empty product list instead of an error. `matches`
+ * is a case-insensitive regular expression over the result's text (for an
+ * MCP bridge, the text of the tool result; an `isError` result fails anyway).
+ */
+export interface ProbeFailRule {
+  matches: string;
+  hint: string;
+  /** The variable the hint is shown under. */
+  field?: string;
+  /** Failure kind reported to the form (default `auth_failed`). */
+  kind?: string;
+}
 
 export interface AdapterMeta {
   slug: string;
@@ -775,7 +794,18 @@ export interface AdapterMeta {
    *  by the agent days later, and by scripts/probe-keyless.mjs in CI. Params
    *  may use the literal `__TOMORROW__` for a date. Without one, the first
    *  GET tool with no required parameters is used. */
-  probe?: { tool: string; params?: Record<string, unknown> };
+  probe?: { tool: string; params?: Record<string, unknown>; failWhen?: ProbeFailRule[] };
+  /** Non-secret settings looked up at setup from another variable, never
+   *  typed by the user: Atlassian's cloudId from the site's public
+   *  tenant_info. Stored with the connector's variables at install and when
+   *  the source variable changes in the variable editor (derived-settings.ts). */
+  derivedEnvVars?: Record<string, DerivedEnvVar>;
+  /** Sentences added to the connector's instructions when they are served to
+   *  a model, each only when every non-secret `{{VAR}}` it names is set on
+   *  the connector: per-workspace facts such as the Atlassian site and its
+   *  cloudId. Read from the catalog at serve time, so they reach installed
+   *  connectors without "Apply update" (instruction-facts.ts). */
+  instructionFacts?: string[];
   /** How each variable is presented when someone sets the connector up
    *  (label, secret or not, where to find it). Optional and partial: what is
    *  left out is derived from the name, see env-var-meta.ts. */
