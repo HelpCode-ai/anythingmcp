@@ -55,7 +55,7 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
   };
   const licenseGuard: any = {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
-    getUsage: jest.fn().mockResolvedValue({ connectors: { current: 1, max: 5 } }),
+    getUsage: jest.fn().mockResolvedValue({ plan: 'trial', connectors: { current: 1, max: 5 } }),
     getTrialState: jest.fn().mockResolvedValue(opts.trial ?? null),
   };
   const securityEvents: any = { log: jest.fn() };
@@ -331,6 +331,25 @@ describe('ConnectorSetupService — install', () => {
     licenseGuard.getUsage.mockResolvedValueOnce({ plan: 'cloud_starter', connectors: { current: 5, max: 5 } });
     const out: any = await service.install(ctx, { adapter: 'openplz' });
     expect(out.body.upgradeUrl).toBe('https://cloud.example.com/settings/license?source=chat_setup');
+  });
+
+  it('without any licence, sends an admin to the licence page and does not suggest removing a connector', async () => {
+    const { service, ctx, licenseGuard } = build({ role: 'ADMIN' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('No active license.'));
+    licenseGuard.getUsage.mockResolvedValueOnce({ plan: null, connectors: { current: 0, max: null } });
+    const out: any = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.body.upgradeUrl).toBe('https://cloud.example.com/settings/license?source=chat_setup');
+    expect(out.body.whatTheUserCanDo).toMatch(/no active licence/);
+    expect(out.body.whatTheUserCanDo).not.toMatch(/remove a connector/);
+  });
+
+  it('without any licence, tells an editor to ask an admin to activate one', async () => {
+    const { service, ctx, licenseGuard } = build({ role: 'EDITOR' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('No active license.'));
+    licenseGuard.getUsage.mockResolvedValueOnce({ plan: null, connectors: { current: 0, max: null } });
+    const out: any = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.body.upgradeUrl).toBeUndefined();
+    expect(out.body.whatTheUserCanDo).toMatch(/activate a licence/);
   });
 
   it('at the limit, tells an editor who can lift it, without a billing link', async () => {

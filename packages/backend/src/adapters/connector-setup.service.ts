@@ -401,10 +401,25 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         select: { role: true },
       })
       .catch(() => null);
-    if (member?.role !== 'ADMIN') {
-      return { error: reason, whatTheUserCanDo: 'Ask a workspace administrator to upgrade the plan, or remove a connector they no longer need.' };
-    }
     const usage = await this.licenseGuard.getUsage(ctx.userId, ctx.organizationId).catch(() => null);
+    // No licence at all (an ended trial, a lapsed plan): a bigger plan or one
+    // connector fewer would not help, so say what would.
+    const noLicence = usage != null && usage.plan == null;
+    if (member?.role !== 'ADMIN') {
+      return {
+        error: reason,
+        whatTheUserCanDo: noLicence
+          ? 'Ask a workspace administrator to activate a licence for this workspace.'
+          : 'Ask a workspace administrator to upgrade the plan, or remove a connector they no longer need.',
+      };
+    }
+    if (noLicence) {
+      return {
+        error: reason,
+        whatTheUserCanDo: 'This workspace has no active licence, so no app can be added yet. Choose a plan on the licence page, then try again.',
+        upgradeUrl: `${ctx.dashboardBase}/settings/license?source=${CHAT_SETUP_SOURCE}`,
+      };
+    }
     const onTrial = usage?.plan === 'trial';
     return {
       error: reason,
