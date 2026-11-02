@@ -17,6 +17,7 @@ import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { findSecretLiterals } from '../common/secret-literals.util';
 import { searchCatalog } from './catalog-search';
+import { fileSearchSetupPath } from './file-search-setup';
 import { CHAT_SETUP_SOURCE } from '../license/license-checkout';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
@@ -170,9 +171,34 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     }
 
     const usage = await this.licenseGuard.getUsage(ctx.userId, ctx.organizationId).catch(() => null);
+    const wizardUrl = (slug: string): string | null => {
+      const path = fileSearchSetupPath(this.adapters.describe(slug), 'chat');
+      return path ? `${ctx.dashboardBase}${path}` : null;
+    };
+    // A storage query ("synology", "nas", "Dateiserver"): File Search reads
+    // the documents on that system, which its API connector does not. The
+    // suggestion travels with the results so the model can offer both.
+    const shown = new Set(scored.map(({ a }) => a.slug));
+    const fileSearchShown = search.terms.length ? search.fileSearch.filter((e) => shown.has(e.slug)) : [];
+    const setupUrls = new Map(scored.map(({ a }) => [a.slug, wizardUrl(a.slug)]));
+    const anyFileSearch = [...setupUrls.values()].some(Boolean);
     return {
       body: {
         results: scored.map(({ a }) => {
+          const setupUrl = setupUrls.get(a.slug);
+          if (setupUrl) {
+            return {
+              adapter: a.slug,
+              name: a.name,
+              description: a.description,
+              alreadyInstalled: installed.has(a.slug),
+              fileSearch: true,
+              setup:
+                'Set up in the File Search wizard on the dashboard, not from the chat: it tests the connection, scans the folder and checks it against the plan, then indexes the documents so the AI can search inside them.',
+              setupUrl,
+              showToTheUser: 'Give setupUrl as a clickable Markdown link with the full https address. Never shorten or reword it.',
+            };
+          }
           const full = this.adapters.describe(a.slug);
           const vars = full.envVars.filter((v) => !v.advanced);
           return {
@@ -201,10 +227,21 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
             enteredByTheUserOnTheLinkedPage: vars.filter((v) => v.secret).map((v) => v.label),
           };
         }),
+        ...(fileSearchShown.length
+          ? {
+              fileSearch: {
+                adapters: fileSearchShown.map((e) => e.slug),
+                whatItAdds:
+                  'File Search lets the AI search inside the documents stored there, which an API connector does not: it indexes the PDF, Word, Excel and Outlook files on the NAS, server or storage and keeps the index in sync. Offer it alongside the other results.',
+              },
+            }
+          : {}),
         ...(usage?.connectors?.max != null
           ? { connectorsLeftOnThisPlan: Math.max(0, usage.connectors.max - usage.connectors.current) }
           : {}),
-        next: 'Confirm the choice with the user, then call setup_install_connector with the adapter id (and any settings listed above). Never ask for passwords, API keys or tokens in the chat.',
+        next:
+          'Confirm the choice with the user, then call setup_install_connector with the adapter id (and any settings listed above). Never ask for passwords, API keys or tokens in the chat.' +
+          (anyFileSearch ? ' For a File Search result, give the user its setupUrl instead: it cannot be installed from the chat.' : ''),
       },
     };
   }
@@ -222,6 +259,20 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       definition = this.adapters.describe(slug);
     } catch {
       return { isError: true, body: { error: `No catalog connector '${slug}'. Use setup_find_connectors to get its id.` } };
+    }
+
+    // File Search needs the wizard (connection test, folder scan, plan check);
+    // importAdapter would refuse it with a bare error.
+    const wizardPath = fileSearchSetupPath(definition, 'chat');
+    if (wizardPath) {
+      return {
+        isError: true,
+        body: {
+          error: `${definition.name} is a File Search connector and is set up in the File Search wizard, not from the chat.`,
+          setupUrl: `${ctx.dashboardBase}${wizardPath}`,
+          whatTheUserDoes: 'Open the link, enter the server address and a read-only account, and follow the wizard: it tests the connection, scans the folder and activates the index.',
+        },
+      };
     }
 
     const descriptors = new Map(describeAdapterEnvVars(definition).map((d) => [d.name, d]));
