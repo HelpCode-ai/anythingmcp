@@ -82,6 +82,9 @@ export async function startConnectorAuthorization(
   // PKCE (RFC 7636) is on unless a REST/GraphQL connector turned it off.
   // MCP authorization always requires it.
   let pkce = true;
+  // REST/GraphQL only: the redirect_uri the provider wants in place of the
+  // callback URL (eBay's RuName, see resolveProviderRedirectUri).
+  let providerRedirectUri: string | undefined;
 
   if (connector.type === 'MCP') {
     // MCP: discover OAuth metadata from the remote server, then pick the
@@ -180,6 +183,7 @@ export async function startConnectorAuthorization(
     tokenAuthMethod = settings.tokenAuthMethod;
     clientAssertion = settings.clientAssertion;
     pkce = settings.pkce;
+    providerRedirectUri = settings.providerRedirectUri;
     // The client id/secret stay as stored (placeholders included, so a
     // later env var edit still reaches them); only what was taken from
     // the catalog is added.
@@ -206,13 +210,17 @@ export async function startConnectorAuthorization(
     ? deps.mcpOAuthService.generateCodeChallenge(codeVerifier)
     : undefined;
   const state = deps.mcpOAuthService.generateState();
+  // What the provider is sent as redirect_uri, on authorize and on the code
+  // exchange alike: the callback URL, or the provider's own redirect name.
+  const redirectUri = providerRedirectUri ?? callbackUrl;
 
   // Store pending flow
   await deps.mcpOAuthService.storePendingFlow(state, {
     ...(codeVerifier ? { codeVerifier } : {}),
     connectorId: connector.id,
     userId: opts.userId,
-    redirectUri: callbackUrl,
+    redirectUri,
+    ...(providerRedirectUri ? { callbackUrl } : {}),
     clientId,
     clientSecret,
     tokenUrl: tokenEndpoint,
@@ -231,7 +239,7 @@ export async function startConnectorAuthorization(
   const authorizationUrl = deps.mcpOAuthService.buildAuthorizationUrl({
     authorizationEndpoint,
     clientId,
-    redirectUri: callbackUrl,
+    redirectUri,
     codeChallenge,
     state,
     scope,

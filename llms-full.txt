@@ -3531,6 +3531,16 @@ or `private_key_jwt`, which signs a short-lived client assertion with a private
 key instead of sending a secret (see
 [REST connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/rest.md#signed-client-assertion-private_key_jwt>)).
 
+The browser sign-in ("Authorize with Provider") sends this server's callback
+URL (`<SERVER_URL>/api/mcp-oauth/callback`) as `redirect_uri`. A provider that
+wants something else there names it in `authConfig.providerRedirectUri`, which
+is then sent on the authorization request and on the code exchange alike.
+eBay is the case: its `redirect_uri` is the app's RuName, and the RuName's
+"Auth Accepted URL" in eBay's developer portal points at the callback URL.
+Use a variable (`"providerRedirectUri": "{{EBAY_RUNAME}}"`); until it has a
+value, the sign-in asks for it instead of starting. `authConfig.pkce: false`
+leaves out the PKCE challenge and verifier for providers that do not use them.
+
 A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
 connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
 also sent on the token requests: the authorization-code exchange, refreshes
