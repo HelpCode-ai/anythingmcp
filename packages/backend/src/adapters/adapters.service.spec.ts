@@ -655,7 +655,7 @@ describe('AdaptersService.verifyCredentials', () => {
     const { service } = build(jest.fn());
     const out = await service.verifyCredentials('etsy', 'org1', ETSY_KEYS);
     expect(out).toMatchObject({ ok: false, kind: 'auth_failed', status: 403 });
-    expect((out as any).message).toContain('stays Pending until Etsy approves it');
+    expect((out as any).message).toContain('stays Pending Personal Approval until Etsy approves it');
     expect((out as any).message).toContain('API key not found or not active');
   });
 
@@ -878,7 +878,7 @@ describe('AdaptersService popular connectors', () => {
     const { svc } = service({ rows: [{ slug: 'etsy', workspaces: 40n }] });
     const etsy = (await svc.popularConnectors('org1')).find((i) => i.slug === 'etsy')!;
     expect(etsy.setupKind).toBe('oauth_browser');
-    expect(etsy.needs).toEqual(['Keystring', 'Shared secret']);
+    expect(etsy.needs).toEqual(['Keystring', 'Shared Secret']);
   });
 
   it('marks what the workspace already has', async () => {

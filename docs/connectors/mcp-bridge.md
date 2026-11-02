@@ -79,7 +79,9 @@ most servers listen.
 3. Tools are registered in the local ToolRegistry
 4. When an AI client calls a bridged tool, AnythingMCP:
    - Forwards the tool call to the remote MCP server
-   - Passes parameters through
+   - Passes parameters through, and fills in from the connector's environment variables only
+     the parameters the remote tool's schema names (a variable called `owner` fills `owner`;
+     the connector's own key or token is never sent as a tool argument)
    - Returns the response
 
 ### Endpoint Mapping

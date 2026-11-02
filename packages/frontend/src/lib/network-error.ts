@@ -8,6 +8,7 @@ const NETWORK_ERROR_MESSAGES = [
   /^Failed to fetch$/i, // Chrome, Edge
   /^NetworkError when attempting to fetch resource\.?$/i, // Firefox
   /^Network request failed$/i,
+  /^network error$/i, // Chrome, connection lost while reading a response body
   /^Importing a module script failed\.?$/i, // Safari, dynamic import
   /^Failed to fetch dynamically imported module/i, // Chrome, dynamic import
   /^Loading (CSS )?chunk [\w-]+ failed/i, // webpack/turbopack chunk loader
