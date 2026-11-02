@@ -3324,6 +3324,12 @@
       "range": "{from}–{to} di {total}",
       "prev": "Indietro",
       "next": "Avanti"
+    },
+    "searchHint": {
+      "title": "Vuoi che la tua AI cerchi dentro i documenti?",
+      "body": "La ricerca file indicizza i file PDF, Word, Excel e Outlook sul tuo NAS, server o storage e tiene l'indice aggiornato: così l'AI trova cosa c'è scritto nei file, non solo i loro nomi.",
+      "cta": "Configura la ricerca file",
+      "for": "Apre la procedura guidata per {name}."
     }
   },
   "fileShare": {
