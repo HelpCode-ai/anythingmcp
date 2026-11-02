@@ -323,6 +323,24 @@ describe('ConnectorSetupService — install', () => {
     expect(adapters.importAdapter).not.toHaveBeenCalled();
   });
 
+  it('adds the https:// an address from the chat lacks, and names the fix for one still wrong', async () => {
+    const { service, ctx, adapters } = build();
+    await service.install(ctx, { adapter: 'odoo', settings: { ODOO_URL: 'acme.odoo.com', ODOO_DB: 'acme' } });
+    expect(adapters.importAdapter).toHaveBeenLastCalledWith(
+      'odoo',
+      'u1',
+      'org-1',
+      { ODOO_URL: 'https://acme.odoo.com', ODOO_DB: 'acme' },
+      { addressMayWait: true },
+    );
+
+    adapters.importAdapter.mockClear();
+    const out: any = await service.install(ctx, { adapter: 'woocommerce', settings: { WOOCOMMERCE_URL: 'http://shop.example.com/' } });
+    expect(out.isError).toBe(true);
+    expect(out.body.error).toMatch(/Use https:\/\/ instead of http:\/\/ and remove the \/ at the end: https:\/\/shop\.example\.com\./);
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
+  });
+
   it('respects the trial limit', async () => {
     const { service, ctx, licenseGuard, adapters } = build();
     licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('Trial limit reached (2 connectors).'));

@@ -5,7 +5,7 @@ import { normalizeAddressVariables } from '../common/base-url-variable.util';
 /** What install and the variable editors do before checking: the adapter's clean-ups, then the address ones. */
 const prepare = (slug: string, values: Record<string, string>) => {
   const a = getAdapter(slug)!;
-  return normalizeAddressVariables(a.connector.baseUrl, normalizeAdapterEnvValues(slug, values), a.connector.type, {
+  return normalizeAddressVariables(a.connector.baseUrl, normalizeAdapterEnvValues(a, values), a.connector.type, {
     singleLabel: true,
   });
 };
@@ -53,6 +53,31 @@ describe('normalisation before the checks (shapes working connectors were saved 
   it('substack: still refuses a profile link, saying a profile is not a publication', () => {
     const fields = checkAdapterEnvValues(getAdapter('substack')!, prepare('substack', { SUBSTACK_PUBLICATION_URL: 'https://substack.com/@writer?utm_source=x' }));
     expect(fields.SUBSTACK_PUBLICATION_URL).toMatch(/is a person, not a publication/);
+  });
+
+  it('adds the https:// an address pattern wants, for any adapter, so the check passes', () => {
+    for (const [slug, name, typed] of [
+      ['odoo', 'ODOO_URL', 'amcp-e2e-test.odoo.com'],
+      ['woocommerce', 'WOOCOMMERCE_URL', 'shop.example.com'],
+      ['prestashop', 'PRESTASHOP_URL', 'shop.example.com/de'],
+      ['zoho-mail', 'ZOHO_MAIL_ACCOUNTS_URL', 'accounts.zoho.eu'],
+    ]) {
+      const a = adapter(slug);
+      const values = normalizeAdapterEnvValues(a, { [name]: typed });
+      expect(values[name]).toBe(`https://${typed}`);
+      expect(checkAdapterEnvValues(a, values, [name])).toEqual({});
+    }
+  });
+
+  it('keeps refusing an address that a scheme does not fix, naming the change', () => {
+    const a = adapter('odoo');
+    const values = prepare('odoo', { ODOO_URL: 'acme.odoo.com/odoo/action-123' });
+    expect(values.ODOO_URL).toBe('https://acme.odoo.com/odoo/action-123');
+    expect(checkAdapterEnvValues(a, values, ['ODOO_URL']).ODOO_URL).toBe(
+      'Odoo address does not look right. Remove /odoo/action-123 after the host: https://acme.odoo.com.',
+    );
+    // Unchanged without the adapter (only its slug): the slug-only rules.
+    expect(normalizeAdapterEnvValues('odoo', { ODOO_URL: 'acme.odoo.com' })).toEqual({ ODOO_URL: 'acme.odoo.com' });
   });
 
   it('leaves other adapters and other variables alone', () => {
@@ -145,7 +170,7 @@ describe('checkAdapterEnvValues', () => {
       ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e',
     });
     expect(Object.keys(fields)).toEqual(['ODOO_URL']);
-    expect(fields.ODOO_URL).toMatch(/nothing after the host/);
+    expect(fields.ODOO_URL).toBe('Odoo address does not look right. Remove /web after the host: https://erp.acme.de.');
   });
 
   it('refuses an Odoo key pasted three times', () => {
