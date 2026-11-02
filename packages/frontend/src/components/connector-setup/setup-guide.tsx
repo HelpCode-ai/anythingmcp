@@ -163,9 +163,14 @@ export function GuideIntro({
   );
 }
 
-/** Where the user is: numbered steps, then "Use it". Titles from sm up. */
+/**
+ * Where the user is: numbered steps, then "Use it". Titles from sm up; with
+ * more than four, only the current one (the others in their tooltip), since
+ * cut-off titles ("C…", "A…") say nothing.
+ */
 export function GuideStepper({ steps, current }: { steps: SetupGuideStep[]; current: number }) {
   const items = [...steps.map((s) => s.title), 'Use it'];
+  const compact = items.length > 4;
   return (
     <ol className="flex items-center gap-1.5" aria-label="Setup progress">
       {items.map((title, i) => {
@@ -175,6 +180,7 @@ export function GuideStepper({ steps, current }: { steps: SetupGuideStep[]; curr
           <li key={title} className={cn('flex min-w-0 items-center gap-1.5', active ? 'flex-auto' : 'flex-none sm:flex-1')}>
             <span
               aria-current={active ? 'step' : undefined}
+              title={active ? undefined : title}
               className={cn(
                 'flex size-6 flex-none items-center justify-center rounded-full text-[11px] font-semibold',
                 done && 'bg-[var(--brand)] text-[var(--primary-foreground)]',
@@ -187,7 +193,7 @@ export function GuideStepper({ steps, current }: { steps: SetupGuideStep[]; curr
             <span
               className={cn(
                 'truncate text-xs',
-                active ? 'font-medium text-[var(--text)]' : 'hidden text-[var(--text-3)] sm:inline',
+                active ? 'font-medium text-[var(--text)]' : cn('hidden text-[var(--text-3)]', !compact && 'sm:inline'),
               )}
             >
               {title}
@@ -238,6 +244,73 @@ function GuideValue({ label, value, note, pick }: { label: string; value: string
         </div>
       )}
       {note && <p className="text-xs text-[var(--text-3)]">{note}</p>}
+    </div>
+  );
+}
+
+/**
+ * A `waitForProvider` step's status: the provider is still refusing the saved
+ * keys (an Etsy app awaiting Etsy's approval), or has just accepted them. The
+ * keys are saved, so the user can leave and come back; the page checks again
+ * on its own when they do, and "Check again" asks right away.
+ */
+export function GuideWaitPanel({
+  name,
+  status,
+  checkedAt,
+  error,
+  onCheck,
+  onReenterKeys,
+}: {
+  /** The provider's short name ("Etsy"). */
+  name: string;
+  status: 'checking' | 'waiting' | 'ready';
+  /** When the provider last answered; null before the first answer. */
+  checkedAt: Date | null;
+  /** A check that could not be made (network, rate limit). */
+  error?: string;
+  onCheck: () => void;
+  onReenterKeys: () => void;
+}) {
+  if (status === 'ready') {
+    return (
+      <div role="status" className="rounded-[11px] bg-[var(--t-success-bg)] px-4 py-3 text-sm text-[var(--t-success-fg)]">
+        <p className="font-medium">
+          <span aria-hidden>✓ </span>
+          {name} approved your app.
+        </p>
+        <p className="mt-0.5">Continue with the next step.</p>
+      </div>
+    );
+  }
+  const time = checkedAt ? checkedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+  return (
+    <div role="status" aria-live="polite" className="space-y-3 rounded-[11px] bg-[var(--t-warn-bg)] px-4 py-3">
+      <div className="flex items-start gap-3">
+        <span aria-hidden className={cn('mt-1 size-2.5 flex-none rounded-full bg-[var(--warn)]', status === 'checking' && 'animate-pulse')} />
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-sm font-medium text-[var(--text)]">
+            {status === 'checking' && !checkedAt ? `Asking ${name} about your app…` : `${name} has not approved your app yet`}
+          </p>
+          {time && (
+            <p className="text-xs text-[var(--text-3)]">
+              Last checked at {time}. This page checks again whenever you come back to it.
+            </p>
+          )}
+          {error && <p className="text-xs text-[var(--danger)]">{error}</p>}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Button size="sm" variant="secondary" onClick={onCheck} disabled={status === 'checking'}>
+          {status === 'checking' ? 'Checking…' : 'Check again'}
+        </Button>
+        <button type="button" onClick={onReenterKeys} className="text-xs text-[var(--text-3)] underline hover:text-[var(--text)]">
+          Already approved, but this still waits? Enter the keys again
+        </button>
+      </div>
+      <p className="text-xs text-[var(--text-2)]">
+        Your keys are saved. You can close this page: when you come back, it opens at this step.
+      </p>
     </div>
   );
 }

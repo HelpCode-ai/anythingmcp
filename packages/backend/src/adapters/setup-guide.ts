@@ -46,6 +46,22 @@ export interface SetupGuideStep {
   problems?: Array<{ q: string; a: string }>;
   /** A checkbox to tick before Continue, for a step done on the provider's side. */
   confirm?: string;
+  /**
+   * Continue saves what has been entered so far on the connector (created
+   * here if it does not exist yet, as an unfinished connector the AI cannot
+   * use) and asks the provider whether it accepts the keys, with the
+   * adapter's `checkBeforeAuthorization`. Keys entered once are never asked
+   * for again, however long the provider takes. Needs `fields`.
+   */
+  saveAndCheck?: boolean;
+  /**
+   * Shown only while the provider refuses the keys saved by the
+   * `saveAndCheck` step before it, and skipped once it accepts them: an
+   * Etsy app waiting for Etsy's approval. The page checks again when the
+   * user comes back to it and offers "Check again"; Continue opens once the
+   * keys are accepted. Cannot have `fields` or `confirm`.
+   */
+  waitForProvider?: boolean;
 }
 
 export type SetupEffortKind = 'none' | 'one_click' | 'api_key' | 'own_app' | 'admin_needed';
