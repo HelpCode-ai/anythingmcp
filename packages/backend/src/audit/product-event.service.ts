@@ -229,6 +229,23 @@ export const ProductEvents = {
    * those workspaces: does a week more lead to a purchase.
    */
   TRIAL_EXTENDED: 'trial_extended',
+  /**
+   * Cloud: the onboarding cron sent a user with an empty workspace reminder 1
+   * or 2 (ee/cloud/onboarding-reminder.ts). metadata.reminder = 1 or 2,
+   * metadata.arm = the user's reminder-1 arm ('A', 'B' or 'holdout'),
+   * metadata.kind = 'generic' or 'ai_client' (the email for a user who already
+   * connected an AI client, the same in both arms). On reminder 2 of a user
+   * whose reminder 1 went out before the test (2 Nov 2026), the arm is the
+   * one they would have had: read arms from reminder 1. Server-only. Read with
+   * the holdout event and the connectors table: a connector within 7 days of
+   * sign-up, per arm.
+   */
+  ONBOARDING_REMINDER_SENT: 'onboarding_reminder_sent',
+  /**
+   * Cloud: the user is in the reminder-1 control group and got no reminder 1.
+   * metadata.reminder = 1, metadata.arm = 'holdout'. Once per user.
+   */
+  ONBOARDING_REMINDER_HOLDOUT: 'onboarding_reminder_holdout',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -249,6 +266,8 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.CHECKOUT_LINK_CREATED,
   ProductEvents.TRIAL_EXPIRED_CALL_BLOCKED,
   ProductEvents.TRIAL_EXTENDED,
+  ProductEvents.ONBOARDING_REMINDER_SENT,
+  ProductEvents.ONBOARDING_REMINDER_HOLDOUT,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
