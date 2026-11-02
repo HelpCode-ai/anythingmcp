@@ -656,6 +656,27 @@ export interface SetupLinkSession {
   user: { id: string; email: string; name: string | null; role: string; organizationId: string | null };
 }
 
+/**
+ * The account this browser signed in with on the authorization page a short
+ * while ago (connecting Claude, ChatGPT, …): the sign-in page offers
+ * "Continue as …" instead of asking for the password again.
+ */
+export const recentSignIn = {
+  who: async (): Promise<{ email: string; name: string | null } | null> => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/recent-sign-in`);
+      if (response.status !== 200) return null;
+      const body = await response.json();
+      return typeof body?.email === 'string' ? body : null;
+    } catch {
+      return null;
+    }
+  },
+  continue: () => request<SetupLinkSession>('/api/auth/recent-sign-in', { method: 'POST' }),
+  /** On sign-out: the next sign-in page offers nothing. */
+  forget: () => fetch(`${API_BASE}/api/auth/recent-sign-in`, { method: 'DELETE' }).then(() => undefined, () => undefined),
+};
+
 export const setupLinks = {
   /** Signed in: `session` is set when the link's connector is in another workspace. */
   resolve: (token: string, authToken: string, from?: string) =>
