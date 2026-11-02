@@ -97,6 +97,10 @@ const FIRST_APP_CSRF_COOKIE = 'first_app_csrf';
  * it in the chat, through the link the setup tools hand out.
  */
 export const QUICK_SETUP_APPS: ReadonlyArray<{ slug: string; name: string }> = [
+  // The app most people who arrive from the Claude directory ask for. It
+  // takes the user's own Etsy app and Etsy's approval: the picker only adds
+  // it, and the guided setup the chat links to walks through the rest.
+  { slug: 'etsy', name: 'Etsy' },
   { slug: 'telegram-bot', name: 'Telegram' },
   { slug: 'shopify', name: 'Shopify' },
   { slug: 'woocommerce', name: 'WooCommerce' },
