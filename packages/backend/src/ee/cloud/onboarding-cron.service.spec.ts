@@ -512,11 +512,20 @@ describe('OnboardingCronService — onboarding pass', () => {
     candidates: any[];
     orgConnectors?: Record<string, number>;
     grants?: { userId: string; clientId: string }[];
+    /** product_events rows the intent check reads: intent events, then signup_attributed. */
+    intentEvents?: Array<{ userId: string | null; organizationId: string | null }>;
+    signups?: Array<{ userId: string | null; organizationId: string | null; metadata: unknown }>;
   }) {
     const update = jest.fn().mockResolvedValue({});
     const prisma = {
-      // No blocked-call events: the blocked-call pass is a no-op here.
-      productEvent: { groupBy: jest.fn().mockResolvedValue([]) },
+      productEvent: {
+        // No blocked-call events: the blocked-call pass is a no-op here.
+        groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn(async (args: any) =>
+          args.where.event === 'signup_attributed' ? (opts.signups ?? []) : (opts.intentEvents ?? []),
+        ),
+        create: jest.fn().mockResolvedValue({}),
+      },
       user: {
         findMany: jest
           .fn()
@@ -547,8 +556,9 @@ describe('OnboardingCronService — onboarding pass', () => {
     } as any;
     return { service: new OnboardingCronService(prisma, email, makeLicense(), makeRelease()), email, update, prisma };
   }
+  // Arms of these ids (onboarding-reminder.spec.ts): u3 A, u2 B, u1 holdout.
   const user = (over: Partial<any>) => ({
-    id: 'u1',
+    id: 'u3',
     email: 'u1@example.com',
     name: 'Ada',
     organizationId: 'org-1',
@@ -563,7 +573,7 @@ describe('OnboardingCronService — onboarding pass', () => {
   it('nudges a user who connected Claude to an empty workspace, naming the client', async () => {
     const { service, email, update } = makeService({
       candidates: [user({})],
-      grants: [{ userId: 'u1', clientId: 'claude-client' }],
+      grants: [{ userId: 'u3', clientId: 'claude-client' }],
     });
     await service.run();
     expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, {
@@ -610,6 +620,167 @@ describe('OnboardingCronService — onboarding pass', () => {
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { onboardingCompletedAt: expect.any(Date) } }),
     );
+  });
+
+  describe('reminder 1 test arms', () => {
+    const events = (prisma: any) => prisma.productEvent.create.mock.calls.map((c: any[]) => c[0].data);
+
+    it('arm A: today\'s email, recorded with its arm', async () => {
+      const { service, email, prisma } = makeService({ candidates: [user({ id: 'u3' })] });
+      const out = await service.run();
+      expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, undefined);
+      expect(out.firstReminders).toBe(1);
+      expect(events(prisma)).toEqual([
+        {
+          event: 'onboarding_reminder_sent',
+          userId: 'u3',
+          organizationId: 'org-1',
+          metadata: { reminder: 1, arm: 'A', kind: 'generic' },
+        },
+      ]);
+    });
+
+    it('arm B: three one-click Claude chats for setups without app review', async () => {
+      const { service, email, prisma } = makeService({ candidates: [user({ id: 'u2' })] });
+      await service.run();
+      const opts = email.sendOnboardingReminderEmail.mock.calls[0][3];
+      expect(opts.quickSetups).toEqual([
+        { label: 'Telegram bot', url: 'https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP' },
+        { label: 'Odoo', url: 'https://claude.ai/new?q=Connect%20my%20Odoo%20to%20AnythingMCP' },
+        { label: 'Shopify store', url: 'https://claude.ai/new?q=Connect%20my%20Shopify%20store%20to%20AnythingMCP' },
+      ]);
+      expect(events(prisma)[0].metadata).toEqual({ reminder: 1, arm: 'B', kind: 'generic' });
+    });
+
+    it('a user with an AI client gets the AI-client email in arm B too, recorded as such', async () => {
+      const { service, email, prisma } = makeService({
+        candidates: [user({ id: 'u2' })],
+        grants: [{ userId: 'u2', clientId: 'claude-client' }],
+      });
+      await service.run();
+      expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, { aiClient: 'Claude' });
+      expect(events(prisma)[0].metadata).toEqual({ reminder: 1, arm: 'B', kind: 'ai_client' });
+    });
+
+    it('holdout: no email, the step closed without a send date, one holdout event', async () => {
+      const { service, email, prisma, update } = makeService({ candidates: [user({ id: 'u1' })] });
+      const out = await service.run();
+      expect(email.sendOnboardingReminderEmail).not.toHaveBeenCalled();
+      expect(out.firstReminderHoldout).toBe(1);
+      expect(update).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { onboardingReminderCount: 1 } });
+      expect(events(prisma)).toEqual([
+        {
+          event: 'onboarding_reminder_holdout',
+          userId: 'u1',
+          organizationId: 'org-1',
+          metadata: { reminder: 1, arm: 'holdout' },
+        },
+      ]);
+    });
+
+    it('records nothing when the email could not be sent, so the next run retries', async () => {
+      const { service, email, prisma, update } = makeService({ candidates: [user({ id: 'u3' })] });
+      email.sendOnboardingReminderEmail.mockResolvedValue(false);
+      await service.run();
+      expect(update).not.toHaveBeenCalled();
+      expect(prisma.productEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('still sends when the event cannot be written', async () => {
+      const { service, prisma } = makeService({ candidates: [user({ id: 'u3' })] });
+      prisma.productEvent.create.mockRejectedValue(new Error('db down'));
+      const out = await service.run();
+      expect(out.firstReminders).toBe(1);
+    });
+  });
+
+  describe('reminder 2 only with intent', () => {
+    const due = (over: Partial<any> = {}) =>
+      user({
+        onboardingReminderCount: 1,
+        onboardingLastReminderAt: new Date(Date.now() - 70 * HOUR),
+        createdAt: new Date(Date.now() - 73 * HOUR),
+        ...over,
+      });
+
+    it('is withheld from a user who showed no intent: count unchanged', async () => {
+      const { service, email, update } = makeService({ candidates: [due()] });
+      const out = await service.run();
+      expect(email.sendOnboardingReminderEmail).not.toHaveBeenCalled();
+      expect(out.secondRemindersWithheld).toBe(1);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a catalog search of the workspace', { intentEvents: [{ userId: null, organizationId: 'org-1' }] }],
+      ['a guided setup the user opened', { intentEvents: [{ userId: 'u3', organizationId: null }] }],
+      [
+        'a sign-up from Google',
+        { signups: [{ userId: 'u3', organizationId: 'org-1', metadata: { first_channel: 'organic_google' } }] },
+      ],
+    ])('goes to a user with %s, recorded with the arm', async (_label, rows) => {
+      const { service, email, prisma, update } = makeService({ candidates: [due()], ...rows });
+      const out = await service.run();
+      expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 2);
+      expect(out.secondReminders).toBe(1);
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ onboardingReminderCount: 2 }) }),
+      );
+      expect(prisma.productEvent.create.mock.calls[0][0].data.metadata).toEqual({
+        reminder: 2,
+        arm: 'A',
+        kind: 'generic',
+      });
+    });
+
+    it('does not count a direct sign-up, or one without a channel, as intent', async () => {
+      const { service, email } = makeService({
+        candidates: [due()],
+        signups: [
+          { userId: 'u3', organizationId: 'org-1', metadata: { first_channel: 'direct' } },
+          { userId: 'u3', organizationId: 'org-1', metadata: {} },
+        ],
+      });
+      await service.run();
+      expect(email.sendOnboardingReminderEmail).not.toHaveBeenCalled();
+    });
+
+    it('does not count another workspace\'s events', async () => {
+      const { service, email } = makeService({
+        candidates: [due()],
+        intentEvents: [{ userId: 'someone-else', organizationId: 'org-2' }],
+      });
+      await service.run();
+      expect(email.sendOnboardingReminderEmail).not.toHaveBeenCalled();
+    });
+
+    it('asks for intent events of the user and the workspace, of the last 15 days, only for users due', async () => {
+      const { service, prisma } = makeService({ candidates: [due(), user({ id: 'u2' })] });
+      const before = Date.now();
+      await service.run();
+      const calls = prisma.productEvent.findMany.mock.calls.map((c: any[]) => c[0].where);
+      const actions = calls.find((w: any) => w.event.in);
+      expect(actions.event.in).toEqual(['catalog_search', 'setup_started', 'setup_step_viewed']);
+      expect(actions.OR).toEqual([{ userId: { in: ['u3'] } }, { organizationId: { in: ['org-1'] } }]);
+      const age = before - actions.createdAt.gte.getTime();
+      expect(age).toBeGreaterThanOrEqual(15 * 24 * HOUR - 1000);
+      expect(age).toBeLessThan(15 * 24 * HOUR + 60_000);
+    });
+
+    it('does not query events when nobody is due for reminder 2', async () => {
+      const { service, prisma } = makeService({ candidates: [user({ id: 'u3' })] });
+      await service.run();
+      expect(prisma.productEvent.findMany).not.toHaveBeenCalled();
+    });
+
+    it('a holdout user with intent gets reminder 2 three days after sign-up', async () => {
+      const { service, email } = makeService({
+        candidates: [due({ id: 'u1', onboardingLastReminderAt: null })],
+        intentEvents: [{ userId: 'u1', organizationId: 'org-1' }],
+      });
+      await service.run();
+      expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 2);
+    });
   });
 });
 

@@ -23,7 +23,7 @@
     }
   },
   "verifyHints": {
-    "unreachable": "TallyPrime could not be reached at this address. Check that TallyPrime is running, that F1 > Settings > Connectivity has it acting as Server on this port, and that the address is reachable from AnythingMCP: AnythingMCP Cloud cannot reach a LAN address.",
+    "unreachable": "TallyPrime could not be reached at this address. Check that TallyPrime is running and that F1 > Settings > Connectivity has it acting as Server on this port. On AnythingMCP Cloud the address must be reachable from the internet: publish the Tally port through a tunnel (for example Cloudflare Tunnel) or a port forwarding with HTTPS, or install AnythingMCP self-hosted in the same network; a LAN address (192.168.x.x) cannot be reached from the Cloud.",
     "bad_request": "TallyPrime rejected the request. Check that at least one company is open in TallyPrime."
   },
   "probe": {

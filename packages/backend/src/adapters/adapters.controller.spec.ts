@@ -208,6 +208,24 @@ describe('POST /api/adapters/:slug/verify — failures are recorded with the pro
     });
   });
 
+  it('records an app waiting for the provider approval, with the connector it finishes', async () => {
+    const { controller, adaptersService, productEvents } = buildController();
+    (adaptersService as any).verifyCredentials = jest.fn().mockResolvedValue({
+      ok: false,
+      kind: 'auth_failed',
+      status: 403,
+      message: 'Etsy does not accept these app keys yet.',
+      appPending: true,
+    });
+    await controller.verify(req('ADMIN'), 'etsy', { credentials: {}, connectorId: 'c9' });
+    expect(productEvents.log).toHaveBeenCalledWith({
+      event: 'etsy_app_pending_seen',
+      userId: 'u1',
+      organizationId: 'org1',
+      metadata: { adapterSlug: 'etsy', via: 'setup', connectorId: 'c9' },
+    });
+  });
+
   it('logs nothing when the check passed', async () => {
     const { controller, adaptersService, productEvents } = buildController();
     (adaptersService as any).verifyCredentials = jest.fn().mockResolvedValue({ ok: true, toolName: 't', durationMs: 1, sample: '' });

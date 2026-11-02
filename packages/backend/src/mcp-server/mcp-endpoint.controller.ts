@@ -32,7 +32,10 @@ import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
 import { slugifyForPrefix } from '../connectors/graphql-builtins';
-import { SharedSetupRegistry } from './shared-setup';
+import { SharedSetupRegistry, type SetupCallOptions } from './shared-setup';
+import { SharedToolCallRecorder } from './shared-tool-calls';
+import { ProductEventService } from '../audit/product-event.service';
+import { PrismaService } from '../common/prisma.service';
 import {
   McpConnectionGrantService,
   ResolvedGrant,
@@ -267,7 +270,14 @@ export class McpEndpointController {
     @Optional() private readonly sharedSetup?: SharedSetupRegistry,
     @Optional() private readonly memory?: MemoryService,
     @Optional() private readonly folders?: KnowledgeFoldersService,
-  ) {}
+    @Optional() productEvents?: ProductEventService,
+    @Optional() prisma?: PrismaService,
+  ) {
+    this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
+  }
+
+  /** Records which shared /mcp tools a workspace calls (once a day per tool). */
+  private readonly sharedCalls: SharedToolCallRecorder | null;
 
   /** The caller's knowledge-folder access in a workspace (null without the module). */
   private async folderAccessFor(organizationId: string, userId?: string | null) {
@@ -292,6 +302,11 @@ export class McpEndpointController {
     if (!visibleConnectorIds || visibleConnectorIds.length === 0) return undefined;
     const caps = await this.rolesService.getCapabilities(userId, mcpServerConfig.organizationId);
     if (!caps.inlineCode) return undefined;
+    // Plan gate: inline code (code_execute / code_propose_tool) is Team and
+    // above. Saved code tools are gated separately at creation time.
+    if (!(await this.toolExecutor.inlineCodeAllowedForOrg(mcpServerConfig.organizationId))) {
+      return undefined;
+    }
     return { connectorIds: visibleConnectorIds };
   }
 
@@ -494,15 +509,29 @@ export class McpEndpointController {
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
       connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
+      ...(this.sharedCalls && (setupOrg || organizationId) && variant === 'shared'
+        ? {
+            called: ({ tool, setupTool }) => {
+              void this.sharedCalls!.record({
+                organizationId: (setupOrg || organizationId) as string,
+                userId: user.sub,
+                tool,
+                ...(setupTool ? { setupTool } : {}),
+                profile,
+                oauthClientId: oauthClientId(user),
+              });
+            },
+          }
+        : {}),
       ...(canSetUp && setupProvider && setupCtx
         ? {
             setup: {
               organizationId: setupCtx.organizationId,
-              run: (name: string, args: Record<string, unknown>) =>
+              run: (name: string, args: Record<string, unknown>, opts?: SetupCallOptions) =>
                 name === 'setup_find_connectors'
-                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number })
+                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number }, opts)
                   : name === 'setup_install_connector'
-                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> })
+                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> }, opts)
                     : setupProvider.status(setupCtx),
             },
           }

@@ -648,6 +648,11 @@
       "skillsAuto": "Automatico: testo completo se breve, altrimenti un elenco su richiesta",
       "skillsInline": "Sempre il testo completo",
       "skillsIndex": "Sempre un elenco (l'AI apre una skill con skill_get)",
+      "codeMode": "Modalità codice",
+      "codeModeOff": "Off (nessuna esecuzione di codice)",
+      "codeModeTools": "Solo code tool salvati",
+      "codeModeInline": "Code tool salvati + codice inline",
+      "codeModeHint": "Permette ai client AI di eseguire brevi programmi che orchestrano i tool di questo server in un solo passaggio. Disattivato di default; richiede un code-runner configurato. Inline espone anche il tool generico code_execute ai ruoli abilitati.",
       "skillsHint": "Come le <link>Skill IA</link> di questo server raggiungono il client AI. Un elenco mantiene brevi le istruzioni; le procedure lunghe vengono sempre aperte su richiesta.",
       "save": "Salva"
     }
@@ -932,7 +937,10 @@
       "providerError": "{name} ha risposto con un errore.",
       "suggest": "Configura invece {name}",
       "suggestOther": "Configura invece l'altro connettore",
-      "saveAnyway": "Salva comunque"
+      "saveAnyway": "Salva comunque",
+      "appPendingTitle": "{name} non accetta ancora queste chiavi.",
+      "appPendingBody": "Se la tua app è nuova, {name} la verifica, di solito entro pochi giorni: ti scriveremo un'e-mail quando sarà approvata, non devi fare altro. Se la tua app è già attiva, copia di nuovo lo shared secret dalla pagina della tua app. Le tue chiavi sono salvate.",
+      "appPendingOpen": "Apri il connettore"
     },
     "field": {
       "required": "Obbligatorio",
@@ -950,7 +958,10 @@
       "back": "Indietro",
       "checking": "Verifica in corso…",
       "continue": "Continua",
-      "tickHint": "Spunta la casella qui sopra quando hai finito."
+      "tickHint": "Spunta la casella qui sopra quando hai finito.",
+      "saveAndCheck": "Salva e verifica con {name}",
+      "waitHint": "\"Continua\" si attiva quando {name} ha approvato la tua app.",
+      "keysFirst": "Inserisci prima le chiavi nel passaggio precedente."
     },
     "title": {
       "finish": "Completa la configurazione di {name}",
@@ -1000,6 +1011,17 @@
       "fillPrevious": "{action}: compila prima il passaggio precedente.",
       "screenshot": "Screenshot del {date}; ora la pagina potrebbe essere leggermente diversa.",
       "problems": "Problemi comuni"
+    },
+    "wait": {
+      "checking": "Chiediamo a {name} della tua app…",
+      "notYet": "{name} non ha ancora approvato la tua app",
+      "checkedAt": "Ultimo controllo alle {time}. La pagina ricontrolla ogni volta che ci torni.",
+      "checkAgain": "Controlla di nuovo",
+      "checkingShort": "Controllo in corso…",
+      "activeAlready": "Già approvata ma qui non si sblocca? Reinserisci le chiavi",
+      "saved": "Le tue chiavi sono salvate. Puoi chiudere questa pagina: quando torni, si riapre a questo passaggio.",
+      "ready": "{name} ha approvato la tua app.",
+      "readyNext": "Continua con il passaggio successivo."
     }
   },
   "setupSuccess": {
@@ -1687,7 +1709,7 @@
     "codeProgram": "Programma",
     "codeProgramHint": "Un corpo JavaScript async. Chiama altri tool con await amcp.run(nome, args), amcp.search(query), amcp.describe(nome). Gli input del tool sono in args. Restituisci il risultato.",
     "codeUses": "Usa (connettori)",
-    "codeUsesHint": "JSON: i connettori che questo tool codice può chiamare, es. [{\"connectorId\":\"<id>\",\"tools\":[\"nome_tool\"]}]. Ometti \"tools\" per permettere tutti i tool di un connettore. Solo connettori di questo workspace.",
+    "codeUsesHint": "Array JSON dei connettori che questo tool codice può chiamare. Ogni voce indica un connectorId e un elenco opzionale di nomi di tool; senza elenco sono permessi tutti i tool del connettore. Solo connettori di questo workspace.",
     "codeRunAs": "Esegui come",
     "codeRunAsInvoker": "Invoker (permessi del chiamante)",
     "codeRunAsDefiner": "Definer (curato da admin; solo admin)",
@@ -3324,6 +3346,12 @@
       "range": "{from}–{to} di {total}",
       "prev": "Indietro",
       "next": "Avanti"
+    },
+    "searchHint": {
+      "title": "Vuoi che la tua AI cerchi dentro i documenti?",
+      "body": "La ricerca file indicizza i file PDF, Word, Excel e Outlook sul tuo NAS, server o storage e tiene l'indice aggiornato: così l'AI trova cosa c'è scritto nei file, non solo i loro nomi.",
+      "cta": "Configura la ricerca file",
+      "for": "Apre la procedura guidata per {name}."
     }
   },
   "fileShare": {

@@ -712,6 +712,10 @@ export interface SetupGuideStep {
   fields?: string[];
   problems?: Array<{ q: string; a: string }>;
   confirm?: string;
+  /** Continue saves the values on the connector and asks the provider whether it accepts the keys. */
+  saveAndCheck?: boolean;
+  /** Shown while the provider refuses the saved keys (an Etsy app awaiting approval); skipped once it accepts them. */
+  waitForProvider?: boolean;
 }
 
 export interface SetupGuide extends SetupEffort {
@@ -723,7 +727,23 @@ export interface SetupGuide extends SetupEffort {
 
 export type VerifyResult =
   | { ok: true; toolName: string; durationMs: number; sample: string }
-  | { ok: false; kind: string; message: string; missing?: string[]; status?: number | null; suggest?: string; suggestName?: string }
+  | {
+      ok: false;
+      kind: string;
+      message: string;
+      missing?: string[];
+      fields?: Record<string, string>;
+      status?: number | null;
+      suggest?: string;
+      suggestName?: string;
+      /**
+       * The provider refused the app keys in a way that may be an app awaiting
+       * its approval (Etsy: Pending) or a wrong secret of an active app (Etsy
+       * answers both with the same 403): the page keeps the keys, and the owner
+       * is emailed once they are accepted.
+       */
+      appPending?: boolean;
+    }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
 
 export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';
@@ -2007,7 +2027,7 @@ export const mcpServers = {
     request<{ calls30d: number; lastCallAt: string | null }>(`/api/mcp-servers/${id}/activity`, { token }),
   create: (data: { name: string; slug?: string; description?: string; instructions?: string }, token: string) =>
     request<any>('/api/mcp-servers', { method: 'POST', body: data, token }),
-  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: 'auto' | 'inline' | 'index' }, token: string) =>
+  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: 'auto' | 'inline' | 'index'; codeMode?: 'off' | 'tools' | 'inline' }, token: string) =>
     request<any>(`/api/mcp-servers/${id}`, { method: 'PUT', body: data, token }),
   delete: (id: string, token: string) =>
     request(`/api/mcp-servers/${id}`, { method: 'DELETE', token }),
