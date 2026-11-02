@@ -309,6 +309,13 @@ describe('LoginController', () => {
 
       expect(res._cookies['login_user']).toBeDefined();
       expect(res._cookies['login_user'].options.signed).toBe(true);
+      // Remembered for the setup links the AI client hands out next.
+      expect(res._cookies['amcp_signin'].options).toEqual(
+        expect.objectContaining({ httpOnly: true, signed: true, sameSite: 'lax' }),
+      );
+      expect(JSON.parse(Buffer.from(res._cookies['amcp_signin'].value, 'base64url').toString())).toEqual(
+        expect.objectContaining({ uid: expect.any(String), iat: expect.any(Number) }),
+      );
       expect(res._cleared).toContain('login_csrf');
       expect(res._redirect).toBe('http://mcp.test/callback');
     });
@@ -359,6 +366,7 @@ describe('LoginController', () => {
       );
 
       expect(res._cookies['login_user']).toBeUndefined();
+      expect(res._cookies['amcp_signin']).toBeUndefined();
       expect(res._redirect).toContain('/auth/login?error=');
     });
 

@@ -43,6 +43,7 @@ import {
   type TrustRowOptions,
 } from './auth-page';
 import { maskEmail } from './mcp-email-verification';
+import { setRecentSignInCookie } from './recent-sign-in.util';
 import { SharedSetupRegistry, type SetupContext, type SharedSetupProvider } from '../mcp-server/shared-setup';
 import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
 
@@ -475,6 +476,9 @@ export class LoginController {
     /** Set when the user signed in on this page with Google, Microsoft or GitHub. */
     socialProvider?: string,
   ): Promise<void> {
+    // Remembered for the setup links the AI client will hand out, so they open
+    // the dashboard without asking for this sign-in again (recent-sign-in.util).
+    setRecentSignInCookie(res, user.id, this.isSecureRequest(req));
     // Set a short-lived cookie with the user profile for the callback to read
     const profile = {
       id: user.id,
