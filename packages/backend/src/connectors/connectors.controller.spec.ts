@@ -859,8 +859,28 @@ describe('PUT :id/env-vars and PUT :id — the checks of the install form', () =
     const { controller, connectorsService } = build(odoo(stored));
     await expect(
       controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ODOO_URL: 'https://erp.acme.de/web' } }),
-    ).rejects.toMatchObject({ response: { code: 'invalid_values', fields: { ODOO_URL: expect.stringMatching(/nothing after the host/) } } });
+    ).rejects.toMatchObject({
+      response: { code: 'invalid_values', fields: { ODOO_URL: expect.stringMatching(/Remove \/web after the host: https:\/\/erp\.acme\.de\./) } },
+    });
     expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('stores an address typed without https:// with it, also one outside the base URL (Zoho accounts server)', async () => {
+    const zoho = {
+      ...odoo({}),
+      authType: 'OAUTH2',
+      baseUrl: 'https://mail.zoho.eu/api',
+      envVars: { ZOHO_MAIL_CLIENT_ID: '1000.ABCDEFGHIJKLMNOP', ZOHO_MAIL_API_URL: 'https://mail.zoho.eu', ZOHO_MAIL_ACCOUNTS_URL: '' },
+      config: { adapterSlug: 'zoho-mail' },
+    };
+    const { controller, connectorsService } = build(zoho);
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { ...zoho.envVars, ZOHO_MAIL_ACCOUNTS_URL: 'accounts.zoho.eu' },
+    });
+    expect(connectorsService.update).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({ envVars: expect.objectContaining({ ZOHO_MAIL_ACCOUNTS_URL: 'https://accounts.zoho.eu' }) }),
+    );
   });
 
   it('refuses a key pasted twice through the connector form (PUT :id) too', async () => {

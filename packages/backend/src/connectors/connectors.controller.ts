@@ -1002,7 +1002,7 @@ export class ConnectorsController {
     return normalizeAddressVariables(
       adapter ? adapter.connector.baseUrl : connector.baseUrl,
       // The adapter's own clean-ups, as at install (env-var-checks.ts).
-      adapter ? normalizeAdapterEnvValues(adapter.slug, values) : values,
+      adapter ? normalizeAdapterEnvValues(adapter, values) : values,
       connector.type,
       { singleLabel: !!adapter },
     );

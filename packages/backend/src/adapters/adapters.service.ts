@@ -37,6 +37,7 @@ import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
 import { applyResponseTransform } from '../connectors/response-transform.util';
 import {
+  carriedSetupValues,
   describeAdapterEnvVars,
   EnvVarDescriptor,
   needsBrowserAuthorization,
@@ -375,7 +376,7 @@ export class AdaptersService {
         adapter.connector.baseUrl,
         // Per-adapter clean-ups first (a bot token with spaces, a Bitrix24
         // webhook URL with a method name after it): env-var-checks.ts.
-        normalizeAdapterEnvValues(adapter.slug, credentials),
+        normalizeAdapterEnvValues(adapter, credentials),
         adapter.connector.type,
         { singleLabel: true },
       );
@@ -623,6 +624,10 @@ export class AdaptersService {
           : undefined;
       // A hint about one value (Atlassian: the token) goes under that field.
       const field = !odoo && typeof own === 'object' && own?.field ? own.field : undefined;
+      // The other adapter as something the page can act on: its setup,
+      // started with what was already entered (an Odoo below 19: the JSON-RPC
+      // connector, with the address and database the user typed).
+      const target = suggest ? getAdapter(suggest) : undefined;
       return {
         ok: false,
         kind: classified.kind,
@@ -631,7 +636,16 @@ export class AdaptersService {
         // The hint is what the user acts on; the provider's own words follow.
         message: odoo ? odoo.message : message,
         ...(field ? { fields: { [field]: message } } : {}),
-        ...(suggest ? { suggest, suggestName: getAdapter(suggest)?.name ?? suggest } : {}),
+        ...(suggest ? { suggest, suggestName: target?.name ?? suggest } : {}),
+        ...(target
+          ? {
+              switchTo: {
+                slug: target.slug,
+                name: target.name,
+                prefill: carriedSetupValues(adapter, target, prepared.credentials),
+              },
+            }
+          : {}),
       };
     }
   }
@@ -1257,6 +1271,12 @@ export type VerifyResult =
       /** Another adapter to offer instead, from the adapter's verifyHints. */
       suggest?: string;
       suggestName?: string;
+      /**
+       * The same suggestion, ready to act on: the setup of `slug`, started
+       * with `prefill` (the values entered here that it takes under the same
+       * name; never a secret or a credential, as they go into a link).
+       */
+      switchTo?: { slug: string; name: string; prefill: Record<string, string> };
       /**
        * The provider refused the app keys of an adapter whose approval is
        * watched (an Etsy app still Pending, or a wrong shared secret): the
