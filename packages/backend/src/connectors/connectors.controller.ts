@@ -60,7 +60,7 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
-import { checkAdapterEnvValues, describeFieldProblems } from '../adapters/env-var-checks';
+import { checkAdapterEnvValues, describeFieldProblems, normalizeAdapterEnvValues } from '../adapters/env-var-checks';
 import { resolvePkce } from './oauth-authorize-settings';
 import { isMachineGrant } from './oauth-grant.util';
 import { mcpPathOf } from './mcp-connector-config.util';
@@ -1049,7 +1049,8 @@ export class ConnectorsController {
     const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
     return normalizeAddressVariables(
       adapter ? adapter.connector.baseUrl : connector.baseUrl,
-      values,
+      // The adapter's own clean-ups, as at install (env-var-checks.ts).
+      adapter ? normalizeAdapterEnvValues(adapter.slug, values) : values,
       connector.type,
       { singleLabel: !!adapter },
     );

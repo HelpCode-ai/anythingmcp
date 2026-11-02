@@ -19,7 +19,7 @@ import {
 import { pickProbe } from './probe.util';
 import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
 import { odooCheckAdvice } from './odoo-database-hint';
-import { checkAdapterEnvValues, describeFieldProblems } from './env-var-checks';
+import { checkAdapterEnvValues, describeFieldProblems, normalizeAdapterEnvValues } from './env-var-checks';
 import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
 import { normalizeAddressVariables } from '../common/base-url-variable.util';
@@ -370,7 +370,9 @@ export class AdaptersService {
       // on another domain is refused, naming the variable.
       credentials = normalizeAddressVariables(
         adapter.connector.baseUrl,
-        credentials,
+        // Per-adapter clean-ups first (a bot token with spaces, a Bitrix24
+        // webhook URL with a method name after it): env-var-checks.ts.
+        normalizeAdapterEnvValues(adapter.slug, credentials),
         adapter.connector.type,
         { singleLabel: true },
       );

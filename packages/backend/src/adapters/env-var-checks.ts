@@ -122,6 +122,47 @@ function matchesPattern(pattern: string, value: string): boolean {
   }
 }
 
+/**
+ * Per-variable clean-ups applied before a value is checked and stored, for
+ * shapes that working connectors were saved with and that mean exactly one
+ * thing. Normalising beats refusing: the value the user pasted works, and the
+ * stored one is what is used.
+ *
+ * (The tenant pasted as a whole address, `acme.weclapp.com`, is handled for
+ * every adapter by normalizeSubdomainVariables in base-url-variable.util.ts.)
+ */
+const NORMALISERS: Record<string, Record<string, (value: string) => string>> = {
+  // A bot token has no whitespace; one copied from a chat or a PDF can carry
+  // spaces after the colon or inside (`123: AAH… …`).
+  'telegram-bot': {
+    TELEGRAM_BOT_TOKEN: (v) => v.replace(/\s+/g, ''),
+  },
+  // The webhook URL is everything up to `/rest/<user_id>/<code>/`; a method
+  // name copied with it (`…/crm.deal.list.json?ID=1`) is cut off, because
+  // the tools append their own.
+  bitrix24: {
+    BITRIX24_WEBHOOK_URL: (v) => {
+      const m = /^(.*?\/rest\/\d+\/[A-Za-z0-9_-]+)(?:[/?#].*)?$/.exec(v.trim());
+      return m ? `${m[1]}/` : v;
+    },
+  },
+};
+
+/**
+ * These values with the adapter's clean-ups applied (NORMALISERS). Values of
+ * other variables, and of adapters without clean-ups, come back unchanged.
+ */
+export function normalizeAdapterEnvValues<T extends Record<string, unknown>>(slug: string | undefined, values: T): T {
+  const rules = slug ? NORMALISERS[slug] : undefined;
+  if (!rules) return values;
+  return Object.fromEntries(
+    Object.entries(values).map(([name, value]) => {
+      const ruled = Object.prototype.hasOwnProperty.call(rules, name);
+      return [name, ruled && typeof value === 'string' && value ? rules[name](value) : value];
+    }),
+  ) as T;
+}
+
 /** The adapter fields a checker needs. */
 export type CheckedAdapter = Parameters<typeof describeAdapterEnvVars>[0];
 

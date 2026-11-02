@@ -860,6 +860,26 @@ describe('PUT :id/env-vars and PUT :id — the checks of the install form', () =
     expect(connectorsService.update).not.toHaveBeenCalled();
   });
 
+  it('leaves stored Etsy app keys the pattern would refuse alone when they are sent back unchanged', async () => {
+    const etsy = {
+      ...odoo({}),
+      authType: 'OAUTH2',
+      baseUrl: 'https://openapi.etsy.com/v3',
+      envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkl', ETSY_CLIENT_SECRET: 'abcd-efgh-i' },
+      config: { adapterSlug: 'etsy' },
+    };
+    const { controller, connectorsService } = build(etsy);
+    // The editor sends the visible value back as it was and a secret empty (kept).
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkl', ETSY_CLIENT_SECRET: '', ETSY_SHOP_ID: '12345678' },
+    });
+    expect(connectorsService.update).toHaveBeenCalled();
+    // Changing one of them is checked.
+    await expect(
+      controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkm' } }),
+    ).rejects.toMatchObject({ response: { fields: { ETSY_CLIENT_ID: expect.any(String) } } });
+  });
+
   it('does not let a stored bad value block an edit of another variable', async () => {
     const { controller, connectorsService } = build(odoo({ ...stored, ODOO_URL: 'https://erp.acme.de/web' }));
     await controller.updateEnvVars(req('ADMIN'), 'c1', {
