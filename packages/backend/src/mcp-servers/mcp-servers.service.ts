@@ -240,7 +240,7 @@ export class McpServersService {
     );
   }
 
-  async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: string }) {
+  async update(id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: string; codeMode?: string }) {
     return this.withSlugConflict(data.slug, () =>
       this.prisma.mcpServerConfig.update({
         where: { id },
