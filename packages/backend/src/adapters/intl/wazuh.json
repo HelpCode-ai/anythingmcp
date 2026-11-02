@@ -1,0 +1,910 @@
+{
+  "slug": "wazuh",
+  "name": "Wazuh",
+  "aliases": [
+    "wazuh siem",
+    "wazuh xdr",
+    "wazuh manager"
+  ],
+  "description": "Let your AI read your Wazuh 4.x security platform through the server API: manager version and daemon status, agents and their connection status, the detection rules and decoders, Security Configuration Assessment (CIS benchmark) results and File Integrity Monitoring data per agent. Read-only: it never restarts, changes or deletes anything. Alerts and vulnerabilities live in the Wazuh indexer and are not covered.",
+  "instructions": "## Wazuh\nThis connector reads a **Wazuh 4.x** deployment through the **Wazuh server API** (the manager, port 55000 by default): manager version and daemon status, agents and their status, the rules and decoders of the ruleset, Security Configuration Assessment (SCA) results and File Integrity Monitoring (FIM, syscheck) data per agent. It is **read-only**: every tool is a GET request. It cannot restart anything, run active responses, add, remove or upgrade agents, or edit rules, decoders, users or configuration.\n\n**Setup (about 5 minutes)**\n1. Set `WAZUH_URL` to the server API address, normally `https://<manager-host>:55000`, without a trailing slash. Not the dashboard (port 443) and not the indexer (port 9200).\n2. Create a dedicated API user for the AI and give it the built-in `readonly` role (Wazuh dashboard: **Server management, Security, Users**, or `POST /security/users` and `POST /security/users/{user_id}/roles`). Put its name and password in `WAZUH_USERNAME` and `WAZUH_PASSWORD`. The `readonly` role covers manager:read, agent:read, rules:read, decoders:read, sca:read and syscheck:read.\n3. Check the setup with `wazuh_get_manager_info`.\n\nThe connector signs in at `/security/user/authenticate` with that user (HTTP Basic) and sends the returned JWT as a Bearer token. Wazuh tokens last 900 seconds by default (`auth_token_exp_timeout`); the connector signs in again before they expire and after a 401.\n\n**Where Wazuh runs**\n- **Self-hosted AnythingMCP**: Wazuh usually runs on a private address (`https://10.0.0.5:55000`, `https://wazuh.intern:55000`). The outbound SSRF guard blocks private and local addresses by default, so an administrator must allow the host through the `SSRF_ALLOWED_HOSTS` environment variable or the allowlist in the admin settings.\n- **TLS**: Wazuh installs a self-signed certificate on port 55000. A self-signed certificate will fail: the connector offers no trust-anything switch. Give the API a certificate whose name matches `WAZUH_URL` (Wazuh `api.yaml`, `https.cert` and `https.key`), put a reverse proxy with a valid certificate in front of it, or, on self-hosted, start AnythingMCP with `NODE_EXTRA_CA_CERTS` pointing to your internal CA.\n- **AnythingMCP Cloud**: Cloud can only reach a Wazuh API exposed on the public internet over HTTPS with a publicly trusted certificate. A private IP or a local hostname is refused, and the allowlist cannot be changed on Cloud.\n\n**Privacy**: agent names, IP addresses, operating systems, file paths and hashes describe your infrastructure. Assign this connector only to MCP servers whose users may see that.\n\n**How to work**\n1. Overview: `wazuh_get_agents_summary` for counts by status, `wazuh_get_manager_status` for the daemons, `wazuh_get_manager_info` and `wazuh_get_api_info` for versions.\n2. Agents: `wazuh_list_agents` with `status` (e.g. `disconnected`), `group`, `os_platform` or `q`; then `wazuh_get_agent` for one agent. `wazuh_get_agents_os_summary` lists platforms, `wazuh_list_outdated_agents` agents older than the manager.\n3. Hardening: `wazuh_list_sca_policies` for an agent, then `wazuh_list_sca_checks` with `result=failed` for what to fix.\n4. File integrity: `wazuh_get_syscheck_last_scan`, then `wazuh_list_syscheck_files` with `file`, `hash` or `summary=true`.\n5. Detection content: `wazuh_list_rules` by `level` (`12` or `10-15`), `group`, compliance mapping or `mitre`; `wazuh_list_rule_groups` for group names; `wazuh_list_decoders` for decoders.\n\n**Paging**: list tools return `{items, total}`, 50 items by default and at most 500 per call; ask again with `offset` increased by `limit` until you have `total`. Wazuh allows 300 requests per minute by default and answers 429 above that.\n\n**Identifiers**: agent ids have at least three digits (`001`, `012`); `000` is the manager itself, which also runs SCA and FIM. A `policy_id` (`cis_ubuntu22-04`) comes from `wazuh_list_sca_policies`. Rule ids are numbers (`5710`).\n\n**Common errors**\n- 401 \"Invalid credentials\": wrong `WAZUH_USERNAME` or `WAZUH_PASSWORD`. Tokens are also revoked when users, roles or security settings change; the connector then signs in again.\n- 403: the API user's role lacks a read permission; give it the `readonly` role.\n- 429 or a blocked IP: too many requests per minute, or too many failed logins (50 within 5 minutes by default block the address for 300 seconds).\n- \"Agent does not exist\" (Wazuh error 1701): no agent with that id; list them with `wazuh_list_agents`.\n- 400 \"There is no database for agent\": the agent has never connected, so it has no SCA or FIM data yet.\n- \"self-signed certificate\" or \"unable to verify the first certificate\": see TLS above.\n- 404 everywhere: `WAZUH_URL` points at the dashboard or the indexer instead of the server API.\n\n**Out of scope**: alerts and events (they are stored in the Wazuh indexer, not served by this API), vulnerability detection results (in the indexer since Wazuh 4.8), every write (active response, restarts, agent enrollment, removal or upgrade, rule and configuration changes, users and roles), cluster configuration, and Wazuh 5.x, which removes most of these endpoints.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "wazuh",
+  "docsUrl": "https://documentation.wazuh.com/current/user-manual/api/reference.html",
+  "prerequisites": "A Wazuh 4.x server API (manager, port 55000) reachable from AnythingMCP with a certificate AnythingMCP trusts (on Cloud: public over HTTPS), and an API user with the built-in readonly role. About 5 minutes.",
+  "requiredEnvVars": [
+    "WAZUH_URL",
+    "WAZUH_USERNAME",
+    "WAZUH_PASSWORD"
+  ],
+  "envVarMeta": {
+    "WAZUH_URL": {
+      "label": "Wazuh server API URL",
+      "kind": "address",
+      "help": "The Wazuh server API address, normally port 55000, without a trailing slash. Not the dashboard (443) or the indexer (9200). On AnythingMCP Cloud it must be public over HTTPS.",
+      "example": "https://wazuh.example.com:55000",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https://, with the port and without a trailing slash, e.g. https://wazuh.example.com:55000."
+    },
+    "WAZUH_USERNAME": {
+      "label": "API username",
+      "kind": "credential",
+      "help": "A dedicated Wazuh API user with the built-in readonly role (Server management, Security, Users in the Wazuh dashboard).",
+      "example": "mcp-readonly",
+      "link": "https://documentation.wazuh.com/current/user-manual/api/rbac/index.html"
+    },
+    "WAZUH_PASSWORD": {
+      "label": "API password",
+      "kind": "credential",
+      "secret": true,
+      "help": "That API user's password.",
+      "link": "https://documentation.wazuh.com/current/user-manual/api/rbac/index.html"
+    }
+  },
+  "verifyHints": {
+    "401": "Wazuh refused the sign-in: WAZUH_USERNAME or WAZUH_PASSWORD is wrong, or the token was revoked after a security change.",
+    "403": "Signed in, but the API user lacks a read permission. Give it the built-in readonly role.",
+    "404": "No Wazuh server API at this address. WAZUH_URL must point at the manager API (port 55000 by default), not the dashboard or the indexer.",
+    "rate_limited": "Wazuh limits requests per minute (300 by default) and blocks an address after too many failed logins (50 within 5 minutes by default). Wait a few minutes."
+  },
+  "probe": {
+    "tool": "wazuh_get_manager_info"
+  },
+  "connector": {
+    "name": "Wazuh server API",
+    "type": "REST",
+    "baseUrl": "{{WAZUH_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{WAZUH_URL}}/security/user/authenticate",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Accept": "application/json"
+      },
+      "loginBasicAuth": true,
+      "loginBody": {},
+      "username": "{{WAZUH_USERNAME}}",
+      "password": "{{WAZUH_PASSWORD}}",
+      "tokenJsonPath": "data.token",
+      "tokenTTLSeconds": 900,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "data.failed_items[0].error.code",
+          "equals": 1701,
+          "messagePath": "data.failed_items[0].error.message",
+          "status": 404
+        },
+        {
+          "path": "data.failed_items[0].error.code",
+          "messagePath": "data.failed_items[0].error.message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "wazuh_get_api_info",
+      "description": "Get the Wazuh server API's own info: API version (e.g. 4.14.9), revision, license, hostname and server time. Use it to confirm the server runs Wazuh 4.x. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data"
+        }
+      }
+    },
+    {
+      "name": "wazuh_get_manager_info",
+      "description": "Get the Wazuh manager's basic information: version, installation path, type (server), max agents, OpenSSL support, time zone and uuid. Used to check the connection. Needs manager:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/manager/info"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data.affected_items[0]"
+        }
+      }
+    },
+    {
+      "name": "wazuh_get_manager_status",
+      "description": "Get the state of every Wazuh manager daemon (wazuh-analysisd, wazuh-remoted, wazuh-db, wazuh-modulesd, wazuh-apid and others): running or stopped. Needs manager:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/manager/status"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data.affected_items[0]"
+        }
+      }
+    },
+    {
+      "name": "wazuh_list_agents",
+      "description": "List Wazuh agents with id, name, IP, status, OS name and version, agent version, last keep-alive, groups, cluster node and registration date, plus the total. Filter by status, name, IP, group, OS platform or version; page with limit and offset. Needs agent:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Optional: agent status, one of active, pending, never_connected, disconnected, or several separated by commas, e.g. active,disconnected."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional: exact agent name."
+          },
+          "ip": {
+            "type": "string",
+            "description": "Optional: agent IP address, e.g. 10.0.0.12."
+          },
+          "group": {
+            "type": "string",
+            "description": "Optional: agent group name, e.g. default."
+          },
+          "os_platform": {
+            "type": "string",
+            "description": "Optional: OS platform as Wazuh reports it, e.g. ubuntu, windows, darwin, amzn."
+          },
+          "version": {
+            "type": "string",
+            "description": "Optional: agent version, e.g. Wazuh v4.14.9."
+          },
+          "node_name": {
+            "type": "string",
+            "description": "Optional: cluster node the agent reports to, e.g. node01."
+          },
+          "older_than": {
+            "type": "string",
+            "description": "Optional: only agents whose last keep-alive (or registration, when never connected) is older than this, e.g. 7d, 12h, 30m."
+          },
+          "search": {
+            "type": "string",
+            "description": "Optional: free-text search over all fields; start with - to exclude matches."
+          },
+          "q": {
+            "type": "string",
+            "description": "Optional Wazuh query filter, e.g. status=active;os.platform=ubuntu (; is AND, , is OR, operators = != < > ~ for 'like')."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Optional: fields to sort by, + ascending or - descending, comma separated, e.g. -lastKeepAlive or +name."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Optional: how many items to return, 1 to 500 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional: how many items to skip, for the next page (offset = previous offset + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents",
+        "queryParams": {
+          "select": "id,name,ip,status,os.name,os.version,version,lastKeepAlive,group,node_name,dateAdd",
+          "status": "$status",
+          "name": "$name",
+          "ip": "$ip",
+          "group": "$group",
+          "os.platform": "$os_platform",
+          "version": "$version",
+          "node_name": "$node_name",
+          "older_than": "$older_than",
+          "search": "$search",
+          "q": "$q",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "items": "$.data.affected_items",
+            "total": "$.data.total_affected_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "wazuh_get_agent",
+      "description": "Get one Wazuh agent by id with every field Wazuh keeps: name, IP and registration IP, status, OS (name, version, platform, arch, uname), agent version, groups, configuration sync state, manager, cluster node, registration and last keep-alive dates. Answers an error when the agent does not exist. Needs agent:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "pattern": "^\\d{3,}$",
+            "description": "Agent id with at least three digits, e.g. 001, from wazuh_list_agents. 000 is the Wazuh manager itself."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents",
+        "queryParams": {
+          "agents_list": "$agent_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data.affected_items[0]"
+        }
+      }
+    },
+    {
+      "name": "wazuh_get_agents_summary",
+      "description": "Count Wazuh agents by connection status (active, disconnected, never_connected, pending, total) and by configuration sync state (synced, not_synced). The manager itself (000) is not counted. Best first call for 'how are my agents'. Needs agent:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/summary/status"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data"
+        }
+      }
+    },
+    {
+      "name": "wazuh_get_agents_os_summary",
+      "description": "List the operating system platforms present among the Wazuh agents, e.g. ubuntu, windows, darwin, with the total. Empty when only the manager is registered. Needs agent:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/summary/os"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "items": "$.data.affected_items",
+            "total": "$.data.total_affected_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "wazuh_list_outdated_agents",
+      "description": "List Wazuh agents whose version is older than the manager's, with id, name and version, plus the total. Needs agent:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Optional: free-text search over all fields; start with - to exclude matches."
+          },
+          "q": {
+            "type": "string",
+            "description": "Optional Wazuh query filter, e.g. status=active;os.platform=ubuntu (; is AND, , is OR, operators = != < > ~ for 'like')."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Optional: fields to sort by, + ascending or - descending, comma separated, e.g. +version."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Optional: how many items to return, 1 to 500 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional: how many items to skip, for the next page (offset = previous offset + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agents/outdated",
+        "queryParams": {
+          "search": "$search",
+          "q": "$q",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "items": "$.data.affected_items",
+            "total": "$.data.total_affected_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "wazuh_list_rules",
+      "description": "Search the Wazuh ruleset: rule id, level, description, groups, file, status and MITRE technique ids, plus the total. Filter by level or level range, group, file, compliance mapping (PCI DSS, GDPR, HIPAA, NIST 800-53, TSC) or MITRE id. Needs rules:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rule_ids": {
+            "type": "string",
+            "description": "Optional: rule ids separated by commas, e.g. 5710,5712."
+          },
+          "level": {
+            "type": "string",
+            "description": "Optional: rule level or range, e.g. 12 or 10-15 (levels go from 0 to 16)."
+          },
+          "group": {
+            "type": "string",
+            "description": "Optional: rule group from wazuh_list_rule_groups, e.g. authentication_failed."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Optional: rule file name, e.g. 0095-sshd_rules.xml."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled",
+              "all"
+            ],
+            "description": "Optional: enabled (default in Wazuh), disabled or all."
+          },
+          "pci_dss": {
+            "type": "string",
+            "description": "Optional: PCI DSS requirement, e.g. 10.2.4."
+          },
+          "gdpr": {
+            "type": "string",
+            "description": "Optional: GDPR article, e.g. IV_35.7.d."
+          },
+          "hipaa": {
+            "type": "string",
+            "description": "Optional: HIPAA section, e.g. 164.312.b."
+          },
+          "nist_800_53": {
+            "type": "string",
+            "description": "Optional: NIST 800-53 control, e.g. AU.6."
+          },
+          "tsc": {
+            "type": "string",
+            "description": "Optional: TSC criterion, e.g. CC6.1."
+          },
+          "mitre": {
+            "type": "string",
+            "description": "Optional: MITRE ATT&CK technique id, e.g. T1110."
+          },
+          "search": {
+            "type": "string",
+            "description": "Optional: free-text search over all fields; start with - to exclude matches."
+          },
+          "q": {
+            "type": "string",
+            "description": "Optional Wazuh query filter, e.g. status=active;os.platform=ubuntu (; is AND, , is OR, operators = != < > ~ for 'like')."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Optional: fields to sort by, + ascending or - descending, comma separated, e.g. -level."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Optional: how many items to return, 1 to 500 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional: how many items to skip, for the next page (offset = previous offset + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rules",
+        "queryParams": {
+          "select": "id,level,description,groups,filename,status,mitre",
+          "rule_ids": "$rule_ids",
+          "level": "$level",
+          "group": "$group",
+          "filename": "$filename",
+          "status": "$status",
+          "pci_dss": "$pci_dss",
+          "gdpr": "$gdpr",
+          "hipaa": "$hipaa",
+          "nist-800-53": "$nist_800_53",
+          "tsc": "$tsc",
+          "mitre": "$mitre",
+          "search": "$search",
+          "q": "$q",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "items": "$.data.affected_items",
+            "total": "$.data.total_affected_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "wazuh_list_rule_groups",
+      "description": "List the group names used in the Wazuh ruleset (e.g. authentication_failed, syscheck, web), plus the total; a group is what wazuh_list_rules takes as group. Needs rules:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Optional: free-text search over all fields; start with - to exclude matches."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Optional: how many items to return, 1 to 500 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional: how many items to skip, for the next page (offset = previous offset + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rules/groups",
+        "queryParams": {
+          "search": "$search",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "items": "$.data.affected_items",
+            "total": "$.data.total_affected_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "wazuh_list_decoders",
+      "description": "List Wazuh decoders: name, file, directory, status and parent decoder, plus the total. Filter by decoder names, file or status. Needs decoders:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "decoder_names": {
+            "type": "string",
+            "description": "Optional: decoder names separated by commas, e.g. sshd,pam."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Optional: decoder file name, e.g. 0310-ssh_decoders.xml."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled",
+              "all"
+            ],
+            "description": "Optional: enabled, disabled or all."
+          },
+          "search": {
+            "type": "string",
+            "description": "Optional: free-text search over all fields; start with - to exclude matches."
+          },
+          "q": {
+            "type": "string",
+            "description": "Optional Wazuh query filter, e.g. status=active;os.platform=ubuntu (; is AND, , is OR, operators = != < > ~ for 'like')."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Optional: fields to sort by, + ascending or - descending, comma separated, e.g. +name."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Optional: how many items to return, 1 to 500 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional: how many items to skip, for the next page (offset = previous offset + limit)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/decoders",
+        "queryParams": {
+          "select": "name,filename,relative_dirname,status,details.parent",
+          "decoder_names": "$decoder_names",
+          "filename": "$filename",
+          "status": "$status",
+          "search": "$search",
+          "q": "$q",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "items": "$.data.affected_items",
+            "total": "$.data.total_affected_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "wazuh_list_sca_policies",
+      "description": "List the Security Configuration Assessment (SCA) policies scanned on one agent, e.g. a CIS benchmark: policy_id, name, passed, failed and invalid (not applicable) checks, score, total checks and the scan start and end. Needs sca:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "pattern": "^\\d{3,}$",
+            "description": "Agent id with at least three digits, e.g. 001, from wazuh_list_agents. 000 is the Wazuh manager itself."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional: exact policy name."
+          },
+          "search": {
+            "type": "string",
+            "description": "Optional: free-text search over all fields; start with - to exclude matches."
+          },
+          "q": {
+            "type": "string",
+            "description": "Optional Wazuh query filter, e.g. status=active;os.platform=ubuntu (; is AND, , is OR, operators = != < > ~ for 'like')."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Optional: how many items to return, 1 to 500 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional: how many items to skip, for the next page (offset = previous offset + limit)."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sca/{agent_id}",
+        "queryParams": {
+          "name": "$name",
+          "search": "$search",
+          "q": "$q",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "items": "$.data.affected_items",
+            "total": "$.data.total_affected_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "wazuh_list_sca_checks",
+      "description": "List the checks of one SCA policy on one agent: check id, title, result (passed, failed, not applicable), rationale and remediation, plus the total. Use result=failed to see what to fix. Needs sca:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "pattern": "^\\d{3,}$",
+            "description": "Agent id with at least three digits, e.g. 001, from wazuh_list_agents. 000 is the Wazuh manager itself."
+          },
+          "policy_id": {
+            "type": "string",
+            "description": "Policy id from wazuh_list_sca_policies, e.g. cis_ubuntu22-04."
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "not applicable"
+            ],
+            "description": "Optional: only checks with this result."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional: exact check title."
+          },
+          "search": {
+            "type": "string",
+            "description": "Optional: free-text search over all fields; start with - to exclude matches."
+          },
+          "q": {
+            "type": "string",
+            "description": "Optional Wazuh query filter, e.g. status=active;os.platform=ubuntu (; is AND, , is OR, operators = != < > ~ for 'like')."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Optional: how many items to return, 1 to 500 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional: how many items to skip, for the next page (offset = previous offset + limit)."
+          }
+        },
+        "required": [
+          "agent_id",
+          "policy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sca/{agent_id}/checks/{policy_id}",
+        "queryParams": {
+          "select": "id,title,result,rationale,remediation",
+          "result": "$result",
+          "title": "$title",
+          "search": "$search",
+          "q": "$q",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "items": "$.data.affected_items",
+            "total": "$.data.total_affected_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "wazuh_list_syscheck_files",
+      "description": "List what File Integrity Monitoring (FIM, syscheck) recorded on one agent: file or registry path, type, size, owner, permissions, hashes, modification time, number of changes and date, plus the total. summary=true returns only path, mtime and date. Needs syscheck:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "pattern": "^\\d{3,}$",
+            "description": "Agent id with at least three digits, e.g. 001, from wazuh_list_agents. 000 is the Wazuh manager itself."
+          },
+          "file": {
+            "type": "string",
+            "description": "Optional: full path of one file or registry key, e.g. /etc/passwd."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "registry_key",
+              "registry_value"
+            ],
+            "description": "Optional: file, or registry_key or registry_value on Windows agents."
+          },
+          "hash": {
+            "type": "string",
+            "description": "Optional: an MD5, SHA1 or SHA256 hash to look for."
+          },
+          "summary": {
+            "type": "boolean",
+            "description": "Optional: true returns only file, mtime and date per entry."
+          },
+          "search": {
+            "type": "string",
+            "description": "Optional: free-text search over all fields; start with - to exclude matches."
+          },
+          "q": {
+            "type": "string",
+            "description": "Optional Wazuh query filter, e.g. status=active;os.platform=ubuntu (; is AND, , is OR, operators = != < > ~ for 'like')."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Optional: fields to sort by, + ascending or - descending, comma separated, e.g. -date."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Optional: how many items to return, 1 to 500 (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional: how many items to skip, for the next page (offset = previous offset + limit)."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/syscheck/{agent_id}",
+        "queryParams": {
+          "file": "$file",
+          "type": "$type",
+          "hash": "$hash",
+          "summary": "$summary",
+          "search": "$search",
+          "q": "$q",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "items": "$.data.affected_items",
+            "total": "$.data.total_affected_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "wazuh_get_syscheck_last_scan",
+      "description": "Get the start and end time of the last File Integrity Monitoring (syscheck) scan on one agent. An end older than the start means a scan is running. Needs syscheck:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "pattern": "^\\d{3,}$",
+            "description": "Agent id with at least three digits, e.g. 001, from wazuh_list_agents. 000 is the Wazuh manager itself."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/syscheck/{agent_id}/last_scan"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "data.affected_items[0]"
+        }
+      }
+    }
+  ]
+}
