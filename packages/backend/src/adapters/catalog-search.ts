@@ -29,6 +29,16 @@
  *
  * A one-letter query ("x") matches only an adapter whose slug, name or alias
  * is exactly that letter.
+ *
+ * File Search suggestions (FILE_SEARCH_INTENTS): a query about a storage
+ * system or about documents ("synology", "nas", "Dateiserver", "pdf") also
+ * brings the File Search entries that read it, so people learn the AI can
+ * search inside the files and not only call the system's API. They go first,
+ * or right after a result named exactly like the query ("synology": the DSM
+ * API connector, then Synology File Search). Only entries the caller passed
+ * in are suggested: on the Cloud the self-hosted "network-folder" is not
+ * among them. Cloud drives (SharePoint, OneDrive, Google Drive, Dropbox) are
+ * not File Search sources and get no suggestion.
  */
 
 export interface CatalogSearchEntry {
@@ -42,13 +52,18 @@ export interface CatalogSearchEntry {
   priority?: number;
 }
 
-/** How a result matched: see the steps above. */
-export type CatalogMatchKind = 'direct' | 'fuzzy' | 'partial';
+/**
+ * How a result matched: see the steps above. 'suggested' is a File Search
+ * entry the query did not match by itself, added for a storage query.
+ */
+export type CatalogMatchKind = 'direct' | 'fuzzy' | 'partial' | 'suggested';
 
 export interface CatalogSearchHit<T> {
   entry: T;
   match: CatalogMatchKind;
   score: number;
+  /** Placed by a File Search suggestion (see FILE_SEARCH_INTENTS). */
+  suggested?: boolean;
 }
 
 export interface CatalogSearchResult<T> {
@@ -59,6 +74,11 @@ export interface CatalogSearchResult<T> {
   missing: string[];
   /** How the first result matched, or 'none' when nothing did. */
   match: CatalogMatchKind | 'none';
+  /**
+   * File Search entries suggested for a storage or document query, best
+   * first; they are among `hits` too. Empty when the query is about neither.
+   */
+  fileSearch: T[];
 }
 
 /** Fewer direct results than this, and fuzzy matches fill up to it. */
@@ -67,6 +87,62 @@ export const MIN_RESULTS = 3;
 export const MAX_FUZZY = 5;
 /** At most this many partial results. */
 export const MAX_PARTIAL = 10;
+/** At most this many File Search suggestions. */
+export const MAX_FILE_SEARCH = 3;
+
+/**
+ * Storage and document queries, and the File Search entries that answer
+ * them, best first. A trigger is one word or several written together
+ * ("file server" and "fileserver" are both "fileserver"), compared without
+ * accents, case or punctuation, and matched against consecutive query words
+ * (stopwords included: "server" is one). Only the systems File Search reads:
+ * SFTP, FTP/FTPS, WebDAV (Nextcloud, ownCloud), S3, the NAS presets,
+ * Fritz!Box, Hetzner Storage Box and, self-hosted, a network folder.
+ */
+export const FILE_SEARCH_INTENTS: ReadonlyArray<{ triggers: readonly string[]; slugs: readonly string[] }> = [
+  { triggers: ['synology', 'diskstation', 'dsm'], slugs: ['synology-file-search'] },
+  { triggers: ['qnap', 'qts', 'quts', 'qutshero'], slugs: ['qnap-file-search'] },
+  { triggers: ['nextcloud', 'storageshare'], slugs: ['nextcloud-file-search', 'webdav'] },
+  { triggers: ['owncloud'], slugs: ['owncloud-file-search', 'webdav'] },
+  { triggers: ['fritzbox', 'fritz', 'fritznas', 'myfritz'], slugs: ['fritzbox-file-search'] },
+  { triggers: ['storagebox', 'hetznerstoragebox'], slugs: ['hetzner-storage-box'] },
+  {
+    triggers: [
+      's3', 'amazons3', 'awss3', 'minio', 'wasabi', 'bucket', 'buckets', 'objectstorage',
+      'cloudflarer2', 'backblaze', 'backblazeb2', 'digitaloceanspaces',
+    ],
+    slugs: ['s3-file-search'],
+  },
+  { triggers: ['sftp', 'ssh', 'scp'], slugs: ['sftp'] },
+  { triggers: ['ftp', 'ftps'], slugs: ['ftp'] },
+  { triggers: ['webdav', 'hidrive'], slugs: ['webdav'] },
+  {
+    triggers: ['nas', 'nasshare', 'nasserver', 'nassystem'],
+    slugs: ['synology-file-search', 'qnap-file-search', 'network-folder', 'sftp'],
+  },
+  {
+    triggers: [
+      'fileserver', 'dateiserver', 'netzlaufwerk', 'netzlaufwerke', 'laufwerk', 'networkdrive',
+      'networkshare', 'networkfolder', 'netzwerkordner', 'netzwerkfreigabe', 'netzwerkspeicher',
+      'smb', 'cifs', 'nfs', 'samba', 'windowsshare', 'cartelladirete', 'serverdeifile',
+    ],
+    slugs: ['network-folder', 'sftp', 'webdav'],
+  },
+  {
+    triggers: [
+      'document', 'documents', 'dokument', 'dokumente', 'documento', 'documenti', 'documentos',
+      'pdf', 'pdfs', 'files', 'dateien', 'dateiablage', 'filesearch', 'dateisuche',
+      'volltextsuche', 'fulltextsearch',
+    ],
+    slugs: ['network-folder', 'sftp', 'webdav'],
+  },
+];
+
+/**
+ * Cloud drives: File Search does not read them, they have connectors of
+ * their own. A query naming one gets no File Search suggestion.
+ */
+const NOT_FILE_SEARCH = ['sharepoint', 'onedrive', 'googledrive', 'gdrive', 'dropbox', 'icloud'];
 
 /**
  * Words that do not name an app, in the languages people search in (en, de,
@@ -292,6 +368,30 @@ function byRank<T extends CatalogSearchEntry>(a: Scored<T>, b: Scored<T>): numbe
 }
 
 /**
+ * The File Search slugs a query asks for (FILE_SEARCH_INTENTS), best first,
+ * and the query words that triggered them. Nothing for a cloud drive query.
+ */
+export function fileSearchIntent(query: string): { slugs: string[]; words: string[] } {
+  const words = queryWords(query).map(compact).filter(Boolean);
+  const joined = words.join('');
+  if (!words.length || NOT_FILE_SEARCH.some((w) => joined.includes(w))) return { slugs: [], words: [] };
+  const slugs: string[] = [];
+  const used = new Set<string>();
+  // In query order: "synology nas" suggests Synology first.
+  for (let i = 0; i < words.length; i++) {
+    for (let j = Math.min(words.length, i + 3); j > i; j--) {
+      const run = words.slice(i, j).join('');
+      const intent = FILE_SEARCH_INTENTS.find((x) => x.triggers.includes(run));
+      if (!intent) continue;
+      for (const slug of intent.slugs) if (!slugs.includes(slug)) slugs.push(slug);
+      for (const w of words.slice(i, j)) used.add(w);
+      break;
+    }
+  }
+  return { slugs, words: [...used] };
+}
+
+/**
  * Searches the entries. Entries must already be the ones this deployment
  * offers: unlisted and hidden adapters are filtered out by the caller.
  */
@@ -300,7 +400,7 @@ export function searchCatalog<T extends CatalogSearchEntry>(
   query: string,
 ): CatalogSearchResult<T> {
   const terms = searchTerms(query);
-  if (!terms.length) return { hits: [], terms, missing: [], match: 'none' };
+  if (!terms.length) return { hits: [], terms, missing: [], match: 'none', fileSearch: [] };
 
   // The whole query as one name: "mercado livre", "amo crm", "telegram bot".
   const wholeQuery = [compact(query), compact(terms.join(''))].filter((q) => q.length > 1);
@@ -351,15 +451,38 @@ export function searchCatalog<T extends CatalogSearchEntry>(
       .slice(0, MAX_PARTIAL);
   }
 
-  const hits: CatalogSearchHit<T>[] = [
+  let hits: CatalogSearchHit<T>[] = [
     ...direct.map((s) => ({ entry: s.entry, match: 'direct' as const, score: s.score })),
     ...fuzzy.map((s) => ({ entry: s.entry, match: 'fuzzy' as const, score: s.score })),
     ...partial.map((s) => ({ entry: s.entry, match: 'partial' as const, score: s.score })),
   ];
+
+  const intent = fileSearchIntent(query);
+  const fileSearch = intent.slugs
+    .map((slug) => entries.find((e) => e.slug === slug))
+    .filter((e): e is T => !!e)
+    .slice(0, MAX_FILE_SEARCH);
+  if (fileSearch.length) {
+    const picked = new Set<T>(fileSearch);
+    const suggestedHits = fileSearch.map(
+      (entry): CatalogSearchHit<T> => ({
+        ...(hits.find((h) => h.entry === entry) ?? { entry, match: 'suggested' as const, score: 0 }),
+        suggested: true,
+      }),
+    );
+    const rest = hits.filter((h) => !picked.has(h.entry));
+    // A result named after the query, or matching it as a whole word ("synology",
+    // the DSM API; "documents", a DMS), keeps the first place.
+    const lead = rest[0] && rest[0] === hits[0] && rest[0].match === 'direct' && rest[0].score >= SCORE.word ? [rest[0]] : [];
+    hits = [...lead, ...suggestedHits, ...rest.slice(lead.length)];
+    for (const t of terms) if (intent.words.includes(compact(t))) matchedTerms.add(t);
+  }
+
   return {
     hits,
     terms,
     missing: terms.filter((t) => !matchedTerms.has(t)),
     match: hits.length ? hits[0].match : 'none',
+    fileSearch,
   };
 }

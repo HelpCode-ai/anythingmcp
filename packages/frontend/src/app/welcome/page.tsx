@@ -12,6 +12,8 @@ import { ConnectorLogo } from '@/components/connector-logo';
 import { StarterPack } from '@/components/starter-pack';
 import { searchCatalog } from '@/lib/catalog-search';
 import { useCatalogSearchReport } from '@/lib/use-catalog-search-report';
+import { fileSearchSetupPath } from '@/lib/file-search-catalog';
+import { FileSearchSearchHint } from '@/components/file-search/search-hint';
 
 // Shown when the ranking can't be loaded: what the cloud ranked in October
 // 2026. The live list comes from /api/adapters/popular-connectors.
@@ -138,6 +140,13 @@ export default function WelcomePage() {
               placeholder={t('searchPlaceholder')}
               className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-[16px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--border-strong)] focus:outline-none"
             />
+            {/* A storage query ("synology", "nas"): File Search reads the
+                documents on it, which the system's API connector does not. */}
+            {searchResult && searchResult.fileSearch.length > 0 && (
+              <div className="mt-3">
+                <FileSearchSearchHint entries={searchResult.fileSearch} from="welcome_hint" onPick={reportPicked} />
+              </div>
+            )}
             {!query.trim() && popular.length > 0 && (
               <p className="mt-4 text-xs font-medium uppercase tracking-[0.12em] text-[var(--text-3)]">
                 {t('popular')}
@@ -147,7 +156,7 @@ export default function WelcomePage() {
               {(query.trim() ? matches.slice(0, 8) : popular).map((a) => (
                 <Link
                   key={a.slug}
-                  href={`/connectors/setup/${encodeURIComponent(a.slug)}`}
+                  href={fileSearchSetupPath(a.slug, 'welcome') ?? `/connectors/setup/${encodeURIComponent(a.slug)}`}
                   onClick={() => reportPicked(a.slug)}
                   className="flex items-center gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[var(--shadow-sm)] transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]"
                 >
