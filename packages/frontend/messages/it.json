@@ -940,7 +940,8 @@
       "saveAnyway": "Salva comunque",
       "appPendingTitle": "{name} non accetta ancora queste chiavi.",
       "appPendingBody": "Se la tua app è nuova, {name} la verifica, di solito entro pochi giorni: ti scriveremo un'e-mail quando sarà approvata, non devi fare altro. Se la tua app è già attiva, copia di nuovo lo shared secret dalla pagina della tua app. Le tue chiavi sono salvate.",
-      "appPendingOpen": "Apri il connettore"
+      "appPendingOpen": "Apri il connettore",
+      "switchTo": "Passa a {name}"
     },
     "field": {
       "required": "Obbligatorio",
@@ -950,7 +951,16 @@
       "stored": "Salvato. Lascia vuoto per mantenerlo",
       "hide": "Nascondi",
       "show": "Mostra",
-      "open": "Apri"
+      "open": "Apri",
+      "fix": {
+        "sentence": "{changes}: {value}",
+        "and": "e",
+        "scheme": "aggiungi https:// all'inizio",
+        "https": "usa https:// invece di http://",
+        "slash": "togli la / alla fine",
+        "www": "togli il www.",
+        "path": "togli {removed} dopo l'host"
+      }
     },
     "advanced": "Avanzate",
     "guide": {

@@ -650,11 +650,27 @@ export const connectors = {
 };
 
 /** One-time links an AI client hands out to finish a connector's setup. */
+/** A dashboard session handed back with a setup link, for the link's workspace. */
+export interface SetupLinkSession {
+  accessToken: string;
+  user: { id: string; email: string; name: string | null; role: string; organizationId: string | null };
+}
+
 export const setupLinks = {
+  /** Signed in: `session` is set when the link's connector is in another workspace. */
   resolve: (token: string, authToken: string, from?: string) =>
-    request<{ redirect: string }>('/api/setup-links/resolve', {
+    request<{ redirect: string; session?: SetupLinkSession }>('/api/setup-links/resolve', {
       method: 'POST',
       token: authToken,
+      body: { token, ...(from ? { from } : {}) },
+    }),
+  /**
+   * Not signed in to the dashboard, right after signing in to connect an AI
+   * client: the backend checks the sign-in cookie that browser received.
+   */
+  open: (token: string, from?: string) =>
+    request<{ redirect: string; session: SetupLinkSession }>('/api/setup-links/open', {
+      method: 'POST',
       body: { token, ...(from ? { from } : {}) },
     }),
 };
@@ -736,6 +752,12 @@ export type VerifyResult =
       status?: number | null;
       suggest?: string;
       suggestName?: string;
+      /**
+       * The same suggestion, ready to act on: the setup of `slug`, started
+       * with `prefill` (addresses and settings entered here, never a secret).
+       * An Odoo below 19 offers the JSON-RPC connector this way.
+       */
+      switchTo?: { slug: string; name: string; prefill: Record<string, string> };
       /**
        * The provider refused the app keys in a way that may be an app awaiting
        * its approval (Etsy: Pending) or a wrong secret of an active app (Etsy
