@@ -169,9 +169,11 @@ test('OAuth: app keys Etsy does not accept yet keep the user here, instead of an
   await expect(page).toHaveURL(/\/connectors\/setup\/etsy/);
 });
 
-test('OAuth: an Etsy app still Pending keeps the keys and says the owner will be emailed', async ({ page }) => {
+test('OAuth: keys Etsy refuses (app Pending, or a wrong secret) are kept, and the owner will be emailed', async ({ page }) => {
   // Users waited days for Etsy's approval email and never came back; the
-  // backend now checks the kept keys again and emails on approval.
+  // backend now checks the kept keys again and emails on approval. Etsy
+  // answers the same 403 for a wrong shared secret of an active app, so the
+  // panel does not claim the app is unapproved.
   const calls = await setup(page, {
     etsyVerify: {
       ok: false,
@@ -185,7 +187,10 @@ test('OAuth: an Etsy app still Pending keeps the keys and says the owner will be
   await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
   await page.getByLabel('Shared secret').fill('s3cr3t0abc');
   await page.getByRole('button', { name: 'Save and sign in to Etsy' }).click();
-  await expect(page.getByText("We'll e-mail you when it's approved; nothing else to do.")).toBeVisible();
+  await expect(page.getByText('Etsy Open API v3 does not accept these keys yet.')).toBeVisible();
+  await expect(page.getByText("we'll e-mail you when it's approved, nothing else to do.")).toBeVisible();
+  await expect(page.getByText('If your app is already active, copy the shared secret again from your app page.')).toBeVisible();
+  await expect(page.getByText('has not approved your app')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Open the connector' })).toHaveAttribute('href', '/connectors/c9');
   expect(calls.imports).toHaveLength(1);
   expect(calls.imports[0].credentials).toMatchObject({
