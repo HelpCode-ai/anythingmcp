@@ -335,6 +335,34 @@ describe('AdaptersService — values that cannot be the real ones', () => {
       ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e',
     });
     expect(Object.keys(out.fields)).toEqual(['ODOO_URL']);
+    expect(out.fields.ODOO_URL).toMatch(/Remove \/web after the host: https:\/\/erp\.acme\.de\./);
+  });
+
+  it('adds the missing https:// to an address before the pattern check, and calls with it', async () => {
+    const { service, execute } = build();
+    const out: any = await service.verifyCredentials('odoo', 'org1', {
+      ODOO_URL: 'amcp-e2e-test.odoo.com',
+      ODOO_DB: 'amcp-e2e-test',
+      ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e',
+    });
+    expect(out.fields).toBeUndefined();
+    expect(execute).toHaveBeenCalled();
+    expect(execute.mock.calls[0][0].envVars.ODOO_URL).toBe('https://amcp-e2e-test.odoo.com');
+  });
+
+  it('the install stores an address field outside the base URL with its https:// (Zoho accounts server)', async () => {
+    const { service, prisma } = build();
+    await service.importAdapter('zoho-mail', 'u1', 'org1', {
+      ZOHO_MAIL_CLIENT_ID: '1000.ABCDEFGHIJKLMNOP',
+      ZOHO_MAIL_CLIENT_SECRET: 'f00ba4c0ffee1234567890abcdef',
+      ZOHO_MAIL_API_URL: 'mail.zoho.eu',
+      ZOHO_MAIL_ACCOUNTS_URL: 'accounts.zoho.eu',
+    });
+    const data = prisma.connector.create.mock.calls[0][0].data;
+    expect(data.envVars).toMatchObject({
+      ZOHO_MAIL_API_URL: 'https://mail.zoho.eu',
+      ZOHO_MAIL_ACCOUNTS_URL: 'https://accounts.zoho.eu',
+    });
   });
 
   it('"Save anyway" (the install) refuses them too, before anything is written', async () => {
@@ -1127,11 +1155,28 @@ describe('AdaptersService.verifyCredentials: Odoo JSON-2 answering 404', () => {
     );
   });
 
+  it('below 19, offers the switch to the JSON-RPC setup with the address and database, never the key', async () => {
+    odooAnswers({ version: [16, 0, 0, 'final', 0, ''], serie: '16.0' });
+    const out: any = await build().verifyCredentials('odoo', 'org1', {
+      // Typed without https://, as the address bar shows it.
+      ODOO_URL: 'binikit.odoo.com',
+      ODOO_DB: 'binikit',
+      ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e',
+    });
+    expect(out.switchTo).toEqual({
+      slug: 'odoo-jsonrpc',
+      name: 'Odoo 14-18 (JSON-RPC)',
+      prefill: { ODOO_URL: 'https://binikit.odoo.com', ODOO_DB: 'binikit' },
+    });
+    expect(JSON.stringify(out.switchTo)).not.toContain('a3f9c27e');
+  });
+
   it('on Odoo 19 says the database name is wrong and names the right one, at the root of the address', async () => {
     odooAnswers({ version: ['saas~19', 3, 0, 'final', 0, 'e'], serie: 'saas~19.3', databases: ['binikit-main-12245208'] });
     const out: any = await build().verifyCredentials('odoo', 'org1', creds);
     expect(out.ok).toBe(false);
     expect(out.suggest).toBeUndefined();
+    expect(out.switchTo).toBeUndefined();
     expect(out.message).toMatch(/version saas~19\.3 and has the JSON-2 API, so the database name "binikit" is wrong/);
     expect(out.message).toContain('"binikit-main-12245208"');
     const urls = outbound.mock.calls.map(([c]: any) => c.url);

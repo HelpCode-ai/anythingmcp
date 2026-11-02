@@ -737,6 +737,12 @@ export type VerifyResult =
       suggest?: string;
       suggestName?: string;
       /**
+       * The same suggestion, ready to act on: the setup of `slug`, started
+       * with `prefill` (addresses and settings entered here, never a secret).
+       * An Odoo below 19 offers the JSON-RPC connector this way.
+       */
+      switchTo?: { slug: string; name: string; prefill: Record<string, string> };
+      /**
        * The provider refused the app keys in a way that may be an app awaiting
        * its approval (Etsy: Pending) or a wrong secret of an active app (Etsy
        * answers both with the same 403): the page keeps the keys, and the owner

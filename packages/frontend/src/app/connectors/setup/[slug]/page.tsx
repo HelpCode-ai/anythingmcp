@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { fileSearchSetupPath } from '@/lib/file-search-catalog';
 import { copyText } from '@/lib/clipboard';
 import { returnAssistant } from '@/lib/return-assistant';
+import { addressFix, isPlainAddressField, switchSetupHref, withMissingScheme, type AddressFix } from '@/lib/address-fix';
 import { GuideIntro, GuideStepper, GuideStepView, GuideWaitPanel, StuckLink } from '@/components/connector-setup/setup-guide';
 import { SetupSuccess } from '@/components/connector-setup/setup-success';
 
@@ -45,6 +46,11 @@ import { SetupSuccess } from '@/components/connector-setup/setup-success';
  *                   start a field with this value, e.g. the Odoo address and
  *                   database from the AnythingMCP module in Odoo. Addresses and
  *                   settings only: a credential is never read from a link.
+ *   replaces=<id>   opened from "Switch to …" on another connector's setup
+ *                   (an Odoo below 19 on the JSON-2 connector): once this one
+ *                   is saved, that connector is deleted if it is still not
+ *                   ready and comes from another catalog adapter, so the
+ *                   workspace keeps no dead draft.
  *
  * An adapter with a `setupGuide` is set up one step at a time instead (an
  * intro, the steps, then the success screen); "Enter everything on one page"
@@ -73,6 +79,7 @@ function SetupContent() {
   const { token } = useAuth();
   const t = useTranslations('connectorSetup');
   const existingId = params.get('connector');
+  const replaces = params.get('replaces');
   const back = returnAssistant(params.get('from'));
   const backFromProvider = params.get('step') === 'done';
   // Values handed over in the link (prefill.<NAME>), applied once the fields are known.
@@ -288,20 +295,46 @@ function SetupContent() {
   const credentials = () =>
     Object.fromEntries(
       fields
-        .map((f) => [f.name, (values[f.name] ?? '').trim()] as const)
+        // An address typed without https:// gets it when the pattern wants it.
+        .map((f) => [f.name, withMissingScheme(f, (values[f.name] ?? '').trim())] as const)
         .filter(([name, v]) => connectorId || v !== '' || !fields.find((f) => f.name === name)?.required),
     ) as Record<string, string>;
+
+  /** Show the https:// an address gets as soon as the user leaves the field. */
+  const completeAddress = (f: EnvVarDescriptor) => {
+    const v = values[f.name] ?? '';
+    const fixed = withMissingScheme(f, v);
+    if (fixed === v) return;
+    setValues((all) => ({ ...all, [f.name]: fixed }));
+    setFieldErrors((errs) => {
+      const next = { ...errs };
+      delete next[f.name];
+      return next;
+    });
+  };
+
+  /** What to change in a refused address, when the pattern says it ("Add https:// in front: …"). */
+  const fixMessage = (fix: AddressFix): string => {
+    const phrases = fix.changes.map((c) => t(`field.fix.${c}`, { removed: fix.removed ?? '' }));
+    const joined =
+      phrases.length > 1 ? `${phrases.slice(0, -1).join(', ')} ${t('field.fix.and')} ${phrases[phrases.length - 1]}` : phrases[0];
+    return t('field.fix.sentence', { changes: `${joined.charAt(0).toUpperCase()}${joined.slice(1)}`, value: fix.value });
+  };
 
   /** Client-side checks: required fields and patterns (of `only`, in a guide step). */
   const validate = (only?: string[]): boolean => {
     const errs: Record<string, string> = {};
     for (const f of only ? fields.filter((x) => only.includes(x.name)) : fields) {
-      const v = (values[f.name] ?? '').trim();
+      const v = withMissingScheme(f, (values[f.name] ?? '').trim());
       if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = t('field.required');
       else if (v && f.pattern) {
         try {
           if (!new RegExp(f.pattern).test(v)) {
-            errs[f.name] = f.patternMessage ?? (f.example ? t('field.looksWrongExample', { example: f.example }) : t('field.looksWrong'));
+            // Say what to change when the pattern tells it; the adapter's own words otherwise.
+            const fix = isPlainAddressField(f) ? addressFix(f.pattern, v) : undefined;
+            errs[f.name] = fix
+              ? fixMessage(fix)
+              : (f.patternMessage ?? (f.example ? t('field.looksWrongExample', { example: f.example }) : t('field.looksWrong')));
           }
         } catch {
           /* a broken pattern never blocks the form */
@@ -313,6 +346,24 @@ function SetupContent() {
     return Object.keys(errs).length === 0;
   };
 
+  /**
+   * Opened from "Switch to …" on another connector's setup (?replaces=): the
+   * connector left behind there is deleted once this one is saved, if it is
+   * still not ready and comes from another catalog adapter. A connector that
+   * works, or one of this adapter, is never touched; a failure keeps it.
+   */
+  const retireReplaced = async (newId: string) => {
+    if (!replaces || replaces === newId || !token) return;
+    try {
+      const old = await connectors.get(replaces, token);
+      const oldSlug = (old?.config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
+      if (old?.id !== replaces || old.setupStatus === 'ready' || typeof oldSlug !== 'string' || oldSlug === slug) return;
+      await connectors.delete(replaces, token);
+    } catch {
+      // Kept: it stays visible under Connectors, where it can be deleted.
+    }
+  };
+
   /** Create the connector, or store the values on the existing one. Returns its id. */
   const save = async (): Promise<string> => {
     const creds = credentials();
@@ -322,6 +373,7 @@ function SetupContent() {
     }
     const out = await adapters.import(slug, token!, creds);
     setSavedId(out.connectorId);
+    await retireReplaced(out.connectorId);
     return out.connectorId;
   };
 
@@ -578,8 +630,22 @@ function SetupContent() {
                 : t('verify.providerError', { name: info.name })}
           </p>
           <p className="mt-1 break-words text-xs">{verifyFailed.message}</p>
+          {verifyFailed.switchTo && (
+            // The other connector's setup, started with the address and
+            // settings typed here (never a key), the way back to the chat, and
+            // this connector to delete once that one is saved.
+            <Link
+              href={switchSetupHref(verifyFailed.switchTo.slug, verifyFailed.switchTo.prefill ?? {}, {
+                from: back?.id,
+                replaces: connectorId,
+              })}
+              className={cn(buttonVariants({ size: 'sm' }), 'mt-3')}
+            >
+              {t('verify.switchTo', { name: verifyFailed.switchTo.name })}
+            </Link>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-            {verifyFailed.suggest && (
+            {verifyFailed.suggest && !verifyFailed.switchTo && (
               <Link
                 href={`/connectors/setup/${encodeURIComponent(verifyFailed.suggest)}`}
                 className="text-xs font-medium underline"
@@ -633,6 +699,7 @@ function SetupContent() {
             value={values[f.name] ?? ''}
             placeholder={storedSecrets.includes(f.name) ? t('field.stored') : (f.example ?? '')}
             onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+            onBlur={() => completeAddress(f)}
             aria-invalid={!!fieldErrors[f.name]}
             className={cn(
               'w-full rounded-[9px] border bg-[var(--surface)] px-3 py-2 text-[16px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:outline-none sm:text-sm',

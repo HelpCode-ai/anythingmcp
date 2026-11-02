@@ -3,6 +3,8 @@ import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AdaptersService } from './adapters.service';
 import { describeAdapterEnvVars, needsBrowserAuthorization } from './env-var-meta';
+import { normalizeAdapterEnvValue } from './env-var-checks';
+import { addressFix, describeAddressFix } from './address-fix';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { SecurityEvents, SecurityEventService } from '../audit/security-event.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
@@ -296,7 +298,10 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           },
         };
       }
-      const text = value !== undefined && value !== null ? String(value).trim() : '';
+      // An address typed without https:// (`acme.odoo.com`) gets it when the
+      // field's pattern wants it, as on the setup page (address-fix.ts).
+      const typed = value !== undefined && value !== null ? String(value).trim() : '';
+      const text = typed ? normalizeAdapterEnvValue(d, typed) : '';
       // A shop URL with `?access_token=…`, a tenant field holding a key: the
       // chat is the wrong place for it, whatever the setting is called.
       if (text && findSecretLiterals(text).length > 0) {
@@ -309,10 +314,12 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         };
       }
       if (text && d.pattern && !matchesPattern(d.pattern, text)) {
+        // Secrets never get here, so the fixed address can be named.
+        const fix = d.kind !== 'credential' ? addressFix(d.pattern, text) : undefined;
         return {
           isError: true,
           body: {
-            error: `'${d.label}' does not look right. ${d.patternMessage ?? d.help ?? ''}`.trim(),
+            error: `'${d.label}' does not look right. ${fix ? describeAddressFix(fix) : (d.patternMessage ?? d.help ?? '')}`.trim(),
             hint: 'Ask the user to check the value, or install without it: they can enter it on the page linked in the answer.',
           },
         };
