@@ -7,6 +7,7 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { SecurityEvents, SecurityEventService } from '../audit/security-event.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 import {
+  SetupCallOptions,
   SetupCallResult,
   SetupContext,
   SharedSetupProvider,
@@ -121,7 +122,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
 
   // ── Find ──────────────────────────────────────────────────────────────
 
-  async find(ctx: SetupContext, args: { query?: string; limit?: number }): Promise<SetupCallResult> {
+  async find(
+    ctx: SetupContext,
+    args: { query?: string; limit?: number },
+    opts: SetupCallOptions = {},
+  ): Promise<SetupCallResult> {
     const query = String(args.query ?? '');
     const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
     const installed = new Set(
@@ -163,7 +168,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         metadata: {
           query,
           results: scored.length,
-          via: 'mcp',
+          via: opts.via ?? 'mcp',
           ...(search.missing.length ? { missing: search.missing.join(' ') } : {}),
           ...(scored.length ? { match: search.match, adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
         },
@@ -251,6 +256,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   async install(
     ctx: SetupContext,
     args: { adapter?: string; settings?: Record<string, unknown> },
+    opts: SetupCallOptions = {},
   ): Promise<SetupCallResult> {
     const slug = String(args.adapter ?? '').trim();
     let definition: ReturnType<AdaptersService['describe']>;
@@ -343,7 +349,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       organizationId: ctx.organizationId,
       // A chat install checks nothing but the import probe; `verified` keeps
       // these apart from setups that made a successful call.
-      metadata: { adapterSlug: slug, via: 'mcp', verified: imported.probe?.ok === true },
+      metadata: { adapterSlug: slug, via: opts.via ?? 'mcp', verified: imported.probe?.ok === true },
     });
 
     const state = await this.connectorState(imported.connectorId);
