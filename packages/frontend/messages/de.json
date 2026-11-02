@@ -953,7 +953,10 @@
       "back": "Zurück",
       "checking": "Wird geprüft…",
       "continue": "Weiter",
-      "tickHint": "Setzen Sie oben das Häkchen, sobald das erledigt ist."
+      "tickHint": "Setzen Sie oben das Häkchen, sobald das erledigt ist.",
+      "saveAndCheck": "Speichern und bei {name} prüfen",
+      "waitHint": "„Weiter“ wird aktiv, sobald {name} Ihre App freigegeben hat.",
+      "keysFirst": "Geben Sie zuerst im Schritt davor Ihre Schlüssel ein."
     },
     "title": {
       "finish": "Einrichtung von {name} abschließen",
@@ -1003,6 +1006,17 @@
       "fillPrevious": "{action}: Füllen Sie zuerst den vorherigen Schritt aus.",
       "screenshot": "Screenshot vom {date}; die Seite kann inzwischen etwas anders aussehen.",
       "problems": "Häufige Probleme"
+    },
+    "wait": {
+      "checking": "Wir fragen {name} nach Ihrer App…",
+      "notYet": "{name} hat Ihre App noch nicht freigegeben",
+      "checkedAt": "Zuletzt geprüft um {time}. Die Seite prüft erneut, sobald Sie zurückkommen.",
+      "checkAgain": "Erneut prüfen",
+      "checkingShort": "Wird geprüft…",
+      "activeAlready": "Schon freigegeben, aber hier geht es nicht weiter? Schlüssel neu eingeben",
+      "saved": "Ihre Schlüssel sind gespeichert. Sie können diese Seite schließen: Wenn Sie zurückkommen, öffnet sie sich bei diesem Schritt.",
+      "ready": "{name} hat Ihre App freigegeben.",
+      "readyNext": "Weiter mit dem nächsten Schritt."
     }
   },
   "setupSuccess": {

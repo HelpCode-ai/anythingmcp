@@ -281,7 +281,7 @@ describe('importAdapter for an MCP adapter (splunk)', () => {
     const { service, prisma, created } = build(discover);
     // Unlisted until verified with a real account; the install path is what is tested here.
     jest.spyOn(service as any, 'isInstallableHere').mockReturnValue(true);
-    await service.importAdapter('linear', 'u1', 'o1', { LINEAR_API_KEY: 'lin_api_x' });
+    await service.importAdapter('linear', 'u1', 'o1', { LINEAR_API_KEY: 'lin_api_0123456789abcdefghijKLMN' });
 
     expect(prisma.connector.create.mock.calls[0][0].data.config).toMatchObject({ mcpToolPrefix: 'linear_' });
     expect(created.map((t) => [t.name, t.endpointMapping.method, t.isEnabled])).toEqual([

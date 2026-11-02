@@ -591,8 +591,11 @@ export class EmailService {
     to: string,
     name: string,
     dayNumber: 1 | 2,
-    /** Set when the user already connected an AI client to the empty workspace. */
-    opts?: { aiClient?: string },
+    /**
+     * aiClient: set when the user already connected an AI client to the empty
+     * workspace. quickSetups: reminder 1's variant B (one-click Claude chats).
+     */
+    opts?: { aiClient?: string; quickSetups?: ReadonlyArray<{ label: string; url: string }> },
   ): Promise<boolean> {
     const transport = await this.createTransporter();
     if (!transport) {
@@ -608,6 +611,7 @@ export class EmailService {
         name,
         dayNumber,
         aiClient: opts?.aiClient,
+        quickSetups: opts?.quickSetups,
         cloudUrl: this.cloudUrl(),
         signInWith: await this.signInProvider(to),
       },
@@ -621,7 +625,7 @@ export class EmailService {
         ...this.mail(email, headers),
       });
       this.logger.log(
-        `Onboarding-reminder email (day ${dayNumber}${opts?.aiClient ? ', AI client connected' : ''}) sent to ${maskEmail(to)}`,
+        `Onboarding-reminder email (day ${dayNumber}${opts?.aiClient ? ', AI client connected' : ''}${opts?.quickSetups?.length && !opts?.aiClient ? ', one-click setups' : ''}) sent to ${maskEmail(to)}`,
       );
       return true;
     } catch (err) {

@@ -712,6 +712,10 @@ export interface SetupGuideStep {
   fields?: string[];
   problems?: Array<{ q: string; a: string }>;
   confirm?: string;
+  /** Continue saves the values on the connector and asks the provider whether it accepts the keys. */
+  saveAndCheck?: boolean;
+  /** Shown while the provider refuses the saved keys (an Etsy app awaiting approval); skipped once it accepts them. */
+  waitForProvider?: boolean;
 }
 
 export interface SetupGuide extends SetupEffort {
@@ -728,6 +732,7 @@ export type VerifyResult =
       kind: string;
       message: string;
       missing?: string[];
+      fields?: Record<string, string>;
       status?: number | null;
       suggest?: string;
       suggestName?: string;

@@ -93,6 +93,34 @@ async function databaseListSentence(
     .join(', ')}. Enter the one you use as the database name.`;
 }
 
+/**
+ * For a tool call that Odoo's JSON-2 API answered 404 "No database is
+ * selected": what is wrong with this connector, found out rather than
+ * guessed. An address saved with a path after the host (`/web`, `/odoo`)
+ * sends every call to `/web/json/2`; otherwise the databases this address
+ * serves are listed (one unauthenticated request, as in the setup check).
+ * Undefined when neither can be said.
+ */
+export async function odooNoDatabaseAdvice(
+  baseUrl: string | undefined,
+  enteredDatabase: string | undefined,
+): Promise<string | undefined> {
+  if (!baseUrl || /\{\{/.test(baseUrl)) return undefined;
+  const origin = odooOrigin(baseUrl);
+  const parts: string[] = [];
+  try {
+    const path = new URL(baseUrl).pathname.replace(/\/json\/2\/?$/, '').replace(/\/+$/, '');
+    if (path) {
+      parts.push(`ODOO_URL has "${path}" after the host, so the calls go to the wrong address: set it to ${origin}.`);
+    }
+  } catch {
+    // not a URL: nothing to say about its path
+  }
+  const list = await databaseListSentence(origin, enteredDatabase);
+  if (list) parts.push(list);
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
 /** What a failed Odoo check should say instead of the generic message. */
 export interface OdooCheckAdvice {
   message: string;

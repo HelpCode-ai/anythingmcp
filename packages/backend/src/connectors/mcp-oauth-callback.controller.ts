@@ -901,7 +901,10 @@ function refusedExchange(
   } else if (err.providerError === 'invalid_grant') {
     message =
       `The provider refused the authorization code${detail}. Start the authorization again; ` +
-      `if it keeps failing, check that the app's redirect URI is exactly ${flow.redirectUri}.`;
+      (flow.callbackUrl
+        ? `if it keeps failing, check that the redirect name ${flow.redirectUri} is the one of this app ` +
+          `and that its accepted URL at the provider is exactly ${flow.callbackUrl}.`
+        : `if it keeps failing, check that the app's redirect URI is exactly ${flow.redirectUri}.`);
   } else {
     message = `The provider refused the sign-in${detail}. Check the connector's OAuth settings and authorize again.`;
   }

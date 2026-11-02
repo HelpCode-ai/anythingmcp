@@ -289,6 +289,11 @@ export function onboardingReminderEmail(
     cloudUrl: string;
     /** The recipient's sign-in provider, if any (see cloudPageUrl). */
     signInWith?: string | null;
+    /**
+     * Reminder 1 without an AI client only: one-click Claude chats that
+     * replace the how-to (the cron's variant B, ee/cloud/onboarding-reminder.ts).
+     */
+    quickSetups?: ReadonlyArray<{ label: string; url: string }>;
   },
   ctx: MarketingContext,
 ): RenderedEmail {
@@ -319,6 +324,38 @@ export function onboardingReminderEmail(
         `You connected ${input.aiClient} to AnythingMCP, but your workspace has no apps yet. Ask ${input.aiClient} in the chat, e.g. "Connect my Shopify store": it installs the connector and gives you a one-time link to sign in to the app. No API keys pasted into the chat.\n\n` +
         `This works when ${input.aiClient} is connected through ${mcpUrl}.\n\n` +
         `Or add one in the dashboard: ${storeUrl}`,
+      ctx,
+      unsubscribeUrl: ctx.unsubscribeUrl,
+    });
+  }
+
+  if (input.dayNumber === 1 && input.quickSetups?.length) {
+    const quick = input.quickSetups;
+    return build({
+      subject: 'Connect your first app in one click: AnythingMCP',
+      preheader: 'Pick one: Claude opens with the request typed in.',
+      bodyHtml:
+        h1('Your workspace is ready.', 'Connect your first app in one click.') +
+        p(`${hi} your AnythingMCP workspace has no apps yet. Pick one below: Claude opens a new chat with the request typed in, sets up the connector with you and gives you a one-time link to sign in. No API keys pasted into the chat.`) +
+        steps(
+          quick.map((q) => ({
+            title: link(q.url, `Connect ${esc(q.label)}`),
+            detail: 'A token or key you create yourself, no app review: ready in a few minutes.',
+          })),
+        ) +
+        p(
+          `AnythingMCP not in Claude yet? Add it from ${link(CLAUDE_DIRECTORY_URL, 'Claude&rsquo;s connector directory')} first, one click.`,
+          { size: 14, muted: true },
+        ) +
+        button(welcomeUrl, 'Or pick an app in the dashboard') +
+        small('Stuck, or the app you need is missing? Reply and tell us which one.'),
+      bodyText:
+        `${greeting(input.name)}\n\n` +
+        `Your AnythingMCP workspace is ready but has no apps yet. Pick one: Claude opens a new chat with the request typed in and sets up the connector with you.\n\n` +
+        quick.map((q) => `Connect ${q.label}: ${q.url}`).join('\n') +
+        `\n\nAnythingMCP not in Claude yet? Add it from Claude's connector directory first: ${CLAUDE_DIRECTORY_URL}\n\n` +
+        `Or pick an app in the dashboard: ${welcomeUrl}\n\n` +
+        `Stuck, or the app you need is missing? Reply and tell us which one.`,
       ctx,
       unsubscribeUrl: ctx.unsubscribeUrl,
     });

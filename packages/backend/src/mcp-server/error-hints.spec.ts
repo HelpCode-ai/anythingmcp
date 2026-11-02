@@ -389,7 +389,7 @@ describe('deriveErrorHint: generative AI APIs', () => {
     ).toContain('aistudio.google.com/apikey');
     expect(
       deriveErrorHint({ host: gemini, status: 429, body: { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota' } } }),
-    ).toMatch(/free tier.*image models have no free tier/);
+    ).toMatch(/rate limit reached.*Do not retry in a loop/);
     expect(
       deriveErrorHint({ host: gemini, status: 404, body: { error: { message: 'models/gemini-9-ultra is not found for API version v1beta, or is not supported for generateContent.' } } }),
     ).toMatch(/gemini_list_models/);

@@ -145,3 +145,49 @@ describe('McpServersService — shared guide skills per workspace', () => {
     expect(text).toContain('- org-B');
   });
 });
+
+/**
+ * A catalog connector's per-workspace facts (the Atlassian site and its
+ * cloudId) reach the model with its instructions, on initialize and in the
+ * shared workspace guide, while its variables go no further.
+ */
+describe('McpServersService — instruction facts of catalog connectors', () => {
+  const CLOUD_ID = '1324a887-45db-1bf4-1e99-ef0ff456d421';
+  const JIRA = {
+    id: 'c-jira',
+    name: 'Atlassian',
+    instructions: 'Catalog text.',
+    organizationId: 'org-A',
+    envVars: { ATLASSIAN_SITE: 'acme.atlassian.net', ATLASSIAN_CLOUD_ID: CLOUD_ID, ATLASSIAN_API_TOKEN: 'ATATTsecret' },
+    config: { adapterSlug: 'atlassian' },
+  };
+  const kgSkills = { activeSkillsText: jest.fn().mockResolvedValue(null) };
+
+  it('adds the cloudId to the composed instructions and the visible content', async () => {
+    const prisma = {
+      mcpServerConfig: { findUnique: jest.fn().mockResolvedValue({ instructions: null, organizationId: 'org-A' }) },
+      mcpServerConnector: { findMany: jest.fn().mockResolvedValue([{ connectorId: 'c-jira', connector: JIRA }]) },
+      mcpResource: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new McpServersService(prisma as any, kgSkills as any, {} as any);
+    const content = await service.getVisibleContent('srv-1', ['c-jira']);
+    expect(content.instructions).toContain(
+      `## Atlassian\nCatalog text.\n\nThis workspace's Atlassian site is acme.atlassian.net, cloudId ${CLOUD_ID}`,
+    );
+    expect(content.connectors).toEqual([
+      { id: 'c-jira', name: 'Atlassian', instructions: expect.stringContaining(`cloudId ${CLOUD_ID}`) },
+    ]);
+    expect(JSON.stringify(content)).not.toContain('ATATTsecret');
+  });
+
+  it('adds the cloudId to the shared workspace guide', async () => {
+    const prisma = {
+      mcpServerConfig: { findMany: jest.fn().mockResolvedValue([]) },
+      connector: { findMany: jest.fn().mockResolvedValue([JIRA]) },
+    };
+    const service = new McpServersService(prisma as any, kgSkills as any, {} as any);
+    const text = await service.getSharedGuide({ connectorIds: ['c-jira'], serverIds: [] });
+    expect(text).toContain(`cloudId ${CLOUD_ID}`);
+    expect(text).not.toContain('ATATTsecret');
+  });
+});

@@ -8,6 +8,23 @@
   "icon": "bitrix24",
   "docsUrl": "https://training.bitrix24.com/rest_help/",
   "requiredEnvVars": ["BITRIX24_WEBHOOK_URL"],
+  "envVarMeta": {
+    "BITRIX24_WEBHOOK_URL": {
+      "label": "Inbound webhook URL",
+      "help": "In Bitrix24: Developer resources → Other → Inbound webhook. Pick the scopes, save, and copy the webhook URL it shows. A page of the portal (a CRM or task page) does not work.",
+      "example": "https://myteam.bitrix24.com/rest/1/abc123def456ghi7/",
+      "pattern": "^(https?://)?[^\\s/?#]+/rest/\\d+/[A-Za-z0-9_-]+/?$",
+      "patternMessage": "This is not an inbound webhook URL. Create one in Bitrix24 (Developer resources → Other → Inbound webhook) and paste its URL, of the form https://<portal>.bitrix24.com/rest/<user_id>/<code>/."
+    }
+  },
+  "verifyHints": {
+    "401": "Bitrix24 refused the webhook: it was deleted or its code changed. Create a new inbound webhook (Developer resources → Other → Inbound webhook) and paste its URL.",
+    "404": "Bitrix24 found no inbound webhook at this address. Create one (Developer resources → Other → Inbound webhook) and paste its URL, of the form https://<portal>.bitrix24.com/rest/<user_id>/<code>/."
+  },
+  "probe": {
+    "tool": "bitrix24_call",
+    "params": { "method": "scope" }
+  },
   "connector": {
     "name": "Bitrix24 Inbound Webhook",
     "type": "REST",

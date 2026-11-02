@@ -120,6 +120,23 @@ export const EMAIL_SAMPLES: EmailSample[] = [
     render: (ctx, n) => onboardingReminderEmail({ name: n.name, dayNumber: 1, cloudUrl: SAMPLE_CLOUD_URL }, unsub(ctx)),
   },
   {
+    id: 'onboarding-day1-quick',
+    render: (ctx, n) =>
+      onboardingReminderEmail(
+        {
+          name: n.name,
+          dayNumber: 1,
+          cloudUrl: SAMPLE_CLOUD_URL,
+          quickSetups: [
+            { label: 'Telegram bot', url: 'https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP' },
+            { label: 'Odoo', url: 'https://claude.ai/new?q=Connect%20my%20Odoo%20to%20AnythingMCP' },
+            { label: 'Shopify store', url: 'https://claude.ai/new?q=Connect%20my%20Shopify%20store%20to%20AnythingMCP' },
+          ],
+        },
+        unsub(ctx),
+      ),
+  },
+  {
     id: 'onboarding-day2',
     render: (ctx, n) => onboardingReminderEmail({ name: n.name, dayNumber: 2, cloudUrl: SAMPLE_CLOUD_URL }, unsub(ctx)),
   },
@@ -332,6 +349,7 @@ export const EMAIL_SAMPLES: EmailSample[] = [
 /** Ids of the samples that must carry an unsubscribe line. */
 export const MARKETING_SAMPLE_IDS = new Set([
   'onboarding-day1',
+  'onboarding-day1-quick',
   'onboarding-day2',
   'onboarding-client-connected',
   'activation-connect-client',
