@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import type { FileSearchAccess, FileSearchBudget, FileSourceTestResult, FileTreeNode } from '@/lib/api';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
@@ -217,7 +217,13 @@ export function LockedCard({ access, onStartTrial, busy }: { access: Extract<Fil
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-[15px] font-semibold text-[var(--text)]">{t('locked.title')}</h2>
-          <p className="mt-1 text-[13px] leading-[1.55] text-[var(--text-2)]">{access.message}</p>
+          <p className="mt-1 text-[13px] leading-[1.55] text-[var(--text-2)]">
+            {access.keyRequired === 'to_start'
+              ? t('locked.keyToStart')
+              : access.keyRequired === 'during_trial'
+                ? t('locked.keyDuringTrial')
+                : access.message}
+          </p>
           <ul className="mt-3 space-y-1 text-[13px] text-[var(--text-2)]">
             <li>• {t('locked.point1')}</li>
             <li>• {t('locked.point2')}</li>
@@ -227,9 +233,15 @@ export function LockedCard({ access, onStartTrial, busy }: { access: Extract<Fil
             {access.trialAvailable && onStartTrial && (
               <Button onClick={onStartTrial} disabled={busy}>{t('locked.startTrial')}</Button>
             )}
-            <Link href="/settings/license" className="inline-flex h-9 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[13px] font-semibold text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]">
-              {access.trialAvailable ? t('locked.buy') : t('locked.activate')}
-            </Link>
+            {access.keyRequired ? (
+              <Link href="/settings/license" className={cn(buttonVariants({ variant: 'primary' }))}>
+                {t('locked.registerKey')}
+              </Link>
+            ) : (
+              <Link href="/settings/license" className="inline-flex h-9 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[13px] font-semibold text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]">
+                {access.trialAvailable ? t('locked.buy') : t('locked.activate')}
+              </Link>
+            )}
           </div>
         </div>
       </div>

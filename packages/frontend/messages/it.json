@@ -3251,7 +3251,10 @@
       "point3": "Link di download temporanei, permessi per ruolo, registro di audit.",
       "startTrial": "Avvia la prova gratuita di 30 giorni",
       "buy": "Acquista una licenza",
-      "activate": "Attiva una licenza"
+      "activate": "Attiva una licenza",
+      "keyToStart": "Registra una chiave Community gratuita in Impostazioni → Licenza per avviare la prova di 30 giorni della Ricerca file. La chiave è gratuita e arriva via email.",
+      "keyDuringTrial": "Registra una chiave Community gratuita in Impostazioni → Licenza per usare la Ricerca file durante la prova. La chiave è gratuita e arriva via email.",
+      "registerKey": "Registra una chiave Community gratuita"
     },
     "card": {
       "title": "Ricerca file",
