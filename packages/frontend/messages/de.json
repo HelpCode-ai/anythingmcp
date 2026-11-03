@@ -1026,7 +1026,7 @@
     },
     "wait": {
       "checking": "Wir fragen {name} nach Ihrer App…",
-      "notYet": "{name} hat Ihre App noch nicht freigegeben",
+      "notYet": "{name} akzeptiert diese Schlüssel noch nicht",
       "checkedAt": "Zuletzt geprüft um {time}. Die Seite prüft erneut, sobald Sie zurückkommen.",
       "checkAgain": "Erneut prüfen",
       "checkingShort": "Wird geprüft…",
