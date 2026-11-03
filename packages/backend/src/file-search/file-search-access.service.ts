@@ -15,10 +15,23 @@ import type { FileSearchQuota } from './file-search.types';
  *     dates); no licence → locked.
  *   - Self-hosted: a live paid key (starter, team, business, enterprise) of
  *     the workspace or the instance; else the 30-day evaluation; else locked.
- *     Community never gets File Search after the evaluation.
+ *     Community never gets File Search after the evaluation. The evaluation
+ *     opens File Search only with a registered licence key of any plan (the
+ *     free Community key too); evaluations started before that rule keep it
+ *     until they end.
  */
 
 export const FILE_SEARCH_LOCKED = 'file_search_locked';
+/**
+ * Site setting EditionService.startTrial writes on every trial it starts from
+ * this release on: such a trial opens File Search only while a licence key is
+ * registered. Trials started earlier have no marker and keep File Search.
+ */
+export const FILE_SEARCH_TRIAL_NEEDS_KEY = 'file_search_trial_needs_key';
+/** Why a self-hosted Community instance waits for a licence key, if it does. */
+export type KeyRequired = 'to_start' | 'during_trial' | null;
+/** Self-hosted is sold as Community and Enterprise (on request). */
+const ENTERPRISE_CONTACT_URL = 'https://anythingmcp.com/contact?plan=enterprise';
 const PAID = new Set(['starter', 'team', 'business', 'enterprise']);
 const TRIAL_KEY = 'business_trial_ends_at';
 const CACHE_MS = 30_000;
@@ -30,6 +43,8 @@ export type FileSearchAccess =
       reason: 'no_licence' | 'expired' | 'community' | 'plan_without_feature';
       cloud: boolean;
       trialAvailable: boolean;
+      /** Self-hosted: File Search waits for a registered licence key. */
+      keyRequired: KeyRequired;
       message: string;
     };
 
@@ -71,6 +86,7 @@ export class FileSearchAccessService {
       code: FILE_SEARCH_LOCKED,
       reason: a.reason,
       trialAvailable: a.trialAvailable,
+      keyRequired: a.keyRequired,
       message: a.message,
     });
   }
@@ -84,7 +100,7 @@ export class FileSearchAccessService {
         select: { plan: true, status: true, expiresAt: true, features: true },
       });
       if (!lic) {
-        return { allowed: false, reason: 'no_licence', cloud, trialAvailable: false, message: 'File Search needs an active plan. Ask a workspace administrator to choose one.' };
+        return { allowed: false, reason: 'no_licence', cloud, trialAvailable: false, keyRequired: null, message: 'File Search needs an active plan. Ask a workspace administrator to choose one.' };
       }
       if (lic.expiresAt && lic.expiresAt < now) {
         return {
@@ -92,12 +108,13 @@ export class FileSearchAccessService {
           reason: 'expired',
           cloud,
           trialAvailable: false,
+          keyRequired: null,
           message: lic.plan === 'trial' ? 'The free trial has ended. File Search continues with a paid plan.' : 'The licence has expired. Renew it to continue using File Search.',
         };
       }
       const quota = quotaForPlan(lic.plan, { cloud, overrides: (lic.features as any)?.fileSearch });
       if (!quota) {
-        return { allowed: false, reason: 'plan_without_feature', cloud, trialAvailable: false, message: `The ${lic.plan} plan does not include File Search.` };
+        return { allowed: false, reason: 'plan_without_feature', cloud, trialAvailable: false, keyRequired: null, message: `The ${lic.plan} plan does not include File Search.` };
       }
       return { allowed: true, plan: lic.plan, quota, cloud, trialEndsAt: lic.plan === 'trial' && lic.expiresAt ? lic.expiresAt.toISOString() : null };
     }
@@ -107,28 +124,55 @@ export class FileSearchAccessService {
       const quota = quotaForPlan(lic.plan, { cloud, overrides: (lic.features as any)?.fileSearch })!;
       return { allowed: true, plan: lic.plan, quota, cloud, trialEndsAt: null };
     }
-    const trialRaw = (await this.prisma.siteSettings.findUnique({ where: { key: TRIAL_KEY } }))?.value ?? null;
+    const [trialRaw, needsKeyRaw] = await Promise.all([this.setting(TRIAL_KEY), this.setting(FILE_SEARCH_TRIAL_NEEDS_KEY)]);
+    // Any registered key counts, the free Community key included.
+    const keyRegistered = !!lic;
     const trialEnds = trialRaw ? new Date(trialRaw) : null;
     if (trialEnds && !Number.isNaN(trialEnds.getTime()) && trialEnds > now) {
-      return { allowed: true, plan: 'trial', quota: quotaForPlan('trial', { cloud })!, cloud, trialEndsAt: trialEnds.toISOString() };
+      if (keyRegistered || needsKeyRaw !== 'true') {
+        return { allowed: true, plan: 'trial', quota: quotaForPlan('trial', { cloud })!, cloud, trialEndsAt: trialEnds.toISOString() };
+      }
+      return {
+        allowed: false,
+        reason: 'community',
+        cloud,
+        trialAvailable: false,
+        keyRequired: 'during_trial',
+        message: 'Register a free Community key under Settings → License to use File Search during the trial.',
+      };
+    }
+    const unused = trialRaw === null;
+    if (unused && !keyRegistered) {
+      return {
+        allowed: false,
+        reason: 'community',
+        cloud,
+        trialAvailable: false,
+        keyRequired: 'to_start',
+        message: 'Register a free Community key under Settings → License to start the 30-day File Search trial.',
+      };
     }
     return {
       allowed: false,
       reason: lic && lic.expiresAt && lic.expiresAt <= now ? 'expired' : 'community',
       cloud,
-      trialAvailable: trialRaw === null,
-      message:
-        trialRaw === null
-          ? 'Start the free 30-day trial or activate a licence to use File Search.'
-          : 'The 30-day trial has ended. Activate a licence to continue using File Search; your index is kept for 30 days.',
+      trialAvailable: unused,
+      keyRequired: null,
+      message: unused
+        ? 'Start the free 30-day trial or activate a licence to use File Search.'
+        : `The 30-day trial has ended. File Search continues with AnythingMCP Enterprise (${ENTERPRISE_CONTACT_URL}); your index is kept for 30 days.`,
     };
+  }
+
+  private async setting(key: string): Promise<string | null> {
+    return (await this.prisma.siteSettings.findUnique({ where: { key } }))?.value ?? null;
   }
 
   private async selfHostedLicence(organizationId: string): Promise<LicenceRow | null> {
     const select = { plan: true, status: true, expiresAt: true, features: true } as const;
     const own = await this.prisma.license.findFirst({ where: { organizationId, status: 'active' }, orderBy: { createdAt: 'desc' }, select });
     if (own) return own;
-    const key = (await this.prisma.siteSettings.findUnique({ where: { key: 'license_key' } }))?.value;
+    const key = await this.setting('license_key');
     if (key) {
       const byKey = await this.prisma.license.findUnique({ where: { licenseKey: key }, select });
       if (byKey) return byKey;
