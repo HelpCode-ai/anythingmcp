@@ -1,5 +1,5 @@
 import { CONTROL_PERCENT, LicenseWallService, knownClientName, wallVariant } from './license-wall.service';
-import { ProductEvents } from '../audit/product-event.service';
+import { ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { LicenseController } from './license.controller';
 
 function prismaMock(opts: {
@@ -149,5 +149,16 @@ describe('GET /api/license/wall', () => {
       expect(await controller.wallForUser(req as any)).toEqual({ wall: null });
       expect(wall.view).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('license_wall_viewed metadata', () => {
+  it('keeps the variant and the calls when stored, and drops an unknown variant', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const events = new ProductEventService({ productEvent: { create } } as any);
+    await events.log({ event: ProductEvents.LICENSE_WALL_VIEWED, organizationId: 'org_a', metadata: { variant: 'trust', calls: 214 } });
+    expect(create.mock.calls[0][0].data.metadata).toEqual({ variant: 'trust', calls: 214 });
+    await events.log({ event: ProductEvents.LICENSE_WALL_VIEWED, organizationId: 'org_a', metadata: { variant: 'other', calls: 0 } });
+    expect(create.mock.calls[1][0].data.metadata).toEqual({ calls: 0 });
   });
 });

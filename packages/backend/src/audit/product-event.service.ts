@@ -446,7 +446,7 @@ export class ProductEventService {
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
-  'tool', 'profile', 'setupTool',
+  'tool', 'profile', 'setupTool', 'variant', 'calls',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
@@ -468,6 +468,8 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   protocol: KNOWN_PROTOCOLS,
   preset: KNOWN_PRESETS,
   files: KNOWN_FILE_BUCKETS,
+  // license_wall_viewed (license-wall.service.ts).
+  variant: new Set(['trust', 'control']),
 };
 const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
