@@ -1,5 +1,5 @@
 import { LicenseGuardService } from './license-guard.service';
-import { codeToolCapForPlan, inlineCodeAllowedForPlan } from './code-mode-quotas';
+import { codeToolCapForPlan, inlineCodeAllowedForPlan, effectiveCodeModePlan } from './code-mode-quotas';
 
 function guard({ cloud, license, codeToolCount }: { cloud: boolean; license: any; codeToolCount: number }) {
   const prisma = { $queryRaw: jest.fn().mockResolvedValue([{ count: codeToolCount }]) };
@@ -44,6 +44,21 @@ describe('code-mode-quotas', () => {
     expect(inlineCodeAllowedForPlan('trial')).toBe(false);
     expect(inlineCodeAllowedForPlan('community')).toBe(false);
     expect(inlineCodeAllowedForPlan(null)).toBe(false);
+  });
+
+  it('promotes a card-backed trial to the team experience, leaves others alone', () => {
+    // A trial with a card on file is treated as Team for code mode.
+    expect(effectiveCodeModePlan('trial', true)).toBe('team');
+    expect(codeToolCapForPlan(effectiveCodeModePlan('trial', true))).toBe(20);
+    expect(inlineCodeAllowedForPlan(effectiveCodeModePlan('trial', true))).toBe(true);
+    // A free (card-less) trial is unchanged: tools-only, cap 3, no inline.
+    expect(effectiveCodeModePlan('trial', false)).toBe('trial');
+    expect(codeToolCapForPlan(effectiveCodeModePlan('trial', false))).toBe(3);
+    expect(inlineCodeAllowedForPlan(effectiveCodeModePlan('trial', false))).toBe(false);
+    // The card flag only lifts a trial, nothing else.
+    expect(effectiveCodeModePlan('starter', true)).toBe('starter');
+    expect(effectiveCodeModePlan('community', true)).toBe('community');
+    expect(effectiveCodeModePlan(null, true)).toBe('community');
   });
 });
 
@@ -94,5 +109,35 @@ describe('LicenseGuardService.canUseInlineCode', () => {
     await expect(guard({ cloud: true, license: { plan: 'starter' }, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(false);
     await expect(guard({ cloud: false, license: { plan: 'community' }, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(false);
     await expect(guard({ cloud: false, license: null, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(false);
+  });
+
+  it('is true for a card-backed trial (billing.status trialing), false for a free trial', async () => {
+    const cardTrial = { plan: 'trial', status: 'active', billing: { status: 'trialing' } };
+    await expect(guard({ cloud: true, license: cardTrial, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(true);
+    // A free trial has no Stripe billing.
+    await expect(guard({ cloud: true, license: { plan: 'trial', status: 'active' }, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(false);
+    // A trial whose subscription is not trialing (e.g. past_due) is not a live card trial.
+    await expect(
+      guard({ cloud: true, license: { plan: 'trial', status: 'active', billing: { status: 'past_due' } }, codeToolCount: 0 }).canUseInlineCode('org1'),
+    ).resolves.toBe(false);
+  });
+});
+
+describe('LicenseGuardService.checkCanCreateCodeTool — card-backed trial cap', () => {
+  it('lets a card-backed trial create up to the Team cap (20), not the trial cap (3)', async () => {
+    const cardTrial = { plan: 'trial', status: 'active', billing: { status: 'trialing' }, features: {} };
+    // 5 tools would already exceed the free-trial cap of 3, but a card trial is Team.
+    await expect(guard({ cloud: true, license: cardTrial, codeToolCount: 5 }).checkCanCreateCodeTool('org1')).resolves.toBeUndefined();
+    // At the Team cap it blocks, naming the team plan.
+    await expect(
+      guard({ cloud: true, license: cardTrial, codeToolCount: 20 }).checkCanCreateCodeTool('org1'),
+    ).rejects.toThrow(/20 code tools on the team plan/);
+  });
+
+  it('a free trial still caps at 3', async () => {
+    const freeTrial = { plan: 'trial', status: 'active', features: {} };
+    await expect(
+      guard({ cloud: true, license: freeTrial, codeToolCount: 3 }).checkCanCreateCodeTool('org1'),
+    ).rejects.toThrow(/3 code tools on the trial plan/);
   });
 });
