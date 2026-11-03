@@ -53,6 +53,10 @@ import {
   CHATGPT_APP_INSTRUCTIONS,
   registerChatgptAppToolset,
 } from './chatgpt-app-toolset';
+import {
+  FILE_SEARCH_APP_INSTRUCTIONS,
+  registerFileSearchAppToolset,
+} from './file-search-app-toolset';
 
 /**
  * The OAuth client an access token was issued to.
@@ -445,17 +449,60 @@ export class McpEndpointController {
     this.statelessOnly(res);
   }
 
+  // ── /mcp/file-search: the endpoint of the File Search directory plugin ────
+  //
+  // Fixed single-operation tools over the workspace's File Search sources only
+  // (see file-search-app-toolset.ts). Same auth, grant and role scope as /mcp,
+  // same in Cloud and self-hosted. Declared before the ':serverId' routes so
+  // the static segment wins route matching.
+
+  @Post('file-search')
+  async handleFileSearchAppPost(@Req() req: Request, @Res() res: Response) {
+    if (!(req as any).user?.sub) {
+      // Operator credentials (a static key) name no user and no workspace.
+      res.status(403).json({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'This endpoint needs a signed-in AnythingMCP user.' },
+        id: null,
+      });
+      return;
+    }
+    if (isListenRequest((req as any).body)) {
+      await this.serveStateless(
+        req,
+        res,
+        (req as any).body,
+        () => listenOnlyServer('AnythingMCP File Search', APP_VERSION, { tools: { listChanged: true } }),
+        'file-search listen',
+      );
+      return;
+    }
+    await this.attachVisibleTools(req);
+    await this.serveSharedToolset(req, res, 'file-search');
+  }
+
+  @Get('file-search')
+  handleFileSearchAppGet(@Res() res: Response) {
+    this.statelessOnly(res);
+  }
+
+  @Delete('file-search')
+  handleFileSearchAppDelete(@Res() res: Response) {
+    this.statelessOnly(res);
+  }
+
   /**
    * Serves a fixed tool set, statelessly, over exactly the tools
    * `attachVisibleTools` resolved for this caller: the shared endpoint's
-   * (`shared`) or the OpenAI directory plugin's (`chatgpt-app`). Every run is
+   * (`shared`), the OpenAI directory database plugin's (`chatgpt-app`) or the
+   * File Search plugin's (`file-search`). Every run is
    * executed in the one connector that owns the tool, so a same-named tool
    * elsewhere can never be reached.
    */
   private async serveSharedToolset(
     req: Request,
     res: Response,
-    variant: 'shared' | 'chatgpt-app' = 'shared',
+    variant: 'shared' | 'chatgpt-app' | 'file-search' = 'shared',
   ): Promise<void> {
     const user = (req as any).user;
     // Already narrowed to a pinned credential's server by attachVisibleTools.
@@ -589,6 +636,29 @@ export class McpEndpointController {
         };
       },
     };
+
+    if (variant === 'file-search') {
+      await this.serveStateless(
+        req,
+        res,
+        (req as any).body,
+        () => {
+          const mcpServer = new McpServer(
+            { name: 'AnythingMCP File Search', version: APP_VERSION },
+            { instructions: FILE_SEARCH_APP_INSTRUCTIONS },
+          );
+          registerFileSearchAppToolset(mcpServer, scopeTools, {
+            execute: deps.execute,
+            connectors: deps.connectors,
+            guide: deps.guide,
+            setupUrl: `${dashboardBase}/connectors/new/file-search?from=chat`,
+          });
+          return mcpServer;
+        },
+        'file-search',
+      );
+      return;
+    }
 
     if (variant === 'chatgpt-app') {
       await this.serveStateless(

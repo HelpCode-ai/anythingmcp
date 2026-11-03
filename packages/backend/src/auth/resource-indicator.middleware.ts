@@ -5,6 +5,21 @@ import type { Request, Response, NextFunction } from 'express';
 export const MCP_RESOURCE_COOKIE = 'mcp_resource';
 
 /**
+ * Name of the signed cookie carrying which fixed plugin endpoint the client
+ * asked for (`/mcp/file-search`), when it named one. Separate from
+ * MCP_RESOURCE_COOKIE, which only ever holds a server id.
+ */
+export const MCP_APP_COOKIE = 'mcp_app';
+
+/**
+ * The fixed plugin endpoints whose authorization adds a step of its own: the
+ * File Search plugin offers to connect a folder after "Approve". The database
+ * plugin (`/mcp/chatgpt-app`) has none and is deliberately not listed.
+ */
+export const APP_ENDPOINTS = ['file-search'] as const;
+export type AppEndpoint = (typeof APP_ENDPOINTS)[number];
+
+/**
  * Captures the RFC 8707 `resource` indicator the client sends to /authorize.
  *
  * The MCP 2026-07-28 authorization spec makes `resource` mandatory on both the
@@ -40,6 +55,21 @@ export class ResourceIndicatorMiddleware implements NestMiddleware {
 
     const raw = (req.query as Record<string, unknown>).resource;
     const serverId = typeof raw === 'string' ? parseServerId(raw) : null;
+
+    const app = typeof raw === 'string' ? parseAppEndpoint(raw) : null;
+    if (app) {
+      const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+      res.cookie(MCP_APP_COOKIE, app, {
+        httpOnly: true,
+        secure: isSecure,
+        // As long as the authorization it belongs to may stay paused (30 min).
+        maxAge: 30 * 60 * 1000,
+        sameSite: isSecure ? 'none' : 'lax',
+        signed: true,
+      });
+    } else {
+      res.clearCookie(MCP_APP_COOKIE);
+    }
 
     if (serverId) {
       const isSecure =
@@ -86,4 +116,22 @@ export function parseServerId(resource: string): string | null {
   // Server ids are cuids. Constrain the shape so a hostile value cannot be
   // smuggled into a downstream lookup or a rendered page.
   return /^[a-z0-9]{20,40}$/i.test(serverId) ? serverId : null;
+}
+
+/**
+ * The fixed plugin endpoint a resource indicator names (`https://host/mcp/file-search`),
+ * or null. Like the server id, unauthenticated client input: it may only pick
+ * which optional page follows "Approve" (the File Search setup offer), never
+ * whom a session belongs to or what it may reach.
+ */
+export function parseAppEndpoint(resource: string): AppEndpoint | null {
+  let url: URL;
+  try {
+    url = new URL(resource);
+  } catch {
+    return null;
+  }
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length !== 2 || segments[0] !== 'mcp') return null;
+  return (APP_ENDPOINTS as readonly string[]).includes(segments[1]) ? (segments[1] as AppEndpoint) : null;
 }

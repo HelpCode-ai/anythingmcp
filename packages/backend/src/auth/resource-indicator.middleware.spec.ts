@@ -90,3 +90,31 @@ describe('ResourceIndicatorMiddleware', () => {
     expect(next).toHaveBeenCalled();
   });
 });
+
+describe('parseAppEndpoint and the plugin endpoint cookie', () => {
+  // Imported here so the suites above stay as they were.
+  const { parseAppEndpoint, MCP_APP_COOKIE, ResourceIndicatorMiddleware: Middleware } =
+    jest.requireActual('./resource-indicator.middleware') as typeof import('./resource-indicator.middleware');
+
+  it('recognises the File Search plugin endpoint only', () => {
+    expect(parseAppEndpoint('https://cloud.example.com/mcp/file-search')).toBe('file-search');
+    expect(parseAppEndpoint('https://cloud.example.com/mcp/chatgpt-app')).toBeNull();
+    expect(parseAppEndpoint('https://cloud.example.com/mcp')).toBeNull();
+    expect(parseAppEndpoint('https://cloud.example.com/mcp/file-search/x')).toBeNull();
+    expect(parseAppEndpoint('not a url')).toBeNull();
+  });
+
+  it('sets the app cookie for /mcp/file-search and clears it otherwise, leaving the server id alone', () => {
+    const m = new Middleware();
+    const res: any = { cookie: jest.fn(), clearCookie: jest.fn() };
+    m.use({ method: 'GET', query: { resource: 'https://h/mcp/file-search' }, headers: {}, secure: false } as any, res, jest.fn());
+    expect(res.cookie).toHaveBeenCalledWith(MCP_APP_COOKIE, 'file-search', expect.objectContaining({ httpOnly: true, signed: true }));
+    // Not a server id: the server cookie is cleared as for any other value.
+    expect(res.clearCookie).toHaveBeenCalledWith(MCP_RESOURCE_COOKIE);
+
+    const res2: any = { cookie: jest.fn(), clearCookie: jest.fn() };
+    m.use({ method: 'GET', query: { resource: 'https://h/mcp/chatgpt-app' }, headers: {}, secure: false } as any, res2, jest.fn());
+    expect(res2.cookie).not.toHaveBeenCalled();
+    expect(res2.clearCookie).toHaveBeenCalledWith(MCP_APP_COOKIE);
+  });
+});
