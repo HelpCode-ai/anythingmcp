@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { McpEndpointController } from './mcp-endpoint.controller';
+import { withRegistryIndexes } from './registry-test-double';
 
 /**
  * Connector setup from a chat hands the user a one-time link; the setup page
@@ -27,7 +28,7 @@ function build(setup: unknown) {
   };
   const controller = new McpEndpointController(
     servers as any,
-    { getAllTools: () => [], countByName: () => 0 } as any,
+    withRegistryIndexes({ getAllTools: () => [], countByName: () => 0 }) as any,
     { executeTool: jest.fn() } as any,
     { getAllowedToolIds: jest.fn(async () => null) } as any,
     { isEnabled: jest.fn(async () => false), lookup: jest.fn() } as any,
