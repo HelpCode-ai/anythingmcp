@@ -290,3 +290,43 @@ describe('jsonSchemaToZodShape with top-level combinators', () => {
     expect(parse(schema, { kind: 'text' })).toEqual({ kind: 'text' });
   });
 });
+
+describe('jsonSchemaToZodShape limits', () => {
+  const telegram = {
+    type: 'object',
+    properties: {
+      timeout: { type: 'integer', minimum: 0, maximum: 25 },
+      ratio: { type: 'number', exclusiveMinimum: 0, exclusiveMaximum: 1 },
+      includes: { type: 'array', items: { type: 'string', enum: ['Images', 'Inventory'] } },
+      ids: { type: 'array', items: { type: 'integer' } },
+    },
+  };
+
+  it('accepts values inside the declared limits', () => {
+    const args = { timeout: 25, ratio: 0.5, includes: ['Inventory'], ids: [1, 2] };
+    expect(parse(telegram, args)).toEqual(args);
+  });
+
+  it('refuses a number outside minimum, maximum or the exclusive limits', () => {
+    expect(() => parse(telegram, { timeout: 30 })).toThrow();
+    expect(() => parse(telegram, { timeout: -1 })).toThrow();
+    expect(() => parse(telegram, { ratio: 0 })).toThrow();
+    expect(() => parse(telegram, { ratio: 1 })).toThrow();
+  });
+
+  it('refuses an array item outside the allowed values', () => {
+    expect(() => parse(telegram, { includes: ['Shipping'] })).toThrow();
+  });
+
+  it('lists the limits to clients', () => {
+    const listed = z.toJSONSchema(z.object(jsonSchemaToZodShape(telegram))) as any;
+    expect(listed.properties.timeout).toMatchObject({ minimum: 0, maximum: 25 });
+    expect(listed.properties.ratio).toMatchObject({ exclusiveMinimum: 0, exclusiveMaximum: 1 });
+    expect(listed.properties.includes.items).toMatchObject({ enum: ['Images', 'Inventory'] });
+  });
+
+  it('ignores limits that are not numbers', () => {
+    const schema = { type: 'object', properties: { n: { type: 'number', maximum: '10' } } };
+    expect(parse(schema, { n: 99 })).toEqual({ n: 99 });
+  });
+});
