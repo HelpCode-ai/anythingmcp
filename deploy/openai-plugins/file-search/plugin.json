@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "file-server-search",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Search, read and cite the documents in your company folders on SFTP, FTPS, FTP, WebDAV (Nextcloud, ownCloud), S3-compatible storage or a NAS (Synology, QNAP, FRITZ!Box, Hetzner Storage Box).",
   "author": {
     "name": "KOCH Freiburg GmbH",
@@ -55,7 +55,7 @@
         "privacyPolicyURL": "https://anythingmcp.com/privacy-policy",
         "termsOfServiceURL": "https://anythingmcp.com/terms",
         "defaultPrompt": [
-          "What is the current list price of article BR-12103 from Brandt Türen? Cite the file and page.",
+          "What does the Brandt Türen 2026 PDF price list say for article BR-12103? Give the page.",
           "Find the latest price increase letter from Brandt Türen and summarize it.",
           "Which folders are connected, and what do they contain?"
         ],
@@ -69,10 +69,10 @@
         "test_cases": {
           "positive": [
             {
-              "description": "Price of an article from the current price list",
-              "prompt": "What is the 2026 list price of article BR-12103 from Brandt Türen? Name the file.",
-              "tools_triggered": "find_exact_text, read_document",
-              "expected_behavior": "Finds BR-12103 (Brandschutztür T30) in Lieferanten/Brandt Türen - 70121/Preisliste/Preisliste_2026.xlsx and answers 590.05 EUR, naming the file and its date."
+              "description": "Price of an article from a named price list",
+              "prompt": "What does the Brandt Türen 2026 PDF price list say for article BR-12103? Give the page.",
+              "tools_triggered": "find_exact_text or search_documents, read_document",
+              "expected_behavior": "Reads 'Preisliste Brandt Türen 2026.pdf' (Lieferanten/Brandt Türen - 70121/Preisliste) and answers: BR-12103, Rahmen Aluminium 875 x 2125, 943.71 EUR net, valid from 01.04.2026, page 1."
             },
             {
               "description": "Summarize a letter from a supplier",
