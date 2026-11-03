@@ -18,6 +18,11 @@ import { DatabaseEngine } from '../connectors/engines/database.engine';
 import { AuditService } from '../audit/audit.service';
 import { RedisService } from '../common/redis.service';
 import { LicenseGuardService, TrialEndedException } from '../license/license-guard.service';
+import {
+  monthlyCodeRunCapForPlan,
+  concurrentCodeRunCapForPlan,
+  startOfUtcMonth,
+} from '../license/code-run-quotas';
 import { ProductEventService } from '../audit/product-event.service';
 import { TrialBlockedCallRecorder, trialEndedToolResult } from './trial-blocked-call';
 import { DeploymentService } from '../common/deployment.service';
@@ -1211,7 +1216,14 @@ export class DynamicMcpTools {
     // does not add, so expose them through a declared variable: prepend a const.
     const program = `const args = ${JSON.stringify(params ?? {})};\n${spec.code}`;
 
-    const result = await this.codeExecutor.run({ code: program, bridge });
+    const lease = await this.acquireCodeRunLease(tool.organizationId);
+    if (!lease.allowed) return fail(lease.reason ?? 'Code run quota exceeded.', 'QuotaExceeded');
+    let result: Awaited<ReturnType<CodeExecutorService['run']>>;
+    try {
+      result = await this.codeExecutor.run({ code: program, bridge });
+    } finally {
+      await lease.release();
+    }
     const durationMs = Date.now() - startTime;
 
     // One code_runs row for the run itself (retention/quotas); the inner tool
@@ -1314,6 +1326,79 @@ export class DynamicMcpTools {
     return this.licenseGuard.canUseInlineCode(organizationId);
   }
 
+  /**
+   * Admit one code run against this workspace's Cloud quotas, or refuse it.
+   * Two limits: a monthly run cap (counted authoritatively from `code_runs`)
+   * and a per-org concurrency cap (best-effort via Redis, to protect the shared
+   * runner). Cloud only — self-hosted is single-tenant and not metered, so this
+   * is a no-op there and whenever there is no organization to count against.
+   * Returns a lease whose `release()` the caller MUST invoke when the run ends.
+   */
+  private async acquireCodeRunLease(
+    organizationId?: string,
+  ): Promise<{ allowed: boolean; reason?: string; release: () => Promise<void> }> {
+    const noRelease = async () => {};
+    if (!this.deployment.isCloud() || !organizationId) {
+      return { allowed: true, release: noRelease };
+    }
+
+    const plan = await this.licenseGuard.codeModePlanForOrg(organizationId);
+
+    // 1. Monthly run cap — authoritative from the audit table, so it holds even
+    //    when Redis is down. The current run has no row yet, so `used` counts
+    //    only runs already finished this month.
+    const monthly = monthlyCodeRunCapForPlan(plan);
+    if (monthly != null) {
+      const used = await this.prisma.codeRun
+        .count({ where: { organizationId, createdAt: { gte: startOfUtcMonth() } } })
+        .catch((e) => {
+          this.logger.warn(`code run quota count failed: ${e?.message ?? e}`);
+          return 0;
+        });
+      if (used >= monthly) {
+        return {
+          allowed: false,
+          reason: `Monthly code run limit reached (${monthly} runs on the ${plan} plan this month). It resets at the start of next month; upgrade the plan for more.`,
+          release: noRelease,
+        };
+      }
+    }
+
+    // 2. Concurrency cap — best-effort. Without Redis there is no shared counter,
+    //    so skip it rather than guess (the monthly cap still applies).
+    const concurrent = concurrentCodeRunCapForPlan(plan);
+    if (concurrent != null && this.redisService.isConnected) {
+      const key = `coderun:inflight:${organizationId}`;
+      const n = await this.redisService.incr(key);
+      // Safety TTL: a run is bounded to well under this, so the counter can
+      // never stick if a release is lost (crash, redeploy mid-run).
+      await this.redisService.expire(key, 120);
+      if (n > concurrent) {
+        await this.releaseInflight(key);
+        return {
+          allowed: false,
+          reason: `Too many code runs at once (limit ${concurrent} concurrent on the ${plan} plan). Wait for a run to finish and retry.`,
+          release: noRelease,
+        };
+      }
+      return { allowed: true, release: () => this.releaseInflight(key) };
+    }
+
+    return { allowed: true, release: noRelease };
+  }
+
+  /** Decrement an in-flight counter, clearing it if it would go negative. */
+  private async releaseInflight(key: string): Promise<void> {
+    const client = this.redisService.getClient();
+    if (!client) return;
+    try {
+      const v = await client.decr(key);
+      if (v < 0) await client.del(key);
+    } catch (e: any) {
+      this.logger.warn(`code run quota release failed: ${e?.message ?? e}`);
+    }
+  }
+
   async executeInlineCode(
     code: string,
     context: CodeExecContext,
@@ -1341,7 +1426,14 @@ export class DynamicMcpTools {
     const bridge = buildCodeBridge(spec, deps);
     const program = `const args = {};\n${code}`;
 
-    const result = await this.codeExecutor.run({ code: program, bridge });
+    const lease = await this.acquireCodeRunLease(context.organizationId);
+    if (!lease.allowed) return fail(lease.reason ?? 'Code run quota exceeded.', 'QuotaExceeded');
+    let result: Awaited<ReturnType<CodeExecutorService['run']>>;
+    try {
+      result = await this.codeExecutor.run({ code: program, bridge });
+    } finally {
+      await lease.release();
+    }
     const durationMs = Date.now() - startTime;
 
     if (context.organizationId) {

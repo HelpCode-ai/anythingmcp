@@ -74,7 +74,18 @@ function fakeRunner(program: (bridge: any) => Promise<unknown>, configured = tru
   };
 }
 
-function build(tools: RegisteredTool[], program: (bridge: any) => Promise<unknown>, opts: { configured?: boolean } = {}) {
+function build(
+  tools: RegisteredTool[],
+  program: (bridge: any) => Promise<unknown>,
+  opts: {
+    configured?: boolean;
+    cloud?: boolean;
+    plan?: string;
+    codeRunCount?: number;
+    redisConnected?: boolean;
+    inflight?: number;
+  } = {},
+) {
   const byId = new Map(tools.map((t) => [t.id, t]));
   const registry = {
     getTool: (name: string, connectorIds?: string[]) => {
@@ -86,13 +97,28 @@ function build(tools: RegisteredTool[], program: (bridge: any) => Promise<unknow
     getAllTools: () => tools,
   };
   const audit = { logInvocation: jest.fn().mockResolvedValue(undefined) };
-  const redis = { get: jest.fn().mockResolvedValue(null), set: jest.fn(), incr: jest.fn(), expire: jest.fn(), ttl: jest.fn() };
-  const license = { checkLicenseActive: jest.fn().mockResolvedValue(undefined) };
+  const redisClient = { decr: jest.fn().mockResolvedValue(0), del: jest.fn().mockResolvedValue(1) };
+  const redis = {
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn(),
+    incr: jest.fn().mockResolvedValue(opts.inflight ?? 1),
+    expire: jest.fn(),
+    ttl: jest.fn(),
+    isConnected: opts.redisConnected ?? false,
+    getClient: () => redisClient,
+  };
+  const license = {
+    checkLicenseActive: jest.fn().mockResolvedValue(undefined),
+    codeModePlanForOrg: jest.fn().mockResolvedValue(opts.plan ?? 'team'),
+  };
   const kg = { scheduleObservationalIngest: jest.fn() };
   const reject = { execute: jest.fn().mockRejectedValue(new Error('unexpected engine call')) };
   const codeExecutor = fakeRunner(program, opts.configured ?? true);
   const prisma = {
-    codeRun: { create: jest.fn().mockResolvedValue({ id: 'cr1' }) },
+    codeRun: {
+      create: jest.fn().mockResolvedValue({ id: 'cr1' }),
+      count: jest.fn().mockResolvedValue(opts.codeRunCount ?? 0),
+    },
     mcpServerConfig: { findUnique: jest.fn().mockResolvedValue({ codeMode: 'tools' }) },
   };
   const executor = new DynamicMcpTools(
@@ -100,7 +126,7 @@ function build(tools: RegisteredTool[], program: (bridge: any) => Promise<unknow
     audit as any,
     redis as any,
     license as any,
-    { isCloud: () => false } as any,
+    { isCloud: () => opts.cloud ?? false } as any,
     prisma as any,
     reject as any, // rest
     reject as any, // graphql
@@ -115,7 +141,7 @@ function build(tools: RegisteredTool[], program: (bridge: any) => Promise<unknow
     codeExecutor as any,
   );
   void byId;
-  return { executor, audit, codeExecutor, prisma };
+  return { executor, audit, codeExecutor, prisma, redis, redisClient, license };
 }
 
 describe('DynamicMcpTools — code tools', () => {
@@ -271,5 +297,90 @@ describe('DynamicMcpTools — inline code', () => {
     expect(executor.codeModeAvailable()).toBe(true);
     const off = build([innerRead], (b) => b.run('x', {}), { configured: false });
     expect(off.executor.codeModeAvailable()).toBe(false);
+  });
+});
+
+describe('DynamicMcpTools — Cloud run quotas', () => {
+  it('refuses a code tool when the monthly run cap is reached', async () => {
+    const { executor, prisma } = build([codeTool(), innerRead], (b) => b.run('inner_read', {}), {
+      cloud: true,
+      plan: 'team',
+      codeRunCount: 5000, // at the Team monthly cap
+    });
+    const res = await executor.executeTool('summary', {}, { organizationId: 'org1', allowedToolIds: ['code-1', 'read-1'] });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('Monthly code run limit reached');
+    expect(res.content[0].text).toContain('team');
+    // The run never happened, so no code_runs row was written.
+    expect(prisma.codeRun.create).not.toHaveBeenCalled();
+    // It counted this month's runs, scoped to the org.
+    expect(prisma.codeRun.count).toHaveBeenCalledTimes(1);
+    const where = prisma.codeRun.count.mock.calls[0][0].where;
+    expect(where.organizationId).toBe('org1');
+    expect(where.createdAt.gte).toBeInstanceOf(Date);
+  });
+
+  it('runs and records when under the monthly cap', async () => {
+    const { executor, prisma } = build([codeTool(), innerRead], (b) => b.run('inner_read', {}), {
+      cloud: true,
+      plan: 'team',
+      codeRunCount: 10,
+    });
+    const res = await executor.executeTool('summary', {}, { organizationId: 'org1', allowedToolIds: ['code-1', 'read-1'] });
+    expect(res.isError).toBeUndefined();
+    expect(prisma.codeRun.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses when the per-org concurrency cap is exceeded, and undoes the counter', async () => {
+    const { executor, prisma, redisClient } = build([codeTool(), innerRead], (b) => b.run('inner_read', {}), {
+      cloud: true,
+      plan: 'team', // concurrency cap 3
+      redisConnected: true,
+      inflight: 4, // incr returns 4 > 3
+    });
+    const res = await executor.executeTool('summary', {}, { organizationId: 'org1', allowedToolIds: ['code-1', 'read-1'] });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('Too many code runs at once');
+    expect(prisma.codeRun.create).not.toHaveBeenCalled();
+    // The failed admission decremented the in-flight counter it had bumped.
+    expect(redisClient.decr).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the concurrency counter after a successful run', async () => {
+    const { executor, redisClient } = build([codeTool(), innerRead], (b) => b.run('inner_read', {}), {
+      cloud: true,
+      plan: 'team',
+      redisConnected: true,
+      inflight: 1,
+    });
+    const res = await executor.executeTool('summary', {}, { organizationId: 'org1', allowedToolIds: ['code-1', 'read-1'] });
+    expect(res.isError).toBeUndefined();
+    expect(redisClient.decr).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses inline code when the monthly run cap is reached', async () => {
+    const { executor, prisma } = build([innerRead], (b) => b.run('inner_read', {}), {
+      cloud: true,
+      plan: 'starter',
+      codeRunCount: 500, // at the Starter monthly cap
+    });
+    const res = await executor.executeInlineCode(
+      'return await amcp.run("inner_read", {});',
+      { userId: 'u1', organizationId: 'org1' },
+      { connectorIds: ['c1'], allowedToolIds: ['read-1'] },
+    );
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('Monthly code run limit reached');
+    expect(prisma.codeRun.create).not.toHaveBeenCalled();
+  });
+
+  it('does not enforce quotas on self-hosted (no isCloud)', async () => {
+    const { executor, prisma } = build([codeTool(), innerRead], (b) => b.run('inner_read', {}), {
+      cloud: false,
+      codeRunCount: 999999,
+    });
+    const res = await executor.executeTool('summary', {}, { organizationId: 'org1', allowedToolIds: ['code-1', 'read-1'] });
+    expect(res.isError).toBeUndefined();
+    expect(prisma.codeRun.count).not.toHaveBeenCalled();
   });
 });
