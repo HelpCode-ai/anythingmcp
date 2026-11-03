@@ -6,6 +6,7 @@ const ENV_KEYS = [
   'SUPPORT_CHAT_URL',
   'SUPPORT_CHAT_INBOX_ID',
   'SUPPORT_CHAT_SECRET',
+  'SUPPORT_CHAT_DISABLED_ORGS',
   'LIBREDESK_API_URL',
   'LIBREDESK_API_KEY',
   'LIBREDESK_API_SECRET',
@@ -80,6 +81,26 @@ describe('SupportController', () => {
         const { controller, identity } = build();
         await controller.widget({ user: { sub: 'u1', organizationId: 'o1' } });
         expect(identity.widgetSession).toHaveBeenCalledWith('u1', 'o1');
+      },
+    );
+  });
+
+  it('widget is 404 for a workspace listed in SUPPORT_CHAT_DISABLED_ORGS', async () => {
+    await withEnv(
+      {
+        SUPPORT_CHAT_URL: 'https://desk.test',
+        SUPPORT_CHAT_INBOX_ID: 'inbox',
+        SUPPORT_CHAT_SECRET: 'sec',
+        SUPPORT_CHAT_DISABLED_ORGS: 'o0, o1',
+      },
+      async () => {
+        const { controller, identity } = build();
+        await expect(controller.widget({ user: { sub: 'u1', organizationId: 'o1' } })).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+        await controller.widget({ user: { sub: 'u2', organizationId: 'o2' } });
+        expect(identity.widgetSession).toHaveBeenCalledTimes(1);
+        expect(identity.widgetSession).toHaveBeenCalledWith('u2', 'o2');
       },
     );
   });

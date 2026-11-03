@@ -42,6 +42,23 @@ export function supportChatConfig(env: NodeJS.ProcessEnv = process.env): Support
   return { baseUrl, inboxId, secret };
 }
 
+/**
+ * Workspaces that must not get the chat widget, from
+ * SUPPORT_CHAT_DISABLED_ORGS (comma-separated organization ids). Used when a
+ * customer's data processing agreement excludes the desk's AI assistant: the
+ * widget is not loaded for them and they reach support by e-mail.
+ */
+export function supportChatDisabledFor(
+  organizationId: string | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (!organizationId) return false;
+  return (env.SUPPORT_CHAT_DISABLED_ORGS || '')
+    .split(',')
+    .map((id) => id.trim())
+    .includes(organizationId);
+}
+
 export function supportTriageConfig(env: NodeJS.ProcessEnv = process.env): SupportTriageConfig | null {
   const baseUrl = trimUrl(env.LIBREDESK_API_URL || env.SUPPORT_CHAT_URL);
   const apiKey = (env.LIBREDESK_API_KEY || '').trim();
