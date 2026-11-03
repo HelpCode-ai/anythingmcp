@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 import { ApiError, auth, license, recentSignIn, server, social, sso, type SocialProviderButton, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/toast';
-import { buildPricingUrl } from '@/lib/marketing';
+import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { ProviderMark } from '@/components/provider-mark';
@@ -1010,7 +1010,7 @@ function LoginForm() {
             {tLicense.rich('activate.available', {
               link: (chunks) => (
                 <a
-                  href={buildPricingUrl(undefined, null, true)}
+                  href={buildEnterpriseContactUrl()}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[var(--brand)] hover:underline font-medium"

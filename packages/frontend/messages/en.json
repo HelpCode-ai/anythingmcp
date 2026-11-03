@@ -150,11 +150,11 @@
     "question": "How will you use Anything<brand>MCP</brand>?",
     "changeLater": "You can change this later under Settings → License.",
     "personal": {
-      "title": "Personal, education or evaluation",
-      "description": "Community edition, free, for up to 3 users. We email you a community key so you get security and release notices."
+      "title": "Community edition, free",
+      "description": "Free under AGPL-3.0 for any use, including commercial use, for up to 3 active users. We email you a community key so you get security and release notices."
     },
     "company": {
-      "title": "For a company or team",
+      "title": "More users or single sign-on",
       "description": "Try Enterprise free for 30 days: more users, single sign-on with Entra ID, Google or Okta, and SCIM. No payment details."
     },
     "haveKey": "I have a license key",
@@ -170,7 +170,7 @@
     "activate": {
       "title": "Activate License",
       "subtitle": "Enter your license key to activate Anything<brand>MCP</brand>",
-      "available": "Starter, Team and Enterprise license keys are available at <link>anythingmcp.com</link>."
+      "available": "Enterprise license keys are available on request: <link>contact us</link>. Existing Starter and Team keys keep working."
     },
     "keyLabel": "License Key",
     "submit": "Activate License",
@@ -2114,7 +2114,7 @@
     "cancel": "Cancel",
     "inviteUser": "Invite User",
     "dismiss": "dismiss",
-    "licenseSeats": "Your license includes {limit} users. To invite more people, change your plan under <link>Settings → License</link>.",
+    "licenseSeats": "Your license includes {limit} users. For more users, contact us about Enterprise under <link>Settings → License</link>.",
     "invite": {
       "title": "Invite a New User",
       "body": "Send an invitation email. The user will receive a link to create their account with the specified role.",
@@ -2361,6 +2361,7 @@
       "activate": "Activate License Key",
       "changePlan": "To move to another plan, <link>change it in the billing portal</link> — your current subscription is switched and prorated, not duplicated.",
       "purchase": "Purchase a license at <link>anythingmcp.com</link>",
+      "selfHosted": "Enter the license key you received from us. Existing Starter and Team keys keep working.",
       "submit": "Activate"
     },
     "upgrade": {
@@ -3246,11 +3247,13 @@
     },
     "locked": {
       "title": "File Search is part of the paid editions",
+      "titleEnterprise": "File Search after the trial is part of Enterprise",
       "point1": "Search inside PDF, Excel, Word and Outlook files from Claude, ChatGPT, Copilot and other AI clients.",
       "point2": "SFTP, FTP/FTPS, WebDAV and network folders, synced in the background.",
       "point3": "Temporary download links, permissions per role, audit log.",
       "startTrial": "Start the free 30-day trial",
       "buy": "Buy a licence",
+      "contactEnterprise": "Contact us about Enterprise",
       "activate": "Activate a licence",
       "keyToStart": "Register a free Community key under Settings → License to start the 30-day File Search trial. The key is free and arrives by email.",
       "keyDuringTrial": "Register a free Community key under Settings → License to use File Search during the trial. The key is free and arrives by email.",
