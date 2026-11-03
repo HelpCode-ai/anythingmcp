@@ -13,7 +13,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { supportChatConfig, supportTriageConfig } from './support-config';
+import { supportChatConfig, supportChatDisabledFor, supportTriageConfig } from './support-config';
 import { SupportIdentityService } from './support-identity.service';
 import { DeskConversation, SupportTriageService } from './support-triage.service';
 
@@ -32,7 +32,8 @@ export class SupportController {
 
   /**
    * GET /api/support/widget: what the frontend needs to load the chat widget
-   * with a verified identity. 404 where the chat is not configured.
+   * with a verified identity. 404 where the chat is not configured, or is
+   * switched off for the caller's workspace (SUPPORT_CHAT_DISABLED_ORGS).
    */
   @Get('widget')
   @UseGuards(AuthGuard('jwt'))
@@ -40,7 +41,9 @@ export class SupportController {
   @ApiOperation({ summary: 'Support chat widget settings and signed identity for the current user' })
   async widget(@Req() req: any) {
     if (!supportChatConfig()) throw new NotFoundException();
-    return this.identity.widgetSession(req.user.sub, req.user.organizationId ?? null);
+    const organizationId = req.user.organizationId ?? null;
+    if (supportChatDisabledFor(organizationId)) throw new NotFoundException();
+    return this.identity.widgetSession(req.user.sub, organizationId);
   }
 
   /**
