@@ -65,6 +65,11 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   "loginUrl": "https://api.example.com/graphql",
   "loginMethod": "POST",                     // GET | POST (default POST)
   "loginHeaders": { "X-App": "anythingmcp" }, // static headers for the login call
+  "loginBasicAuth": true,                    // optional: send Authorization: Basic base64(username:password)
+                                             // on the login call only (Wazuh). The password is then not
+                                             // offered to templates, no body is sent without loginBody, and
+                                             // an Authorization in loginHeaders is refused, as are signedJwt
+                                             // and bcrypt passwordHashing.
 
   // ─── Body: prefer structured `loginBody` (recursive ${name} substitution) ─
   "loginBody": {
