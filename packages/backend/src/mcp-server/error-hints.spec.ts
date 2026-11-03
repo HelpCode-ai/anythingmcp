@@ -1,6 +1,30 @@
 import { deriveErrorHint, hostFromAxiosConfig } from './error-hints';
 
 describe('deriveErrorHint', () => {
+  it('names the outbound address when a firewall in front of the API refuses the call', () => {
+    // 3 Nov 2026: a self-hosted Bitrix24 behind an IP allowlist answered every
+    // call with a 403 "Access Restricted" page; the model told the user the
+    // webhook was broken.
+    const hint = deriveErrorHint({
+      host: 'crm.example.com',
+      status: 403,
+      body: '<!DOCTYPE html><html lang="en"><head><title>Access Restricted</title></head></html>',
+      adapterSlug: 'bitrix24',
+      cloud: true,
+      egressIps: ['104.248.242.235'],
+    });
+    expect(hint).toMatch(/104\.248\.242\.235/);
+    expect(hint).toMatch(/Retrying will not help/);
+    // The vendor's own rule still wins: Bitrix24's HTML 404 is a wrong webhook URL.
+    expect(
+      deriveErrorHint({ status: 404, body: '<html><body>Not found</body></html>', adapterSlug: 'bitrix24', egressIps: ['1.2.3.4'] }),
+    ).toMatch(/inbound webhook/);
+    // A JSON permission error is not an allowlist.
+    expect(
+      deriveErrorHint({ host: 'crm.example.com', status: 403, body: { error: 'ACCESS_DENIED' }, egressIps: ['1.2.3.4'] }),
+    ).toBeUndefined();
+  });
+
   it('says nothing for an ordinary failure', () => {
     expect(
       deriveErrorHint({ host: 'api.example.com', status: 500, body: { message: 'boom' } }),
@@ -99,10 +123,10 @@ describe('deriveErrorHint', () => {
       }
     });
 
-    it('leaves an unrelated "Access Denied" page alone', () => {
-      expect(
-        deriveErrorHint({ host: 'example.com', status: 403, body: '<html><title>Access Denied</title></html>' }),
-      ).toBeUndefined();
+    it('leaves an unrelated "Access Denied" page to the firewall rule, not the Odoo one', () => {
+      const hint = deriveErrorHint({ host: 'example.com', status: 403, body: '<html><title>Access Denied</title></html>' });
+      expect(hint).not.toMatch(/Odoo/);
+      expect(hint).toMatch(/IP allowlist/);
     });
   });
 

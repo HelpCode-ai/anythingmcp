@@ -156,6 +156,9 @@ x-backend: &backend
     # Largest upstream response one tool call reads, in bytes. Empty = the
     # default, 10 MB, the same as self-hosted (see .env.example).
     - TOOL_MAX_RESPONSE_BYTES=${TOOL_MAX_RESPONSE_BYTES:-}
+    # Public IPs the backend calls APIs from, shown on the setup and connector
+    # pages and named when an IP allowlist refuses a call (see .env.example).
+    - EGRESS_IPS=${EGRESS_IPS:-}
     # Internal MOTIS instance for the Deutsche Bahn connector. When set, the
     # adapter's MOTIS_URL is filled in automatically at import (and hidden
     # from the install form), so cloud users never see or choose it.

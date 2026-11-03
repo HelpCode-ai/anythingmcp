@@ -99,6 +99,9 @@ services:
       # Largest upstream response one tool call reads, in bytes. Empty = the
       # default, 10 MB (see .env.example).
       - TOOL_MAX_RESPONSE_BYTES=${TOOL_MAX_RESPONSE_BYTES:-}
+      # Public IPs this server calls APIs from, shown to users who must
+      # allowlist them (see .env.example). Empty = not shown.
+      - EGRESS_IPS=${EGRESS_IPS:-}
       # Knowledge Graph LLM (optional): hosted providers need their API key,
       # a local OpenAI-compatible endpoint needs KG_LLM_BASE_URL and no key
       # (KG_LLM_API_KEY is only sent when set). From inside this container

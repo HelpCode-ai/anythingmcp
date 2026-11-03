@@ -27,6 +27,7 @@ import { returnAssistant } from '@/lib/return-assistant';
 import { addressFix, isPlainAddressField, switchSetupHref, withMissingScheme, type AddressFix } from '@/lib/address-fix';
 import { GuideIntro, GuideStepper, GuideStepView, GuideWaitPanel, StuckLink } from '@/components/connector-setup/setup-guide';
 import { SetupSuccess } from '@/components/connector-setup/setup-success';
+import { NetworkNote } from '@/components/connector-setup/network-note';
 
 /**
  * Guided setup of a catalog connector, in one place: what to enter (grouped,
@@ -912,6 +913,8 @@ function SetupContent() {
           </div>
         )}
 
+        {info.requiresIpAllowlist && <NetworkNote ips={info.egressIps ?? []} name={info.name} required />}
+
         {isOAuth && selfRegisteringBridge && (
           <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
             <p>
@@ -977,6 +980,8 @@ function SetupContent() {
             A draft is not offered to your AI client until it is complete.
           </p>
         )}
+
+        {!info.requiresIpAllowlist && <NetworkNote ips={info.egressIps ?? []} name={info.name} />}
       </Card>
 
       {info.instructions && (

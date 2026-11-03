@@ -14,6 +14,7 @@ import { AppShell } from '@/components/app-shell';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { NetworkNote } from '@/components/connector-setup/network-note';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
 import { SetupStatusBanner, SetupStatusPill } from '@/components/setup-status';
@@ -184,6 +185,9 @@ export default function ConnectorDetailPage() {
   // Whether CONNECTOR_PROXY_URL is configured on this instance — drives
   // visibility of the per-tool "Use proxy" checkbox.
   const [proxyAvailable, setProxyAvailable] = useState(false);
+  // The addresses this instance calls APIs from (EGRESS_IPS), for servers
+  // that only accept approved IPs. Empty when the operator did not set them.
+  const [egressIps, setEgressIps] = useState<string[]>([]);
   // Tool whose MCP hints (annotations) panel is expanded, if any.
   const [hintsToolId, setHintsToolId] = useState<string | null>(null);
 
@@ -321,7 +325,10 @@ export default function ConnectorDetailPage() {
       // Cheap, instance-wide flag — drives the per-tool proxy checkbox.
       connectors
         .proxyAvailability(token)
-        .then((r) => setProxyAvailable(!!r.available))
+        .then((r) => {
+          setProxyAvailable(!!r.available);
+          setEgressIps(Array.isArray(r.egressIps) ? r.egressIps : []);
+        })
         .catch(() => setProxyAvailable(false));
       const c = await connectors.get(id, token);
       setConnector(c);
@@ -1959,6 +1966,13 @@ export default function ConnectorDetailPage() {
         </Card>
         )}
 
+        <NetworkNote
+          ips={egressIps}
+          name={connector.name}
+          mentionProxy={proxyAvailable && connector.type !== 'FILE_SEARCH'}
+          className="bg-[var(--surface)]"
+        />
+
         {/* Tools Section */}
         <Card className="p-[22px]">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -2270,7 +2284,7 @@ export default function ConnectorDetailPage() {
                           {proxyAvailable && connector?.type !== 'FILE_SEARCH' && (
                             <label
                               className="flex items-center gap-1 rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs cursor-pointer transition-colors hover:border-[var(--border-strong)]"
-                              title="Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs."
+                              title="Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs. Calls through it leave from changing IP addresses: keep it off for a server that only accepts approved IPs."
                             >
                               <input
                                 type="checkbox"

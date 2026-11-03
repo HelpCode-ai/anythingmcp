@@ -18,6 +18,7 @@
     "EMAG_PASSWORD"
   ],
   "prerequisites": "An eMAG Marketplace seller account with a user that has API rights, and the public IP address of this connector whitelisted by eMAG.",
+  "requiresIpAllowlist": true,
   "envVarMeta": {
     "EMAG_API_HOST": {
       "label": "API host (platform)",

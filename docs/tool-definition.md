@@ -327,6 +327,10 @@ a client of the user's own from `{{VAR}}`s, scope, RFC 8707 resource). Both
 are described in [MCP Bridge](connectors/mcp-bridge.md#connector-settings-connectorconfig).
 `prerequisites` (an array of short sentences) lists what the user needs at
 the vendor first; the setup page shows it above the form.
+`requiresIpAllowlist: true` marks an API that refuses every call from an
+address not registered with the provider (eMAG, Shopee, the Korean law API):
+the setup page then shows the server's outbound IP addresses (`EGRESS_IPS`)
+as a step to complete, not as a side note.
 
 ### DATABASE adapters
 

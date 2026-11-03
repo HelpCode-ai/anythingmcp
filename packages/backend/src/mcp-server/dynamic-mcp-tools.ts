@@ -33,6 +33,7 @@ import { KgService } from '../knowledge-graph/kg.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
+import { egressIps } from '../connectors/egress';
 import { envVarsForMcpTool } from '../connectors/mcp-connector-config.util';
 import { processGauges } from '../common/process-vitals';
 import { recordToolCall } from '../common/metrics';
@@ -612,6 +613,8 @@ export class DynamicMcpTools {
           adapterSlug: mcpSlug,
           connectorPage: connectorPageUrl(tool.connectorId),
           cloud: this.deployment.isCloud(),
+          egressIps: egressIps(),
+          usedProxy,
         });
         const errorResult: { content: ToolResultContent; isError: true } = {
           content: [
@@ -768,6 +771,8 @@ export class DynamicMcpTools {
         verifyHints: adapterSlug ? getAdapter(adapterSlug)?.verifyHints : undefined,
         connectorPage: connectorPageUrl(tool.connectorId),
         cloud: this.deployment.isCloud(),
+        egressIps: egressIps(),
+        usedProxy,
       });
       // Odoo JSON-2 "No database is selected": ask Odoo which databases this
       // address serves and name them, as the setup check does. One small
