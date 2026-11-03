@@ -106,6 +106,33 @@ describe('catalog search — several words', () => {
     expect(shop.missing).toEqual(['quarzwerk']);
     expect(shop.hits.length).toBeGreaterThan(0);
   });
+
+  it.each([
+    // Other adapters match more of the other words in their description.
+    ['instagram direct message', 'instagram'],
+    ['etsy listings search', 'etsy'],
+    ['etsy open api v3', 'etsy'],
+    ['gmail email inbox', 'gmail'],
+    // Others match every word, WhatsApp Business only the app's name.
+    ['whatsapp messages chats', 'whatsapp-business'],
+    ['telegram send message', 'telegram-bot'],
+  ])('"%s" puts the app the query names first', (query, slug) => {
+    expect(first(query).entry.slug).toBe(slug);
+  });
+
+  it('lists the named apps in the order of the query words', () => {
+    expect(slugs('etsy printify printful gelato').slice(0, 4)).toEqual(['etsy', 'printify', 'printful', 'gelato']);
+  });
+
+  it('marks a named app the other words did not match as partial', () => {
+    const result = searchCatalog(catalog, 'whatsapp messages chats');
+    expect(result.hits[0].match).toBe('partial');
+    expect(result.hits.slice(1).some((h) => h.match === 'direct')).toBe(true);
+  });
+
+  it('a word starting many names names no app: "google calendar events"', () => {
+    expect(first('google calendar events').entry.slug).toBe('google-calendar');
+  });
 });
 
 describe('catalog search — aliases', () => {
