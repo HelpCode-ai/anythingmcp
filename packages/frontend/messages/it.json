@@ -1026,7 +1026,7 @@
     },
     "wait": {
       "checking": "Chiediamo a {name} della tua app…",
-      "notYet": "{name} non ha ancora approvato la tua app",
+      "notYet": "{name} non accetta ancora queste chiavi",
       "checkedAt": "Ultimo controllo alle {time}. La pagina ricontrolla ogni volta che ci torni.",
       "checkAgain": "Controlla di nuovo",
       "checkingShort": "Controllo in corso…",

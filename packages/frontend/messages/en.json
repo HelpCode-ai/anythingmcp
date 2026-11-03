@@ -1026,7 +1026,7 @@
     },
     "wait": {
       "checking": "Asking {name} about your app…",
-      "notYet": "{name} has not approved your app yet",
+      "notYet": "{name} does not accept these keys yet",
       "checkedAt": "Last checked at {time}. This page checks again whenever you come back to it.",
       "checkAgain": "Check again",
       "checkingShort": "Checking…",
