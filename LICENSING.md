@@ -31,4 +31,12 @@ Dates).
 Contributions are accepted under the [Contributor License
 Agreement](CLA.md) — see [CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
-For commercial licensing inquiries: info@helpcode.ai
+## Editions
+
+The self-hosted Community edition is free under the AGPL-3.0 for any use,
+including commercial use, for up to 3 active users. More users, single
+sign-on, SCIM, File Search beyond the 30-day trial and support come with
+Enterprise, on request. Existing Starter and Team licence keys keep working.
+See the [License FAQ](docs/license-faq.md).
+
+For Enterprise and commercial licensing inquiries: info@helpcode.ai

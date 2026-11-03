@@ -345,7 +345,6 @@ export default function IdentityProvidersPage() {
               ? 'The providers below keep signing members in. Adding or changing a provider, turning on SCIM or requiring single sign-on needs Enterprise.'
               : 'Connect Entra ID, Google, Okta or any OIDC provider, provision users with SCIM and map directory groups to roles.'
           }
-          upgrade="enterprise"
         />
       )}
       {loading ? (
