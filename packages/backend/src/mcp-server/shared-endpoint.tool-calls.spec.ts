@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { McpEndpointController } from './mcp-endpoint.controller';
 import * as toolset from './shared-toolset';
+import { withRegistryIndexes } from './registry-test-double';
 
 /**
  * The shared endpoint reports each call of its tools to the
@@ -29,7 +30,7 @@ describe('shared /mcp: shared_tool_called', () => {
         getConnectorIds: jest.fn(async () => []),
         getConnectorSummaries: jest.fn(async () => []),
       } as any,
-      { getAllTools: () => [], countByName: () => 0 } as any,
+      withRegistryIndexes({ getAllTools: () => [], countByName: () => 0 }) as any,
       { executeTool: jest.fn() } as any,
       { getAllowedToolIds: jest.fn(async () => null) } as any,
       { isEnabled: jest.fn(async () => false), lookup: jest.fn() } as any,
