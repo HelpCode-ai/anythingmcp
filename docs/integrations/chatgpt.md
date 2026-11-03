@@ -89,6 +89,31 @@ Only database connectors set to **read-only** are queried; a connector with writ
 
 ---
 
+## The File Search plugin endpoint: `/mcp/file-search`
+
+`https://<your-host>/mcp/file-search` serves the File Search plugin ("SFTP & NAS File Search" in OpenAI's plugin directory). Like `/mcp/chatgpt-app`, it has one fixed set of tools, the same for every user, and each tool is one operation. It only reaches the workspace's File Search folders; catalog connectors, databases and the File Share connector are not served here.
+
+| Tool | What it does |
+|------|--------------|
+| `list_file_sources` | The connected folders: protocol, content summary, indexed files, last sync, the admin's notes |
+| `search_documents` | Full-text search over the documents, with the best page and a snippet; every folder when no `source` is given |
+| `find_files` | Files by name or glob pattern |
+| `list_folder` | One folder's subfolders and files |
+| `read_document` | The text of one file, whole or by pages |
+| `find_exact_text` | Exact codes, numbers and phrases with their lines (whole rows in spreadsheets) |
+| `view_document_page` | One PDF page or an image as a picture |
+| `get_file_link` | The original file as a 24-hour link for members of the workspace |
+
+Every tool is read-only except `get_file_link`, which stores a members-only link. With more than one folder connected, the tools that take a path need `source` (the id or name `list_file_sources` returns). Roles, folder rules per role and the audit log work as on `/mcp`. When no folder is connected, the tools answer with the link to the File Search wizard instead.
+
+### Folder setup while connecting
+
+When ChatGPT asks for `/mcp/file-search` (its OAuth `resource`), a workspace admin whose workspace has no File Search folder yet sees one more page after **Approve**: how to reach the folder (SFTP, FTPS, FTP, WebDAV, Nextcloud, ownCloud, Synology, QNAP, FRITZ!Box, Hetzner Storage Box, S3-compatible storage, and on a self-hosted instance a mounted network folder). Each choice opens the File Search wizard in the dashboard, signed in on the workspace the connection was granted, with that protocol preselected and the granted MCP servers ticked. When the folder is activated, the wizard returns to the authorization and the browser goes back to ChatGPT. **Skip** goes back at once. Passwords and keys are entered in the wizard, never in the chat.
+
+Editors, viewers and workspaces that already have a folder go straight back to ChatGPT. The page and the endpoint behave the same on Cloud and on a self-hosted instance; on a self-hosted Community edition, File Search itself needs its trial or a licence, which the wizard explains. Other clients and endpoints keep their pages: the first-connector page after **Approve** (Cloud) is unchanged for them.
+
+---
+
 ## Authentication Options
 
 | Method | Configuration |

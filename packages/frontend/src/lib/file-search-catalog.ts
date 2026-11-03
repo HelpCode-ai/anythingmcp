@@ -21,9 +21,10 @@ const FILE_SEARCH_SLUGS: Record<string, { protocol: string; preset?: string }> =
 /**
  * Where the wizard was opened from, sent with file_search_wizard_opened:
  * a card of the store or /welcome, the File Search hint under their search
- * box, the File Search card of Connectors → New, or a link from a chat.
+ * box, the File Search card of Connectors → New, a link from a chat, or the
+ * File Search plugin's setup page after approving an AI client ('authorize').
  */
-export const FILE_SEARCH_ENTRY_POINTS = ['store', 'welcome', 'store_hint', 'welcome_hint', 'connectors_new', 'chat'] as const;
+export const FILE_SEARCH_ENTRY_POINTS = ['store', 'welcome', 'store_hint', 'welcome_hint', 'connectors_new', 'chat', 'authorize'] as const;
 export type FileSearchEntryPoint = (typeof FILE_SEARCH_ENTRY_POINTS)[number];
 
 /**

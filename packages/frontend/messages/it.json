@@ -3370,6 +3370,15 @@
       "body": "La ricerca file indicizza i file PDF, Word, Excel e Outlook sul tuo NAS, server o storage e tiene l'indice aggiornato: così l'AI trova cosa c'è scritto nei file, non solo i loro nomi.",
       "cta": "Configura la ricerca file",
       "for": "Apre la procedura guidata per {name}."
+    },
+    "authorize": {
+      "banner": "Stai collegando una cartella per il tuo assistente AI. Quando la cartella è attiva, torni alla chat.",
+      "skip": "Salta e torna alla chat",
+      "opening": "Apertura della configurazione della cartella…",
+      "openFailedTitle": "Non è stato possibile aprire la configurazione della cartella",
+      "openFailed": "Questa pagina è scaduta.",
+      "openFailedHint": "Torna alla chat e collega di nuovo, oppure accedi alla dashboard e configura lì la cartella.",
+      "openWizard": "Configura la cartella nella dashboard"
     }
   },
   "fileShare": {

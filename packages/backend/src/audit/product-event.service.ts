@@ -83,6 +83,13 @@ export const ProductEvents = {
    */
   EMPTY_WORKSPACE_PROMPT: 'empty_workspace_prompt',
   /**
+   * File Search plugin (/mcp/file-search): after approving the AI client, an
+   * admin of a workspace with no folder was offered to connect one
+   * (login.controller.ts). metadata.client. Server-only. Read against
+   * file_search_wizard_opened with via 'authorize' and file_search_activated.
+   */
+  FILE_SEARCH_AUTHORIZE_OFFERED: 'file_search_authorize_offered',
+  /**
    * Cloud: on that page the user picked one of the quick-setup apps, and it
    * was added to the workspace as a connector waiting for its credentials
    * (login.controller.ts). metadata.adapterSlug, metadata.client (the OAuth
@@ -131,7 +138,8 @@ export const ProductEvents = {
    *
    * Opened: once per page load; metadata.via = where from ('store',
    * 'welcome', 'store_hint' / 'welcome_hint' for the File Search hint under
-   * the search box, 'connectors_new', 'chat').
+   * the search box, 'connectors_new', 'chat', 'authorize' for the File Search
+   * plugin's setup page after "Approve").
    */
   FILE_SEARCH_WIZARD_OPENED: 'file_search_wizard_opened',
   /**
@@ -299,6 +307,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
+  ProductEvents.FILE_SEARCH_AUTHORIZE_OFFERED,
   ProductEvents.POST_APPROVE_APP_PICKED,
   ProductEvents.SHARED_TOOL_CALLED,
   ProductEvents.ADS_ACTIVATION_REPORTED,

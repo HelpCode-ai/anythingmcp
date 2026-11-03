@@ -3370,6 +3370,15 @@
       "body": "Die Dateisuche indexiert die PDF-, Word-, Excel- und Outlook-Dateien auf Ihrem NAS, Server oder Speicher und hält den Index aktuell. So findet die KI, was in den Dateien steht, nicht nur ihre Namen.",
       "cta": "Dateisuche einrichten",
       "for": "Öffnet den Assistenten für {name}."
+    },
+    "authorize": {
+      "banner": "Sie verbinden einen Ordner für Ihren KI-Assistenten. Sobald der Ordner aktiv ist, geht es zurück in den Chat.",
+      "skip": "Überspringen und zurück zum Chat",
+      "opening": "Die Ordner-Einrichtung wird geöffnet…",
+      "openFailedTitle": "Die Ordner-Einrichtung konnte nicht geöffnet werden",
+      "openFailed": "Diese Seite ist abgelaufen.",
+      "openFailedHint": "Gehen Sie zurück in den Chat und verbinden Sie erneut, oder melden Sie sich im Dashboard an und richten Sie den Ordner dort ein.",
+      "openWizard": "Ordner im Dashboard einrichten"
     }
   },
   "fileShare": {
