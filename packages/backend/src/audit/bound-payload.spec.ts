@@ -57,4 +57,15 @@ describe('boundPayload', () => {
     expect(boundPayload(clean, { maxBytes: 1024 })).toBe(clean);
     expect(boundText('x🙂', 2)).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
   });
+
+  it('keeps a "__proto__" field as data when it cuts a response', () => {
+    const big = JSON.parse(
+      `{"__proto__":{"polluted":true},"rows":[${Array.from({ length: 200 }, () => '"x"').join(',')}]}`,
+    );
+    const out = boundPayload(big, { maxBytes: 300 }) as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(out, '__proto__')).toBe(true);
+    expect(JSON.parse(JSON.stringify(out)).__proto__).toEqual({ polluted: true });
+    expect((out as { polluted?: unknown }).polluted).toBeUndefined();
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+  });
 });

@@ -33,7 +33,13 @@ const COMMUNITY: EditionState = {
 
 async function session(
   page: Page,
-  opts: { mode: 'cloud' | 'self-hosted'; edition?: EditionState; usage?: Record<string, unknown> },
+  opts: {
+    mode: 'cloud' | 'self-hosted';
+    edition?: EditionState;
+    usage?: Record<string, unknown>;
+    status?: Record<string, unknown>;
+    users?: unknown[];
+  },
 ) {
   const origin = test.info().project.use.baseURL ?? 'http://localhost:3100';
   await page.context().addCookies([{ name: 'amcp_token', value: 't', url: origin }]);
@@ -53,6 +59,7 @@ async function session(
     if (p.endsWith('/users/me')) return json(ADMIN);
     if (p.endsWith('/license/edition')) return json(opts.edition ?? COMMUNITY);
     if (p.endsWith('/license/status')) {
+      if (opts.status) return json(opts.status);
       return json(
         opts.mode === 'cloud'
           ? { plan: 'cloud_team', status: 'active', expiresAt: null, features: {} }
@@ -60,6 +67,8 @@ async function session(
       );
     }
     if (p.endsWith('/license/usage') && opts.usage) return json(opts.usage);
+    if (p.endsWith('/users') && opts.users) return json(opts.users);
+    if (p.endsWith('/users/invitations') || p.endsWith('/roles')) return json([]);
     if (p.endsWith('/identity-providers') || p.endsWith('/connectors') || p.endsWith('/adapters')) return json([]);
     return json({});
   });
@@ -106,6 +115,63 @@ test.describe('Enterprise instead of Business (self-hosted)', () => {
       /\/contact\?plan=enterprise$/,
     );
     await expect(page.getByText(/Business/)).toHaveCount(0);
+  });
+});
+
+/**
+ * Self-hosted is sold as Community (free for any use, commercial included) and
+ * Enterprise (on request) since 3 Nov 2026. Starter and Team are no longer
+ * offered there, but an instance that holds such a key still shows its plan.
+ */
+test.describe('Self-hosted: Community and Enterprise only', () => {
+  test('the license page offers no self-hosted plan to buy', async ({ page }) => {
+    await session(page, { mode: 'self-hosted' });
+    await page.goto('/settings/license');
+    await expect(page.getByText(/Community is free for any use, including commercial use, for up to 3 active users\./)).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText('Enter the license key you received from us. Existing Starter and Team keys keep working.')).toBeVisible();
+    await expect(page.getByText('File Search after the 30-day trial')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Try Enterprise free for 30 days' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Contact us about Enterprise' })).toHaveAttribute('href', /\/contact\?plan=enterprise$/);
+    await expect(page.getByRole('link', { name: 'View plans' })).toHaveCount(0);
+    await expect(page.locator('a[href*="/pricing"]')).toHaveCount(0);
+    // The free Community registration and the key field stay.
+    await expect(page.getByRole('button', { name: 'Register Free Community License' })).toBeVisible();
+    await expect(page.getByPlaceholder('AMCP-XXXX-XXXX-XXXX-XXXX')).toBeVisible();
+  });
+
+  test('an instance with a Team key still shows its plan', async ({ page }) => {
+    await session(page, {
+      mode: 'self-hosted',
+      edition: { ...COMMUNITY, edition: 'team', source: 'license', plan: 'team', seatLimit: 10, trialAvailable: false },
+      status: { plan: 'team', status: 'active', expiresAt: null, lastVerifiedAt: null, instanceId: 'i1', features: {} },
+    });
+    await page.goto('/settings/license');
+    await expect(page.getByText('License (team)')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Team', exact: true })).toBeVisible();
+    await expect(page.locator('div.font-medium').filter({ hasText: /^Team$/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Change License Key' })).toBeVisible();
+    await expect(page.locator('a[href*="/pricing"]')).toHaveCount(0);
+  });
+
+  test('a full Community instance is pointed to Enterprise, not to a plan', async ({ page }) => {
+    await session(page, {
+      mode: 'self-hosted',
+      edition: { ...COMMUNITY, seatsUsed: 3 },
+      users: [1, 2, 3].map((n) => ({
+        id: `u${n}`,
+        email: `user${n}@example.test`,
+        name: `User ${n}`,
+        role: n === 1 ? 'ADMIN' : 'EDITOR',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      })),
+    });
+    await page.goto('/settings/users');
+    await expect(page.getByText('Community includes 3 users')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('link', { name: 'Contact us about Enterprise' })).toHaveAttribute('href', /\/contact\?plan=enterprise$/);
+    await expect(page.getByRole('link', { name: 'View plans' })).toHaveCount(0);
   });
 });
 

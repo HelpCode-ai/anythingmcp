@@ -20,6 +20,23 @@ The fastest way to get AnythingMCP running — no local setup required:
 
 In both cases, the first user to register becomes **Admin**.
 
+### Coolify
+
+[`docker-compose.coolify.yml`](../docker-compose.coolify.yml) runs AnythingMCP on a [Coolify](https://coolify.io) v4 server. It pulls the published image and starts PostgreSQL next to it.
+
+1. In Coolify, create a **Docker Compose** resource. Either point it at this repository with `docker-compose.coolify.yml` as the compose file, or paste the file into an empty compose resource.
+2. Under **Domains**, give the `app` service your domain with the `:3000` suffix, for example `https://mcp.example.com:3000`. The suffix tells Coolify's proxy which container port to use; visitors still connect on 443.
+3. Fill in the required SMTP variables, then deploy: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` and `SMTP_FROM`. Coolify blocks the deploy until they are set.
+
+   The app's public URL is filled in from the domain automatically, without the port: the file uses Coolify's `SERVICE_URL_APP`, not `SERVICE_URL_APP_3000`, which keeps the `:3000` suffix and breaks the OAuth sign-in redirect. Set `PUBLIC_URL` (for example `https://mcp.example.com`) only to override it. Redeploy after you change the domain.
+
+   Coolify generates `JWT_SECRET`, `COOKIE_SECRET`, `ENCRYPTION_KEY` and the database credentials, and keeps them across redeploys.
+4. Open the domain and register the first account, which becomes **Admin**.
+
+The UI, API, MCP endpoint (`/mcp`) and OAuth endpoints are all served from that one domain, because the frontend proxies backend routes. Coolify's proxy handles HTTPS. `MCP_AUTH_MODE` defaults to `both`: AI clients sign in with OAuth2 or use a per-user API key created in the UI. Leave `MCP_API_KEY` and `MCP_BEARER_TOKEN` empty unless you need them. They are instance-wide master credentials that reach every MCP server in every workspace.
+
+> **Back up `ENCRYPTION_KEY`.** It decrypts every stored connector credential. When you move an existing instance to Coolify, set `JWT_SECRET`, `ENCRYPTION_KEY` and the database to the old values before the first deploy.
+
 ---
 
 ## Quick Start (Docker)
@@ -392,6 +409,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `SOCIAL_MICROSOFT_CLIENT_ID` / `SOCIAL_MICROSOFT_CLIENT_SECRET` | No | Cloud only: enables "Continue with Microsoft" (personal and work accounts). Redirect URI `<FRONTEND_URL>/auth/social/microsoft/callback`; add the `email` and `xms_edov` optional ID-token claims |
 | `SOCIAL_GITHUB_CLIENT_ID` / `SOCIAL_GITHUB_CLIENT_SECRET` | No | Cloud only: enables "Continue with GitHub". Callback URL `<FRONTEND_URL>/auth/social/github/callback` |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
+| `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](#license-verification); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
 ---
 
@@ -410,10 +428,22 @@ AnythingMCP is fully self-hosted, but makes **optional** network calls to `anyth
 
 **Data sent:**
 - License key
-- Instance ID (a random UUID generated on first startup, used to identify the installation)
+- Instance ID (a random UUID generated on first startup, used to identify the installation; sent on activation and registration)
 - Email and name (only during community license registration)
+- Usage counts, with each verification (`/api/license/verify`), as query parameters:
 
-**Data NOT sent:** No API credentials, connector configurations, tool definitions, user data, audit logs, or any operational data.
+  | Parameter | Value |
+  |-----------|-------|
+  | `activeUsers` | Users with at least one active workspace membership, across the instance: the same count as the Community user limit |
+  | `connectors` | Number of connectors on the instance |
+  | `mcpServers` | Number of MCP servers on the instance |
+  | `version` | The AnythingMCP version, e.g. `0.52.0` |
+
+  Only numbers and the version: no names, emails, connector names or URLs. They tell us which Community instances are growing past the Community edition. Set `LICENSE_USAGE_REPORT=false` to send only the license key. If counting fails, the key is verified without the counts. AnythingMCP Cloud never sends them.
+
+**Data NOT sent:** No API credentials, connector configurations, tool definitions, user data, audit logs, or any other operational data.
+
+**File Search trial:** on Community, the 30-day File Search trial starts only with a registered license key. The free Community key counts: register it under **Settings → License**, and it arrives by email. A trial that was already running before this rule keeps File Search until it ends.
 
 **If the service is unreachable:** The application continues to work normally. License verification failures are logged as warnings and do not block functionality.
 

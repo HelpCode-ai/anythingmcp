@@ -63,6 +63,11 @@ export default function LicenseSettingsPage() {
   const cardTrialOffer = cardTrialEligible({ isCloud, role: user?.role, license: status });
   const cardTrialKind = useCardTrialKind(token, cardTrialOffer);
   const billingSummary = isCloud ? describeBilling(status?.billing) : null;
+  // Self-hosted without a paid key (none yet, or Community): nothing to buy
+  // online. An instance with a Starter, Team or Enterprise key keeps the
+  // plan-change link it always had.
+  const selfHostedWithoutPaidKey =
+    !isCloud && (!status?.plan || status.plan === 'trial' || status.plan === 'community');
   const cardTrialDate = cardTrialOffer
     ? formatTrialEnd(cardTrialDisplayEnd(status?.expiresAt), 'long', undefined, dateLocale)
     : null;
@@ -389,7 +394,11 @@ export default function LicenseSettingsPage() {
           <h2 className="text-sm font-semibold text-[var(--text)] mb-4">
             {status?.plan && status.plan !== 'trial' ? t('key.change') : t('key.activate')}
           </h2>
-          {status?.plan && status.plan !== 'trial' ? (
+          {selfHostedWithoutPaidKey ? (
+            // Self-hosted Starter and Team are no longer sold: no pricing link.
+            // Enterprise (enquiry and trial) is offered in the edition card above.
+            <p className="text-sm text-[var(--text-2)] mb-4">{t('key.selfHosted')}</p>
+          ) : status?.plan && status.plan !== 'trial' ? (
             // A paying customer who buys again gets a second subscription beside
             // the first, not a new plan. Send them to the plan switch instead.
             <p className="text-sm text-[var(--text-2)] mb-4">

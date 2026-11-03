@@ -27,6 +27,7 @@ import {
   BudgetBar,
   FolderTree,
   LockedCard,
+  suggestedNext,
   TestChecklist,
   formatBytes,
   formatNumber,
@@ -606,7 +607,11 @@ function Wizard() {
             <h2 className="text-[15px] font-semibold text-[var(--text)]">{t('limit.title')}</h2>
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
               {t('limit.text', { max: caps.access.quota.maxConnectors ?? 0, plan: caps.access.plan })}
-              {caps.access.next ? ` ${t('limit.next', { plan: caps.access.next.plan, max: caps.access.next.quota.maxConnectors ?? '∞' })}` : ''}
+              {(() => {
+                // Self-hosted is only pointed at Enterprise (Starter and Team are no longer sold there).
+                const next = suggestedNext(caps.access.next, !caps.cloud);
+                return next ? ` ${t('limit.next', { plan: next.plan, max: next.quota.maxConnectors ?? '∞' })}` : '';
+              })()}
             </p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Link href={upgradeHref('file_quota_setup')} className="inline-flex h-9 items-center justify-center rounded-[9px] bg-[var(--brand)] px-3.5 text-[13px] font-semibold text-[var(--primary-foreground)]">{t('upgrade')}</Link>

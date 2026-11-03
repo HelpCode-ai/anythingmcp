@@ -69,7 +69,7 @@ describe('TrialExtensionController', () => {
     await controller.extend(token(), req, r);
     expect(prisma.license.findFirst.mock.calls[0][0].where).toEqual({ organizationId: 'org-1', plan: 'trial' });
     expect(client.extendTrial).toHaveBeenCalledWith('AMCP-TRIAL-KEY-0001');
-    expect(licenseService.verifyLicense).toHaveBeenCalledWith('AMCP-TRIAL-KEY-0001');
+    expect(licenseService.verifyLicense).toHaveBeenCalledWith('AMCP-TRIAL-KEY-0001', 'org-1');
     expect(securityEvents.log).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'TRIAL_EXTENDED', organizationId: 'org-1', actorType: 'ANONYMOUS' }),
     );
