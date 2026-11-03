@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { license } from '@/lib/api';
@@ -8,7 +8,14 @@ import { useAuth } from '@/lib/auth-context';
 import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useManagePlan } from '@/lib/use-manage-plan';
 import { useCardCheckout } from '@/lib/use-card-checkout';
-import { DEFAULT_SELECTION, planById, readPlanIntent, type PlanSelection } from '@/lib/card-trial';
+import {
+  DEFAULT_SELECTION,
+  planById,
+  readPlanIntent,
+  selectionForUsage,
+  type PlanSelection,
+  type WorkspaceUsage,
+} from '@/lib/card-trial';
 import { PlanPicker } from '@/components/plan-picker';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
@@ -24,7 +31,7 @@ import { cn } from '@/lib/utils';
 type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed' | 'payment-failed';
 
 export function LicenseWall() {
-  const { token, user, deploymentMode } = useAuth();
+  const { token, user, deploymentMode, orgName, orgs, switchOrg } = useAuth();
   const managePlan = useManagePlan();
   const [reason, setReason] = useState<BlockReason | null>(null);
   // The pricing links name the wall when it is the ended trial's.
@@ -35,6 +42,12 @@ export function LicenseWall() {
   const isCloud = deploymentMode === 'cloud';
   const checkout = useCardCheckout();
   const [selection, setSelection] = useState<PlanSelection>(DEFAULT_SELECTION);
+  // What the workspace already has, so a plan it has outgrown is not the one
+  // preselected (and says so).
+  const [usage, setUsage] = useState<WorkspaceUsage | null>(null);
+  // Once the admin picks a plan, the usage answer no longer moves it.
+  const picked = useRef(false);
+  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   // Cloud admins whose trial ended pick a plan and pay right here (Stripe
   // Checkout, no trial left). Other roles cannot subscribe the workspace and
   // keep the pricing link.
@@ -46,8 +59,44 @@ export function LicenseWall() {
   const [checkNote, setCheckNote] = useState<string | null>(null);
 
   useEffect(() => {
-    if (buyInPlace) setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
-  }, [buyInPlace]);
+    if (!buyInPlace || !token) return;
+    picked.current = false;
+    const intent = readPlanIntent() ?? DEFAULT_SELECTION;
+    setSelection(intent);
+    let cancelled = false;
+    license
+      .getUsage(token)
+      .then((u) => {
+        if (cancelled) return;
+        const current = {
+          connectors: u.connectors.current,
+          mcpServers: u.mcpServers.current,
+          users: u.users.current,
+        };
+        setUsage(current);
+        if (!picked.current) setSelection(selectionForUsage(intent, current));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [buyInPlace, token]);
+
+  const pickPlan = (next: PlanSelection) => {
+    picked.current = true;
+    setSelection(next);
+  };
+
+  // A person in several workspaces can leave this one for another (one paid
+  // for, say): a licence covers a single workspace, so each one is subscribed
+  // on its own.
+  const otherOrgs = (Array.isArray(orgs) ? orgs : []).filter((o) => o.id !== user?.organizationId);
+  const openWorkspace = async (organizationId: string) => {
+    setSwitchingTo(organizationId);
+    await switchOrg(organizationId);
+    // switchOrg reloads the page on success; on failure it only logs.
+    setSwitchingTo(null);
+  };
 
   // Start the trial in place (no navigation) so a failed auto-activation on
   // signup doesn't strand the user on this wall. On success the block clears.
@@ -206,6 +255,12 @@ export function LicenseWall() {
 
         <h1 className="text-2xl font-bold mb-2 text-[var(--text)]">{title}</h1>
 
+        {otherOrgs.length > 0 && orgName && (
+          <p className="text-xs text-[var(--text-3)] mb-2">
+            Workspace: <span className="font-medium text-[var(--text-2)]">{orgName}</span>
+          </p>
+        )}
+
         <p className="text-[var(--text-2)] text-sm mb-6">{body}</p>
 
         <div className="space-y-3">
@@ -233,7 +288,13 @@ export function LicenseWall() {
           ) : buyInPlace ? (
             <>
               <div className="text-left">
-                <PlanPicker value={selection} onChange={setSelection} compact disabled={checkout.loading} />
+                <PlanPicker
+                  value={selection}
+                  onChange={pickPlan}
+                  compact
+                  disabled={checkout.loading}
+                  usage={usage}
+                />
               </div>
               <button
                 onClick={() => checkout.start(selection, false, 'trial_ended_wall')}
@@ -292,6 +353,31 @@ export function LicenseWall() {
             >
               View Plans &amp; Purchase License
             </a>
+          )}
+
+          {otherOrgs.length > 0 && (
+            <div className="border-t border-[var(--border)] pt-3 text-left">
+              <p className="mb-1.5 text-center text-xs text-[var(--text-3)]">Switch to another workspace</p>
+              <div className="max-h-40 space-y-1 overflow-y-auto">
+                {otherOrgs.map((org) => (
+                  <button
+                    key={org.id}
+                    type="button"
+                    onClick={() => openWorkspace(org.id)}
+                    disabled={switchingTo !== null}
+                    className="flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-1.5 text-left hover:bg-[var(--surface-2)] disabled:opacity-60"
+                  >
+                    <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[6px] bg-[var(--avatar-gradient)] text-[10px] font-semibold text-white">
+                      {(org.name || '?').slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--text)]">{org.name}</span>
+                    <span className="text-[11px] text-[var(--text-3)]">
+                      {switchingTo === org.id ? 'Opening…' : org.role}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           {reason !== 'payment-failed' && (
