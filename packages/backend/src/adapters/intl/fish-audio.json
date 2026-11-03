@@ -1,0 +1,607 @@
+{
+  "slug": "fish-audio",
+  "name": "Fish Audio",
+  "aliases": [
+    "fish.audio",
+    "OpenAudio"
+  ],
+  "description": "Text to speech, voice cloning and speech to text with Fish Audio: search a library of community and licensed voices, generate natural multilingual speech with emotion tags as audio files, transcribe recordings with speaker turns, create, update and delete custom voice models, and check the API credit. Paid per use from prepaid API credit; a free TTS tier exists.",
+  "instructions": "## Fish Audio\nThis connector uses the **Fish Audio developer API** (`https://api.fish.audio`): multilingual text to speech with a large library of voices and custom voice clones, speech to text with speaker turns, voice model management and the API credit balance.\n\n**Setup (2 minutes)**\n1. Sign up at https://fish.audio and open **Developers, Get started** (https://fish.audio/app/developers/get-started/).\n2. Click **Get your API key**; the key is shown only once. Paste it into `FISH_AUDIO_API_KEY`. It is sent as `Authorization: Bearer`.\n3. New accounts have no API credit: text to speech with the model `s2.1-pro-free` works at once, every other model and transcription return 402 until credit is added under **Developers, Billing** (https://fish.audio/app/developers/billing/). The developer API credit is separate from the web app subscription.\n\n**Costs**: `fish_audio_text_to_speech` costs $15 per million UTF-8 bytes of text with s2.1-pro or s2-pro (about $0.015 per 1,000 Latin characters; Chinese and Japanese characters take 3 bytes each), $50 per million with drama-3, nothing with s2.1-pro-free. `fish_audio_transcribe` costs $0.36 per hour of audio. Tell the user the cost of long texts or recordings and confirm first. Failed requests are not billed. All other tools are free.\n\n**Workflow**\n- Balance: `fish_audio_get_api_credit` (developer API credit in USD, the probe) and `fish_audio_get_package` (web app plan).\n- Find a voice: `fish_audio_list_voices` with `title`, `tag` (male, female, young, old, narration, calm, deep ...), `language` (en, de, zh ...) and `sort_by` task_count for the most used voices; `licensed` true for voices cleared by their owners. Play `sample_audio` to judge a voice. `self` true lists the account's own voices. `fish_audio_get_voice` shows one voice; `state` trained means ready.\n- Speak: `fish_audio_text_to_speech` with `text` and the voice id as `reference_id`. The audio file is attached to the result. Use `model` s2.1-pro (default) or s2.1-pro-free on a free account; `format` mp3 is smallest; `speed` 0.5 to 2 and `volume` in dB adjust delivery; `language` helps read numbers and dates. Write cues in square brackets in the text for emotion and delivery: [happy], [sad], [excited], [whispering], [laughing], [sighing], [break]. Very long texts produce large files: split them into chapters (about 10 MB of MP3 is the limit of one result).\n- Transcribe: `fish_audio_transcribe` with `audio_url`, a public link to the file (up to 10 MB here; AnythingMCP downloads and uploads it). transcribe-1-pro handles up to 60 minutes and several speakers: the text carries markers such as `<|speaker:0|>`; set `ignore_timestamps` false to get word `segments` (seconds) and `speaker_turns` (speaker, text, start, end). Speaker labels only identify speakers inside one transcript.\n- Clone a voice: `fish_audio_create_voice` with a `title` and `voice_url`, a public link to 10 to 30 seconds of clean speech from one speaker, plus its transcript in `text` when known. The new voice `_id` works at once as `reference_id`. Only clone voices the user has the right to use. `fish_audio_update_voice` renames a voice or changes its description or visibility (tags are edited in the web app); `fish_audio_delete_voice` removes a voice permanently.\n\n**Reading answers**: ids are 32 hexadecimal characters. Dates are ISO 8601 UTC. `credit` and `cumulative_top_up` are US dollars as decimal strings. Voice lists return `total` (capped at 1,000 for library searches) and `has_more`; page with `page_number`.\n\n**Limits and errors**: concurrent requests are limited by spending tier (5 below $100 prepaid, 15 from $100, 50 from $1,000); a long transcription holds a slot until it finishes. Errors return JSON `{status, message}`: 401 \"Invalid token\" (wrong key), 402 no API credit (or a paid model on a free account), 404 unknown voice id, 422 or 400 for invalid fields (e.g. a speaker hint with `diarize` false), 429 too many concurrent requests (retry shortly).\n\n**Out of scope**: voice design (returns candidate audio as base64 text), real-time WebSocket speech and transcription, the voice agent platform, and image and video tools. Fish Audio also runs its own MCP server at https://api.fish.audio/mcp, which signs in with OAuth and bills the web app plan instead of the developer API credit.\n\n**Switched off at install**: `fish_audio_delete_voice`; they cannot be undone, so an admin switches them on when the team needs them.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "fish-audio",
+  "docsUrl": "https://docs.fish.audio/api-reference/introduction",
+  "prerequisites": "A Fish Audio account with an API key; paid models need prepaid API credit.",
+  "requiredEnvVars": [
+    "FISH_AUDIO_API_KEY"
+  ],
+  "envVarMeta": {
+    "FISH_AUDIO_API_KEY": {
+      "label": "Fish Audio API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "fish.audio, Developers, Get started: Get your API key (shown only once).",
+      "link": "https://fish.audio/app/api-keys"
+    }
+  },
+  "verifyHints": {
+    "401": "Fish Audio does not accept this API key (\"Invalid token\"). Create a new one at https://fish.audio/app/api-keys.",
+    "402": "The Fish Audio API credit is used up. Top it up at https://fish.audio/app/developers/billing/, or use the model s2.1-pro-free for text to speech."
+  },
+  "probe": {
+    "tool": "fish_audio_get_api_credit"
+  },
+  "connector": {
+    "name": "Fish Audio",
+    "type": "REST",
+    "baseUrl": "https://api.fish.audio",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{FISH_AUDIO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/wallet/self/api-credit"
+  },
+  "tools": [
+    {
+      "name": "fish_audio_get_api_credit",
+      "description": "The prepaid developer API credit of the Fish Audio account, in US dollars (credit, as a decimal string), with the total ever topped up. Text to speech and transcription draw from it. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wallet/self/api-credit"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "credit": "$.credit",
+            "cumulative_top_up": "$.cumulative_top_up",
+            "has_free_credit": "$.has_free_credit",
+            "updated_at": "$.updated_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "fish_audio_get_package",
+      "description": "The Fish Audio subscription package of the account (type, total and remaining balance, billing period, renewal and cancellation dates). This is the web app plan, separate from the developer API credit. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/wallet/self/package"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "stripe_subscription_id",
+            "stripe_price_id"
+          ]
+        }
+      }
+    },
+    {
+      "name": "fish_audio_list_voices",
+      "description": "Search the Fish Audio voice library (hundreds of thousands of community and licensed voices) or list the account's own voice models, filtered by name, tag and language and sorted by popularity. Returns the voice id (use it as reference_id in fish_audio_text_to_speech), title, description, tags, languages and a sample audio link. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Words in the voice name, e.g. \"narrator\" or \"Morgan\"."
+          },
+          "tag": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags the voices must have, e.g. [\"male\", \"deep\"], [\"female\", \"calm\", \"narration\"]."
+          },
+          "language": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Languages the voice speaks, as codes, e.g. [\"en\"], [\"de\"], [\"zh\", \"ja\"]."
+          },
+          "self": {
+            "type": "boolean",
+            "description": "true lists only the voice models of this account (including private ones) instead of the public library."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "unlist",
+              "private"
+            ],
+            "description": "With self true: only voices with this visibility."
+          },
+          "author_id": {
+            "type": "string",
+            "description": "Only public voices by this author id."
+          },
+          "licensed": {
+            "type": "boolean",
+            "description": "true returns only voices licensed by Fish Audio from the voice owner (safe for commercial use)."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "score",
+              "task_count",
+              "created_at"
+            ],
+            "description": "score (default, relevance and quality), task_count (most used) or created_at (newest)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Voices per page, default 20 here."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/model",
+        "queryParams": {
+          "title": "$title",
+          "tag": "$tag",
+          "language": "$language",
+          "self": "$self",
+          "visibility": "$visibility",
+          "author_id": "$author_id",
+          "licensed": "$licensed",
+          "sort_by": "$sort_by",
+          "page_size": "$page_size",
+          "page_number": "$page_number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.total",
+            "has_more": "$.has_more",
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "id": "_id",
+                "title": "title",
+                "description": "description",
+                "tags": "tags",
+                "languages": "languages",
+                "visibility": "visibility",
+                "state": "state",
+                "train_mode": "train_mode",
+                "licensed": "licensed",
+                "task_count": "task_count",
+                "like_count": "like_count",
+                "author": "author.nickname",
+                "sample_text": "samples[0].text",
+                "sample_audio": "samples[0].audio",
+                "created_at": "created_at"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fish_audio_get_voice",
+      "description": "Details of one Fish Audio voice model by id: title, description, tags, languages, visibility, training state (trained means ready to use), samples with audio links and usage counts. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Voice model id (32 hex characters), from fish_audio_list_voices or the voice page URL on fish.audio."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/model/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "author.avatar",
+            "cover_image",
+            "unliked",
+            "liked",
+            "marked",
+            "lock_visibility"
+          ]
+        }
+      }
+    },
+    {
+      "name": "fish_audio_text_to_speech",
+      "description": "Turn text into natural speech with a Fish Audio voice and return the audio file (MP3 by default) attached to the result. Pick a voice with fish_audio_list_voices and pass its id as reference_id; without one a default voice is used. Emotion and delivery cues in square brackets, such as [happy], [whispering] or [laughing], can be written in the text. COSTS MONEY from the developer API credit: s2.1-pro and s2-pro $15 per million UTF-8 bytes of text (about $0.015 per 1,000 characters), drama-3 $50 per million; s2.1-pro-free is free with limits. Tell the user the length and confirm before long texts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text to speak. Long texts are split into chunks automatically; the result is one file."
+          },
+          "reference_id": {
+            "type": "string",
+            "description": "Voice model id from fish_audio_list_voices or the account's own voices."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "s2.1-pro",
+              "s2.1-pro-free",
+              "s2-pro",
+              "drama-3",
+              "s1"
+            ],
+            "default": "s2.1-pro",
+            "description": "s2.1-pro (default, best value), s2.1-pro-free (free developer tier with limits), s2-pro, drama-3 (most expressive, higher price), s1 (deprecated)."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "mp3",
+              "wav",
+              "opus",
+              "pcm"
+            ],
+            "default": "mp3",
+            "description": "Audio format, default mp3 (smallest)."
+          },
+          "mp3_bitrate": {
+            "type": "integer",
+            "enum": [
+              64,
+              128,
+              192
+            ],
+            "description": "MP3 bitrate in kbps, default 128."
+          },
+          "sample_rate": {
+            "type": "integer",
+            "description": "Sample rate in Hz; default 44100 (48000 for opus)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the text as a BCP-47 tag (en, de, es-MX, zh-CN); used to read numbers, dates and units aloud correctly."
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 2,
+            "description": "Speaking rate, 0.5 to 2, default 1."
+          },
+          "volume": {
+            "type": "number",
+            "description": "Volume change in dB, default 0."
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Expressiveness 0 to 1, default 0.7: higher is more varied."
+          },
+          "top_p": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Nucleus sampling 0 to 1, default 0.7."
+          },
+          "latency": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "balanced",
+              "low"
+            ],
+            "description": "normal (default, best quality), balanced or low latency."
+          },
+          "normalize": {
+            "type": "boolean",
+            "description": "Read numbers, dates and symbols as words before speaking, default true."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/tts",
+        "headers": {
+          "model": "$model",
+          "Accept": "*/*"
+        },
+        "bodyMapping": {
+          "text": "$text",
+          "reference_id": "$reference_id",
+          "format": "$format",
+          "mp3_bitrate": "$mp3_bitrate",
+          "sample_rate": "$sample_rate",
+          "language": "$language",
+          "prosody": {
+            "speed": "$speed",
+            "volume": "$volume"
+          },
+          "temperature": "$temperature",
+          "top_p": "$top_p",
+          "latency": "$latency",
+          "normalize": "$normalize"
+        }
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "fish_audio_transcribe",
+      "description": "Transcribe speech in an audio or video file to text with Fish Audio (transcribe-1-pro by default: up to 60 minutes, speaker turns, emotion and sound cues). Pass a public link to the file (up to 10 MB). Returns text, duration in seconds, detected language and, with timestamps, word segments and speaker turns. COSTS MONEY from the developer API credit: $0.36 per hour of audio, billed per second. Confirm before long recordings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "audio_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https link to the audio or video file (mp3, wav, m4a, ogg, flac, webm, mp4 ...), up to 10 MB; AnythingMCP downloads and uploads it."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "transcribe-1-pro",
+              "transcribe-1"
+            ],
+            "default": "transcribe-1-pro",
+            "description": "transcribe-1-pro (default, recommended) or transcribe-1 (deprecated, short recordings; ignores the speaker options)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Optional language hint as an ISO 639-1 code (en, de, zh); detected automatically anyway."
+          },
+          "ignore_timestamps": {
+            "type": "boolean",
+            "description": "true (the API default) returns no timestamps; false returns word segments and speaker_turns."
+          },
+          "tag_audio_events": {
+            "type": "boolean",
+            "description": "false removes cues such as [laughter] from the text; default true."
+          },
+          "diarize": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "true",
+              "false"
+            ],
+            "description": "Speaker turns: auto (default) or true returns them with timestamps; false removes speaker markers."
+          },
+          "num_speakers": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Expected number of speakers; not with min_speakers or max_speakers."
+          },
+          "min_speakers": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Lower bound for the number of speakers."
+          },
+          "max_speakers": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Upper bound for the number of speakers."
+          }
+        },
+        "required": [
+          "audio_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/asr",
+        "headers": {
+          "model": "$model"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "audio": {
+            "__file": "$audio_url"
+          },
+          "language": "$language",
+          "ignore_timestamps": "$ignore_timestamps",
+          "tag_audio_events": "$tag_audio_events",
+          "diarize": "$diarize",
+          "num_speakers": "$num_speakers",
+          "min_speakers": "$min_speakers",
+          "max_speakers": "$max_speakers"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 400000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "fish_audio_create_voice",
+      "description": "Create a custom voice model (voice clone) from a recording of the voice, ready to use at once with fish_audio_text_to_speech. Pass a public link to a clean 10 to 30 second sample of one speaker; the transcript is detected automatically unless given. The model is private unless visibility says otherwise. Only clone voices the user has the right to use. Creates a model in the account (counts towards the plan's voice limit).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Name of the voice."
+          },
+          "voice_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https link to the voice recording (mp3, wav, m4a ...), up to 10 MB."
+          },
+          "text": {
+            "type": "string",
+            "description": "Optional exact transcript of the recording; improves quality. Detected by speech recognition when left out."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description of the voice."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "private",
+              "unlist"
+            ],
+            "default": "private",
+            "description": "private (default, only this account) or unlist (anyone with the link). Publishing publicly is done in the web app."
+          },
+          "enhance_audio_quality": {
+            "type": "boolean",
+            "description": "Clean up noise in the recording, default true."
+          }
+        },
+        "required": [
+          "title",
+          "voice_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/model",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "type": "tts",
+          "train_mode": "fast",
+          "title": "$title",
+          "voices": {
+            "__file": "$voice_url"
+          },
+          "texts": "$text",
+          "description": "$description",
+          "visibility": "$visibility",
+          "enhance_audio_quality": "$enhance_audio_quality"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "author.avatar",
+            "cover_image"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "fish_audio_update_voice",
+      "description": "Change the title, description or visibility of one of the account's voice models.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Voice model id of the account (fish_audio_list_voices with self true)."
+          },
+          "title": {
+            "type": "string",
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "unlist",
+              "private"
+            ],
+            "description": "New visibility."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/model/{id}",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "visibility": "$visibility"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "fish_audio_delete_voice",
+      "description": "Delete one of the account's voice models permanently. Speech can no longer be generated with it. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Voice model id of the account."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/model/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

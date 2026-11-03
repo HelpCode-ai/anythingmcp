@@ -1,0 +1,1457 @@
+{
+  "slug": "heyreach",
+  "name": "HeyReach",
+  "description": "HeyReach LinkedIn outreach from any AI agent: campaigns and their leads, lead lists, the unified LinkedIn inbox, sender accounts, lead tags, network checks, outreach statistics and webhooks. Public API with an X-API-KEY key.",
+  "instructions": "## HeyReach\nThis connector uses the HeyReach public API (`https://api.heyreach.io/api/public`) for LinkedIn outreach: campaigns and their leads, lead and company lists, the unified LinkedIn inbox, sender accounts, lead tags, network checks, statistics and webhooks.\n\n**Setup**\n1. In HeyReach open **Integrations** and the **HeyReach API** section.\n2. Click **Get API Key**, then **New API Key**, and copy the key into `HEYREACH_API_KEY`. Keys do not expire but can be deleted or deactivated there. A key belongs to one workspace.\n\nThe key is sent in the `X-API-KEY` header. `heyreach_check_api_key` returns 200 (empty body) when it works.\n\n**Ids**\n- `campaign_id` from `heyreach_list_campaigns`; sender ids (`account_id`, `linkedin_account_id`, `sender_id`) from `heyreach_list_linkedin_accounts`; `list_id` from `heyreach_list_lists`; `conversation_id` from `heyreach_list_conversations`; `webhook_id` from `heyreach_list_webhooks`.\n- A lead is identified by its LinkedIn profile URL (`https://www.linkedin.com/in/<slug>/`) or its LinkedIn id (`linkedin_id` in lead records).\n\n**Campaigns**\n- Read: `heyreach_list_campaigns` (filter by status or sender), `heyreach_get_campaign`, `heyreach_get_campaign_sequence`, `heyreach_list_campaign_leads`, `heyreach_get_campaigns_for_lead`.\n- Control: `heyreach_start_campaign` (draft to running), `heyreach_pause_campaign`, `heyreach_resume_campaign`.\n- Leads: `heyreach_add_leads_to_campaign` (up to 100 per call, optional sender per lead), `heyreach_stop_lead_in_campaign`, `heyreach_update_lead_custom_fields`.\n- Campaign statuses: DRAFT, IN_PROGRESS, PAUSED, FINISHED, CANCELED, FAILED, STARTING, SCHEDULED. Lead statuses: Pending, InSequence, Finished, Paused, Failed, Excluded.\n\n**Lists**: `heyreach_list_lists`, `heyreach_get_list`, `heyreach_list_list_leads` (up to 1000 per page), `heyreach_list_list_companies`, `heyreach_get_lists_for_lead`, `heyreach_create_list`, `heyreach_add_leads_to_list`, `heyreach_delete_leads_from_list`. Adding leads to a list does not start them in a finished campaign; use `heyreach_add_leads_to_campaign` for that.\n\n**Leads and tags**: `heyreach_get_lead` (profile details by URL), `heyreach_get_lead_tags`, `heyreach_add_lead_tags`, `heyreach_replace_lead_tags`.\n\n**Inbox**\n- `heyreach_list_conversations` lists conversations (cursor paging: pass `nextCursor` back as `cursor` until it is null). It does not return email addresses or custom fields; use `heyreach_get_lead` for those.\n- `heyreach_get_conversation` returns the messages; `heyreach_send_message` replies from the sender that owns the conversation; `heyreach_set_conversation_seen` marks it read or unread.\n\n**Senders and network**: `heyreach_list_linkedin_accounts`, `heyreach_get_linkedin_account`, `heyreach_get_linkedin_account_status` (is the LinkedIn session still valid), `heyreach_list_network` (1st-degree connections), `heyreach_is_connection`.\n\n**Statistics**: `heyreach_get_overall_stats` and `heyreach_get_stats_by_campaign` take `start_date` and `end_date` (ISO 8601) and optional sender and campaign ids. `byDayStats` is keyed by day (UTC); rates are fractions (0.23 = 23%).\n\n**Webhooks**: `heyreach_list_webhooks`, `heyreach_get_webhook`, `heyreach_create_webhook`, `heyreach_update_webhook`, `heyreach_delete_webhook`. One event type per webhook: CONNECTION_REQUEST_SENT, CONNECTION_REQUEST_ACCEPTED, MESSAGE_SENT, MESSAGE_REPLY_RECEIVED, EVERY_MESSAGE_REPLY_RECEIVED, INMAIL_SENT, INMAIL_REPLY_RECEIVED, FOLLOW_SENT, LIKED_POST, VIEWED_PROFILE, CAMPAIGN_COMPLETED, LEAD_TAG_UPDATED.\n\n**Paging**: most lists take `offset` and `limit` (at most 100) and return `totalCount` and `items`. Times are ISO 8601, in UTC unless an offset is given.\n\n**Limits and errors**: 300 requests per minute per key (429 above that). 401 means a wrong or deactivated key; 404 a wrong id; 400 an invalid body, for example a custom field name with characters other than letters, digits and underscores.\n\nCreating campaigns, connecting LinkedIn accounts (passwords, cookies, proxies) and organization management are left out on purpose; do those in the HeyReach app.\n\n\n**Switched off at install**: `heyreach_delete_leads_from_list` and `heyreach_delete_webhook`; they cannot be undone, so an admin switches them on when the team needs them.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "heyreach",
+  "docsUrl": "https://documenter.getpostman.com/view/23808049/2sA2xb5F75",
+  "requiredEnvVars": [
+    "HEYREACH_API_KEY"
+  ],
+  "envVarMeta": {
+    "HEYREACH_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "HeyReach: Integrations, HeyReach API, Get API Key, New API Key. The key belongs to one workspace.",
+      "link": "https://app.heyreach.io/app/integrations",
+      "pattern": "^[A-Za-z0-9+/=_-]{20,}$",
+      "patternMessage": "Paste only the API key, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "HeyReach refused the API key. Create a new one under Integrations, HeyReach API, or check that it was not deactivated.",
+    "rate_limited": "HeyReach allows 300 requests per minute. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "heyreach_check_api_key"
+  },
+  "connector": {
+    "name": "HeyReach",
+    "type": "REST",
+    "baseUrl": "https://api.heyreach.io/api/public",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{HEYREACH_API_KEY}}"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/auth/CheckApiKey"
+  },
+  "tools": [
+    {
+      "name": "heyreach_check_api_key",
+      "description": "Check that the HeyReach API key works. Returns HTTP 200 with no body when it does.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/auth/CheckApiKey"
+      }
+    },
+    {
+      "name": "heyreach_list_campaigns",
+      "description": "List LinkedIn outreach campaigns with status, lead list, sender accounts and progress counts (total, in progress, pending, finished, failed). Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size, at most 100."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Filter by campaign name."
+          },
+          "statuses": {
+            "type": "array",
+            "description": "Status filter: DRAFT, IN_PROGRESS, PAUSED, FINISHED, CANCELED, FAILED, STARTING, SCHEDULED.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "account_ids": {
+            "type": "array",
+            "description": "Only campaigns using these LinkedIn sender ids (heyreach_list_linkedin_accounts).",
+            "items": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/GetAll",
+        "bodyMapping": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "keyword": "$keyword",
+          "statuses": "$statuses",
+          "accountIds": "$account_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_campaign",
+      "description": "Get one campaign: status, lead list, sender accounts, exclusion settings and progress counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from heyreach_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaign/GetById",
+        "queryParams": {
+          "campaignId": "$campaign_id"
+        }
+      }
+    },
+    {
+      "name": "heyreach_get_campaign_sequence",
+      "description": "Get the sequence of a campaign: the tree of steps (connection request, message, InMail, follow, like, view profile) with delays and message texts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from heyreach_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaign/GetCampaignSequence",
+        "queryParams": {
+          "campaignId": "$campaign_id"
+        }
+      }
+    },
+    {
+      "name": "heyreach_list_campaign_leads",
+      "description": "List the leads of a campaign with their LinkedIn profile, status and last action. Shows the leads the campaign has picked up; more pending leads of the list may be inserted later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from heyreach_list_campaigns."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size, at most 100."
+          },
+          "time_from": {
+            "type": "string",
+            "description": "Start of the time window, ISO 8601 with offset."
+          },
+          "time_to": {
+            "type": "string",
+            "description": "End of the time window, ISO 8601 with offset."
+          },
+          "time_filter": {
+            "type": "string",
+            "description": "What the window applies to.",
+            "enum": [
+              "CreationTime",
+              "Everywhere",
+              "LastActionTakenTime",
+              "FailedTime",
+              "LastActionTakenOrFailedTime"
+            ]
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/GetLeadsFromCampaign",
+        "bodyMapping": {
+          "campaignId": "$campaign_id",
+          "offset": "$offset",
+          "limit": "$limit",
+          "timeFrom": "$time_from",
+          "timeTo": "$time_to",
+          "timeFilter": "$time_filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_campaigns_for_lead",
+      "description": "List the campaigns a lead is in, with campaign status and the lead status in each (Pending, InSequence, Finished, Paused, Failed, Excluded). Identify the lead by email, LinkedIn id or profile URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address of the lead."
+          },
+          "linkedin_id": {
+            "type": "string",
+            "description": "LinkedIn id of the lead (the linkedin_id field of lead records)."
+          },
+          "profile_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL, e.g. https://www.linkedin.com/in/jane-doe/."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/GetCampaignsForLead",
+        "bodyMapping": {
+          "email": "$email",
+          "linkedinId": "$linkedin_id",
+          "profileUrl": "$profile_url",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_add_leads_to_campaign",
+      "description": "Add up to 100 leads to a campaign, optionally pinning each lead to a sender account. Returns how many leads were added, updated and failed. A paused campaign can be resumed by the same call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from heyreach_list_campaigns."
+          },
+          "account_lead_pairs": {
+            "type": "array",
+            "description": "Pairs: [{\"linkedInAccountId\": 123 (optional sender), \"lead\": {\"profileUrl\": \"https://www.linkedin.com/in/jane-doe\", \"firstName\": \"Jane\", \"lastName\": \"Doe\", \"companyName\": \"Acme\", \"position\": \"CTO\", \"emailAddress\": \"jane@acme.com\", \"customUserFields\": [{\"name\": \"pain_point\", \"value\": \"hiring\"}]}}]. Custom field names: letters, digits and underscores only.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "resume_paused_campaign": {
+            "type": "boolean",
+            "description": "Resume the campaign if it is paused."
+          },
+          "resume_finished_campaign": {
+            "type": "boolean",
+            "description": "Restart the campaign if it has finished."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "account_lead_pairs"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/AddLeadsToCampaignV2",
+        "bodyMapping": {
+          "campaignId": "$campaign_id",
+          "accountLeadPairs": "$account_lead_pairs",
+          "resumePausedCampaign": "$resume_paused_campaign",
+          "resumeFinishedCampaign": "$resume_finished_campaign"
+        }
+      }
+    },
+    {
+      "name": "heyreach_stop_lead_in_campaign",
+      "description": "Stop a lead in a campaign: it gets no further steps. Identify it by its LinkedIn member id or profile URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from heyreach_list_campaigns."
+          },
+          "lead_member_id": {
+            "type": "string",
+            "description": "LinkedIn member id of the lead (linkedin_id in heyreach_list_campaign_leads)."
+          },
+          "lead_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL of the lead."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/StopLeadInCampaign",
+        "bodyMapping": {
+          "campaignId": "$campaign_id",
+          "leadMemberId": "$lead_member_id",
+          "leadUrl": "$lead_url"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "heyreach_pause_campaign",
+      "description": "Pause a running campaign. No further actions are taken until it is resumed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from heyreach_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/Pause",
+        "queryParams": {
+          "campaignId": "$campaign_id"
+        },
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "heyreach_resume_campaign",
+      "description": "Resume a paused campaign so it continues its sequence where each lead stopped.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from heyreach_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/Resume",
+        "queryParams": {
+          "campaignId": "$campaign_id"
+        },
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "heyreach_start_campaign",
+      "description": "Start a draft campaign. It needs a sequence, a lead list and at least one connected LinkedIn sender.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from heyreach_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaign/StartCampaign",
+        "queryParams": {
+          "campaignId": "$campaign_id"
+        },
+        "bodyMapping": {}
+      }
+    },
+    {
+      "name": "heyreach_update_lead_custom_fields",
+      "description": "Set custom field values on a lead in a campaign, for use as variables in its messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from heyreach_list_campaigns."
+          },
+          "lead_member_id_or_url": {
+            "type": "string",
+            "description": "LinkedIn member id or profile URL of the lead."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Field values, e.g. {\"pain_point\": \"hiring\", \"event\": \"SaaStr\"}."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "lead_member_id_or_url",
+          "custom_fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/campaign/UpdateLeadCustomFields/campaigns/{campaign_id}/leads/custom-fields",
+        "bodyMapping": {
+          "leadMemberIdOrUrl": "$lead_member_id_or_url",
+          "customFields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "heyreach_list_conversations",
+      "description": "List LinkedIn conversations of the sender accounts, newest first, with the last message, read state and the lead profile. Cursor paged; filters by sender, campaign, lead, tags, read state and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Page size, 1-100 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor from the previous page; omit for the first page."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only conversations with activity after this ISO 8601 time."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only conversations with activity before this ISO 8601 time."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters: {\"linkedInAccountIds\": [123], \"campaignIds\": [45], \"searchString\": \"acme\", \"leadLinkedInId\": \"...\", \"leadProfileUrl\": \"https://www.linkedin.com/in/jane-doe/\", \"tags\": [\"hot\"], \"seen\": false}."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inbox/GetConversationsV3",
+        "bodyMapping": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "from": "$from",
+          "to": "$to",
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_conversation",
+      "description": "Get one LinkedIn conversation with all its messages, senders and the lead profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "LinkedIn sender id (linkedInAccountId of the conversation)."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from heyreach_list_conversations."
+          }
+        },
+        "required": [
+          "account_id",
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inbox/GetChatroom/{account_id}/{conversation_id}"
+      }
+    },
+    {
+      "name": "heyreach_send_message",
+      "description": "Send a LinkedIn message in an existing conversation from the sender account of that conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from heyreach_list_conversations."
+          },
+          "linkedin_account_id": {
+            "type": "integer",
+            "description": "Sender id that owns the conversation."
+          },
+          "message": {
+            "type": "string",
+            "description": "Message text."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject, only used for InMail conversations."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "linkedin_account_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inbox/SendMessage",
+        "bodyMapping": {
+          "conversationId": "$conversation_id",
+          "linkedInAccountId": "$linkedin_account_id",
+          "message": "$message",
+          "subject": "$subject"
+        }
+      }
+    },
+    {
+      "name": "heyreach_set_conversation_seen",
+      "description": "Mark a LinkedIn conversation as read or unread in the HeyReach inbox.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id."
+          },
+          "linkedin_account_id": {
+            "type": "integer",
+            "description": "Sender id that owns the conversation."
+          },
+          "seen": {
+            "type": "boolean",
+            "description": "true for read, false for unread."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "linkedin_account_id",
+          "seen"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inbox/SetSeenStatus",
+        "bodyMapping": {
+          "conversationId": "$conversation_id",
+          "linkedInAccountId": "$linkedin_account_id",
+          "seen": "$seen"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "heyreach_list_linkedin_accounts",
+      "description": "List the LinkedIn sender accounts: name, email, active campaigns, whether the session is valid, Sales Navigator and Recruiter status, cooldowns and daily limits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size, at most 100."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Filter by account name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/li_account/GetAll",
+        "bodyMapping": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "keyword": "$keyword"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_linkedin_account",
+      "description": "Get one LinkedIn sender account with its limits, cooldowns and session state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Sender id from heyreach_list_linkedin_accounts."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/li_account/GetById",
+        "queryParams": {
+          "accountId": "$account_id"
+        }
+      }
+    },
+    {
+      "name": "heyreach_get_linkedin_account_status",
+      "description": "Get the live connection status of a LinkedIn sender (Connected, Disconnected and why) and its Sales Navigator and Recruiter sessions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Sender id."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/li_account/GetAccountStatus/{account_id}"
+      }
+    },
+    {
+      "name": "heyreach_list_lists",
+      "description": "List lead and company lists with their ids, sizes, type and the campaigns using them. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size, at most 100."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Filter by list name."
+          },
+          "list_type": {
+            "type": "string",
+            "description": "List type.",
+            "enum": [
+              "USER_LIST",
+              "COMPANY_LIST"
+            ]
+          },
+          "campaign_ids": {
+            "type": "array",
+            "description": "Only lists used by these campaigns.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/list/GetAll",
+        "bodyMapping": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "keyword": "$keyword",
+          "listType": "$list_type",
+          "campaignIds": "$campaign_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_list",
+      "description": "Get one lead or company list: name, type, size, creation time and campaigns using it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "List id from heyreach_list_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/list/GetById",
+        "queryParams": {
+          "listId": "$list_id"
+        }
+      }
+    },
+    {
+      "name": "heyreach_list_list_leads",
+      "description": "List the leads of a lead list with profile, company, position, tags, email and custom fields. Up to 1000 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Lead list id."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size, at most 1000."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Search by name or other fields."
+          },
+          "lead_profile_url": {
+            "type": "string",
+            "description": "Only this LinkedIn profile URL."
+          },
+          "lead_linkedin_id": {
+            "type": "string",
+            "description": "Only this LinkedIn id."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Added on or after this ISO 8601 time."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Added on or before this ISO 8601 time."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/list/GetLeadsFromList",
+        "bodyMapping": {
+          "listId": "$list_id",
+          "offset": "$offset",
+          "limit": "$limit",
+          "keyword": "$keyword",
+          "leadProfileUrl": "$lead_profile_url",
+          "leadLinkedInId": "$lead_linkedin_id",
+          "createdFrom": "$created_from",
+          "createdTo": "$created_to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_list_list_companies",
+      "description": "List the companies of a company list with name, LinkedIn URL and details, paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Company list id."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size, at most 100."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Filter by company name."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/list/GetCompaniesFromList",
+        "bodyMapping": {
+          "listId": "$list_id",
+          "offset": "$offset",
+          "limit": "$limit",
+          "keyword": "$keyword"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_lists_for_lead",
+      "description": "List the lead lists a lead belongs to. Identify the lead by email, LinkedIn id or profile URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address of the lead."
+          },
+          "linkedin_id": {
+            "type": "string",
+            "description": "LinkedIn id of the lead (the linkedin_id field of lead records)."
+          },
+          "profile_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL, e.g. https://www.linkedin.com/in/jane-doe/."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/list/GetListsForLead",
+        "bodyMapping": {
+          "email": "$email",
+          "linkedinId": "$linkedin_id",
+          "profileUrl": "$profile_url",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_create_list",
+      "description": "Create an empty lead list or company list; fill it with heyreach_add_leads_to_list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "List name."
+          },
+          "type": {
+            "type": "string",
+            "description": "List type.",
+            "enum": [
+              "USER_LIST",
+              "COMPANY_LIST"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/list/CreateEmptyList",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "heyreach_add_leads_to_list",
+      "description": "Add up to 100 leads to a lead list. Returns counts of added, updated and failed leads. A list is not a campaign: a finished campaign does not pick up new list leads; use heyreach_add_leads_to_campaign for that.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Lead list id."
+          },
+          "leads": {
+            "type": "array",
+            "description": "Leads: [{\"profileUrl\": \"https://www.linkedin.com/in/jane-doe\", \"firstName\": \"Jane\", \"lastName\": \"Doe\", \"companyName\": \"Acme\", \"position\": \"CTO\", \"emailAddress\": \"jane@acme.com\", \"location\": \"Berlin\", \"summary\": \"...\", \"about\": \"...\", \"customUserFields\": [{\"name\": \"pain_point\", \"value\": \"hiring\"}]}]. profileUrl is required; custom field names may only contain letters, digits and underscores. At most 100 per call.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "list_id",
+          "leads"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/list/AddLeadsToListV2",
+        "bodyMapping": {
+          "listId": "$list_id",
+          "leads": "$leads"
+        }
+      }
+    },
+    {
+      "name": "heyreach_delete_leads_from_list",
+      "description": "Remove leads from a lead list by their LinkedIn profile URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Lead list id."
+          },
+          "profile_urls": {
+            "type": "array",
+            "description": "LinkedIn profile URLs to remove.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "list_id",
+          "profile_urls"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/list/DeleteLeadsFromListByProfileUrl",
+        "bodyMapping": {
+          "listId": "$list_id",
+          "profileUrls": "$profile_urls"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "heyreach_get_lead",
+      "description": "Get a lead by LinkedIn profile URL: name, headline, company, position, location, email, tags, experience and education.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          }
+        },
+        "required": [
+          "profile_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lead/GetLead",
+        "bodyMapping": {
+          "profileUrl": "$profile_url"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_lead_tags",
+      "description": "Get the tags of a lead, identified by its LinkedIn profile URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          }
+        },
+        "required": [
+          "profile_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lead/GetTags",
+        "bodyMapping": {
+          "profileUrl": "$profile_url"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_add_lead_tags",
+      "description": "Add tags to a lead (existing tags are kept). Identify the lead by profile URL or LinkedIn id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_profile_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          },
+          "lead_linkedin_id": {
+            "type": "string",
+            "description": "LinkedIn id, instead of the URL."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tag names.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "create_tag_if_not_existing": {
+            "type": "boolean",
+            "description": "Create tags that do not exist yet (otherwise unknown tags fail)."
+          }
+        },
+        "required": [
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lead/AddTags",
+        "bodyMapping": {
+          "leadProfileUrl": "$lead_profile_url",
+          "leadLinkedInId": "$lead_linkedin_id",
+          "tags": "$tags",
+          "createTagIfNotExisting": "$create_tag_if_not_existing"
+        }
+      }
+    },
+    {
+      "name": "heyreach_replace_lead_tags",
+      "description": "Replace all tags of a lead with the given ones. Identify the lead by profile URL or LinkedIn id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_profile_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          },
+          "lead_linkedin_id": {
+            "type": "string",
+            "description": "LinkedIn id, instead of the URL."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tag names; [] removes all tags.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "create_tag_if_not_existing": {
+            "type": "boolean",
+            "description": "Create tags that do not exist yet."
+          }
+        },
+        "required": [
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lead/ReplaceTags",
+        "bodyMapping": {
+          "leadProfileUrl": "$lead_profile_url",
+          "leadLinkedInId": "$lead_linkedin_id",
+          "tags": "$tags",
+          "createTagIfNotExisting": "$create_tag_if_not_existing"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "heyreach_list_network",
+      "description": "List the 1st-degree LinkedIn connections of a sender account, paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sender_id": {
+            "type": "integer",
+            "description": "Sender id from heyreach_list_linkedin_accounts."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page, starting at 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Page size, at most 100."
+          }
+        },
+        "required": [
+          "sender_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/MyNetwork/GetMyNetworkForSender",
+        "bodyMapping": {
+          "senderId": "$sender_id",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_is_connection",
+      "description": "Check whether a lead is a 1st-degree connection of a sender. Give the profile URL or the LinkedIn id, not both.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sender_account_id": {
+            "type": "integer",
+            "description": "Sender id."
+          },
+          "lead_profile_url": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          },
+          "lead_linkedin_id": {
+            "type": "string",
+            "description": "LinkedIn id."
+          }
+        },
+        "required": [
+          "sender_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/MyNetwork/IsConnection",
+        "bodyMapping": {
+          "senderAccountId": "$sender_account_id",
+          "leadProfileUrl": "$lead_profile_url",
+          "leadLinkedInId": "$lead_linkedin_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_overall_stats",
+      "description": "Get outreach results for a period, per day and in total: profile views, likes, follows, connection requests sent and accepted, messages and InMails sent and replied, with acceptance and reply rates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start, ISO 8601, e.g. 2026-10-01T00:00:00.000Z."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End, ISO 8601, e.g. 2026-10-31T23:59:59.999Z."
+          },
+          "account_ids": {
+            "type": "array",
+            "description": "Sender ids; [] or omitted for all.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "campaign_ids": {
+            "type": "array",
+            "description": "Campaign ids; [] or omitted for all.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stats/GetOverallStats",
+        "bodyMapping": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "accountIds": "$account_ids",
+          "campaignIds": "$campaign_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_stats_by_campaign",
+      "description": "Get the same outreach results as heyreach_get_overall_stats, broken down per campaign.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start, ISO 8601, e.g. 2026-10-01T00:00:00.000Z."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End, ISO 8601, e.g. 2026-10-31T23:59:59.999Z."
+          },
+          "account_ids": {
+            "type": "array",
+            "description": "Sender ids; [] or omitted for all.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "campaign_ids": {
+            "type": "array",
+            "description": "Campaign ids; [] or omitted for all.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stats/GetOverallStatsByCampaign",
+        "bodyMapping": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "accountIds": "$account_ids",
+          "campaignIds": "$campaign_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_list_webhooks",
+      "description": "List the webhooks of the workspace with their URL, event type, campaigns and active state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/webhooks/GetAllWebhooks",
+        "bodyMapping": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "heyreach_get_webhook",
+      "description": "Get one webhook with its URL, event type, campaigns and active state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_id": {
+            "type": "integer",
+            "description": "Webhook id from heyreach_list_webhooks."
+          }
+        },
+        "required": [
+          "webhook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks/GetWebhookById",
+        "queryParams": {
+          "webhookId": "$webhook_id"
+        }
+      }
+    },
+    {
+      "name": "heyreach_create_webhook",
+      "description": "Create a webhook that POSTs one event type to a URL, for all campaigns or selected ones.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_name": {
+            "type": "string",
+            "description": "Webhook name."
+          },
+          "webhook_url": {
+            "type": "string",
+            "description": "HTTPS URL that receives the events."
+          },
+          "event_type": {
+            "type": "string",
+            "description": "Event: CONNECTION_REQUEST_SENT, CONNECTION_REQUEST_ACCEPTED, MESSAGE_SENT, MESSAGE_REPLY_RECEIVED, EVERY_MESSAGE_REPLY_RECEIVED, INMAIL_SENT, INMAIL_REPLY_RECEIVED, FOLLOW_SENT, LIKED_POST, VIEWED_PROFILE, CAMPAIGN_COMPLETED, LEAD_TAG_UPDATED."
+          },
+          "campaign_ids": {
+            "type": "array",
+            "description": "Campaign ids; [] for all campaigns.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "webhook_name",
+          "webhook_url",
+          "event_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/webhooks/CreateWebhook",
+        "bodyMapping": {
+          "webhookName": "$webhook_name",
+          "webhookUrl": "$webhook_url",
+          "eventType": "$event_type",
+          "campaignIds": "$campaign_ids"
+        }
+      }
+    },
+    {
+      "name": "heyreach_update_webhook",
+      "description": "Change a webhook: name, URL, event type, campaigns, or switch it on or off. Only the fields passed are changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_id": {
+            "type": "integer",
+            "description": "Webhook id."
+          },
+          "webhook_name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "webhook_url": {
+            "type": "string",
+            "description": "New URL."
+          },
+          "event_type": {
+            "type": "string",
+            "description": "New event type."
+          },
+          "campaign_ids": {
+            "type": "array",
+            "description": "New campaign ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "false to switch the webhook off."
+          }
+        },
+        "required": [
+          "webhook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/webhooks/UpdateWebhook",
+        "queryParams": {
+          "webhookId": "$webhook_id"
+        },
+        "bodyMapping": {
+          "webhookName": "$webhook_name",
+          "webhookUrl": "$webhook_url",
+          "eventType": "$event_type",
+          "campaignIds": "$campaign_ids",
+          "isActive": "$is_active"
+        }
+      }
+    },
+    {
+      "name": "heyreach_delete_webhook",
+      "description": "Delete a webhook by id. Its URL stops receiving HeyReach events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_id": {
+            "type": "integer",
+            "description": "Webhook id."
+          }
+        },
+        "required": [
+          "webhook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/webhooks/DeleteWebhook",
+        "queryParams": {
+          "webhookId": "$webhook_id"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

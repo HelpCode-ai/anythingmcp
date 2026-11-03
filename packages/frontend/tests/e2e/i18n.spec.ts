@@ -948,6 +948,822 @@ test.describe('connector page from Accept-Language', () => {
   });
 });
 
+async function connectorToolsSession(page: Page) {
+  await fakeSession(page);
+  const connector = {
+    id: 'c1',
+    name: 'Orders API',
+    type: 'REST',
+    baseUrl: 'https://api.example.com/v1',
+    authType: 'NONE',
+    isActive: true,
+    createdAt: '2026-01-15T10:00:00Z',
+    envVars: {},
+    maskedEnvVars: [],
+    headers: null,
+    config: {},
+    tools: [
+      {
+        id: 't1',
+        name: 'list_orders',
+        description: 'List recent orders',
+        isEnabled: true,
+        parameters: { type: 'object', properties: { status: { type: 'string', description: 'Order status' } } },
+        endpointMapping: { method: 'GET', path: '/orders', queryParams: { status: '$status' } },
+        responseMapping: null,
+      },
+    ],
+    mcpServers: [{ mcpServerId: 's1' }],
+  };
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\/connectors/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/connectors/c1')) return route.fulfill({ json: connector });
+    if (path.endsWith('/connectors/c1/catalog-diff')) return route.fulfill({ json: { catalogManaged: false } });
+    if (path.endsWith('/connectors/proxy-availability')) return route.fulfill({ json: { available: false } });
+    if (path.endsWith('/tools/t1/annotations')) {
+      return route.fulfill({
+        json: { derived: { readOnlyHint: true }, override: null, effective: { readOnlyHint: true }, supportedKeys: [] },
+      });
+    }
+    return route.fulfill({ json: {} });
+  });
+}
+
+test.describe('connector tools and tool editor from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the tools section and the tool editor in German', async ({ page }) => {
+      await connectorToolsSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByText('MCP-Tools (1)', { exact: true })).toBeVisible();
+      await expect(page.getByText('aktiviert', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 Parameter', { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Testen', exact: true }).last().click();
+      await expect(page.getByText('Eingabeparameter (JSON)', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Test ausführen' })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Bearbeiten', exact: true }).last().click();
+      await expect(page.getByRole('heading', { name: 'Tool bearbeiten(REST)' })).toBeVisible();
+      await expect(page.getByText('Tool-Name', { exact: true })).toBeVisible();
+      await expect(page.getByText('Eingabeparameter', { exact: true })).toBeVisible();
+      await expect(page.getByText('Response-Mapping', { exact: true })).toBeVisible();
+      await page.getByLabel('Feldauswahl').check();
+      await expect(page.getByText('Ausgabevorlage (JSON)', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Tool aktualisieren' })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the import panel and the tool hints in Italian', async ({ page }) => {
+      await connectorToolsSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('button', { name: 'Verifica', exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Importa strumenti' }).click();
+      await expect(page.getByText('Importa strumenti da', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'File HAR (acquisizione del browser)' }).click();
+      await expect(page.getByText(/^Dai DevTools del browser/)).toBeVisible();
+
+      await page.getByRole('button', { name: 'Hint', exact: true }).click();
+      await expect(page.getByText('Sola lettura', { exact: true })).toBeVisible();
+      await expect(page.getByText('Comunicato ai client', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Salva hint' })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the tools section, tool editor and hints in English', async ({ page }) => {
+      await connectorToolsSession(page);
+      await page.goto('/connectors/c1');
+      await expect(page.getByText('MCP Tools (1)', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 params', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 query', { exact: true })).toBeVisible();
+
+      await page.getByRole('button', { name: 'Import Tools' }).click();
+      await expect(page.getByText('Import Tools From', { exact: true })).toBeVisible();
+      await expect(page.getByPlaceholder('Paste OpenAPI JSON/YAML or enter URL...')).toBeVisible();
+      await page.getByRole('button', { name: 'Cancel Import' }).click();
+
+      await page.getByRole('button', { name: 'Hints', exact: true }).click();
+      await expect(page.getByText('Read-only', { exact: true })).toBeVisible();
+      await expect(page.getByRole('option', { name: 'Auto (yes)' }).first()).toBeAttached();
+      await page.getByRole('button', { name: 'Close hints' }).click();
+
+      await page.getByRole('button', { name: 'Edit', exact: true }).last().click();
+      await expect(page.getByRole('heading', { name: 'Edit Tool(REST)' })).toBeVisible();
+      await expect(page.getByText('Input Parameters', { exact: true })).toBeVisible();
+      await expect(page.getByText('Query Parameter', { exact: true }).first()).toBeVisible();
+      await expect(page.getByText('Response Cache TTL', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Update Tool' })).toBeVisible();
+    });
+  });
+});
+
+async function settingsSession(page: Page) {
+  await fakeSession(page);
+  // Not under /api, so fakeSession's catch-all does not answer it.
+  await page.route(/\/health\/server-info/, (route) =>
+    route.fulfill({
+      json: {
+        mcpAuthMode: 'both',
+        serverUrl: 'http://localhost:4000',
+        mcpEndpoint: 'http://localhost:4000/mcp',
+        deploymentMode: 'self-hosted',
+        hasUsers: true,
+        registrationEnabled: false,
+        ssoProviders: [],
+        oauthEndpoints: {
+          wellKnown: '/.well-known/oauth-authorization-server',
+          authorize: '/oauth/authorize',
+          token: '/oauth/token',
+          register: '/oauth/register',
+        },
+      },
+    }),
+  );
+  // Registered after fakeSession's catch-all, so these win for their URLs.
+  await page.route(/\/api\//, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/api/users') {
+      return json([
+        { id: 'u1', email: 'test@example.com', name: 'Test User', role: 'ADMIN', createdAt: '2026-01-02T10:00:00Z', learningMode: null },
+        { id: 'u2', email: 'ada@example.com', name: 'Ada', role: 'EDITOR', createdAt: '2026-02-03T10:00:00Z', learningMode: null, learningOptOut: true, mcpRole: null },
+      ]);
+    }
+    if (path === '/api/users/invitations') {
+      return json([{ id: 'i1', email: 'new@example.com', role: 'VIEWER', createdAt: '2026-03-01T10:00:00Z', expiresAt: '2099-01-01T00:00:00Z' }]);
+    }
+    if (path === '/api/roles') return json([]);
+    if (path === '/api/knowledge-graph/settings') {
+      return json({ enabled: true, llmEnabled: false, llmAvailable: false, captureIntent: true, autoExtend: false, skillAutoApply: false, edgeAutoApply: false });
+    }
+    if (path === '/api/memory/status') {
+      return json({ licensed: true, access: 'contribute', settings: { defaultAccess: 'personal', writeMode: 'approval' }, isCurator: true });
+    }
+    if (path === '/api/license/edition') {
+      return json({
+        edition: 'business', business: true, source: 'license', plan: 'business', seatLimit: 10, seatsUsed: 2,
+        communitySeatLimit: 3, trialEndsAt: null, trialAvailable: false, trialDays: 0, transitionUntil: null,
+      });
+    }
+    if (path === '/api/mcp-connections') {
+      return json([
+        { clientId: 'cl1', clientName: 'Claude', revoked: false, servers: [{ id: 's1', name: 'Sales' }], wholeWorkspace: null, connectedAt: '2026-01-01', updatedAt: '2026-01-01' },
+      ]);
+    }
+    if (path === '/api/mcp-connections/targets') {
+      return json([
+        { organizationId: 'o1', organizationName: 'Acme', servers: [{ id: 's1', name: 'Sales', connectorCount: 2 }, { id: 's2', name: 'Support', connectorCount: 1 }] },
+      ]);
+    }
+    return route.fallback();
+  });
+}
+
+test.describe('settings pages from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the profile and users pages in German', async ({ page }) => {
+      await settingsSession(page);
+      await page.goto('/settings');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      const nav = page.locator('main nav');
+      await expect(nav.getByRole('link', { name: /^Profil/ })).toBeVisible();
+      await expect(nav.getByText('Workspace und neue Organisationen', { exact: true })).toBeVisible();
+      await expect(nav.getByText('Organisation', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Passwort ändern' })).toBeVisible();
+      await expect(page.getByPlaceholder('Neues Passwort wiederholen')).toBeVisible();
+      await expect(page.getByText('Beides (OAuth 2.0 + Legacy)', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^Der Authentifizierungsmodus wird über die Umgebungsvariable MCP_AUTH_MODE/)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Mein Konto löschen' })).toBeVisible();
+
+      await page.goto('/settings/users');
+      await expect(page.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
+      await expect(page.getByText('Verwalten Sie Benutzer und versenden Sie Einladungen. 2 von 10 Benutzern auf dieser Instanz.')).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'Skill-Lernen' })).toBeVisible();
+      await expect(page.getByText('widersprochen', { exact: true })).toBeVisible();
+      await expect(page.getByText('Ausstehend', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Insgesamt 2 Benutzer, 1 offene Einladung. Der erste registrierte Benutzer wird automatisch ADMIN.'),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Benutzer einladen' }).click();
+      await expect(page.getByRole('heading', { name: 'Neuen Benutzer einladen' })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the organization and connections pages in Italian', async ({ page }) => {
+      await settingsSession(page);
+      await page.goto('/settings/organization');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('heading', { name: 'Organizzazione', exact: true })).toBeVisible();
+      await expect(page.getByText("Nome dell'organizzazione", { exact: true })).toBeVisible();
+      await expect(page.getByText("Acquisisci l'intento dell'utente", { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Le mie organizzazioni' })).toBeVisible();
+      await expect(page.getByText(/^ADMIN · Entrato il /)).toBeVisible();
+      await page.getByRole('button', { name: 'Disconnetti tutti' }).click();
+      await expect(page.getByRole('dialog').getByText('Digita Acme per confermare')).toBeVisible();
+      await page.getByRole('button', { name: 'Annulla' }).click();
+
+      await page.goto('/settings/connections');
+      await expect(page.getByRole('heading', { name: 'Client AI collegati' })).toBeVisible();
+      await page.getByRole('button', { name: 'Modifica', exact: true }).click();
+      await expect(page.getByText('2 connettori', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 connettore', { exact: true })).toBeVisible();
+      await expect(page.getByText('Tutto in questo workspace', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the settings pages in English', async ({ page }) => {
+      await settingsSession(page);
+      await page.goto('/settings');
+      const nav = page.locator('main nav');
+      await expect(nav.getByText('Workspace and new orgs', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible();
+      await expect(page.getByText('Both (OAuth 2.0 + Legacy)', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Auth mode is configured via the MCP_AUTH_MODE environment variable. Set it to oauth2, legacy, both, or none.'),
+      ).toBeVisible();
+      await expect(
+        page.getByText('API keys are now managed per MCP server. Go to MCP Servers to generate and manage keys for each server.'),
+      ).toBeVisible();
+
+      await page.goto('/settings/users');
+      await expect(page.getByText('Manage users and send invitations. 2 of 10 users on this instance.')).toBeVisible();
+      await expect(page.getByText('opted out', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('2 users, 1 pending invitation total. The first registered user automatically becomes ADMIN.'),
+      ).toBeVisible();
+      await expect(page.getByText('Default (personal)', { exact: true }).first()).toBeVisible();
+
+      await page.goto('/settings/organization');
+      await expect(page.getByText('Organization Name', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^ADMIN · Joined /)).toBeVisible();
+
+      await page.goto('/settings/connections');
+      await expect(page.getByRole('heading', { name: 'Connected AI clients' })).toBeVisible();
+      await page.getByRole('button', { name: 'Change', exact: true }).click();
+      await expect(page.getByText('2 connectors', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 connector', { exact: true })).toBeVisible();
+      await expect(page.getByText('including connectors not on a server', { exact: true })).toBeVisible();
+    });
+  });
+});
+
+async function settingsAdminSession(page: Page) {
+  await settingsSession(page);
+  // Registered after settingsSession's routes, so these win for their URLs.
+  await page.route(/\/api\//, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/api/roles') {
+      return json([{ id: 'r1', name: 'Support', description: 'Support team', isSystem: false, _count: { users: 1, toolAccess: 2 } }]);
+    }
+    if (path === '/api/admin/settings/smtp') return json({ configured: true, host: 'smtp.example.com', port: 587, user: 'mailer', secure: false });
+    if (path === '/api/admin/settings/alert-webhook') {
+      return json({ url: 'https://example.com/hook', type: 'json', enabled: true, threshold: 5, windowMinutes: 10, cooldownMinutes: 30 });
+    }
+    if (path === '/api/admin/settings/footer-links') return json([]);
+    if (path === '/api/version') return json({ version: '1.2.3', commit: 'abc1234', buildDate: '2026-10-01T00:00:00Z', deploymentMode: 'self-hosted' });
+    if (path === '/api/license/status') {
+      return json({
+        plan: 'business', status: 'active', features: null, expiresAt: '2027-01-01T12:00:00Z',
+        lastVerifiedAt: '2026-10-01T12:00:00Z', instanceId: 'inst-1',
+      });
+    }
+    if (path === '/api/identity-providers') {
+      return json([
+        {
+          id: 'p1', type: 'ENTRA', name: 'Contoso', isActive: true, issuer: 'https://login.microsoftonline.com/t1/v2.0',
+          clientId: 'client-1', clientSecretExpiresAt: null, initiateId: 'init1', jitProvisioning: true, jitDefaultRole: 'VIEWER',
+          roleSyncEnabled: true, roleSyncSource: 'GROUPS', roleSyncFallback: 'DENY_ALL', roleSyncDefaultRoleIds: [],
+          scimEnabled: true, scimTokenIssuedAt: '2026-09-01T10:00:00Z', scimLastRequestAt: null, enforceSso: false,
+          lastSuccessfulLoginAt: null, config: { tenantId: 't1' },
+        },
+      ]);
+    }
+    if (path === '/api/auth/recovery-codes') return json({ total: 10, unused: 8, generatedAt: '2026-09-01T10:00:00Z' });
+    if (path === '/api/identity-providers/p1/scim') {
+      return json({
+        enabled: true, supported: true, issuedAt: '2026-09-01T10:00:00Z', lastRequestAt: new Date().toISOString(),
+        tenantUrl: 'http://localhost:3100/api/scim/v2', userCount: 12, groupCount: 3, unlinkedMemberCount: 0,
+      });
+    }
+    if (path === '/api/identity-providers/p1/role-mappings') {
+      return json([{ id: 'm1', externalId: '4be78614-f22d-472f-a2cb-5eb81b6e3f6f', label: 'Sales', userRole: null, mcpRoleIds: ['r1'] }]);
+    }
+    return route.fallback();
+  });
+}
+
+test.describe('settings roles, administration, license and single sign-on from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the roles and single sign-on pages in German', async ({ page }) => {
+      await settingsAdminSession(page);
+      await page.goto('/settings/roles');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('heading', { name: 'Eigene Rollen' })).toBeVisible();
+      await expect(page.getByText('1 Benutzer', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 Tools zugewiesen', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'MCP-Rollen der Benutzer' })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'MCP-Tool-Rolle' })).toBeVisible();
+
+      await page.goto('/settings/identity-providers');
+      await expect(page.getByRole('heading', { name: 'Single Sign-On', exact: true })).toBeVisible();
+      await expect(page.getByText('Legt Konten bei der ersten Anmeldung an', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Wiederherstellungscodes' })).toBeVisible();
+      await expect(page.getByText('8 von 10 ungenutzt. Neu erzeugen macht den aktuellen Satz ungültig.')).toBeVisible();
+      await page.getByRole('button', { name: 'Provisionierung (SCIM)' }).click();
+      await expect(page.getByText('Provisionierte Benutzer 12', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Rollen jetzt neu synchronisieren' })).toBeVisible();
+      await page.getByRole('button', { name: 'Anbieter hinzufügen' }).click();
+      await expect(page.getByText('Verzeichnis-ID (Mandant)', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^Konten bei der ersten Anmeldung anlegen/)).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the administration and license pages in Italian', async ({ page }) => {
+      await settingsAdminSession(page);
+      await page.goto('/settings/admin');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('heading', { name: 'Avvisi sugli errori dei connettori' })).toBeVisible();
+      await expect(
+        page.getByText('Avvisa dopo 5 errori dello stesso connettore entro 10 minuti, poi attende 30 minuti prima di avvisare di nuovo.'),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Prova la connessione' })).toBeVisible();
+      await expect(page.getByText(/^Versione 1\.2\.3 · commit abc1234 · build del 2026-10-01$/)).toBeVisible();
+
+      await page.goto('/settings/license');
+      await expect(page.getByRole('heading', { name: 'Licenza e piano' })).toBeVisible();
+      await expect(page.getByText('attiva', { exact: true })).toBeVisible();
+      await expect(page.getByText('Ultima verifica', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Cambia chiave di licenza' })).toBeVisible();
+
+      await page.goto('/settings/identity-providers');
+      await page.getByRole('button', { name: 'Associazioni dei ruoli' }).click();
+      await expect(page.getByRole('heading', { name: 'Associazioni dei gruppi' })).toBeVisible();
+      await expect(page.getByText('A chi non corrisponde a nulla', { exact: false })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps these settings pages in English', async ({ page }) => {
+      await settingsAdminSession(page);
+      await page.goto('/settings/roles');
+      await expect(page.getByRole('heading', { name: 'Custom Roles' })).toBeVisible();
+      await expect(page.getByText('1 user', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 tools assigned', { exact: true })).toBeVisible();
+
+      await page.goto('/settings/admin');
+      await expect(
+        page.getByText('Alerts after 5 failures of the same connector within 10 minutes, then waits 30 minutes before alerting again.'),
+      ).toBeVisible();
+      await expect(page.getByText(/^Version 1\.2\.3 · commit abc1234 · built 2026-10-01$/)).toBeVisible();
+
+      await page.goto('/settings/license');
+      await expect(page.getByRole('heading', { name: 'License & Plan' })).toBeVisible();
+      await expect(page.getByText('active', { exact: true })).toBeVisible();
+      await expect(page.getByText('Last Verified', { exact: true })).toBeVisible();
+
+      await page.goto('/settings/identity-providers');
+      await expect(page.getByText('8 of 10 unused. Regenerating invalidates the current set.')).toBeVisible();
+      await page.getByRole('button', { name: 'Provisioning (SCIM)' }).click();
+      await expect(page.getByText('Users provisioned 12', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Role mappings' }).click();
+      await expect(
+        page.getByText(
+          'A user in several mapped groups receives the union of their MCP roles and the most privileged workspace role. Roles an admin assigned by hand are never removed by a sync. Someone who matches nothing is given a “No access (SSO)” role, which grants no tools.',
+        ),
+      ).toBeVisible();
+
+      await page.goto('/settings/license/activate');
+      await expect(page.getByText('No license key was provided in the URL.')).toBeVisible();
+    });
+  });
+});
+
+async function adminPagesSession(page: Page) {
+  await settingsAdminSession(page);
+  // Registered after settingsAdminSession's routes, so these win for their URLs.
+  await page.route(/\/api\//, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/api/connectors') return json([{ id: 'c1', name: 'Shop' }]);
+    if (path === '/api/connectors/c1/tools') return json([{ id: 'tl1', name: 'list_orders' }, { id: 'tl2', name: 'get_order' }]);
+    if (path === '/api/roles/r1/tools') return json([{ tool: { id: 'tl1' } }]);
+    if (path === '/api/admin/settings/ssrf-allowed-hosts') return json({ hosts: ['koch-filesystem-bridge'], envHosts: ['db.internal'] });
+    return route.fallback();
+  });
+}
+
+test.describe('admin pages from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the admin users and roles pages in German', async ({ page }) => {
+      await adminPagesSession(page);
+      await page.goto('/admin/users');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('banner').getByText('Benutzerverwaltung', { exact: true })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'Beigetreten' })).toBeVisible();
+      await expect(page.getByText('Uneingeschränkt', { exact: true })).toBeVisible();
+      await expect(page.getByText('2.1.2026', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Insgesamt 2 Benutzer. Der erste registrierte Benutzer wird automatisch ADMIN.'),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Benutzer einladen' }).click();
+      await expect(page.getByRole('heading', { name: 'Neuen Benutzer einladen' })).toBeVisible();
+
+      await page.goto('/admin/roles');
+      await expect(page.getByRole('banner').getByText('MCP-Rollenverwaltung', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 Tools zugewiesen', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Tools verwalten' }).click();
+      await expect(page.getByRole('button', { name: 'Speichern (1 Tool)' })).toBeVisible();
+      await page.getByRole('button', { name: 'Alle auswählen' }).click();
+      await expect(page.getByRole('button', { name: 'Speichern (2 Tools)' })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'MCP-Tool-Rolle' })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the admin settings page in Italian', async ({ page }) => {
+      await adminPagesSession(page);
+      await page.goto('/admin/settings');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('banner').getByText('Impostazioni di amministrazione', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Email / configurazione SMTP' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Prova la connessione' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Allowlist SSRF' })).toBeVisible();
+      await expect(page.getByText(/^Dalla variabile d’ambiente SSRF_ALLOWED_HOSTS \(sola lettura\):$/)).toBeVisible();
+      await expect(page.getByText(/^Nomi host \(oppure caratteri jolly \*\.suffix/)).toBeVisible();
+      await page.getByRole('button', { name: 'Salva allowlist' }).click();
+      await expect(page.getByText('Allowlist SSRF salvata', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the admin pages in English', async ({ page }) => {
+      await adminPagesSession(page);
+      await page.goto('/admin/users');
+      await expect(page.getByRole('banner').getByText('User Management', { exact: true })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'Joined' })).toBeVisible();
+      await expect(page.getByText('Unrestricted', { exact: true })).toBeVisible();
+      await expect(page.getByText('1/2/2026', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 users total. The first registered user automatically becomes ADMIN.')).toBeVisible();
+
+      await page.goto('/admin/roles');
+      await expect(page.getByRole('banner').getByText('MCP Role Management', { exact: true })).toBeVisible();
+      await expect(page.getByText('1 user', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Manage Tools' }).click();
+      await expect(page.getByRole('button', { name: 'Save (1 tools)' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Select all', exact: true })).toBeVisible();
+
+      await page.goto('/admin/settings');
+      await expect(page.getByRole('banner').getByText('Admin Settings', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText(
+          'Hostnames (or *.suffix wildcards / plain IPs) that the SSRF guard will let through when they resolve to a private network address. Needed when connectors call services on the internal network — e.g. a Docker-compose service like koch-filesystem-bridge.',
+        ),
+      ).toBeVisible();
+      await expect(
+        page.getByText(
+          "⚠ Use with caution. Anything added here can be reached by every connector in every organization on this deployment. Do not add hosts you don't fully trust.",
+        ),
+      ).toBeVisible();
+      await expect(page.getByText('From SSRF_ALLOWED_HOSTS env var (read-only):')).toBeVisible();
+      await page.getByRole('button', { name: 'Save allowlist' }).click();
+      await expect(page.getByText('SSRF allowlist saved', { exact: true })).toBeVisible();
+    });
+  });
+});
+
+async function knowledgeSession(page: Page) {
+  await fakeSession(page);
+  // Registered after fakeSession's routes, so these win for their URLs.
+  await page.route(/\/api\//, (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/api/knowledge-graph') {
+      return json({
+        enabled: true,
+        lastBuiltAt: '2026-01-02T10:00:00Z',
+        nodes: [
+          {
+            id: 'n1', entity: 'customer', label: 'Customer', connectorId: 'c1', connectorName: 'Shop',
+            fields: [{ name: 'id', type: 'string' }, { name: 'email', type: 'string' }],
+            toolNames: ['list_customers'], source: 'STATIC', confidence: 1, observations: 0,
+          },
+          {
+            id: 'n2', entity: 'order', label: 'Order', connectorId: 'c1', connectorName: 'Shop',
+            fields: [{ name: 'customerId', type: 'string' }], toolNames: ['list_orders'],
+            source: 'STATIC', confidence: 1, observations: 0,
+          },
+        ],
+        edges: [
+          {
+            id: 'e1', sourceNodeId: 'n2', targetNodeId: 'n1', kind: 'references', matchKey: 'customerId',
+            source: 'STATIC', confidence: 0.9, observations: 3, isManual: false, status: 'active',
+          },
+        ],
+      });
+    }
+    if (path === '/api/knowledge-graph/settings') return json({ enabled: true, llmEnabled: true });
+    if (path === '/api/connectors') return json([{ id: 'c1', name: 'Shop' }]);
+    if (path === '/api/mcp-servers') return json([{ id: 'm1', name: 'Sales' }]);
+    if (path === '/api/knowledge-folders') {
+      return json({
+        restrictionsAvailable: false,
+        folders: [
+          { id: 'f1', parentId: null, name: 'Orders', description: null, roleIds: [], path: 'Orders', depth: 0, skillCount: 1, memoryCount: 1 },
+        ],
+      });
+    }
+    if (path === '/api/knowledge-graph/skills') {
+      return json({
+        total: 2,
+        take: 25,
+        skip: 0,
+        counts: { pending: 1, applied: 1, dismissed: 0 },
+        items: [
+          {
+            id: 's1', connectorId: null, mcpServerId: 'm1', mcpServer: { name: 'Sales' },
+            title: 'Confirm the delivery address', whenToUse: 'Before placing an order',
+            instruction: 'Ask the user to confirm the address.', confidence: 1, evidenceCount: 0,
+            status: 'applied', source: 'manual', version: 2, useCount: 3, lastUsedAt: '2026-01-05T08:00:00Z',
+          },
+          {
+            id: 's2', connectorId: 'c1', connector: { name: 'Shop' }, mcpServerId: null,
+            title: 'Order lookups', whenToUse: 'When looking up an order',
+            instruction: 'Search by order number first.', confidence: 0.85, evidenceCount: 4,
+            status: 'pending', source: 'consolidation', replaces: ['a', 'b'], body: 'Step 1',
+            version: 1, useCount: 0,
+          },
+        ],
+      });
+    }
+    if (path === '/api/knowledge-graph/skills/s1/versions') {
+      return json([
+        { version: 1, title: 'Check the address', whenToUse: '', instruction: 'Check it.', body: null, createdAt: '2026-01-03T09:00:00Z' },
+      ]);
+    }
+    if (path === '/api/memory/status') {
+      return json({
+        licensed: true,
+        access: 'contribute',
+        isCurator: true,
+        settings: { defaultAccess: 'personal', writeMode: 'approval' },
+      });
+    }
+    if (path === '/api/memory/items') {
+      const base = { ownerUserId: 'u1', createdByUserId: 'u1', approvedByUserId: null, approvedAt: null, createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z' };
+      if (url.searchParams.get('scope') === 'personal') {
+        return json({
+          total: 1, pending: 1, take: 25, skip: 0,
+          items: [
+            { ...base, id: 'mm1', scope: 'personal', kind: 'preference', content: 'Answer in short bullet points', tags: ['style'], status: 'active', source: { via: 'mcp', client: 'Claude' } },
+          ],
+        });
+      }
+      return json({
+        total: 1, pending: 1, take: 25, skip: 0,
+        items: [
+          { ...base, id: 'mm2', scope: 'organization', kind: 'fact', content: 'STAMMKUNDE means a customer with a framework agreement', tags: [], status: 'pending', source: { via: 'ui' }, about: 'customer', folderId: 'f1' },
+        ],
+      });
+    }
+    return route.fallback();
+  });
+}
+
+test.describe('knowledge graph, AI skills and memory from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the knowledge graph and the AI skills in German', async ({ page }) => {
+      await knowledgeSession(page);
+      await page.goto('/knowledge-graph');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+      await expect(page.getByRole('button', { name: 'Graph neu aufbauen' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Mit KI anreichern' })).toBeVisible();
+      await expect(page.getByText('Ebene', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'beobachtet', exact: true })).toBeVisible();
+      await expect(page.getByText('Vorschläge anzeigen', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 Entitäten · 1 Beziehung', { exact: true })).toBeVisible();
+      await expect(page.getByText('Datenfluss', { exact: true })).toBeVisible();
+      await expect(page.getByText('Erkunden', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: '+ Entität hinzufügen' }).click();
+      await expect(page.getByPlaceholder('Bezeichnung (z. B. Treuestufe)')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Vergrößern' })).toBeVisible();
+      // The first node circle is the Customer entity (labels only show once zoomed in).
+      await page.locator('svg g[transform] > circle').first().click();
+      await expect(page.getByRole('heading', { name: 'Customer' })).toBeVisible();
+      await expect(page.getByText('Felder (2)', { exact: true })).toBeVisible();
+      await expect(page.getByText('Verbindungen (1)', { exact: true })).toBeVisible();
+      await expect(page.getByText('Referenz · customerId', { exact: true })).toBeVisible();
+
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByRole('banner').getByText('KI-Skills', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Vorgeschlagen\s*1$/ })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Aus behobenen Fehlern lernen' })).toBeVisible();
+      await expect(page.getByText(/^Server: Sales · von Hand geschrieben · v2 · 3× geöffnet, zuletzt am 5\.1\.2026$/)).toBeVisible();
+      await expect(
+        page.getByText(/^Connector: Shop · Vorschlag zum Zusammenführen · v1 · Konfidenz 0\.85 · 4 Beispiele · noch nicht geöffnet$/),
+      ).toBeVisible();
+      await expect(
+        page.getByText('Ersetzt 2 aktive Skills: Wenn Sie ihn übernehmen, werden diese deaktiviert (sie bleiben mit ihrem Verlauf erhalten).'),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Verlauf (1 frühere Version)' }).click();
+      await expect(page.getByRole('button', { name: 'Verlauf ausblenden' })).toBeVisible();
+      await expect(page.getByText('Ordner', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Alle Skills' })).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the memory page in Italian', async ({ page }) => {
+      await knowledgeSession(page);
+      await page.goto('/memory');
+      await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+      await expect(page.getByRole('banner').getByText('Memoria', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText(/^Il tuo accesso in questo workspace: Memoria personale \+ proposte alla memoria aziendale · si imposta per utente in/),
+      ).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Impostazioni → Utenti' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'La mia memoria' })).toBeVisible();
+      await expect(page.getByText('preferenza', { exact: true })).toBeVisible();
+      await expect(page.getByText(/salvato da un client AI \(Claude\) · 02\/01\/2026$/)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Ricorda' })).toBeVisible();
+      await expect(page.getByText('Non salvare mai password, token o chiavi: vengono rifiutati.')).toBeVisible();
+
+      await page.getByRole('button', { name: /^Da rivedere/ }).click();
+      await expect(page.getByText('in attesa di revisione', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^Orders · riguarda customer · aggiunto dalla dashboard/)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Approva' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Tutta la memoria aziendale' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Impostazioni del workspace' })).toBeVisible();
+      await expect(page.getByLabel('Accesso predefinito per gli utenti')).toHaveValue('personal');
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the knowledge graph, AI skills and memory pages in English', async ({ page }) => {
+      await knowledgeSession(page);
+      await page.goto('/knowledge-graph');
+      await expect(page.getByRole('button', { name: 'Rebuild graph' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'observed', exact: true })).toBeVisible();
+      await expect(page.getByText('show suggested', { exact: true })).toBeVisible();
+      await expect(page.getByText('2 entities · 1 relationships', { exact: true })).toBeVisible();
+      await expect(page.getByText('data flow', { exact: true })).toBeVisible();
+      // The first node circle is the Customer entity (labels only show once zoomed in).
+      await page.locator('svg g[transform] > circle').first().click();
+      await expect(page.getByRole('heading', { name: 'Customer' })).toBeVisible();
+      await expect(page.getByText('Fields (2)', { exact: true })).toBeVisible();
+      await expect(page.getByText('references · customerId', { exact: true })).toBeVisible();
+
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByRole('banner').getByText('AI Skills', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText(
+          "Rules and procedures for recurring tasks, scoped to one connector or to a whole MCP server. Active skills reach that server's AI clients on connect, as full text or as a list they open with skill_get (set per server). Long procedures are always opened on demand.",
+        ),
+      ).toBeVisible();
+      await expect(page.getByText(/^server: Sales · written by hand · v2 · opened 3×, last 1\/5\/2026$/)).toBeVisible();
+      await expect(
+        page.getByText(/^connector: Shop · merge proposal · v1 · confidence 0\.85 · 4 example\(s\) · not opened yet$/),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'History (1 earlier version)' })).toBeVisible();
+      await expect(page.getByText('Procedure (6 characters)', { exact: true })).toBeVisible();
+
+      await page.goto('/memory');
+      await expect(
+        page.getByText(/^Your access in this workspace: Personal memory \+ propose to company memory · set per user under/),
+      ).toBeVisible();
+      await expect(page.getByText('preference', { exact: true })).toBeVisible();
+      await expect(page.getByText(/saved by an AI client \(Claude\) · 1\/2\/2026$/)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Remember' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
+    });
+  });
+});
+
+async function codeProposalSession(page: Page) {
+  await knowledgeSession(page);
+  // Registered after knowledgeSession, so it answers the skills list first.
+  await page.route('**/api/knowledge-graph/skills?**', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        total: 1,
+        take: 25,
+        skip: 0,
+        counts: { pending: 1, applied: 0, dismissed: 0 },
+        items: [
+          {
+            id: 'k1', kind: 'code', connectorId: 'c1', connector: { name: 'Shop' }, mcpServerId: null,
+            title: 'Open orders by customer', whenToUse: '', instruction: 'Agents kept chaining three calls.',
+            confidence: 1, evidenceCount: 0, status: 'pending', source: 'agent', version: 1, useCount: 0,
+            payload: {
+              connectorId: 'c1', name: 'open_orders', description: 'Lists open orders for a customer.',
+              parameters: {}, endpointMapping: { code: 'return 1;' },
+            },
+          },
+        ],
+      }),
+    }),
+  );
+}
+
+test.describe('code tool proposal from Accept-Language', () => {
+  test.describe('de-DE', () => {
+    test.use({ locale: 'de-DE', viewport: { width: 1280, height: 860 } });
+
+    test('renders the code tool proposal card in German', async ({ page }) => {
+      await codeProposalSession(page);
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByText('Code-Tool-Vorschlag', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Connector: Shop · von einem Agenten vorgeschlagen · nur lesend, läuft mit den Berechtigungen des Aufrufers'),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Tool erstellen', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Verwerfen', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Vorschlag löschen', exact: true })).toBeVisible();
+      await expect(page.getByText('Programm (9 Zeichen)', { exact: true })).toBeVisible();
+      await expect(page.getByText(/^Beim Erstellen wird ein nur lesendes Code-Tool für Shop angelegt\./)).toBeVisible();
+    });
+  });
+
+  test.describe('it-IT', () => {
+    test.use({ locale: 'it-IT', viewport: { width: 1280, height: 860 } });
+
+    test('renders the code tool proposal card in Italian', async ({ page }) => {
+      await codeProposalSession(page);
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByText('Proposta di strumento di codice', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Crea strumento', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Scarta', exact: true })).toBeVisible();
+      await expect(page.getByText('Cosa fa:', { exact: true })).toBeVisible();
+      await expect(page.getByText('Programma (9 caratteri)', { exact: true })).toBeVisible();
+    });
+  });
+
+  test.describe('en-US', () => {
+    test.use({ locale: 'en-US', viewport: { width: 1280, height: 860 } });
+
+    test('keeps the code tool proposal card in English', async ({ page }) => {
+      await codeProposalSession(page);
+      await page.goto('/knowledge-graph/skills');
+      await expect(page.getByText('Code tool proposal', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("connector: Shop · proposed by an agent · read-only, runs with the caller's permissions", { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Create tool', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Dismiss', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Delete proposal', exact: true })).toBeVisible();
+      await expect(page.getByText('Why:', { exact: true })).toBeVisible();
+      await expect(page.getByText('Does:', { exact: true })).toBeVisible();
+      await expect(page.getByText('Program (9 characters)', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText(
+          "Creating it adds a read-only code tool on Shop. To let it write data or run with the author's rights, edit it afterwards on the connector's tools page.",
+          { exact: true },
+        ),
+      ).toBeVisible();
+    });
+  });
+});
+
 test.describe('message files', () => {
   const read = (locale: string) =>
     JSON.parse(readFileSync(join(__dirname, '../../messages', `${locale}.json`), 'utf8')) as Record<string, unknown>;

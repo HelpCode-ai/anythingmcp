@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { roles, connectors, tools as toolsApi, users } from '@/lib/api';
@@ -35,6 +36,8 @@ interface UserItem {
 
 export default function AdminRolesPage() {
   const { token, user: currentUser } = useAuth();
+  const t = useTranslations('settingsRoles');
+  const ta = useTranslations('adminPages');
   const [roleList, setRoleList] = useState<RoleItem[]>([]);
   const [allTools, setAllTools] = useState<ToolItem[]>([]);
   const [userList, setUserList] = useState<UserItem[]>([]);
@@ -73,14 +76,14 @@ export default function AdminRolesPage() {
       // Flatten all tools from connectors
       const allToolsList: ToolItem[] = [];
       for (const c of connectorData) {
-        const t = await toolsApi.list(c.id, token);
-        for (const tool of t) {
+        const list = await toolsApi.list(c.id, token);
+        for (const tool of list) {
           allToolsList.push({ id: tool.id, name: tool.name, connectorName: c.name });
         }
       }
       setAllTools(allToolsList);
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setLoading(false);
     }
@@ -97,10 +100,10 @@ export default function AdminRolesPage() {
       setNewName('');
       setNewDesc('');
       setShowCreate(false);
-      setMsg('Role created');
+      setMsg(t('created'));
       loadData();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -109,21 +112,21 @@ export default function AdminRolesPage() {
     try {
       await roles.update(id, { name: editName, description: editDesc || undefined }, token);
       setEditingId(null);
-      setMsg('Role updated');
+      setMsg(t('updated'));
       loadData();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!token || !confirm(`Delete role "${name}"? Users with this role will be unassigned.`)) return;
+    if (!token || !confirm(t('confirmDelete', { name }))) return;
     try {
       await roles.delete(id, token);
-      setMsg('Role deleted');
+      setMsg(t('deleted'));
       loadData();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -134,7 +137,7 @@ export default function AdminRolesPage() {
       const access = await roles.getToolAccess(roleId, token);
       setSelectedToolIds(access.map((a: any) => a.tool.id));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -144,10 +147,10 @@ export default function AdminRolesPage() {
     try {
       await roles.setToolAccess(managingToolsForRole, selectedToolIds, token);
       setManagingToolsForRole(null);
-      setMsg('Tool access updated');
+      setMsg(t('toolAccessUpdated'));
       loadData();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setSavingTools(false);
     }
@@ -164,9 +167,9 @@ export default function AdminRolesPage() {
             : u,
         ),
       );
-      setMsg('MCP role assigned');
+      setMsg(t('assigned'));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -180,9 +183,9 @@ export default function AdminRolesPage() {
     return (
       <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-bold mb-2 text-[var(--text)]">Access Denied</h2>
-          <p className="text-[var(--text-3)] mb-4">Only administrators can access this page.</p>
-          <Link href="/" className="text-[var(--brand)] hover:underline">Back to Dashboard</Link>
+          <h2 className="text-xl font-bold mb-2 text-[var(--text)]">{t('accessDenied.title')}</h2>
+          <p className="text-[var(--text-3)] mb-4">{t('accessDenied.body')}</p>
+          <Link href="/" className="text-[var(--brand)] hover:underline">{ta('backToDashboard')}</Link>
         </div>
       </div>
     );
@@ -193,7 +196,7 @@ export default function AdminRolesPage() {
 
   return (
     <AppShell
-      title="MCP Role Management"
+      title={ta('roles.title')}
     >
       <div className="space-y-6">
         {msg && (
@@ -202,22 +205,21 @@ export default function AdminRolesPage() {
             style={{ background: 'var(--t-info-bg)', color: 'var(--t-info-fg)', borderColor: 'var(--border)' }}
           >
             {msg}
-            <button onClick={() => setMsg('')} className="ml-2 underline">dismiss</button>
+            <button onClick={() => setMsg('')} className="ml-2 underline">{t('dismiss')}</button>
           </div>
         )}
 
         {loading ? (
-          <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
+          <p className="text-center text-[var(--text-3)] py-16">{t('loading')}</p>
         ) : (
           <>
             {/* Roles Section */}
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-[15px] font-semibold text-[var(--text)]">Custom Roles</h3>
+                  <h3 className="text-[15px] font-semibold text-[var(--text)]">{t('title')}</h3>
                   <p className="text-xs text-[var(--text-3)] mt-1">
-                    Create roles to control which MCP tools different users can access.
-                    Users without a role have full access. ADMIN always has full access.
+                    {t('intro')}
                   </p>
                 </div>
                 <Button
@@ -225,7 +227,7 @@ export default function AdminRolesPage() {
                   size="sm"
                   onClick={() => setShowCreate(!showCreate)}
                 >
-                  {showCreate ? 'Cancel' : 'Create Role'}
+                  {showCreate ? t('cancel') : t('createRole')}
                 </Button>
               </div>
 
@@ -233,27 +235,27 @@ export default function AdminRolesPage() {
               {showCreate && (
                 <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-4 mb-4 space-y-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">Role Name</label>
+                    <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('form.name')}</label>
                     <input
                       type="text"
                       value={newName}
                       onChange={(e) => setNewName(e.target.value)}
-                      placeholder="e.g. Read Only, Support Team"
+                      placeholder={t('form.namePlaceholder')}
                       className={inputClass}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">Description</label>
+                    <label className="block text-sm font-medium mb-1 text-[var(--text-2)]">{t('form.description')}</label>
                     <input
                       type="text"
                       value={newDesc}
                       onChange={(e) => setNewDesc(e.target.value)}
-                      placeholder="What this role is for..."
+                      placeholder={t('form.descriptionPlaceholder')}
                       className={inputClass}
                     />
                   </div>
                   <Button onClick={handleCreate} disabled={!newName.trim()}>
-                    Create
+                    {t('form.create')}
                   </Button>
                 </div>
               )}
@@ -261,7 +263,7 @@ export default function AdminRolesPage() {
               {/* Role List */}
               {roleList.length === 0 ? (
                 <p className="text-sm text-[var(--text-3)] text-center py-4">
-                  No custom roles yet. Create one to start restricting tool access.
+                  {t('empty')}
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -279,12 +281,12 @@ export default function AdminRolesPage() {
                             type="text"
                             value={editDesc}
                             onChange={(e) => setEditDesc(e.target.value)}
-                            placeholder="Description"
+                            placeholder={t('form.description')}
                             className={inputClass}
                           />
                           <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleUpdate(role.id)}>Save</Button>
-                            <Button variant="secondary" size="sm" onClick={() => setEditingId(null)}>Cancel</Button>
+                            <Button size="sm" onClick={() => handleUpdate(role.id)}>{t('save')}</Button>
+                            <Button variant="secondary" size="sm" onClick={() => setEditingId(null)}>{t('cancel')}</Button>
                           </div>
                         </div>
                       ) : (
@@ -293,15 +295,15 @@ export default function AdminRolesPage() {
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm text-[var(--text)]">{role.name}</span>
                               {role.isSystem && (
-                                <Badge tone="neutral">system</Badge>
+                                <Badge tone="neutral">{t('system')}</Badge>
                               )}
                             </div>
                             {role.description && (
                               <p className="text-xs text-[var(--text-3)] mt-0.5">{role.description}</p>
                             )}
                             <div className="flex gap-4 mt-1 text-xs text-[var(--text-3)]">
-                              <span>{role._count.users} user{role._count.users !== 1 ? 's' : ''}</span>
-                              <span>{role._count.toolAccess} tool{role._count.toolAccess !== 1 ? 's' : ''} assigned</span>
+                              <span>{t('userCount', { count: role._count.users })}</span>
+                              <span>{t('toolCount', { count: role._count.toolAccess })}</span>
                             </div>
                           </div>
                           <div className="flex gap-2">
@@ -310,7 +312,7 @@ export default function AdminRolesPage() {
                               size="sm"
                               onClick={() => handleManageTools(role.id)}
                             >
-                              Manage Tools
+                              {t('manageTools')}
                             </Button>
                             {!role.isSystem && (
                               <>
@@ -319,14 +321,14 @@ export default function AdminRolesPage() {
                                   size="sm"
                                   onClick={() => { setEditingId(role.id); setEditName(role.name); setEditDesc(role.description || ''); }}
                                 >
-                                  Edit
+                                  {t('edit')}
                                 </Button>
                                 <Button
                                   variant="danger"
                                   size="sm"
                                   onClick={() => handleDelete(role.id, role.name)}
                                 >
-                                  Delete
+                                  {t('delete')}
                                 </Button>
                               </>
                             )}
@@ -338,28 +340,27 @@ export default function AdminRolesPage() {
                       {managingToolsForRole === role.id && (
                         <div className="mt-4 pt-4 border-t border-[var(--border)]">
                           <h4 className="text-sm font-medium mb-2 text-[var(--text)]">
-                            Select tools this role can access
+                            {t('access.title')}
                           </h4>
                           <p className="text-xs text-[var(--text-3)] mb-3">
-                            Only checked tools will be available to users with this role.
-                            If no tools are selected, the role has no MCP tool access.
+                            {t('access.body')}
                           </p>
                           {allTools.length === 0 ? (
-                            <p className="text-xs text-[var(--text-3)]">No tools available. Create connectors and tools first.</p>
+                            <p className="text-xs text-[var(--text-3)]">{t('access.noTools')}</p>
                           ) : (
                             <>
                               <div className="flex gap-2 mb-3">
                                 <button
-                                  onClick={() => setSelectedToolIds(allTools.map((t) => t.id))}
+                                  onClick={() => setSelectedToolIds(allTools.map((x) => x.id))}
                                   className="text-xs text-[var(--brand)] hover:underline"
                                 >
-                                  Select all
+                                  {ta('roles.selectAll')}
                                 </button>
                                 <button
                                   onClick={() => setSelectedToolIds([])}
                                   className="text-xs text-[var(--brand)] hover:underline"
                                 >
-                                  Deselect all
+                                  {t('access.deselectAll')}
                                 </button>
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-auto">
@@ -385,14 +386,14 @@ export default function AdminRolesPage() {
                               onClick={handleSaveToolAccess}
                               disabled={savingTools}
                             >
-                              {savingTools ? 'Saving...' : `Save (${selectedToolIds.length} tools)`}
+                              {savingTools ? t('access.saving') : t('access.save', { count: selectedToolIds.length })}
                             </Button>
                             <Button
                               variant="secondary"
                               size="sm"
                               onClick={() => setManagingToolsForRole(null)}
                             >
-                              Cancel
+                              {t('cancel')}
                             </Button>
                           </div>
                         </div>
@@ -406,10 +407,9 @@ export default function AdminRolesPage() {
             {/* User MCP Role Assignment */}
             <Card className="p-6">
               <div className="mb-4">
-                <h3 className="text-[15px] font-semibold text-[var(--text)]">User MCP Role Assignment</h3>
+                <h3 className="text-[15px] font-semibold text-[var(--text)]">{t('assign.title')}</h3>
                 <p className="text-xs text-[var(--text-3)] mt-1">
-                  Assign MCP roles to users to control which tools they can access via MCP.
-                  Users without a role have unrestricted access. ADMIN users always have full access.
+                  {t('assign.intro')}
                 </p>
               </div>
 
@@ -417,9 +417,9 @@ export default function AdminRolesPage() {
                 <table className="w-full min-w-[520px] text-sm">
                   <thead className="bg-[var(--surface-2)]">
                     <tr>
-                      <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">User</th>
-                      <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">App Role</th>
-                      <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">MCP Tool Role</th>
+                      <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">{t('assign.user')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">{t('assign.appRole')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-[var(--text-2)]">{t('assign.mcpRole')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -434,14 +434,14 @@ export default function AdminRolesPage() {
                         </td>
                         <td className="px-4 py-3">
                           {u.role === 'ADMIN' ? (
-                            <span className="text-xs text-[var(--text-3)]">Full access (admin)</span>
+                            <span className="text-xs text-[var(--text-3)]">{t('assign.fullAccess')}</span>
                           ) : (
                             <AppSelect
                               value={u.mcpRoleId || ''}
                               onValueChange={(v) => handleAssignRole(u.id, v || null)}
                               className="h-8 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-2 text-xs text-[var(--text)]"
                               options={[
-                                { value: '', label: 'No restriction (full access)' },
+                                { value: '', label: t('assign.noRestriction') },
                                 ...roleList.map((r) => ({ value: r.id, label: r.name })),
                               ]}
                             />

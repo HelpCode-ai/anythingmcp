@@ -12,7 +12,7 @@
  */
 import * as Sentry from '@sentry/nestjs';
 import { APP_VERSION } from './common/app-version';
-import { isMcpTransportError, scrubBreadcrumb, scrubEvent, scrubSpan } from './common/sentry-scrub';
+import { IGNORED_ERRORS, isMcpTransportError, scrubBreadcrumb, scrubEvent, scrubSpan } from './common/sentry-scrub';
 import { sampleRateFor } from './common/sentry-sampler';
 
 const dsn = process.env.SENTRY_DSN;
@@ -68,11 +68,8 @@ if (dsn) {
       Sentry.httpIntegration({ maxRequestBodySize: 'none' }),
     ],
 
-    // raw-body's BadRequestError when the client hangs up before its request
-    // body has been read. Nothing failed on our side; a client looping on
-    // /mcp/:id and dropping its calls sent 1,388 of these in one burst on
-    // 4 Oct 2026 (ANYTHINGMCP-CLOUD-BACKEND-6).
-    ignoreErrors: [/^request aborted$/],
+    // raw-body's errors for a client that hangs up or sends too large a body.
+    ignoreErrors: IGNORED_ERRORS,
 
     beforeSend: (event) => (isMcpTransportError(event) ? null : scrubEvent(event)),
     // SDK v11 streams spans instead of sending transactions, so spans are

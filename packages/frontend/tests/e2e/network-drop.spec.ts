@@ -77,6 +77,7 @@ test.describe('isNetworkError', () => {
   test('recognises what each browser says when a request gets no answer', () => {
     expect(isNetworkError(new TypeError('Load failed'))).toBe(true);
     expect(isNetworkError(new TypeError('Failed to fetch'))).toBe(true);
+    expect(isNetworkError(new TypeError('network error'))).toBe(true);
     expect(isNetworkError(new TypeError('NetworkError when attempting to fetch resource.'))).toBe(true);
     expect(isNetworkError(new TypeError('Importing a module script failed.'))).toBe(true);
     expect(isNetworkError(Object.assign(new Error('x'), { name: 'ChunkLoadError' }))).toBe(true);

@@ -3,20 +3,24 @@ import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AdaptersService } from './adapters.service';
 import { describeAdapterEnvVars, needsBrowserAuthorization } from './env-var-meta';
+import { normalizeAdapterEnvValue } from './env-var-checks';
+import { addressFix, describeAddressFix } from './address-fix';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { SecurityEvents, SecurityEventService } from '../audit/security-event.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
 import {
+  SetupCallOptions,
   SetupCallResult,
   SetupContext,
   SharedSetupProvider,
   SharedSetupRegistry,
 } from '../mcp-server/shared-setup';
-import { ReturnAssistant, isExcludedAdapterSlug } from '../mcp-server/shared-toolset';
+import { ReturnAssistant, isExcludedAdapterSlug, sharedEndpointAccess } from '../mcp-server/shared-toolset';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { findSecretLiterals } from '../common/secret-literals.util';
 import { searchCatalog } from './catalog-search';
+import { fileSearchSetupPath } from './file-search-setup';
 import { CHAT_SETUP_SOURCE } from '../license/license-checkout';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
@@ -120,7 +124,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
 
   // ── Find ──────────────────────────────────────────────────────────────
 
-  async find(ctx: SetupContext, args: { query?: string; limit?: number }): Promise<SetupCallResult> {
+  async find(
+    ctx: SetupContext,
+    args: { query?: string; limit?: number },
+    opts: SetupCallOptions = {},
+  ): Promise<SetupCallResult> {
     const query = String(args.query ?? '');
     const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 10);
     const installed = new Set(
@@ -139,7 +147,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     // ones and, on the cloud, self-host-only ones.
     const offered = this.adapters
       .listAll()
-      .filter((a) => !isExcludedAdapterSlug(a.slug))
+      .filter((a) => !isExcludedAdapterSlug(a.slug, ctx.profile ?? 'chatgpt'))
       .map((a) => ({ ...a, text: [a.description, a.category] }));
     const search = searchCatalog(offered, query);
     const scored = search.terms.length
@@ -162,7 +170,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         metadata: {
           query,
           results: scored.length,
-          via: 'mcp',
+          via: opts.via ?? 'mcp',
           ...(search.missing.length ? { missing: search.missing.join(' ') } : {}),
           ...(scored.length ? { match: search.match, adapterSlug: scored.map(({ a }) => a.slug).join(',') } : {}),
         },
@@ -170,9 +178,34 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     }
 
     const usage = await this.licenseGuard.getUsage(ctx.userId, ctx.organizationId).catch(() => null);
+    const wizardUrl = (slug: string): string | null => {
+      const path = fileSearchSetupPath(this.adapters.describe(slug), 'chat');
+      return path ? `${ctx.dashboardBase}${path}` : null;
+    };
+    // A storage query ("synology", "nas", "Dateiserver"): File Search reads
+    // the documents on that system, which its API connector does not. The
+    // suggestion travels with the results so the model can offer both.
+    const shown = new Set(scored.map(({ a }) => a.slug));
+    const fileSearchShown = search.terms.length ? search.fileSearch.filter((e) => shown.has(e.slug)) : [];
+    const setupUrls = new Map(scored.map(({ a }) => [a.slug, wizardUrl(a.slug)]));
+    const anyFileSearch = [...setupUrls.values()].some(Boolean);
     return {
       body: {
         results: scored.map(({ a }) => {
+          const setupUrl = setupUrls.get(a.slug);
+          if (setupUrl) {
+            return {
+              adapter: a.slug,
+              name: a.name,
+              description: a.description,
+              alreadyInstalled: installed.has(a.slug),
+              fileSearch: true,
+              setup:
+                'Set up in the File Search wizard on the dashboard, not from the chat: it tests the connection, scans the folder and checks it against the plan, then indexes the documents so the AI can search inside them.',
+              setupUrl,
+              showToTheUser: 'Give setupUrl as a clickable Markdown link with the full https address. Never shorten or reword it.',
+            };
+          }
           const full = this.adapters.describe(a.slug);
           const vars = full.envVars.filter((v) => !v.advanced);
           return {
@@ -180,6 +213,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
             name: a.name,
             description: a.description,
             alreadyInstalled: installed.has(a.slug),
+            ...(sharedEndpointAccess(a.slug, ctx.profile ?? 'chatgpt') === 'read'
+              ? { servedHere: 'Read tools only. Tools that move money or change payment data run on the server\'s own URL.' }
+              : {}),
             setup:
               full.setupKind === 'none'
                 ? 'Nothing to enter: installs and works right away.'
@@ -198,10 +234,21 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
             enteredByTheUserOnTheLinkedPage: vars.filter((v) => v.secret).map((v) => v.label),
           };
         }),
+        ...(fileSearchShown.length
+          ? {
+              fileSearch: {
+                adapters: fileSearchShown.map((e) => e.slug),
+                whatItAdds:
+                  'File Search lets the AI search inside the documents stored there, which an API connector does not: it indexes the PDF, Word, Excel and Outlook files on the NAS, server or storage and keeps the index in sync. Offer it alongside the other results.',
+              },
+            }
+          : {}),
         ...(usage?.connectors?.max != null
           ? { connectorsLeftOnThisPlan: Math.max(0, usage.connectors.max - usage.connectors.current) }
           : {}),
-        next: 'Confirm the choice with the user, then call setup_install_connector with the adapter id (and any settings listed above). Never ask for passwords, API keys or tokens in the chat.',
+        next:
+          'Confirm the choice with the user, then call setup_install_connector with the adapter id (and any settings listed above). Never ask for passwords, API keys or tokens in the chat.' +
+          (anyFileSearch ? ' For a File Search result, give the user its setupUrl instead: it cannot be installed from the chat.' : ''),
       },
     };
   }
@@ -211,14 +258,29 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   async install(
     ctx: SetupContext,
     args: { adapter?: string; settings?: Record<string, unknown> },
+    opts: SetupCallOptions = {},
   ): Promise<SetupCallResult> {
     const slug = String(args.adapter ?? '').trim();
     let definition: ReturnType<AdaptersService['describe']>;
     try {
-      if (!slug || isExcludedAdapterSlug(slug)) throw new Error('unknown');
+      if (!slug || isExcludedAdapterSlug(slug, ctx.profile ?? 'chatgpt')) throw new Error('unknown');
       definition = this.adapters.describe(slug);
     } catch {
       return { isError: true, body: { error: `No catalog connector '${slug}'. Use setup_find_connectors to get its id.` } };
+    }
+
+    // File Search needs the wizard (connection test, folder scan, plan check);
+    // importAdapter would refuse it with a bare error.
+    const wizardPath = fileSearchSetupPath(definition, 'chat');
+    if (wizardPath) {
+      return {
+        isError: true,
+        body: {
+          error: `${definition.name} is a File Search connector and is set up in the File Search wizard, not from the chat.`,
+          setupUrl: `${ctx.dashboardBase}${wizardPath}`,
+          whatTheUserDoes: 'Open the link, enter the server address and a read-only account, and follow the wizard: it tests the connection, scans the folder and activates the index.',
+        },
+      };
     }
 
     const descriptors = new Map(describeAdapterEnvVars(definition).map((d) => [d.name, d]));
@@ -236,7 +298,10 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           },
         };
       }
-      const text = value !== undefined && value !== null ? String(value).trim() : '';
+      // An address typed without https:// (`acme.odoo.com`) gets it when the
+      // field's pattern wants it, as on the setup page (address-fix.ts).
+      const typed = value !== undefined && value !== null ? String(value).trim() : '';
+      const text = typed ? normalizeAdapterEnvValue(d, typed) : '';
       // A shop URL with `?access_token=…`, a tenant field holding a key: the
       // chat is the wrong place for it, whatever the setting is called.
       if (text && findSecretLiterals(text).length > 0) {
@@ -249,10 +314,12 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         };
       }
       if (text && d.pattern && !matchesPattern(d.pattern, text)) {
+        // Secrets never get here, so the fixed address can be named.
+        const fix = d.kind !== 'credential' ? addressFix(d.pattern, text) : undefined;
         return {
           isError: true,
           body: {
-            error: `'${d.label}' does not look right. ${d.patternMessage ?? d.help ?? ''}`.trim(),
+            error: `'${d.label}' does not look right. ${fix ? describeAddressFix(fix) : (d.patternMessage ?? d.help ?? '')}`.trim(),
             hint: 'Ask the user to check the value, or install without it: they can enter it on the page linked in the answer.',
           },
         };
@@ -271,7 +338,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
 
     let imported: Awaited<ReturnType<AdaptersService['importAdapter']>>;
     try {
-      imported = await this.adapters.importAdapter(slug, ctx.userId, ctx.organizationId, settings);
+      // A value that forms part of the API address may still be missing (a
+      // bot token is never taken here): the setup link asks for it.
+      imported = await this.adapters.importAdapter(slug, ctx.userId, ctx.organizationId, settings, {
+        addressMayWait: true,
+      });
     } catch (err: any) {
       return { isError: true, body: { error: String(err?.message ?? err) } };
     }
@@ -289,7 +360,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       organizationId: ctx.organizationId,
       // A chat install checks nothing but the import probe; `verified` keeps
       // these apart from setups that made a successful call.
-      metadata: { adapterSlug: slug, via: 'mcp', verified: imported.probe?.ok === true },
+      metadata: { adapterSlug: slug, via: opts.via ?? 'mcp', verified: imported.probe?.ok === true },
     });
 
     const state = await this.connectorState(imported.connectorId);
@@ -341,10 +412,25 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         select: { role: true },
       })
       .catch(() => null);
-    if (member?.role !== 'ADMIN') {
-      return { error: reason, whatTheUserCanDo: 'Ask a workspace administrator to upgrade the plan, or remove a connector they no longer need.' };
-    }
     const usage = await this.licenseGuard.getUsage(ctx.userId, ctx.organizationId).catch(() => null);
+    // No licence at all (an ended trial, a lapsed plan): a bigger plan or one
+    // connector fewer would not help, so say what would.
+    const noLicence = usage != null && usage.plan == null;
+    if (member?.role !== 'ADMIN') {
+      return {
+        error: reason,
+        whatTheUserCanDo: noLicence
+          ? 'Ask a workspace administrator to activate a licence for this workspace.'
+          : 'Ask a workspace administrator to upgrade the plan, or remove a connector they no longer need.',
+      };
+    }
+    if (noLicence) {
+      return {
+        error: reason,
+        whatTheUserCanDo: 'This workspace has no active licence, so no app can be added yet. Choose a plan on the licence page, then try again.',
+        upgradeUrl: `${ctx.dashboardBase}/settings/license?source=${CHAT_SETUP_SOURCE}`,
+      };
+    }
     const onTrial = usage?.plan === 'trial';
     return {
       error: reason,
@@ -483,7 +569,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     token: string,
     userId: string,
     from?: unknown,
-  ): Promise<{ redirect: string } | { error: string }> {
+  ): Promise<{ redirect: string; organizationId: string } | { error: string }> {
     const row = await this.prisma.connectorSetupLink.findUnique({ where: { tokenHash: this.hash(String(token || '')) } });
     if (!row || row.expiresAt.getTime() < Date.now()) {
       return { error: 'This link has expired. Ask your AI client for a new one, or open the connector in the dashboard.' };
@@ -491,10 +577,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     if (row.userId !== userId) {
       return { error: 'This link was made for another account. Sign in as that account.' };
     }
-    if (row.usedAt) {
-      return { error: 'This link was already used. Ask your AI client for a new one, or open the connector in the dashboard.' };
+    // Opened again by the same user (a second click, a reload, a link
+    // preview) it still works until it expires: it is bound to that user and
+    // needs their session, so a second opening gives nobody else anything.
+    // usedAt records the first opening.
+    if (!row.usedAt) {
+      await this.prisma.connectorSetupLink.update({ where: { id: row.id }, data: { usedAt: new Date() } });
     }
-    await this.prisma.connectorSetupLink.update({ where: { id: row.id }, data: { usedAt: new Date() } });
     const connector = await this.prisma.connector.findFirst({
       where: { id: row.connectorId, organizationId: row.organizationId },
       select: { id: true, config: true },
@@ -509,6 +598,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       redirect: slug
         ? `/connectors/setup/${encodeURIComponent(slug)}?connector=${encodeURIComponent(connector.id)}&from=${back}`
         : `/connectors/${encodeURIComponent(connector.id)}`,
+      // The workspace the connector is in: the dashboard switches to it when
+      // its session is on another one, or every save would be refused.
+      organizationId: row.organizationId,
     };
   }
 

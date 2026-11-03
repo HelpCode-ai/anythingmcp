@@ -212,6 +212,7 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
         "path": "/responses",
         "bodyMapping": {
           "model": "$model",
@@ -319,6 +320,8 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
+        "maxResponseBytes": 41943040,
         "path": "/images/generations",
         "bodyMapping": {
           "model": "$model",
@@ -432,6 +435,8 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
+        "maxResponseBytes": 41943040,
         "path": "/images/edits",
         "bodyMapping": {
           "model": "$model",

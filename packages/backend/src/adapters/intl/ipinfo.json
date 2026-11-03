@@ -1,0 +1,625 @@
+{
+  "slug": "ipinfo",
+  "name": "IPinfo",
+  "aliases": [
+    "ipinfo.io",
+    "IPinfo Lite"
+  ],
+  "description": "IP address intelligence from IPinfo: geolocation, ASN and owner, privacy and residential proxy detection, company, carrier, abuse contacts, hosted domains, IP ranges and WHOIS, single or batch lookups. Free Lite lookups with a token; read-only.",
+  "region": "intl",
+  "category": "enrichment",
+  "icon": "ipinfo",
+  "docsUrl": "https://ipinfo.io/developers",
+  "instructions": "## IPinfo\nThis connector looks up IP address data from **IPinfo**: geolocation, ASN and network owner, privacy detection (VPN, proxy, Tor, relay, hosting), residential proxies, company, mobile carrier, abuse contacts, hosted domains, IP ranges and WHOIS records, one at a time or in batches of up to 1,000. Everything is read-only. It uses two IPinfo hosts: the current API at `https://api.ipinfo.io` (Lite, lookup, places, batch) and the classic API at `https://ipinfo.io` (everything else).\n\n**Setup (2 minutes)**\n1. Sign up at https://ipinfo.io/signup. The free plan gives unlimited IPinfo Lite lookups (country, continent and ASN).\n2. Copy the access token from https://ipinfo.io/dashboard/token and paste it into `IPINFO_TOKEN`. It is sent as `Authorization: Bearer <token>`.\n3. Run `ipinfo_get_my_ip` to check the connection, and `ipinfo_get_token_info` to see what the token may use.\n\nWithout a token only `ipinfo_get_my_ip`, `ipinfo_get_ip_details` and `ipinfo_get_ip_field` work, at a small daily allowance; every other tool answers 400 or 403.\n\n**Which tool for which plan**\n- Free token: `ipinfo_lite_lookup`, `ipinfo_lite_me`, `ipinfo_batch_lite`, plus the classic `ipinfo_get_ip_details` and `ipinfo_get_ip_field`.\n- Core, Plus or Max plan: `ipinfo_lookup` (city-level geo, ASN type, privacy and mobile flags), `ipinfo_batch`; Plus and Max also `ipinfo_get_place`.\n- Business, enterprise or the matching custom API: `ipinfo_get_privacy`, `ipinfo_get_residential_proxy`, `ipinfo_get_company`, `ipinfo_get_carrier`, `ipinfo_get_abuse_contact`, `ipinfo_get_hosted_domains`, `ipinfo_get_asn`, `ipinfo_get_ip_ranges`, `ipinfo_whois_net`, `ipinfo_whois_org`, `ipinfo_whois_poc`. A token without the product answers 403; `ipinfo_get_token_info` lists the products the token has under `features`.\n\n**Workflow**\n- Where is this IP, who owns it? `ipinfo_lite_lookup` on a free token, `ipinfo_lookup` on a paid one, `ipinfo_get_ip_details` for the classic shape; `ipinfo_get_ip_field` when you need just one value (country, city, org).\n- Many IPs: `ipinfo_batch_lite` (free) or `ipinfo_batch` (paid, can mix IPs, fields such as 8.8.8.8/country, ASNs and resproxy/ paths). Split more than 1,000 inputs into several calls.\n- Fraud and security checks: `ipinfo_get_privacy`, `ipinfo_get_residential_proxy`, `ipinfo_get_abuse_contact` (whom to report abuse to), `ipinfo_get_hosted_domains` (reverse IP).\n- Networks and organizations: `ipinfo_get_asn`, `ipinfo_get_ip_ranges` (ranges of a company by its domain), `ipinfo_get_company`, `ipinfo_get_carrier`, and WHOIS with `ipinfo_whois_net`, `ipinfo_whois_org` and `ipinfo_whois_poc`.\n- The server's own IP: `ipinfo_get_my_ip` and `ipinfo_lite_me` report the IP of the AnythingMCP server, not the user's.\n\n**Reading the answers**: the classic API returns `loc` as `\"latitude,longitude\"` and `org` as `\"AS15169 Google LLC\"`; the current API splits them into `geo.latitude`, `geo.longitude` and `as.asn`, `as.name`. Countries are ISO 3166-1 alpha-2 codes (US, DE), time zones IANA names (Europe/Berlin). Private and reserved addresses come back with `bogon: true` and no location. Location is an estimate of where the network is, not of a person; `radius` (Plus) gives the accuracy in km.\n\n**Paging**: `ipinfo_get_hosted_domains` takes `page` (from 0) and `limit`; WHOIS tools return 50 records per page and take `page` (from 0).\n\n**Limits and errors**: Lite is unlimited; paid plans have a monthly quota and answer 429 when it is used up. 400 with \"Token not passed\" or \"API Access Token Required\" means the tool needs a token, 403 \"Unknown token\" a wrong token, 403 on a valid token a product the plan does not include, 404 \"Wrong ip\" a malformed IP.\n",
+  "prerequisites": "An IPinfo access token from ipinfo.io (the Lite plan is free). A few classic lookups also work without one.",
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "IPINFO_TOKEN"
+  ],
+  "envVarMeta": {
+    "IPINFO_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "ipinfo.io, Dashboard, Token: your access token. It is sent as Authorization: Bearer. Leave empty to use only the keyless classic lookups.",
+      "link": "https://ipinfo.io/dashboard/token",
+      "pattern": "^[A-Za-z0-9]{10,}$",
+      "patternMessage": "Paste only the token (letters and digits), without spaces, quotes or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "400": "This IPinfo endpoint needs an access token. Set IPINFO_TOKEN from ipinfo.io/dashboard/token.",
+    "403": "IPinfo refused the token, or your plan does not include this product. Check the token and its features with ipinfo_get_token_info.",
+    "429": "The monthly request quota of your IPinfo plan is used up."
+  },
+  "probe": {
+    "tool": "ipinfo_get_my_ip"
+  },
+  "connector": {
+    "name": "IPinfo API",
+    "type": "REST",
+    "baseUrl": "https://ipinfo.io",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "ipinfo_get_my_ip",
+      "description": "Details of the IP address the request comes from (the AnythingMCP server's public IP): IP, hostname, city, region, country, coordinates, postal code, time zone and AS organization. Works without a token. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/json",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_ip_details",
+      "description": "Details of an IP address from the classic IPinfo API: hostname, city, region, country, coordinates (loc, 'lat,lng'), postal code, time zone, AS number and organization (org, 'AS15169 Google LLC'), anycast and bogon flags. Paid and legacy plans add asn, company, privacy, abuse and domains blocks. Works without a token at a small daily allowance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{ip}/json",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_ip_field",
+      "description": "One field of an IP address as plain text, e.g. only the country code or the city. The cheapest way to answer a single question about an IP.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          },
+          "field": {
+            "type": "string",
+            "description": "The field to return.",
+            "enum": [
+              "ip",
+              "hostname",
+              "city",
+              "region",
+              "country",
+              "loc",
+              "postal",
+              "timezone",
+              "org"
+            ]
+          }
+        },
+        "required": [
+          "ip",
+          "field"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{ip}/{field}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_lite_lookup",
+      "description": "IPinfo Lite: country, country code, continent and ASN (number, name, domain) of an IP address. Free and unlimited with any IPinfo token; no city-level data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.ipinfo.io/lite/{ip}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_lite_me",
+      "description": "IPinfo Lite for the IP address the request comes from (the AnythingMCP server): country, continent and ASN. Needs a token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.ipinfo.io/lite/me",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_lookup",
+      "description": "Full lookup on the current IPinfo API (Core, Plus or Max plan): geo (city, region, country, coordinates, time zone, postal code; Plus adds accuracy radius and geoname id), as (ASN, name, domain, type such as isp or hosting), mobile carrier, anonymous (VPN, proxy, relay, Tor) and the is_anonymous, is_anycast, is_hosting, is_mobile and is_satellite flags. A free token answers 403: use ipinfo_lite_lookup.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.ipinfo.io/lookup/{ip}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_place",
+      "description": "Building-level place matched to an IP address (Plus or Max plan): the public place's name, category (hotel, airport, university, ...) and coordinates, when the IP belongs to one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.ipinfo.io/places/{ip}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_batch_lite",
+      "description": "Look up many IPs in one request with IPinfo Lite (free with any token): country, continent and ASN for up to 1,000 inputs. Returns an object keyed by input. A read, although sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 1,000 IP addresses, or IP/field such as 8.8.8.8/country."
+          },
+          "filter": {
+            "type": "boolean",
+            "description": "true leaves out inputs that have no answer (e.g. IPs without a hostname)."
+          }
+        },
+        "required": [
+          "ips"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://api.ipinfo.io/batch/lite",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        },
+        "queryParams": {
+          "filter": "$filter"
+        },
+        "bodyMapping": {
+          "__raw": "$ips"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ipinfo_batch",
+      "description": "Look up many IPs or other IPinfo paths in one request (paid plans): by default each IP gets the full lookup; entries can also be fields (8.8.8.8/country), ASNs (AS15169), residential proxy checks (resproxy/1.1.1.1) or Lite lookups (lite/8.8.4.4). Up to 1,000 inputs, answer keyed by input. A read, although sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 1,000 inputs. Each is an IP (8.8.8.8), an IP with a field (8.8.8.8/country), or another lookup path (AS15169, resproxy/1.1.1.1, lite/8.8.4.4)."
+          },
+          "filter": {
+            "type": "boolean",
+            "description": "true leaves out inputs that have no answer (e.g. IPs without a hostname)."
+          }
+        },
+        "required": [
+          "ips"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://api.ipinfo.io/batch",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        },
+        "queryParams": {
+          "filter": "$filter"
+        },
+        "bodyMapping": {
+          "__raw": "$ips"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ipinfo_get_token_info",
+      "description": "Plan of the IPinfo token and its usage: requests made and remaining this day and month, and which data products (geolocation, ASN, privacy, abuse, company, carrier, domains, ...) the token can use. Needs a token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_asn",
+      "description": "Details of an autonomous system: name, country, registry, allocation date, domain, type (isp, hosting, business, education), number of IPs, IPv4 and IPv6 prefixes, peers, upstreams and downstreams. Large ASNs return long prefix lists. Enterprise or ASN API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asn": {
+            "type": "integer",
+            "description": "AS number without the AS prefix, e.g. 15169."
+          }
+        },
+        "required": [
+          "asn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/AS{asn}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_ip_ranges",
+      "description": "IP ranges (CIDR blocks) owned by the organization behind a domain, with the number of ranges. Enterprise or IP Ranges API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Organization domain, e.g. nytimes.com."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ranges/{domain}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_abuse_contact",
+      "description": "Abuse contact of an IP address: name, e-mail, phone, postal address, country and the network it covers. Use it to report malicious activity. Business, enterprise or Abuse API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{ip}/abuse",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_privacy",
+      "description": "Privacy detection for an IP address: true or false for vpn, proxy, tor, relay and hosting, and the VPN or proxy service name when known. Business, enterprise or Privacy API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{ip}/privacy",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_residential_proxy",
+      "description": "Residential proxy detection: whether an IP was seen as an exit of a residential proxy network, which service, when it was last seen and on what share of days. Needs the residential proxy add-on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/resproxy/{ip}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_company",
+      "description": "Company behind an IP address: name, domain and type (isp, business, education, hosting, government). Business, enterprise or Company API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{ip}/company",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_carrier",
+      "description": "Mobile carrier of an IP address, if it is on a mobile network: carrier name, mobile country code (mcc) and mobile network code (mnc). Empty for non-mobile IPs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{ip}/carrier",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_get_hosted_domains",
+      "description": "Domains hosted on an IP address (reverse IP), with the total count. 100 per page by default, up to 1,000 per page. Business, enterprise or Hosted Domains API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address, e.g. 8.8.8.8 or 2001:4860:4860::8888."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Domains per page, 1 to 1000 (default 100)."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domains/{ip}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        },
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_whois_net",
+      "description": "WHOIS network records found by a network id (NET-24-62-0-0-1), an IP or IP range (24.62.0.0/15), an organization domain (comcast.net) or an ASN (AS9541): range, name, organization, country, status, abuse and admin contacts and dates. 50 records per page. Enterprise or Whois API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Net id, IP, IP range in CIDR notation, domain, or ASN with the AS prefix."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "source": {
+            "type": "string",
+            "description": "Only records from this regional registry.",
+            "enum": [
+              "arin",
+              "ripe",
+              "afrinic",
+              "apnic",
+              "lacnic"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/whois/net/{query}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        },
+        "queryParams": {
+          "page": "$page",
+          "source": "$source"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_whois_org",
+      "description": "WHOIS organization records by organization id (e.g. PINEAP): name, address, country, contacts and dates. 50 records per page. Enterprise or Whois API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "WHOIS organization (ORG) id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "source": {
+            "type": "string",
+            "description": "Only records from this regional registry.",
+            "enum": [
+              "arin",
+              "ripe",
+              "afrinic",
+              "apnic",
+              "lacnic"
+            ]
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/whois/org/{org_id}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        },
+        "queryParams": {
+          "page": "$page",
+          "source": "$source"
+        }
+      }
+    },
+    {
+      "name": "ipinfo_whois_poc",
+      "description": "WHOIS point-of-contact records by POC id (e.g. CP312-ARIN): name, e-mail, phone, address and dates. 50 records per page. Enterprise or Whois API access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "poc_id": {
+            "type": "string",
+            "description": "WHOIS point of contact (POC) id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "source": {
+            "type": "string",
+            "description": "Only records from this regional registry.",
+            "enum": [
+              "arin",
+              "ripe",
+              "afrinic",
+              "apnic",
+              "lacnic"
+            ]
+          }
+        },
+        "required": [
+          "poc_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/whois/poc/{poc_id}",
+        "headers": {
+          "Authorization": "Bearer ${IPINFO_TOKEN}"
+        },
+        "queryParams": {
+          "page": "$page",
+          "source": "$source"
+        }
+      }
+    }
+  ]
+}

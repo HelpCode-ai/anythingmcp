@@ -1,0 +1,825 @@
+{
+  "slug": "virustotal",
+  "name": "VirusTotal",
+  "aliases": [
+    "VT",
+    "VirusTotal API"
+  ],
+  "description": "Threat intelligence from the VirusTotal API v3: file reports by hash, URL, domain and IP reports from about 70 engines, search, relationships, sandbox behaviour, community comments and votes, URL scanning and rescans.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "virustotal",
+  "docsUrl": "https://docs.virustotal.com/reference/overview",
+  "instructions": "## VirusTotal\nThis connector uses the **VirusTotal API v3** (`https://www.virustotal.com/api/v3`) to check files, URLs, domains and IP addresses against about 70 antivirus engines and URL blocklists, read community comments and votes, follow relationships between indicators (contacted domains, DNS resolutions, dropped files, ...), read sandbox behaviour and, as writes, submit a URL for scanning, request a rescan, comment and vote. Uploading files is not part of this connector: look files up by hash.\n\n**Setup (2 minutes)**\n1. Sign up for the free VirusTotal Community at https://www.virustotal.com/gui/join-us and confirm the e-mail.\n2. Open your API key at https://www.virustotal.com/gui/my-apikey and paste it into `VIRUSTOTAL_API_KEY`. It is sent in the `x-apikey` header.\n3. Run `virustotal_list_popular_threat_categories` to check the key.\n\n**Public vs Premium API**: a free key is limited to 4 requests a minute and 500 a day, and VirusTotal's terms forbid using the public API in commercial products or business workflows. Premium keys have no such limits and unlock `virustotal_intelligence_search`, more relationships and more context. Daily quotas reset at 00:00 UTC.\n\n**Privacy**: every indicator you look up or submit becomes part of the VirusTotal dataset and is visible to the community. Never send URLs, domains or hashes that are confidential or contain personal data (a URL with a token, a reset link, an internal host name).\n\n**Workflow**\n- Is it malicious? `virustotal_get_file_report` (by hash), `virustotal_get_url_report`, `virustotal_get_domain_report`, `virustotal_get_ip_report`. When you only have a URL, call `virustotal_search` with the full URL: it returns the URL report. `virustotal_search` also takes a hash, a domain, an IP or a comment tag.\n- A URL that VirusTotal has not seen (404): `virustotal_scan_url` submits it (public, see Privacy), then poll `virustotal_get_analysis` with the returned id until `status` is `completed`. To refresh an old verdict of a known object use `virustotal_rescan`.\n- Investigate: `virustotal_list_related_objects` follows a relationship (a file's contacted_domains, a domain's resolutions or subdomains, an IP's communicating_files); `virustotal_list_related_ids` returns just the ids, much smaller. `virustotal_get_resolution` reads one DNS resolution. For files, `virustotal_get_file_behaviour_summary` and `virustotal_get_file_mitre_attack` show what the sample did in sandboxes.\n- Community: `virustotal_list_comments` and `virustotal_list_votes` on one object, `virustotal_list_latest_comments` across VirusTotal (filter by tag), `virustotal_get_comment` for one. Writes: `virustotal_add_comment`, `virustotal_add_vote`, and `virustotal_delete_comment` for your own comment.\n- Premium only: `virustotal_intelligence_search` with search modifiers.\n- Quota: `virustotal_get_api_usage` with your VirusTotal user name.\n\n**URL identifiers**: URL tools take the URL id, which is the URL encoded as unpadded base64url (`https://example.com/` becomes `aHR0cHM6Ly9leGFtcGxlLmNvbS8`), or the SHA-256 of the canonical URL. The `data.id` of a URL report is that SHA-256, and the analysis id returned by `virustotal_scan_url` is `u-<sha256>-<timestamp>`, so the middle part is the URL id. If you cannot encode a URL reliably, use `virustotal_search` instead.\n\n**Reading the answers**: responses follow JSON:API: `data.id`, `data.type` and `data.attributes`. `last_analysis_stats` counts the engines per verdict (malicious, suspicious, harmless, undetected, timeout); `last_analysis_results` lists each engine's category and result. `reputation` is a community score (negative is bad); `total_votes` counts harmless and malicious votes. Dates are Unix timestamps in seconds (UTC). A low detection count is not proof that something is safe: also check the analysis date and the relationships. URL, domain and IP reports leave out bulky fields (HTTP headers and cookies, HTML meta, favicon, trackers, the full HTTPS certificate); certificates are available through the historical_ssl_certificates relationship.\n\n**Paging**: list tools return `meta.cursor` and `links.next` while more items exist; pass `meta.cursor` as `cursor` (same `limit`) and stop when it is missing.\n\n**Switched off at install**: `virustotal_scan_url` and `virustotal_delete_comment`; they cannot be undone (a submitted URL is shared with the VirusTotal community for good), so an admin switches them on when the team needs them.\n\n**Errors**: 401 `WrongCredentialsError` or `AuthenticationRequiredError` means a wrong or missing key, 403 `ForbiddenError` a Premium-only endpoint or relationship, 404 `NotFoundError` an object VirusTotal has not seen, 409 `AlreadyExistsError` a duplicate vote, 429 `QuotaExceededError` the minute or daily quota (wait, or upgrade), 400 `InvalidArgumentError` a malformed id.\n",
+  "prerequisites": "A VirusTotal account and its API key (the community key is free; Premium keys unlock more).",
+  "requiredEnvVars": [
+    "VIRUSTOTAL_API_KEY"
+  ],
+  "envVarMeta": {
+    "VIRUSTOTAL_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "virustotal.com, your profile menu, API key. It is sent in the x-apikey header.",
+      "link": "https://www.virustotal.com/gui/my-apikey",
+      "pattern": "^[a-f0-9]{64}$",
+      "patternMessage": "A VirusTotal API key is 64 lowercase hexadecimal characters."
+    }
+  },
+  "verifyHints": {
+    "401": "VirusTotal refused the API key. Copy it again from virustotal.com/gui/my-apikey and make sure the account e-mail is confirmed.",
+    "403": "This endpoint or relationship is part of the VirusTotal Premium API; a community key cannot use it.",
+    "429": "The VirusTotal quota is used up (a free key allows 4 requests a minute and 500 a day). Wait and try again."
+  },
+  "probe": {
+    "tool": "virustotal_list_popular_threat_categories"
+  },
+  "connector": {
+    "name": "VirusTotal API v3",
+    "type": "REST",
+    "baseUrl": "https://www.virustotal.com/api/v3",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-apikey",
+      "apiKey": "{{VIRUSTOTAL_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/popular_threat_categories"
+  },
+  "tools": [
+    {
+      "name": "virustotal_get_file_report",
+      "description": "Report on a file already known to VirusTotal, by hash: detection stats (malicious, suspicious, harmless, undetected), each engine's verdict, the popular threat label, type, size, names, first and last submission dates, reputation, community votes, tags, sandbox verdicts and crowdsourced YARA and Sigma results. Looking up a hash does not upload anything. 404 means VirusTotal has never seen the file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hash": {
+            "type": "string",
+            "description": "SHA-256, SHA-1 or MD5 of the file."
+          },
+          "relationships": {
+            "type": "string",
+            "description": "Optional relationships to include as descriptors in the same answer, comma-separated (e.g. contacted_domains,contacted_ips for a file; resolutions,subdomains for a domain)."
+          }
+        },
+        "required": [
+          "hash"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{hash}",
+        "queryParams": {
+          "relationships": "$relationships"
+        }
+      }
+    },
+    {
+      "name": "virustotal_get_url_report",
+      "description": "Report on a URL already analysed by VirusTotal: detection stats and each engine's verdict, categories, final URL after redirects, HTTP status, title, outgoing links, redirection chain, targeted brand, reputation, votes, first and last submission dates. Needs the URL identifier; when you only have the URL, use virustotal_search with the URL as query. 404 means the URL has not been analysed yet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url_id": {
+            "type": "string",
+            "description": "URL identifier: the URL in unpadded base64url (base64 with - and _ instead of + and /, trailing = removed), or the SHA-256 of the canonical URL. The id is also the middle part of an analysis id u-<id>-<timestamp>."
+          },
+          "relationships": {
+            "type": "string",
+            "description": "Optional relationships to include as descriptors in the same answer, comma-separated (e.g. contacted_domains,contacted_ips for a file; resolutions,subdomains for a domain)."
+          }
+        },
+        "required": [
+          "url_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/urls/{url_id}",
+        "queryParams": {
+          "relationships": "$relationships"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.last_http_response_headers",
+            "data.attributes.last_http_response_cookies",
+            "data.attributes.html_meta",
+            "data.attributes.favicon",
+            "data.attributes.trackers"
+          ]
+        }
+      }
+    },
+    {
+      "name": "virustotal_get_domain_report",
+      "description": "Report on a domain: detection stats and each engine's verdict, categories from several vendors, reputation, votes, last DNS records, registrar, creation date, WHOIS text, popularity ranks and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com (no scheme, no path)."
+          },
+          "relationships": {
+            "type": "string",
+            "description": "Optional relationships to include as descriptors in the same answer, comma-separated (e.g. contacted_domains,contacted_ips for a file; resolutions,subdomains for a domain)."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/domains/{domain}",
+        "queryParams": {
+          "relationships": "$relationships"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.last_https_certificate",
+            "data.attributes.favicon"
+          ]
+        }
+      }
+    },
+    {
+      "name": "virustotal_get_ip_report",
+      "description": "Report on an IPv4 or IPv6 address: detection stats and each engine's verdict, reputation, votes, ASN and owner, country and continent, network range, regional registry, WHOIS text and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "IPv4 or IPv6 address."
+          },
+          "relationships": {
+            "type": "string",
+            "description": "Optional relationships to include as descriptors in the same answer, comma-separated (e.g. contacted_domains,contacted_ips for a file; resolutions,subdomains for a domain)."
+          }
+        },
+        "required": [
+          "ip"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ip_addresses/{ip}",
+        "queryParams": {
+          "relationships": "$relationships"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.last_https_certificate"
+          ]
+        }
+      }
+    },
+    {
+      "name": "virustotal_get_analysis",
+      "description": "Status and result of one analysis started by virustotal_scan_url, virustotal_rescan or a file submission: status (queued, in-progress, completed), stats and each engine's verdict once completed. Poll every 15 to 60 seconds until status is completed; meta.url_info or meta.file_info names the object analysed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "description": "Analysis id returned by a scan or rescan (data.id), e.g. u-<sha256>-<timestamp> for a URL."
+          }
+        },
+        "required": [
+          "analysis_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/analyses/{analysis_id}"
+      }
+    },
+    {
+      "name": "virustotal_search",
+      "description": "Look up a file hash, a URL, a domain, an IP address or a comment tag in one call. Returns the matching object (a URL query returns its URL report, so this is the easy way to get one) or, for a tag, the comments carrying it. Advanced queries with search modifiers need virustotal_intelligence_search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A hash, a full URL, a domain, an IP address, or a comment tag such as #phishing."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of items per page (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.cursor of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "virustotal_intelligence_search",
+      "description": "VirusTotal Intelligence corpus search with search modifiers (e.g. type:peexe positives:10+ fs:2026-01-01+, entity:domain domain_regex:..., content:\"...\"). Premium API only: a public key answers 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Intelligence query with search modifiers, see https://virustotal.readme.io/docs/search-modifiers-full-list."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order, e.g. first_submission_date-, positives-, size+ (depends on the entity searched)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 10, at most 300)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.cursor of the previous answer. Leave empty for the first page."
+          },
+          "descriptors_only": {
+            "type": "boolean",
+            "description": "true returns only object ids and types, which is much smaller."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/intelligence/search",
+        "queryParams": {
+          "query": "$query",
+          "order": "$order",
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "descriptors_only": "$descriptors_only"
+        }
+      }
+    },
+    {
+      "name": "virustotal_list_comments",
+      "description": "Community comments on a file, URL, domain or IP address, newest first: text, tags, date and the comment's own votes. Page with cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Kind of object: files (id = SHA-256, SHA-1 or MD5), urls (id = URL identifier), domains (id = domain name) or ip_addresses (id = IPv4 or IPv6 address).",
+            "enum": [
+              "files",
+              "urls",
+              "domains",
+              "ip_addresses"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The object's id: a file hash, a URL identifier (see the instructions), a domain name or an IP address, matching collection."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of items per page (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.cursor of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "collection",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{collection}/{id}/comments",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "virustotal_list_votes",
+      "description": "Community votes on a file, URL, domain or IP address: each vote's verdict (harmless or malicious), value and date. The totals are in total_votes of the report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Kind of object: files (id = SHA-256, SHA-1 or MD5), urls (id = URL identifier), domains (id = domain name) or ip_addresses (id = IPv4 or IPv6 address).",
+            "enum": [
+              "files",
+              "urls",
+              "domains",
+              "ip_addresses"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The object's id: a file hash, a URL identifier (see the instructions), a domain name or an IP address, matching collection."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of items per page (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.cursor of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "collection",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{collection}/{id}/votes",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "virustotal_list_related_objects",
+      "description": "Objects related to a file, URL, domain or IP address, as full objects: e.g. the domains and IPs a file contacted, files it dropped, a domain's subdomains, DNS resolutions or historical WHOIS, the files communicating with an IP. Page with cursor. Use virustotal_list_related_ids for a lighter list of ids only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Kind of object: files (id = SHA-256, SHA-1 or MD5), urls (id = URL identifier), domains (id = domain name) or ip_addresses (id = IPv4 or IPv6 address).",
+            "enum": [
+              "files",
+              "urls",
+              "domains",
+              "ip_addresses"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The object's id: a file hash, a URL identifier (see the instructions), a domain name or an IP address, matching collection."
+          },
+          "relationship": {
+            "type": "string",
+            "description": "Relationship name. Public API: files: behaviours, bundled_files, comments, contacted_domains, contacted_ips, contacted_urls, dropped_files, execution_parents, pe_resource_children, pe_resource_parents, votes, graphs, collections; urls: comments, last_serving_ip_address, network_location, votes, graphs, collections; domains: comments, communicating_files, historical_ssl_certificates, historical_whois, immediate_parent, parent, referrer_files, resolutions, siblings, subdomains, votes; ip_addresses: comments, communicating_files, historical_ssl_certificates, historical_whois, referrer_files, resolutions, votes. Others (similar_files, embedded_urls, downloaded_files, urls, ...) need the Premium API."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of items per page (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.cursor of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "collection",
+          "id",
+          "relationship"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{collection}/{id}/{relationship}",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "virustotal_list_related_ids",
+      "description": "Ids (descriptors) of the objects related to a file, URL, domain or IP address, without their attributes: much smaller than virustotal_list_related_objects. Look an id up afterwards with the matching report tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Kind of object: files (id = SHA-256, SHA-1 or MD5), urls (id = URL identifier), domains (id = domain name) or ip_addresses (id = IPv4 or IPv6 address).",
+            "enum": [
+              "files",
+              "urls",
+              "domains",
+              "ip_addresses"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The object's id: a file hash, a URL identifier (see the instructions), a domain name or an IP address, matching collection."
+          },
+          "relationship": {
+            "type": "string",
+            "description": "Relationship name. Public API: files: behaviours, bundled_files, comments, contacted_domains, contacted_ips, contacted_urls, dropped_files, execution_parents, pe_resource_children, pe_resource_parents, votes, graphs, collections; urls: comments, last_serving_ip_address, network_location, votes, graphs, collections; domains: comments, communicating_files, historical_ssl_certificates, historical_whois, immediate_parent, parent, referrer_files, resolutions, siblings, subdomains, votes; ip_addresses: comments, communicating_files, historical_ssl_certificates, historical_whois, referrer_files, resolutions, votes. Others (similar_files, embedded_urls, downloaded_files, urls, ...) need the Premium API."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of items per page (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.cursor of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "collection",
+          "id",
+          "relationship"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{collection}/{id}/relationships/{relationship}",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "virustotal_get_file_behaviour_summary",
+      "description": "Summary of all sandbox runs of a file: processes created, files written and deleted, registry keys, mutexes, DNS lookups, IP traffic, HTTP requests, MITRE ATT&CK techniques, verdicts and tags. Empty when no sandbox has run the file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hash": {
+            "type": "string",
+            "description": "SHA-256, SHA-1 or MD5 of the file."
+          }
+        },
+        "required": [
+          "hash"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{hash}/behaviour_summary"
+      }
+    },
+    {
+      "name": "virustotal_get_file_mitre_attack",
+      "description": "MITRE ATT&CK tactics and techniques observed for a file in each sandbox, with the signatures that triggered them and their severity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hash": {
+            "type": "string",
+            "description": "SHA-256, SHA-1 or MD5 of the file."
+          }
+        },
+        "required": [
+          "hash"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{hash}/behaviour_mitre_trees"
+      }
+    },
+    {
+      "name": "virustotal_list_latest_comments",
+      "description": "Latest comments posted anywhere on VirusTotal, optionally only those with a tag (filter tag:malware). Each comment's id starts with the kind and id of the object it is about (f- file, u- URL, d- domain, i- IP).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Optional filter, e.g. tag:malware or tag:phishing."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of items per page (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: meta.cursor of the previous answer. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/comments",
+        "queryParams": {
+          "filter": "$filter",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "virustotal_get_comment",
+      "description": "One comment by id: text, tags, date, votes and, with relationships=author,item, who wrote it and what it is about.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": {
+            "type": "string",
+            "description": "Comment id, e.g. f-<sha256>-<suffix> from a comment list."
+          },
+          "relationships": {
+            "type": "string",
+            "description": "Optional: author, item or author,item."
+          }
+        },
+        "required": [
+          "comment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/comments/{comment_id}",
+        "queryParams": {
+          "relationships": "$relationships"
+        }
+      }
+    },
+    {
+      "name": "virustotal_get_resolution",
+      "description": "One DNS resolution object: which IP a domain resolved to, when, and from which source. Its id is the IP followed by the domain (e.g. 8.8.8.8dns.google), as listed by the resolutions relationship.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resolution_id": {
+            "type": "string",
+            "description": "Resolution id: the IP address immediately followed by the domain name."
+          }
+        },
+        "required": [
+          "resolution_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/resolutions/{resolution_id}"
+      }
+    },
+    {
+      "name": "virustotal_list_popular_threat_categories",
+      "description": "List of the threat categories antivirus verdicts commonly use (trojan, ransomware, dropper, miner, phishing, ...). A cheap call, also used to check the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/popular_threat_categories"
+      }
+    },
+    {
+      "name": "virustotal_get_api_usage",
+      "description": "Daily API usage of a VirusTotal user, per endpoint, between two dates (at most 30 days, default the last 30). The user id is your VirusTotal user name (shown on your profile).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your VirusTotal user name."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYYMMDD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYYMMDD."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/api_usage",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "virustotal_scan_url",
+      "description": "Submit a URL for scanning by about 70 security engines. This is a write that is shared with the community: the URL, and anything inside it (tokens, e-mail addresses, session ids in the query string), becomes visible to other VirusTotal users and cannot be withdrawn. Submit only public URLs. Returns an analysis id (data.id, u-<url_id>-<timestamp>); read the result with virustotal_get_analysis, or the full report with virustotal_get_url_report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The full URL to scan, e.g. https://example.com/login."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/urls",
+        "bodyMapping": {
+          "url": "$url"
+        },
+        "bodyEncoding": "form-urlencoded"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "virustotal_rescan",
+      "description": "Ask VirusTotal to analyse again an object it already knows: a file by hash, a URL by identifier, a domain or an IP address. Use it when the last analysis is old. Returns an analysis id for virustotal_get_analysis. The object is already public; a rescan only refreshes its verdicts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Kind of object: files (id = SHA-256, SHA-1 or MD5), urls (id = URL identifier), domains (id = domain name) or ip_addresses (id = IPv4 or IPv6 address).",
+            "enum": [
+              "files",
+              "urls",
+              "domains",
+              "ip_addresses"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The object's id: a file hash, a URL identifier (see the instructions), a domain name or an IP address, matching collection."
+          }
+        },
+        "required": [
+          "collection",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{collection}/{id}/analyse"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "virustotal_add_comment",
+      "description": "Post a public comment on a file, URL, domain or IP address under your VirusTotal account. Words starting with # become tags. Visible to everyone; it can be removed later with virustotal_delete_comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Kind of object: files (id = SHA-256, SHA-1 or MD5), urls (id = URL identifier), domains (id = domain name) or ip_addresses (id = IPv4 or IPv6 address).",
+            "enum": [
+              "files",
+              "urls",
+              "domains",
+              "ip_addresses"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The object's id: a file hash, a URL identifier (see the instructions), a domain name or an IP address, matching collection."
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text, e.g. 'Phishing page imitating a bank login #phishing'."
+          }
+        },
+        "required": [
+          "collection",
+          "id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{collection}/{id}/comments",
+        "bodyMapping": {
+          "data": {
+            "type": "comment",
+            "attributes": {
+              "text": "$text"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "virustotal_add_vote",
+      "description": "Cast your public vote on a file, URL, domain or IP address: harmless or malicious. It counts in the object's total_votes and reputation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Kind of object: files (id = SHA-256, SHA-1 or MD5), urls (id = URL identifier), domains (id = domain name) or ip_addresses (id = IPv4 or IPv6 address).",
+            "enum": [
+              "files",
+              "urls",
+              "domains",
+              "ip_addresses"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The object's id: a file hash, a URL identifier (see the instructions), a domain name or an IP address, matching collection."
+          },
+          "verdict": {
+            "type": "string",
+            "description": "harmless or malicious.",
+            "enum": [
+              "harmless",
+              "malicious"
+            ]
+          }
+        },
+        "required": [
+          "collection",
+          "id",
+          "verdict"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{collection}/{id}/votes",
+        "bodyMapping": {
+          "data": {
+            "type": "vote",
+            "attributes": {
+              "verdict": "$verdict"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "virustotal_delete_comment",
+      "description": "Delete one of your own public comments by id. It cannot be undone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": {
+            "type": "string",
+            "description": "Id of a comment you posted (data.id from virustotal_add_comment)."
+          }
+        },
+        "required": [
+          "comment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/comments/{comment_id}"
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

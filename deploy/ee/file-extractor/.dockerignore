@@ -1,0 +1,5 @@
+# Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE.
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache

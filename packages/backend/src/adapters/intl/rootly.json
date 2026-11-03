@@ -1,0 +1,2050 @@
+{
+  "slug": "rootly",
+  "name": "Rootly",
+  "description": "Rootly incident management: incidents with timeline, action items and status page updates, alerts, services, functionalities, teams, severities and incident types, on-call (who is on call, schedules, shifts, escalation policies), status pages and retrospectives. Declare, update, mitigate and resolve incidents, acknowledge and resolve alerts.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "rootly",
+  "docsUrl": "https://docs.rootly.com/api-reference/overview",
+  "instructions": "## Rootly\nThis connector works with **Rootly** incident management through its REST API (`https://api.rootly.com`, JSON:API): incidents with their timeline, action items and status page updates, alerts, the service catalog (services, functionalities, teams, environments, severities, incident types), users, on-call (who is on call, schedules, shifts, escalation policies), status pages and retrospectives. It can declare, update, mitigate and resolve incidents, add timeline notes and action items, acknowledge and resolve alerts and publish status page updates.\n\n**Setup (2 minutes)**\n1. In Rootly open the organization menu, **Organization Settings, API Keys** and create a key. A **Global** key sees the whole organization; a **Team** key only that team's records; a **Personal** key acts with your own permissions.\n2. Give the key a role that can read what you need, plus write permission for incidents, alerts and action items if the agent should change them.\n3. Paste the key into `ROOTLY_API_KEY` and run `rootly_get_current_user` to check it.\n\n**Workflow**\n- What is going on: `rootly_list_incidents` with `status: \"started,mitigated\"` (or `in_triage`), then `rootly_get_incident`, `rootly_list_incident_events` for the timeline and `rootly_list_incident_action_items`. Look up ids with `rootly_list_severities`, `rootly_list_services`, `rootly_get_service`, `rootly_list_functionalities`, `rootly_get_functionality`, `rootly_list_teams`, `rootly_get_team`, `rootly_list_environments`, `rootly_list_incident_types` and `rootly_list_users`.\n- Run an incident: `rootly_create_incident` (pass an `idempotency_key`; use kind `test` for a try), `rootly_update_incident` for title, summary, severity, services or status, `rootly_add_incident_event` for timeline notes, then `rootly_mitigate_incident` and `rootly_resolve_incident`.\n- Tasks and follow-ups: `rootly_list_action_items` across incidents, `rootly_get_action_item`, `rootly_create_action_item`, `rootly_update_action_item` (e.g. status done).\n- Alerts: `rootly_list_alerts` (status triggered or open), `rootly_get_alert` for the raw payload, `rootly_acknowledge_alert`, `rootly_resolve_alert`.\n- On-call: `rootly_list_oncalls` answers who is on call now (or in a window); `rootly_list_schedules`, `rootly_get_schedule`, `rootly_get_schedule_shifts`, `rootly_list_shifts` and `rootly_list_escalation_policies` for the details.\n- Communicate: `rootly_list_status_pages`, `rootly_get_status_page`, `rootly_list_incident_status_page_events`, then `rootly_create_status_page_event` to publish an update.\n- Learn: `rootly_list_retrospectives` and `rootly_get_retrospective`.\n\n**Before writing**: a normal incident runs workflows, opens a Slack channel and can page people; a status page update is public and can e-mail subscribers. Confirm with the user first. A private incident cannot be made public again.\n\n**Reading the answers**: JSON:API: records are in `data` (`id`, `type`, `attributes`, `relationships`), embedded records from `include` in `included`. Ids are UUIDs, except user ids (numbers). The human incident number is `attributes.sequential_id` (INC-123). Times are ISO 8601, in UTC unless a time zone is given. `rootly_list_incidents` and `rootly_list_alerts` return a compact set of attributes by default (`fields`); pass `fields: \"\"` for all of them. Zoom meeting passwords and host links are left out of incident answers.\n\n**Paging**: lists return `meta` with `current_page`, `next_page` (null on the last page), `total_count` and `total_pages`; call again with `page_number`. Incidents and alerts also accept the cursor `page_after` from `meta.next_cursor`. Keep `page_size` small, Rootly records are large.\n\n**Errors**: 401 means a wrong or revoked key, 403 a key whose role or team does not allow the call, 404 an unknown id or one outside the key's team, 422 a validation error whose `errors` name the field, 429 the rate limit (the `X-RateLimit-*` headers tell when it resets; wait and retry).",
+  "prerequisites": "A Rootly account and an API key (Organization Settings, API Keys) with a role that allows the calls.",
+  "requiredEnvVars": [
+    "ROOTLY_API_KEY"
+  ],
+  "envVarMeta": {
+    "ROOTLY_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Rootly, Organization Settings, API Keys: create a Global, Team or Personal key and copy it.",
+      "link": "https://docs.rootly.com/api-reference/overview",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the key, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Rootly refused the key: it is wrong or was revoked. Create a new one under Organization Settings, API Keys.",
+    "403": "The key works but its role or team does not allow this call. Use a Global key or give the key a role with the needed permission.",
+    "429": "Rootly rate-limited the key. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "rootly_get_current_user"
+  },
+  "connector": {
+    "name": "Rootly API",
+    "type": "REST",
+    "baseUrl": "https://api.rootly.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ROOTLY_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/vnd.api+json",
+      "Content-Type": "application/vnd.api+json"
+    },
+    "healthcheckPath": "/v1/users/me"
+  },
+  "tools": [
+    {
+      "name": "rootly_get_current_user",
+      "description": "Show the user the API key acts as: id, name, email, time zone and role. Use it to check the key; a Global or Team key answers with the user that created it.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users/me"
+      }
+    },
+    {
+      "name": "rootly_list_incidents",
+      "description": "List incidents, newest first by default: sequential id (the 123 in INC-123), title, status, kind, severity, services, teams, environments, incident types, URL and the lifecycle timestamps (started, detected, acknowledged, mitigated, resolved, closed). Filter by status, severity, service, team, environment, type, text and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in the title and summary."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only incidents with this status. Several are comma-separated, e.g. `started,mitigated`. Values: in_triage, started, detected, acknowledged, mitigated, resolved, closed, cancelled; scheduled maintenance uses scheduled, in_progress, completed."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Only this kind: normal, test, example, backfilled, scheduled (and their `_sub` forms for sub-incidents). Comma-separate several."
+          },
+          "severity": {
+            "type": "string",
+            "description": "Only this severity slug (e.g. `sev0`, `sev1`), from `rootly_list_severities`. Comma-separate several."
+          },
+          "private": {
+            "type": "string",
+            "description": "`true` for private incidents only, `false` for public only.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "sequential_id": {
+            "type": "string",
+            "description": "Only the incident with this number (the 123 in INC-123)."
+          },
+          "service_ids": {
+            "type": "string",
+            "description": "Only incidents on these service ids (comma-separated), from `rootly_list_services`."
+          },
+          "team_ids": {
+            "type": "string",
+            "description": "Only incidents of these team ids (comma-separated), from `rootly_list_teams`."
+          },
+          "environment_ids": {
+            "type": "string",
+            "description": "Only incidents in these environment ids (comma-separated), from `rootly_list_environments`."
+          },
+          "functionality_ids": {
+            "type": "string",
+            "description": "Only incidents on these functionality ids (comma-separated), from `rootly_list_functionalities`."
+          },
+          "type_ids": {
+            "type": "string",
+            "description": "Only incidents of these incident type ids (comma-separated), from `rootly_list_incident_types`."
+          },
+          "created_at_gte": {
+            "type": "string",
+            "description": "Created at or after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "created_at_lte": {
+            "type": "string",
+            "description": "Created at or before this ISO 8601 time."
+          },
+          "started_at_gte": {
+            "type": "string",
+            "description": "Started at or after this ISO 8601 time."
+          },
+          "started_at_lte": {
+            "type": "string",
+            "description": "Started at or before this ISO 8601 time."
+          },
+          "resolved_at_gte": {
+            "type": "string",
+            "description": "Resolved at or after this ISO 8601 time."
+          },
+          "updated_at_gte": {
+            "type": "string",
+            "description": "Updated at or after this ISO 8601 time; use it to poll for changes."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Order: `-created_at` (newest first), `created_at`, `-started_at`, `-updated_at`, `-resolved_at`, and so on.",
+            "enum": [
+              "created_at",
+              "-created_at",
+              "updated_at",
+              "-updated_at",
+              "started_at",
+              "-started_at",
+              "in_triage_at",
+              "-in_triage_at",
+              "mitigated_at",
+              "-mitigated_at",
+              "resolved_at",
+              "-resolved_at"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Related records to embed in `included`, comma-separated, e.g. `roles,subscribers,action_items,events,custom_field_selections`. Leave empty for a compact answer."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Incident attributes to return, comma-separated (JSON:API sparse fieldset). The default keeps the useful ones; pass an empty string to get every attribute.",
+            "default": "sequential_id,title,slug,kind,status,summary,private,severity,services,functionalities,groups,environments,incident_types,url,short_url,slack_channel_url,started_at,detected_at,acknowledged_at,mitigated_at,resolved_at,closed_at,created_at,updated_at"
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_after": {
+            "type": "string",
+            "description": "Cursor for cursor paging: `meta.next_cursor` of the previous answer. Use either this or page_number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/incidents",
+        "queryParams": {
+          "filter[search]": "$search",
+          "filter[status]": "$status",
+          "filter[kind]": "$kind",
+          "filter[severity]": "$severity",
+          "filter[private]": "$private",
+          "filter[sequential_id]": "$sequential_id",
+          "filter[service_ids]": "$service_ids",
+          "filter[team_ids]": "$team_ids",
+          "filter[environment_ids]": "$environment_ids",
+          "filter[functionality_ids]": "$functionality_ids",
+          "filter[type_ids]": "$type_ids",
+          "filter[created_at][gte]": "$created_at_gte",
+          "filter[created_at][lte]": "$created_at_lte",
+          "filter[started_at][gte]": "$started_at_gte",
+          "filter[started_at][lte]": "$started_at_lte",
+          "filter[resolved_at][gte]": "$resolved_at_gte",
+          "filter[updated_at][gte]": "$updated_at_gte",
+          "sort": "$sort",
+          "include": "$include",
+          "fields[incidents]": "$fields",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size",
+          "page[after]": "$page_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].attributes.zoom_meeting_password",
+            "data[*].attributes.zoom_meeting_pstn_password",
+            "data[*].attributes.zoom_meeting_h323_password",
+            "data[*].attributes.zoom_meeting_start_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rootly_get_incident",
+      "description": "Get one incident with all its attributes: title, summary, status, severity, services, teams, environments, types, labels, Slack channel, linked tickets, mitigation and resolution messages and every timestamp. Add `include` for roles, subscribers, action items, events or custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id (UUID) or slug, from `rootly_list_incidents` (`data[].id`)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related records to embed in `included`, comma-separated: sub_statuses, causes, subscribers, roles, environments, incident_types, services, functionalities, groups, events, action_items, custom_field_selections, feedbacks, incident_post_mortem."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/incidents/{incident_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.zoom_meeting_password",
+            "data.attributes.zoom_meeting_pstn_password",
+            "data.attributes.zoom_meeting_h323_password",
+            "data.attributes.zoom_meeting_start_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rootly_create_incident",
+      "description": "Declare an incident. Without `kind` it is a normal incident: Rootly runs the workflows, creates the Slack channel and pages or notifies people as configured. Use kind `test` for a try. Set `idempotency_key` so a retry within 24 hours returns the same incident instead of opening a second one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "description": "A unique string for this request (e.g. a UUID). Repeating the call with the same key within 24 hours returns the incident already created."
+          },
+          "title": {
+            "type": "string",
+            "description": "Incident title. Rootly generates one when it is left empty on create."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Summary of what is happening (markdown)."
+          },
+          "severity_id": {
+            "type": "string",
+            "description": "Severity id, from `rootly_list_severities`."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Affected service ids, from `rootly_list_services`."
+          },
+          "functionality_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Affected functionality ids, from `rootly_list_functionalities`."
+          },
+          "environment_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Environment ids, from `rootly_list_environments`."
+          },
+          "incident_type_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Incident type ids, from `rootly_list_incident_types`."
+          },
+          "group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Team ids, from `rootly_list_teams`."
+          },
+          "labels": {
+            "type": "object",
+            "description": "Labels as key and value pairs, e.g. {\"region\": \"eu-west-1\"}."
+          },
+          "kind": {
+            "type": "string",
+            "description": "normal (default), test, example, backfilled or scheduled (a maintenance window).",
+            "enum": [
+              "normal",
+              "normal_sub",
+              "test",
+              "test_sub",
+              "example",
+              "example_sub",
+              "backfilled",
+              "scheduled",
+              "scheduled_sub"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Starting status (default started). `in_triage` opens it in triage first.",
+            "enum": [
+              "in_triage",
+              "started",
+              "detected",
+              "acknowledged",
+              "mitigated",
+              "resolved",
+              "closed",
+              "cancelled",
+              "scheduled",
+              "in_progress",
+              "completed"
+            ]
+          },
+          "private": {
+            "type": "boolean",
+            "description": "Create a private incident, visible only to its members. A private incident cannot be made public again."
+          },
+          "alert_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Alert ids to attach, from `rootly_list_alerts`."
+          },
+          "notify_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "E-mail addresses to notify."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/incidents",
+        "headers": {
+          "Idempotency-Key": "$idempotency_key"
+        },
+        "bodyMapping": {
+          "data": {
+            "type": "incidents",
+            "attributes": {
+              "title": "$title",
+              "summary": "$summary",
+              "severity_id": "$severity_id",
+              "service_ids": "$service_ids",
+              "functionality_ids": "$functionality_ids",
+              "environment_ids": "$environment_ids",
+              "incident_type_ids": "$incident_type_ids",
+              "group_ids": "$group_ids",
+              "labels": "$labels",
+              "kind": "$kind",
+              "status": "$status",
+              "private": "$private",
+              "alert_ids": "$alert_ids",
+              "notify_emails": "$notify_emails"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.zoom_meeting_password",
+            "data.attributes.zoom_meeting_pstn_password",
+            "data.attributes.zoom_meeting_h323_password",
+            "data.attributes.zoom_meeting_start_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rootly_update_incident",
+      "description": "Change an incident: title, summary, status, severity, affected services, functionalities, environments, types, teams, causes or labels. Only the fields you pass change; a list replaces the whole list (pass the current ids too when adding one). For mitigating and resolving with a message prefer `rootly_mitigate_incident` and `rootly_resolve_incident`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `rootly_list_incidents`."
+          },
+          "title": {
+            "type": "string",
+            "description": "Incident title. Rootly generates one when it is left empty on create."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Summary of what is happening (markdown)."
+          },
+          "severity_id": {
+            "type": "string",
+            "description": "Severity id, from `rootly_list_severities`."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Affected service ids, from `rootly_list_services`."
+          },
+          "functionality_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Affected functionality ids, from `rootly_list_functionalities`."
+          },
+          "environment_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Environment ids, from `rootly_list_environments`."
+          },
+          "incident_type_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Incident type ids, from `rootly_list_incident_types`."
+          },
+          "group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Team ids, from `rootly_list_teams`."
+          },
+          "labels": {
+            "type": "object",
+            "description": "Labels as key and value pairs, e.g. {\"region\": \"eu-west-1\"}."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status. Moving it on runs the workflows tied to that status.",
+            "enum": [
+              "in_triage",
+              "started",
+              "detected",
+              "acknowledged",
+              "mitigated",
+              "resolved",
+              "closed",
+              "cancelled",
+              "scheduled",
+              "in_progress",
+              "completed"
+            ]
+          },
+          "cause_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cause ids."
+          },
+          "public_title": {
+            "type": "string",
+            "description": "Title shown on public status pages."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/incidents/{incident_id}",
+        "bodyMapping": {
+          "data": {
+            "type": "incidents",
+            "attributes": {
+              "title": "$title",
+              "summary": "$summary",
+              "severity_id": "$severity_id",
+              "service_ids": "$service_ids",
+              "functionality_ids": "$functionality_ids",
+              "environment_ids": "$environment_ids",
+              "incident_type_ids": "$incident_type_ids",
+              "group_ids": "$group_ids",
+              "labels": "$labels",
+              "status": "$status",
+              "cause_ids": "$cause_ids",
+              "public_title": "$public_title"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.zoom_meeting_password",
+            "data.attributes.zoom_meeting_pstn_password",
+            "data.attributes.zoom_meeting_h323_password",
+            "data.attributes.zoom_meeting_start_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rootly_mitigate_incident",
+      "description": "Mark an incident as mitigated (the impact is under control) with a short note on how. Sets `mitigated_at` and runs the mitigation workflows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `rootly_list_incidents`."
+          },
+          "mitigation_message": {
+            "type": "string",
+            "description": "How the incident was mitigated."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/incidents/{incident_id}/mitigate",
+        "bodyMapping": {
+          "data": {
+            "type": "incidents",
+            "attributes": {
+              "mitigation_message": "$mitigation_message"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.zoom_meeting_password",
+            "data.attributes.zoom_meeting_pstn_password",
+            "data.attributes.zoom_meeting_h323_password",
+            "data.attributes.zoom_meeting_start_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rootly_resolve_incident",
+      "description": "Mark an incident as resolved with a short note on how. Sets `resolved_at`, runs the resolution workflows and usually starts the retrospective.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `rootly_list_incidents`."
+          },
+          "resolution_message": {
+            "type": "string",
+            "description": "How the incident was resolved."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/incidents/{incident_id}/resolve",
+        "bodyMapping": {
+          "data": {
+            "type": "incidents",
+            "attributes": {
+              "resolution_message": "$resolution_message"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.attributes.zoom_meeting_password",
+            "data.attributes.zoom_meeting_pstn_password",
+            "data.attributes.zoom_meeting_h323_password",
+            "data.attributes.zoom_meeting_start_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rootly_list_incident_events",
+      "description": "List the timeline of an incident: the events (notes, status changes, updates) with their text, visibility (internal or external) and when they occurred.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `rootly_list_incidents`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/incidents/{incident_id}/events",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_add_incident_event",
+      "description": "Add a note to the timeline of an incident. Internal notes stay with the responders; external ones can be shared.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `rootly_list_incidents`."
+          },
+          "event": {
+            "type": "string",
+            "description": "The text of the timeline entry."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "internal (default) or external.",
+            "enum": [
+              "internal",
+              "external"
+            ]
+          }
+        },
+        "required": [
+          "incident_id",
+          "event"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/incidents/{incident_id}/events",
+        "bodyMapping": {
+          "data": {
+            "type": "incident_events",
+            "attributes": {
+              "event": "$event",
+              "visibility": "$visibility"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "rootly_list_action_items",
+      "description": "List action items across all incidents: summary, kind (task during the incident, follow_up after it), priority, status, assignee, due date and the incident. Filter by status, priority, kind, incident status and due date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only this status: open, in_progress, cancelled, done. Comma-separate several."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Only this priority: high, medium, low."
+          },
+          "kind": {
+            "type": "string",
+            "description": "task or follow_up.",
+            "enum": [
+              "task",
+              "follow_up"
+            ]
+          },
+          "incident_status": {
+            "type": "string",
+            "description": "Only items of incidents in this status, e.g. resolved."
+          },
+          "due_date_gte": {
+            "type": "string",
+            "description": "Due on or after this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "due_date_lte": {
+            "type": "string",
+            "description": "Due on or before this date (YYYY-MM-DD or ISO 8601)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, `-` for descending, e.g. `-created_at` or `due_date`."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related records to embed, comma-separated, e.g. `incident`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/action_items",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[priority]": "$priority",
+          "filter[kind]": "$kind",
+          "filter[incident_status]": "$incident_status",
+          "filter[due_date][gte]": "$due_date_gte",
+          "filter[due_date][lte]": "$due_date_lte",
+          "sort": "$sort",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_incident_action_items",
+      "description": "List the action items of one incident: summary, kind, priority, status, assignee and due date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `rootly_list_incidents`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/incidents/{incident_id}/action_items",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_get_action_item",
+      "description": "Get one action item with its description, assignee, teams, due date and linked Jira issue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action_item_id": {
+            "type": "string",
+            "description": "Action item id, from `rootly_list_action_items`."
+          }
+        },
+        "required": [
+          "action_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/action_items/{action_item_id}"
+      }
+    },
+    {
+      "name": "rootly_create_action_item",
+      "description": "Add an action item to an incident: a task to do now or a follow-up for after the incident, with priority, assignee and due date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `rootly_list_incidents`."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Short summary of what to do."
+          },
+          "description": {
+            "type": "string",
+            "description": "Longer description (markdown)."
+          },
+          "kind": {
+            "type": "string",
+            "description": "task (default, during the incident) or follow_up (after it).",
+            "enum": [
+              "task",
+              "follow_up"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "description": "high, medium (default) or low.",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "open (default), in_progress, cancelled or done.",
+            "enum": [
+              "open",
+              "in_progress",
+              "cancelled",
+              "done"
+            ]
+          },
+          "assigned_to_user_id": {
+            "type": "integer",
+            "description": "Id of the user to assign, from `rootly_list_users` (a number)."
+          },
+          "assigned_to_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Team ids to assign, from `rootly_list_teams`."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "incident_id",
+          "summary"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/incidents/{incident_id}/action_items",
+        "bodyMapping": {
+          "data": {
+            "type": "incident_action_items",
+            "attributes": {
+              "summary": "$summary",
+              "description": "$description",
+              "kind": "$kind",
+              "priority": "$priority",
+              "status": "$status",
+              "assigned_to_user_id": "$assigned_to_user_id",
+              "assigned_to_group_ids": "$assigned_to_group_ids",
+              "due_date": "$due_date"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "rootly_update_action_item",
+      "description": "Change an action item: summary, description, status (e.g. done), priority, assignee or due date. Only the fields you pass change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action_item_id": {
+            "type": "string",
+            "description": "Action item id, from `rootly_list_action_items`."
+          },
+          "summary": {
+            "type": "string",
+            "description": "New summary."
+          },
+          "description": {
+            "type": "string",
+            "description": "Longer description (markdown)."
+          },
+          "kind": {
+            "type": "string",
+            "description": "task (default, during the incident) or follow_up (after it).",
+            "enum": [
+              "task",
+              "follow_up"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "description": "high, medium (default) or low.",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "open (default), in_progress, cancelled or done.",
+            "enum": [
+              "open",
+              "in_progress",
+              "cancelled",
+              "done"
+            ]
+          },
+          "assigned_to_user_id": {
+            "type": "integer",
+            "description": "Id of the user to assign, from `rootly_list_users` (a number)."
+          },
+          "assigned_to_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Team ids to assign, from `rootly_list_teams`."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "action_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/action_items/{action_item_id}",
+        "bodyMapping": {
+          "data": {
+            "type": "incident_action_items",
+            "attributes": {
+              "summary": "$summary",
+              "description": "$description",
+              "kind": "$kind",
+              "priority": "$priority",
+              "status": "$status",
+              "assigned_to_user_id": "$assigned_to_user_id",
+              "assigned_to_group_ids": "$assigned_to_group_ids",
+              "due_date": "$due_date"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rootly_list_alerts",
+      "description": "List alerts, newest first: short id, summary, status (open, triggered, acknowledged, resolved, deferred), source (datadog, grafana, email and so on), noise flag, services, teams, environments, urgency and timestamps. Filter by status, source, service, team, environment, labels and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only this status: open, triggered, acknowledged, resolved, deferred. Comma-separate several."
+          },
+          "source": {
+            "type": "string",
+            "description": "Only alerts from this source, e.g. datadog, grafana, prometheus, email, api."
+          },
+          "services": {
+            "type": "string",
+            "description": "Only alerts on these service ids (comma-separated)."
+          },
+          "groups": {
+            "type": "string",
+            "description": "Only alerts of these team ids (comma-separated)."
+          },
+          "environments": {
+            "type": "string",
+            "description": "Only alerts in these environment ids (comma-separated)."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Only alerts with these labels, `key:value`, comma-separated."
+          },
+          "started_at_gte": {
+            "type": "string",
+            "description": "Started at or after this ISO 8601 time."
+          },
+          "started_at_lte": {
+            "type": "string",
+            "description": "Started at or before this ISO 8601 time."
+          },
+          "created_at_gte": {
+            "type": "string",
+            "description": "Created at or after this ISO 8601 time."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related records to embed, comma-separated, e.g. `incidents,services,responders`."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Alert attributes to return, comma-separated. The default leaves out the raw payload (`data`); pass an empty string for every attribute.",
+            "default": "short_id,summary,status,source,noise,services,groups,environments,alert_urgency_id,deduplication_key,url,external_url,started_at,ended_at,acknowledged_at,resolved_at,created_at"
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_after": {
+            "type": "string",
+            "description": "Cursor for cursor paging: `meta.next_cursor` of the previous answer. Use either this or page_number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/alerts",
+        "queryParams": {
+          "filter[status]": "$status",
+          "filter[source]": "$source",
+          "filter[services]": "$services",
+          "filter[groups]": "$groups",
+          "filter[environments]": "$environments",
+          "filter[labels]": "$labels",
+          "filter[started_at][gte]": "$started_at_gte",
+          "filter[started_at][lte]": "$started_at_lte",
+          "filter[created_at][gte]": "$created_at_gte",
+          "include": "$include",
+          "fields[alerts]": "$fields",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size",
+          "page[after]": "$page_after"
+        }
+      }
+    },
+    {
+      "name": "rootly_get_alert",
+      "description": "Get one alert with its full details, including the raw payload the source sent (`data`), labels, responders and linked incidents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alert_id": {
+            "type": "string",
+            "description": "Alert id, from `rootly_list_alerts`."
+          },
+          "include": {
+            "type": "string",
+            "description": "Related records to embed, comma-separated, e.g. `incidents,events,responders`."
+          }
+        },
+        "required": [
+          "alert_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/alerts/{alert_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "rootly_acknowledge_alert",
+      "description": "Acknowledge an alert: someone is looking at it, so its escalation stops paging the next level. Recorded as done by the API key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alert_id": {
+            "type": "string",
+            "description": "Alert id, from `rootly_list_alerts`."
+          }
+        },
+        "required": [
+          "alert_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/alerts/{alert_id}/acknowledge"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rootly_resolve_alert",
+      "description": "Resolve an alert, optionally with a note and also resolving the incidents it is attached to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alert_id": {
+            "type": "string",
+            "description": "Alert id, from `rootly_list_alerts`."
+          },
+          "resolution_message": {
+            "type": "string",
+            "description": "How the alert was resolved."
+          },
+          "resolve_related_incidents": {
+            "type": "boolean",
+            "description": "Also resolve the incidents this alert is attached to."
+          }
+        },
+        "required": [
+          "alert_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/alerts/{alert_id}/resolve",
+        "bodyMapping": {
+          "data": {
+            "type": "alerts",
+            "attributes": {
+              "resolution_message": "$resolution_message",
+              "resolve_related_incidents": "$resolve_related_incidents"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rootly_list_services",
+      "description": "List the services in the catalog: name, slug, description, owners, linked repositories and external ids (Backstage, Cortex, OpsLevel, PagerDuty).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in the name."
+          },
+          "name": {
+            "type": "string",
+            "description": "Exact name."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Exact slug."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, `-` for descending, e.g. `name`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/services",
+        "queryParams": {
+          "filter[search]": "$search",
+          "filter[name]": "$name",
+          "filter[slug]": "$slug",
+          "sort": "$sort",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_get_service",
+      "description": "Get one service with its description, owner teams and users, escalation policy, alert and incident broadcast settings and external links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "Service id or slug, from `rootly_list_services`."
+          }
+        },
+        "required": [
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/services/{service_id}"
+      }
+    },
+    {
+      "name": "rootly_list_functionalities",
+      "description": "List the functionalities (user-facing capabilities such as Checkout or Login) with name, slug, description and owners.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in the name."
+          },
+          "name": {
+            "type": "string",
+            "description": "Exact name."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, `-` for descending."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/functionalities",
+        "queryParams": {
+          "filter[search]": "$search",
+          "filter[name]": "$name",
+          "sort": "$sort",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_get_functionality",
+      "description": "Get one functionality with its description, owners, linked services and status page components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "functionality_id": {
+            "type": "string",
+            "description": "Functionality id or slug, from `rootly_list_functionalities`."
+          }
+        },
+        "required": [
+          "functionality_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/functionalities/{functionality_id}"
+      }
+    },
+    {
+      "name": "rootly_list_teams",
+      "description": "List the teams (groups) with name, slug, description, members and their on-call and escalation settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in the name."
+          },
+          "name": {
+            "type": "string",
+            "description": "Exact name."
+          },
+          "include": {
+            "type": "string",
+            "description": "Embed `users`, `schedules` or `escalation_policies` (comma-separated)."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams",
+        "queryParams": {
+          "filter[search]": "$search",
+          "filter[name]": "$name",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_get_team",
+      "description": "Get one team with its description and members; add `include` for its schedules and escalation policies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id or slug, from `rootly_list_teams`."
+          },
+          "include": {
+            "type": "string",
+            "description": "Embed `users`, `schedules` or `escalation_policies` (comma-separated)."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/teams/{team_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_environments",
+      "description": "List the environments (production, staging and so on) with name, slug and colour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in the name."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/environments",
+        "queryParams": {
+          "filter[search]": "$search",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_severities",
+      "description": "List the severity levels (e.g. SEV0 to SEV3) with id, name, slug, level (`severity`: critical, high, medium, low), description and colour. Use the id when creating or updating incidents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in the name."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/severities",
+        "queryParams": {
+          "filter[search]": "$search",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_incident_types",
+      "description": "List the incident types (e.g. Security, Customer facing) with id, name, slug and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Exact name."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/incident_types",
+        "queryParams": {
+          "filter[name]": "$name",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_users",
+      "description": "List the users of the organization: id, name, email, time zone; add `include` for role, teams or schedules.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in name and email."
+          },
+          "email": {
+            "type": "string",
+            "description": "Exact email address."
+          },
+          "include": {
+            "type": "string",
+            "description": "Embed `role`, `teams`, `schedules`, `email_addresses` or `phone_numbers` (comma-separated)."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users",
+        "queryParams": {
+          "filter[search]": "$search",
+          "filter[email]": "$email",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_oncalls",
+      "description": "Who is on call: the on-call entries of every escalation policy, schedule and level for now or a time window, with the user, schedule, escalation policy and level. Filter by schedule, escalation policy, user, service or team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601 (default now)."
+          },
+          "until": {
+            "type": "string",
+            "description": "End of the window, ISO 8601 (default the same as since)."
+          },
+          "earliest": {
+            "type": "boolean",
+            "description": "Only the first on-call entry per escalation policy path and level."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone for the times in the answer, e.g. Europe/Berlin (default UTC)."
+          },
+          "schedule_ids": {
+            "type": "string",
+            "description": "Schedule ids, comma-separated."
+          },
+          "escalation_policy_ids": {
+            "type": "string",
+            "description": "Escalation policy ids, comma-separated."
+          },
+          "user_ids": {
+            "type": "string",
+            "description": "User ids, comma-separated."
+          },
+          "service_ids": {
+            "type": "string",
+            "description": "Service ids, comma-separated."
+          },
+          "group_ids": {
+            "type": "string",
+            "description": "Team ids, comma-separated."
+          },
+          "include": {
+            "type": "string",
+            "description": "Embed `user`, `schedule` or `escalation_policy` (comma-separated)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/oncalls",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until",
+          "earliest": "$earliest",
+          "time_zone": "$time_zone",
+          "filter[schedule_ids]": "$schedule_ids",
+          "filter[escalation_policy_ids]": "$escalation_policy_ids",
+          "filter[user_ids]": "$user_ids",
+          "filter[service_ids]": "$service_ids",
+          "filter[group_ids]": "$group_ids",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_schedules",
+      "description": "List the on-call schedules with name, description, owning teams and time zone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in the name."
+          },
+          "team_ids": {
+            "type": "string",
+            "description": "Only schedules of these team ids, comma-separated."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/schedules",
+        "queryParams": {
+          "filter[search]": "$search",
+          "filter[team_ids]": "$team_ids",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_get_schedule",
+      "description": "Get one on-call schedule with its owners, time zone and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_id": {
+            "type": "string",
+            "description": "Schedule id, from `rootly_list_schedules`."
+          }
+        },
+        "required": [
+          "schedule_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/schedules/{schedule_id}"
+      }
+    },
+    {
+      "name": "rootly_get_schedule_shifts",
+      "description": "List the shifts of one schedule in a time window: who is on call from when to when, including overrides.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_id": {
+            "type": "string",
+            "description": "Schedule id, from `rootly_list_schedules`."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the window, ISO 8601."
+          }
+        },
+        "required": [
+          "schedule_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/schedules/{schedule_id}/shifts",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_shifts",
+      "description": "List on-call shifts across schedules in a time window (default: the shifts running now): schedule, rotation, user, start and end, override and shadow flags. Filter by schedule and user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601 (default now)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the window, ISO 8601."
+          },
+          "schedule_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these schedule ids."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these user ids (numbers as text)."
+          },
+          "include": {
+            "type": "string",
+            "description": "Embed `assignee`, `shift_override` or `shift_shadow` (comma-separated)."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Shifts per page (default 50, up to 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/shifts",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "schedule_ids[]": "$schedule_ids",
+          "user_ids[]": "$user_ids",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_escalation_policies",
+      "description": "List the escalation policies with name, description, repeat settings and owning teams; add `include` for their levels and paths.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in the name."
+          },
+          "team_ids": {
+            "type": "string",
+            "description": "Only policies of these team ids, comma-separated."
+          },
+          "include": {
+            "type": "string",
+            "description": "Embed `escalation_policy_levels`, `escalation_policy_paths`, `groups` or `services` (comma-separated)."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/escalation_policies",
+        "queryParams": {
+          "filter[search]": "$search",
+          "filter[team_ids]": "$team_ids",
+          "include": "$include",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_list_status_pages",
+      "description": "List the status pages with title, public URL, whether they are public, and their settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search in the title."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/status-pages",
+        "queryParams": {
+          "filter[search]": "$search",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_get_status_page",
+      "description": "Get one status page with its title, description, public URL, components and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `rootly_list_status_pages`."
+          }
+        },
+        "required": [
+          "status_page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/status-pages/{status_page_id}"
+      }
+    },
+    {
+      "name": "rootly_list_incident_status_page_events",
+      "description": "List the updates an incident published to status pages: text, status (investigating, identified, monitoring, resolved), status page and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `rootly_list_incidents`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/incidents/{incident_id}/status-page-events",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_create_status_page_event",
+      "description": "Publish an incident update on a status page, e.g. Investigating, then Identified, Monitoring and Resolved. It is public and can notify the page subscribers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `rootly_list_incidents`."
+          },
+          "status_page_id": {
+            "type": "string",
+            "description": "Status page id, from `rootly_list_status_pages`."
+          },
+          "event": {
+            "type": "string",
+            "description": "The update text shown on the page."
+          },
+          "status": {
+            "type": "string",
+            "description": "investigating (default), identified, monitoring or resolved; scheduled maintenance uses scheduled, in_progress or completed.",
+            "enum": [
+              "investigating",
+              "identified",
+              "monitoring",
+              "resolved",
+              "scheduled",
+              "in_progress",
+              "completed"
+            ]
+          },
+          "notify_subscribers": {
+            "type": "boolean",
+            "description": "Notify the subscribers of the status page (default false)."
+          }
+        },
+        "required": [
+          "incident_id",
+          "status_page_id",
+          "event"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/incidents/{incident_id}/status-page-events",
+        "bodyMapping": {
+          "data": {
+            "type": "incident_status_page_events",
+            "attributes": {
+              "event": "$event",
+              "status_page_id": "$status_page_id",
+              "status": "$status",
+              "notify_subscribers": "$notify_subscribers"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "rootly_list_retrospectives",
+      "description": "List incident retrospectives (post-mortems): title, status (draft, published), the incident, URL and dates. Filter by status, severity, team, service and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search."
+          },
+          "status": {
+            "type": "string",
+            "description": "draft or published.",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "description": "Only retrospectives of incidents with this severity slug."
+          },
+          "team_ids": {
+            "type": "string",
+            "description": "Team ids, comma-separated."
+          },
+          "service_ids": {
+            "type": "string",
+            "description": "Service ids, comma-separated."
+          },
+          "created_at_gte": {
+            "type": "string",
+            "description": "Created at or after this ISO 8601 time."
+          },
+          "created_at_lte": {
+            "type": "string",
+            "description": "Created at or before this ISO 8601 time."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, `-` for descending, e.g. `-created_at`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). `meta.next_page` of the previous answer gives the next one; it is null on the last page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (Rootly default 20). Keep it small (10 to 50): Rootly records are large.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/post_mortems",
+        "queryParams": {
+          "filter[search]": "$search",
+          "filter[status]": "$status",
+          "filter[severity]": "$severity",
+          "filter[team_ids]": "$team_ids",
+          "filter[service_ids]": "$service_ids",
+          "filter[created_at][gte]": "$created_at_gte",
+          "filter[created_at][lte]": "$created_at_lte",
+          "sort": "$sort",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "rootly_get_retrospective",
+      "description": "Get one retrospective with its title, status, content, URL and the incident it belongs to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "retrospective_id": {
+            "type": "string",
+            "description": "Retrospective id, from `rootly_list_retrospectives`."
+          }
+        },
+        "required": [
+          "retrospective_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/post_mortems/{retrospective_id}"
+      }
+    }
+  ]
+}

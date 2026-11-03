@@ -1,0 +1,1091 @@
+{
+  "slug": "power-bi",
+  "name": "Microsoft Power BI",
+  "aliases": [
+    "Power BI",
+    "PowerBI",
+    "Power BI Service"
+  ],
+  "description": "Let your AI work with Power BI: list workspaces, semantic models, reports, dashboards, dataflows, gateways and apps, run DAX queries against a model, check data sources, parameters, refresh history and schedules, and start or cancel refreshes. Power BI REST API, signed in with your Microsoft work account.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "power-bi",
+  "docsUrl": "https://learn.microsoft.com/en-us/rest/api/power-bi/",
+  "instructions": "## Microsoft Power BI\nThis connector works with the **Power BI REST API** (`https://api.powerbi.com/v1.0/myorg`) as the Microsoft 365 user who signed in: workspaces and their members, semantic models (datasets) with their data sources, parameters, refresh history and schedule, **DAX queries** against a model, reports and their pages, dashboards and tiles, dataflows, gateways, installed apps and imports. It can start and cancel refreshes of semantic models and dataflows. The AI sees exactly what that user may see in the Power BI service.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com → **Applications → App registrations → New registration** (or reuse the app of another Microsoft connector).\n2. Supported account types: *Accounts in this organizational directory only* is the usual choice. Power BI works only with work or school accounts, not personal Microsoft accounts.\n3. **Redirect URI**: platform **Web**, `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Power BI Service → Delegated permissions**: tick `Workspace.Read.All`, `Dataset.ReadWrite.All`, `Report.Read.All`, `Dashboard.Read.All`, `Dataflow.ReadWrite.All`, `Gateway.Read.All` and `App.Read.All`. Use `Dataset.Read.All` and `Dataflow.Read.All` instead for a connector that may only read. Then **Grant admin consent** if your organisation does not let users consent themselves.\n5. **Certificates & secrets → New client secret**; copy the secret **Value** (shown once).\n6. Fill in `MICROSOFT_CLIENT_ID` (Application ID), `MICROSOFT_CLIENT_SECRET` (secret value) and `MICROSOFT_TENANT_ID` (the Directory (tenant) ID GUID, your domain such as `contoso.onmicrosoft.com`, or `organizations` for a multi-tenant app), then install.\n7. On the connector page click **Authorize with Provider** and sign in with a user who has a Power BI licence (Free, Pro or PPU). The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**Scope**: `https://analysis.windows.net/powerbi/api/.default offline_access`. `.default` grants the Power BI permissions ticked in step 4 (add or remove them there, then authorize again); `offline_access` gives a refresh token. Do not add Microsoft Graph scopes to this connector: one token serves one API.\n\n**Tenant settings**: DAX queries need the Power BI admin setting **Dataset Execute Queries REST API** (called *Semantic model Execute Queries REST API* in newer admin portals; Admin portal → Tenant settings → Integration settings) to be on, and the user needs Read and Build permission on the model. Models hosted in Azure Analysis Services are not supported.\n\n**Workflow**\n- Find content: `power_bi_list_workspaces` (OData `filter` such as `contains(name,'Sales')`), then per workspace `power_bi_list_datasets`, `power_bi_list_reports`, `power_bi_list_dashboards`, `power_bi_list_dataflows`. Content in the user's **My workspace** has no workspace id: use `power_bi_list_my_datasets`, `power_bi_list_my_reports`, `power_bi_list_my_dashboards`. Installed apps: `power_bi_list_apps`, `power_bi_get_app`, `power_bi_list_app_reports`, `power_bi_list_app_dashboards`.\n- Workspace details: `power_bi_get_workspace`, `power_bi_list_workspace_users`.\n- Answer a question with numbers: find the report the user means (`power_bi_get_report` gives its `datasetId`), then `power_bi_execute_dax_query` on that semantic model. To learn the model, `EVALUATE COLUMNSTATISTICS()` lists its tables and columns, and `EVALUATE TOPN(5, 'Table')` shows sample rows. Measures are not listed by the API (INFO functions and DMV queries are refused): ask the user for measure names or use the ones the report shows. Prefer the model's measures over summing raw columns.\n- Model health: `power_bi_get_dataset`, `power_bi_list_dataset_datasources`, `power_bi_list_dataset_parameters`, `power_bi_get_refresh_history` (why did last night's refresh fail? read `serviceExceptionJson`), `power_bi_get_refresh_details`, `power_bi_get_refresh_schedule`.\n- Reports and dashboards: `power_bi_list_report_pages`, `power_bi_list_dashboard_tiles`.\n- Dataflows: `power_bi_list_dataflow_transactions`, `power_bi_list_dataflow_datasources`.\n- Gateways (gateway admins only): `power_bi_list_gateways`, `power_bi_list_gateway_datasources`, `power_bi_get_gateway_datasource_status`.\n- Imports: `power_bi_list_imports`, `power_bi_get_import`.\n- Refreshes: `power_bi_refresh_dataset`, `power_bi_cancel_refresh`, `power_bi_refresh_dataflow`. Confirm with the user before starting one: a refresh loads the sources and counts toward the daily refresh limit.\n\n**Switched off at install**: `power_bi_update_dataset_parameters` changes Power Query parameters of a model (for example which server or period it loads). Turn it on per tool only if the AI should do that.\n\n**DAX queries**: one query per call, starting with `EVALUATE` (optionally after `DEFINE`); DAX only. A query returns one table; at most 100,000 rows or 1,000,000 values (whichever comes first) and 15 MB per query, and 120 queries per minute per user. Column keys come back as `Table[Column]`, computed columns as `[Name]`. A DAX error answers 400 with the message from the engine. Models with row-level security return only the rows the user may see; `impersonated_user_name` tests another user's view and needs write permission on the model.\n\n**Refreshes**: `power_bi_refresh_dataset` answers 202 with no body; the new run shows at the top of `power_bi_get_refresh_history` with status `Unknown` while it runs. Shared capacity (Pro) allows 8 refreshes a day per model (scheduled ones included) and only `notify_option`; options such as `type`, `objects` or `commit_mode` make it an enhanced refresh, which needs Premium, PPU or Fabric capacity and must not send `notify_option`. Only enhanced refreshes can be followed with `power_bi_get_refresh_details` and cancelled with `power_bi_cancel_refresh`.\n\n**Reading the answers**: lists come as `{\"value\": [...]}`. Ids are GUIDs. Times are ISO 8601 in UTC. `webUrl` opens the item in the Power BI service. List tools return everything at once, except `power_bi_list_workspaces` and `power_bi_list_workspace_users`, which page with `top` and `skip`.\n\n**Limits**: the Power BI REST API throttles per user and per tenant; a 429 answer carries Retry-After. Premium capacities slow down refreshes when overloaded, and a refresh throttled for more than an hour fails.\n\n**Common errors**\n- 401: the authorization expired or was revoked, or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 `PowerBINotAuthorizedException` or `Unauthorized`: the user has no access to that workspace or item, a permission from step 4 is missing, or (for DAX) Build permission or the tenant setting is missing.\n- 404 `ItemNotFound` or `PowerBIEntityNotFound`: wrong id, or the item is in another workspace (use the `group_id` where it lives).\n- 400 `DatasetExecuteQueriesError`: the DAX query is invalid; read the message.\n- 400 on a refresh: `notify_option` sent with enhanced options, enhanced options on shared capacity, or a refresh already running.",
+  "requiredEnvVars": [
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_TENANT_ID"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center, App registrations, your app, Overview: Application (client) ID. The app registration of another Microsoft connector works here too once it has the Power BI Service permissions.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same app, Certificates & secrets, New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+    },
+    "MICROSOFT_TENANT_ID": {
+      "label": "Tenant",
+      "kind": "setting",
+      "help": "Single-tenant app: the Directory (tenant) ID from the app's Overview page, or your domain such as contoso.onmicrosoft.com. Multi-tenant app: organizations. Power BI does not accept personal Microsoft accounts, so common and consumers do not apply.",
+      "example": "aaaabbbb-0000-cccc-1111-dddd2222eeee",
+      "pattern": "^(organizations|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)$",
+      "patternMessage": "Use the tenant GUID, a verified domain such as contoso.onmicrosoft.com, or organizations."
+    }
+  },
+  "verifyHints": {
+    "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
+    "403": "The user or the app may not do this: add the Power BI Service delegated permissions (Workspace.Read.All, Dataset.ReadWrite.All, ...) with consent and authorize again, and check that the user has a Power BI licence.",
+    "rate_limited": "Power BI is throttling this user. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "power_bi_list_workspaces"
+  },
+  "prerequisites": "A Power BI (Microsoft Fabric) work account with a Power BI licence, and an app registration in Microsoft Entra (free, about 10 minutes) with the redirect URI below, the delegated Power BI Service permissions and a client secret. Some organisations only let an admin grant consent. DAX queries also need the tenant setting Dataset Execute Queries REST API.",
+  "connector": {
+    "name": "Power BI REST API",
+    "type": "REST",
+    "baseUrl": "https://api.powerbi.com/v1.0/myorg",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/{{MICROSOFT_TENANT_ID}}/oauth2/v2.0/token",
+      "scopes": "https://analysis.windows.net/powerbi/api/.default offline_access"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/groups?$top=1"
+  },
+  "tools": [
+    {
+      "name": "power_bi_list_workspaces",
+      "description": "List the workspaces (groups) the signed-in user can access: id, name, isReadOnly, isOnDedicatedCapacity (Premium or Fabric capacity) and capacityId. My workspace is not in this list. Filter with OData, e.g. contains(name,'Sales').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. contains(name,'Finance') or name eq 'Sales' or isOnDedicatedCapacity eq true."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Return at most this many items.",
+            "minimum": 1
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Skip this many items first (paging together with top).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups",
+        "queryParams": {
+          "$filter": "$filter",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "power_bi_get_workspace",
+      "description": "Read one workspace: name, read-only flag, capacity and default semantic model storage format.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}"
+      }
+    },
+    {
+      "name": "power_bi_list_workspace_users",
+      "description": "List who has access to a workspace: email or app id, display name, principalType (User, Group, App) and groupUserAccessRight (Admin, Member, Contributor, Viewer).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Return at most this many items.",
+            "minimum": 1
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Skip this many items first (paging together with top).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/users",
+        "queryParams": {
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_datasets",
+      "description": "List the semantic models (datasets) of a workspace: id, name, configuredBy (owner), isRefreshable, isOnPremGatewayRequired, targetStorageMode, createdDate and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/datasets"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].users",
+            "value[*].createReportEmbedURL",
+            "value[*].qnaEmbedURL",
+            "value[*].upstreamDataflows"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_my_datasets",
+      "description": "List the semantic models (datasets) in the signed-in user's My workspace.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasets"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].users",
+            "value[*].createReportEmbedURL",
+            "value[*].qnaEmbedURL",
+            "value[*].upstreamDataflows"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_get_dataset",
+      "description": "Read one semantic model (dataset) of a workspace: name, owner (configuredBy), isRefreshable, storage mode, whether it needs a gateway or an effective identity (row-level security), created date and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          }
+        },
+        "required": [
+          "group_id",
+          "dataset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/datasets/{dataset_id}"
+      }
+    },
+    {
+      "name": "power_bi_execute_dax_query",
+      "description": "Run a DAX query against a semantic model and get the rows back as JSON (results[0].tables[0].rows, keys like \"Table[Column]\" or \"[Measure]\"). Works for models in any workspace the user can read and build on, including My workspace. One query per call, starting with EVALUATE, e.g. EVALUATE TOPN(10, SUMMARIZECOLUMNS('Date'[Year], \"Sales\", [Total Sales]), [Sales], DESC). Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          },
+          "query": {
+            "type": "string",
+            "description": "One DAX query beginning with EVALUATE (DEFINE ... EVALUATE ... also works). Keep results small with TOPN, filters or SUMMARIZECOLUMNS; at most 100,000 rows or 1,000,000 values come back."
+          },
+          "include_nulls": {
+            "type": "boolean",
+            "description": "true keeps null values in the rows (default false: keys with null values are left out)."
+          },
+          "impersonated_user_name": {
+            "type": "string",
+            "description": "UPN of a user whose row-level security should apply, e.g. anna@contoso.com (needs dataset write permission). Leave empty to query as the signed-in user."
+          }
+        },
+        "required": [
+          "dataset_id",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/datasets/{dataset_id}/executeQueries",
+        "bodyMapping": {
+          "queries": [
+            {
+              "query": "$query"
+            }
+          ],
+          "serializerSettings": {
+            "includeNulls": "$include_nulls"
+          },
+          "impersonatedUserName": "$impersonated_user_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "power_bi_list_dataset_datasources",
+      "description": "List the data sources of a semantic model: datasourceType (Sql, AnalysisServices, SharePointList, Web, File, ...), connectionDetails (server, database, url, path) and the gatewayId and datasourceId when it goes through a gateway.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          }
+        },
+        "required": [
+          "group_id",
+          "dataset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/datasets/{dataset_id}/datasources"
+      }
+    },
+    {
+      "name": "power_bi_list_dataset_parameters",
+      "description": "List the Power Query parameters of a semantic model: name, type, currentValue, isRequired and suggestedValues.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          }
+        },
+        "required": [
+          "group_id",
+          "dataset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/datasets/{dataset_id}/parameters"
+      }
+    },
+    {
+      "name": "power_bi_get_refresh_history",
+      "description": "Refresh history of a semantic model, newest first: requestId, refreshType (Scheduled, OnDemand, ViaApi, ...), startTime, endTime, status (Unknown while running, Completed, Failed, Disabled, Cancelled) and serviceExceptionJson with the error of a failed refresh. Needs write permission on the model.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Number of entries (default: the last 60).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "group_id",
+          "dataset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/datasets/{dataset_id}/refreshes",
+        "queryParams": {
+          "$top": "$top"
+        }
+      }
+    },
+    {
+      "name": "power_bi_get_refresh_details",
+      "description": "Execution details of one refresh of a semantic model (enhanced refreshes started through the API on Premium, PPU or Fabric capacity): status and extendedStatus, the tables and partitions refreshed, attempts and error messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          },
+          "refresh_id": {
+            "type": "string",
+            "description": "Refresh id: requestId from power_bi_get_refresh_history."
+          }
+        },
+        "required": [
+          "group_id",
+          "dataset_id",
+          "refresh_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/datasets/{dataset_id}/refreshes/{refresh_id}"
+      }
+    },
+    {
+      "name": "power_bi_get_refresh_schedule",
+      "description": "The scheduled refresh of a semantic model: enabled, days, times, localTimeZoneId and notifyOption.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          }
+        },
+        "required": [
+          "group_id",
+          "dataset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/datasets/{dataset_id}/refreshSchedule"
+      }
+    },
+    {
+      "name": "power_bi_list_reports",
+      "description": "List the reports of a workspace: id, name, reportType (PowerBIReport or PaginatedReport), the datasetId it reads, description and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/reports"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].users",
+            "value[*].subscriptions",
+            "value[*].embedUrl"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_my_reports",
+      "description": "List the reports in the signed-in user's My workspace: id, name, type, datasetId and webUrl.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].users",
+            "value[*].subscriptions",
+            "value[*].embedUrl"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_get_report",
+      "description": "Read one report of a workspace: name, type, the datasetId (semantic model) behind it, description and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "report_id": {
+            "type": "string",
+            "description": "Report id (a GUID), from power_bi_list_reports."
+          }
+        },
+        "required": [
+          "group_id",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/reports/{report_id}"
+      }
+    },
+    {
+      "name": "power_bi_list_report_pages",
+      "description": "List the pages of a Power BI report: name (the internal id used in URLs), displayName and order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "report_id": {
+            "type": "string",
+            "description": "Report id (a GUID), from power_bi_list_reports."
+          }
+        },
+        "required": [
+          "group_id",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/reports/{report_id}/pages"
+      }
+    },
+    {
+      "name": "power_bi_list_dashboards",
+      "description": "List the dashboards of a workspace: id, displayName, isReadOnly and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/dashboards"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].users",
+            "value[*].subscriptions",
+            "value[*].embedUrl"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_my_dashboards",
+      "description": "List the dashboards in the signed-in user's My workspace: id, displayName, isReadOnly and webUrl.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dashboards"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].users",
+            "value[*].subscriptions",
+            "value[*].embedUrl"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_dashboard_tiles",
+      "description": "List the tiles of a dashboard: id, title, the reportId and datasetId each tile comes from, and its size (rowSpan, colSpan).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dashboard_id": {
+            "type": "string",
+            "description": "Dashboard id (a GUID), from power_bi_list_dashboards."
+          }
+        },
+        "required": [
+          "group_id",
+          "dashboard_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/dashboards/{dashboard_id}/tiles"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].embedUrl",
+            "value[*].embedData"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_dataflows",
+      "description": "List the dataflows (Gen1) of a workspace: objectId, name, description and configuredBy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/dataflows"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].users"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_dataflow_transactions",
+      "description": "Refresh transactions of a dataflow, newest first: id, refreshType, startTime, endTime and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataflow_id": {
+            "type": "string",
+            "description": "Dataflow id (objectId, a GUID), from power_bi_list_dataflows."
+          }
+        },
+        "required": [
+          "group_id",
+          "dataflow_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/dataflows/{dataflow_id}/transactions"
+      }
+    },
+    {
+      "name": "power_bi_list_dataflow_datasources",
+      "description": "List the data sources a dataflow reads: type, connection details and gateway ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataflow_id": {
+            "type": "string",
+            "description": "Dataflow id (objectId, a GUID), from power_bi_list_dataflows."
+          }
+        },
+        "required": [
+          "group_id",
+          "dataflow_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/dataflows/{dataflow_id}/datasources"
+      }
+    },
+    {
+      "name": "power_bi_list_gateways",
+      "description": "List the on-premises data gateways the signed-in user administers: id, name, type and gatewayStatus. Users who are not gateway admins get an empty list.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/gateways"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].publicKey"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_gateway_datasources",
+      "description": "List the data sources configured on a gateway: id, datasourceName, datasourceType, connectionDetails and credentialType.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gateway_id": {
+            "type": "string",
+            "description": "Gateway id (a GUID), from power_bi_list_gateways."
+          }
+        },
+        "required": [
+          "gateway_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/gateways/{gateway_id}/datasources"
+      }
+    },
+    {
+      "name": "power_bi_get_gateway_datasource_status",
+      "description": "Check whether a gateway can reach one of its data sources. An empty answer (HTTP 200) means it is reachable; otherwise the error says why (gateway offline, wrong credentials, ...).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gateway_id": {
+            "type": "string",
+            "description": "Gateway id (a GUID), from power_bi_list_gateways."
+          },
+          "datasource_id": {
+            "type": "string",
+            "description": "Data source id, from power_bi_list_gateway_datasources."
+          }
+        },
+        "required": [
+          "gateway_id",
+          "datasource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/gateways/{gateway_id}/datasources/{datasource_id}/status"
+      }
+    },
+    {
+      "name": "power_bi_list_apps",
+      "description": "List the Power BI apps installed for the signed-in user: id, name, description, publishedBy and lastUpdate.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps"
+      }
+    },
+    {
+      "name": "power_bi_get_app",
+      "description": "Read one installed app: name, description, publisher and last update.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "App id (a GUID), from power_bi_list_apps."
+          }
+        },
+        "required": [
+          "app_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{app_id}"
+      }
+    },
+    {
+      "name": "power_bi_list_app_reports",
+      "description": "List the reports of an installed app (ids are the app copies; datasetId names the semantic model).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "App id (a GUID), from power_bi_list_apps."
+          }
+        },
+        "required": [
+          "app_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{app_id}/reports"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].users",
+            "value[*].subscriptions",
+            "value[*].embedUrl"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_app_dashboards",
+      "description": "List the dashboards of an installed app: id, displayName, isReadOnly and webUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "App id (a GUID), from power_bi_list_apps."
+          }
+        },
+        "required": [
+          "app_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apps/{app_id}/dashboards"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "value[*].users",
+            "value[*].subscriptions",
+            "value[*].embedUrl"
+          ]
+        }
+      }
+    },
+    {
+      "name": "power_bi_list_imports",
+      "description": "List the imports (uploads of .pbix, .rdl, .xlsx or .json files) of a workspace: id, name, importState (Publishing, Succeeded, Failed), created and updated time, and the reports and semantic models each import produced.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/imports"
+      }
+    },
+    {
+      "name": "power_bi_get_import",
+      "description": "Read one import of a workspace: its state and the reports and semantic models it created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "import_id": {
+            "type": "string",
+            "description": "Import id, from power_bi_list_imports."
+          }
+        },
+        "required": [
+          "group_id",
+          "import_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/imports/{import_id}"
+      }
+    },
+    {
+      "name": "power_bi_refresh_dataset",
+      "description": "Start a refresh of a semantic model. Asynchronous: the call answers 202 at once; follow it with power_bi_get_refresh_history (and power_bi_get_refresh_details for an enhanced refresh). A plain refresh takes only notify_option. Any other option (type, objects, commit_mode, ...) starts an enhanced refresh, which needs Premium, PPU or Fabric capacity and must leave notify_option out. On shared (Pro) capacity a model can refresh at most 8 times a day, scheduled ones included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          },
+          "notify_option": {
+            "type": "string",
+            "description": "Email on completion or failure, for a plain refresh only.",
+            "enum": [
+              "NoNotification",
+              "MailOnFailure",
+              "MailOnCompletion"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Enhanced refresh type (default Automatic).",
+            "enum": [
+              "Full",
+              "ClearValues",
+              "Calculate",
+              "DataOnly",
+              "Automatic",
+              "Defragment"
+            ]
+          },
+          "commit_mode": {
+            "type": "string",
+            "description": "Enhanced refresh: Transactional (default, all or nothing) or PartialBatch.",
+            "enum": [
+              "Transactional",
+              "PartialBatch"
+            ]
+          },
+          "objects": {
+            "type": "array",
+            "description": "Enhanced refresh of only these tables or partitions, e.g. [{\"table\": \"Sales\"}, {\"table\": \"Sales\", \"partition\": \"Sales-2026\"}].",
+            "items": {
+              "type": "object",
+              "description": "{\"table\": \"...\", \"partition\": \"...\"}"
+            }
+          },
+          "max_parallelism": {
+            "type": "integer",
+            "description": "Enhanced refresh: maximum parallel processing threads.",
+            "minimum": 1
+          },
+          "retry_count": {
+            "type": "integer",
+            "description": "Enhanced refresh: retries before the refresh fails.",
+            "minimum": 0
+          },
+          "apply_refresh_policy": {
+            "type": "boolean",
+            "description": "Enhanced refresh: apply the incremental refresh policy (default true)."
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "Enhanced refresh with incremental policy: the date to treat as today, ISO 8601."
+          },
+          "timeout": {
+            "type": "string",
+            "description": "Enhanced refresh: time limit per attempt, hh:mm:ss (default 05:00:00)."
+          }
+        },
+        "required": [
+          "group_id",
+          "dataset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/groups/{group_id}/datasets/{dataset_id}/refreshes",
+        "bodyMapping": {
+          "notifyOption": "$notify_option",
+          "type": "$type",
+          "commitMode": "$commit_mode",
+          "objects": "$objects",
+          "maxParallelism": "$max_parallelism",
+          "retryCount": "$retry_count",
+          "applyRefreshPolicy": "$apply_refresh_policy",
+          "effectiveDate": "$effective_date",
+          "timeout": "$timeout"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "power_bi_cancel_refresh",
+      "description": "Cancel a running enhanced refresh of a semantic model (one started through the API with enhanced options). Plain and scheduled refreshes cannot be cancelled this way.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          },
+          "refresh_id": {
+            "type": "string",
+            "description": "Refresh id: requestId of the running refresh, from power_bi_get_refresh_history."
+          }
+        },
+        "required": [
+          "group_id",
+          "dataset_id",
+          "refresh_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/groups/{group_id}/datasets/{dataset_id}/refreshes/{refresh_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "power_bi_refresh_dataflow",
+      "description": "Start a refresh of a dataflow. Asynchronous; follow it with power_bi_list_dataflow_transactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataflow_id": {
+            "type": "string",
+            "description": "Dataflow id (objectId, a GUID), from power_bi_list_dataflows."
+          },
+          "notify_option": {
+            "type": "string",
+            "description": "Email on failure or none. MailOnCompletion is not supported for dataflows.",
+            "enum": [
+              "NoNotification",
+              "MailOnFailure"
+            ],
+            "default": "NoNotification"
+          },
+          "process_type": {
+            "type": "string",
+            "description": "default refreshes as configured (incremental where set up); processFull refreshes everything.",
+            "enum": [
+              "default",
+              "processFull"
+            ]
+          }
+        },
+        "required": [
+          "group_id",
+          "dataflow_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/groups/{group_id}/dataflows/{dataflow_id}/refreshes",
+        "queryParams": {
+          "processType": "$process_type"
+        },
+        "bodyMapping": {
+          "notifyOption": "$notify_option"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "power_bi_update_dataset_parameters",
+      "description": "Change Power Query parameter values of a semantic model (for example a server name or a date range). Takes effect at the next refresh. Installed switched off: turn it on only if the AI should change model parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Workspace id (a GUID), from power_bi_list_workspaces. Content in My workspace has none: use the power_bi_list_my_* tools for it."
+          },
+          "dataset_id": {
+            "type": "string",
+            "description": "Semantic model (dataset) id, from power_bi_list_datasets or power_bi_list_my_datasets."
+          },
+          "update_details": {
+            "type": "array",
+            "description": "Parameters to change, e.g. [{\"name\": \"Region\", \"newValue\": \"EMEA\"}]. Names from power_bi_list_dataset_parameters.",
+            "items": {
+              "type": "object",
+              "description": "{\"name\": \"...\", \"newValue\": \"...\"}"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "group_id",
+          "dataset_id",
+          "update_details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/groups/{group_id}/datasets/{dataset_id}/Default.UpdateParameters",
+        "bodyMapping": {
+          "updateDetails": "$update_details"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    }
+  ]
+}

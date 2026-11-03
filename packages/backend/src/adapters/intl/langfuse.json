@@ -1,0 +1,483 @@
+{
+  "slug": "langfuse",
+  "name": "Langfuse",
+  "aliases": ["Langfuse Cloud", "Langfuse API"],
+  "description": "Let your AI read a Langfuse project: LLM traces, observations and sessions with cost, tokens and latency, metrics over time, scores and evaluations, prompts with their versions and labels, datasets, dataset items and experiments; it can also publish prompt versions, move labels, add scores and build datasets.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "langfuse",
+  "docsUrl": "https://api.reference.langfuse.com",
+  "prerequisites": "A Langfuse project on Langfuse Cloud (EU, US, Japan or HIPAA) or on a self-hosted Langfuse v4, and a project API key pair (public and secret key) from the project settings. About 3 minutes.",
+  "requiredEnvVars": ["LANGFUSE_HOST", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"],
+  "envVarMeta": {
+    "LANGFUSE_HOST": {
+      "label": "Langfuse address",
+      "kind": "address",
+      "help": "https://cloud.langfuse.com for Cloud EU, https://us.cloud.langfuse.com for Cloud US, https://jp.cloud.langfuse.com for Cloud Japan, https://hipaa.cloud.langfuse.com for HIPAA US, or your self-hosted address as you open it in the browser. Without a trailing slash or path.",
+      "example": "https://cloud.langfuse.com",
+      "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+(?::\\d{1,5})?$",
+      "patternMessage": "Use https://cloud.langfuse.com, https://us.cloud.langfuse.com, another Langfuse Cloud region or your self-hosted address (https://...), without a trailing slash or path."
+    },
+    "LANGFUSE_PUBLIC_KEY": {
+      "label": "Public key",
+      "kind": "credential",
+      "help": "Langfuse, Project settings, API Keys, Create new API keys. The public key starts with pk-lf-.",
+      "pattern": "^pk-lf-[A-Za-z0-9-]{8,}$",
+      "patternMessage": "Paste the public key as Langfuse shows it, starting with pk-lf-."
+    },
+    "LANGFUSE_SECRET_KEY": {
+      "label": "Secret key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once next to the public key when the key pair is created; it starts with sk-lf-.",
+      "pattern": "^sk-lf-[A-Za-z0-9-]{8,}$",
+      "patternMessage": "Paste the secret key as Langfuse shows it, starting with sk-lf-."
+    }
+  },
+  "verifyHints": {
+    "401": "Langfuse refused the key pair. Check that the public and secret key belong together and to this address: keys of Cloud EU do not work on Cloud US and the other way round.",
+    "403": "This key pair may not use this endpoint. Use a project-scoped API key from the project settings, not an organization key.",
+    "404": "The Langfuse address answers but this endpoint is missing. Self-hosted Langfuse must be v4 or later for the v2 observations and metrics endpoints."
+  },
+  "probe": { "tool": "langfuse_get_project" },
+  "connector": {
+    "name": "Langfuse Public API",
+    "type": "REST",
+    "baseUrl": "{{LANGFUSE_HOST}}/api/public",
+    "authType": "BASIC_AUTH",
+    "authConfig": { "username": "{{LANGFUSE_PUBLIC_KEY}}", "password": "{{LANGFUSE_SECRET_KEY}}" },
+    "headers": { "Accept": "application/json", "User-Agent": "AnythingMCP" },
+    "healthcheckPath": "/projects"
+  },
+  "instructions": "## Langfuse\nThis connector uses the **Langfuse Public API** (`<LANGFUSE_HOST>/api/public`) of one Langfuse project: LLM observability (traces, observations and sessions with model, tokens, cost and latency), metrics, scores, prompt management, datasets and experiments. It works with Langfuse Cloud (EU, US, Japan, HIPAA) and self-hosted Langfuse v4.\n\n**Setup (3 minutes)**\n1. In Langfuse open the project, then **Settings, API Keys, Create new API keys**.\n2. Copy the **public key** (`pk-lf-...`) into `LANGFUSE_PUBLIC_KEY` and the **secret key** (`sk-lf-...`, shown once) into `LANGFUSE_SECRET_KEY`. They are sent as HTTP Basic auth.\n3. Set `LANGFUSE_HOST` to the region the project lives in: `https://cloud.langfuse.com` (EU), `https://us.cloud.langfuse.com` (US), `https://jp.cloud.langfuse.com` (Japan), `https://hipaa.cloud.langfuse.com` (HIPAA), or the self-hosted address.\n4. Run `langfuse_get_project` to check the keys; `langfuse_get_health` shows the server version.\n\n**Langfuse's own MCP server**: Langfuse also runs a native MCP server at `<LANGFUSE_HOST>/api/public/mcp` (same Basic auth key pair), mainly for prompt management. This connector covers prompts too, plus tracing data, metrics, scores and datasets.\n\n**Tracing data (observations-first)**: in Langfuse v4 a trace is the set of observations (spans, generations, tool calls, events) that share a `traceId`, and a session is the set of traces that share a `sessionId`. The old `/traces`, `/sessions` and `/metrics/daily` endpoints are deprecated (Langfuse Cloud serves them until 16 November 2026), so this connector reads everything from Observations API v2 and Metrics API v2, the only real-time read path. Other endpoints can lag about 10 minutes behind ingestion.\n- `langfuse_list_observations`: rows newest first. Always bound it with `from_start_time` and `to_start_time` (ISO 8601, UTC). Filter by `type` (GENERATION for LLM calls), `name`, `user_id`, `session_id`, `trace_id`, `level` (ERROR for failures), `environment`, `is_root_observation` (true gives one row per trace, the trace's entry point), or a structured `filter`. `fields` picks the field groups: `core` (always), `basic`, `time`, `io` (input and output), `metadata`, `model`, `usage` (tokens and cost), `prompt`, `metrics` (latency), `trace_context` (trace name, tags, release).\n- `langfuse_get_trace`: every observation of one trace with input, output, model, usage and latency. Rebuild the tree with `parentObservationId`; the root has none. Trace-level input and output are those of the root observation.\n- `langfuse_get_session`: the traces of one session (one row per trace by default), oldest conversation turns last.\n- `langfuse_query_metrics`: aggregates such as cost per model per day. `query` is a JSON string, e.g. `{\"view\": \"observations\", \"metrics\": [{\"measure\": \"totalCost\", \"aggregation\": \"sum\"}, {\"measure\": \"count\", \"aggregation\": \"count\"}], \"dimensions\": [{\"field\": \"providedModelName\"}], \"timeDimension\": {\"granularity\": \"day\"}, \"filters\": [], \"fromTimestamp\": \"2026-10-01T00:00:00Z\", \"toTimestamp\": \"2026-10-31T00:00:00Z\"}`. Views: `observations`, `scores-numeric`, `scores-boolean`, `scores-categorical`. Observation measures: `count`, `latency`, `streamingLatency`, `inputTokens`, `outputTokens`, `totalTokens`, `inputCost`, `outputCost`, `totalCost`, `timeToFirstToken`, `countScores`; aggregations `sum`, `avg`, `count`, `max`, `min`, `p50`, `p75`, `p90`, `p95`, `p99`. Dimensions include `environment`, `type`, `name`, `level`, `tags`, `release`, `traceName`, `providedModelName`, `promptName`, `promptVersion`. High-cardinality fields such as `userId` and `sessionId` can be filtered on but not grouped by.\n\n**Scores and evaluations**: `langfuse_list_scores` (filter by `name`, `source` API, ANNOTATION or EVAL, `data_type`, `trace_id`, `session_id`, `observation_id`, `experiment_id`, value range, time range); `langfuse_list_score_configs` for the score definitions; `langfuse_create_score` adds one score (numeric, boolean as 0 or 1, categorical or text) to a trace, observation, session or experiment run. Scores are processed asynchronously.\n\n**Prompts**: `langfuse_list_prompts` (names with versions, labels and tags), `langfuse_get_prompt` (the version labelled `production` unless `version` or `label` is given). `langfuse_create_prompt_version` publishes a new version of a text or chat prompt (a new name creates the prompt); `langfuse_update_prompt_labels` moves deployment labels such as `production` or `staging` to a version. Prompt names with folders (`support/greeting`) are passed as they are. Changing the `production` label changes what applications fetch: **confirm with the user first**.\n\n**Datasets and experiments**: `langfuse_list_datasets`, `langfuse_get_dataset`, `langfuse_create_dataset`; `langfuse_list_dataset_items`, `langfuse_get_dataset_item`, `langfuse_upsert_dataset_item` (creates an item, or updates it when `item_id` exists; `status` ARCHIVED hides it from new runs). `langfuse_list_experiments` lists dataset runs and experiments with their scores (`from_start_time` is required).\n\n**Reading answers**: times are ISO 8601, UTC. Costs are USD; in v2 observations `inputPrice`, `outputPrice` and `totalPrice` are strings (decimal precision), `input` and `output` arrive as JSON text to parse. Latency and time to first token are milliseconds in metrics.\n\n**Paging**: observations, scores and experiments use cursors: pass `meta.cursor` back as `cursor` until it is missing. Prompts, datasets, dataset items and score configs use `page` (from 1) and `limit`; `meta.totalPages` says how many pages exist.\n\n**Not included**: deleting traces, prompts, datasets or scores, annotation queues, organization and SCIM administration, LLM connections, and ingestion (traces are sent by the Langfuse SDKs over OpenTelemetry).\n\n**Errors**: 400 bad parameter (a malformed `filter` or `query` JSON, a group-by on a high-cardinality field, `limit` over the maximum); 401 wrong key pair or wrong region; 403 the key may not use this endpoint; 404 unknown prompt, dataset or item, or a self-hosted version without the v2 endpoints; 429 rate limited (wait, do not loop).",
+  "tools": [
+    {
+      "name": "langfuse_get_project",
+      "description": "Show the Langfuse project this key pair belongs to: id, name, organization and retention settings. Use it to check the connection.",
+      "endpointMapping": { "method": "GET", "path": "/projects" }
+    },
+    {
+      "name": "langfuse_get_health",
+      "description": "Check that the Langfuse server and its database are up and read the Langfuse version (v4 or later is needed for the observation and metrics tools).",
+      "endpointMapping": { "method": "GET", "path": "/health" }
+    },
+    {
+      "name": "langfuse_list_observations",
+      "description": "List observations (LLM generations, spans, tool calls, events) of the Langfuse project, newest first, with the chosen field groups. Bound it with from_start_time and to_start_time. Page with cursor = meta.cursor until it is missing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_start_time": { "type": "string", "description": "Only observations that started at or after this ISO 8601 time, e.g. 2026-10-01T00:00:00Z." },
+          "to_start_time": { "type": "string", "description": "Only observations that started before this ISO 8601 time." },
+          "fields": { "type": "string", "default": "core,basic,usage", "description": "Comma-separated field groups: core, basic, time, io, metadata, model, usage, prompt, metrics, trace_context. Default core,basic,usage; add io for input and output." },
+          "type": { "type": "string", "description": "Observation type: GENERATION, SPAN, EVENT, AGENT, TOOL, CHAIN, RETRIEVER, EVALUATOR, EMBEDDING, GUARDRAIL." },
+          "name": { "type": "string", "description": "Exact observation name." },
+          "user_id": { "type": "string", "description": "Only observations of this user id." },
+          "session_id": { "type": "string", "description": "Only observations of this session id." },
+          "trace_id": { "type": "string", "description": "Only observations of this trace id." },
+          "level": { "type": "string", "enum": ["DEBUG", "DEFAULT", "WARNING", "ERROR"], "description": "Only observations with this level; ERROR finds failures." },
+          "environment": { "type": "array", "items": { "type": "string" }, "description": "Only these environments, e.g. [\"production\"]." },
+          "is_root_observation": { "type": "boolean", "description": "true: only the entry point of each trace (one row per trace)." },
+          "version": { "type": "string", "description": "Only observations with this version." },
+          "filter": { "type": "string", "description": "Structured filter as a JSON string, overriding the simple filters: [{\"type\": \"string\", \"column\": \"traceName\", \"operator\": \"=\", \"value\": \"support-chat\"}]. Types: string, number, datetime, boolean, stringOptions, arrayOptions (tags), stringObject (metadata, with key), null." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 50, "description": "Rows per page, default 50, at most 1000." },
+          "cursor": { "type": "string", "description": "meta.cursor of the previous page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/observations",
+        "queryParams": {
+          "fromStartTime": "$from_start_time",
+          "toStartTime": "$to_start_time",
+          "fields": "$fields",
+          "type": "$type",
+          "name": "$name",
+          "userId": "$user_id",
+          "sessionId": "$session_id",
+          "traceId": "$trace_id",
+          "level": "$level",
+          "environment": "$environment",
+          "isRootObservation": "$is_root_observation",
+          "version": "$version",
+          "filter": "$filter",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "langfuse_get_trace",
+      "description": "Read one Langfuse trace: all of its observations with input, output, model, token usage, cost and latency, newest first. The root observation has no parentObservationId and carries the trace's input and output.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "trace_id": { "type": "string", "description": "Trace id, e.g. from langfuse_list_observations." },
+          "fields": { "type": "string", "default": "core,basic,time,io,model,usage,metrics,trace_context", "description": "Field groups, default core,basic,time,io,model,usage,metrics,trace_context." },
+          "from_start_time": { "type": "string", "description": "Optional lower time bound (ISO 8601) to speed up the lookup." },
+          "to_start_time": { "type": "string", "description": "Optional upper time bound (ISO 8601)." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200, "description": "Observations per page, default 200." },
+          "cursor": { "type": "string", "description": "meta.cursor of the previous page, for very long traces." }
+        },
+        "required": ["trace_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/observations",
+        "queryParams": { "traceId": "$trace_id", "fields": "$fields", "fromStartTime": "$from_start_time", "toStartTime": "$to_start_time", "limit": "$limit", "cursor": "$cursor" }
+      }
+    },
+    {
+      "name": "langfuse_get_session",
+      "description": "Read one Langfuse session (for example a chat conversation): by default one row per trace, the entry point of each turn, with input, output and trace name, newest first. Set root_only false for every observation of the session.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "string", "description": "Session id as set by the application." },
+          "root_only": { "type": "boolean", "default": true, "description": "true (default): one row per trace; false: every observation." },
+          "fields": { "type": "string", "default": "core,basic,io,usage,trace_context", "description": "Field groups, default core,basic,io,usage,trace_context." },
+          "from_start_time": { "type": "string", "description": "Optional lower time bound (ISO 8601)." },
+          "to_start_time": { "type": "string", "description": "Optional upper time bound (ISO 8601)." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 100, "description": "Rows per page, default 100." },
+          "cursor": { "type": "string", "description": "meta.cursor of the previous page." }
+        },
+        "required": ["session_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/observations",
+        "queryParams": { "sessionId": "$session_id", "isRootObservation": "$root_only", "fields": "$fields", "fromStartTime": "$from_start_time", "toStartTime": "$to_start_time", "limit": "$limit", "cursor": "$cursor" }
+      }
+    },
+    {
+      "name": "langfuse_query_metrics",
+      "description": "Aggregate Langfuse data (Metrics API v2): counts, tokens, cost, latency percentiles or score values, grouped by dimensions such as model, trace name or prompt, optionally per minute, hour, day, week or month. Replaces the deprecated daily metrics endpoint.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "The query as a JSON string: {\"view\": \"observations\", \"metrics\": [{\"measure\": \"totalCost\", \"aggregation\": \"sum\"}], \"dimensions\": [{\"field\": \"providedModelName\"}], \"timeDimension\": {\"granularity\": \"day\"}, \"filters\": [], \"fromTimestamp\": \"2026-10-01T00:00:00Z\", \"toTimestamp\": \"2026-10-31T00:00:00Z\"}. view, metrics, fromTimestamp and toTimestamp are required." }
+        },
+        "required": ["query"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v2/metrics", "queryParams": { "query": "$query" } }
+    },
+    {
+      "name": "langfuse_list_scores",
+      "description": "List Langfuse scores (evaluations, user feedback, annotations) newest first, with name, value, data type, source, comment and the trace, observation or session they belong to. Filters take comma-separated lists. Page with cursor = meta.cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Score names, comma-separated." },
+          "source": { "type": "string", "description": "Sources, comma-separated: API, ANNOTATION, EVAL." },
+          "data_type": { "type": "string", "description": "Data types, comma-separated: NUMERIC, BOOLEAN, CATEGORICAL, TEXT, CORRECTION." },
+          "trace_id": { "type": "string", "description": "Trace ids, comma-separated." },
+          "session_id": { "type": "string", "description": "Session ids, comma-separated (not together with trace_id)." },
+          "observation_id": { "type": "string", "description": "Observation ids, comma-separated; needs trace_id." },
+          "experiment_id": { "type": "string", "description": "Experiment (dataset run) ids, comma-separated." },
+          "config_id": { "type": "string", "description": "Score config ids, comma-separated." },
+          "environment": { "type": "string", "description": "Environments, comma-separated." },
+          "value_min": { "type": "number", "description": "Lowest numeric value, with data_type NUMERIC." },
+          "value_max": { "type": "number", "description": "Highest numeric value, with data_type NUMERIC." },
+          "from_timestamp": { "type": "string", "description": "Only scores at or after this ISO 8601 time." },
+          "to_timestamp": { "type": "string", "description": "Only scores before this ISO 8601 time." },
+          "fields": { "type": "string", "description": "Extra field groups, e.g. details." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Scores per page, default 50, at most 100." },
+          "cursor": { "type": "string", "description": "meta.cursor of the previous page." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/scores",
+        "queryParams": {
+          "name": "$name",
+          "source": "$source",
+          "dataType": "$data_type",
+          "traceId": "$trace_id",
+          "sessionId": "$session_id",
+          "observationId": "$observation_id",
+          "experimentId": "$experiment_id",
+          "configId": "$config_id",
+          "environment": "$environment",
+          "valueMin": "$value_min",
+          "valueMax": "$value_max",
+          "fromTimestamp": "$from_timestamp",
+          "toTimestamp": "$to_timestamp",
+          "fields": "$fields",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "langfuse_create_score",
+      "description": "Add one score to a Langfuse trace, observation, session or experiment run, e.g. a quality rating or a correctness check. Processed asynchronously (HTTP 202). Pass the same score_id again to overwrite a score.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Score name, e.g. correctness or user-feedback." },
+          "value": { "description": "The value: a number for NUMERIC, 0 or 1 for BOOLEAN, a string for CATEGORICAL and TEXT." },
+          "data_type": { "type": "string", "enum": ["NUMERIC", "BOOLEAN", "CATEGORICAL", "TEXT"], "description": "Data type; inferred from value when omitted." },
+          "trace_id": { "type": "string", "description": "Trace the score belongs to." },
+          "observation_id": { "type": "string", "description": "Observation the score belongs to (with trace_id)." },
+          "session_id": { "type": "string", "description": "Session the score belongs to." },
+          "dataset_run_id": { "type": "string", "description": "Experiment (dataset run) the score belongs to." },
+          "comment": { "type": "string", "description": "Explanation of the score." },
+          "config_id": { "type": "string", "description": "Score config id from langfuse_list_score_configs; enforces its range or categories." },
+          "score_id": { "type": "string", "description": "Your own id for the score, to update it later." },
+          "environment": { "type": "string", "description": "Environment, e.g. production." },
+          "metadata": { "type": "object", "description": "Extra key-value metadata." }
+        },
+        "required": ["name", "value"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/scores",
+        "bodyMapping": [
+          {
+            "name": "$name",
+            "value": "$value",
+            "dataType": "$data_type",
+            "traceId": "$trace_id",
+            "observationId": "$observation_id",
+            "sessionId": "$session_id",
+            "datasetRunId": "$dataset_run_id",
+            "comment": "$comment",
+            "configId": "$config_id",
+            "id": "$score_id",
+            "environment": "$environment",
+            "metadata": "$metadata",
+            "source": "API"
+          }
+        ]
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false }
+    },
+    {
+      "name": "langfuse_list_score_configs",
+      "description": "List the score configs of the Langfuse project: name, data type, numeric range or categories, description and whether archived.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Configs per page, default 50." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/score-configs", "queryParams": { "page": "$page", "limit": "$limit" } }
+    },
+    {
+      "name": "langfuse_list_prompts",
+      "description": "List the prompts of the Langfuse project: name, type, versions, labels, tags and last update. Filter by name, label or tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Exact prompt name." },
+          "label": { "type": "string", "description": "Only prompts with a version carrying this label, e.g. production." },
+          "tag": { "type": "string", "description": "Only prompts with this tag." },
+          "from_updated_at": { "type": "string", "description": "Only versions updated at or after this ISO 8601 time." },
+          "to_updated_at": { "type": "string", "description": "Only versions updated before this ISO 8601 time." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Prompts per page, default 50." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/prompts",
+        "queryParams": { "name": "$name", "label": "$label", "tag": "$tag", "fromUpdatedAt": "$from_updated_at", "toUpdatedAt": "$to_updated_at", "page": "$page", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "langfuse_get_prompt",
+      "description": "Read one Langfuse prompt version: its text or chat messages, config (model, temperature), labels, tags, version and commit message. Without version or label the version labelled production is returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt_name": { "type": "string", "description": "Prompt name including any folder path, e.g. support/greeting." },
+          "version": { "type": "integer", "minimum": 1, "description": "A specific version number." },
+          "label": { "type": "string", "description": "A label such as production, staging or latest." },
+          "resolve": { "type": "boolean", "description": "false returns prompt references unresolved; default true." }
+        },
+        "required": ["prompt_name"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/prompts/{prompt_name}",
+        "encodePathParams": true,
+        "queryParams": { "version": "$version", "label": "$label", "resolve": "$resolve" }
+      }
+    },
+    {
+      "name": "langfuse_create_prompt_version",
+      "description": "Publish a new version of a Langfuse prompt (a new name creates the prompt). Text prompts take a string with {{variables}}, chat prompts a list of messages. Labels such as production change what applications fetch: confirm with the user before setting them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Prompt name including any folder path, at most 255 characters." },
+          "type": { "type": "string", "enum": ["text", "chat"], "default": "text", "description": "text (default) or chat." },
+          "prompt": { "description": "For text: the prompt string, e.g. Summarise {{text}} in {{language}}. For chat: [{\"role\": \"system\", \"content\": \"...\"}, {\"role\": \"user\", \"content\": \"{{question}}\"}]." },
+          "config": { "type": "object", "description": "Free-form config stored with the version, e.g. {\"model\": \"gpt-4o\", \"temperature\": 0.2}." },
+          "labels": { "type": "array", "items": { "type": "string" }, "description": "Labels for this version, e.g. [\"staging\"]; latest is set automatically." },
+          "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags for all versions of the prompt." },
+          "commit_message": { "type": "string", "description": "What changed in this version." }
+        },
+        "required": ["name", "prompt"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/prompts",
+        "bodyMapping": { "name": "$name", "type": "$type", "prompt": "$prompt", "config": "$config", "labels": "$labels", "tags": "$tags", "commitMessage": "$commit_message" }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false }
+    },
+    {
+      "name": "langfuse_update_prompt_labels",
+      "description": "Set the deployment labels of one Langfuse prompt version, e.g. promote version 4 to production. A label moves away from the version that had it. Confirm with the user before moving production.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt_name": { "type": "string", "description": "Prompt name including any folder path." },
+          "version": { "type": "integer", "minimum": 1, "description": "Version number to label." },
+          "new_labels": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "Labels to put on this version, e.g. [\"production\"]. latest is reserved." }
+        },
+        "required": ["prompt_name", "version", "new_labels"]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v2/prompts/{prompt_name}/versions/{version}",
+        "encodePathParams": true,
+        "bodyMapping": { "newLabels": "$new_labels" }
+      }
+    },
+    {
+      "name": "langfuse_list_datasets",
+      "description": "List the datasets of the Langfuse project with id, name, description, metadata and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Datasets per page, default 50." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/v2/datasets", "queryParams": { "page": "$page", "limit": "$limit" } }
+    },
+    {
+      "name": "langfuse_get_dataset",
+      "description": "Read one Langfuse dataset by name: description, metadata, input and expected-output JSON schemas and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset_name": { "type": "string", "description": "Dataset name, including any folder path." }
+        },
+        "required": ["dataset_name"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v2/datasets/{dataset_name}", "encodePathParams": true }
+    },
+    {
+      "name": "langfuse_create_dataset",
+      "description": "Create a Langfuse dataset for evaluations and experiments, optionally with JSON schemas that every item's input and expected output must match.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Dataset name; folders with /." },
+          "description": { "type": "string", "description": "What the dataset is for." },
+          "metadata": { "type": "object", "description": "Key-value metadata." },
+          "input_schema": { "type": "object", "description": "JSON Schema the items' input must match." },
+          "expected_output_schema": { "type": "object", "description": "JSON Schema the items' expected output must match." }
+        },
+        "required": ["name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/datasets",
+        "bodyMapping": { "name": "$name", "description": "$description", "metadata": "$metadata", "inputSchema": "$input_schema", "expectedOutputSchema": "$expected_output_schema" }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false }
+    },
+    {
+      "name": "langfuse_list_dataset_items",
+      "description": "List the items of Langfuse datasets: input, expected output, metadata, status (ACTIVE or ARCHIVED) and the trace or observation they came from. Filter by dataset or source; version shows a dataset as it was at a point in time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset_name": { "type": "string", "description": "Only items of this dataset." },
+          "source_trace_id": { "type": "string", "description": "Only items created from this trace." },
+          "source_observation_id": { "type": "string", "description": "Only items created from this observation." },
+          "version": { "type": "string", "description": "ISO 8601 UTC time: items as they were then; needs dataset_name." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Items per page, default 50." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dataset-items",
+        "queryParams": { "datasetName": "$dataset_name", "sourceTraceId": "$source_trace_id", "sourceObservationId": "$source_observation_id", "version": "$version", "page": "$page", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "langfuse_get_dataset_item",
+      "description": "Read one Langfuse dataset item: input, expected output, metadata, status, source trace and observation, dataset and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": { "type": "string", "description": "Dataset item id." }
+        },
+        "required": ["item_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/dataset-items/{item_id}" }
+    },
+    {
+      "name": "langfuse_upsert_dataset_item",
+      "description": "Add an item to a Langfuse dataset, or update it when item_id already exists: input, expected output, metadata, the source trace or observation, and status ARCHIVED to retire it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset_name": { "type": "string", "description": "Dataset the item belongs to." },
+          "input": { "description": "Input of the test case: any JSON value." },
+          "expected_output": { "description": "Expected output: any JSON value." },
+          "metadata": { "description": "Metadata: any JSON value." },
+          "source_trace_id": { "type": "string", "description": "Trace the item was taken from." },
+          "source_observation_id": { "type": "string", "description": "Observation the item was taken from." },
+          "item_id": { "type": "string", "description": "Your own id; an existing id updates that item. Unique per project, at most 255 characters." },
+          "status": { "type": "string", "enum": ["ACTIVE", "ARCHIVED"], "description": "ACTIVE (default) or ARCHIVED." }
+        },
+        "required": ["dataset_name"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dataset-items",
+        "bodyMapping": {
+          "datasetName": "$dataset_name",
+          "input": "$input",
+          "expectedOutput": "$expected_output",
+          "metadata": "$metadata",
+          "sourceTraceId": "$source_trace_id",
+          "sourceObservationId": "$source_observation_id",
+          "id": "$item_id",
+          "status": "$status"
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true }
+    },
+    {
+      "name": "langfuse_list_experiments",
+      "description": "List Langfuse experiments and dataset runs with recent activity first: name, dataset, metadata and, with fields scores, their aggregated scores. from_start_time is required. Page with cursor = meta.cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_start_time": { "type": "string", "description": "Required lower bound: experiments with events at or after this ISO 8601 time." },
+          "to_start_time": { "type": "string", "description": "Upper bound (ISO 8601)." },
+          "name": { "type": "string", "description": "Experiment names, comma-separated." },
+          "dataset_id": { "type": "string", "description": "Dataset ids, comma-separated." },
+          "fields": { "type": "string", "default": "core,scores", "description": "Field groups: core, metadata, scores. Default core,scores." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Experiments per page, default 50." },
+          "cursor": { "type": "string", "description": "meta.cursor of the previous page." }
+        },
+        "required": ["from_start_time"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/experiments",
+        "queryParams": { "fromStartTime": "$from_start_time", "toStartTime": "$to_start_time", "name": "$name", "datasetId": "$dataset_id", "fields": "$fields", "limit": "$limit", "cursor": "$cursor" }
+      }
+    }
+  ]
+}

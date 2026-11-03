@@ -29,6 +29,8 @@
     }
   },
   "signIn": {
+    "continueAs": "Continua come {email}",
+    "continueAsHint": "Hai appena effettuato l'accesso qui per collegare il tuo assistente AI.",
     "title": "Accedi",
     "subtitle": "Crea connettori personalizzati per Claude, ChatGPT, Copilot, Meta Muse e qualsiasi agente AI",
     "emailVerified": "Email verificata con successo! Ora puoi accedere.",
@@ -65,7 +67,7 @@
     "title": "Crea il tuo account",
     "cloudTitle": "Crea il tuo account gratuito",
     "cloudSubtitle": "7 giorni di prova gratuita · nessuna carta di credito · collega Claude, ChatGPT, Copilot, Cursor o Meta Muse ai tuoi strumenti.",
-    "socialConsent": "Continuando accetti i <terms>Termini di utilizzo</terms> e l'<privacy>Informativa sulla privacy</privacy>.",
+    "socialConsent": "Continuando accetti i <terms>Termini di utilizzo</terms> e l’<privacy>Informativa sulla privacy</privacy>.",
     "continueWithEmail": "Continua con l'email",
     "name": "Nome",
     "namePlaceholder": "Il tuo nome",
@@ -79,7 +81,7 @@
     "confirmPassword": "Conferma password",
     "confirmPasswordPlaceholder": "Ripeti la password",
     "acceptTerms": "Accetto i <terms>Termini di utilizzo</terms>",
-    "acceptTermsCloud": "Accetto i <terms>Termini di utilizzo</terms> e ho letto l'<privacy>Informativa sulla privacy</privacy>",
+    "acceptTermsCloud": "Accetto i <terms>Termini di utilizzo</terms> e ho letto l’<privacy>Informativa sulla privacy</privacy>",
     "submit": "Crea account",
     "submitCloud": "Inizia la prova gratuita →",
     "encrypted": "Crittografia AES-256-GCM · ospitato a Francoforte, Germania",
@@ -148,11 +150,11 @@
     "question": "Come userai Anything<brand>MCP</brand>?",
     "changeLater": "Puoi cambiarlo in seguito in Impostazioni → Licenza.",
     "personal": {
-      "title": "Uso personale, didattico o di valutazione",
-      "description": "Community edition, gratuita, fino a 3 utenti. Ti inviamo via email una chiave community, così ricevi gli avvisi di sicurezza e di rilascio."
+      "title": "Community edition, gratuita",
+      "description": "Gratuita con licenza AGPL-3.0 per qualsiasi uso, anche commerciale, fino a 3 utenti attivi. Ti inviamo via email una chiave community, così ricevi gli avvisi di sicurezza e di rilascio."
     },
     "company": {
-      "title": "Per un'azienda o un team",
+      "title": "Più utenti o single sign-on",
       "description": "Prova Enterprise gratis per 30 giorni: più utenti, single sign-on con Entra ID, Google o Okta, e SCIM. Nessun dato di pagamento."
     },
     "haveKey": "Ho una chiave di licenza",
@@ -168,7 +170,7 @@
     "activate": {
       "title": "Attiva licenza",
       "subtitle": "Inserisci la tua chiave di licenza per attivare Anything<brand>MCP</brand>",
-      "available": "Le chiavi di licenza Starter, Team ed Enterprise sono disponibili su <link>anythingmcp.com</link>."
+      "available": "Le chiavi di licenza Enterprise sono disponibili su richiesta: <link>contattaci</link>. Le chiavi Starter e Team esistenti continuano a funzionare."
     },
     "keyLabel": "Chiave di licenza",
     "submit": "Attiva licenza",
@@ -648,6 +650,11 @@
       "skillsAuto": "Automatico: testo completo se breve, altrimenti un elenco su richiesta",
       "skillsInline": "Sempre il testo completo",
       "skillsIndex": "Sempre un elenco (l'AI apre una skill con skill_get)",
+      "codeMode": "Modalità codice",
+      "codeModeOff": "Off (nessuna esecuzione di codice)",
+      "codeModeTools": "Solo code tool salvati",
+      "codeModeInline": "Code tool salvati + codice inline",
+      "codeModeHint": "Permette ai client AI di eseguire brevi programmi che orchestrano i tool di questo server in un solo passaggio. Disattivato di default; richiede un code-runner configurato. Inline espone anche il tool generico code_execute ai ruoli abilitati.",
       "skillsHint": "Come le <link>Skill IA</link> di questo server raggiungono il client AI. Un elenco mantiene brevi le istruzioni; le procedure lunghe vengono sempre aperte su richiesta.",
       "save": "Salva"
     }
@@ -665,7 +672,8 @@
     "exportFailed": "Esportazione non riuscita: {error}",
     "healthCheckFailed": "Controllo di stato non riuscito: {error}",
     "types": {
-      "database": "Database"
+      "database": "Database",
+      "email": "Email (IMAP/SMTP)"
     },
     "menu": {
       "healthCheck": "Controllo di stato",
@@ -931,7 +939,11 @@
       "providerError": "{name} ha risposto con un errore.",
       "suggest": "Configura invece {name}",
       "suggestOther": "Configura invece l'altro connettore",
-      "saveAnyway": "Salva comunque"
+      "saveAnyway": "Salva comunque",
+      "appPendingTitle": "{name} non accetta ancora queste chiavi.",
+      "appPendingBody": "Se la tua app è nuova, {name} la verifica, di solito entro pochi giorni: ti scriveremo un'e-mail quando sarà approvata, non devi fare altro. Se la tua app è già attiva, copia di nuovo lo shared secret dalla pagina della tua app. Le tue chiavi sono salvate.",
+      "appPendingOpen": "Apri il connettore",
+      "switchTo": "Passa a {name}"
     },
     "field": {
       "required": "Obbligatorio",
@@ -941,7 +953,16 @@
       "stored": "Salvato. Lascia vuoto per mantenerlo",
       "hide": "Nascondi",
       "show": "Mostra",
-      "open": "Apri"
+      "open": "Apri",
+      "fix": {
+        "sentence": "{changes}: {value}",
+        "and": "e",
+        "scheme": "aggiungi https:// all'inizio",
+        "https": "usa https:// invece di http://",
+        "slash": "togli la / alla fine",
+        "www": "togli il www.",
+        "path": "togli {removed} dopo l'host"
+      }
     },
     "advanced": "Avanzate",
     "guide": {
@@ -949,7 +970,10 @@
       "back": "Indietro",
       "checking": "Verifica in corso…",
       "continue": "Continua",
-      "tickHint": "Spunta la casella qui sopra quando hai finito."
+      "tickHint": "Spunta la casella qui sopra quando hai finito.",
+      "saveAndCheck": "Salva e verifica con {name}",
+      "waitHint": "\"Continua\" si attiva quando {name} ha approvato la tua app.",
+      "keysFirst": "Inserisci prima le chiavi nel passaggio precedente."
     },
     "title": {
       "finish": "Completa la configurazione di {name}",
@@ -999,6 +1023,17 @@
       "fillPrevious": "{action}: compila prima il passaggio precedente.",
       "screenshot": "Screenshot del {date}; ora la pagina potrebbe essere leggermente diversa.",
       "problems": "Problemi comuni"
+    },
+    "wait": {
+      "checking": "Chiediamo a {name} della tua app…",
+      "notYet": "{name} non ha ancora approvato la tua app",
+      "checkedAt": "Ultimo controllo alle {time}. La pagina ricontrolla ogni volta che ci torni.",
+      "checkAgain": "Controlla di nuovo",
+      "checkingShort": "Controllo in corso…",
+      "activeAlready": "Già approvata ma qui non si sblocca? Reinserisci le chiavi",
+      "saved": "Le tue chiavi sono salvate. Puoi chiudere questa pagina: quando torni, si riapre a questo passaggio.",
+      "ready": "{name} ha approvato la tua app.",
+      "readyNext": "Continua con il passaggio successivo."
     }
   },
   "setupSuccess": {
@@ -1116,6 +1151,10 @@
       "DATABASE": {
         "name": "Database",
         "description": "Collegati a PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB o SQLite. Supporta la modalità sola lettura o lettura e scrittura."
+      },
+      "EMAIL": {
+        "name": "Email (IMAP/SMTP)",
+        "description": "Collega qualsiasi casella: IONOS, Aruba, Strato, GMX, Gmail con password per app, il tuo server di posta. Leggi, cerca, archivia e invia email."
       }
     },
     "configure": "Configura {type}",
@@ -1220,6 +1259,47 @@
     "create": "Crea connettore",
     "testConnection": "Testa la connessione"
   },
+  "emailSettings": {
+    "provider": "Provider",
+    "providerPlaceholder": "Scegli per compilare i server…",
+    "providerHint": "Compila server e porte. Per altri provider li trovi nelle loro guide (server in entrata/in uscita).",
+    "imapHost": "Server IMAP (in entrata)",
+    "smtpHost": "Server SMTP (in uscita)",
+    "port": "Porta",
+    "securityLabel": "Sicurezza",
+    "security": {
+      "tls": "SSL/TLS",
+      "starttls": "STARTTLS",
+      "none": "Nessuna (in chiaro)"
+    },
+    "smtpHint": "Senza server SMTP il connettore può solo leggere, non inviare.",
+    "username": "Nome utente",
+    "password": "Password o password per app",
+    "keepUsername": "Invariato (scrivi per sostituire)",
+    "keepPassword": "Invariata (scrivi per sostituire)",
+    "passwordHint": "Il nome utente di solito è l'indirizzo email completo. Gmail, Yahoo, iCloud e Fastmail richiedono una password per app. Microsoft 365 e Outlook.com non accettano password qui: usa il connettore Microsoft Outlook.",
+    "separateSmtpLogin": "Per l'invio si usa un altro login",
+    "smtpUsername": "Nome utente SMTP",
+    "smtpPassword": "Password SMTP",
+    "fromAddress": "Indirizzo mittente",
+    "fromAddressPlaceholder": "Predefinito: il nome utente",
+    "fromName": "Nome mittente",
+    "advanced": "Cartelle e certificati",
+    "sentFolder": "Cartella posta inviata",
+    "draftsFolder": "Cartella bozze",
+    "autoDetected": "Rilevata automaticamente",
+    "saveSent": "Copia della posta inviata",
+    "saveSentAuto": "Automatico (Gmail salva da sé una copia)",
+    "saveSentAlways": "Salva sempre una copia in Inviata",
+    "saveSentNever": "Non salvare copie",
+    "allowSelfSigned": "Accetta un certificato autofirmato",
+    "allowSelfSignedHint": "Solo per un server di posta nella tua rete con un certificato non emesso da un'autorità pubblica.",
+    "cloudNote": "AnythingMCP Cloud si collega solo in modo cifrato, a server di posta pubblici sulle porte standard (IMAP 993/143, SMTP 465/587/2525). Il provider di hosting blocca l'SMTP in uscita su 465 e 587, quindi l'invio di solito non funziona: rispondi con le bozze o usa un provider con SMTP sulla porta 2525. Invio ed eliminazione partono disattivati.",
+    "selfHostedNote": "Un server di posta nella tua rete deve essere nella allowlist delle connessioni in uscita (Admin > Impostazioni). Invio ed eliminazione partono disattivati: attivali nell'elenco degli strumenti.",
+    "catalogManaged": "Questo connettore viene dal catalogo: server e login vengono dalle sue variabili. Modificale in Variabili d'ambiente.",
+    "summary": "IMAP {imap} · SMTP {smtp}",
+    "noSmtp": "non impostato (solo lettura)"
+  },
   "connectorDetail": {
     "back": "Connettori",
     "loadingTitle": "Connettore",
@@ -1228,7 +1308,7 @@
     "inactive": "Inattivo",
     "dismiss": "Chiudi",
     "actions": {
-      "test": "Testa",
+      "test": "Verifica",
       "edit": "Modifica",
       "cancel": "Annulla",
       "export": "Esporta",
@@ -1276,7 +1356,7 @@
       "baseUrl": "URL di base",
       "healthcheck": "Percorso di healthcheck",
       "healthcheckOptional": "facoltativo, predefinito /",
-      "healthcheckHint": "Percorso usato da \"Testa\". Indica un endpoint che risponde 2xx senza autenticazione (es. <code>/health</code>) se l'API non ha un handler alla radice.",
+      "healthcheckHint": "Percorso usato da \"Verifica\". Indica un endpoint che risponde 2xx senza autenticazione (es. <code>/health</code>) se l'API non ha un handler alla radice.",
       "accessMode": "Modalità di accesso",
       "readOnly": "Sola lettura",
       "readWrite": "Lettura e scrittura",
@@ -1412,7 +1492,8 @@
       "nothingToUpdate": "Niente da aggiornare.",
       "envSaved": "Variabili d'ambiente salvate",
       "envSavedWarnings": "Variabili d'ambiente salvate. {warnings}",
-      "discoveryFailed": "Rilevamento non riuscito: {message}"
+      "discoveryFailed": "Rilevamento non riuscito: {message}",
+      "authorizationFailed": "Autorizzazione non riuscita: {message}"
     }
   },
   "userCredentials": {
@@ -1441,6 +1522,1951 @@
       "cancel": "Annulla",
       "saving": "Salvataggio…",
       "switch": "Cambia"
+    }
+  },
+  "connectorTools": {
+    "title": "Strumenti MCP ({count})",
+    "cancelImport": "Annulla importazione",
+    "importTools": "Importa strumenti",
+    "autoImport": "Importa dalla specifica",
+    "discovering": "Rilevamento...",
+    "discover": "Rileva dal server MCP",
+    "cancel": "Annulla",
+    "addTool": "Aggiungi strumento",
+    "import": {
+      "title": "Importa strumenti da",
+      "sources": {
+        "openapi": "OpenAPI / Swagger",
+        "postman": "Collection Postman",
+        "curl": "Comando cURL",
+        "har": "File HAR (acquisizione del browser)",
+        "graphql": "Introspection GraphQL",
+        "wsdl": "WSDL",
+        "json": "Definizione JSON",
+        "mcp": "Rilevamento MCP",
+        "odata": "$metadata OData"
+      },
+      "placeholders": {
+        "openapi": "Incolla il JSON/YAML OpenAPI o inserisci un URL...",
+        "postman": "Incolla il JSON della Collection Postman o inserisci un URL...",
+        "graphql": "Inserisci l'URL dell'endpoint GraphQL...",
+        "wsdl": "Inserisci l'URL del WSDL...",
+        "mcp": "Facoltativo: lascia vuoto per usare l'URL di base del connettore",
+        "odata": "Facoltativo: incolla un documento $metadata invece di scaricarlo"
+      },
+      "servicePath": "Percorso del servizio",
+      "servicePathPlaceholder": "Lascia vuoto: il servizio è l'URL di base",
+      "servicePathHint": "Il suo $metadata viene letto con le credenziali di questo connettore. Ogni entity set diventa uno strumento list e uno get.",
+      "entitySets": "Entity set (facoltativo)",
+      "entitySetsPlaceholder": "A_BusinessPartner, A_Customer — vuoto per tutti",
+      "url": "URL (scarica la specifica da un URL)",
+      "harFile": "File HAR",
+      "harHint": "Dai DevTools del browser: scheda Network → clic destro → \"Save all as HAR\". I file HAR contengono cookie di sessione e token: corpi delle risposte, cookie e header con credenziali vengono rimossi nel tuo browser prima di caricare qualsiasi cosa.",
+      "harReady": "{name} — pronto per l'importazione.",
+      "harReading": "Lettura di {name}...",
+      "harTooBig": "Questa acquisizione pesa ancora {size} dopo aver rimosso corpi delle risposte e cookie, più di quanto il server accetta. Acquisisci una sessione più breve (meno richieste) e riprova.",
+      "harOtherOrigin": "Nessuna delle {count} richieste di questa acquisizione è stata fatta a {url}. Acquisisci una sessione verso quell'host e riprova.",
+      "harOtherOriginNoUrl": "Nessuna delle {count} richieste di questa acquisizione è stata fatta all'URL di base del connettore. Acquisisci una sessione verso quell'host e riprova.",
+      "harReadError": "Impossibile leggere questo file: {message}",
+      "contentCurl": "Comandi cURL",
+      "contentJson": "Definizioni JSON degli strumenti",
+      "contentOther": "Oppure incolla direttamente il contenuto",
+      "importing": "Importazione...",
+      "import": "Importa"
+    },
+    "empty": "Nessuno strumento configurato. Importali da una specifica, una Collection Postman o un comando cURL, oppure aggiungili a mano.",
+    "card": {
+      "enabled": "attivo",
+      "disabled": "disattivato",
+      "deprecated": "obsoleto",
+      "deprecatedTitle": "Rimosso dalla specifica di origine il {date}. Assegnazioni dei ruoli e cronologia restano.",
+      "mapped": "mappato",
+      "mappedTitle": "Un mapping della risposta modella l'output di questo strumento prima che arrivi al client AI. Modificalo in Mapping della risposta.",
+      "params": "{count, plural, one {# parametro} other {# parametri}}",
+      "paramsFromEnv": " ({count} da env)",
+      "paramsFromEnvTitle": "{count, plural, one {# parametro compilato} other {# parametri compilati}} dalle variabili d'ambiente",
+      "query": "{count} query",
+      "body": "{count} body",
+      "headers": "{count} header",
+      "test": "Prova",
+      "close": "Chiudi",
+      "edit": "Modifica",
+      "hints": "Hint",
+      "closeHints": "Chiudi hint",
+      "hintsTitle": "Annotazioni MCP: dicono agli agenti se questo strumento è di sola lettura, distruttivo, idempotente.",
+      "disable": "Disattiva",
+      "enable": "Attiva",
+      "proxy": "Proxy",
+      "proxyTitle": "Instrada la richiesta di questo strumento attraverso il proxy / web-unblocker configurato. Consigliato per API con protezione anti-bot, blocchi geografici o limiti di frequenza.",
+      "delete": "Elimina",
+      "showSql": "Mostra tutto l'SQL",
+      "showPath": "Mostra tutto il percorso",
+      "hideSql": "Nascondi SQL",
+      "hidePath": "Nascondi percorso"
+    },
+    "playground": {
+      "autoFilled": "Compilati da env:",
+      "autoFilledNote": " — inseriti in fase di esecuzione, non serve includerli nei parametri di test",
+      "input": "Parametri di input (JSON)",
+      "running": "Esecuzione...",
+      "runTest": "Esegui test",
+      "response": "Risposta",
+      "success": "Riuscito ({ms} ms)",
+      "error": "Errore ({ms} ms)",
+      "viewMapped": "Mappata (ciò che vede l'AI)",
+      "viewRaw": "Risposta grezza dell'API",
+      "mappingFailed": "Mapping della risposta non riuscito ({error}): viene restituita la risposta grezza. Correggilo in Modifica → Mapping della risposta.",
+      "kind": {
+        "authFailed": "Credenziali rifiutate:",
+        "badRequest": "Richiesta non valida:",
+        "notFound": "Non trovato:",
+        "rateLimited": "Limite di frequenza raggiunto:",
+        "upstreamError": "Errore dell'API:",
+        "unreachable": "Non raggiungibile:",
+        "error": "Non riuscito:"
+      },
+      "empty": "Fai clic su \"Esegui test\" per eseguire questo strumento..."
+    },
+    "msg": {
+      "firstRun": "Esecuzione della tua prima chiamata a uno strumento…",
+      "created": "Strumento creato.",
+      "updated": "Strumento aggiornato."
+    }
+  },
+  "toolEditor": {
+    "titleEdit": "Modifica strumento",
+    "titleCreate": "Crea strumento",
+    "cancel": "Annulla",
+    "saving": "Salvataggio...",
+    "update": "Aggiorna strumento",
+    "create": "Crea strumento",
+    "name": "Nome dello strumento",
+    "nameHint": "snake_case, mostrato al modello AI",
+    "description": "Descrizione",
+    "descriptionPlaceholder": "Recupera un elenco di utenti con filtri facoltativi",
+    "descriptionHint": "Una descrizione chiara aiuta l'AI a decidere quando usare questo strumento",
+    "toolType": "Tipo di strumento",
+    "native": {
+      "REST": "Chiamata API",
+      "ODATA": "Chiamata OData",
+      "GRAPHQL": "Operazione GraphQL",
+      "SOAP": "Operazione SOAP",
+      "DATABASE": "Query SQL",
+      "MCP": "Chiamata a uno strumento remoto",
+      "WEBHOOK": "Webhook",
+      "other": "Nativo"
+    },
+    "staticText": "Testo statico",
+    "staticResponse": "Testo della risposta statica",
+    "staticPlaceholder": "# Istruzioni\n\nDescrivi come usare questo strumento o fornisci informazioni fisse.\n\nPuoi usare la formattazione Markdown.",
+    "staticHint": "Questo testo viene restituito direttamente, senza chiamare nessuna API. Usalo per istruzioni, documentazione o risposte fisse.",
+    "operationType": "Tipo di operazione",
+    "graphqlQuery": "Query / mutation GraphQL",
+    "graphqlHint": "Usa le $variables nella query e associale ai parametri qui sotto come \"Variabile GraphQL\"",
+    "sqlTemplate": "Template della query SQL",
+    "sqlHint": "Usa $param_name per fare riferimento ai parametri. Sono consentite solo query SELECT.",
+    "soapOperation": "Operazione SOAP",
+    "soapHint": "Il nome dell'operazione/metodo SOAP dal WSDL",
+    "portPath": "Porta / Percorso",
+    "method": "Metodo",
+    "path": "Percorso",
+    "pathHint": "Usa {example} per i parametri di percorso: vengono creati automaticamente qui sotto",
+    "requestBody": "Corpo della richiesta",
+    "bodyFields": "Campi del body",
+    "bodyTemplate": "Template del body (JSON)",
+    "bodyMapping": "Mapping del body (JSON)",
+    "invalidJson": "JSON non valido: il salvataggio è disattivato finché non è corretto.",
+    "bodyMappingHint": "Inviato come corpo della richiesta, con la struttura intatta. Usa <code>$param</code> per gli argomenti dello strumento e <code>{connectorVar}</code> / <code>{contextVar}</code> per i valori del connettore e del contesto della chiamata. Compare automaticamente quando il mapping salvato è annidato: modificarlo qui lo mantiene intatto.",
+    "encoding": "Codifica:",
+    "bodyTemplateHint": "Usa <code>{example}</code> per i valori dinamici. Tutti gli altri campi vengono inviati così come sono. I parametri vengono estratti automaticamente qui sotto.",
+    "params": {
+      "title": "Parametri di input",
+      "hint": "Definisci cosa può passare il modello AI a questo strumento e dove va ogni valore nella richiesta API",
+      "add": "Aggiungi parametro",
+      "envBanner": "Compilati da env:",
+      "envBannerHint": "Questi parametri vengono inseriti dalle variabili d'ambiente in fase di esecuzione e nascosti all'AI.",
+      "empty": "Ancora nessun parametro. Aggiungine uno per ogni valore che il modello AI deve poter passare.",
+      "name": "Nome",
+      "type": "Tipo",
+      "description": "Descrizione",
+      "mapsTo": "Destinazione",
+      "req": "Obbl.",
+      "envTitle": "Questo parametro viene compilato da una variabile d'ambiente e nascosto all'AI",
+      "descriptionPlaceholder": "Descrivi questo parametro…",
+      "fileType": "file (da URL)",
+      "required": "Obbligatorio",
+      "remove": "Rimuovi",
+      "removeTitle": "Rimuovi parametro",
+      "removeNamed": "Rimuovi il parametro {name}",
+      "queryOverrides": "Chiavi query personalizzate",
+      "queryKey": "chiave query",
+      "headerOverrides": "Nomi header personalizzati",
+      "headerName": "nome header"
+    },
+    "targets": {
+      "path": "Parametro di percorso",
+      "query": "Parametro query",
+      "body": "Campo del body",
+      "header": "Valore header",
+      "graphqlVar": "Variabile GraphQL",
+      "soap": "Parametro SOAP",
+      "sql": "Parametro SQL",
+      "passThrough": "Parametro passato invariato"
+    },
+    "cacheTtl": "TTL della cache delle risposte",
+    "cacheSeconds": "secondi (0 = nessuna cache)",
+    "cacheHint": "Memorizza in Redis le richieste identiche per ridurre le chiamate API. Valori comuni: 60 (1 min), 300 (5 min), 3600 (1 ora).",
+    "preview": "Anteprima del mapping generato (JSON)",
+    "codeText": "Tool Codice",
+    "codeProgram": "Programma",
+    "codeProgramHint": "Un corpo JavaScript async. Chiama altri tool con await amcp.run(nome, args), amcp.search(query), amcp.describe(nome). Gli input del tool sono in args. Restituisci il risultato.",
+    "codeUses": "Usa (connettori)",
+    "codeUsesHint": "Array JSON dei connettori che questo tool codice può chiamare. Ogni voce indica un connectorId e un elenco opzionale di nomi di tool; senza elenco sono permessi tutti i tool del connettore. Solo connettori di questo workspace.",
+    "codeRunAs": "Esegui come",
+    "codeRunAsInvoker": "Invoker (permessi del chiamante)",
+    "codeRunAsDefiner": "Definer (curato da admin; solo admin)",
+    "codeAllowWrites": "Permetti tool di scrittura",
+    "codeAllowWritesHint": "Off = il programma può chiamare solo tool in sola lettura. Le scritture richiedono Enterprise."
+  },
+  "responseMapping": {
+    "title": "Mapping della risposta",
+    "intro": "Modella la risposta dell'API prima che arrivi al client AI. Meno token, e solo i campi di cui questo strumento ha davvero bisogno escono dal tuo workspace. Off = la risposta grezza viene restituita invariata.",
+    "modes": {
+      "off": "Off",
+      "select": "Selezione dei campi",
+      "jmespath": "JMESPath"
+    },
+    "outputTemplate": "Template di output (JSON)",
+    "insertExample": "Inserisci un esempio",
+    "invalidJson": "JSON non valido: il salvataggio è disattivato finché non è corretto.",
+    "selectHint": "Le chiavi sono i nomi in output. Una foglia è un percorso (<code>$.a.b</code>, <code>items[*].id</code>, <code>list[-1].x</code>), un valore statico (<code>\"= my-source\"</code>) oppure <code>{reshape}</code> per rimodellare ogni elemento di un array. Un percorso che non si risolve viene omesso.",
+    "exclude": "Percorsi da escludere (uno per riga)",
+    "excludeHint": "Rimossi prima che venga applicato il template. Usalo da solo (senza template) per togliere pochi campi superflui e tenere tutto il resto.",
+    "expression": "Espressione JMESPath",
+    "expressionHint": "JMESPath completo, con le funzioni: usalo per valori calcolati come <code>length(devices)</code> o filtri come <code>{filter}</code>.",
+    "fallback": "Restituisci la risposta grezza se il mapping non riesce",
+    "maxSize": "Dimensione massima della risposta",
+    "bytes": "byte (0 = nessun limite)",
+    "previewTitle": "Applica il mapping all'ultima risposta reale di questo strumento. Non viene chiamata nessuna API.",
+    "previewTitleDisabled": "Salva lo strumento ed eseguilo una volta per avere una risposta reale su cui fare l'anteprima.",
+    "previewing": "Anteprima in corso…",
+    "preview": "Anteprima con l'ultima risposta reale",
+    "sampleFrom": " · esempio del {date}",
+    "previewFailed": "Anteprima non riuscita",
+    "mappingFailed": "Mapping non riuscito ({error}): viene mostrata la risposta grezza.",
+    "raw": "Risposta grezza",
+    "mapped": "Ciò che riceve il client AI"
+  },
+  "toolAnnotations": {
+    "hints": {
+      "readOnlyHint": {
+        "label": "Sola lettura",
+        "help": "Lo strumento non può modificare nulla. Gli agenti provano molto più liberamente gli strumenti di sola lettura: impostalo per le ricerche esposte tramite POST."
+      },
+      "destructiveHint": {
+        "label": "Distruttivo",
+        "help": "La scrittura elimina o sovrascrive dati, invece di aggiungerne soltanto. Ha senso solo se lo strumento non è di sola lettura."
+      },
+      "idempotentHint": {
+        "label": "Idempotente",
+        "help": "Richiamarlo con gli stessi argomenti non cambia nient'altro. Ha senso solo se lo strumento non è di sola lettura."
+      },
+      "openWorldHint": {
+        "label": "Mondo aperto",
+        "help": "Comunica con un sistema esterno i cui contenuti non possiamo delimitare. No per un database o un contenuto statico."
+      }
+    },
+    "loading": "Caricamento degli hint…",
+    "intro": "Hint che i client MCP leggono prima di chiamare questo strumento, soprattutto se è di sola lettura. Vengono dedotti dal connettore: sovrascrivili solo quando la deduzione è sbagliata (di solito una ricerca di sola lettura esposta tramite POST).",
+    "title": "Titolo",
+    "titlePlaceholder": "Ricavato dal nome dello strumento",
+    "ignored": "(ignorato per gli strumenti di sola lettura)",
+    "auto": "Automatico",
+    "autoYes": "Automatico (sì)",
+    "autoNo": "Automatico (no)",
+    "yes": "Sì",
+    "no": "No",
+    "advertised": "Comunicato ai client",
+    "none": "— nessuno —",
+    "resetDone": "Ripristinati i valori dedotti",
+    "saved": "Salvato",
+    "error": "Errore: {message}",
+    "saving": "Salvataggio…",
+    "save": "Salva hint",
+    "reset": "Ripristina i valori dedotti"
+  },
+  "settingsNav": {
+    "sections": {
+      "organization": "Organizzazione"
+    },
+    "items": {
+      "profile": {
+        "label": "Profilo",
+        "description": "Nome, email, password"
+      },
+      "connections": {
+        "label": "Connessioni",
+        "description": "A cosa può accedere ogni client AI"
+      },
+      "organization": {
+        "label": "Generale",
+        "description": "Workspace e nuove organizzazioni"
+      },
+      "users": {
+        "label": "Utenti",
+        "description": "Membri e inviti"
+      },
+      "roles": {
+        "label": "Ruoli",
+        "description": "Controllo degli accessi agli strumenti MCP"
+      },
+      "identityProviders": {
+        "label": "Single sign-on",
+        "description": "Microsoft, Google, Okta"
+      },
+      "license": {
+        "label": "Licenza",
+        "description": "Piano, fatturazione, abbonamento"
+      },
+      "admin": {
+        "label": "Amministrazione",
+        "description": "SMTP, avvisi, link nel footer"
+      },
+      "fileShare": {
+        "label": "Condivisione file",
+        "description": "Link di download temporanei"
+      }
+    }
+  },
+  "settingsProfile": {
+    "authModes": {
+      "none": "Nessuna (sconsigliato)",
+      "legacy": "Legacy (Bearer Token / chiave API)",
+      "oauth2": "OAuth 2.0 (Authorization Code + Client Credentials)",
+      "both": "Entrambe (OAuth 2.0 + Legacy)"
+    },
+    "toast": {
+      "requestsErased": "{count, plural, one {# richiesta acquisita cancellata} other {# richieste acquisite cancellate}}",
+      "learningOptedOut": "Le tue richieste non vengono più usate per l'apprendimento delle skill",
+      "learningReset": "La tua scelta è stata rimossa; vale l'impostazione del tuo admin",
+      "couldNotSave": "Impossibile salvare",
+      "tipsOn": "Consigli e offerte attivati",
+      "tipsOff": "Disiscrizione da consigli e offerte completata",
+      "couldNotConnect": "Impossibile collegare",
+      "accountConnected": "Account collegato",
+      "accountDisconnected": "Account scollegato",
+      "couldNotDisconnect": "Impossibile scollegare",
+      "profileUpdated": "Profilo aggiornato",
+      "profileUpdateFailed": "Aggiornamento del profilo non riuscito",
+      "passwordsDoNotMatch": "Le password non corrispondono",
+      "passwordChangeFailed": "Modifica della password non riuscita",
+      "passwordChanged": "Password modificata"
+    },
+    "confirmUnlink": "Scollegare \"{name}\"? Dopo ti servirà la password per accedere.",
+    "confirmSocialUnlink": "Scollegare {name}? Non potrai più usarlo per accedere.",
+    "error": "Errore: {message}",
+    "couldNotUpdateProfile": "Impossibile aggiornare il profilo",
+    "couldNotChangePassword": "Impossibile modificare la password",
+    "incorrectPassword": "Password errata.",
+    "deleteFailed": "Impossibile eliminare l'account.",
+    "onlyAdmin": "Sei l'unico admin di queste organizzazioni.",
+    "couldNotStartSignIn": "Impossibile avviare l'accesso.",
+    "profile": {
+      "title": "Profilo",
+      "email": "Email",
+      "name": "Nome",
+      "role": "Ruolo",
+      "save": "Salva profilo"
+    },
+    "emailPrefs": {
+      "title": "Preferenze email",
+      "label": "Consigli e offerte via email",
+      "body": "Consigli per la configurazione finché il tuo workspace è nuovo, e offerte dopo una prova. Le email sul tuo account, come i codici di accesso e gli avvisi sul piano, vengono sempre inviate."
+    },
+    "learning": {
+      "title": "Apprendimento delle skill",
+      "effective": "Le tue richieste ai client AI collegati a questo workspace vengono registrate insieme alle chiamate agli strumenti che ne derivano, così gli admin possono trasformare le esigenze ricorrenti in skill del workspace.",
+      "optedOut": "Hai scelto di non partecipare: le tue richieste non vengono registrate per l'apprendimento delle skill in questo workspace.",
+      "adminOff": "Il tuo admin ha disattivato per te l'apprendimento delle skill in questo workspace.",
+      "label": "Usa le mie richieste per l'apprendimento delle skill",
+      "body": "Togliere la spunta vale sempre. Rimetterla rimuove solo la tua rinuncia: se le tue richieste vengono usate lo decide poi il tuo admin.",
+      "erase": "Cancella le mie richieste acquisite"
+    },
+    "password": {
+      "title": "Cambia password",
+      "current": "Password attuale",
+      "new": "Nuova password",
+      "newPlaceholder": "Min. 8 caratteri",
+      "confirm": "Conferma la nuova password",
+      "confirmPlaceholder": "Ripeti la nuova password",
+      "submit": "Cambia password"
+    },
+    "linked": {
+      "title": "Account collegati",
+      "body": "Collega il tuo account di directory per accedere senza password. Il tuo amministratore non può farlo al posto tuo: il collegamento è affidabile solo perché l'hai creato tu mentre avevi effettuato l'accesso.",
+      "connectedLastUsed": "Collegato · ultimo uso {date}",
+      "connected": "Collegato",
+      "notConnected": "Non collegato",
+      "working": "In corso...",
+      "disconnect": "Scollega",
+      "connect": "Collega"
+    },
+    "social": {
+      "title": "Metodi di accesso",
+      "body": "Accedi ad AnythingMCP con uno di questi account invece che con la password.",
+      "noPassword": "Il tuo account non ha ancora una password. <link>Imposta una password</link> per accedere anche con il tuo indirizzo email.",
+      "lastUsed": "ultimo uso {date}"
+    },
+    "mcpAuth": {
+      "title": "Autenticazione del server MCP",
+      "body": "Configura come i client MCP (Claude, ChatGPT, Cursor) si autenticano sul tuo server.",
+      "method": "Metodo di autenticazione",
+      "loading": "Caricamento...",
+      "active": "Attivo",
+      "oauthTitle": "Endpoint OAuth 2.0",
+      "oauthNote": "Supporta i grant type Authorization Code (con PKCE) e Client Credentials. I client MCP come Claude Desktop rilevano questi endpoint automaticamente.",
+      "legacyTitle": "Autenticazione legacy",
+      "legacyBody": "Imposta <code>MCP_BEARER_TOKEN</code> o <code>MCP_API_KEY</code> nelle tue variabili d'ambiente.",
+      "modeNote": "La modalità di autenticazione si configura con la variabile d'ambiente <code>MCP_AUTH_MODE</code>. Impostala su <code>oauth2</code>, <code>legacy</code>, <code>both</code> o <code>none</code>."
+    },
+    "apiKeys": {
+      "title": "Chiavi API MCP",
+      "body": "Le chiavi API ora si gestiscono per ogni server MCP. Vai su <link>Server MCP</link> per generare e gestire le chiavi di ogni server."
+    },
+    "danger": {
+      "title": "Zona pericolosa",
+      "body": "Elimina definitivamente il tuo account. Verranno rimossi il profilo, i token di reimpostazione della password, i token di verifica dell'email, le chiavi API MCP, i connettori e le configurazioni dei server MCP. I log di audit vengono conservati senza i tuoi dati identificativi.",
+      "button": "Elimina il mio account"
+    },
+    "deleteDialog": {
+      "title": "Elimina account",
+      "descPassword": "Questa azione non può essere annullata. Inserisci la password e digita <strong>DELETE</strong> per confermare.",
+      "descNoPassword": "Questa azione non può essere annullata. Digita <strong>DELETE</strong> per confermare. Se hai effettuato l'accesso più di 10 minuti fa, ti verrà chiesto prima di accedere di nuovo.",
+      "blockingTitle": "Impossibile eliminare: sei l'unico admin di:",
+      "blockingHint": "Nomina prima un altro admin o elimina quelle organizzazioni.",
+      "password": "Password",
+      "typeConfirm": "Digita <code>DELETE</code> per confermare",
+      "reauth": "Accedi di nuovo con {provider}",
+      "cancel": "Annulla",
+      "deleting": "Eliminazione…",
+      "submit": "Elimina il mio account"
+    }
+  },
+  "settingsConnections": {
+    "loadFailed": "Impossibile caricare le connessioni",
+    "emptySelection": "Scegli almeno un server MCP, oppure l'intero workspace.",
+    "notAvailable": "Questa selezione non è disponibile per te.",
+    "updated": "Aggiornato. Vale dalla prossima richiesta di questa connessione.",
+    "revokedMsg": "{client} non può più accedere a nulla.",
+    "loading": "Caricamento…",
+    "title": "Client AI collegati",
+    "intro": "A cosa può accedere ogni client tramite il tuo endpoint MCP condiviso. Le modifiche valgono dalla sua prossima richiesta, senza bisogno di ricollegarlo.",
+    "empty": "Non c'è ancora niente di collegato. Aggiungi il tuo endpoint MCP in Claude, ChatGPT, Meta Muse o Cursor: comparirà qui appena lo autorizzi.",
+    "revoked": "Revocato",
+    "reachesNothing": "Nessun accesso. Scegli qui sotto per consentirlo di nuovo.",
+    "everythingIn": "Tutto in {workspace}",
+    "nothingSelected": "Nessuna selezione",
+    "change": "Modifica",
+    "revoke": "Revoca",
+    "connectorCount": "{count, plural, one {# connettore} other {# connettori}}",
+    "wholeWorkspace": "Tutto in questo workspace",
+    "wholeWorkspaceHint": "compresi i connettori non assegnati a un server",
+    "save": "Salva",
+    "cancel": "Annulla"
+  },
+  "settingsOrg": {
+    "updated": "Organizzazione aggiornata",
+    "updateFailed": "Impossibile aggiornare l'organizzazione",
+    "deleteFailed": "Impossibile eliminare l'organizzazione",
+    "membersSignedOut": "{count, plural, one {# membro disconnesso ovunque.} other {# membri disconnessi ovunque.}}",
+    "crossOrg": "{count, plural, one {# di loro appartiene anche ad altri workspace ed è stato disconnesso anche lì.} other {# di loro appartengono anche ad altri workspace e sono stati disconnessi anche lì.}}",
+    "keysDeactivated": "{count, plural, one {# chiave API MCP disattivata.} other {# chiavi API MCP disattivate.}}",
+    "revokeFailed": "Impossibile revocare le sessioni",
+    "created": "Organizzazione creata! Cambio in corso...",
+    "createFailed": "Impossibile creare l'organizzazione",
+    "title": "Organizzazione",
+    "introAdmin": "Gestisci le impostazioni del tuo workspace. Tutti i membri di questa organizzazione condividono connettori, server MCP e strumenti.",
+    "introMember": "Visualizza la tua organizzazione attuale e crea nuovi workspace.",
+    "name": "Nome dell'organizzazione",
+    "namePlaceholder": "Il mio workspace",
+    "id": "ID dell'organizzazione",
+    "yourRole": "Il tuo ruolo",
+    "createdAt": "Creata il",
+    "saving": "Salvataggio...",
+    "save": "Salva modifiche",
+    "features": {
+      "title": "Funzionalità",
+      "onlyAdmins": "Solo gli admin possono modificarlo",
+      "kg": {
+        "label": "Knowledge Graph",
+        "description": "Rileva automaticamente le relazioni tra le entità dei tuoi connettori (dalle definizioni degli strumenti e dall'uso reale) e le espone agli agenti. Disattivandolo, il grafo non viene più costruito, la pagina viene nascosta e lo strumento MCP di supporto viene rimosso."
+      },
+      "llm": {
+        "label": "Arricchimento con AI",
+        "description": "Lascia che un LLM suggerisca relazioni in più che le euristiche non trovano (ad es. che una persona nel CRM, un cliente nella fatturazione e un utente del supporto sono la stessa persona). Vengono inviati solo i nomi delle entità e dei campi, mai i tuoi dati. I suggerimenti attendono la tua conferma. Possono esserci costi del modello."
+      },
+      "edgeAutoApply": {
+        "label": "Applica in automatico le connessioni più sicure",
+        "description": "Quando l'arricchimento con AI suggerisce una connessione con alta confidenza (≥ 0,90), la aggiunge al grafo in automatico invece di lasciarla alla revisione manuale. I collegamenti con confidenza più bassa attendono comunque la tua conferma. Nessun costo aggiuntivo del modello: cambia solo come vengono gestiti i suggerimenti esistenti."
+      },
+      "captureIntent": {
+        "label": "Acquisisci l'intento dell'utente",
+        "description": "Aggiunge a ogni strumento MCP un parametro facoltativo che chiede all'agente la richiesta originale dell'utente. Acquisisce il contesto di ogni chiamata, così il grafo può essere ottimizzato e nel tempo possono essere suggerite delle skill. È l'impostazione predefinita per ogni utente: puoi cambiarla per singolo utente in Impostazioni → Utenti (Apprendimento delle skill), e ogni utente può rinunciare nelle proprie impostazioni."
+      },
+      "autoExtend": {
+        "label": "Estensione AI programmata",
+        "description": "A intervalli regolari (circa una volta al giorno), lascia che l'AI estenda il grafo e generi skill dagli intenti degli utenti acquisiti, così la tua rete e le tue skill continuano a migliorare da sole. Attenta ai costi: gira solo ogni tanto, si salta quando non è cambiato nulla e resta disattivata finché non la attivi. Richiede Arricchimento con AI + Acquisisci l'intento dell'utente."
+      },
+      "skillAutoApply": {
+        "label": "Applica in automatico le skill più sicure",
+        "description": "Quando l'AI genera una skill con alta confidenza (≥ 0,90), la applica in automatico invece di lasciarla come suggerimento da rivedere. Le skill con confidenza più bassa attendono comunque l'approvazione manuale."
+      }
+    },
+    "security": {
+      "title": "Sicurezza",
+      "body": "Disconnetti ogni membro dalla dashboard e da ogni client AI collegato, compresi i client che hanno un refresh token. Nessuno perde ruolo o accessi; tutti devono solo accedere di nuovo. Usalo dopo una sospetta fuga di credenziali o un cambio del tuo identity provider. Le chiavi API MCP non sono sessioni e restano invariate, a meno che tu non scelga diversamente.",
+      "button": "Disconnetti tutti"
+    },
+    "revokeDialog": {
+      "title": "Disconnetti tutti",
+      "description": "Ogni membro di <strong>{name}</strong> dovrà accedere di nuovo, sulla dashboard e in ogni client AI. I membri che appartengono anche ad altri workspace vengono disconnessi anche lì. Per confermare, digita qui sotto il nome dell'organizzazione.",
+      "typeConfirm": "Digita <code>{name}</code> per confermare",
+      "alsoMe": "Disconnetti anche me",
+      "alsoMeHint": "Lascialo attivo se la sessione compromessa potrebbe essere la tua. Verrai portato subito alla pagina di accesso.",
+      "alsoKeys": "Disattiva anche tutte le chiavi API MCP di questo workspace",
+      "alsoKeysHint": "Le chiavi API non sono sessioni: senza questa opzione, ogni chiave <code>mcp_…</code> continua a funzionare. Le chiavi disattivate non possono essere ripristinate.",
+      "cancel": "Annulla",
+      "signingOut": "Disconnessione…",
+      "submit": "Disconnetti tutti"
+    },
+    "danger": {
+      "title": "Zona pericolosa",
+      "body": "Elimina definitivamente questa organizzazione, con tutti i membri, i connettori, i server MCP, le chiavi API, i ruoli personalizzati, gli inviti in sospeso e le impostazioni. Gli altri membri vengono spostati nel loro workspace successivo più vecchio, se ne hanno uno. Questa azione non può essere annullata.",
+      "button": "Elimina questa organizzazione"
+    },
+    "deleteDialog": {
+      "title": "Elimina organizzazione",
+      "description": "Verranno eliminati <strong>{name}</strong> e tutto ciò che contiene. Per confermare, digita qui sotto il nome dell'organizzazione.",
+      "typeConfirm": "Digita <code>{name}</code> per confermare",
+      "cancel": "Annulla",
+      "deleting": "Eliminazione…",
+      "submit": "Elimina organizzazione"
+    },
+    "myOrgs": {
+      "title": "Le mie organizzazioni",
+      "joined": "{role} · Entrato il {date}",
+      "active": "Attiva",
+      "switch": "Passa a questa",
+      "createTitle": "Crea una nuova organizzazione",
+      "createPlaceholder": "Nome della nuova organizzazione",
+      "creating": "Creazione...",
+      "create": "Crea organizzazione"
+    }
+  },
+  "settingsUsers": {
+    "memoryLevels": {
+      "none": "Nessun accesso",
+      "read": "Lettura della memoria aziendale",
+      "personal": "Personale",
+      "contribute": "Contributo"
+    },
+    "memoryDefault": "Predefinito ({level, select, none {nessun accesso} read {lettura} personal {personale} other {contributo}})",
+    "learningDefaultOn": "Predefinito (attivo)",
+    "learningDefaultOff": "Predefinito (disattivo)",
+    "on": "Attivo",
+    "off": "Disattivo",
+    "error": "Errore: {message}",
+    "roleUpdated": "Ruolo cambiato in {role}",
+    "learningUpdated": "{count, plural, one {Apprendimento delle skill aggiornato per # utente.} other {Apprendimento delle skill aggiornato per # utenti.}}",
+    "requestsErased": "{count, plural, one {# richiesta acquisita cancellata.} other {# richieste acquisite cancellate.}}",
+    "memoryUpdated": "{count, plural, one {Accesso alla memoria aggiornato per # utente.} other {Accesso alla memoria aggiornato per # utenti.}}",
+    "confirmEraseMemory": "{count, plural, one {Cancellare la memoria personale di # utente in questo workspace?} other {Cancellare la memoria personale di # utenti in questo workspace?}}\n\nViene eliminata senza mostrartela. Questa azione non può essere annullata.",
+    "memoryErased": "{count, plural, one {# elemento di memoria personale cancellato.} other {# elementi di memoria personale cancellati.}}",
+    "confirmDeactivate": "Disattivare {email}?\n\nLe sessioni terminano subito, le chiavi MCP smettono di funzionare e l'accesso a questo workspace viene tolto. Potrai riattivare l'account in seguito.",
+    "deactivated": "Utente disattivato",
+    "reactivated": "Utente riattivato. Le chiavi MCP revocate restano revocate; se ne può creare una nuova.",
+    "signedOut": "{email} è stato disconnesso ovunque e deve accedere di nuovo.",
+    "keysDeactivated": "{count, plural, one {# chiave API MCP disattivata.} other {# chiavi API MCP disattivate.}}",
+    "otherWorkspaces": "{count, plural, one {È stato disconnesso anche da # altro workspace.} other {È stato disconnesso anche da # altri workspace.}}",
+    "revokeFailed": "Impossibile revocare le sessioni",
+    "confirmDelete": "Rimuovere {email} da questo workspace? Se è il suo unico workspace, l'account viene eliminato. Questa azione non può essere annullata.",
+    "deleted": "Utente eliminato",
+    "confirmRevokeInvite": "Revocare l'invito per {email}?",
+    "inviteRevoked": "Invito revocato",
+    "accessDenied": {
+      "title": "Accesso negato",
+      "body": "Solo gli amministratori possono accedere a questa pagina.",
+      "back": "Torna alle impostazioni"
+    },
+    "revokeDialog": {
+      "title": "Disconnetti ovunque",
+      "description": "<strong>{email}</strong> verrà disconnesso dalla dashboard e da ogni client AI collegato (Claude, ChatGPT, Cursor, …), compresi i client che hanno un refresh token. Ruolo e accessi restano invariati: basta accedere di nuovo. Se appartiene ad altri workspace, viene disconnesso anche lì.",
+      "alsoKeys": "Disattiva anche le sue chiavi API MCP in questo workspace",
+      "alsoKeysHint": "Le chiavi API non sono sessioni: senza questa opzione, ogni chiave <code>mcp_…</code> che ha creato continua a funzionare. Le chiavi disattivate non possono essere ripristinate.",
+      "cancel": "Annulla",
+      "signingOut": "Disconnessione…",
+      "submit": "Disconnetti ovunque"
+    },
+    "title": "Gestione utenti",
+    "intro": "Gestisci gli utenti e invia inviti.",
+    "seats": "{used} utenti su {limit} in questa istanza.",
+    "seatsOver": "{used} utenti in questa istanza, {limit} inclusi.",
+    "cancel": "Annulla",
+    "inviteUser": "Invita utente",
+    "dismiss": "chiudi",
+    "licenseSeats": "La tua licenza include {limit} utenti. Per più utenti, chiedici di Enterprise in <link>Impostazioni → Licenza</link>.",
+    "invite": {
+      "title": "Invita un nuovo utente",
+      "body": "Invia un'email di invito. La persona riceverà un link per creare il proprio account con il ruolo indicato.",
+      "email": "Email",
+      "appRole": "Ruolo nell'app",
+      "mcpRole": "Ruolo per gli strumenti MCP",
+      "noRestriction": "Nessuna restrizione (accesso completo)",
+      "emailFailed": "Invio dell'email non riuscito:",
+      "link": "Link di invito (da condividere manualmente):",
+      "sending": "Invio...",
+      "send": "Invia invito"
+    },
+    "bulk": {
+      "selected": "{count} selezionati · Apprendimento delle skill:",
+      "eraseWhenOff": "Quando lo disattivi, cancella anche le richieste già acquisite da queste persone",
+      "clear": "Annulla selezione",
+      "memory": "Memoria:",
+      "eraseMemory": "Cancella la memoria personale"
+    },
+    "loading": "Caricamento...",
+    "table": {
+      "selectAll": "Seleziona tutti gli utenti",
+      "select": "Seleziona {email}",
+      "email": "Email",
+      "name": "Nome",
+      "status": "Stato",
+      "role": "Ruolo",
+      "mcpRole": "Ruolo MCP",
+      "learning": "Apprendimento delle skill",
+      "learningHint": "Se le richieste di questo utente ai client AI possono essere usate per suggerire skill del workspace. Il valore predefinito segue Impostazioni → Organizzazione → Acquisisci l'intento dell'utente.",
+      "memory": "Memoria",
+      "memoryHint": "Cosa possono fare i client AI di questo utente con la memoria del workspace. Il valore predefinito segue le impostazioni della pagina Memoria.",
+      "date": "Data",
+      "actions": "Azioni",
+      "you": "tu",
+      "deactivated": "Disattivato",
+      "active": "Attivo",
+      "fullAccess": "Accesso completo",
+      "noRole": "Nessun ruolo",
+      "noRoleHint": "Nessun ruolo MCP assegnato. Senza restrizioni solo finché questo workspace non ha una whitelist di strumenti; appena un ruolo limita gli strumenti, un membro senza ruolo non ne ha nessuno.",
+      "optedOut": "ha rinunciato",
+      "optedOutHint": "Questo utente ha rinunciato di sua scelta. Le sue richieste non vengono usate, qualunque cosa sia impostata qui.",
+      "reactivate": "Riattiva",
+      "signOutHint": "Obbliga questo membro ad accedere di nuovo su ogni client",
+      "signOut": "Disconnetti ovunque",
+      "deactivate": "Disattiva",
+      "delete": "Elimina",
+      "pending": "In sospeso",
+      "expired": "Scaduto",
+      "default": "Predefinito",
+      "expires": "Scade: {date}",
+      "revoke": "Revoca"
+    },
+    "footer": "{users, plural, one {# utente} other {# utenti}}{invites, plural, =0 {} one {, # invito in sospeso} other {, # inviti in sospeso}} in totale. Il primo utente registrato diventa automaticamente ADMIN."
+  },
+  "settingsRoles": {
+    "error": "Errore: {message}",
+    "created": "Ruolo creato",
+    "updated": "Ruolo aggiornato",
+    "confirmDelete": "Eliminare il ruolo \"{name}\"? Gli utenti con questo ruolo non lo avranno più.",
+    "deleted": "Ruolo eliminato",
+    "toolAccessUpdated": "Accesso agli strumenti aggiornato",
+    "assigned": "Ruolo MCP assegnato",
+    "accessDenied": {
+      "title": "Accesso negato",
+      "body": "Solo gli amministratori possono accedere a questa pagina.",
+      "back": "Torna alle impostazioni"
+    },
+    "dismiss": "chiudi",
+    "loading": "Caricamento...",
+    "title": "Ruoli personalizzati",
+    "intro": "Crea ruoli per decidere a quali strumenti MCP possono accedere i diversi utenti. Gli utenti senza ruolo hanno accesso completo. ADMIN ha sempre accesso completo.",
+    "cancel": "Annulla",
+    "createRole": "Crea ruolo",
+    "form": {
+      "name": "Nome del ruolo",
+      "namePlaceholder": "es. Sola lettura, Team di supporto",
+      "description": "Descrizione",
+      "descriptionPlaceholder": "A cosa serve questo ruolo...",
+      "create": "Crea"
+    },
+    "empty": "Nessun ruolo personalizzato. Creane uno per iniziare a limitare l'accesso agli strumenti.",
+    "save": "Salva",
+    "system": "sistema",
+    "userCount": "{count, plural, one {# utente} other {# utenti}}",
+    "toolCount": "{count, plural, one {# strumento assegnato} other {# strumenti assegnati}}",
+    "manageTools": "Gestisci strumenti",
+    "edit": "Modifica",
+    "delete": "Elimina",
+    "access": {
+      "title": "Scegli gli strumenti a cui questo ruolo può accedere",
+      "body": "Solo gli strumenti selezionati saranno disponibili per gli utenti con questo ruolo. Se non selezioni nessuno strumento, il ruolo non ha accesso agli strumenti MCP.",
+      "noTools": "Nessuno strumento disponibile. Crea prima connettori e strumenti.",
+      "selectAll": "Seleziona tutti ({count})",
+      "deselectAll": "Deseleziona tutti",
+      "selected": "{selected}/{total} selezionati",
+      "search": "Cerca strumenti...",
+      "all": "Tutti",
+      "none": "Nessuno",
+      "saving": "Salvataggio...",
+      "save": "{count, plural, one {Salva (# strumento)} other {Salva (# strumenti)}}"
+    },
+    "assign": {
+      "title": "Ruoli MCP degli utenti",
+      "intro": "Assegna ruoli MCP agli utenti per decidere a quali strumenti possono accedere tramite MCP. Gli utenti senza ruolo hanno accesso illimitato. Gli utenti ADMIN hanno sempre accesso completo.",
+      "user": "Utente",
+      "appRole": "Ruolo nell'app",
+      "mcpRole": "Ruolo per gli strumenti MCP",
+      "fullAccess": "Accesso completo (admin)",
+      "noRestriction": "Nessuna restrizione (accesso completo)"
+    }
+  },
+  "settingsAdmin": {
+    "error": "Errore: {message}",
+    "accessDenied": {
+      "title": "Accesso negato",
+      "body": "Solo gli amministratori possono accedere a questa pagina.",
+      "back": "Torna alle impostazioni"
+    },
+    "remove": "Rimuovi",
+    "copy": "Copia",
+    "copied": "Copiato",
+    "smtp": {
+      "saved": "Configurazione SMTP salvata",
+      "testing": "Verifica della connessione...",
+      "confirmRemove": "Rimuovere la configurazione SMTP del workspace? Le email verranno inviate dal servizio di posta della piattaforma.",
+      "removed": "Configurazione SMTP rimossa. Ora le email usano il servizio di posta della piattaforma",
+      "title": "Email / configurazione SMTP",
+      "intro": "Configura SMTP per le email di reimpostazione della password e per le notifiche.",
+      "host": "Host SMTP",
+      "port": "Porta",
+      "user": "Nome utente",
+      "password": "Password",
+      "passwordKeep": "••••••••  (nuova per aggiornarla)",
+      "passwordPlaceholder": "Password SMTP",
+      "from": "Indirizzo mittente (facoltativo)",
+      "secure": "Usa SSL/TLS (porta 465)",
+      "save": "Salva configurazione SMTP",
+      "test": "Prova la connessione"
+    },
+    "alerts": {
+      "types": {
+        "json": "Webhook JSON generico",
+        "slack": "Incoming webhook di Slack"
+      },
+      "saved": "Webhook di avviso salvato",
+      "sendingTest": "Invio dell'avviso di prova...",
+      "testDelivered": "Avviso di prova consegnato",
+      "deliveryFailed": "consegna non riuscita",
+      "confirmRemove": "Rimuovere il webhook di avviso per gli errori dei connettori? Per questa organizzazione non partiranno più avvisi.",
+      "removed": "Webhook di avviso rimosso",
+      "title": "Avvisi sugli errori dei connettori",
+      "intro": "Ricevi una notifica via webhook o Slack quando un connettore continua a fallire, invece di scoprirlo dai log.",
+      "url": "URL del webhook",
+      "cloudHttps": "Su AnythingMCP Cloud l'URL deve usare https.",
+      "payloadType": "Tipo di payload",
+      "enabled": "Attivo",
+      "threshold": "Soglia di errori",
+      "window": "Finestra (minuti)",
+      "cooldown": "Pausa (minuti)",
+      "summary": "Avvisa dopo {threshold, plural, one {# errore} other {# errori}} dello stesso connettore entro {window, plural, one {# minuto} other {# minuti}}, poi attende {cooldown, plural, one {# minuto} other {# minuti}} prima di avvisare di nuovo.",
+      "rotate": "Rigenera il secret di firma al salvataggio",
+      "secretOnce": "Secret di firma, mostrato una sola volta. Copialo ora:",
+      "secretHelp": "Usalo per verificare l'header <code>X-AnythingMCP-Signature</code> (HMAC <code>sha256=</code> di timestamp e body; Slack lo ignora). Non verrà mostrato di nuovo.",
+      "savedIt": "L'ho salvato",
+      "save": "Salva webhook di avviso",
+      "saveUrlFirst": "Salva prima il nuovo URL",
+      "sendTest": "Invia avviso di prova"
+    },
+    "footer": {
+      "saved": "Link del footer salvati",
+      "title": "Link del footer",
+      "intro": "Aggiungi link a note legali, informativa sulla privacy, termini di servizio e simili. Compaiono nel footer di ogni pagina.",
+      "labelPlaceholder": "Etichetta (es. Informativa sulla privacy)",
+      "add": "+ Aggiungi link",
+      "save": "Salva link del footer"
+    },
+    "about": {
+      "title": "Informazioni su questa istanza",
+      "unavailable": "Informazioni sulla versione non disponibili.",
+      "version": "Versione",
+      "commit": "commit",
+      "built": "build del {date}",
+      "copied": "Copiato negli appunti",
+      "copyFailed": "Copia non riuscita",
+      "copy": "Copia info sulla versione"
+    }
+  },
+  "settingsLicense": {
+    "errors": {
+      "activate": "Attivazione della licenza non riuscita",
+      "invalid": "La licenza non è valida",
+      "verify": "Verifica non riuscita",
+      "register": "Registrazione della licenza Community non riuscita",
+      "portal": "Impossibile aprire il portale di fatturazione",
+      "trial": "Attivazione della prova non riuscita"
+    },
+    "verified": "Licenza verificata",
+    "none": "Nessuno",
+    "statuses": {
+      "active": "attiva",
+      "expired": "scaduta",
+      "invalid": "non valida",
+      "revoked": "revocata",
+      "pending": "in attesa"
+    },
+    "adminOnly": "Solo gli amministratori possono gestire la licenza.",
+    "title": "Licenza e piano",
+    "intro": "Gestisci la tua licenza di Anything MCP",
+    "currentPlan": "Piano attuale",
+    "licenseKey": "Chiave di licenza",
+    "noLicense": "Nessuna licenza registrata.",
+    "activating": "Attivazione...",
+    "startTrial": "Inizia la prova gratuita di 7 giorni",
+    "communityHint": "Facoltativa per Community: una chiave gratuita via email ti dà gli avvisi di sicurezza e di rilascio.",
+    "registering": "Registrazione...",
+    "registerCommunity": "Registra la licenza Community gratuita",
+    "fields": {
+      "plan": "Piano",
+      "status": "Stato",
+      "expires": "Scade",
+      "lastVerified": "Ultima verifica",
+      "trialDaysLeft": "Giorni di prova rimasti",
+      "days": "{count, plural, one {# giorno} other {# giorni}}",
+      "instanceId": "ID istanza"
+    },
+    "verifying": "Verifica...",
+    "verify": "Verifica ora",
+    "billing": {
+      "opening": "Apertura…",
+      "updatePayment": "Aggiorna il metodo di pagamento",
+      "keepPlan": "Mantieni il mio piano",
+      "manage": "Gestisci abbonamento e fatturazione",
+      "cancel": "Annulla l'abbonamento"
+    },
+    "features": {
+      "title": "Funzionalità",
+      "yes": "Sì",
+      "no": "No",
+      "unlimited": "Illimitato"
+    },
+    "key": {
+      "change": "Cambia chiave di licenza",
+      "activate": "Attiva chiave di licenza",
+      "changePlan": "Per passare a un altro piano, <link>cambialo nel portale di fatturazione</link>: il tuo abbonamento attuale viene modificato e ricalcolato pro rata, non duplicato.",
+      "purchase": "Acquista una licenza su <link>anythingmcp.com</link>",
+      "selfHosted": "Inserisci la chiave di licenza che hai ricevuto da noi. Le chiavi Starter e Team esistenti continuano a funzionare.",
+      "submit": "Attiva"
+    },
+    "upgrade": {
+      "title": "Passa a un piano a pagamento",
+      "payBody": "Scegli un piano per continuare a usare AnythingMCP Cloud dopo la prova. Questo indirizzo ha già avuto un abbonamento, quindi il piano inizia e viene addebitato al momento dell'acquisto.",
+      "cardBody": "Aggiungi un metodo di pagamento per continuare a usare AnythingMCP Cloud dopo la prova. Non ti viene addebitato nulla prima del {date} e puoi annullare quando vuoi.",
+      "cardBodyNoDate": "Aggiungi un metodo di pagamento per continuare a usare AnythingMCP Cloud dopo la prova. Non ti viene addebitato nulla prima della fine della prova e puoi annullare quando vuoi.",
+      "choosePlan": "Scegli un piano",
+      "addPayment": "Aggiungi un metodo di pagamento",
+      "compare": "Confronta i piani",
+      "body": "Passa a un piano a pagamento per continuare a usare AnythingMCP Cloud dopo la fine della prova.",
+      "viewPlans": "Vedi i piani"
+    },
+    "activate": {
+      "redirecting": "Reindirizzamento alle impostazioni…",
+      "noKey": "Nell'URL non c'è nessuna chiave di licenza.",
+      "malformed": "La chiave di licenza nell'URL non ha un formato valido.",
+      "adminOnly": "Solo gli amministratori possono attivare una chiave di licenza. Chiedi al tuo admin di accedere.",
+      "activated": "Licenza attivata.",
+      "backToClient": "Ti riportiamo indietro per completare il collegamento del tuo client AI…",
+      "failed": "Attivazione della licenza non riuscita.",
+      "title": "Attivazione della licenza",
+      "preparing": "Preparazione…",
+      "activating": "Attivazione della licenza…",
+      "key": "Chiave:",
+      "goToSettings": "Vai alle impostazioni della licenza"
+    }
+  },
+  "settingsSso": {
+    "types": {
+      "ENTRA": {
+        "label": "Microsoft Entra ID",
+        "fields": {
+          "tenantId": {
+            "label": "ID directory (tenant)",
+            "help": "Il GUID del tenant dalla panoramica della registrazione dell'app. Un nome di directory come contoso.onmicrosoft.com non è accettato."
+          }
+        }
+      },
+      "GOOGLE": {
+        "label": "Google Workspace",
+        "fields": {
+          "hostedDomain": {
+            "label": "Dominio del Workspace",
+            "help": "Fortemente consigliato. Senza, Google non è autorevole per gli indirizzi che non sono gmail.com, quindi potrebbe accedere qualsiasi account Google."
+          }
+        }
+      },
+      "OKTA": {
+        "label": "Okta",
+        "hint": "Usa il tuo dominio Okta, es. https://acme.okta.com. I domini personalizzati non sono ancora supportati.",
+        "fields": {
+          "authorizationServerId": {
+            "label": "ID dell'authorization server (facoltativo)"
+          }
+        }
+      },
+      "AUTH0": {
+        "label": "Auth0",
+        "hint": "Solo per le installazioni self-hosted.",
+        "fields": {
+          "rolesClaimNamespace": {
+            "label": "Namespace del claim dei ruoli",
+            "help": "Auth0 scarta senza avvisi i claim personalizzati senza namespace: l'accesso riesce e i ruoli semplicemente mancano."
+          }
+        }
+      },
+      "GITHUB": {
+        "label": "GitHub",
+        "hint": "GitHub non è un provider OpenID Connect, quindi non c'è un documento di discovery da verificare.",
+        "fields": {
+          "organization": {
+            "label": "Limita a un'organizzazione (facoltativo)"
+          }
+        }
+      },
+      "OIDC": {
+        "label": "OpenID Connect generico",
+        "hint": "Solo per le installazioni self-hosted.",
+        "fields": {
+          "groupsClaimName": {
+            "label": "Nome del claim dei gruppi (facoltativo)"
+          }
+        }
+      }
+    },
+    "toast": {
+      "loadFailed": "Impossibile caricare i provider",
+      "enforced": "Single sign-on obbligatorio",
+      "passwordReenabled": "Accesso con password riattivato",
+      "enforceFailed": "Impossibile cambiare l'obbligo",
+      "updated": "Provider aggiornato",
+      "created": "Provider creato",
+      "saveFailed": "Salvataggio non riuscito",
+      "deleted": "Provider eliminato",
+      "deleteFailed": "Eliminazione non riuscita",
+      "copyFailed": "Copia non riuscita",
+      "testOk": "Connessione OK",
+      "testFailed": "Connessione non riuscita",
+      "testError": "Verifica non riuscita"
+    },
+    "confirmEnforce": "Rendere obbligatorio il single sign-on per questo workspace?\n\nL'accesso con password smette di funzionare per tutti i membri. Se l'identity provider diventa irraggiungibile, potrai entrare solo con i tuoi codici di recupero.",
+    "confirmDelete": "Eliminare \"{name}\"? Chi accede tramite questo provider perderà l'accesso e i membri con l'accesso con password disattivato resteranno bloccati fuori.",
+    "accessDenied": {
+      "title": "Accesso negato",
+      "body": "Solo gli amministratori possono accedere a questa pagina.",
+      "back": "Torna alle impostazioni"
+    },
+    "cloud": {
+      "title": "Non disponibile su AnythingMCP Cloud",
+      "body": "Single sign-on, provisioning SCIM e sincronizzazione dei ruoli fanno parte dell'edizione self-hosted, dove l'istanza appartiene a una sola azienda. Su Cloud i membri accedono con email e password."
+    },
+    "loading": "Caricamento...",
+    "title": "Single sign-on",
+    "intro": "Fai accedere i membri con l'identity provider della tua organizzazione invece che con una password. Condividi con loro il link di accesso qui sotto: è il punto d'ingresso di questo workspace.",
+    "cancel": "Annulla",
+    "add": "Aggiungi provider",
+    "copy": "Copia",
+    "copied": "Copiato",
+    "form": {
+      "provider": "Provider",
+      "typeLocked": "Il tipo di provider non si può cambiare dopo la creazione: le impostazioni salvate sono state validate per quel tipo. Crea invece un nuovo provider.",
+      "name": "Nome visualizzato",
+      "namePlaceholder": "Accedi con Microsoft",
+      "nameHelp": "Mostrato sul pulsante di accesso.",
+      "issuer": "URL dell'issuer",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "keepBlank": "(lascia vuoto per mantenerlo)",
+      "secretHidden": "Il secret non viene mai rimandato al browser, quindi non può essere mostrato qui.",
+      "secretExpires": "Il secret scade il (facoltativo)",
+      "secretExpiresHelp": "Microsoft limita i client secret a 24 mesi. Se registri qui la data, una scadenza silenziosa diventa un avviso.",
+      "jit": "Crea gli account al primo accesso",
+      "jitHelp": "Disattivato per impostazione predefinita. Se lo attivi, chiunque possa autenticarsi presso il tuo identity provider entra in questo workspace come Viewer, compresi gli ospiti che potresti aver invitato lì per altri motivi.",
+      "roleSync": "Sincronizza i ruoli dalla directory a ogni accesso",
+      "roleSyncHelp": "I permessi vengono così gestiti dove già si gestiscono ingressi e uscite. I ruoli assegnati a mano da un admin non vengono mai rimossi da una sincronizzazione.",
+      "source": "Leggi i ruoli da",
+      "sources": {
+        "GROUPS": "Gruppi di sicurezza / Microsoft 365",
+        "APP_ROLES": "Ruoli dell'applicazione"
+      },
+      "sourceHelp": "I gruppi riusano ciò che la directory gestisce già, ma l'associazione avviene tramite gli ID oggetto invece che con nomi leggibili. I ruoli dell'applicazione sono più leggibili, ma vanno prima dichiarati nel manifest dell'app.",
+      "fallback": "Quando non corrisponde nulla",
+      "fallbacks": {
+        "DENY_ALL": "Non concedere strumenti",
+        "KEEP_EXISTING": "Lascia invariati i ruoli esistenti",
+        "DEFAULT_ROLE": "Concedi un ruolo predefinito"
+      },
+      "fallbackHelp": "“Non concedere strumenti” è l'impostazione predefinita di proposito: assegna un ruolo esplicito senza strumenti, così il risultato non dipende dal fatto che questo workspace abbia già impostato whitelist di strumenti.",
+      "defaultRoles": "Ruoli MCP predefiniti",
+      "defaultRolesPlaceholder": "Scegli almeno un ruolo",
+      "noRoles": "Non esistono ancora ruoli MCP: creane uno in Ruoli",
+      "defaultRolesHelp": "Concessi a chiunque abbia gruppi che non corrispondono a nessuna associazione. Se lo lasci vuoto, il fallback si comporta esattamente come “Non concedere strumenti”.",
+      "active": "Attivo",
+      "defaultRoleMissing": "“Concedi un ruolo predefinito” richiede almeno un ruolo MCP predefinito. Scegline uno qui sopra o scegli un altro fallback.",
+      "saving": "Salvataggio...",
+      "saveChanges": "Salva le modifiche",
+      "create": "Crea provider"
+    },
+    "empty": "Nessun identity provider configurato. I membri accedono con una password.",
+    "list": {
+      "inactive": "Inattivo",
+      "ssoRequired": "SSO obbligatorio",
+      "secretExpiring": "Secret in scadenza",
+      "jit": "Crea gli account al primo accesso",
+      "testing": "Verifica...",
+      "test": "Verifica",
+      "edit": "Modifica",
+      "delete": "Elimina",
+      "hideMappings": "Nascondi le associazioni dei ruoli",
+      "mappings": "Associazioni dei ruoli",
+      "hideScim": "Nascondi il provisioning",
+      "scim": "Provisioning (SCIM)",
+      "enforce": "Rendi obbligatorio il single sign-on"
+    },
+    "recovery": {
+      "generateFailed": "Impossibile generare i codici",
+      "title": "Codici di recupero",
+      "intro": "Codici monouso che ti fanno accedere quando l'identity provider non è raggiungibile: un client secret scaduto, una migrazione del tenant, un claim che non arriva più. Puoi rendere obbligatorio il single sign-on solo quando ne possiedi alcuni.",
+      "saveNow": "Salvali ora: non potranno essere mostrati di nuovo.",
+      "copy": "Copia",
+      "copied": "Copiato",
+      "download": "Scarica",
+      "savedThem": "Li ho salvati",
+      "generating": "Generazione...",
+      "generate": "Genera codici di recupero",
+      "regenerate": "Rigenera",
+      "noneYet": "Ancora nessuno.",
+      "unused": "{unused} di {total} non usati.",
+      "regenerateWarning": "Rigenerarli invalida il set attuale."
+    },
+    "mappings": {
+      "orgRoles": {
+        "unchanged": "Lascia invariato",
+        "VIEWER": "Viewer",
+        "EDITOR": "Editor",
+        "ADMIN": "Admin"
+      },
+      "loadFailed": "Impossibile caricare le associazioni",
+      "saved": "Associazioni salvate",
+      "saveFailed": "Salvataggio non riuscito",
+      "loading": "Caricamento delle associazioni...",
+      "groupsTitle": "Associazioni dei gruppi",
+      "appRolesTitle": "Associazioni dei ruoli dell'app",
+      "groupsScimHelp": "I gruppi assegnati all'applicazione in Entra compaiono qui automaticamente dopo il provisioning. Assegna ruoli MCP a ciascuno; un gruppo senza ruoli non concede nulla. Puoi comunque aggiungere un gruppo tramite ID oggetto se non è ancora stato inviato.",
+      "groupsHelp": "Inserisci l’<strong>ID oggetto</strong> del gruppo, non il nome: Microsoft non rende unici i nomi dei gruppi, quindi associare per nome permetterebbe a chiunque possa creare un gruppo di assegnarsi un ruolo. Lo trovi in Entra in Groups → il gruppo → Overview → Object Id. Nel token compaiono solo i gruppi <em>assegnati all'applicazione</em>.",
+      "appRolesHelp": "Inserisci il <strong>valore</strong> del ruolo dell'app dal manifest dell'applicazione (per esempio <code>amcp.einkauf</code>), non il suo nome visualizzato.",
+      "scimAppRolesWarning": "I ruoli vengono letti dai ruoli dell'applicazione all'accesso. Le modifiche ai gruppi inviate tramite SCIM non cambiano i ruoli di nessuno tra un accesso e l'altro: per questo imposta “Leggi i ruoli da” su gruppi.",
+      "syncOff": "La sincronizzazione dei ruoli è disattivata per questo provider, quindi queste associazioni vengono salvate ma mai applicate. Attivala in Modifica.",
+      "groupId": "ID oggetto del gruppo",
+      "appRoleValue": "Valore del ruolo dell'app",
+      "fromScim": "da SCIM",
+      "members": "{count, plural, one {# membro} other {# membri}}",
+      "label": "Nome (leggibile)",
+      "workspaceRole": "Ruolo nel workspace",
+      "mcpRoles": "Ruoli MCP",
+      "noRolesPlaceholder": "Nessun ruolo: non concede nulla",
+      "noRoles": "Non esistono ancora ruoli MCP: creane uno in Ruoli",
+      "scimRemoveHint": "Per rimuoverlo, togli l'assegnazione del gruppo all'applicazione in Entra.",
+      "remove": "Rimuovi",
+      "add": "Aggiungi associazione",
+      "saving": "Salvataggio...",
+      "save": "Salva le associazioni",
+      "footer": "Un utente in più gruppi associati riceve l’<strong>unione</strong> dei loro ruoli MCP e il ruolo del workspace <strong>con più privilegi</strong>. I ruoli assegnati a mano da un admin non vengono mai rimossi da una sincronizzazione.",
+      "footerDenyAll": "A chi non corrisponde a nulla viene dato il ruolo “No access (SSO)”, che non concede strumenti."
+    },
+    "scim": {
+      "toast": {
+        "loadFailed": "Impossibile caricare lo stato del provisioning",
+        "copyFailed": "Copia non riuscita",
+        "copyManually": "Seleziona il valore e copialo a mano.",
+        "changeFailed": "Modifica del provisioning non riuscita",
+        "enabled": "Provisioning attivato",
+        "rotated": "Token rigenerato",
+        "resyncFailed": "Risincronizzazione non riuscita",
+        "disabled": "Provisioning disattivato"
+      },
+      "confirmRotate": "Rigenerare il token SCIM?\n\nIl token attuale smette subito di funzionare. Il provisioning di Entra fallisce finché non incolli il nuovo token nell'applicazione aziendale.",
+      "confirmDisable": "Disattivare il provisioning SCIM?\n\nEntra non potrà più creare, aggiornare o disattivare account qui. Account, appartenenze e ruoli esistenti restano come sono.",
+      "resync": {
+        "title": "{count, plural, one {# membro risincronizzato} other {# membri risincronizzati}}",
+        "changed": "{count} modificati",
+        "unchanged": "{count} invariati",
+        "failed": "{count} non riusciti",
+        "lastAdmin": "{count} protetti come ultimo admin",
+        "button": "Risincronizza i ruoli ora"
+      },
+      "title": "Provisioning (SCIM)",
+      "intro": "Lascia che Entra crei gli account, li aggiorni e, cosa più importante, li disattivi non appena qualcuno viene disattivato o rimosso dalla directory, senza bisogno di accedere. Senza questo, chi se ne va conserva le chiavi MCP che ha già finché un amministratore non lo disattiva a mano.",
+      "entraOnly": "Il provisioning è disponibile per i provider Microsoft Entra ID.",
+      "saveNow": "Salva il token ora: non potrà essere mostrato di nuovo.",
+      "tenantUrl": "Tenant URL",
+      "secretToken": "Secret Token",
+      "copy": "Copia",
+      "copied": "Copiato",
+      "hide": "Nascondi",
+      "reveal": "Mostra",
+      "savedIt": "L'ho salvato",
+      "enabling": "Attivazione...",
+      "enable": "Attiva il provisioning",
+      "unlinked": "{count, plural, one {# membro esistente non ha ancora un'identità Microsoft: Entra segnalerà un conflitto finché non accede una volta con Microsoft.} other {# membri esistenti non hanno ancora un'identità Microsoft: Entra segnalerà un conflitto finché non accedono una volta con Microsoft.}}",
+      "issued": "Token emesso il {date}",
+      "lastRequest": "Ultima richiesta da Entra {date}",
+      "never": "mai",
+      "stale": "inattivo",
+      "users": "Utenti con provisioning {count}",
+      "groups": "Gruppi sincronizzati {count}",
+      "rotate": "Rigenera il token",
+      "resyncNeedsSync": "Attiva prima la sincronizzazione dei ruoli in Modifica",
+      "resyncNeedsGroups": "Vale solo quando i ruoli vengono letti dai gruppi",
+      "disable": "Disattiva",
+      "steps": {
+        "show": "Come configurarlo in Entra",
+        "s1": "Interfaccia di amministrazione di Entra → <strong>Enterprise applications</strong> → <strong>New application</strong> →<strong> Create your own application</strong> → <em>Integrate any other application you don't find in the gallery</em>. Chiamala per esempio <em>AnythingMCP provisioning</em>.",
+        "s1b": "Deve essere una <strong>seconda app non presa dalla galleria</strong>: l'app che hai registrato per l'accesso viene da<em> App registrations</em>, e lì Entra lascia <strong>Get started</strong> disattivato con “automatic provisioning … is not supported”.",
+        "s2": "<strong>Users and groups → Add user/group</strong>: assegna gli stessi gruppi che hai assegnato all'app di accesso. Le assegnazioni non passano da un'app all'altra, e vengono sottoposti a provisioning solo i gruppi assegnati.",
+        "s3": "<strong>Provisioning</strong> → Provisioning Mode: <strong>Automatic</strong>.",
+        "s4": "<strong>Connectivity</strong> (i tenant meno recenti la mostrano direttamente come <em>Admin Credentials</em>): metodo di autenticazione <strong>Bearer authentication</strong>, poi incolla <strong>Tenant URL</strong> e <strong>Secret Token</strong> qui sopra → <strong>Test connection</strong>. Entra non salva finché la verifica non riesce.",
+        "s5": "<strong>Attribute mapping</strong>: lascia <code>userName</code> ← <code>userPrincipalName</code> e<code> active</code> come sono, ma <strong>cambia <code>externalId</code></strong>: la sua origine predefinita è <code>mailNickname</code>, deve essere <code>objectId</code>. Altrimenti la stessa persona finisce con un account da SCIM e un altro dall'accesso.",
+        "s6": "Settings → Scope: <em>Sync only assigned users and groups</em>. Vengono sottoposti a provisioning solo i gruppi assegnati in <strong>Users and groups</strong>, la stessa regola del claim dei gruppi.",
+        "s7": "<strong>Save</strong>, poi <strong>Start provisioning</strong>. Il primo ciclo crea <em>tutti</em> gli utenti assegnati; i successivi girano circa ogni 40 minuti.",
+        "s8": "Per provare un utente senza aspettare: <strong>Provision on demand</strong>. Usalo di nuovo dopo aver disattivato l'utente in Entra."
+      }
+    }
+  },
+  "adminPages": {
+    "backToDashboard": "Torna alla dashboard",
+    "users": {
+      "inviteNoSmtp": "SMTP non è configurato. Condividi manualmente questo link di invito:",
+      "joined": "Data di iscrizione",
+      "unrestricted": "Senza restrizioni"
+    },
+    "roles": {
+      "title": "Gestione dei ruoli MCP",
+      "selectAll": "Seleziona tutti"
+    },
+    "settings": {
+      "title": "Impostazioni di amministrazione"
+    },
+    "ssrf": {
+      "saved": "Allowlist SSRF salvata",
+      "title": "Allowlist SSRF",
+      "intro": "Nomi host (oppure caratteri jolly <code>*.suffix</code> o semplici indirizzi IP) che la protezione SSRF lascia passare quando si risolvono in un indirizzo di rete privato. Serve quando i connettori chiamano servizi sulla rete interna, ad esempio un servizio Docker Compose come <code>koch-filesystem-bridge</code>.",
+      "warning": "⚠ Usala con cautela. Tutto ciò che aggiungi qui è raggiungibile da ogni connettore in ogni organizzazione di questa installazione. Non aggiungere host di cui non ti fidi completamente.",
+      "envHosts": "Dalla variabile d’ambiente <code>SSRF_ALLOWED_HOSTS</code> (sola lettura):",
+      "list": "Elenco modificabile dagli amministratori (un host per riga)",
+      "save": "Salva allowlist"
+    }
+  },
+  "knowledgeGraph": {
+    "title": "Knowledge Graph",
+    "counts": "{nodes, plural, one {# entità} other {# entità}} · {edges, plural, one {# relazione} other {# relazioni}}",
+    "countsBuilt": "{nodes, plural, one {# entità} other {# entità}} · {edges, plural, one {# relazione} other {# relazioni}} · costruito il {date}",
+    "status": {
+      "loadFailed": "Impossibile caricare il grafo",
+      "enriching": "Sto chiedendo al modello dei suggerimenti di relazioni…",
+      "noChanges": "Nessuna modifica dall’ultimo arricchimento.",
+      "suggested": "L’AI ha suggerito {count, plural, one {# relazione} other {# relazioni}}{hasModel, select, yes { ({model})} other {}}. Rivedile tra le relazioni suggerite.",
+      "enrichFailed": "Arricchimento non riuscito",
+      "rebuilding": "Ricostruzione del grafo…",
+      "rebuilt": "Ricostruito: {nodes, plural, one {# entità} other {# entità}}, {edges, plural, one {# relazione} other {# relazioni}} da {connectors, plural, one {# connettore} other {# connettori}}.",
+      "rebuildFailed": "Ricostruzione non riuscita",
+      "saved": "Salvato",
+      "saveFailed": "Salvataggio non riuscito",
+      "entityDeleted": "Entità eliminata",
+      "deleteFailed": "Eliminazione non riuscita",
+      "connectionAdded": "Connessione aggiunta",
+      "entityAdded": "Entità aggiunta",
+      "createFailed": "Creazione non riuscita"
+    },
+    "enriching": "Arricchimento…",
+    "enrich": "Arricchisci con AI",
+    "rebuilding": "Ricostruzione…",
+    "rebuild": "Ricostruisci il grafo",
+    "layer": "Livello",
+    "sources": {
+      "STATIC": "statico",
+      "OBSERVED": "osservato",
+      "MANUAL": "manuale",
+      "LLM": "AI"
+    },
+    "showSuggested": "mostra suggerite",
+    "minConfidence": "confidenza minima",
+    "skillsLink": "Skill →",
+    "loading": "Caricamento del grafo…",
+    "disabled": "Il Knowledge Graph è disattivato per questo workspace.",
+    "disabledHint": "Un admin può attivarlo in Impostazioni → Organizzazione → Funzionalità.",
+    "emptyAdmin": "Nessun grafo ancora. Fai clic su “Ricostruisci il grafo” per generarlo dai tuoi connettori e dal loro uso.",
+    "emptyMember": "Nessun grafo ancora. Chiedi a un admin di costruirlo.",
+    "explore": "Esplora",
+    "exploreHint": "Fai clic su un’entità per vederne i campi e i collegamenti, oppure su un arco per esaminare (e modificare) una relazione.",
+    "kinds": {
+      "references": "riferimento",
+      "produces_consumes": "flusso di dati",
+      "parent_child": "padre / figlio",
+      "same_identity": "stessa identità",
+      "related": "correlato"
+    },
+    "edgeStatus": {
+      "suggested": "suggerita",
+      "active": "attiva",
+      "rejected": "rifiutata"
+    },
+    "node": {
+      "connector": "connettore",
+      "labelPlaceholder": "Etichetta",
+      "descriptionPlaceholder": "Descrizione (mostrata ai client AI che leggono il grafo)",
+      "deleteTitle": "Elimina questa entità e i suoi collegamenti",
+      "fields": "Campi ({count})",
+      "connections": "Connessioni ({count})",
+      "tools": "Strumenti ({count})"
+    },
+    "edge": {
+      "kind": "Tipo",
+      "matchKey": "Chiave di corrispondenza",
+      "confidence": "Confidenza",
+      "observations": "Osservazioni",
+      "note": "Descrizione (fornita ai client AI)",
+      "notePlaceholder": "Perché queste entità sono collegate…",
+      "saveChanges": "Salva le modifiche",
+      "confirm": "Conferma",
+      "reject": "Rifiuta"
+    },
+    "addNode": {
+      "open": "+ Aggiungi entità",
+      "title": "Nuova entità",
+      "labelPlaceholder": "Etichetta (ad es. Livello fedeltà)",
+      "connector": "Appartiene al connettore…",
+      "description": "Descrizione (facoltativa, fornita ai client AI)",
+      "submit": "Aggiungi entità"
+    },
+    "addEdge": {
+      "open": "+ Aggiungi connessione",
+      "title": "Nuova connessione",
+      "from": "Dall’entità…",
+      "to": "All’entità…",
+      "submit": "Aggiungi"
+    },
+    "graph": {
+      "zoomIn": "Ingrandisci",
+      "zoomOut": "Riduci",
+      "fit": "Adatta il grafo alla vista",
+      "fitTitle": "Adatta alla vista"
+    },
+    "save": "Salva",
+    "cancel": "Annulla",
+    "edit": "Modifica",
+    "delete": "Elimina"
+  },
+  "aiSkills": {
+    "title": "Skill IA",
+    "tabs": {
+      "all": "Tutte",
+      "pending": "Suggerite",
+      "applied": "Attive",
+      "dismissed": "Scartate"
+    },
+    "badge": {
+      "pending": "Suggerita",
+      "applied": "Attiva",
+      "dismissed": "Scartata"
+    },
+    "codeProposal": {
+      "badge": "Proposta di strumento di codice",
+      "created": "Creato",
+      "meta": "{scope} · proposto da un agente · sola lettura, viene eseguito con i permessi di chi lo chiama",
+      "createTool": "Crea strumento",
+      "dismiss": "Scarta",
+      "deleteAria": "Elimina la proposta",
+      "why": "Perché:",
+      "does": "Cosa fa:",
+      "program": "Programma ({count, number} caratteri)",
+      "note": "Creandolo aggiungi uno strumento di codice in sola lettura su {connector}. Per permettergli di scrivere dati o di essere eseguito con i diritti dell’autore, modificalo poi nella pagina degli strumenti del connettore.",
+      "theConnector": "il connettore",
+      "createFailed": "Impossibile creare lo strumento."
+    },
+    "status": {
+      "loadFailed": "Caricamento non riuscito",
+      "analyzingServer": "Analisi del contesto del server…",
+      "analyzingIntents": "Analisi degli intenti acquisiti…",
+      "generated": "{count, plural, one {Generato # suggerimento} other {Generati # suggerimenti}}.",
+      "noPatterns": "Nessun nuovo schema trovato per ora.",
+      "generationFailed": "Generazione non riuscita",
+      "consolidating": "Unione delle skill attive con AI…",
+      "proposedMerge": "{proposed, plural, one {Proposta # skill unita} other {Proposte # skill unite}} al posto di {replaced, plural, one {# attiva} other {# attive}}. Rivedile in “Suggerite”: applicarne una disattiva le skill che sostituisce.",
+      "nothingToMerge": "Niente da unire ({before, plural, one {# skill attiva} other {# skill attive}}).",
+      "consolidationFailed": "Unione non riuscita",
+      "lookingForErrors": "Cerco le chiamate che sono fallite e poi sono state corrette…",
+      "proposedFromErrors": "{count, plural, one {Proposta # skill} other {Proposte # skill}} dagli errori corretti. Rivedile in “Suggerite”.",
+      "noFixedErrors": "Ancora nessun errore corretto ricorrente. Vengono usate solo le chiamate degli utenti che contribuiscono all’apprendimento delle skill.",
+      "errorsFailed": "Impossibile esaminare gli errori",
+      "created": "Skill creata (attiva per MCP)."
+    },
+    "scopeThisServer": "questo server",
+    "scopeConnectors": "connettori",
+    "scopeTitle": "Ambito per Genera / Unisci",
+    "scopeAria": "Ambito per Genera e Unisci",
+    "fromConnectors": "Dai connettori",
+    "forServer": "Per il server: {name}",
+    "consolidateTitle": "Unisci le skill attive in questo ambito in un numero minore di skill non ridondanti",
+    "consolidating": "Unione…",
+    "consolidate": "Unisci",
+    "generating": "Generazione…",
+    "generate": "Genera con AI",
+    "actionsLabel": "Azioni sulle skill",
+    "generateScope": "Genera con AI · {scope}",
+    "consolidateScope": "Unisci · {scope}",
+    "looking": "Ricerca…",
+    "learn": "Impara dagli errori corretti",
+    "learnHint": "Propone una regola quando delle chiamate sono fallite e hanno funzionato dopo che un argomento ha cambiato formato. Non serve un modello AI.",
+    "close": "Chiudi",
+    "newSkill": "Nuova skill",
+    "intro": "Regole e procedure per attività ricorrenti, per un connettore o per un intero server MCP. Le skill <hl>attive</hl> raggiungono i client AI di quel server alla connessione, come testo completo o come elenco che aprono con <code>skill_get</code> (si imposta per server). Le procedure lunghe si aprono sempre su richiesta.",
+    "emptyTitle": "Ancora nessuna skill",
+    "emptyAdmin": "Le skill vengono generate dagli intenti acquisiti. Attiva <link>Acquisisci l’intento dell’utente e Arricchimento con AI</link>, lascia girare qualche chiamata agli strumenti, poi usa “Genera con AI”.",
+    "emptyMember": "Vengono generate dagli intenti acquisiti dalle chiamate agli strumenti. Chiedi a un admin di generarle.",
+    "searchPlaceholder": "Cerca skill…",
+    "loading": "Caricamento…",
+    "noMatch": "Nessuna skill corrisponde a questo filtro.",
+    "pager": {
+      "range": "{from}–{to} di {total}",
+      "prev": "← Indietro",
+      "page": "Pagina {page} / {total}",
+      "next": "Avanti →"
+    },
+    "card": {
+      "historyFailed": "Impossibile caricare la cronologia",
+      "server": "server: {name}",
+      "connector": "connettore: {name}",
+      "workspace": "workspace",
+      "confidence": "confidenza {value}",
+      "examples": "{count, plural, one {# esempio} other {# esempi}}",
+      "opened": "aperta {count}×",
+      "openedLast": "aperta {count}×, l’ultima il {date}",
+      "notOpened": "non ancora aperta",
+      "activate": "Attiva",
+      "apply": "Applica",
+      "deactivate": "Disattiva",
+      "deleteAria": "Elimina la skill",
+      "when": "Quando:",
+      "do": "Cosa fare:",
+      "replaces": "Sostituisce {count, plural, one {# skill attiva} other {# skill attive}}: applicandola le disattivi (restano, con la loro cronologia).",
+      "procedure": "Procedura ({count, plural, one {# carattere} other {# caratteri}})",
+      "hideHistory": "Nascondi la cronologia",
+      "history": "Cronologia ({count, plural, one {# versione precedente} other {# versioni precedenti}})",
+      "replaced": "sostituita il {date}",
+      "historyProcedure": "Procedura: {count, plural, one {# carattere} other {# caratteri}}"
+    },
+    "sources": {
+      "llm": "generata dall’AI",
+      "mergeProposal": "proposta di unione",
+      "mergedByAi": "unita dall’AI",
+      "errors": "appresa dagli errori corretti",
+      "finder": "da Skills Finder",
+      "manual": "scritta a mano"
+    },
+    "form": {
+      "titlePlaceholder": "Titolo",
+      "whenPlaceholder": "Quando usarla",
+      "instructionPlaceholder": "Istruzione",
+      "procedurePlaceholder": "Procedura completa (facoltativa, markdown): passaggi, regole sui campi, formato di output. Si apre su richiesta con skill_get.",
+      "folder": "Cartella",
+      "folderOption": "Cartella: {name}",
+      "noFolder": "Nessuna cartella",
+      "noFolderTop": "Nessuna cartella (livello principale)",
+      "createFailed": "Creazione non riuscita",
+      "newTitlePlaceholder": "Titolo (ad es. Conferma sempre l’indirizzo di consegna)",
+      "newWhenPlaceholder": "Quando usarla (facoltativo)",
+      "newInstructionPlaceholder": "Istruzione per l’agente (indicazione all’imperativo)",
+      "newProcedurePlaceholder": "Procedura completa (facoltativa, markdown): passaggi, regole sui campi, formato di output. L’AI la apre con skill_get quando la skill si applica.",
+      "scopePlaceholder": "Ambito… (dove si applica questa skill)",
+      "mcpServers": "Server MCP",
+      "connectors": "Connettori",
+      "serverOption": "Server: {name}",
+      "connectorOption": "Connettore: {name}",
+      "creating": "Creazione…",
+      "create": "Crea la skill",
+      "createdHint": "Creata come attiva → subito disponibile per il server MCP."
+    },
+    "save": "Salva",
+    "cancel": "Annulla",
+    "edit": "Modifica",
+    "delete": "Elimina"
+  },
+  "memory": {
+    "title": "Memoria",
+    "loadFailed": "Impossibile caricare la memoria",
+    "loading": "Caricamento…",
+    "access": {
+      "none": "Nessun accesso",
+      "read": "Lettura della memoria aziendale",
+      "personal": "Memoria personale + lettura della memoria aziendale",
+      "contribute": "Memoria personale + proposte alla memoria aziendale"
+    },
+    "tabs": {
+      "personal": "La mia memoria",
+      "organization": "Memoria aziendale",
+      "pending": "Da rivedere"
+    },
+    "intro": "Fatti, preferenze e note che i tuoi client AI salvano e ritrovano, in qualsiasi client collegato a un server di questo workspace. <hl>La mia memoria</hl> è visibile solo a te. <hl>La memoria aziendale</hl> è condivisa con tutti; i client AI possono proporre aggiunte, che admin ed editor rivedono, a meno che il workspace non le salvi in automatico.",
+    "accessAdmin": "Il tuo accesso in questo workspace: <hl>{level}</hl> · si imposta per utente in <link>Impostazioni → Utenti</link>",
+    "accessMember": "Il tuo accesso in questo workspace: <hl>{level}</hl> · impostato dal tuo admin",
+    "searchPlaceholder": "Cerca nella memoria…",
+    "saved": "Salvato.",
+    "empty": {
+      "personal": "Ancora niente di salvato. Chiedi al tuo client AI di ricordare qualcosa, oppure aggiungilo qui sopra.",
+      "pending": "Niente da rivedere.",
+      "organization": "La memoria aziendale è vuota."
+    },
+    "pager": {
+      "range": "{from}–{to} di {total}",
+      "prev": "← Indietro",
+      "page": "Pagina {page} / {total}",
+      "next": "Avanti →"
+    },
+    "form": {
+      "saveFailed": "Salvataggio non riuscito",
+      "placeholderOrganization": "Aggiungi alla memoria aziendale, ad es. \"STAMMKUNDE indica un cliente con contratto quadro\"",
+      "placeholderPersonal": "Aggiungi alla tua memoria, ad es. \"Rispondimi in inglese, numeri in tabelle\"",
+      "kind": "Tipo",
+      "folder": "Cartella",
+      "noFolder": "Nessuna cartella",
+      "tagsPlaceholder": "Tag, separati da virgole (facoltativi)",
+      "aboutPlaceholder": "Riguarda (facoltativo), ad es. customer",
+      "aboutTitle": "Ciò a cui si riferisce, con il nome che gli dà il knowledge graph. I client AI lo ricevono quando cercano quell’entità.",
+      "saving": "Salvataggio…",
+      "addCompany": "Aggiungi alla memoria aziendale",
+      "remember": "Ricorda",
+      "noSecrets": "Non salvare mai password, token o chiavi: vengono rifiutati."
+    },
+    "kinds": {
+      "fact": "Fatto",
+      "preference": "Preferenza",
+      "note": "Nota"
+    },
+    "kindBadges": {
+      "fact": "fatto",
+      "preference": "preferenza",
+      "note": "nota"
+    },
+    "card": {
+      "actionFailed": "Azione non riuscita",
+      "viaAi": "salvato da un client AI",
+      "viaAiClient": "salvato da un client AI ({client})",
+      "viaDashboard": "aggiunto dalla dashboard",
+      "pending": "in attesa di revisione",
+      "rejected": "rifiutato",
+      "about": "riguarda {about}",
+      "approve": "Approva",
+      "reject": "Rifiuta",
+      "deleteAria": "Elimina l’elemento della memoria"
+    },
+    "settings": {
+      "title": "Impostazioni del workspace",
+      "writeMode": "Memoria aziendale dai client AI",
+      "approval": "Richiede l’approvazione di un admin o di un editor",
+      "auto": "Salvata in automatico",
+      "writeModeHint": "Vale per gli utenti che possono proporre aggiunte alla memoria aziendale. In entrambi i casi vedi chi ha salvato cosa, e puoi modificarlo o eliminarlo qui.",
+      "defaultAccess": "Accesso predefinito per gli utenti",
+      "defaultAccessHint": "Per gli utenti impostati su Predefinito in Impostazioni → Utenti, compresi quelli nuovi.",
+      "saving": "Salvataggio…",
+      "save": "Salva le impostazioni"
+    },
+    "save": "Salva",
+    "cancel": "Annulla",
+    "edit": "Modifica",
+    "delete": "Elimina"
+  },
+  "knowledgeFolders": {
+    "title": "Cartelle",
+    "createFailed": "Impossibile creare la cartella",
+    "newInside": "Nuova cartella in {path}",
+    "newTop": "Nuova cartella al livello principale",
+    "new": "+ Nuova",
+    "inside": "In {path}",
+    "name": "Nome della cartella",
+    "create": "Crea",
+    "allSkills": "Tutte le skill",
+    "allMemory": "Tutta la memoria aziendale",
+    "notInFolder": "Non in una cartella",
+    "limited": "Limitata ai ruoli:",
+    "lockTitle": "Limitata ai ruoli",
+    "editAria": "Modifica la cartella {path}",
+    "emptyHint": "Le cartelle raggruppano skill e memoria aziendale per argomento, per le persone e per i client AI.",
+    "saveFailed": "Salvataggio non riuscito",
+    "confirmDeleteUp": "Eliminare la cartella \"{path}\"?\n\nLe sue sottocartelle, skill e memorie passano nella cartella superiore. Nient’altro viene eliminato.",
+    "confirmDeleteTop": "Eliminare la cartella \"{path}\"?\n\nLe sue sottocartelle, skill e memorie passano al livello principale. Nient’altro viene eliminato.",
+    "deleteFailed": "Eliminazione non riuscita",
+    "descriptionPlaceholder": "Cosa va qui (mostrato ai client AI)",
+    "parent": "Cartella superiore",
+    "topLevel": "Livello principale",
+    "visibleTo": "Visibile a",
+    "noneChecked": "Nessuno selezionato: tutto il workspace. Gli admin vedono sempre tutte le cartelle.",
+    "noRoles": "Ancora nessun ruolo: creali in Impostazioni → Ruoli.",
+    "visibleToList": "Visibile a: {roles}",
+    "aRole": "un ruolo",
+    "enterprise": "Limitare le cartelle ai ruoli fa parte di Enterprise.",
+    "save": "Salva",
+    "cancel": "Annulla",
+    "edit": "Modifica",
+    "delete": "Elimina"
+  },
+  "fileSearch": {
+    "title": "Ricerca file",
+    "subtitle": "Fai cercare all'AI dentro i documenti di una cartella: PDF, Excel, Word, PowerPoint, Outlook",
+    "back": "Nuovo connettore",
+    "loading": "Caricamento…",
+    "cancel": "Annulla",
+    "backStep": "Indietro",
+    "upgrade": "Upgrade",
+    "adminOnly": "Solo gli amministratori del workspace possono configurare connettori di Ricerca file.",
+    "defaultName": "Documenti",
+    "worker": {
+      "down": "La Ricerca file non è attiva su questo server.",
+      "downHint": "Il files-worker o l'estrattore di testo non sono raggiungibili. Un amministratore li avvia con il profilo Compose \"files\" (vedi la documentazione di Ricerca file)."
+    },
+    "steps": {
+      "label": "Passi della configurazione",
+      "source": "Origine",
+      "test": "Test",
+      "scan": "Scansione",
+      "describe": "Descrizione",
+      "activate": "Attivazione"
+    },
+    "source": {
+      "protocol": "Dove sono i file?",
+      "cloudNote": "AnythingMCP Cloud raggiunge i server su internet. Per una cartella condivisa nella rete dell'ufficio usa SFTP o WebDAV sul NAS, oppure installa AnythingMCP self-hosted accanto.",
+      "presets": "Scorciatoie",
+      "name": "Nome",
+      "namePlaceholder": "Listini fornitori",
+      "nameHint": "Lo vedono l'AI e i nomi dei tool: descrivi il contenuto, non il server.",
+      "ftpMode": "Cifratura",
+      "host": "Server",
+      "port": "Porta",
+      "webdavUrl": "Indirizzo WebDAV",
+      "s3Endpoint": "Endpoint S3",
+      "webdavHint": "Nextcloud: File → Impostazioni → WebDAV mostra l'indirizzo. Synology: installa WebDAV Server e usa HTTPS (porta 5006).",
+      "bucket": "Bucket",
+      "region": "Regione",
+      "accessKey": "Access key",
+      "secretKey": "Secret key",
+      "username": "Nome utente",
+      "authMode": "Accedi con",
+      "privateKey": "Chiave privata",
+      "passphrase": "Passphrase della chiave (se c'è)",
+      "password": "Password",
+      "passwordKeep": "Lascia vuoto per mantenere la password salvata",
+      "appPasswordHint": "Nextcloud e ownCloud: crea una password per app in Sicurezza → Dispositivi e sessioni.",
+      "localFolder": "Cartella",
+      "folder": "Cartella da indicizzare",
+      "localRoots": "Cartelle consentite: {roots}",
+      "noLocalRoots": "Nessuna cartella consentita. Un amministratore imposta FILE_SOURCE_ROOTS sulle cartelle montate che AnythingMCP può leggere.",
+      "folderHint": "È incluso tutto ciò che sta sotto questa cartella. Le sottocartelle le scegli dopo la scansione.",
+      "plainFtpWarning": "L'FTP non cifrato invia la password in chiaro su internet. Ho capito e lo accetto (meglio: FTPS o SFTP).",
+      "next": "Testa la connessione"
+    },
+    "protocols": {
+      "sftp": {
+        "title": "SFTP",
+        "description": "Trasferimento file via SSH. La maggior parte dei NAS e dei server Linux, Hetzner Storage Box."
+      },
+      "ftp": {
+        "title": "FTP / FTPS",
+        "description": "FTP con TLS (esplicito o implicito), ad es. Fritz!Box, hosting web."
+      },
+      "webdav": {
+        "title": "WebDAV / Nextcloud",
+        "description": "Nextcloud, ownCloud, WebDAV di Synology e QNAP."
+      },
+      "local": {
+        "title": "Cartella di rete",
+        "description": "Una condivisione o un volume montato in questa installazione self-hosted (SMB, NFS)."
+      },
+      "s3": {
+        "title": "Bucket S3",
+        "description": "AWS S3, DigitalOcean Spaces, MinIO, Hetzner, Wasabi."
+      }
+    },
+    "presets": {
+      "nextcloud": "Nextcloud",
+      "synology": "NAS Synology",
+      "qnap": "NAS QNAP",
+      "fritzbox": "Fritz!Box",
+      "hetzner": "Hetzner Storage Box",
+      "owncloud": "ownCloud"
+    },
+    "ftpModes": {
+      "ftps": "FTPS (esplicito, porta 21)",
+      "ftps-implicit": "FTPS (implicito, porta 990)",
+      "ftp": "FTP (non cifrato)"
+    },
+    "authModes": {
+      "password": "Password",
+      "key": "Chiave SSH"
+    },
+    "test": {
+      "checklist": "Test della connessione",
+      "steps": {
+        "resolve": "Indirizzo del server",
+        "connect": "Server raggiungibile",
+        "handshake": "Connessione cifrata",
+        "fingerprint": "Identità del server",
+        "login": "Accesso",
+        "folder": "Cartella leggibile"
+      },
+      "intro": "AnythingMCP si collega al server, accede ed elenca la cartella. Non viene salvato nulla finché il test non riesce.",
+      "running": "Test della connessione in corso…",
+      "ok": "Connesso. {n} elementi nella cartella.",
+      "again": "Ripeti il test",
+      "next": "Salva e continua"
+    },
+    "fingerprint": {
+      "title": "Conferma l'identità del server",
+      "ssh": "Questa è l'impronta della chiave SSH del server. Confrontala con quella mostrata dal tuo amministratore o dal NAS. Dopo la conferma AnythingMCP rifiuta la connessione se cambia: ti protegge da un server che si spaccia per il tuo.",
+      "tls": "Il server usa un certificato non garantito da un'autorità pubblica, normale per un NAS o un router. Confronta l'impronta con quella mostrata dal dispositivo; dopo la conferma viene accettato solo questo certificato.",
+      "confirmLabel": "Ho verificato l'impronta: appartiene al nostro server.",
+      "confirm": "Conferma e ripeti il test"
+    },
+    "scan": {
+      "intro": "La scansione elenca tutta la cartella senza indicizzare nulla: quanti file ci sono in ogni sottocartella, di che tipo e di che anni. Legge anche alcuni piccoli documenti di esempio per descrivere il contenuto. Poi scegli cosa includere.",
+      "useAi": "Scrivi la descrizione con l'AI",
+      "aiConsent": "Nomi delle cartelle, nomi dei file e i primi 2.000 caratteri di massimo 20 file di esempio vengono inviati a {provider}. I dati personali negli esempi vengono mascherati.",
+      "aiPolicyOff": "Le bozze con AI sono disattivate dalla policy del workspace: la descrizione viene costruita dalla struttura delle cartelle.",
+      "aiUnavailable": "Su questo server non è configurato un modello AI: la descrizione viene costruita dalla struttura delle cartelle.",
+      "start": "Scansiona la cartella",
+      "phase": {
+        "connecting": "Connessione…",
+        "listing": "Elenco della cartella…",
+        "sampling": "Lettura dei documenti di esempio…",
+        "describing": "Scrittura della descrizione…",
+        "done": "Fatto"
+      },
+      "progress": "Finora {files} file in {dirs} cartelle",
+      "cancel": "Annulla la scansione",
+      "retry": "Ripeti la scansione",
+      "stats": {
+        "files": "File",
+        "folders": "Cartelle",
+        "size": "Dimensione",
+        "years": "Anni"
+      },
+      "truncated": "La cartella è molto grande: la scansione ha smesso di contare. Scegli una sottocartella al passo 1 per un numero esatto.",
+      "folders": "Cartelle da includere",
+      "archivesUnticked": "{n} cartelle di archivio escluse",
+      "types": "Tipi di file",
+      "typesHint": "Nessun tipo selezionato = tutti i tipi. Gli altri file restano trovabili per nome.",
+      "age": "Modificati negli",
+      "ageAll": "Qualsiasi periodo",
+      "ageYears": "Ultimi {n} anni",
+      "again": "Ripeti la scansione",
+      "next": "Continua"
+    },
+    "typeGroups": {
+      "pdf": "PDF",
+      "excel": "Excel / CSV",
+      "word": "Word",
+      "powerpoint": "PowerPoint",
+      "email": "E-mail",
+      "text": "Testo",
+      "drawing": "Disegni (SVG, DXF)",
+      "code": "Codice e configurazione"
+    },
+    "describe": {
+      "intro": "Questo testo dice all'AI cosa contiene la cartella e come cercarci. Ogni server MCP con questo connettore lo inoltra. Controllalo e aggiungi quello che sai solo tu.",
+      "writing": "Scrittura della descrizione…",
+      "byAi": "Scritta dall'AI ({model}). Controllala prima di salvare.",
+      "byRules": "Costruita dalla struttura delle cartelle e dai documenti di esempio.",
+      "summary": "Riassunto in una riga",
+      "summaryHint": "Compare in ogni descrizione dei tool. Restano {n} caratteri.",
+      "instructions": "Istruzioni per l'AI",
+      "instructionsHint": "Cosa sono i documenti, come sono nominate le cartelle, a cosa fare attenzione.",
+      "terms": "Termini frequenti (clicca per aggiungerli al riassunto)",
+      "preview": "Cosa vede l'AI",
+      "previewText": "Cerca nel testo di tutti i documenti della cartella \"{name}\" ({summary})…",
+      "prompts": "Domande a cui sa rispondere",
+      "withAi": "Con AI",
+      "regenerate": "Riscrivi",
+      "next": "Continua"
+    },
+    "activate": {
+      "prefix": "Prefisso dei tool",
+      "prefixHint": "I tool si chiameranno ad es. {example}.",
+      "interval": "Sincronizzazione",
+      "higherPlan": "piano superiore",
+      "intervalHint": "File nuovi e modificati vengono presi a ogni sincronizzazione. La ricerca funziona anche mentre sincronizza.",
+      "servers": "Aggiungi ai server MCP",
+      "noServers": "Non c'è ancora un server MCP. Puoi aggiungere il connettore a un server più tardi.",
+      "serversHint": "Solo i ruoli che hanno questi tool possono usarli.",
+      "summary": "Verranno indicizzati {files} file ({size}), poi sincronizzati {interval}.",
+      "activating": "Attivazione…",
+      "cta": "Attiva e avvia la prima sincronizzazione",
+      "ocr": "Leggi le pagine scansionate (OCR)",
+      "ocrHint": "I PDF scansionati senza testo vengono letti con il riconoscimento del testo. Più lento; disponibile con Enterprise."
+    },
+    "interval": {
+      "weekly": "ogni settimana",
+      "daily": "ogni giorno",
+      "hourly": "ogni ora",
+      "hours": "ogni {n} ore",
+      "minutes": "ogni {n} minuti"
+    },
+    "budget": {
+      "selected": "Selezionati: {files} file, {size}",
+      "unlimited": "Nessun limite nel tuo piano",
+      "plan": "Piano {plan}: {max} file",
+      "textFiles": "{n} con testo leggibile",
+      "nameOnly": "{n} trovabili solo per nome",
+      "tooLarge": "{n} più grandi di {max} (elencati, non letti)",
+      "others": "+ {n} negli altri connettori di Ricerca file",
+      "bytes": "Volume {used} su {max}",
+      "overWithNext": "La selezione supera il tuo piano. Togli cartelle o tipi di file, oppure fai l'upgrade: il piano {plan} include {max} file.",
+      "over": "La selezione supera il tuo piano. Togli cartelle o tipi di file."
+    },
+    "tree": {
+      "collapse": "Chiudi {name}",
+      "expand": "Apri {name}",
+      "include": "Includi {name}",
+      "archive": "archivio",
+      "files": "{n} file",
+      "filter": "Filtra le cartelle",
+      "label": "Cartelle",
+      "empty": "Nessuna cartella corrisponde."
+    },
+    "locked": {
+      "title": "La Ricerca file fa parte delle edizioni a pagamento",
+      "titleEnterprise": "La Ricerca file dopo la prova fa parte di Enterprise",
+      "point1": "Cerca dentro file PDF, Excel, Word e Outlook da Claude, ChatGPT, Copilot e altri client AI.",
+      "point2": "SFTP, FTP/FTPS, WebDAV e cartelle di rete, sincronizzati in background.",
+      "point3": "Link di download temporanei, permessi per ruolo, registro di audit.",
+      "startTrial": "Avvia la prova gratuita di 30 giorni",
+      "buy": "Acquista una licenza",
+      "contactEnterprise": "Contattaci per Enterprise",
+      "activate": "Attiva una licenza",
+      "keyToStart": "Registra una chiave Community gratuita in Impostazioni → Licenza per avviare la prova di 30 giorni della Ricerca file. La chiave è gratuita e arriva via email.",
+      "keyDuringTrial": "Registra una chiave Community gratuita in Impostazioni → Licenza per usare la Ricerca file durante la prova. La chiave è gratuita e arriva via email.",
+      "registerKey": "Registra una chiave Community gratuita"
+    },
+    "card": {
+      "title": "Ricerca file",
+      "description": "Cerca dentro i documenti di una cartella: SFTP, FTP, WebDAV, NAS o una condivisione di rete."
+    },
+    "shareConnector": {
+      "title": "Condivisione file",
+      "text": "Permette ai client AI di pubblicare i file che creano come link di download temporanei. Link, limiti e policy del workspace si gestiscono nelle Impostazioni.",
+      "manage": "Apri le impostazioni di Condivisione file"
+    },
+    "panel": {
+      "draftTitle": "Configurazione non completata",
+      "draftText": "Questo connettore è stato testato ma non ancora attivato: non ha tool e non sincronizza.",
+      "continueSetup": "Continua la configurazione",
+      "paused": {
+        "paused_quota": "Sincronizzazione in pausa: la cartella supera il tuo piano",
+        "paused_licence": "Sincronizzazione in pausa: la Ricerca file richiede una licenza",
+        "paused_error": "Sincronizzazione in pausa: il server non era raggiungibile",
+        "paused_admin": "Sincronizzazione messa in pausa da un amministratore",
+        "stillSearching": "L'AI continua a cercare nei file indicizzati fino al {date}."
+      },
+      "upgradeTo": "Passa a {plan}",
+      "editSelection": "Modifica la selezione",
+      "resume": "Riprendi",
+      "resumed": "Ripresa. La prossima sincronizzazione parte entro un minuto.",
+      "indexed": "Indicizzati",
+      "ofFiles": "su {n} file",
+      "size": "Dimensione",
+      "chars": "{n} caratteri di testo",
+      "lastSync": "Ultima sincronizzazione",
+      "nextSync": "Prossima sincronizzazione",
+      "now": "in corso",
+      "planUsage": "{used} di {max} file nel piano {plan} (tutti i connettori di Ricerca file)",
+      "nearLimit": "{pct} % usato",
+      "syncQueued": "Sincronizzazione avviata.",
+      "syncing": "Sincronizzazione…",
+      "syncNow": "Sincronizza ora",
+      "pause": "Metti in pausa",
+      "pausedMsg": "Sincronizzazione in pausa.",
+      "scheduleSaved": "Pianificazione salvata.",
+      "manualLeft": "Sincronizzazioni manuali rimaste oggi: {n}",
+      "description": "Cosa viene detto all'AI su questa cartella",
+      "edit": "Modifica",
+      "newDraft": "L'ultima scansione ha scritto una nuova descrizione.",
+      "reviewDraft": "Rivedila",
+      "save": "Salva",
+      "descriptionSaved": "Descrizione salvata; i tool sono stati aggiornati.",
+      "noDescription": "Nessuna descrizione.",
+      "runs": "Sincronizzazioni recenti",
+      "runCounters": "{listed} file elencati, {added} nuovi o modificati, {extracted} letti, {deleted} rimossi",
+      "noRuns": "Non è ancora partita nessuna sincronizzazione.",
+      "problems": "{n} file richiedono attenzione",
+      "problemsHint": "Restano trovabili per nome. I file che falliscono tre volte vengono riprovati solo quando cambiano.",
+      "folders": "Cartelle nell'indice",
+      "hide": "Nascondi",
+      "show": "Mostra"
+    },
+    "states": {
+      "active": "Attivo",
+      "syncing": "In sincronizzazione",
+      "draft": "Bozza",
+      "paused_quota": "In pausa: limite del piano",
+      "paused_licence": "In pausa: licenza",
+      "paused_error": "In pausa: connessione",
+      "paused_admin": "In pausa"
+    },
+    "runStatus": {
+      "running": "In corso",
+      "succeeded": "Completata",
+      "partial": "In avanzamento",
+      "paused": "In pausa",
+      "failed": "Fallita",
+      "cancelled": "Annullata"
+    },
+    "entryStatus": {
+      "failed": "Non leggibile (verrà riprovato)",
+      "gave_up": "Non leggibile",
+      "skipped_size": "Più grande di quanto il piano consente",
+      "pending": "In attesa di lettura",
+      "name_only": "Trovabile solo per nome",
+      "indexed": "Indicizzato"
+    },
+    "rules": {
+      "title": "Permessi per cartella",
+      "intro": "Limita i ruoli ad alcune cartelle di questo connettore. Un ruolo senza regole vede tutto; con regole vede solo le cartelle consentite, e il divieto vince.",
+      "enterprise": "I permessi per cartella per ruolo sono disponibili con AnythingMCP Enterprise. Nel frattempo collega ogni cartella come connettore a sé e assegnalo ai ruoli giusti.",
+      "role": "Ruolo",
+      "effect": "Consenti o nega",
+      "allow": "Consenti",
+      "deny": "Nega",
+      "folder": "Cartella",
+      "remove": "Rimuovi",
+      "add": "Aggiungi regola",
+      "saved": "Permessi per cartella salvati."
+    },
+    "limit": {
+      "title": "Hai già usato tutti i connettori di Ricerca file del tuo piano",
+      "text": "Il piano {plan} include {max} connettore/i di Ricerca file e sono tutti configurati. Fai l’upgrade o elimina quello che non ti serve più.",
+      "next": "Il piano {plan} ne include {max}.",
+      "manage": "Gestisci i connettori"
+    },
+    "pager": {
+      "label": "Pagine",
+      "range": "{from}–{to} di {total}",
+      "prev": "Indietro",
+      "next": "Avanti"
+    },
+    "searchHint": {
+      "title": "Vuoi che la tua AI cerchi dentro i documenti?",
+      "body": "La ricerca file indicizza i file PDF, Word, Excel e Outlook sul tuo NAS, server o storage e tiene l'indice aggiornato: così l'AI trova cosa c'è scritto nei file, non solo i loro nomi.",
+      "cta": "Configura la ricerca file",
+      "for": "Apre la procedura guidata per {name}."
+    }
+  },
+  "fileShare": {
+    "title": "Condivisione file",
+    "subtitle": "Link di download temporanei per file delle tue cartelle o scritti dall'AI. I link scadono da soli e il file viene cancellato.",
+    "locked": {
+      "title": "La Condivisione file non è inclusa in questo piano",
+      "text": "Con un upgrade i client AI possono consegnare file come link temporanei.",
+      "cta": "Vedi i piani"
+    },
+    "usage": {
+      "title": "I tuoi limiti ({plan})",
+      "stored": "Spazio nei link attivi",
+      "today": "Nuovi link oggi",
+      "validity": "Validità massima",
+      "hours": "{n} ore",
+      "noLimit": "Nessun limite",
+      "fileSize": "File più grande",
+      "publicOn": "I link pubblici sono consentiti.",
+      "publicOff": "I link pubblici sono disattivati: i link si aprono solo per i membri che hanno effettuato l'accesso.",
+      "days": "{n} giorni"
+    },
+    "connector": {
+      "title": "Link dalle chat AI",
+      "on": "Il connettore \"{name}\" permette ai client AI di pubblicare come link i file che scrivono (CSV, report).",
+      "off": "Aggiungi il connettore Condivisione file perché i client AI possano pubblicare come link i file che scrivono (CSV, report).",
+      "add": "Aggiungi il connettore Condivisione file",
+      "added": "Connettore Condivisione file aggiunto al tuo server MCP predefinito."
+    },
+    "links": {
+      "title": "Link",
+      "empty": "Nessun link attivo.",
+      "loading": "Caricamento…",
+      "public": "pubblico",
+      "internal": "interno",
+      "until": "fino al {date}",
+      "noExpiry": "senza scadenza",
+      "downloads": "{n, plural, one {# download} other {# download}}",
+      "by": "da {name}",
+      "revoke": "Revoca",
+      "revoked": "Link revocato e file cancellato.",
+      "count": "{n, plural, one {# link attivo} other {# link attivi}}",
+      "search": "Cerca per nome file",
+      "searchLabel": "Cerca link",
+      "allAccess": "Tutti i link",
+      "onlyPublic": "Solo pubblici",
+      "onlyInternal": "Solo interni",
+      "mine": "Solo i miei",
+      "noMatch": "Nessun link corrisponde ai filtri.",
+      "confirm": "Revocare questo link ed eliminare il file?",
+      "confirmYes": "Revoca",
+      "cancel": "Annulla",
+      "expiresIn": "scade tra {time}"
+    },
+    "policy": {
+      "title": "Regole per File Search e File Share",
+      "intro": "Vale per tutti i connettori di Ricerca file e i link di questo workspace.",
+      "enterprise": "Le policy del workspace sono disponibili con AnythingMCP Enterprise.",
+      "saved": "Policy salvata.",
+      "maxTtl": "Validità massima di un link (ore)",
+      "maxTtlPlaceholder": "Valore del piano",
+      "publicLinks": {
+        "label": "Consenti link pubblici",
+        "hint": "Spento: i link si aprono solo per i membri di questo workspace che hanno effettuato l'accesso."
+      },
+      "aiDrafting": {
+        "label": "Consenti all'AI di scrivere le descrizioni delle cartelle",
+        "hint": "Spento: la configurazione non invia mai nomi di cartelle o esempi a un modello AI."
+      },
+      "allowPlainFtp": {
+        "label": "Consenti FTP non cifrato",
+        "hint": "Spento: si possono collegare solo SFTP e FTPS."
+      },
+      "locked": "Con AnythingMCP Enterprise un amministratore può disattivare i link pubblici, le bozze con IA e l’FTP non cifrato, e limitare la validità dei link.",
+      "on": "attivo",
+      "off": "disattivo",
+      "planDefault": "secondo il piano"
+    },
+    "link": {
+      "loading": "Caricamento…",
+      "notFound": "Questo link non esiste.",
+      "unavailable": "Questo link non è disponibile",
+      "sharedBy": "Condiviso da",
+      "access": "Accesso",
+      "internal": "Membri del workspace",
+      "public": "Chiunque abbia il link",
+      "expires": "Scade",
+      "never": "Mai",
+      "state": {
+        "expired": "Questo link è scaduto.",
+        "revoked": "Questo link è stato revocato.",
+        "exhausted": "Questo link ha raggiunto il limite di download."
+      },
+      "signIn": "Accedi per scaricare",
+      "download": "Scarica",
+      "preparing": "Preparazione…",
+      "warning": "Apri solo file di persone di cui ti fidi. AnythingMCP non controlla i file per i virus."
     }
   }
 }

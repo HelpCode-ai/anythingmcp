@@ -1,6 +1,15 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { AxiosError } from 'axios';
 import { ToolRegistry } from './tool-registry';
+import { CodeExecutorService } from './code-executor.service';
+import {
+  isCodeMethod,
+  parseCodeToolMapping,
+  buildCodeBridge,
+  type CodeBridgeDeps,
+  type BridgeResolvedTool,
+} from './code-tool.util';
+import { deriveToolAnnotations } from './tool-annotations';
 import { RestEngine } from '../connectors/engines/rest.engine';
 import { GraphqlEngine } from '../connectors/engines/graphql.engine';
 import { SoapEngine } from '../connectors/engines/soap.engine';
@@ -8,7 +17,9 @@ import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
 import { DatabaseEngine } from '../connectors/engines/database.engine';
 import { AuditService } from '../audit/audit.service';
 import { RedisService } from '../common/redis.service';
-import { LicenseGuardService } from '../license/license-guard.service';
+import { LicenseGuardService, TrialEndedException } from '../license/license-guard.service';
+import { ProductEventService } from '../audit/product-event.service';
+import { TrialBlockedCallRecorder, trialEndedToolResult } from './trial-blocked-call';
 import { DeploymentService } from '../common/deployment.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -28,16 +39,22 @@ import {
   type ResponseMeta,
 } from '../connectors/engines/response-headers.util';
 import { KgService } from '../knowledge-graph/kg.service';
+import { WebhookEventsService } from '../connectors/webhook-events.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
+import { envVarsForMcpTool } from '../connectors/mcp-connector-config.util';
 import { processGauges } from '../common/process-vitals';
 import { recordToolCall } from '../common/metrics';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
+import { EmailEngine } from '../connectors/engines/email.engine';
+import { FileSearchEngine } from '../file-search/file-search.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { hashContent } from '../adapters/catalog-fingerprint';
+import { getAdapter } from '../adapters/catalog';
+import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { connectorErrorWhen } from '../connectors/error-when.util';
 import {
@@ -61,6 +78,22 @@ export type ToolResultContent = [
     | { type: 'resource'; resource: { uri: string; mimeType: string; blob: string } }
   )[],
 ];
+/** Invocation context shared by the code-tool and inline-code paths. */
+interface CodeExecContext {
+  userId?: string;
+  userEmail?: string;
+  organizationId?: string;
+  authMethod?: string;
+  apiKeyName?: string;
+  mcpServerId?: string;
+  mcpServerName?: string;
+  connectorIds?: string[];
+  intent?: string;
+  learnable?: boolean;
+  allowedToolIds?: string[] | null;
+  inCodeRun?: boolean;
+}
+
 import { ResponseBodyError } from '../connectors/engines/response-error.util';
 import { connectorSecretValues } from '../connectors/connector-secrets.util';
 import { redactSecretsDeep } from '../common/secret-literals.util';
@@ -94,9 +127,19 @@ export class DynamicMcpTools {
     private readonly mcpClientEngine: McpClientEngine,
     private readonly databaseEngine: DatabaseEngine,
     private readonly kgService: KgService,
+    private readonly webhookEvents: WebhookEventsService,
     @Optional() private readonly odataEngine?: ODataEngine,
     @Optional() private readonly userCredentials?: UserCredentialsService,
-  ) {}
+    @Optional() private readonly emailEngine?: EmailEngine,
+    @Optional() private readonly codeExecutor?: CodeExecutorService,
+    @Optional() productEvents?: ProductEventService,
+    @Optional() private readonly fileSearchEngine?: FileSearchEngine,
+  ) {
+    this.blockedCalls = new TrialBlockedCallRecorder(prisma, productEvents);
+  }
+
+  /** Records tool calls refused because the Cloud trial ended (throttled). */
+  private readonly blockedCalls: TrialBlockedCallRecorder;
 
   /**
    * Decide whether this tool call should be routed through the
@@ -227,6 +270,20 @@ export class DynamicMcpTools {
   }
 
   /**
+   * The tool a call resolves to, in the one scope the caller is entitled to
+   * (see executeTool): its server's connectors, else its organization, else
+   * (single-tenant self-hosted, no principal) any tool of that name.
+   */
+  private resolveTool(
+    toolName: string,
+    context?: { organizationId?: string; connectorIds?: string[] },
+  ): RegisteredTool | undefined {
+    if (context?.connectorIds) return this.toolRegistry.getTool(toolName, context.connectorIds);
+    if (context?.organizationId) return this.toolRegistry.getToolForOrg(toolName, context.organizationId);
+    return this.toolRegistry.getTool(toolName);
+  }
+
+  /**
    * Execute a tool by name with the given parameters.
    * Handles caching, audit logging, env interpolation, and engine dispatch.
    */
@@ -245,6 +302,19 @@ export class DynamicMcpTools {
       intent?: string;
       /** The caller contributes to skill learning (stamped on the log row). */
       learnable?: boolean;
+      /**
+       * The caller's allowed tool ids in this org (null = unrestricted), as the
+       * controllers already resolve via RolesService. A code tool in `invoker`
+       * mode re-checks this before every inner call; when it is undefined for an
+       * identified user the code tool fails closed (denies inner calls) rather
+       * than guess. Plain tool calls ignore it (their role is gated upstream).
+       */
+      allowedToolIds?: string[] | null;
+      /** Set on calls made from inside a code run, so a code tool cannot be
+       *  reached from within another (no recursion). */
+      inCodeRun?: boolean;
+      /** The OAuth client the caller's access token was issued to, if any. */
+      oauthClientId?: string;
     },
   ): Promise<{
     content: ToolResultContent;
@@ -260,6 +330,26 @@ export class DynamicMcpTools {
     try {
       await this.licenseGuard.checkLicenseActive(context?.organizationId);
     } catch (err: any) {
+      // Cloud trial over: say when it ended, that nothing was deleted, and
+      // hand the AI the reactivation link to show. The blocked call is
+      // recorded in the background; it never delays or breaks this answer.
+      if (err instanceof TrialEndedException) {
+        const blocked = this.resolveTool(toolName, context);
+        if (blocked && context?.organizationId) {
+          const slug = (blocked.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+          void this.blockedCalls.record({
+            organizationId: context.organizationId,
+            userId: context.userId,
+            toolName: blocked.name,
+            adapterSlug: typeof slug === 'string' && slug ? slug : undefined,
+            oauthClientId: context.oauthClientId,
+          });
+        }
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(trialEndedToolResult(err.trialEndedAt)) }],
+          isError: true,
+        };
+      }
       return {
         content: [
           {
@@ -292,14 +382,7 @@ export class DynamicMcpTools {
     //   - organizationId — any JWT on the global /mcp. Only the caller's org.
     //   - neither — an instance-level static credential on a single-tenant
     //     self-hosted box, where "any tool" is the correct answer.
-    let tool: RegisteredTool | undefined;
-    if (context?.connectorIds) {
-      tool = this.toolRegistry.getTool(toolName, context.connectorIds);
-    } else if (context?.organizationId) {
-      tool = this.toolRegistry.getToolForOrg(toolName, context.organizationId);
-    } else {
-      tool = this.toolRegistry.getTool(toolName);
-    }
+    const tool = this.resolveTool(toolName, context);
     if (!tool) {
       return {
         content: [
@@ -312,6 +395,21 @@ export class DynamicMcpTools {
         ],
         isError: true,
       };
+    }
+
+    // Code tools run a stored program in the out-of-process runner instead of
+    // calling one upstream endpoint. Handled before the cache and the engine
+    // dispatch: a run is never cached, and its authority is enforced by the
+    // bridge, not the engine. A code tool is refused from inside another code
+    // run so there is no recursion to bound.
+    if (isCodeMethod(tool.endpointMapping)) {
+      if (context?.inCodeRun) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: `'${toolName}' is a code tool and cannot be called from within a code run.` }) }],
+          isError: true,
+        };
+      }
+      return this.executeCodeTool(tool, params, context);
     }
 
     // Check response cache. The cache holds the *raw* upstream response, so
@@ -496,7 +594,13 @@ export class DynamicMcpTools {
 
       // Inject env vars as parameter defaults (env var values fill in params
       // that match by name, so they don't need to be provided by the caller)
-      const paramsWithEnv = this.injectEnvVars(params, envVars);
+      // A remote MCP server gets the variables as tool arguments, so only
+      // those its schema names: every variable, credentials included, used
+      // to be sent with every bridged tool call.
+      const paramsWithEnv = this.injectEnvVars(
+        params,
+        tool.connectorType === 'MCP' ? envVarsForMcpTool(envVars, tool.parameters) : envVars,
+      );
 
       // Apply JSON Schema defaults for missing params
       const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
@@ -516,6 +620,21 @@ export class DynamicMcpTools {
               (tool.connectorConfig.config as { odata?: unknown } | undefined)?.odata,
               envVars,
             ),
+            // Email settings too: a catalog install keeps {{EMAIL_IMAP_HOST}}.
+            emailSettings: interpolateDeep(
+              (tool.connectorConfig.config as { email?: unknown } | undefined)?.email,
+              envVars,
+            ),
+            connectorId: tool.connectorId,
+            organizationId: tool.organizationId,
+            // File Search reads its index per workspace and connector; the
+            // caller decides the folder scope (Enterprise folder rules).
+            fileSearch: {
+              organizationId: tool.organizationId,
+              connectorId: tool.connectorId,
+              connectorName: tool.connectorName,
+              userId: context?.userId,
+            },
           },
         );
       } finally {
@@ -538,8 +657,25 @@ export class DynamicMcpTools {
             .join('\n'),
           secretValues,
         );
+        // The remote server refused the call inside a 200 (Atlassian: "The
+        // session token is missing the scope claim…" for an API token created
+        // without scopes). Same advice as for a thrown error, after its words.
+        const mcpRawSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+        const mcpSlug = typeof mcpRawSlug === 'string' && mcpRawSlug ? mcpRawSlug : undefined;
+        const mcpHint = deriveErrorHint({
+          host: hostFromUrl(tool.connectorConfig?.baseUrl),
+          message: safeText,
+          adapterSlug: mcpSlug,
+          connectorPage: connectorPageUrl(tool.connectorId),
+          cloud: this.deployment.isCloud(),
+        });
         const errorResult: { content: ToolResultContent; isError: true } = {
-          content: [{ type: 'text', text: safeText }],
+          content: [
+            {
+              type: 'text',
+              text: mcpHint ? `${safeText}\n\n---\nHINT (from AnythingMCP): ${mcpHint}` : safeText,
+            },
+          ],
           isError: true,
         };
         const durationMs = Date.now() - startTime;
@@ -670,14 +806,36 @@ export class DynamicMcpTools {
       // response says (a refresh token refused 7 days after a Google
       // authorization, a Meta session that was logged out).
       const engineHint = typeof error?.hint === 'string' && error.hint ? error.hint : undefined;
-      const hint = engineHint ?? deriveErrorHint({
+      // A catalog connector also gets its adapter's own advice (verifyHints)
+      // for a refused credential, and the link to its page where the user
+      // fixes it: a connector saved without a passing setup check otherwise
+      // repeats the vendor's bare "API key not valid" on every call.
+      const rawSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+      const adapterSlug = typeof rawSlug === 'string' && rawSlug ? rawSlug : undefined;
+      const message = typeof error?.message === 'string' ? error.message : undefined;
+      let hint = engineHint ?? deriveErrorHint({
         host:
           hostFromAxiosConfig(error?.config) ??
           hostFromUrl(tool.connectorConfig?.baseUrl),
         status: typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
-        message: typeof error?.message === 'string' ? error.message : undefined,
+        message,
         body: errorDetail.responseBody,
+        adapterSlug,
+        verifyHints: adapterSlug ? getAdapter(adapterSlug)?.verifyHints : undefined,
+        connectorPage: connectorPageUrl(tool.connectorId),
+        cloud: this.deployment.isCloud(),
       });
+      // Odoo JSON-2 "No database is selected": ask Odoo which databases this
+      // address serves and name them, as the setup check does. One small
+      // unauthenticated request, made only for this answer.
+      if (hint && adapterSlug === 'odoo' && /No database is selected/i.test(`${message ?? ''} ${String(errorDetail.responseBody ?? '')}`)) {
+        const envVars = (tool.connectorConfig?.envVars ?? {}) as Record<string, unknown>;
+        const advice = await odooNoDatabaseAdvice(
+          tool.connectorConfig?.baseUrl ?? undefined,
+          typeof envVars.ODOO_DB === 'string' ? envVars.ODOO_DB : undefined,
+        ).catch(() => undefined);
+        if (advice) hint = `${advice} ${hint}`;
+      }
       if (hint) errorDetail.hint = hint;
 
       await this.auditService.logInvocation({
@@ -985,7 +1143,332 @@ export class DynamicMcpTools {
     // Generic errors (database, etc.)
     const detail: Record<string, unknown> = { error: error.message };
     if (error.code) detail.code = error.code;
+    // The MCP SDK reports a refused request's HTTP status in `data.status`
+    // (its message is only the body, e.g. {"error":"invalid_token"}): keep it,
+    // so a 401 from a remote MCP server is told apart like any other.
+    if (typeof error?.data?.status === 'number') detail.status = error.data.status;
     return detail;
+  }
+
+  /**
+   * Execute a saved code tool: run its stored program in the out-of-process
+   * code-runner, giving it a bridge scoped to the tool's `uses`, the caller's
+   * role (in `invoker` mode) and its read/write setting. Every inner tool call
+   * goes back through `executeTool` (so licence, tenant scope and audit apply to
+   * each), with `inCodeRun` set so no code tool can be reached recursively.
+   */
+  private async executeCodeTool(
+    tool: RegisteredTool,
+    params: Record<string, unknown>,
+    context?: CodeExecContext,
+  ): Promise<{ content: ToolResultContent; isError?: boolean; structured?: unknown }> {
+    const startTime = Date.now();
+    const spec = parseCodeToolMapping(tool.endpointMapping);
+    const fail = (message: string, name = 'Error'): { content: ToolResultContent; isError: true } => ({
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: message, name }, null, 2) }],
+      isError: true,
+    });
+
+    if (!spec) return fail('This tool is not a valid code tool.');
+    if (!this.codeExecutor || !this.codeExecutor.isConfigured()) {
+      return fail('Code mode is not available on this instance (no code-runner configured).', 'Unavailable');
+    }
+
+    // Per-server master switch. Code mode is off by default; a code tool reached
+    // through a server whose codeMode is 'off' does not run. Calls without a
+    // server (an instance-level operator credential on a single-tenant box)
+    // have no switch to consult and are allowed, like every other tool there.
+    if (context?.mcpServerId) {
+      const server = await this.prisma.mcpServerConfig.findUnique({
+        where: { id: context.mcpServerId },
+        select: { codeMode: true },
+      });
+      if (!server || server.codeMode === 'off') {
+        return fail('Code mode is turned off for this MCP server.', 'CodeModeOff');
+      }
+    }
+
+    // The connectors this code tool may reach, and the caller's role scope.
+    const usesConnectorIds = spec.uses.map((u) => u.connectorId);
+    // `invoker` mode must know the caller's allowed tool ids. null = unrestricted
+    // (ADMIN/operator). Unknown for an identified user → fail closed (deny inner
+    // calls) rather than guess; definer mode does not use it.
+    const allowedToolIds: string[] | null =
+      context?.allowedToolIds !== undefined
+        ? context.allowedToolIds
+        : context?.userId
+          ? []
+          : null;
+
+    const deps = this.codeBridgeDeps(usesConnectorIds, allowedToolIds, context);
+    const bridge = buildCodeBridge(spec, deps);
+    // The program receives its tool arguments as `args` via a wrapper the runner
+    // does not add, so expose them through a declared variable: prepend a const.
+    const program = `const args = ${JSON.stringify(params ?? {})};\n${spec.code}`;
+
+    const result = await this.codeExecutor.run({ code: program, bridge });
+    const durationMs = Date.now() - startTime;
+
+    // One code_runs row for the run itself (retention/quotas); the inner tool
+    // calls keep their own tool_invocations rows. Best-effort: a failed audit
+    // write must never fail the run. Uses the tool's own org, always present.
+    void this.prisma.codeRun
+      .create({
+        data: {
+          organizationId: tool.organizationId,
+          userId: context?.userId,
+          mcpServerId: context?.mcpServerId,
+          toolId: tool.id,
+          source: 'tool',
+          status: result.ok ? 'SUCCESS' : 'ERROR',
+          durationMs,
+          toolCallCount: result.calls.length,
+          error: result.ok ? undefined : (result.error?.message ?? 'code run failed').slice(0, 2000),
+        },
+      })
+      .catch((e) => this.logger.warn(`code_runs audit write failed: ${e?.message ?? e}`));
+
+    // One audit row for the code tool itself; each inner call logged its own.
+    await this.auditService.logInvocation({
+      toolId: tool.id,
+      userId: context?.userId,
+      userEmail: context?.userEmail,
+      mcpServerId: context?.mcpServerId,
+      organizationId: context?.organizationId,
+      connectorId: tool.connectorId,
+      usedProxy: false,
+      intent: context?.intent,
+      learnable: context?.learnable ?? false,
+      input: params,
+      output: result.ok ? ({ value: result.value } as Record<string, unknown>) : undefined,
+      status: result.ok ? 'SUCCESS' : 'ERROR',
+      durationMs,
+      error: result.ok ? undefined : this.formatStoredError({ error: result.error?.message ?? 'code run failed' }),
+      clientInfo: context
+        ? JSON.stringify({
+            authMethod: context.authMethod,
+            apiKeyName: context.apiKeyName,
+            userEmail: context.userEmail,
+            mcpServerName: context.mcpServerName,
+            codeRun: true,
+            toolCalls: result.calls.length,
+          })
+        : undefined,
+    });
+    this.logToolCall(tool, context, durationMs, result.ok ? 'SUCCESS' : 'ERROR');
+    return this.codeResultToContent(result);
+  }
+
+  /**
+   * Run an inline code program (the generic `code_execute` tool): a program the
+   * model wrote on the spot, read-only, with the caller's own permissions, over
+   * the connectors reachable on this server. Unlike a saved code tool there is
+   * no McpTool, so only a `code_runs` row is written (source `inline`); the
+   * inner tool calls still log their own `tool_invocations`. Exposure is gated
+   * by the caller (server codeMode `inline` + the role's `inlineCode`
+   * capability); this method enforces read-only and invoker rights.
+   */
+  /**
+   * Run a saved code tool directly from its stored row, for the dashboard
+   * "Test" button. The admin already has the tool in hand, so this skips the
+   * name→registry lookup `executeTool` does (the tool may have just been saved
+   * and not re-registered yet) and runs the same out-of-process code path with
+   * the same governance (uses allow-list, read/write, invoker/definer). No
+   * `mcpServerId` is passed, so the per-server codeMode switch is not consulted:
+   * this is an owner testing their own tool, like any instance-level operator
+   * call. Refuses cleanly when no runner is configured.
+   */
+  async runSavedCodeTool(
+    tool: {
+      id: string;
+      name: string;
+      connectorId: string;
+      connectorType?: string;
+      organizationId: string;
+      endpointMapping: unknown;
+    },
+    params: Record<string, unknown>,
+    context?: CodeExecContext,
+  ): Promise<{ content: ToolResultContent; isError?: boolean; structured?: unknown }> {
+    return this.executeCodeTool(tool as unknown as RegisteredTool, params, context);
+  }
+
+  /** Whether a code-runner is configured, so code mode can run at all. */
+  codeModeAvailable(): boolean {
+    return !!this.codeExecutor?.isConfigured();
+  }
+
+  /**
+   * Whether the organization's plan includes inline code (Team and above). The
+   * MCP endpoint uses it to gate `code_execute` / `code_propose_tool` exposure,
+   * on top of the per-server `codeMode` and the caller's `inlineCode` role
+   * capability. Delegates to the licence guard so the plan→feature map lives in
+   * one place.
+   */
+  async inlineCodeAllowedForOrg(organizationId?: string): Promise<boolean> {
+    return this.licenseGuard.canUseInlineCode(organizationId);
+  }
+
+  async executeInlineCode(
+    code: string,
+    context: CodeExecContext,
+    opts: { connectorIds: string[]; allowedToolIds: string[] | null },
+  ): Promise<{ content: ToolResultContent; isError?: boolean; structured?: unknown }> {
+    const startTime = Date.now();
+    const fail = (message: string, name = 'Error'): { content: ToolResultContent; isError: true } => ({
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: message, name }, null, 2) }],
+      isError: true,
+    });
+    if (typeof code !== 'string' || !code.trim()) return fail('No code was provided to run.');
+    if (!this.codeExecutor || !this.codeExecutor.isConfigured()) {
+      return fail('Code mode is not available on this instance (no code-runner configured).', 'Unavailable');
+    }
+
+    // Inline code is always read-only, invoker rights, over exactly the
+    // connectors the caller can reach on this server.
+    const spec = {
+      code,
+      uses: opts.connectorIds.map((connectorId) => ({ connectorId })),
+      runAs: 'invoker' as const,
+      allowWrites: false,
+    };
+    const deps = this.codeBridgeDeps(opts.connectorIds, opts.allowedToolIds, context);
+    const bridge = buildCodeBridge(spec, deps);
+    const program = `const args = {};\n${code}`;
+
+    const result = await this.codeExecutor.run({ code: program, bridge });
+    const durationMs = Date.now() - startTime;
+
+    if (context.organizationId) {
+      void this.prisma.codeRun
+        .create({
+          data: {
+            organizationId: context.organizationId,
+            userId: context.userId,
+            mcpServerId: context.mcpServerId,
+            toolId: null,
+            source: 'inline',
+            status: result.ok ? 'SUCCESS' : 'ERROR',
+            durationMs,
+            toolCallCount: result.calls.length,
+            error: result.ok ? undefined : (result.error?.message ?? 'code run failed').slice(0, 2000),
+          },
+        })
+        .catch((e) => this.logger.warn(`code_runs audit write failed: ${e?.message ?? e}`));
+    }
+
+    return this.codeResultToContent(result);
+  }
+
+  /**
+   * The CodeBridgeDeps shared by saved code tools and inline code: resolve a
+   * tool within the allowed connectors, run it back through executeTool (so
+   * licence, tenant scope and audit apply, with inCodeRun set), and search /
+   * describe over the same set. The access rules (uses, read/write, role) are
+   * applied by buildCodeBridge around these, per the spec.
+   */
+  private codeBridgeDeps(
+    usesConnectorIds: string[],
+    allowedToolIds: string[] | null,
+    context?: CodeExecContext,
+  ): CodeBridgeDeps {
+    const toBridgeTool = (t: RegisteredTool): BridgeResolvedTool => ({
+      id: t.id,
+      name: t.name,
+      connectorId: t.connectorId,
+      readOnly:
+        deriveToolAnnotations({
+          name: t.name,
+          connectorType: t.connectorType,
+          endpointMapping: t.endpointMapping as { method?: string; path?: string },
+          connectorConfig: { config: t.connectorConfig?.config ?? null },
+          annotations: t.annotations,
+        }).readOnlyHint === true,
+      isCode: isCodeMethod(t.endpointMapping),
+    });
+
+    return {
+      resolveTool: (name) => {
+        const resolved = this.toolRegistry.getTool(name, usesConnectorIds);
+        return resolved ? toBridgeTool(resolved) : undefined;
+      },
+      allowedToolIds,
+      runTool: async (name, args, connectorId) => {
+        const r = await this.executeTool(name, args, {
+          ...context,
+          connectorIds: [connectorId],
+          allowedToolIds,
+          inCodeRun: true,
+        });
+        if (r.isError) {
+          throw new Error(textOf(r.content) ?? `Tool '${name}' failed.`);
+        }
+        if (r.structured !== undefined) return r.structured;
+        const text = textOf(r.content);
+        try {
+          return text ? JSON.parse(text) : null;
+        } catch {
+          return text ?? null;
+        }
+      },
+      search: async (query) => {
+        const q = query.toLowerCase().trim();
+        const seen = new Set<string>();
+        const out: { tool: string; description: string; readOnly: boolean }[] = [];
+        for (const connectorId of usesConnectorIds) {
+          for (const t of this.toolRegistry.getAllTools()) {
+            if (t.connectorId !== connectorId || isCodeMethod(t.endpointMapping)) continue;
+            if (seen.has(t.name)) continue;
+            const hay = `${t.name} ${t.description ?? ''}`.toLowerCase();
+            if (q && !hay.includes(q)) continue;
+            seen.add(t.name);
+            out.push({ tool: t.name, description: t.description ?? '', readOnly: toBridgeTool(t).readOnly });
+            if (out.length >= 50) return out;
+          }
+        }
+        return out;
+      },
+      describe: async (name) => {
+        const resolved = this.toolRegistry.getTool(name, usesConnectorIds);
+        if (!resolved) return null;
+        return {
+          name: resolved.name,
+          description: resolved.description ?? '',
+          inputSchema: resolved.parameters ?? {},
+          readOnly: toBridgeTool(resolved).readOnly,
+        };
+      },
+    };
+  }
+
+  /** Turn a code-run result into a tool result (shared by tool and inline runs). */
+  private codeResultToContent(result: {
+    ok: boolean;
+    value?: unknown;
+    error?: { name: string; message: string };
+    logs: { level: string; message: string }[];
+  }): { content: ToolResultContent; isError?: boolean; structured?: unknown } {
+    if (result.ok) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result.value ?? null, null, 2) }],
+        structured: result.value,
+      };
+    }
+    // A refused tool call surfaces as the access error the bridge threw.
+    const name = result.error?.name === 'CodeToolAccessError' ? 'AccessDenied' : result.error?.name ?? 'Error';
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(
+            { error: result.error?.message ?? 'code run failed', name, logs: result.logs.slice(-20) },
+            null,
+            2,
+          ),
+        },
+      ],
+      isError: true,
+    };
   }
 
   private async executeWithEngine(
@@ -993,8 +1476,29 @@ export class DynamicMcpTools {
     config: any,
     endpointMapping: any,
     params: Record<string, unknown>,
-    extra?: { connectorConfig?: Record<string, unknown>; odataSettings?: unknown },
+    extra?: {
+      connectorConfig?: Record<string, unknown>;
+      odataSettings?: unknown;
+      emailSettings?: unknown;
+      connectorId?: string;
+      organizationId?: string;
+      fileSearch?: { organizationId: string; connectorId: string; connectorName?: string; userId?: string };
+    },
   ): Promise<{ body: unknown; meta?: ResponseMeta }> {
+    // Recent webhook events — a read of our own storage, never an outbound
+    // call, so it bypasses every engine (same shape as the static branch
+    // below).
+    if (endpointMapping.method === 'webhook_recent_events') {
+      if (!extra?.connectorId || !extra?.organizationId) {
+        throw new Error('webhook_recent_events requires connectorId and organizationId');
+      }
+      const events = await this.webhookEvents.recentEvents(extra.connectorId, extra.organizationId, {
+        limit: params.limit as number | undefined,
+        since: params.since as string | undefined,
+      });
+      return { body: { events } };
+    }
+
     // Static response tools — return text immediately without engine dispatch.
     //
     // The `method` alone decides this, not `method && staticResponse`. With the
@@ -1054,6 +1558,23 @@ export class DynamicMcpTools {
         return {
           body: await this.mcpClientEngine.execute(config, endpointMapping, params),
         };
+      case 'EMAIL': {
+        if (!this.emailEngine) throw new Error('The email engine is not available.');
+        return {
+          body: await this.emailEngine.execute(
+            { authConfig: config.authConfig, baseUrl: config.baseUrl },
+            endpointMapping,
+            params,
+            extra?.emailSettings ?? (extra?.connectorConfig as { email?: unknown } | undefined)?.email,
+          ),
+        };
+      }
+      case 'FILE_SEARCH': {
+        if (!this.fileSearchEngine || !extra?.fileSearch) throw new Error('File Search is not available on this server.');
+        return {
+          body: await this.fileSearchEngine.execute(endpointMapping.method, params, extra.fileSearch),
+        };
+      }
       case 'DATABASE': {
         const connectorConfig = extra?.connectorConfig as any;
         const readOnly = connectorConfig?.readOnly !== false;

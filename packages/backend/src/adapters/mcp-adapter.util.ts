@@ -14,7 +14,8 @@ type CatalogTool = AdapterDefinition['tools'][number];
  * the fallback when the server cannot be reached at install. What the catalog
  * adds on top is policy: a tool it marks `enabled: false` (a write a
  * workspace should opt into) installs switched off, and annotations it sets
- * fill in what the server leaves out.
+ * fill in what the server leaves out, and parameters it lists in
+ * `omitParameters` are dropped from the server's schema.
  *
  * Tools the server has and the catalog does not know are installed as the
  * server describes them; catalog tools the server no longer has are left out.
@@ -57,7 +58,7 @@ export function mergeDiscoveredMcpTools(
     return {
       name,
       description: d.description,
-      parameters: d.parameters,
+      parameters: withoutParameters(d.parameters, own?.omitParameters),
       endpointMapping: d.endpointMapping,
       ...(d.outputSchema ? { outputSchema: d.outputSchema } : {}),
       ...(own?.annotations || d.annotations
@@ -66,6 +67,29 @@ export function mergeDiscoveredMcpTools(
       ...(own?.enabled === false ? { enabled: false } : {}),
     };
   });
+}
+
+/**
+ * A copy of a tool's JSON Schema without the named top-level properties,
+ * also removed from `required`. The server's schema is returned as is when
+ * there is nothing to drop.
+ */
+function withoutParameters(
+  parameters: Record<string, unknown>,
+  omit: string[] | undefined,
+): Record<string, unknown> {
+  if (!omit?.length || !parameters || typeof parameters !== 'object') return parameters;
+  const props = parameters.properties as Record<string, unknown> | undefined;
+  const required = parameters.required;
+  const hasProp = !!props && omit.some((k) => Object.prototype.hasOwnProperty.call(props, k));
+  const hasRequired = Array.isArray(required) && required.some((r) => omit.includes(r as string));
+  if (!hasProp && !hasRequired) return parameters;
+  const out: Record<string, unknown> = { ...parameters };
+  if (props) {
+    out.properties = Object.fromEntries(Object.entries(props).filter(([k]) => !omit.includes(k)));
+  }
+  if (Array.isArray(required)) out.required = required.filter((r) => !omit.includes(r as string));
+  return out;
 }
 
 /** `mcp-tv-get-ohlcv`, `tv.get_ohlcv` and `tv__get_ohlcv` all read `..._get_ohlcv`. */

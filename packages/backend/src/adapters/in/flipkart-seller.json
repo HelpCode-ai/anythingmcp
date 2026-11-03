@@ -1,0 +1,950 @@
+{
+  "slug": "flipkart-seller",
+  "name": "Flipkart Seller",
+  "aliases": [
+    "Flipkart",
+    "Flipkart Marketplace",
+    "Flipkart Seller API",
+    "Flipkart Seller Hub"
+  ],
+  "description": "Flipkart Marketplace Seller API v3 for your own seller account: listings with price and stock updates, order shipments (search, details, labels and invoices, ready to dispatch, cancellation, handover and manifest) and returns.",
+  "instructions": "## Flipkart Seller\nThis connector uses the **Flipkart Marketplace Seller API v3** (`https://api.flipkart.net/sellers`) for a seller's own account: listings with price and stock, orders as shipments (search, details, labels and invoices, ready to dispatch, cancellation, handover and manifest) and returns.\n\n**Setup (about 5 minutes)**\n1. Sign in to the Flipkart Seller Hub (https://seller.flipkart.com) and open **Manage Profile > Developer Access**.\n2. Click **Create New Access**, give the application a name and a description and submit. Flipkart shows an **Application ID** and an **Application Secret**. A self access application is for your own seller account only; do not share it with a partner.\n3. Paste them into `FLIPKART_APP_ID` and `FLIPKART_APP_SECRET`.\n4. Install and run `flipkart_seller_search_listings`.\n\n**How it signs in**: OAuth2 client credentials. AnythingMCP asks `https://api.flipkart.net/oauth-service/oauth/token` for a token with scope `Seller_Api`, sending the application id and secret as HTTP Basic, and asks again before the token expires (Flipkart's tokens last weeks) or on a 401.\n\n**Listings**\n- `flipkart_seller_search_listings` pages through all listings (500 per page) with listing id, product id (FSN) and SKU; `flipkart_seller_search_products` returns 20 at a time with title, status, vertical, prices and dimensions, filtered by listing state and an optional text.\n- `flipkart_seller_get_listings` gives up to 10 SKUs in detail: price (MRP and selling price), tax, status, fulfilment profile, dispatch SLA, packages, stock per location and `orders_to_be_fulfilled`.\n- `flipkart_seller_update_price` and `flipkart_seller_update_inventory` change one SKU. They need the SKU's `product_id` (from the two tools above) and, for stock, the location id. Confirm the new values with the user first. A 200 answer can still carry `status: failure` for the SKU, with the reason in `errors` or `attribute_errors`: read it.\n\n**Orders (shipments)**: a shipment is what is packed and handed over together; it holds one or more order items of one order.\n- Find: `flipkart_seller_search_shipments` with `type` preDispatch (states APPROVED, PACKING_IN_PROGRESS, PACKED, FORM_FAILED, READY_TO_DISPATCH), postDispatch (SHIPPED, DELIVERED, PICKUP_COMPLETE) or cancelled (CANCELLED, with `cancellation_type`). Up to 20 per page; when `hasMore` is true, call `flipkart_seller_next_shipments_page` with the `next_token` taken from `nextPageUrl`. Searches reach at most 5,000 shipments; Flipkart Assured (FA) orders are not included.\n- Read: `flipkart_seller_get_shipments` by shipment, order or order item ids (order items, prices, dates, hold flag, packaging policy); `flipkart_seller_get_shipment_details` for delivery and billing address, tracking id and courier.\n- Process a new order (state APPROVED, `hold` false and after `dispatchAfterDate`): `flipkart_seller_generate_labels` (packs the shipment and asks Flipkart for the label and invoice; state goes to PACKING_IN_PROGRESS, then PACKED, usually within seconds), then `flipkart_seller_download_labels` (one PDF with label and invoice) and `flipkart_seller_download_invoices`, then `flipkart_seller_mark_ready_to_dispatch` (READY_TO_DISPATCH, the courier is booked). Before the pickup: `flipkart_seller_get_handover_counts` lists the couriers (`vendorGroupCode`) with the number of shipments and the one time code for the pickup, and `flipkart_seller_download_manifest` the manifest PDF for one courier.\n- `flipkart_seller_cancel_shipments` cancels order items the seller cannot fulfil. It is installed switched off: cancellations hurt the seller's rating and can get the account or location suspended, so only cancel after the user explicitly asks.\n- These actions answer per shipment with `processingStatus` SUCCESS or FAILURE plus `errorCode` and `errorMessage`, even when the HTTP status is 200.\n\n**Returns**: `flipkart_seller_list_returns` lists customer returns (`customer_return`) or courier returns (`courier_return`, undelivered shipments) by created or modified date, 25 per page; when `hasMore` is true pass `nextUrl` to `flipkart_seller_next_returns_page`. `flipkart_seller_get_returns` reads returns by return ids or tracking ids.\n\n**Reading the answers**: dates are ISO 8601, in IST when no zone is given. Amounts are in INR (`sellingPrice`, `customerPrice`, `shippingCharge`, `totalPrice` per order item). Ids: `shipmentId`, `orderId` (OD...), `orderItemId`, `listingId` (LST...), `product_id` / `fsn` (Flipkart product id), `sku` (yours), `locationId` (LOC...). Labels, invoices and the manifest are returned as PDF files.\n\n**Errors**: 401 an expired or refused token (check the application id and secret), 400 or 422 an invalid request with a code such as INVALID_REQUEST_PAGE_SIZE or INVALID_DATE_FORMAT, 403 an id that belongs to another seller, 5xx a Flipkart problem (DEPENDENT_SYSTEM_CALL_FAILED): retry later.\n\n**Out of scope**: creating and editing listing content, self ship (seller-delivered) dispatch and delivery updates, self ship return actions, Flipkart Quick (hyperlocal) listings, reports and order notifications (webhooks).",
+  "region": "in",
+  "category": "e-commerce",
+  "icon": "flipkart",
+  "docsUrl": "https://seller.flipkart.com/api-docs/FMSAPI.html",
+  "prerequisites": "A Flipkart seller account and a self access application created in Seller Hub, Manage Profile, Developer Access (application id and secret).",
+  "requiredEnvVars": [
+    "FLIPKART_APP_ID",
+    "FLIPKART_APP_SECRET"
+  ],
+  "envVarMeta": {
+    "FLIPKART_APP_ID": {
+      "label": "Application ID",
+      "kind": "credential",
+      "help": "Seller Hub, Manage Profile, Developer Access: the Application ID of your self access application.",
+      "link": "https://seller.flipkart.com",
+      "pattern": "^[A-Za-z0-9_-]{6,}$",
+      "patternMessage": "Paste only the application id, without spaces."
+    },
+    "FLIPKART_APP_SECRET": {
+      "label": "Application Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Seller Hub, Manage Profile, Developer Access: the Application Secret shown with the application id.",
+      "link": "https://seller.flipkart.com",
+      "pattern": "^[A-Za-z0-9_-]{6,}$",
+      "patternMessage": "Paste only the application secret, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Flipkart refused the application id or secret. Copy both again from Seller Hub, Manage Profile, Developer Access; a self access application only works for the seller account that created it.",
+    "403": "Flipkart refused access for this application. Check in Seller Hub, Developer Access that the application is active."
+  },
+  "probe": {
+    "tool": "flipkart_seller_search_listings"
+  },
+  "connector": {
+    "name": "Flipkart Marketplace Seller API",
+    "type": "REST",
+    "baseUrl": "https://api.flipkart.net/sellers",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{FLIPKART_APP_ID}}",
+      "clientSecret": "{{FLIPKART_APP_SECRET}}",
+      "tokenUrl": "https://api.flipkart.net/oauth-service/oauth/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scope": "Seller_Api"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "flipkart_seller_search_listings",
+      "description": "Page through all of the seller's listings, 500 per page: listing id, product id (FSN) and SKU. Answers `has_more` and `next_page_id`; pass `next_page_id` as `page_id` for the next page. Read-only although sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ],
+            "description": "Only ACTIVE or INACTIVE listings. Leave out for all."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "`next_page_id` from the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listings/v3/search",
+        "bodyMapping": {
+          "filters": {
+            "listing_status": "$listing_status"
+          },
+          "page_id": "$page_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "flipkart_seller_search_products",
+      "description": "Listings with product details, 20 per batch: listing id, product id, SKU, status, product name, image, vertical, selling price (ssp), effective selling price (esp), MRP and package dimensions (cm, kg), plus `totalListingsCount`. Filter by listing state and an optional search text. Read-only although sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "internal_state": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "READY_FOR_ACTIVATION",
+              "ARCHIVED",
+              "INACTIVATED_BY_FLIPKART"
+            ],
+            "default": "ACTIVE",
+            "description": "Listing state to return (default ACTIVE)."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Optional text to search in the listings, e.g. part of a title or SKU."
+          },
+          "batch_no": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Batch index, 0 for the first 20, 1 for the next 20, and so on."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listings/v3/product/search",
+        "bodyMapping": {
+          "batchNo": "$batch_no",
+          "internalState": "$internal_state",
+          "searchText": "$search_text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "flipkart_seller_get_listings",
+      "description": "Details of up to 10 listings by SKU: listing id, product id, title and URL, MRP and selling price, tax (HSN), status, shipping fees, fulfilment profile and dispatch SLA, packages, stock per location and `orders_to_be_fulfilled`. Unknown SKUs come back under `unavailable`, malformed ones under `invalid`. Read-only although sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "Seller SKUs, at most 10."
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listings/v3/details",
+        "bodyMapping": {
+          "sku_ids": "$skus"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "flipkart_seller_update_price",
+      "description": "Set the MRP and selling price of one listing. Changes the live price on Flipkart: confirm the SKU and both prices with the user first. The answer is keyed by SKU with `status` success, warning or failure and the reasons in `errors` / `attribute_errors`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Seller SKU of the listing."
+          },
+          "product_id": {
+            "type": "string",
+            "minLength": 13,
+            "maxLength": 16,
+            "description": "Flipkart product id (FSN) of the listing, from flipkart_seller_get_listings or flipkart_seller_search_listings."
+          },
+          "mrp": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Maximum retail price in whole rupees."
+          },
+          "selling_price": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Selling price in whole rupees, not above the MRP."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "default": "INR",
+            "description": "Currency, INR."
+          }
+        },
+        "required": [
+          "sku",
+          "product_id",
+          "mrp",
+          "selling_price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listings/v3/update/price",
+        "bodyTemplate": "{\"${sku}\":{\"product_id\":\"${product_id}\",\"price\":{\"mrp\":${mrp},\"selling_price\":${selling_price},\"currency\":\"${currency}\"}}}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "flipkart_seller_update_inventory",
+      "description": "Set the available stock of one listing at one or more seller locations. Overwrites the current stock: confirm the SKU, locations and quantities with the user first. The answer is keyed by SKU with `status` success, warning or failure and the reasons in `errors` / `attribute_errors`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Seller SKU of the listing."
+          },
+          "product_id": {
+            "type": "string",
+            "minLength": 13,
+            "maxLength": 16,
+            "description": "Flipkart product id (FSN) of the listing, from flipkart_seller_get_listings or flipkart_seller_search_listings."
+          },
+          "locations": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One entry per seller location: the location id (see `locations` in flipkart_seller_get_listings) and the new stock.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Location id, e.g. LOC..."
+                },
+                "inventory": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units available at this location."
+                }
+              },
+              "required": [
+                "id",
+                "inventory"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sku",
+          "product_id",
+          "locations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listings/v3/update/inventory",
+        "bodyTemplate": "{\"${sku}\":{\"product_id\":\"${product_id}\",\"locations\":${locations}}}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "flipkart_seller_search_shipments",
+      "description": "Search the seller's shipments (orders) by state and dates. Each shipment has its id, dispatch-by and dispatch-after dates, hold flag, location and order items (order id, order item id, SKU, FSN, quantity, status, prices). Up to 20 per page; when `hasMore` is true use flipkart_seller_next_shipments_page. Read-only although sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "preDispatch",
+              "postDispatch",
+              "cancelled"
+            ],
+            "default": "preDispatch",
+            "description": "preDispatch: not yet handed over; postDispatch: shipped or delivered; cancelled: cancelled shipments."
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "APPROVED",
+                "PACKING_IN_PROGRESS",
+                "PACKED",
+                "FORM_FAILED",
+                "READY_TO_DISPATCH",
+                "SHIPPED",
+                "DELIVERED",
+                "PICKUP_COMPLETE",
+                "CANCELLED"
+              ]
+            },
+            "description": "Shipment states matching the type. preDispatch: APPROVED, PACKING_IN_PROGRESS, PACKED, FORM_FAILED, READY_TO_DISPATCH. postDispatch: SHIPPED, DELIVERED, PICKUP_COMPLETE. cancelled: CANCELLED."
+          },
+          "cancellation_type": {
+            "type": "string",
+            "enum": [
+              "marketplaceCancellation",
+              "sellerCancellation",
+              "buyerCancellation"
+            ],
+            "description": "Required with type cancelled: who cancelled."
+          },
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only shipments with these seller SKUs."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "The seller location id (`locationId` on the shipment, e.g. LOC...)."
+          },
+          "shipment_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "NORMAL",
+                "SELF",
+                "EXPRESS"
+              ]
+            },
+            "description": "NORMAL (Flipkart logistics) or SELF (self ship). For postDispatch, search NORMAL and SELF separately."
+          },
+          "order_date": {
+            "type": "object",
+            "description": "Only shipments whose order date lies in this range. ISO 8601 date-times; without a time zone Flipkart assumes IST.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "Start, e.g. 2026-10-01T00:00:00+05:30."
+              },
+              "to": {
+                "type": "string",
+                "description": "End, e.g. 2026-10-31T23:59:59+05:30."
+              }
+            }
+          },
+          "dispatch_by_date": {
+            "type": "object",
+            "description": "Only shipments whose dispatch-by date lies in this range. ISO 8601 date-times; without a time zone Flipkart assumes IST.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "Start, e.g. 2026-10-01T00:00:00+05:30."
+              },
+              "to": {
+                "type": "string",
+                "description": "End, e.g. 2026-10-31T23:59:59+05:30."
+              }
+            }
+          },
+          "dispatch_after_date": {
+            "type": "object",
+            "description": "Only shipments whose dispatch-after date lies in this range. ISO 8601 date-times; without a time zone Flipkart assumes IST.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "Start, e.g. 2026-10-01T00:00:00+05:30."
+              },
+              "to": {
+                "type": "string",
+                "description": "End, e.g. 2026-10-31T23:59:59+05:30."
+              }
+            }
+          },
+          "modified_date": {
+            "type": "object",
+            "description": "Only shipments whose last modification lies in this range. ISO 8601 date-times; without a time zone Flipkart assumes IST.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "Start, e.g. 2026-10-01T00:00:00+05:30."
+              },
+              "to": {
+                "type": "string",
+                "description": "End, e.g. 2026-10-31T23:59:59+05:30."
+              }
+            }
+          },
+          "cancellation_date": {
+            "type": "object",
+            "description": "Only shipments whose cancellation date lies in this range. ISO 8601 date-times; without a time zone Flipkart assumes IST.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "Start, e.g. 2026-10-01T00:00:00+05:30."
+              },
+              "to": {
+                "type": "string",
+                "description": "End, e.g. 2026-10-31T23:59:59+05:30."
+              }
+            }
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 20,
+            "description": "Shipments per page, at most 20."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Sort order; by default dispatchByDate ascending.",
+            "properties": {
+              "field": {
+                "type": "string",
+                "enum": [
+                  "dispatchByDate",
+                  "orderDate",
+                  "modifiedDate",
+                  "dispatchAfterDate"
+                ]
+              },
+              "order": {
+                "type": "string",
+                "enum": [
+                  "asc",
+                  "desc"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "states"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/shipments/filter",
+        "bodyMapping": {
+          "filter": {
+            "type": "$type",
+            "states": "$states",
+            "cancellationType": "$cancellation_type",
+            "sku": "$skus",
+            "locationId": "$location_id",
+            "shipmentTypes": "$shipment_types",
+            "orderDate": "$order_date",
+            "dispatchByDate": "$dispatch_by_date",
+            "dispatchAfterDate": "$dispatch_after_date",
+            "modifiedDate": "$modified_date",
+            "cancellationDate": "$cancellation_date"
+          },
+          "pagination": {
+            "pageSize": "$page_size"
+          },
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "flipkart_seller_next_shipments_page",
+      "description": "The next page of a shipment search. Take `next_token` from the `nextPageUrl` of the previous flipkart_seller_search_shipments or flipkart_seller_next_shipments_page answer (the value after next_token=, URL-decoded) and call again until `hasMore` is false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "next_token": {
+            "type": "string",
+            "description": "The next_token value from `nextPageUrl`."
+          }
+        },
+        "required": [
+          "next_token"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/shipments/filter",
+        "queryParams": {
+          "next_token": "$next_token"
+        }
+      }
+    },
+    {
+      "name": "flipkart_seller_get_shipments",
+      "description": "Shipments with their order items by shipment ids, order ids or order item ids (give exactly one of the three): dates, hold flag, location, packaging policy, sub-shipments and per item the status, SKU, quantity and price components.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_ids": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$",
+            "description": "Comma-separated shipment ids."
+          },
+          "order_ids": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$",
+            "description": "Comma-separated order ids (OD...)."
+          },
+          "order_item_ids": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$",
+            "description": "Comma-separated order item ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/shipments",
+        "queryParams": {
+          "shipmentIds": "$shipment_ids",
+          "orderIds": "$order_ids",
+          "orderItemIds": "$order_item_ids"
+        }
+      }
+    },
+    {
+      "name": "flipkart_seller_get_shipment_details",
+      "description": "Shipping details of up to 25 shipments: delivery and billing address, courier and tracking id, dispatch and delivery dates and sub-shipments. Buyer phone and email are only given for self ship shipments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_ids": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$",
+            "description": "Comma-separated shipment ids (`shipmentId` from flipkart_seller_search_shipments), without spaces."
+          }
+        },
+        "required": [
+          "shipment_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/shipments/{shipment_ids}"
+      }
+    },
+    {
+      "name": "flipkart_seller_generate_labels",
+      "description": "Pack shipments: sends the invoice and package details and asks Flipkart to generate the shipping label and invoice. The shipments move from APPROVED to PACKING_IN_PROGRESS and then PACKED (usually within seconds, at times up to 30 minutes). Only for shipments that are not on hold and past `dispatchAfterDate`. Confirm with the user first. The answer gives `processingStatus` and an error code per shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipments": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One entry per shipment, as Flipkart's pack request: {shipmentId, locationId, taxItems: [{orderItemId, taxRate, quantity}], invoices: [{orderId, invoiceNumber (only without auto invoicing), invoiceDate (YYYY-MM-DD)}], subShipments: [{subShipmentId, dimensions: {length, breadth, height (cm), weight (kg)}}], serialNumbers: [{orderItemId, serialNumbers: [[...]]}] for serialised products only}.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shipmentId": {
+                  "type": "string"
+                },
+                "locationId": {
+                  "type": "string"
+                },
+                "taxItems": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "invoices": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "subShipments": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "serialNumbers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "required": [
+                "shipmentId",
+                "locationId",
+                "taxItems",
+                "invoices",
+                "subShipments"
+              ]
+            }
+          }
+        },
+        "required": [
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/shipments/labels",
+        "bodyMapping": {
+          "shipments": "$shipments"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "flipkart_seller_download_labels",
+      "description": "Download the shipping labels, with the invoice when the seller uses Flipkart's auto invoicing, of packed shipments as one PDF. At most 100 shipment ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_ids": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$",
+            "description": "Comma-separated shipment ids (`shipmentId` from flipkart_seller_search_shipments), without spaces."
+          }
+        },
+        "required": [
+          "shipment_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/shipments/{shipment_ids}/labels",
+        "headers": {
+          "Accept": "application/pdf"
+        }
+      }
+    },
+    {
+      "name": "flipkart_seller_download_invoices",
+      "description": "Download the customer invoices of packed shipments as a PDF.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_ids": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$",
+            "description": "Comma-separated shipment ids (`shipmentId` from flipkart_seller_search_shipments), without spaces."
+          }
+        },
+        "required": [
+          "shipment_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/shipments/{shipment_ids}/invoices",
+        "headers": {
+          "Accept": "application/pdf"
+        }
+      }
+    },
+    {
+      "name": "flipkart_seller_mark_ready_to_dispatch",
+      "description": "Mark packed shipments of one location as Ready to Dispatch, which books the courier pickup. Do it once the shipments are packed and labelled. Confirm with the user first. The answer gives `processingStatus` per shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Shipment ids, all from the same location."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "The seller location id (`locationId` on the shipment, e.g. LOC...)."
+          }
+        },
+        "required": [
+          "shipment_ids",
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/shipments/dispatch",
+        "bodyMapping": {
+          "shipmentIds": "$shipment_ids",
+          "locationId": "$location_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "flipkart_seller_cancel_shipments",
+      "description": "Cancel order items of a shipment the seller cannot fulfil. Cannot be undone, sets the product out of stock and counts against the seller's cancellation rate (too many cancellations get the account or location suspended). Installed switched off; only call after the user explicitly asked to cancel and confirmed.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "The shipment id."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "The seller location id (`locationId` on the shipment, e.g. LOC...)."
+          },
+          "cancellation_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "`cancellationGroupId` of the order items to cancel, from flipkart_seller_get_shipments."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "cannot_procure_item",
+              "not_enough_inventory",
+              "b2b_order"
+            ],
+            "description": "Why the seller cancels."
+          }
+        },
+        "required": [
+          "shipment_id",
+          "location_id",
+          "cancellation_group_ids",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/shipments/cancel",
+        "bodyMapping": {
+          "shipments": [
+            {
+              "shipmentId": "$shipment_id",
+              "locationId": "$location_id",
+              "cancellationGroupIds": "$cancellation_group_ids",
+              "reason": "$reason"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "flipkart_seller_get_handover_counts",
+      "description": "Shipments ready for pickup at a location, per courier: `vendorGroupCode`, whether they are multi-pack shipments (`isMps`), the count, the pickup window and the one time code (`otc.code`) to give the pickup executive.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_id": {
+            "type": "string",
+            "description": "The seller location id (`locationId` on the shipment, e.g. LOC...)."
+          }
+        },
+        "required": [
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/shipments/handover/counts",
+        "queryParams": {
+          "locationId": "$location_id"
+        }
+      }
+    },
+    {
+      "name": "flipkart_seller_download_manifest",
+      "description": "Download the manifest PDF (the list of shipments to hand over) for one courier at a location, using the `vendorGroupCode` from flipkart_seller_get_handover_counts. Read-only although sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_group_code": {
+            "type": "string",
+            "description": "`vendorGroupCode` from flipkart_seller_get_handover_counts."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "The seller location id (`locationId` on the shipment, e.g. LOC...)."
+          },
+          "is_mps": {
+            "type": "boolean",
+            "default": false,
+            "description": "true for multi-pack shipments (`isMps` in the handover counts)."
+          }
+        },
+        "required": [
+          "vendor_group_code",
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/shipments/manifest",
+        "headers": {
+          "Accept": "application/pdf"
+        },
+        "bodyMapping": {
+          "params": {
+            "vendorGroupCode": "$vendor_group_code",
+            "locationId": "$location_id",
+            "isMps": "$is_mps"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "flipkart_seller_list_returns",
+      "description": "Returns of one kind, filtered by created or modified date and location, 25 per page: return id, order and order item id, shipment id, quantity, status, type, reason and sub-reason, tracking id, courier and dates. When `hasMore` is true use flipkart_seller_next_returns_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "customer_return",
+              "courier_return"
+            ],
+            "default": "customer_return",
+            "description": "customer_return: returned by the buyer; courier_return: undelivered and coming back from the courier."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only returns created after this ISO 8601 date-time."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only returns created before this ISO 8601 date-time."
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only returns changed after this ISO 8601 date-time."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only returns changed before this ISO 8601 date-time."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "The seller location id (`locationId` on the shipment, e.g. LOC...)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/returns",
+        "queryParams": {
+          "source": "$source",
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "modifiedAfter": "$modified_after",
+          "modifiedBefore": "$modified_before",
+          "locationId": "$location_id"
+        }
+      }
+    },
+    {
+      "name": "flipkart_seller_get_returns",
+      "description": "Returns by return ids or by courier tracking ids (up to 25 each), with the same fields as flipkart_seller_list_returns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_ids": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$",
+            "description": "Comma-separated return ids, at most 25."
+          },
+          "tracking_ids": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$",
+            "description": "Comma-separated courier tracking ids, at most 25."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/returns",
+        "queryParams": {
+          "returnIds": "$return_ids",
+          "trackingIds": "$tracking_ids"
+        }
+      }
+    },
+    {
+      "name": "flipkart_seller_next_returns_page",
+      "description": "The next page of returns. Pass the `nextUrl` of the previous flipkart_seller_list_returns or flipkart_seller_next_returns_page answer exactly as returned (it starts with /returns) and call again until `hasMore` is false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "next_url": {
+            "type": "string",
+            "pattern": "^/returns\\?[^\\s#]*$",
+            "description": "`nextUrl` from the previous answer, e.g. /returns?source=customer_return&..."
+          }
+        },
+        "required": [
+          "next_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2{next_url}"
+      }
+    }
+  ]
+}

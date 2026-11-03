@@ -50,14 +50,18 @@ export class LicenseReleaseService {
     if (!this.deployment.isCloud() || organizationIds.length === 0) return;
     const paid = await this.prisma.license.findMany({
       where: { organizationId: { in: organizationIds }, status: 'active', plan: { not: 'trial' } },
-      select: { licenseKey: true, billing: true },
+      select: { licenseKey: true, billing: true, organizationId: true },
     });
 
     for (const licence of paid) {
       let billing = parseLicenseBilling(licence.billing);
       try {
         const { data } = await axios.get(`${LICENSE_API_URL}/api/license/verify`, {
-          params: { key: licence.licenseKey, billing: '1' },
+          params: {
+            key: licence.licenseKey,
+            billing: '1',
+            ...(licence.organizationId && { organizationId: licence.organizationId }),
+          },
           timeout: 10000,
           headers: licenseServiceHeaders(),
         });

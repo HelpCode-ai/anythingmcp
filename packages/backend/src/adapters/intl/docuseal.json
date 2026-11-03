@@ -1,0 +1,1112 @@
+{
+  "slug": "docuseal",
+  "name": "DocuSeal",
+  "description": "Let your AI work with DocuSeal, the open-source e-signature platform (Cloud US or EU, or self-hosted): find templates, submissions and signers, check who has signed, get signed documents and completion events, send templates or one-off PDFs for signature, update signers, and create, clone or archive templates from PDF, DOCX or HTML.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "docuseal",
+  "docsUrl": "https://www.docuseal.com/docs/api",
+  "instructions": "## DocuSeal\nThis connector works with **DocuSeal**, the open-source document signing platform, through its REST API: on DocuSeal Cloud (`https://api.docuseal.com`, EU `https://api.docuseal.eu`) or on your own server (`https://<your host>/api`). It lists and reads templates, submissions (signature requests) and submitters (signers), gets signed documents and completion events, sends templates or one-off PDFs for signature, updates signers and submissions, and creates, clones, updates and archives templates.\n\n**Setup (2 minutes)**\n1. Copy your API key: on DocuSeal Cloud at https://console.docuseal.com/api (EU accounts: https://console.docuseal.eu/api); on a self-hosted DocuSeal under **Settings → API** (`https://<your host>/settings/api`).\n2. Paste it into `DOCUSEAL_API_KEY`. It is sent in the `X-Auth-Token` header and acts as the user it belongs to.\n3. Set `DOCUSEAL_API_URL`: `https://api.docuseal.com` (Cloud, US), `https://api.docuseal.eu` (Cloud, EU) or `https://<your host>/api` for a self-hosted instance (the same address you open DocuSeal at, plus `/api`). No trailing slash.\n4. Run `docuseal_list_templates` to check.\n\n**Test mode**: DocuSeal Cloud has a test mode with its own API key (switch it in the console); test submissions are not legally binding and are free. Use the test key while you try the connector.\n\n**Workflow**\n- Templates: `docuseal_list_templates` (search by name with `q`, by `folder` or `external_id`), `docuseal_get_template` for roles and field names.\n- Send for signature: `docuseal_create_submission` with the template id and one submitter per role (`role` must match the template's role names, e.g. \"First Party\"); pre-fill fields with `values` keyed by field name. `docuseal_create_submissions_from_emails` is the quick way for single-signer templates. `docuseal_create_submission_from_pdf` sends a one-off PDF without a template.\n- Track: `docuseal_list_submissions` (filter by `status`, `template_id`, signer `q`), `docuseal_get_submission` (each submitter's status and timestamps, event history), `docuseal_list_submitters`, `docuseal_get_submitter`.\n- Signed documents: `docuseal_get_submission_documents` (PDF links, `merge` for one file); `combined_document_url` and `audit_log_url` in the submission.\n- What was signed lately: `docuseal_list_form_completed_events` (each signer who finished) and `docuseal_list_submission_completed_events` (fully signed submissions).\n- Follow up: `docuseal_update_submitter` (fix an email, re-send the invitation with `send_email`, pre-fill values), `docuseal_update_submission` (rename, change expiry, archive or restore), `docuseal_archive_submission`.\n- Build templates: `docuseal_create_template_from_pdf`, `docuseal_create_template_from_docx`, `docuseal_create_template_from_html`, `docuseal_clone_template`, `docuseal_update_template`, `docuseal_archive_template`.\n\n**Sending is real: confirm first.** Creating a submission emails the signers (unless `send_email` is false), `completed: true` signs on someone's behalf, and archiving stops signing links. Show the user the template or document, the signers with their roles and the message, and send only after a clear yes.\n\n**Files**: `documents[].file` takes a public URL (DocuSeal downloads it) or Base64 content. Fields come from text tags in the document, e.g. `{{Full Name;role=Signer;type=text}}`, `{{Sign here;role=Signer;type=signature}}`, `{{Date;role=Signer;type=date}}` (types: heading, text, signature, initials, date, number, image, checkbox, multiple, file, radio, select, cells, stamp, payment, phone, verification, kba, strikethrough), or from `fields` with exact `areas` (page, x, y, w, h as fractions of the page). HTML templates use tags such as `<text-field name=\"Name\" role=\"Signer\"></text-field>`.\n\n**Reading the answers**: ids are integers. Times are ISO 8601 with time zone (`2026-10-30T14:05:00.000Z`). Submission `status`: pending, completed, declined, expired. Submitter `status`: awaiting (not yet invited, signing order), sent, opened, completed, declined. `embed_src` is the signer's personal signing link. Document URLs are temporary.\n\n**Paging**: lists return `{\"data\": [...], \"pagination\": {\"count\", \"next\", \"prev\"}}`, newest first, 10 items by default (`limit` up to 100). Pass `pagination.next` as `after` for the next, older page; stop when `next` is null. The completed-event tools page the same way by completion time (Unix seconds).\n\n**Errors**: 401 \"Not authenticated\" for a wrong or missing API key (or a Cloud key on the EU host and vice versa); 403 when the key's user may not see the item; 404 unknown id; 422 with an `error` message for invalid input (unknown role name, missing email, archived template, template without fields, unreadable file); 429 \"Too many requests\" when the rate limit is reached. Self-hosted instances answer 404 for every call when `/api` is missing from `DOCUSEAL_API_URL`.",
+  "prerequisites": "A DocuSeal account (Cloud or self-hosted) and its API key, from console.docuseal.com/api or Settings, API on your own server.",
+  "requiredEnvVars": [
+    "DOCUSEAL_API_URL",
+    "DOCUSEAL_API_KEY"
+  ],
+  "envVarMeta": {
+    "DOCUSEAL_API_URL": {
+      "label": "API address",
+      "kind": "address",
+      "help": "https://api.docuseal.com for DocuSeal Cloud, https://api.docuseal.eu for the EU cloud, or https://<your host>/api for a self-hosted DocuSeal.",
+      "example": "https://api.docuseal.com",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*)?[^/\\s]$",
+      "patternMessage": "Use https://api.docuseal.com, https://api.docuseal.eu or your server address followed by /api, without a trailing slash."
+    },
+    "DOCUSEAL_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "DocuSeal Cloud: console.docuseal.com/api (or console.docuseal.eu/api). Self-hosted: Settings, API. Sent as the X-Auth-Token header.",
+      "link": "https://console.docuseal.com/api",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "DocuSeal refused the API key. Copy it again from the API page, and check that DOCUSEAL_API_URL matches where the account lives (api.docuseal.com, api.docuseal.eu or your server plus /api).",
+    "404": "Nothing answered at this address. For a self-hosted DocuSeal, DOCUSEAL_API_URL must end in /api, e.g. https://sign.example.com/api."
+  },
+  "probe": {
+    "tool": "docuseal_list_templates",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "DocuSeal API",
+    "type": "REST",
+    "baseUrl": "{{DOCUSEAL_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Auth-Token",
+      "apiKey": "{{DOCUSEAL_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/templates?limit=1"
+  },
+  "tools": [
+    {
+      "name": "docuseal_list_templates",
+      "description": "List document templates, newest first: id, name, slug, folder_name, external_id, the roles of its submitters, its fields (name, type, role, required) and documents. Filter by name (q), folder or external id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Only templates whose name contains this text."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Only the template with this slug."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Only templates with this external id (set when created through the API or the embedded builder)."
+          },
+          "folder": {
+            "type": "string",
+            "description": "Only templates in this folder (folder name)."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true lists archived templates instead of active ones."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of templates to return, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "integer",
+            "description": "Paging: pass pagination.next of the previous answer to get the next (older) page. Lists are newest first."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only templates with an id greater than this one (newer)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates",
+        "queryParams": {
+          "q": "$q",
+          "slug": "$slug",
+          "external_id": "$external_id",
+          "folder": "$folder",
+          "archived": "$archived",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].fields[*].areas",
+            "data[*].documents[*].preview_image_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "docuseal_get_template",
+      "description": "Read one template: name, folder, roles (submitters with their uuid and name), fields (name, type, role, required, position), documents with download URLs, author and dates. Field names are the keys for pre-filled values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Template id, from docuseal_list_templates."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates/{template_id}"
+      }
+    },
+    {
+      "name": "docuseal_list_submissions",
+      "description": "List signature requests (submissions), newest first: id, name, status (pending, completed, declined, expired), template, source, created and completed time, audit_log_url, combined_document_url and each submitter with email, role and status. Filter by template, status, folder or signer (q).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Only submissions of this template."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only submissions in this state.",
+            "enum": [
+              "pending",
+              "completed",
+              "declined",
+              "expired"
+            ]
+          },
+          "q": {
+            "type": "string",
+            "description": "Only submissions with a submitter whose name, email or phone contains this text."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Only the submission with this slug."
+          },
+          "template_folder": {
+            "type": "string",
+            "description": "Only submissions of templates in this folder."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true returns only archived submissions, false only active ones."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of submissions to return, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "integer",
+            "description": "Paging: pass pagination.next of the previous answer to get the next (older) page. Lists are newest first."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only submissions with an id greater than this one (newer)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/submissions",
+        "queryParams": {
+          "template_id": "$template_id",
+          "status": "$status",
+          "q": "$q",
+          "slug": "$slug",
+          "template_folder": "$template_folder",
+          "archived": "$archived",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "docuseal_get_submission",
+      "description": "Read one submission: status, each submitter (id, email, name, role, status: awaiting, sent, opened, completed, declined; sent_at, opened_at, completed_at, declined_at, the values they entered, embed_src signing link), the event history (submission_events), the signed documents and the audit log URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "integer",
+            "description": "Submission id, from docuseal_list_submissions or the submission_id of a submitter."
+          }
+        },
+        "required": [
+          "submission_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/submissions/{submission_id}"
+      }
+    },
+    {
+      "name": "docuseal_get_submission_documents",
+      "description": "Download links of a submission's documents: the signed PDFs once completed, the partly filled ones before. merge=true returns one combined PDF. The links expire after a while; download them soon.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "integer",
+            "description": "Submission id, from docuseal_list_submissions or the submission_id of a submitter."
+          },
+          "merge": {
+            "type": "boolean",
+            "description": "true merges all documents into one PDF."
+          }
+        },
+        "required": [
+          "submission_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/submissions/{submission_id}/documents",
+        "queryParams": {
+          "merge": "$merge"
+        }
+      }
+    },
+    {
+      "name": "docuseal_list_submitters",
+      "description": "List submitters (signers) across submissions, newest first: id, submission_id, email, name, phone, role, status, sent, opened and completed times, values and metadata. Filter by submission, signer text (q), external id or completion date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "integer",
+            "description": "Only submitters of this submission."
+          },
+          "q": {
+            "type": "string",
+            "description": "Only submitters whose name, email or phone contains this text."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Only the submitter with this slug."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Only submitters with this external id."
+          },
+          "completed_after": {
+            "type": "string",
+            "description": "Only submitters who completed after this date and time, e.g. 2026-10-01 00:00:00 UTC."
+          },
+          "completed_before": {
+            "type": "string",
+            "description": "Only submitters who completed before this date and time."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of submitters to return, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "integer",
+            "description": "Paging: pass pagination.next of the previous answer to get the next (older) page. Lists are newest first."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only submitters with an id greater than this one (newer)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/submitters",
+        "queryParams": {
+          "submission_id": "$submission_id",
+          "q": "$q",
+          "slug": "$slug",
+          "external_id": "$external_id",
+          "completed_after": "$completed_after",
+          "completed_before": "$completed_before",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "docuseal_get_submitter",
+      "description": "Read one submitter: email, name, role, status, sent, opened, completed or declined time and decline reason, the field values they entered, their documents and the embed_src signing link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submitter_id": {
+            "type": "integer",
+            "description": "Submitter id, from docuseal_get_submission (submitters[].id) or docuseal_list_submitters."
+          }
+        },
+        "required": [
+          "submitter_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/submitters/{submitter_id}"
+      }
+    },
+    {
+      "name": "docuseal_list_form_completed_events",
+      "description": "Completed-form events, newest first: one per signer who finished (event_type form.completed, timestamp, and the submitter with values, documents and audit log), the same data a form.completed webhook carries. Use it to catch up on signatures since a time. Paged by completion time: pass pagination.next as after.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of events (default 10, max 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "integer",
+            "description": "Only events completed before this Unix time in seconds (pass pagination.next for the next, older page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only events completed after this Unix time in seconds."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/form/completed",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "docuseal_list_submission_completed_events",
+      "description": "Completed-submission events, newest first: one per submission whose signers all finished (event_type submission.completed, timestamp, and the submission with submitters, documents and audit log). Paged by completion time: pass pagination.next as after.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of events (default 10, max 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "integer",
+            "description": "Only events completed before this Unix time in seconds (pass pagination.next for the next, older page)."
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only events completed after this Unix time in seconds."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/submission/completed",
+        "queryParams": {
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      }
+    },
+    {
+      "name": "docuseal_create_submission",
+      "description": "Send a template for signature: creates a submission with one submitter per template role and, unless send_email is false, emails each signer their link (in order, or all at once with order random). Pre-fill fields with values. Returns the submitters with id, status and embed_src signing link. Confirm signers and template with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Template id, from docuseal_list_templates."
+          },
+          "submitters": {
+            "type": "array",
+            "description": "Signers, one per template role, e.g. [{\"role\": \"First Party\", \"email\": \"anna@example.com\", \"name\": \"Anna\", \"values\": {\"Company\": \"ACME\"}}]. Each may set email, phone, name, role, values (pre-filled fields by field name), external_id, metadata, send_email, send_sms, completed (true signs automatically), order, require_email_2fa, message, fields (per-field settings: readonly, required, default_value).",
+            "items": {
+              "type": "object",
+              "description": "One submitter."
+            },
+            "minItems": 1
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "false creates the request without emailing the signers (share the embed_src links yourself). Default true."
+          },
+          "send_sms": {
+            "type": "boolean",
+            "description": "true also invites signers by SMS (phone required; paid feature)."
+          },
+          "order": {
+            "type": "string",
+            "description": "preserved (default) signs in role order, one after the other; random lets everyone sign at the same time.",
+            "enum": [
+              "preserved",
+              "random"
+            ]
+          },
+          "completed_redirect_url": {
+            "type": "string",
+            "description": "URL the signer is sent to after signing."
+          },
+          "bcc_completed": {
+            "type": "string",
+            "description": "Email address that gets a BCC of the signed documents."
+          },
+          "reply_to": {
+            "type": "string",
+            "description": "Reply-To address for the invitation emails."
+          },
+          "expire_at": {
+            "type": "string",
+            "description": "Expiry date and time after which nobody can sign, e.g. 2026-12-31 23:59:59 UTC."
+          },
+          "message": {
+            "type": "object",
+            "description": "Custom invitation email: {\"subject\": \"...\", \"body\": \"...\"}. The body may use {{submitter.link}}, {{template.name}}, {{account.name}} and other DocuSeal variables."
+          },
+          "variables": {
+            "type": "object",
+            "description": "Values for dynamic content variables of the template, e.g. {\"customer_name\": \"ACME\"}."
+          }
+        },
+        "required": [
+          "template_id",
+          "submitters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/submissions",
+        "bodyMapping": {
+          "template_id": "$template_id",
+          "submitters": "$submitters",
+          "send_email": "$send_email",
+          "send_sms": "$send_sms",
+          "order": "$order",
+          "completed_redirect_url": "$completed_redirect_url",
+          "bcc_completed": "$bcc_completed",
+          "reply_to": "$reply_to",
+          "expire_at": "$expire_at",
+          "message": "$message",
+          "variables": "$variables"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "docuseal_create_submissions_from_emails",
+      "description": "Quick send: one submission per email address for a single-signer template, invitations sent right away. Use docuseal_create_submission for several roles or pre-filled values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Template id, from docuseal_list_templates."
+          },
+          "emails": {
+            "type": "string",
+            "description": "Comma-separated email addresses, e.g. anna@example.com, ben@example.com."
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "false creates the submissions without sending emails. Default true."
+          },
+          "message": {
+            "type": "object",
+            "description": "Custom invitation email: {\"subject\": \"...\", \"body\": \"...\"}. The body may use {{submitter.link}}, {{template.name}}, {{account.name}} and other DocuSeal variables."
+          }
+        },
+        "required": [
+          "template_id",
+          "emails"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/submissions/emails",
+        "bodyMapping": {
+          "template_id": "$template_id",
+          "emails": "$emails",
+          "send_email": "$send_email",
+          "message": "$message"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "docuseal_create_submission_from_pdf",
+      "description": "Send a one-off PDF for signature without saving a template first: give the PDF (URL or Base64) with text tags or field positions, and the signers. Emails go out unless send_email is false. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the submission."
+          },
+          "documents": {
+            "type": "array",
+            "description": "Documents, each {\"name\": \"...\", \"file\": \"<PDF URL or Base64 content>\"}; optional \"fields\" with exact positions. Fields can also be text tags inside the document, e.g. {{Name;role=Signer;type=text}} and {{Sign;role=Signer;type=signature}}.",
+            "items": {
+              "type": "object",
+              "description": "One document: name, file, optional fields."
+            },
+            "minItems": 1
+          },
+          "submitters": {
+            "type": "array",
+            "description": "Signers, one per template role, e.g. [{\"role\": \"First Party\", \"email\": \"anna@example.com\", \"name\": \"Anna\", \"values\": {\"Company\": \"ACME\"}}]. Each may set email, phone, name, role, values (pre-filled fields by field name), external_id, metadata, send_email, send_sms, completed (true signs automatically), order, require_email_2fa, message, fields (per-field settings: readonly, required, default_value).",
+            "items": {
+              "type": "object",
+              "description": "One submitter."
+            },
+            "minItems": 1
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "false creates the request without emailing the signers (share the embed_src links yourself). Default true."
+          },
+          "send_sms": {
+            "type": "boolean",
+            "description": "true also invites signers by SMS (phone required; paid feature)."
+          },
+          "order": {
+            "type": "string",
+            "description": "preserved (default) signs in role order, one after the other; random lets everyone sign at the same time.",
+            "enum": [
+              "preserved",
+              "random"
+            ]
+          },
+          "completed_redirect_url": {
+            "type": "string",
+            "description": "URL the signer is sent to after signing."
+          },
+          "bcc_completed": {
+            "type": "string",
+            "description": "Email address that gets a BCC of the signed documents."
+          },
+          "reply_to": {
+            "type": "string",
+            "description": "Reply-To address for the invitation emails."
+          },
+          "expire_at": {
+            "type": "string",
+            "description": "Expiry date and time after which nobody can sign, e.g. 2026-12-31 23:59:59 UTC."
+          },
+          "message": {
+            "type": "object",
+            "description": "Custom invitation email: {\"subject\": \"...\", \"body\": \"...\"}. The body may use {{submitter.link}}, {{template.name}}, {{account.name}} and other DocuSeal variables."
+          },
+          "flatten": {
+            "type": "boolean",
+            "description": "true removes PDF form fields from the documents."
+          },
+          "merge_documents": {
+            "type": "boolean",
+            "description": "true merges several documents into one PDF."
+          },
+          "remove_tags": {
+            "type": "boolean",
+            "description": "true removes the {{text tags}} from the document (default true)."
+          }
+        },
+        "required": [
+          "documents",
+          "submitters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/submissions/pdf",
+        "bodyMapping": {
+          "name": "$name",
+          "documents": "$documents",
+          "submitters": "$submitters",
+          "send_email": "$send_email",
+          "send_sms": "$send_sms",
+          "order": "$order",
+          "completed_redirect_url": "$completed_redirect_url",
+          "bcc_completed": "$bcc_completed",
+          "reply_to": "$reply_to",
+          "expire_at": "$expire_at",
+          "message": "$message",
+          "flatten": "$flatten",
+          "merge_documents": "$merge_documents",
+          "remove_tags": "$remove_tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "docuseal_update_submission",
+      "description": "Rename a submission, change its expiry date, or archive and unarchive it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "integer",
+            "description": "Submission id, from docuseal_list_submissions or the submission_id of a submitter."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "expire_at": {
+            "type": "string",
+            "description": "New expiry date and time, e.g. 2026-12-31 23:59:59 UTC."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true archives, false restores the submission."
+          }
+        },
+        "required": [
+          "submission_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/submissions/{submission_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "expire_at": "$expire_at",
+          "archived": "$archived"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "docuseal_archive_submission",
+      "description": "Archive a submission: its signing links stop working. It can be restored with docuseal_update_submission (archived false). Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "integer",
+            "description": "Submission id, from docuseal_list_submissions or the submission_id of a submitter."
+          }
+        },
+        "required": [
+          "submission_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/submissions/{submission_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "docuseal_update_submitter",
+      "description": "Change a submitter of a pending submission: correct name, email or phone, pre-fill or change field values, set metadata, re-send the invitation (send_email true), or sign on their behalf (completed true). Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submitter_id": {
+            "type": "integer",
+            "description": "Submitter id, from docuseal_get_submission (submitters[].id) or docuseal_list_submitters."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "email": {
+            "type": "string",
+            "description": "New email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "New phone number in international format, e.g. +491701234567."
+          },
+          "values": {
+            "type": "object",
+            "description": "Field values by field name, e.g. {\"Company\": \"ACME\"}."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for this submitter."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Your own data stored with the submitter."
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "true sends the invitation email again."
+          },
+          "send_sms": {
+            "type": "boolean",
+            "description": "true sends the invitation SMS again."
+          },
+          "reply_to": {
+            "type": "string",
+            "description": "Reply-To address for the email."
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "true marks the submitter as completed and signs automatically."
+          },
+          "completed_redirect_url": {
+            "type": "string",
+            "description": "URL the signer is sent to after signing."
+          },
+          "require_email_2fa": {
+            "type": "boolean",
+            "description": "true asks the signer for a one-time code sent by email."
+          },
+          "message": {
+            "type": "object",
+            "description": "Custom invitation email: {\"subject\": \"...\", \"body\": \"...\"}. The body may use {{submitter.link}}, {{template.name}}, {{account.name}} and other DocuSeal variables."
+          },
+          "fields": {
+            "type": "array",
+            "description": "Per-field settings, e.g. [{\"name\": \"Amount\", \"default_value\": \"100\", \"readonly\": true}].",
+            "items": {
+              "type": "object",
+              "description": "One field: name, default_value, readonly, required, validation, preferences."
+            }
+          }
+        },
+        "required": [
+          "submitter_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/submitters/{submitter_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "phone": "$phone",
+          "values": "$values",
+          "external_id": "$external_id",
+          "metadata": "$metadata",
+          "send_email": "$send_email",
+          "send_sms": "$send_sms",
+          "reply_to": "$reply_to",
+          "completed": "$completed",
+          "completed_redirect_url": "$completed_redirect_url",
+          "require_email_2fa": "$require_email_2fa",
+          "message": "$message",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "docuseal_create_template_from_pdf",
+      "description": "Create a reusable template from one or more PDFs (URL or Base64). Fields come from text tags in the PDF ({{Field;role=Signer;type=signature}}) or from exact field positions. Returns the template with its id, roles and fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Template name."
+          },
+          "documents": {
+            "type": "array",
+            "description": "Documents, each {\"name\": \"...\", \"file\": \"<PDF URL or Base64 content>\"}; optional \"fields\" with exact positions. Fields can also be text tags inside the document, e.g. {{Name;role=Signer;type=text}} and {{Sign;role=Signer;type=signature}}.",
+            "items": {
+              "type": "object",
+              "description": "One document: name, file, optional fields."
+            },
+            "minItems": 1
+          },
+          "folder_name": {
+            "type": "string",
+            "description": "Folder to put the template in."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for the template. An existing template with the same external id gets the new PDF instead of a new template being created."
+          },
+          "shared_link": {
+            "type": "boolean",
+            "description": "true (the default) lets anyone with the template link start a submission; false keeps it private."
+          },
+          "flatten": {
+            "type": "boolean",
+            "description": "true removes PDF form fields from the documents."
+          },
+          "remove_tags": {
+            "type": "boolean",
+            "description": "true removes the {{text tags}} from the document (default true)."
+          }
+        },
+        "required": [
+          "documents"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/templates/pdf",
+        "bodyMapping": {
+          "name": "$name",
+          "documents": "$documents",
+          "folder_name": "$folder_name",
+          "external_id": "$external_id",
+          "shared_link": "$shared_link",
+          "flatten": "$flatten",
+          "remove_tags": "$remove_tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "docuseal_create_template_from_docx",
+      "description": "Create a reusable template from a Word DOCX file (URL or Base64), with fields from text tags such as {{Field;role=Signer;type=date}} or from positions. Dynamic documents can use [[variables]].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Template name."
+          },
+          "documents": {
+            "type": "array",
+            "description": "Documents, each {\"name\": \"...\", \"file\": \"<DOCX URL or Base64 content>\"}; optional \"fields\" with exact positions. Fields can also be text tags inside the document, e.g. {{Name;role=Signer;type=text}} and {{Sign;role=Signer;type=signature}}.",
+            "items": {
+              "type": "object",
+              "description": "One document: name, file, optional fields."
+            },
+            "minItems": 1
+          },
+          "folder_name": {
+            "type": "string",
+            "description": "Folder to put the template in."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for the template."
+          },
+          "shared_link": {
+            "type": "boolean",
+            "description": "true (the default) lets anyone with the template link start a submission; false keeps it private."
+          }
+        },
+        "required": [
+          "documents"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/templates/docx",
+        "bodyMapping": {
+          "name": "$name",
+          "documents": "$documents",
+          "folder_name": "$folder_name",
+          "external_id": "$external_id",
+          "shared_link": "$shared_link"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "docuseal_create_template_from_html",
+      "description": "Create a template from HTML: DocuSeal renders it to PDF and turns <text-field>, <signature-field>, <date-field>, <checkbox-field> and similar tags into fillable fields, e.g. <signature-field name=\"Signature\" role=\"Signer\"></signature-field>.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "html": {
+            "type": "string",
+            "description": "The HTML of the document, with field tags."
+          },
+          "name": {
+            "type": "string",
+            "description": "Template name."
+          },
+          "html_header": {
+            "type": "string",
+            "description": "HTML repeated as header on every page."
+          },
+          "html_footer": {
+            "type": "string",
+            "description": "HTML repeated as footer on every page."
+          },
+          "size": {
+            "type": "string",
+            "description": "Page size (default Letter).",
+            "enum": [
+              "Letter",
+              "Legal",
+              "Tabloid",
+              "Ledger",
+              "A0",
+              "A1",
+              "A2",
+              "A3",
+              "A4",
+              "A5",
+              "A6"
+            ]
+          },
+          "folder_name": {
+            "type": "string",
+            "description": "Folder to put the template in."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for the template."
+          },
+          "shared_link": {
+            "type": "boolean",
+            "description": "true (the default) lets anyone with the template link start a submission; false keeps it private."
+          }
+        },
+        "required": [
+          "html"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/templates/html",
+        "bodyMapping": {
+          "html": "$html",
+          "name": "$name",
+          "html_header": "$html_header",
+          "html_footer": "$html_footer",
+          "size": "$size",
+          "folder_name": "$folder_name",
+          "external_id": "$external_id",
+          "shared_link": "$shared_link"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "docuseal_clone_template",
+      "description": "Copy a template into a new one, optionally with a new name, folder and external id. Returns the new template.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Template id, from docuseal_list_templates."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the copy."
+          },
+          "folder_name": {
+            "type": "string",
+            "description": "Folder for the copy."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for the copy."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/templates/{template_id}/clone",
+        "bodyMapping": {
+          "name": "$name",
+          "folder_name": "$folder_name",
+          "external_id": "$external_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "docuseal_update_template",
+      "description": "Rename a template, move it to another folder, rename its roles, or archive and unarchive it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Template id, from docuseal_list_templates."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "folder_name": {
+            "type": "string",
+            "description": "Folder to move the template to (created if missing)."
+          },
+          "roles": {
+            "type": "array",
+            "description": "New role names in the order of the template's submitters, e.g. [\"Customer\", \"Company\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true archives, false restores the template."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/templates/{template_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "folder_name": "$folder_name",
+          "roles": "$roles",
+          "archived": "$archived"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "docuseal_archive_template",
+      "description": "Archive a template so it can no longer be sent. Existing submissions stay. It can be restored with docuseal_update_template (archived false). Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Template id, from docuseal_list_templates."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/templates/{template_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,1184 @@
+{
+  "slug": "deed-page",
+  "name": "deed.page",
+  "description": "Publish HTML pages and small static sites that your AI writes to a permanent public URL, update them in place, roll back versions and attach custom domains from Claude, ChatGPT or Copilot through deed.page's official MCP server.",
+  "instructions": "This connector bridges **deed.page's official remote MCP server** (`https://deed.page/mcp`). deed.page is static web hosting built for AI agents: a page or a small site the AI writes (a report, a dashboard, a prototype, a document to share) goes live at `https://<slug>.deed.page/` with one tool call. deed.page's own server provides the tools: publish and update sites, check a slug, list versions and restore one, large uploads by manifest, custom domains, a site password, analytics and webhooks. AnythingMCP puts them behind your MCP endpoint with OAuth for Claude and ChatGPT, per-tool roles and the audit log, next to your other systems.\n\n**Everything published is public.** Anyone with the URL can open a site unless it has a password, so never let the AI publish secrets, credentials or private customer data. Sites stay out of the public gallery unless `listed` is true.\n\n**Setup (about 2 minutes)**:\n1. Get an owner token. deed.page has no sign-up: the first publish without a token creates one and returns it once as `token` (it starts with `deed_tok_`). Publish any page once by following https://deed.page/docs, or with any MCP client connected to `https://deed.page/mcp`, and copy the token from the response.\n2. Paste it as `DEED_PAGE_TOKEN` and install. AnythingMCP sends it as a Bearer token on every call, so every site the AI publishes through this connector belongs to that owner and can be updated, listed and deleted later. Leave the tools' own `token` argument empty.\n3. Keep the token safe: whoever has it controls every site of that owner. A lost token cannot be recovered unless a recovery email was attached.\n\n**The tools come from the server.** At install AnythingMCP asks deed.page for its tools, so you get the current set. Open the connector and click **Discover tools** to pick up new ones later.\n\n**Ask before publishing**: the AI should show the user what it is about to put online (the files, or a short summary of them, and the slug) and publish or update only after the user says yes. A `ttl_seconds` preview link is a good way to let them check it first. Don't run publishes from a schedule or another flow nobody is watching.\n\n**Working with it**: call `deed_page_publish_site` with `files` (for example `{\"index.html\": \"<!doctype html>...\"}`) and an optional `slug`; it returns the live `url` and a `version`. Publish to the same slug again, or use `deed_page_update_site`, to replace a page in place. `deed_page_get_site` checks whether a slug is live, `deed_page_list_sites` lists the owner's sites, and `deed_page_list_versions` with `deed_page_restore_version` rolls a site back. Set `ttl_seconds` for a preview link that expires on its own. For many or large files use `deed_page_plan_upload` and `deed_page_finalize_upload`, which skip files deed.page already has.\n\n**Errors**: a taken slug returns `slug_taken` and a reserved one `slug_reserved`, each with a suggestion; a racing or stale update returns `version_conflict`; going over the plan's limits returns a quota error. When a plan limit error appears, tell the user which limit was reached; `deed_page_whoami` shows the current plan and its limits, and deed.page's paid plans and their limits are listed at https://deed.page/pricing.\n\n**Safety**: deleting a site, rotating or revoking the token, managing Pro agent seats (creating a seat returns a new token), removing a custom domain and deleting a webhook install switched off. The billing and promotion tools (`deed_page_get_upgrade_link`, `deed_page_claim_share_credit`, `deed_page_set_badge`) install switched off too; an administrator can turn them on. Rotating or revoking through the connector would also break the token stored here, so do that at deed.page and paste the new token instead. Turn the others on per tool if the AI should be allowed to remove things.",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "deed-page",
+  "docsUrl": "https://deed.page/docs",
+  "prerequisites": "- A deed.page owner token (it starts with deed_tok_). There is no account to create: the first publish without a token returns one, see https://deed.page/docs.\n- Everything published is public to anyone with the URL, unless the site has a password.",
+  "requiredEnvVars": [
+    "DEED_PAGE_TOKEN"
+  ],
+  "envVarMeta": {
+    "DEED_PAGE_TOKEN": {
+      "label": "deed.page owner token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The token returned once by your first publish to deed.page without a token. Paste only the token, without Bearer.",
+      "link": "https://deed.page/docs",
+      "example": "deed_tok_...",
+      "pattern": "^deed_tok_[A-Za-z0-9_-]+$",
+      "patternMessage": "deed.page owner tokens start with deed_tok_."
+    }
+  },
+  "connector": {
+    "name": "deed.page",
+    "type": "MCP",
+    "baseUrl": "https://deed.page/mcp",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{DEED_PAGE_TOKEN}}"
+    },
+    "config": {
+      "mcpToolPrefix": "deed_page_"
+    }
+  },
+  "tools": [
+    {
+      "name": "deed_page_publish_site",
+      "description": "Publishes files to a live permanent URL at a slug. Inputs: files (required), and optional slug, spa, ttl_seconds, merge, expected_version, token, listed, category, tags, title, and description. Paths are stored exactly. Returns url, path_url, slug, version, listing, and token on the first anonymous publish. On deed.page, url and path_url are both https://{slug}.deed.page/. A lost token has no recovery unless an optional recovery email was attached. When expected_version does not match the live version, the result is version_conflict and nothing is written. A racing publish of the same slug returns version_conflict even without expected_version. Malware, executables, and credential-harvesting pages return content_rejected and are not stored. .bin is blocked by file type (it often has no MZ or ELF header). A raw octet-stream body is screened as one file. listed defaults to false, so the slug stays out of the public gallery unless listed is true. Password-protected sites cannot be listed. Before calling, show the user the files and slug and wait for an explicit yes; the result is public.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Exact slug matching ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$ (lowercase letters, digits, hyphens, 1-63, no leading or trailing hyphen). Invalid slugs return slug_invalid and are not rewritten. Reserved names (hello, my-page, www, api, docs, admin, mcp, blog, app, status, and other docs examples) return slug_reserved on a new claim. A token that already owns one can still update it. Omit for a random slug."
+          },
+          "files": {
+            "type": "object",
+            "description": "Path map, or an array of {path, content} or {path, base64}. Paths are stored exactly as given (a single top-level directory is not removed). Text as a string, binary as {\"base64\":\"...\"}. Example: {\"index.html\":\"<!doctype html><h1>Hi</h1>\",\"img/logo.png\":{\"base64\":\"iVBOR...\"}}. Any other array is rejected.",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "base64": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "spa": {
+            "type": "boolean",
+            "description": "Serve index.html for unknown paths (single-page apps)."
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "description": "Opt-in expiry in seconds. Omit for a permanent site."
+          },
+          "merge": {
+            "type": "boolean",
+            "description": "Add or overwrite only these exact paths on the existing site. Paths omitted from this call are left unchanged. Nothing is moved to the site root."
+          },
+          "expected_version": {
+            "type": "string",
+            "description": "Live version this write is based on, such as \"v3\". If the slug is no longer at that version, the result is version_conflict and nothing is written. A racing publish of the same slug returns version_conflict even when this is omitted."
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Opt into the public gallery. Default false. false removes the slug immediately. Password-protected sites cannot be listed."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "Apps & tools",
+              "Games",
+              "Business",
+              "Portfolio",
+              "Docs & guides",
+              "Education",
+              "Events",
+              "Other"
+            ],
+            "description": "Gallery category. Required when listed is true."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 5 tags. Each tag is lowercase letters, digits, and hyphens, at most 32 characters."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Gallery title, at most 80 characters. Required when listed is true."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Gallery description, at most 300 characters. Required when listed is true."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "files"
+        ]
+      },
+      "endpointMapping": {
+        "method": "publish_site",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "title": "Publish a site"
+      },
+      "omitParameters": [
+        "via",
+        "heard_from"
+      ]
+    },
+    {
+      "name": "deed_page_update_site",
+      "description": "Replaces the files of a slug owned by the token, or, when merge is true, adds and overwrites only the paths sent. Inputs: slug, files, and optional spa, merge, expected_version, token, listed, category, tags, title, and description. Returns url, path_url, slug, listing, and a new version. When expected_version does not match the live version, the result is version_conflict and nothing is written. Two racing updates return version_conflict even without expected_version. listed defaults to false. Password-protected sites cannot be listed. A new version of a listed slug runs the gallery checks again. Before calling, show the user the files and slug and wait for an explicit yes; the result is public.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug you own. Must match ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$. Not rewritten. Reserved slugs are rejected."
+          },
+          "files": {
+            "type": "object",
+            "description": "Path map, or an array of {path, content} or {path, base64}. Paths are stored exactly as given (a single top-level directory is not removed). Text as a string, binary as {\"base64\":\"...\"}. Example: {\"index.html\":\"<!doctype html><h1>Hi</h1>\",\"img/logo.png\":{\"base64\":\"iVBOR...\"}}. Any other array is rejected.",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "base64": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "spa": {
+            "type": "boolean",
+            "description": "Serve index.html for unknown paths."
+          },
+          "merge": {
+            "type": "boolean",
+            "description": "Keep every path you do not send, and add or overwrite only these exact paths."
+          },
+          "expected_version": {
+            "type": "string",
+            "description": "Live version this update is based on, such as \"v3\". If the site has moved on, the call returns version_conflict with no write. Omit it and a concurrent update still returns version_conflict rather than dropping files."
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Opt into the public gallery. Default false. false removes the slug immediately. Password-protected sites cannot be listed."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "Apps & tools",
+              "Games",
+              "Business",
+              "Portfolio",
+              "Docs & guides",
+              "Education",
+              "Events",
+              "Other"
+            ],
+            "description": "Gallery category. Required when listed is true."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 5 tags. Each tag is lowercase letters, digits, and hyphens, at most 32 characters."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Gallery title, at most 80 characters. Required when listed is true."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Gallery description, at most 300 characters. Required when listed is true."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "slug",
+          "files"
+        ]
+      },
+      "endpointMapping": {
+        "method": "update_site",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Update a site"
+      },
+      "omitParameters": [
+        "via"
+      ]
+    },
+    {
+      "name": "deed_page_get_site",
+      "description": "Returns whether a slug is live, plus its URL, version, size, and timestamps. Input: slug. No token is required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug to look up."
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "get_site",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "title": "Get site info"
+      }
+    },
+    {
+      "name": "deed_page_list_sites",
+      "description": "Returns every live site owned by the token, with URLs and versions. Input: token, or an Authorization bearer header.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_sites",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "title": "List my sites"
+      }
+    },
+    {
+      "name": "deed_page_delete_site",
+      "description": "Permanently removes a slug owned by the token and detaches its custom hostnames. The slug becomes available again. Inputs: slug and token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug you own."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "delete_site",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Delete a site"
+      },
+      "enabled": false
+    },
+    {
+      "name": "deed_page_rotate_token",
+      "description": "Issues a new token for the same principal. Every site carries over. Inputs: token, and optional overlap_seconds from 0 to 300. The previous token stops working immediately when overlap_seconds is omitted or 0. During a non-zero overlap window both tokens work. After that window the previous token returns 401 token_revoked. The new token is returned once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "overlap_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 300,
+            "description": "Seconds the previous token keeps working so an in-flight deploy can finish. Omit or 0 to invalidate it immediately. Maximum 300."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "rotate_token",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "title": "Rotate the owner token"
+      },
+      "enabled": false
+    },
+    {
+      "name": "deed_page_revoke_token",
+      "description": "Revokes owner tokens. Inputs: token, and optional scope. Scope \"current\" (the default) revokes the token that was sent. Scope \"all\" revokes every token for that principal, including any overlap window. A later request with a revoked token returns 401 token_revoked, which is distinct from 403 suspended. Sites stay online. Without a recovery email, a revoked token cannot update them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "current",
+              "all"
+            ],
+            "description": "current revokes only this token. all revokes every token for the principal. Default current."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "revoke_token",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Revoke an owner token"
+      },
+      "enabled": false
+    },
+    {
+      "name": "deed_page_whoami",
+      "description": "Returns the plan (plan.id is free, hobby, or pro), limits, the number of sites the token owns, and the number of custom hostnames attached. Use it to confirm a plan change after payment. Input: token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "whoami",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "title": "Show plan and quota"
+      }
+    },
+    {
+      "name": "deed_page_agent_seats",
+      "description": "Pro only: named tokens for more agents on one account, up to 5. Each seat has a label and its own token, shares the owner's sites, and can be revoked without touching the others. action \"list\" shows seats (any token). action \"create\" needs the owner token and a label; the new seat token is returned once. action \"revoke\" needs seat_id; the owner token revokes any seat, a seat token only itself. Seat tokens cannot rotate, revoke all tokens, manage seats, change the recovery email or open billing. Free and Hobby get plan_required with a Pro upgrade link to show your human.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "create",
+              "revoke"
+            ],
+            "description": "list (default), create, or revoke."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "create only: a name for the agent that gets this seat, like \"design agent\". Unique among active seats."
+          },
+          "seat_id": {
+            "type": "string",
+            "description": "revoke only: the seat id (seat_…) from list or create."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "agent_seats",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "title": "Manage Pro agent seats"
+      },
+      "enabled": false
+    },
+    {
+      "name": "deed_page_get_upgrade_link",
+      "description": "Creates a Stripe Checkout URL that upgrades this token's owner to Hobby ($3/mo) or Pro ($15/mo). Call it only when the user asks for an upgrade link. Show the returned checkout_url and the price to the user; the user opens it and decides whether to pay. When payment completes the same token gets the higher limits automatically, and the token's plan (plan.id) then reads hobby or pro. Inputs: plan (hobby or pro; omitted means the next plan up), token and optional upgrade_trigger (the limit field from the error, custom_domain_limit, or manual). A token already on a paid plan gets portal_url instead. The call itself does not charge.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "string",
+            "enum": [
+              "hobby",
+              "pro"
+            ],
+            "description": "Plan to buy. Omit for the next plan above the current one (Free -> hobby, Hobby -> pro)."
+          },
+          "upgrade_trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "custom_domain_limit",
+              "quota_sites",
+              "quota_bytes",
+              "publish_rate",
+              "quota_domains",
+              "webhook_limit",
+              "plan_required",
+              "share_credit",
+              "size_warning"
+            ],
+            "description": "The limit field of the plan-limit error that sent you here (for example publish_rate or quota_sites), custom_domain_limit, or manual."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "get_upgrade_link",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "title": "Get a paid-plan checkout link"
+      },
+      "omitParameters": [
+        "how_heard"
+      ],
+      "enabled": false
+    },
+    {
+      "name": "deed_page_claim_share_credit",
+      "description": "Free plan only, once per token. If the user posted publicly about deed.page on X or Reddit, pass that post's URL. The server checks that the post is public, mentions deed.page or links to a deed.page site, is from the last 30 days, and was not claimed before, then raises this token's Free limits by 25 sites and to 50 MB per site. Never post on the user's behalf; only send a URL the user gives you. Hobby ($3/mo) is still the bigger upgrade: show the returned user_message, which includes the Hobby link. Inputs: url and token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public post URL: https://x.com/{user}/status/{id} or https://www.reddit.com/r/{sub}/comments/{id}/..."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "claim_share_credit",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "title": "Claim the one-time share credit"
+      },
+      "enabled": false
+    },
+    {
+      "name": "deed_page_list_versions",
+      "description": "Returns every retained version of a slug owned by the token, newest first. Inputs: slug and token. Each entry includes version, created_at, file_count, bytes, kind (publish, merge, or restore), restored_from, and a public permalink. Free keeps 10 versions, Hobby 50, Pro unlimited.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug you own."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "list_versions",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "List retained versions"
+      }
+    },
+    {
+      "name": "deed_page_restore_version",
+      "description": "Creates a new version whose files equal a retained version, without uploading those files again. Inputs: slug, version, optional expected_version, and token. When expected_version does not match the live version, the result is version_conflict and nothing is written. The previous permalink keeps serving until retention drops it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug you own."
+          },
+          "version": {
+            "type": "string",
+            "description": "Version to copy forward, such as \"v2\"."
+          },
+          "expected_version": {
+            "type": "string",
+            "description": "Live version this restore is based on, such as \"v4\". A mismatch returns version_conflict."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "slug",
+          "version"
+        ]
+      },
+      "endpointMapping": {
+        "method": "restore_version",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "title": "Restore a retained version"
+      }
+    },
+    {
+      "name": "deed_page_add_domain",
+      "description": "Attaches a hostname to a slug owned by the token and returns the DNS records to create: a CNAME for a subdomain, an A record or an ALIAS record for an apex (one of those, not both), and every TXT record. Inputs: slug, domain, and token. Status starts at pending_dns until DNS and the certificate are ready. Free allows 1 hostname, Hobby 3, Pro 20. deed.page names are rejected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug you own."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Hostname to attach, such as docs.example.com or example.com. No scheme or path."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "slug",
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "add_domain",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Attach a custom domain"
+      }
+    },
+    {
+      "name": "deed_page_list_domains",
+      "description": "Returns custom hostnames on one slug, or on every site the token owns when slug is omitted. Inputs: token, and optional slug. Status is the last checked value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Optional slug you own. Omit to list every hostname on this token."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_domains",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "List custom domains"
+      }
+    },
+    {
+      "name": "deed_page_remove_domain",
+      "description": "Removes a hostname so requests to that host no longer serve the site. Inputs: domain, optional slug, and token. When slug is set, the hostname must already be attached to that slug.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Hostname to remove."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Optional slug. When set, the hostname must be attached to that slug."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "remove_domain",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Remove a custom domain"
+      },
+      "enabled": false
+    },
+    {
+      "name": "deed_page_domain_status",
+      "description": "Returns the verification status of a custom domain and refreshes verification, DNS config, and certificate state. Inputs: slug, domain, and token. status is pending_dns, verifying, issuing_cert, active, or error. dns_records are the records to create. An error includes the reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug the hostname is attached to."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Hostname to check."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "slug",
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "domain_status",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Check custom domain status"
+      }
+    },
+    {
+      "name": "deed_page_plan_upload",
+      "description": "Accepts a file manifest and returns which hashes are already stored, a direct upload URL for each missing hash, and a session id. Inputs: files as {path, sha256, size, content_type?}, and optional slug, spa, merge, ttl_seconds, expected_version, and token. Applies when the files are larger than about 4 MB, or when each sha256 is already known. Does not publish by itself. Per-site size limits are unchanged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Exact slug, or omit for a random one."
+          },
+          "files": {
+            "type": "array",
+            "description": "Manifest entries. sha256 is 64 lowercase hex characters. size is the byte length.",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "sha256",
+                "size"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                },
+                "content_type": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "spa": {
+            "type": "boolean",
+            "description": "Serve index.html for unknown paths (single-page apps)."
+          },
+          "merge": {
+            "type": "boolean",
+            "description": "Overlay these paths on the live site."
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "description": "Opt-in expiry in seconds for the site this upload creates. Omit for a permanent site."
+          },
+          "expected_version": {
+            "type": "string",
+            "description": "Live version this upload must match, such as \"v3\"."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "files"
+        ]
+      },
+      "endpointMapping": {
+        "method": "plan_upload",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "title": "Plan a large upload"
+      },
+      "omitParameters": [
+        "via",
+        "heard_from"
+      ]
+    },
+    {
+      "name": "deed_page_finalize_upload",
+      "description": "Checks uploaded hashes, screens the new bytes, and commits one version under the slug lock. Inputs: session (upl_...), optional expected_version, and token. A stale expected_version returns version_conflict and writes nothing. A bad hash returns hash_mismatch. An expired session returns session_expired.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "Upload session id (upl_...)."
+          },
+          "expected_version": {
+            "type": "string",
+            "description": "Version the caller expects to be live. When it does not match, the result is version_conflict and nothing is written."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "endpointMapping": {
+        "method": "finalize_upload",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Finalize a large upload"
+      },
+      "omitParameters": [
+        "via",
+        "heard_from"
+      ]
+    },
+    {
+      "name": "deed_page_get_manifest",
+      "description": "Returns the canonical manifest for a site version: paths, sha256, sizes, version, slug, and created_at, plus an Ed25519 signature. signature is null when the server has no signing key. Inputs: slug, and optional version. When version is omitted, the result is the live site. Public keys are published at /.well-known/deed-signing-keys.json. No token is required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug of the site whose manifest to return, for example quarterly-report."
+          },
+          "version": {
+            "type": "string",
+            "description": "Optional retained version, such as \"v2\". Omit for the live version."
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "get_manifest",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Get a signed version manifest"
+      }
+    },
+    {
+      "name": "deed_page_site_analytics",
+      "description": "Returns owner-only cookieless counts for a slug: views per UTC day, top paths, top referrer hosts, and AI crawler counts by user-agent family. Inputs: slug, optional from and to as YYYY-MM-DD (default the last 7 days, maximum 90), and token. The accuracy field describes under-counting. No raw IP or full user agent is stored.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug you own."
+          },
+          "from": {
+            "type": "string",
+            "description": "First UTC day, YYYY-MM-DD. Default is 6 days before to."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last UTC day, YYYY-MM-DD. Default is today."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "site_analytics",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Site analytics"
+      }
+    },
+    {
+      "name": "deed_page_set_site_access",
+      "description": "Changes the access setting stored for a slug on deed.page. Inputs: slug, password, and token. password is 8 to 200 characters, or an empty string (or null) to clear the password. The call writes a scrypt hash into the site record on deed.page, or removes that hash, and contacts no outside system. Setting a password is available on Hobby and Pro; Free returns plan_required. Clearing is allowed on every plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug you own."
+          },
+          "password": {
+            "type": "string",
+            "description": "New password, 8 to 200 characters. Pass an empty string (or null) to clear the password and make the site public."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "slug",
+          "password"
+        ]
+      },
+      "endpointMapping": {
+        "method": "set_site_access",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Set or clear a site password"
+      }
+    },
+    {
+      "name": "deed_page_set_listing",
+      "description": "Sets or clears the public gallery listing for a slug. Inputs: slug, listed, and when listed is true a category, title, description, and optional tags (at most 5), plus token. Returns listed, status, category, tags, title, and description. listed false removes the slug from the gallery immediately. Password-protected sites cannot be listed. A new version of the site runs the gallery checks again. Text is checked on deed.page, and also with the OpenAI moderation API when OPENAI_API_KEY is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Slug you own."
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Opt into the public gallery. Default false. false removes the slug immediately. Password-protected sites cannot be listed."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "Apps & tools",
+              "Games",
+              "Business",
+              "Portfolio",
+              "Docs & guides",
+              "Education",
+              "Events",
+              "Other"
+            ],
+            "description": "Gallery category. Required when listed is true."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to 5 tags. Each tag is lowercase letters, digits, and hyphens, at most 32 characters."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Gallery title, at most 80 characters. Required when listed is true."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Gallery description, at most 300 characters. Required when listed is true."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "slug",
+          "listed"
+        ]
+      },
+      "endpointMapping": {
+        "method": "set_listing",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Set gallery listing"
+      }
+    },
+    {
+      "name": "deed_page_set_badge",
+      "description": "Free-plan sites show a small 'Published with deed.page' link in the bottom-right corner; Hobby and Pro never show it. Inputs: show (boolean), optional slug, and token. With slug, the setting applies to that site; without slug, it applies to every site of the token. Only a paid plan removes the badge: on Free, show false returns plan_required with the Hobby price and a signed upgrade_url in message and user_message (show user_message to your human, do not retry), except where the badge was already off before 2026-10-25 (kept); on Hobby and Pro it changes nothing because those plans never show it. show true shows it again. Returns the stored setting and whether the badge is shown. Writes only the setting on deed.page and contacts no outside system.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "show": {
+            "type": "boolean",
+            "description": "true shows the badge again. false is refused on Free (paid-plan perk) and is a no-op on Hobby and Pro."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Slug you own. Omit to apply to every site of this token."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "show"
+        ]
+      },
+      "endpointMapping": {
+        "method": "set_badge",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Set the Free-plan badge"
+      },
+      "enabled": false
+    },
+    {
+      "name": "deed_page_create_webhook",
+      "description": "Registers an http or https URL for the events site.published, site.version_restored, site.deleted, site.taken_down, domain.active, and report.received. Inputs: url, optional events, and token. Returns the webhook id and an HMAC secret once. Free allows 1 webhook, Hobby 5, Pro 20. Private, internal, and localhost targets are rejected. Delivery is best-effort, with up to 3 attempts. API documentation: https://deed.page/docs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public http or https URL on port 80 or 443."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "site.published",
+                "site.version_restored",
+                "site.deleted",
+                "site.taken_down",
+                "domain.active",
+                "report.received"
+              ]
+            },
+            "description": "Events to send. Omit for all of them."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "create_webhook",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "title": "Register a webhook"
+      }
+    },
+    {
+      "name": "deed_page_list_webhooks",
+      "description": "Returns the webhook URLs registered for the token. Secrets are not included. Input: token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "list_webhooks",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "List webhooks"
+      }
+    },
+    {
+      "name": "deed_page_delete_webhook",
+      "description": "Deletes one webhook so it receives no further events. Inputs: id (whk_...) and token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Webhook id (whk_...)."
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token returned by your first publish (deed_tok_...). Optional if the MCP client sends Authorization: Bearer."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "delete_webhook",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Delete a webhook"
+      },
+      "enabled": false
+    }
+  ]
+}

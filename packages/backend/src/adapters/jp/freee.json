@@ -1,0 +1,3377 @@
+{
+  "slug": "freee",
+  "name": "freee",
+  "aliases": [
+    "freee会計",
+    "freee Accounting",
+    "freee請求書",
+    "フリー"
+  ],
+  "description": "freee Accounting (freee会計) and freee Invoice (freee請求書), the Japanese cloud accounting suite: deals, partners, account items, tax codes, items, sections, memo tags, bank and card lines, manual journals, the journal book, trial balances and the general ledger, the file box, and invoices and quotations. Creates deals, payments, journals, partners and documents. OAuth 2.0.",
+  "instructions": "## freee\nThis connector uses the **freee API** (`https://api.freee.co.jp`): **freee会計 (freee Accounting)** at `/api/1` for companies, deals (取引), partners (取引先), account items (勘定科目), tax codes, items, sections, memo tags, bank and card accounts with their statement lines, transfers, manual journals (振替伝票), the journal book, trial balances and the general ledger, and the file box; and **freee請求書 (freee Invoice)** at `/iv` for invoices and quotations. Since the invoice system change in October 2023 invoices and quotations are created in freee請求書; the old `/api/1/invoices` endpoints are not used here.\n\n**Setup (about 10 minutes)**\n1. Sign in at https://app.secure.freee.co.jp/developers/applications (freee アプリストア, 開発者向け) and click **新規追加 (create an app)**. A private app (非公開アプリ) is enough for your own companies.\n2. On the tab **基本設定**, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n3. Under **権限設定 (permissions)** tick read and, for the write tools, write for: 会計 (取引, 取引先, 勘定科目, 品目, 部門, メモタグ, 税区分, 口座, 口座明細, 振替伝票, 仕訳帳, 試算表, ファイルボックス, 事業所, ユーザー) and 請求書 (請求書, 見積書). Permissions are set on the app, not as OAuth scopes. Save (保存).\n4. Copy the **Client ID** into `FREEE_CLIENT_ID` and the **Client Secret** into `FREEE_CLIENT_SECRET`, leave `FREEE_REFRESH_TOKEN` empty and install.\n5. Click **Authorize with Provider** and sign in to freee with a user who may see the companies you need; freee asks you to pick a company (事業所選択) and shows the app permissions. Run `freee_get_me` to check.\n\n**Tokens**: an access token lasts 6 hours and is renewed with the refresh token. freee issues a new refresh token at every renewal and the old one stops working; a refresh token unused for 90 days expires, then authorize again. What the AI may do also depends on the role of the freee user in each company.\n\n**Company (`company_id`)**: every tool except `freee_get_me` and `freee_list_companies` needs the company id. Take it from `freee_get_me` (companies of the user) or `freee_list_companies`; `freee_get_company` shows the fiscal years.\n\n**Workflow**\n- Look up ids first: `freee_list_account_items` / `freee_get_account_item`, `freee_list_taxes` (tax codes for lines), `freee_list_partners` / `freee_get_partner`, `freee_list_items`, `freee_list_sections`, `freee_list_tags`, `freee_list_walletables`, `freee_list_users`.\n- Income and expenses: `freee_list_deals` and `freee_get_deal`; `freee_create_deal` registers one (with payments to settle it right away), `freee_create_deal_payment` adds a payment later, `freee_update_deal` replaces its lines (keep line ids).\n- Masters: `freee_create_partner`, `freee_update_partner`, `freee_create_item`, `freee_create_section`, `freee_create_tag`.\n- Bank and cards: `freee_list_wallet_txns` and `freee_get_wallet_txn` for statement lines, `freee_list_transfers` for transfers between own accounts.\n- Journals: `freee_list_manual_journals`, `freee_get_manual_journal`, `freee_create_manual_journal`. The full journal book is asynchronous: `freee_request_journals`, then `freee_get_journals_status` until `uploaded`, then `freee_download_journals`.\n- Reports: `freee_get_trial_balance` (trial_bs, trial_pl, trial_cr and the year comparisons), `freee_get_trial_pl_sections` (P/L by section), `freee_list_general_ledgers` (general ledger, beta).\n- Evidence: `freee_list_receipts` and `freee_get_receipt` for the file box.\n- freee請求書: `freee_list_invoices`, `freee_get_invoice`, `freee_list_invoice_templates`, `freee_create_invoice`, `freee_cancel_invoice` and `freee_uncancel_invoice`; `freee_list_quotations`, `freee_get_quotation`, `freee_create_quotation`. Documents are created unsent; sending happens in freee. Show the lines and total and wait for the user's yes before creating one.\n\n**Reading answers**: amounts are integers in JPY (tax included unless the field says otherwise); dates are `yyyy-mm-dd` in JST. Lists return `meta.total_count` on deals and journals; page with `offset` and `limit` (deals and wallet lines up to 100, manual journals 500, partners, items and tags 3000). `fiscal_year` in reports is the year the fiscal period starts.\n\n**Limits and errors**: freee answers `status_code` and `errors` with `messages`, mostly in Japanese; the validation message names the field. 401 means the token expired or was revoked (authorize again), 403 that the user or the app permissions do not allow the call, or, briefly, too many requests (wait about 10 minutes). Reports allow 10 calls per second and return 429 above.\n\n**Switched off at install**: `freee_delete_deal` and `freee_delete_manual_journal`; they cannot be undone, so an admin switches them on when the team needs them.",
+  "region": "jp",
+  "category": "accounting",
+  "icon": "freee",
+  "docsUrl": "https://developer.freee.co.jp/reference/accounting/reference",
+  "appRegistrationUrl": "https://app.secure.freee.co.jp/developers/applications",
+  "prerequisites": "A freee account with access to the companies (事業所) you want to connect, and a freee app of your own created in the freee app store developer page, with the AnythingMCP callback URL and the accounting and invoice permissions ticked.",
+  "requiredEnvVars": [
+    "FREEE_CLIENT_ID",
+    "FREEE_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "FREEE_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "FREEE_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "freee app store, developer page, your app, 基本設定: the Client ID.",
+      "link": "https://app.secure.freee.co.jp/developers/applications"
+    },
+    "FREEE_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page, the Client Secret next to the Client ID.",
+      "link": "https://app.secure.freee.co.jp/developers/applications"
+    },
+    "FREEE_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Leave empty: Authorize with Provider fills it in. freee replaces the refresh token at every renewal, so a token used elsewhere stops working here.",
+      "advanced": true
+    }
+  },
+  "verifyHints": {
+    "401": "freee did not accept the token. Authorize again; a refresh token unused for 90 days, or used by another tool, no longer works.",
+    "403": "The freee user or the app permissions (権限設定) do not allow this, or freee is throttling for a few minutes. Check the app permissions and the user role in that company."
+  },
+  "probe": {
+    "tool": "freee_get_me"
+  },
+  "connector": {
+    "name": "freee API",
+    "type": "REST",
+    "baseUrl": "https://api.freee.co.jp",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{FREEE_CLIENT_ID}}",
+      "clientSecret": "{{FREEE_CLIENT_SECRET}}",
+      "refreshToken": "{{FREEE_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://accounts.secure.freee.co.jp/public_api/authorize?prompt=select_company",
+      "tokenUrl": "https://accounts.secure.freee.co.jp/public_api/token",
+      "tokenAuthMethod": "client_secret_post",
+      "scopes": "read write"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/1/users/me"
+  },
+  "tools": [
+    {
+      "name": "freee_get_me",
+      "description": "Who the connector acts as: the freee user (id, email, display name) and every company (事業所) the user belongs to, with company id, name and role. The first call: it gives the company_id every other tool needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/users/me",
+        "queryParams": {
+          "companies": "true"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "user": {
+              "id": "$.user.id",
+              "email": "$.user.email",
+              "display_name": "$.user.display_name",
+              "companies": {
+                "$from": "$.user.companies[*]",
+                "$select": {
+                  "id": "id",
+                  "display_name": "display_name",
+                  "role": "role",
+                  "use_custom_role": "use_custom_role"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "freee_list_companies",
+      "description": "List the companies (事業所) the signed-in user can open: id, display name, name kana, company number and role.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/companies"
+      }
+    },
+    {
+      "name": "freee_get_company",
+      "description": "Read one company: name, address, fiscal years (fiscal_years with start and end dates), tax settings and plan. Optional flags also return the master lists in the same call (account items, tax codes, items, partners, sections, tags, walletables); prefer the dedicated list tools for big lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "details": {
+            "type": "boolean",
+            "description": "true adds all master lists below at once (large)."
+          },
+          "account_items": {
+            "type": "boolean",
+            "description": "true adds the account items (勘定科目)."
+          },
+          "taxes": {
+            "type": "boolean",
+            "description": "true adds the tax codes (税区分)."
+          },
+          "items": {
+            "type": "boolean",
+            "description": "true adds the items (品目)."
+          },
+          "partners": {
+            "type": "boolean",
+            "description": "true adds the partners (取引先)."
+          },
+          "sections": {
+            "type": "boolean",
+            "description": "true adds the sections (部門)."
+          },
+          "tags": {
+            "type": "boolean",
+            "description": "true adds the memo tags (メモタグ)."
+          },
+          "walletables": {
+            "type": "boolean",
+            "description": "true adds the walletables (口座)."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/companies/{company_id}",
+        "queryParams": {
+          "details": "$details",
+          "account_items": "$account_items",
+          "taxes": "$taxes",
+          "items": "$items",
+          "partners": "$partners",
+          "sections": "$sections",
+          "tags": "$tags",
+          "walletables": "$walletables"
+        }
+      }
+    },
+    {
+      "name": "freee_list_users",
+      "description": "List the users of a company with their id, email, display name and role. Useful to see who may approve or whose name appears on a record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 50, at most 3000).",
+            "minimum": 1,
+            "maximum": 3000
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/users",
+        "queryParams": {
+          "company_id": "$company_id",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_list_deals",
+      "description": "List deals (取引: income or expense) with their lines, amounts, due amount, partner and payments. Filter by type, settlement status, partner, account item and dates. Up to 100 per call; meta.total_count gives the number of matches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "type": {
+            "type": "string",
+            "description": "income (収入) or expense (支出).",
+            "enum": [
+              "income",
+              "expense"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "unsettled (未決済) or settled (完了).",
+            "enum": [
+              "unsettled",
+              "settled"
+            ]
+          },
+          "partner_id": {
+            "type": "integer",
+            "description": "Partner id from freee_list_partners."
+          },
+          "partner_code": {
+            "type": "string",
+            "description": "Partner code (only when partner codes are enabled); not together with partner_id."
+          },
+          "account_item_id": {
+            "type": "integer",
+            "description": "Account item id from freee_list_account_items."
+          },
+          "start_issue_date": {
+            "type": "string",
+            "description": "Issue date from, yyyy-mm-dd (JST)."
+          },
+          "end_issue_date": {
+            "type": "string",
+            "description": "Issue date to, yyyy-mm-dd (JST)."
+          },
+          "start_due_date": {
+            "type": "string",
+            "description": "Due date from, yyyy-mm-dd (JST)."
+          },
+          "end_due_date": {
+            "type": "string",
+            "description": "Due date to, yyyy-mm-dd (JST)."
+          },
+          "start_renew_date": {
+            "type": "string",
+            "description": "+更新 (renew) date from, yyyy-mm-dd (JST)."
+          },
+          "end_renew_date": {
+            "type": "string",
+            "description": "+更新 (renew) date to, yyyy-mm-dd (JST)."
+          },
+          "min_due_amount": {
+            "type": "integer",
+            "description": "Only deals with at least this unpaid amount (JPY)."
+          },
+          "accruals": {
+            "type": "string",
+            "description": "with also returns the receivable and payable lines (債権債務行); default without.",
+            "enum": [
+              "without",
+              "with"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/deals",
+        "queryParams": {
+          "company_id": "$company_id",
+          "type": "$type",
+          "status": "$status",
+          "partner_id": "$partner_id",
+          "partner_code": "$partner_code",
+          "account_item_id": "$account_item_id",
+          "start_issue_date": "$start_issue_date",
+          "end_issue_date": "$end_issue_date",
+          "start_due_date": "$start_due_date",
+          "end_due_date": "$end_due_date",
+          "start_renew_date": "$start_renew_date",
+          "end_renew_date": "$end_renew_date",
+          "min_due_amount": "$min_due_amount",
+          "accruals": "$accruals",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_get_deal",
+      "description": "Read one deal (取引) with its lines (details), payments, renews (+更新) and attached receipts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Deal id."
+          },
+          "accruals": {
+            "type": "string",
+            "description": "with also returns the receivable and payable lines.",
+            "enum": [
+              "without",
+              "with"
+            ]
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/deals/{id}",
+        "queryParams": {
+          "company_id": "$company_id",
+          "accruals": "$accruals"
+        }
+      }
+    },
+    {
+      "name": "freee_create_deal",
+      "description": "Register a deal (取引): an income or expense with its lines and, optionally, the payment. Returns the deal with its id. Use freee_list_taxes for tax codes and freee_list_account_items for account items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "type": {
+            "type": "string",
+            "description": "income (収入) or expense (支出).",
+            "enum": [
+              "income",
+              "expense"
+            ]
+          },
+          "issue_date": {
+            "type": "string",
+            "description": "Issue date (発生日), yyyy-mm-dd (JST)."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (支払期日), yyyy-mm-dd (JST)."
+          },
+          "partner_id": {
+            "type": "integer",
+            "description": "Partner id; or partner_code."
+          },
+          "partner_code": {
+            "type": "string",
+            "description": "Partner code, when partner codes are enabled; not together with partner_id."
+          },
+          "ref_number": {
+            "type": "string",
+            "description": "Reference number (管理番号)."
+          },
+          "details": {
+            "type": "array",
+            "description": "Deal lines (up to 100). Each needs tax_code (from freee_list_taxes), account_item_id (from freee_list_account_items) and amount in JPY including tax; optional item_id, section_id, tag_ids, description, vat. Example: [{\"tax_code\": 136, \"account_item_id\": 101, \"amount\": 11000, \"description\": \"Consulting\"}].",
+            "items": {
+              "type": "object",
+              "description": "One deal line.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Existing line id, only when updating a deal: lines left out of the update are deleted."
+                },
+                "tax_code": {
+                  "type": "integer",
+                  "description": "Tax code (税区分コード) from freee_list_taxes."
+                },
+                "account_item_id": {
+                  "type": "integer",
+                  "description": "Account item (勘定科目) id."
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Amount in JPY including tax; negative for a deduction line."
+                },
+                "vat": {
+                  "type": "integer",
+                  "description": "Consumption tax in JPY; computed when omitted."
+                },
+                "item_id": {
+                  "type": "integer",
+                  "description": "Item (品目) id."
+                },
+                "section_id": {
+                  "type": "integer",
+                  "description": "Section (部門) id."
+                },
+                "tag_ids": {
+                  "type": "array",
+                  "description": "Memo tag ids.",
+                  "items": {
+                    "type": "integer",
+                    "description": "A memo tag id."
+                  }
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Line note (備考)."
+                }
+              },
+              "required": [
+                "tax_code",
+                "account_item_id",
+                "amount"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "payments": {
+            "type": "array",
+            "description": "Optional payments that settle the deal right away: [{\"date\": \"2026-10-31\", \"from_walletable_type\": \"bank_account\", \"from_walletable_id\": 1, \"amount\": 11000}]. Without payments the deal stays unsettled (未決済).",
+            "items": {
+              "type": "object",
+              "description": "One payment.",
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "description": "Payment date, yyyy-mm-dd (JST)."
+                },
+                "from_walletable_type": {
+                  "type": "string",
+                  "description": "bank_account, credit_card, wallet (cash and others) or private_account_item.",
+                  "enum": [
+                    "bank_account",
+                    "credit_card",
+                    "wallet",
+                    "private_account_item"
+                  ]
+                },
+                "from_walletable_id": {
+                  "type": "integer",
+                  "description": "Walletable id from freee_list_walletables (account item id for private_account_item)."
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Amount paid in JPY."
+                }
+              },
+              "required": [
+                "date",
+                "from_walletable_type",
+                "from_walletable_id",
+                "amount"
+              ]
+            }
+          },
+          "receipt_ids": {
+            "type": "array",
+            "description": "Receipt (ファイルボックス) ids to attach, from freee_list_receipts.",
+            "items": {
+              "type": "integer",
+              "description": "A receipt id."
+            }
+          }
+        },
+        "required": [
+          "company_id",
+          "type",
+          "issue_date",
+          "details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deals",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "type": "$type",
+          "issue_date": "$issue_date",
+          "due_date": "$due_date",
+          "partner_id": "$partner_id",
+          "partner_code": "$partner_code",
+          "ref_number": "$ref_number",
+          "details": "$details",
+          "payments": "$payments",
+          "receipt_ids": "$receipt_ids"
+        }
+      }
+    },
+    {
+      "name": "freee_update_deal",
+      "description": "Update a deal (取引). Send the whole set of lines: lines without their id are added and existing lines missing from details are deleted, so read the deal with freee_get_deal first and keep the line ids. Payments change through freee_create_deal_payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Deal id."
+          },
+          "type": {
+            "type": "string",
+            "description": "income or expense.",
+            "enum": [
+              "income",
+              "expense"
+            ]
+          },
+          "issue_date": {
+            "type": "string",
+            "description": "Issue date, yyyy-mm-dd (JST)."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, yyyy-mm-dd (JST)."
+          },
+          "partner_id": {
+            "type": "integer",
+            "description": "Partner id."
+          },
+          "partner_code": {
+            "type": "string",
+            "description": "Partner code; not together with partner_id."
+          },
+          "ref_number": {
+            "type": "string",
+            "description": "Reference number (管理番号)."
+          },
+          "details": {
+            "type": "array",
+            "description": "Deal lines (up to 100). Each needs tax_code (from freee_list_taxes), account_item_id (from freee_list_account_items) and amount in JPY including tax; optional item_id, section_id, tag_ids, description, vat. Example: [{\"tax_code\": 136, \"account_item_id\": 101, \"amount\": 11000, \"description\": \"Consulting\"}].",
+            "items": {
+              "type": "object",
+              "description": "One deal line.",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Existing line id, only when updating a deal: lines left out of the update are deleted."
+                },
+                "tax_code": {
+                  "type": "integer",
+                  "description": "Tax code (税区分コード) from freee_list_taxes."
+                },
+                "account_item_id": {
+                  "type": "integer",
+                  "description": "Account item (勘定科目) id."
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Amount in JPY including tax; negative for a deduction line."
+                },
+                "vat": {
+                  "type": "integer",
+                  "description": "Consumption tax in JPY; computed when omitted."
+                },
+                "item_id": {
+                  "type": "integer",
+                  "description": "Item (品目) id."
+                },
+                "section_id": {
+                  "type": "integer",
+                  "description": "Section (部門) id."
+                },
+                "tag_ids": {
+                  "type": "array",
+                  "description": "Memo tag ids.",
+                  "items": {
+                    "type": "integer",
+                    "description": "A memo tag id."
+                  }
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Line note (備考)."
+                }
+              },
+              "required": [
+                "tax_code",
+                "account_item_id",
+                "amount"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "receipt_ids": {
+            "type": "array",
+            "description": "Receipt ids; when given they replace the attached files.",
+            "items": {
+              "type": "integer",
+              "description": "A receipt id."
+            }
+          }
+        },
+        "required": [
+          "company_id",
+          "id",
+          "type",
+          "issue_date",
+          "details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/1/deals/{id}",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "type": "$type",
+          "issue_date": "$issue_date",
+          "due_date": "$due_date",
+          "partner_id": "$partner_id",
+          "partner_code": "$partner_code",
+          "ref_number": "$ref_number",
+          "details": "$details",
+          "receipt_ids": "$receipt_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "freee_create_deal_payment",
+      "description": "Record a payment (支払行) on an existing deal, e.g. when an invoice was paid into the bank account. A deal is settled when its payments reach the amount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Deal id."
+          },
+          "date": {
+            "type": "string",
+            "description": "Payment date, yyyy-mm-dd (JST)."
+          },
+          "from_walletable_type": {
+            "type": "string",
+            "description": "bank_account, credit_card, wallet or private_account_item.",
+            "enum": [
+              "bank_account",
+              "credit_card",
+              "wallet",
+              "private_account_item"
+            ]
+          },
+          "from_walletable_id": {
+            "type": "integer",
+            "description": "Walletable id from freee_list_walletables."
+          },
+          "amount": {
+            "type": "integer",
+            "description": "Amount in JPY."
+          }
+        },
+        "required": [
+          "company_id",
+          "id",
+          "date",
+          "from_walletable_type",
+          "from_walletable_id",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deals/{id}/payments",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "date": "$date",
+          "from_walletable_type": "$from_walletable_type",
+          "from_walletable_id": "$from_walletable_id",
+          "amount": "$amount"
+        }
+      }
+    },
+    {
+      "name": "freee_delete_deal",
+      "description": "Delete a deal (取引) with its lines and payments for good. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Deal id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/1/deals/{id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "freee_list_partners",
+      "description": "List partners (取引先) with id, code, name, long name, kana, contact, invoice registration number (インボイス登録番号) and bank account. Search by keyword (name, code, kana, shortcuts).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Partial match on code, name, long name, kana or shortcuts; separate several words with spaces for AND."
+          },
+          "start_update_date": {
+            "type": "string",
+            "description": "Updated from, yyyy-mm-dd (JST)."
+          },
+          "end_update_date": {
+            "type": "string",
+            "description": "Updated to, yyyy-mm-dd (JST)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 50, at most 3000).",
+            "minimum": 1,
+            "maximum": 3000
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/partners",
+        "queryParams": {
+          "company_id": "$company_id",
+          "keyword": "$keyword",
+          "start_update_date": "$start_update_date",
+          "end_update_date": "$end_update_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_get_partner",
+      "description": "Read one partner (取引先) with address, contact, invoice settings, payment terms and bank account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Partner id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/partners/{id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "freee_create_partner",
+      "description": "Create a partner (取引先). The name must be unique in the company; code is required when partner codes are enabled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "code": {
+            "type": "string",
+            "description": "Partner code; required when partner codes are enabled, otherwise leave out."
+          },
+          "name": {
+            "type": "string",
+            "description": "Partner name (取引先名), unique in the company, up to 255 characters."
+          },
+          "long_name": {
+            "type": "string",
+            "description": "Official name (正式名称) printed on invoices."
+          },
+          "name_kana": {
+            "type": "string",
+            "description": "Name in full-width katakana (カナ名称)."
+          },
+          "shortcut1": {
+            "type": "string",
+            "description": "Search shortcut 1."
+          },
+          "shortcut2": {
+            "type": "string",
+            "description": "Search shortcut 2."
+          },
+          "org_code": {
+            "type": "integer",
+            "description": "1 corporation (法人), 2 individual (個人).",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "country_code": {
+            "type": "string",
+            "description": "JP (domestic, default) or ZZ (abroad).",
+            "enum": [
+              "JP",
+              "ZZ"
+            ]
+          },
+          "default_title": {
+            "type": "string",
+            "description": "Honorific on invoices: 御中, 様 or (空白)."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "contact_name": {
+            "type": "string",
+            "description": "Contact person name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Contact email."
+          },
+          "qualified_invoice_issuer": {
+            "type": "boolean",
+            "description": "true when the partner is a registered qualified invoice issuer (適格請求書発行事業者)."
+          },
+          "invoice_registration_number": {
+            "type": "string",
+            "description": "Invoice registration number: T followed by 13 digits."
+          },
+          "address_attributes": {
+            "type": "object",
+            "description": "Address: {\"zipcode\": \"100-0001\", \"prefecture_code\": 12, \"street_name1\": \"千代田区千代田1-1\", \"street_name2\": \"ビル5F\"}. prefecture_code 0 is Hokkaido, 12 Tokyo, 26 Osaka, -1 none.",
+            "properties": {
+              "zipcode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "prefecture_code": {
+                "type": "integer",
+                "description": "Prefecture code (0 Hokkaido ... 12 Tokyo ... 46 Okinawa, -1 none)."
+              },
+              "street_name1": {
+                "type": "string",
+                "description": "City and street."
+              },
+              "street_name2": {
+                "type": "string",
+                "description": "Building and room."
+              }
+            }
+          },
+          "partner_bank_account_attributes": {
+            "type": "object",
+            "description": "The partner's receiving bank account: bank_code (4 digits), branch_code (3 digits), account_type (ordinary, checking, earmarked, savings, other), account_number, account_name (holder in kana), long_account_name.",
+            "properties": {
+              "bank_name": {
+                "type": "string",
+                "description": "Bank name."
+              },
+              "bank_code": {
+                "type": "string",
+                "description": "4-digit bank code."
+              },
+              "branch_name": {
+                "type": "string",
+                "description": "Branch name."
+              },
+              "branch_code": {
+                "type": "string",
+                "description": "3-digit branch code."
+              },
+              "account_type": {
+                "type": "string",
+                "description": "ordinary (普通), checking (当座), earmarked, savings or other."
+              },
+              "account_number": {
+                "type": "string",
+                "description": "Account number."
+              },
+              "account_name": {
+                "type": "string",
+                "description": "Account holder in half-width kana, as used for 全銀 transfers."
+              },
+              "long_account_name": {
+                "type": "string",
+                "description": "Account holder name."
+              }
+            }
+          }
+        },
+        "required": [
+          "company_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/partners",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "code": "$code",
+          "name": "$name",
+          "long_name": "$long_name",
+          "name_kana": "$name_kana",
+          "shortcut1": "$shortcut1",
+          "shortcut2": "$shortcut2",
+          "org_code": "$org_code",
+          "country_code": "$country_code",
+          "default_title": "$default_title",
+          "phone": "$phone",
+          "contact_name": "$contact_name",
+          "email": "$email",
+          "qualified_invoice_issuer": "$qualified_invoice_issuer",
+          "invoice_registration_number": "$invoice_registration_number",
+          "address_attributes": "$address_attributes",
+          "partner_bank_account_attributes": "$partner_bank_account_attributes"
+        }
+      }
+    },
+    {
+      "name": "freee_update_partner",
+      "description": "Update a partner (取引先). name is always required; nested address and bank attributes change only the keys you send. available false hides the partner from input lists without deleting it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Partner id."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "false hides the partner from input suggestions (it is not deleted)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Partner name (取引先名), unique in the company, up to 255 characters."
+          },
+          "long_name": {
+            "type": "string",
+            "description": "Official name (正式名称) printed on invoices."
+          },
+          "name_kana": {
+            "type": "string",
+            "description": "Name in full-width katakana (カナ名称)."
+          },
+          "shortcut1": {
+            "type": "string",
+            "description": "Search shortcut 1."
+          },
+          "shortcut2": {
+            "type": "string",
+            "description": "Search shortcut 2."
+          },
+          "org_code": {
+            "type": "integer",
+            "description": "1 corporation (法人), 2 individual (個人).",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "country_code": {
+            "type": "string",
+            "description": "JP (domestic, default) or ZZ (abroad).",
+            "enum": [
+              "JP",
+              "ZZ"
+            ]
+          },
+          "default_title": {
+            "type": "string",
+            "description": "Honorific on invoices: 御中, 様 or (空白)."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "contact_name": {
+            "type": "string",
+            "description": "Contact person name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Contact email."
+          },
+          "qualified_invoice_issuer": {
+            "type": "boolean",
+            "description": "true when the partner is a registered qualified invoice issuer (適格請求書発行事業者)."
+          },
+          "invoice_registration_number": {
+            "type": "string",
+            "description": "Invoice registration number: T followed by 13 digits."
+          },
+          "address_attributes": {
+            "type": "object",
+            "description": "Address: {\"zipcode\": \"100-0001\", \"prefecture_code\": 12, \"street_name1\": \"千代田区千代田1-1\", \"street_name2\": \"ビル5F\"}. prefecture_code 0 is Hokkaido, 12 Tokyo, 26 Osaka, -1 none.",
+            "properties": {
+              "zipcode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "prefecture_code": {
+                "type": "integer",
+                "description": "Prefecture code (0 Hokkaido ... 12 Tokyo ... 46 Okinawa, -1 none)."
+              },
+              "street_name1": {
+                "type": "string",
+                "description": "City and street."
+              },
+              "street_name2": {
+                "type": "string",
+                "description": "Building and room."
+              }
+            }
+          },
+          "partner_bank_account_attributes": {
+            "type": "object",
+            "description": "The partner's receiving bank account: bank_code (4 digits), branch_code (3 digits), account_type (ordinary, checking, earmarked, savings, other), account_number, account_name (holder in kana), long_account_name.",
+            "properties": {
+              "bank_name": {
+                "type": "string",
+                "description": "Bank name."
+              },
+              "bank_code": {
+                "type": "string",
+                "description": "4-digit bank code."
+              },
+              "branch_name": {
+                "type": "string",
+                "description": "Branch name."
+              },
+              "branch_code": {
+                "type": "string",
+                "description": "3-digit branch code."
+              },
+              "account_type": {
+                "type": "string",
+                "description": "ordinary (普通), checking (当座), earmarked, savings or other."
+              },
+              "account_number": {
+                "type": "string",
+                "description": "Account number."
+              },
+              "account_name": {
+                "type": "string",
+                "description": "Account holder in half-width kana, as used for 全銀 transfers."
+              },
+              "long_account_name": {
+                "type": "string",
+                "description": "Account holder name."
+              }
+            }
+          }
+        },
+        "required": [
+          "company_id",
+          "id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/1/partners/{id}",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "available": "$available",
+          "name": "$name",
+          "long_name": "$long_name",
+          "name_kana": "$name_kana",
+          "shortcut1": "$shortcut1",
+          "shortcut2": "$shortcut2",
+          "org_code": "$org_code",
+          "country_code": "$country_code",
+          "default_title": "$default_title",
+          "phone": "$phone",
+          "contact_name": "$contact_name",
+          "email": "$email",
+          "qualified_invoice_issuer": "$qualified_invoice_issuer",
+          "invoice_registration_number": "$invoice_registration_number",
+          "address_attributes": "$address_attributes",
+          "partner_bank_account_attributes": "$partner_bank_account_attributes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "freee_list_account_items",
+      "description": "List account items (勘定科目) with id, name, code, category, default tax code and shortcut. Needed for deal and journal lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Partial match on code, name or shortcuts."
+          },
+          "base_date": {
+            "type": "string",
+            "description": "Base date for the default tax code rate, yyyy-mm-dd (JST)."
+          },
+          "start_update_date": {
+            "type": "string",
+            "description": "Updated from, yyyy-mm-dd (JST)."
+          },
+          "end_update_date": {
+            "type": "string",
+            "description": "Updated to, yyyy-mm-dd (JST)."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/account_items",
+        "queryParams": {
+          "company_id": "$company_id",
+          "keyword": "$keyword",
+          "base_date": "$base_date",
+          "start_update_date": "$start_update_date",
+          "end_update_date": "$end_update_date"
+        }
+      }
+    },
+    {
+      "name": "freee_get_account_item",
+      "description": "Read one account item (勘定科目) with its category, default tax code, group and searchable settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Account item id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/account_items/{id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "freee_list_items",
+      "description": "List items (品目) with id, name, code and shortcuts; the item_id goes into deal and journal lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "start_update_date": {
+            "type": "string",
+            "description": "Updated from, yyyy-mm-dd (JST)."
+          },
+          "end_update_date": {
+            "type": "string",
+            "description": "Updated to, yyyy-mm-dd (JST)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 50, at most 3000).",
+            "minimum": 1,
+            "maximum": 3000
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/items",
+        "queryParams": {
+          "company_id": "$company_id",
+          "start_update_date": "$start_update_date",
+          "end_update_date": "$end_update_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_create_item",
+      "description": "Create an item (品目). The name must be unique in the company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "name": {
+            "type": "string",
+            "description": "Item name, up to 30 characters."
+          },
+          "code": {
+            "type": "string",
+            "description": "Item code, when item codes are enabled."
+          },
+          "shortcut1": {
+            "type": "string",
+            "description": "Search shortcut 1."
+          },
+          "shortcut2": {
+            "type": "string",
+            "description": "Search shortcut 2."
+          }
+        },
+        "required": [
+          "company_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/items",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "name": "$name",
+          "code": "$code",
+          "shortcut1": "$shortcut1",
+          "shortcut2": "$shortcut2"
+        }
+      }
+    },
+    {
+      "name": "freee_list_sections",
+      "description": "List sections (部門) with id, name, long name, code and parent section.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "start_update_date": {
+            "type": "string",
+            "description": "Updated from, yyyy-mm-dd (JST)."
+          },
+          "end_update_date": {
+            "type": "string",
+            "description": "Updated to, yyyy-mm-dd (JST)."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/sections",
+        "queryParams": {
+          "company_id": "$company_id",
+          "start_update_date": "$start_update_date",
+          "end_update_date": "$end_update_date"
+        }
+      }
+    },
+    {
+      "name": "freee_create_section",
+      "description": "Create a section (部門). The name must be unique; parent_id works on plans with section hierarchy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "name": {
+            "type": "string",
+            "description": "Section name, up to 30 characters."
+          },
+          "long_name": {
+            "type": "string",
+            "description": "Official name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Section code, when section codes are enabled."
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "Parent section id."
+          },
+          "shortcut1": {
+            "type": "string",
+            "description": "Search shortcut 1."
+          },
+          "shortcut2": {
+            "type": "string",
+            "description": "Search shortcut 2."
+          }
+        },
+        "required": [
+          "company_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/sections",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "name": "$name",
+          "long_name": "$long_name",
+          "code": "$code",
+          "parent_id": "$parent_id",
+          "shortcut1": "$shortcut1",
+          "shortcut2": "$shortcut2"
+        }
+      }
+    },
+    {
+      "name": "freee_list_tags",
+      "description": "List memo tags (メモタグ) with id, name and shortcuts; the ids go into tag_ids of deal and journal lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "start_update_date": {
+            "type": "string",
+            "description": "Updated from, yyyy-mm-dd (JST)."
+          },
+          "end_update_date": {
+            "type": "string",
+            "description": "Updated to, yyyy-mm-dd (JST)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 50, at most 3000).",
+            "minimum": 1,
+            "maximum": 3000
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/tags",
+        "queryParams": {
+          "company_id": "$company_id",
+          "start_update_date": "$start_update_date",
+          "end_update_date": "$end_update_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_create_tag",
+      "description": "Create a memo tag (メモタグ). The name must be unique in the company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "name": {
+            "type": "string",
+            "description": "Tag name, up to 30 characters."
+          },
+          "shortcut1": {
+            "type": "string",
+            "description": "Search shortcut 1."
+          },
+          "shortcut2": {
+            "type": "string",
+            "description": "Search shortcut 2."
+          }
+        },
+        "required": [
+          "company_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/tags",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "name": "$name",
+          "shortcut1": "$shortcut1",
+          "shortcut2": "$shortcut2"
+        }
+      }
+    },
+    {
+      "name": "freee_list_taxes",
+      "description": "List the tax codes (税区分) of the company: code, name, display category (tax_10, tax_r8 ...) and whether each is in use. The code goes into deal and journal lines as tax_code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "display_category": {
+            "type": "string",
+            "description": "Only one display category, e.g. tax_10 (10%), tax_r8 (reduced 8%), tax_8.",
+            "enum": [
+              "tax_5",
+              "tax_8",
+              "tax_r8",
+              "tax_10",
+              "tax_5_e80",
+              "tax_5_e70",
+              "tax_5_e50",
+              "tax_5_e30",
+              "tax_8_e80",
+              "tax_8_e70",
+              "tax_8_e50",
+              "tax_8_e30",
+              "tax_r8_e80",
+              "tax_r8_e70",
+              "tax_r8_e50",
+              "tax_r8_e30",
+              "tax_10_e80",
+              "tax_10_e70",
+              "tax_10_e50",
+              "tax_10_e30"
+            ]
+          },
+          "available": {
+            "type": "boolean",
+            "description": "true only codes in use, false only codes not in use."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/taxes/companies/{company_id}",
+        "queryParams": {
+          "display_category": "$display_category",
+          "available": "$available"
+        }
+      }
+    },
+    {
+      "name": "freee_list_walletables",
+      "description": "List walletables (口座): bank accounts, credit cards and other wallets (cash, e-money), with id, type and name; optionally balances, last sync time and sync status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "type": {
+            "type": "string",
+            "description": "bank_account, credit_card or wallet.",
+            "enum": [
+              "bank_account",
+              "credit_card",
+              "wallet"
+            ]
+          },
+          "with_balance": {
+            "type": "boolean",
+            "description": "true adds walletable_balance (registered) and last_balance (synced), in JPY."
+          },
+          "with_last_synced_at": {
+            "type": "boolean",
+            "description": "true adds last_synced_at."
+          },
+          "with_sync_status": {
+            "type": "boolean",
+            "description": "true adds sync_status."
+          },
+          "start_update_date": {
+            "type": "string",
+            "description": "Updated from, yyyy-mm-dd (JST)."
+          },
+          "end_update_date": {
+            "type": "string",
+            "description": "Updated to, yyyy-mm-dd (JST)."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/walletables",
+        "queryParams": {
+          "company_id": "$company_id",
+          "type": "$type",
+          "with_balance": "$with_balance",
+          "with_last_synced_at": "$with_last_synced_at",
+          "with_sync_status": "$with_sync_status",
+          "start_update_date": "$start_update_date",
+          "end_update_date": "$end_update_date"
+        }
+      }
+    },
+    {
+      "name": "freee_list_wallet_txns",
+      "description": "List wallet transactions (口座明細): bank and card statement lines with date, amount, due amount, balance, description and status (unprocessed, settled, ignored). Filter by walletable (type and id together), dates and entry side.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "walletable_type": {
+            "type": "string",
+            "description": "bank_account, credit_card or wallet; give walletable_id too.",
+            "enum": [
+              "bank_account",
+              "credit_card",
+              "wallet"
+            ]
+          },
+          "walletable_id": {
+            "type": "integer",
+            "description": "Walletable id; give walletable_type too."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Date from, yyyy-mm-dd (JST)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Date to, yyyy-mm-dd (JST)."
+          },
+          "entry_side": {
+            "type": "string",
+            "description": "income (入金) or expense (出金).",
+            "enum": [
+              "income",
+              "expense"
+            ]
+          },
+          "sort_type": {
+            "type": "string",
+            "description": "created_at_desc for newest created first; default is by date, descending.",
+            "enum": [
+              "created_at_desc"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/wallet_txns",
+        "queryParams": {
+          "company_id": "$company_id",
+          "walletable_type": "$walletable_type",
+          "walletable_id": "$walletable_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "entry_side": "$entry_side",
+          "sort_type": "$sort_type",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_get_wallet_txn",
+      "description": "Read one wallet transaction (口座明細): date, amount, due amount, balance, description, walletable and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Wallet transaction id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/wallet_txns/{id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "freee_list_transfers",
+      "description": "List transfers (取引（振替）) between the company own walletables, e.g. bank to cash, with date, amount and both walletables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Date from, yyyy-mm-dd (JST)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Date to, yyyy-mm-dd (JST)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/transfers",
+        "queryParams": {
+          "company_id": "$company_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_list_manual_journals",
+      "description": "List manual journals (振替伝票) with their debit and credit lines. Filter by dates, account item, amount, partner, item, section, adjustment (決算整理仕訳) and reference number. Up to 500 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "start_issue_date": {
+            "type": "string",
+            "description": "Issue date from, yyyy-mm-dd (JST)."
+          },
+          "end_issue_date": {
+            "type": "string",
+            "description": "Issue date to, yyyy-mm-dd (JST)."
+          },
+          "entry_side": {
+            "type": "string",
+            "description": "credit (貸方) or debit (借方).",
+            "enum": [
+              "credit",
+              "debit"
+            ]
+          },
+          "account_item_id": {
+            "type": "integer",
+            "description": "Account item id."
+          },
+          "min_amount": {
+            "type": "integer",
+            "description": "Minimum amount in JPY incl. tax."
+          },
+          "max_amount": {
+            "type": "integer",
+            "description": "Maximum amount in JPY incl. tax."
+          },
+          "partner_id": {
+            "type": "integer",
+            "description": "Partner id (0 for lines without partner)."
+          },
+          "partner_code": {
+            "type": "string",
+            "description": "Partner code."
+          },
+          "item_id": {
+            "type": "integer",
+            "description": "Item id (0 for none)."
+          },
+          "section_id": {
+            "type": "integer",
+            "description": "Section id (0 for none)."
+          },
+          "adjustment": {
+            "type": "string",
+            "description": "only (決算整理仕訳 only) or without (daily journals only).",
+            "enum": [
+              "only",
+              "without"
+            ]
+          },
+          "txn_number": {
+            "type": "string",
+            "description": "Journal number (仕訳番号), when numbering is enabled."
+          },
+          "ref_number": {
+            "type": "string",
+            "description": "Reference number (管理番号), prefix match."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 20, at most 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/manual_journals",
+        "queryParams": {
+          "company_id": "$company_id",
+          "start_issue_date": "$start_issue_date",
+          "end_issue_date": "$end_issue_date",
+          "entry_side": "$entry_side",
+          "account_item_id": "$account_item_id",
+          "min_amount": "$min_amount",
+          "max_amount": "$max_amount",
+          "partner_id": "$partner_id",
+          "partner_code": "$partner_code",
+          "item_id": "$item_id",
+          "section_id": "$section_id",
+          "adjustment": "$adjustment",
+          "txn_number": "$txn_number",
+          "ref_number": "$ref_number",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_get_manual_journal",
+      "description": "Read one manual journal (振替伝票) with its debit and credit lines, partners, sections and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Manual journal id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/manual_journals/{id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "freee_create_manual_journal",
+      "description": "Post a manual journal (振替伝票): debit and credit lines whose totals must match, up to 100 lines. Use it for adjustments and entries that are not an income or expense deal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "issue_date": {
+            "type": "string",
+            "description": "Issue date, yyyy-mm-dd (JST)."
+          },
+          "adjustment": {
+            "type": "boolean",
+            "description": "true for a closing adjustment (決算整理仕訳); default false."
+          },
+          "ref_number": {
+            "type": "string",
+            "description": "Reference number (管理番号), up to 20 characters."
+          },
+          "details": {
+            "type": "array",
+            "description": "Lines: [{\"entry_side\": \"debit\", \"account_item_id\": 1, \"tax_code\": 0, \"amount\": 5000}, {\"entry_side\": \"credit\", \"account_item_id\": 2, \"tax_code\": 0, \"amount\": 5000}]. Debit and credit totals must be equal.",
+            "items": {
+              "type": "object",
+              "description": "One journal line.",
+              "properties": {
+                "entry_side": {
+                  "type": "string",
+                  "description": "debit (借方) or credit (貸方).",
+                  "enum": [
+                    "debit",
+                    "credit"
+                  ]
+                },
+                "account_item_id": {
+                  "type": "integer",
+                  "description": "Account item id."
+                },
+                "tax_code": {
+                  "type": "integer",
+                  "description": "Tax code from freee_list_taxes (0 for 対象外)."
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Amount in JPY incl. tax."
+                },
+                "vat": {
+                  "type": "integer",
+                  "description": "Consumption tax in JPY; computed when omitted."
+                },
+                "partner_id": {
+                  "type": "integer",
+                  "description": "Partner id."
+                },
+                "item_id": {
+                  "type": "integer",
+                  "description": "Item id."
+                },
+                "section_id": {
+                  "type": "integer",
+                  "description": "Section id."
+                },
+                "tag_ids": {
+                  "type": "array",
+                  "description": "Memo tag ids.",
+                  "items": {
+                    "type": "integer",
+                    "description": "A memo tag id."
+                  }
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Line note (備考)."
+                }
+              },
+              "required": [
+                "entry_side",
+                "account_item_id",
+                "tax_code",
+                "amount"
+              ]
+            },
+            "minItems": 2,
+            "maxItems": 100
+          },
+          "receipt_ids": {
+            "type": "array",
+            "description": "Receipt ids to attach.",
+            "items": {
+              "type": "integer",
+              "description": "A receipt id."
+            }
+          }
+        },
+        "required": [
+          "company_id",
+          "issue_date",
+          "details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/manual_journals",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "issue_date": "$issue_date",
+          "adjustment": "$adjustment",
+          "ref_number": "$ref_number",
+          "details": "$details",
+          "receipt_ids": "$receipt_ids"
+        }
+      }
+    },
+    {
+      "name": "freee_delete_manual_journal",
+      "description": "Delete a manual journal (振替伝票) for good. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Manual journal id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/1/manual_journals/{id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "freee_request_journals",
+      "description": "Ask freee to prepare the journal book (仕訳帳) of a period as a file: CSV (freee generic, Yayoi) or PDF. Returns a request id; poll freee_get_journals_status until status is uploaded, then freee_download_journals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "download_type": {
+            "type": "string",
+            "description": "generic_v2 (freee CSV, recommended), generic (old CSV), csv (Yayoi format) or pdf.",
+            "enum": [
+              "generic",
+              "generic_v2",
+              "csv",
+              "pdf"
+            ]
+          },
+          "encoding": {
+            "type": "string",
+            "description": "sjis (default) or utf-8, for generic and generic_v2.",
+            "enum": [
+              "sjis",
+              "utf-8"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Period start, yyyy-mm-dd (JST). Default: start of the current fiscal year."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Period end, yyyy-mm-dd (JST). Default: end of the current fiscal year."
+          },
+          "visible_tags": {
+            "type": "array",
+            "description": "Extra columns for generic, csv and pdf: partner, item, tag, section, description, wallet_txn_description, segment_1_tag, segment_2_tag, segment_3_tag, all.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "partner",
+                "item",
+                "tag",
+                "section",
+                "description",
+                "wallet_txn_description",
+                "segment_1_tag",
+                "segment_2_tag",
+                "segment_3_tag",
+                "all"
+              ],
+              "description": "A column."
+            }
+          }
+        },
+        "required": [
+          "company_id",
+          "download_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/journals",
+        "queryParams": {
+          "company_id": "$company_id",
+          "download_type": "$download_type",
+          "encoding": "$encoding",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "visible_tags[]": "$visible_tags"
+        }
+      }
+    },
+    {
+      "name": "freee_get_journals_status",
+      "description": "Check a journal book request from freee_request_journals: status enqueued, working, uploaded or failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Request id from freee_request_journals."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/journals/reports/{id}/status",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "freee_download_journals",
+      "description": "Download the prepared journal book file (CSV or PDF) once freee_get_journals_status says uploaded. The file is returned as an attachment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Request id from freee_request_journals."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/journals/reports/{id}/download",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "freee_get_trial_balance",
+      "description": "Read a trial balance report (試算表): balance sheet (trial_bs), profit and loss (trial_pl) or manufacturing cost (trial_cr), for one period or compared with one or two previous years. Each balance row has the account item, opening, debit, credit and closing amounts in JPY, and composition ratio; breakdown_display_type splits rows by partner, item, section or segment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "report": {
+            "type": "string",
+            "description": "trial_bs (貸借対照表), trial_pl (損益計算書), trial_cr (製造原価報告書), or their _two_years / _three_years comparisons.",
+            "enum": [
+              "trial_bs",
+              "trial_bs_two_years",
+              "trial_bs_three_years",
+              "trial_pl",
+              "trial_pl_two_years",
+              "trial_pl_three_years",
+              "trial_cr",
+              "trial_cr_two_years",
+              "trial_cr_three_years"
+            ]
+          },
+          "breakdown_display_type": {
+            "type": "string",
+            "description": "Split each account by partner, item, section, account_item or segment_1_tag ... segment_3_tag (only with account_item_display_type account_item).",
+            "enum": [
+              "partner",
+              "item",
+              "section",
+              "account_item",
+              "segment_1_tag",
+              "segment_2_tag",
+              "segment_3_tag"
+            ]
+          },
+          "section_id": {
+            "type": "integer",
+            "description": "Only this section (0 for none)."
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "description": "Fiscal year: the calendar year in which the fiscal period starts (2026 for April 2026 to March 2027). Default: the current one."
+          },
+          "start_month": {
+            "type": "integer",
+            "description": "First fiscal month to include, 1-12.",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "end_month": {
+            "type": "integer",
+            "description": "Last fiscal month to include, 1-12 (with a fiscal year starting in October, start_month 11 and end_month 3 is valid).",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Instead of months: period start, yyyy-mm-dd (JST)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Instead of months: period end, yyyy-mm-dd (JST)."
+          },
+          "account_item_display_type": {
+            "type": "string",
+            "description": "account_item (per account, default) or group (as in the financial statements, 決算書表示).",
+            "enum": [
+              "account_item",
+              "group"
+            ]
+          },
+          "partner_id": {
+            "type": "integer",
+            "description": "Only this partner (0 for none)."
+          },
+          "partner_code": {
+            "type": "string",
+            "description": "Only this partner code."
+          },
+          "item_id": {
+            "type": "integer",
+            "description": "Only this item (0 for none)."
+          },
+          "adjustment": {
+            "type": "string",
+            "description": "only: only closing adjustments; without: exclude them. Default: include.",
+            "enum": [
+              "only",
+              "without"
+            ]
+          },
+          "cost_allocation": {
+            "type": "string",
+            "description": "P/L and cost reports only: only or without allocation journals (配賦仕訳); needs a corporate Standard plan or higher.",
+            "enum": [
+              "only",
+              "without"
+            ]
+          },
+          "approval_flow_status": {
+            "type": "string",
+            "description": "without_in_progress excludes journals awaiting approval; all includes them (only with journal approval enabled).",
+            "enum": [
+              "without_in_progress",
+              "all"
+            ]
+          }
+        },
+        "required": [
+          "company_id",
+          "report"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/reports/{report}",
+        "queryParams": {
+          "company_id": "$company_id",
+          "breakdown_display_type": "$breakdown_display_type",
+          "section_id": "$section_id",
+          "fiscal_year": "$fiscal_year",
+          "start_month": "$start_month",
+          "end_month": "$end_month",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "account_item_display_type": "$account_item_display_type",
+          "partner_id": "$partner_id",
+          "partner_code": "$partner_code",
+          "item_id": "$item_id",
+          "adjustment": "$adjustment",
+          "cost_allocation": "$cost_allocation",
+          "approval_flow_status": "$approval_flow_status"
+        }
+      }
+    },
+    {
+      "name": "freee_get_trial_pl_sections",
+      "description": "Read the profit and loss (損益計算書) compared side by side for 1 to 5 sections (部門比較).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "section_ids": {
+            "type": "string",
+            "description": "1 to 5 section ids, comma separated without spaces (0 for lines without section), e.g. 101,102."
+          },
+          "breakdown_display_type": {
+            "type": "string",
+            "description": "Split each account by partner, item, account_item or segment tags.",
+            "enum": [
+              "partner",
+              "item",
+              "account_item",
+              "segment_1_tag",
+              "segment_2_tag",
+              "segment_3_tag"
+            ]
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "description": "Fiscal year: the calendar year in which the fiscal period starts (2026 for April 2026 to March 2027). Default: the current one."
+          },
+          "start_month": {
+            "type": "integer",
+            "description": "First fiscal month to include, 1-12.",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "end_month": {
+            "type": "integer",
+            "description": "Last fiscal month to include, 1-12 (with a fiscal year starting in October, start_month 11 and end_month 3 is valid).",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Instead of months: period start, yyyy-mm-dd (JST)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Instead of months: period end, yyyy-mm-dd (JST)."
+          },
+          "account_item_display_type": {
+            "type": "string",
+            "description": "account_item (per account, default) or group (as in the financial statements, 決算書表示).",
+            "enum": [
+              "account_item",
+              "group"
+            ]
+          },
+          "partner_id": {
+            "type": "integer",
+            "description": "Only this partner (0 for none)."
+          },
+          "partner_code": {
+            "type": "string",
+            "description": "Only this partner code."
+          },
+          "item_id": {
+            "type": "integer",
+            "description": "Only this item (0 for none)."
+          },
+          "adjustment": {
+            "type": "string",
+            "description": "only: only closing adjustments; without: exclude them. Default: include.",
+            "enum": [
+              "only",
+              "without"
+            ]
+          },
+          "cost_allocation": {
+            "type": "string",
+            "description": "P/L and cost reports only: only or without allocation journals (配賦仕訳); needs a corporate Standard plan or higher.",
+            "enum": [
+              "only",
+              "without"
+            ]
+          },
+          "approval_flow_status": {
+            "type": "string",
+            "description": "without_in_progress excludes journals awaiting approval; all includes them (only with journal approval enabled).",
+            "enum": [
+              "without_in_progress",
+              "all"
+            ]
+          }
+        },
+        "required": [
+          "company_id",
+          "section_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/reports/trial_pl_sections",
+        "queryParams": {
+          "company_id": "$company_id",
+          "section_ids": "$section_ids",
+          "breakdown_display_type": "$breakdown_display_type",
+          "fiscal_year": "$fiscal_year",
+          "start_month": "$start_month",
+          "end_month": "$end_month",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "account_item_display_type": "$account_item_display_type",
+          "partner_id": "$partner_id",
+          "partner_code": "$partner_code",
+          "item_id": "$item_id",
+          "adjustment": "$adjustment",
+          "cost_allocation": "$cost_allocation",
+          "approval_flow_status": "$approval_flow_status"
+        }
+      }
+    },
+    {
+      "name": "freee_list_general_ledgers",
+      "description": "Read the general ledger (総勘定元帳, beta) for a period: per account item, every entry with date, counter account, partner, description, debit, credit and running balance. Filter by account item name, partner, item, section or tag names; big ledgers can time out, so keep periods short.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Period start, yyyy-mm-dd (JST)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Period end, yyyy-mm-dd (JST)."
+          },
+          "account_item_name": {
+            "type": "string",
+            "description": "Account item name, e.g. 売掛金."
+          },
+          "partner_name": {
+            "type": "string",
+            "description": "Partner name (未選択 for none)."
+          },
+          "item_name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "section_name": {
+            "type": "string",
+            "description": "Section name."
+          },
+          "tag_name": {
+            "type": "string",
+            "description": "Memo tag name."
+          },
+          "adjustment": {
+            "type": "string",
+            "description": "only or without closing adjustments.",
+            "enum": [
+              "only",
+              "without"
+            ]
+          },
+          "approval_flow_status": {
+            "type": "string",
+            "description": "without_in_progress (default) or all.",
+            "enum": [
+              "all",
+              "without_in_progress"
+            ]
+          }
+        },
+        "required": [
+          "company_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/reports/general_ledgers",
+        "queryParams": {
+          "company_id": "$company_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "account_item_name": "$account_item_name",
+          "partner_name": "$partner_name",
+          "item_name": "$item_name",
+          "section_name": "$section_name",
+          "tag_name": "$tag_name",
+          "adjustment": "$adjustment",
+          "approval_flow_status": "$approval_flow_status"
+        }
+      }
+    },
+    {
+      "name": "freee_list_receipts",
+      "description": "List files in the file box (ファイルボックス, receipts and invoices uploaded as evidence) uploaded in a date range: id, status, description, issue date, amount when read by OCR, and whether a deal is linked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Uploaded from, yyyy-mm-dd (JST)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Uploaded to, yyyy-mm-dd (JST)."
+          },
+          "user_name": {
+            "type": "string",
+            "description": "Uploader display name or email, partial match."
+          },
+          "number": {
+            "type": "integer",
+            "description": "File number shown in the file box."
+          },
+          "category": {
+            "type": "string",
+            "description": "all (default), without_deal (未登録), with_expense_application_line, with_deal (登録済み) or ignored.",
+            "enum": [
+              "all",
+              "without_deal",
+              "with_expense_application_line",
+              "with_deal",
+              "ignored"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 50, at most 3000).",
+            "minimum": 1,
+            "maximum": 3000
+          }
+        },
+        "required": [
+          "company_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/receipts",
+        "queryParams": {
+          "company_id": "$company_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "user_name": "$user_name",
+          "number": "$number",
+          "category": "$category",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_get_receipt",
+      "description": "Read one file box entry (証憑ファイル) with its metadata and the deals it is linked to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Receipt id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/receipts/{id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "freee_list_invoices",
+      "description": "List invoices (請求書) of freee請求書 (freee Invoice): id, number, subject, partner, billing and payment dates, total, payment, sending and deal status. Filter by number, subject, partners, statuses and dates; up to 100 per call, limit plus offset at most 10,000.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Invoice number."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject (件名)."
+          },
+          "partner_ids": {
+            "type": "string",
+            "description": "Up to 3 partner ids, comma separated without spaces."
+          },
+          "payment_status": {
+            "type": "string",
+            "description": "unsettled, settled, canceled, unprocessed or failed.",
+            "enum": [
+              "settled",
+              "unsettled",
+              "canceled",
+              "unprocessed",
+              "failed"
+            ]
+          },
+          "deal_status": {
+            "type": "string",
+            "description": "registered (取引登録済み) or unregistered.",
+            "enum": [
+              "registered",
+              "unregistered"
+            ]
+          },
+          "sending_status": {
+            "type": "string",
+            "description": "sent or unsent.",
+            "enum": [
+              "sent",
+              "unsent"
+            ]
+          },
+          "cancel_status": {
+            "type": "string",
+            "description": "canceled or uncanceled.",
+            "enum": [
+              "canceled",
+              "uncanceled"
+            ]
+          },
+          "start_billing_date": {
+            "type": "string",
+            "description": "Billing date from, yyyy-mm-dd (JST)."
+          },
+          "end_billing_date": {
+            "type": "string",
+            "description": "Billing date to, yyyy-mm-dd (JST)."
+          },
+          "start_payment_date": {
+            "type": "string",
+            "description": "Payment due date from, yyyy-mm-dd (JST)."
+          },
+          "end_payment_date": {
+            "type": "string",
+            "description": "Payment due date to, yyyy-mm-dd (JST)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/iv/invoices",
+        "queryParams": {
+          "company_id": "$company_id",
+          "invoice_number": "$invoice_number",
+          "subject": "$subject",
+          "partner_ids": "$partner_ids",
+          "payment_status": "$payment_status",
+          "deal_status": "$deal_status",
+          "sending_status": "$sending_status",
+          "cancel_status": "$cancel_status",
+          "start_billing_date": "$start_billing_date",
+          "end_billing_date": "$end_billing_date",
+          "start_payment_date": "$start_payment_date",
+          "end_payment_date": "$end_payment_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_get_invoice",
+      "description": "Read one invoice (請求書) of freee請求書 with its lines, tax breakdown, partner details and statuses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Invoice id from freee_list_invoices."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/iv/invoices/{id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "freee_list_invoice_templates",
+      "description": "List the invoice layouts (帳票テンプレート) usable for new invoices, with their id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/iv/invoices/templates",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "freee_create_invoice",
+      "description": "Create an invoice (請求書) in freee請求書. It is created unsent: sending by email or post happens in freee. Returns the invoice with id, number and total. invoice_number is needed only when automatic numbering is off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "billing_date": {
+            "type": "string",
+            "description": "Billing date (請求日), yyyy-mm-dd (JST)."
+          },
+          "payment_date": {
+            "type": "string",
+            "description": "Payment due date (期日), yyyy-mm-dd (JST)."
+          },
+          "payment_type": {
+            "type": "string",
+            "description": "transfer (振込, default), direct_debit (振替) or card.",
+            "enum": [
+              "transfer",
+              "direct_debit",
+              "card"
+            ]
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Invoice number; only when automatic numbering is off (then required)."
+          },
+          "invoice_note": {
+            "type": "string",
+            "description": "Remarks printed on the invoice (備考)."
+          },
+          "template_id": {
+            "type": "integer",
+            "description": "Layout id from freee_list_invoice_templates; default layout when omitted."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject (件名)."
+          },
+          "partner_id": {
+            "type": "integer",
+            "description": "Partner id from freee_list_partners; or partner_code."
+          },
+          "partner_code": {
+            "type": "string",
+            "description": "Partner code; or partner_id."
+          },
+          "partner_title": {
+            "type": "string",
+            "description": "Honorific after the partner name: 御中, 様 or (空白).",
+            "enum": [
+              "御中",
+              "様",
+              "(空白)"
+            ]
+          },
+          "partner_display_name": {
+            "type": "string",
+            "description": "Addressee shown on the document; default the partner name."
+          },
+          "partner_contact_name": {
+            "type": "string",
+            "description": "Contact person shown on the document."
+          },
+          "partner_contact_email_to": {
+            "type": "string",
+            "description": "Recipient email(s), comma separated; default the partner contact."
+          },
+          "tax_entry_method": {
+            "type": "string",
+            "description": "in: prices include tax (内税); out: prices exclude tax (外税).",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "tax_fraction": {
+            "type": "string",
+            "description": "Rounding of consumption tax: omit (切り捨て), round_up or round.",
+            "enum": [
+              "omit",
+              "round_up",
+              "round"
+            ]
+          },
+          "line_amount_fraction": {
+            "type": "string",
+            "description": "Rounding of line amounts: omit, round_up or round.",
+            "enum": [
+              "omit",
+              "round_up",
+              "round"
+            ]
+          },
+          "withholding_tax_entry_method": {
+            "type": "string",
+            "description": "Withholding tax computed on the price incl. tax (in) or excl. tax (out).",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "memo": {
+            "type": "string",
+            "description": "Internal memo (社内メモ), not printed."
+          },
+          "lines": {
+            "type": "array",
+            "description": "Lines: [{\"type\": \"item\", \"description\": \"Consulting October\", \"quantity\": 1, \"unit\": \"式\", \"unit_price\": \"100000\", \"tax_rate\": 10}]. type text lines carry only a description.",
+            "items": {
+              "type": "object",
+              "description": "One line.",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "item (default) or text.",
+                  "enum": [
+                    "item",
+                    "text"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description (摘要・品名)."
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity (up to 3 decimals); required for item lines."
+                },
+                "unit": {
+                  "type": "string",
+                  "description": "Unit, e.g. 個, 時間, 式."
+                },
+                "unit_price": {
+                  "type": "string",
+                  "description": "Unit price in JPY as a string, up to 3 decimals, e.g. \"12000\"."
+                },
+                "tax_rate": {
+                  "type": "number",
+                  "enum": [
+                    0,
+                    8,
+                    10
+                  ],
+                  "description": "Tax rate in percent: 10, 8 or 0; required for item lines."
+                },
+                "reduced_tax_rate": {
+                  "type": "boolean",
+                  "description": "true for the reduced 8% rate (only with tax_rate 8)."
+                },
+                "withholding": {
+                  "type": "boolean",
+                  "description": "true when the line is subject to withholding tax (源泉徴収)."
+                }
+              }
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "company_id",
+          "billing_date",
+          "partner_title",
+          "tax_entry_method",
+          "tax_fraction",
+          "withholding_tax_entry_method",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/iv/invoices",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "billing_date": "$billing_date",
+          "payment_date": "$payment_date",
+          "payment_type": "$payment_type",
+          "invoice_number": "$invoice_number",
+          "invoice_note": "$invoice_note",
+          "template_id": "$template_id",
+          "subject": "$subject",
+          "partner_id": "$partner_id",
+          "partner_code": "$partner_code",
+          "partner_title": "$partner_title",
+          "partner_display_name": "$partner_display_name",
+          "partner_contact_name": "$partner_contact_name",
+          "partner_contact_email_to": "$partner_contact_email_to",
+          "tax_entry_method": "$tax_entry_method",
+          "tax_fraction": "$tax_fraction",
+          "line_amount_fraction": "$line_amount_fraction",
+          "withholding_tax_entry_method": "$withholding_tax_entry_method",
+          "memo": "$memo",
+          "lines": "$lines"
+        }
+      }
+    },
+    {
+      "name": "freee_cancel_invoice",
+      "description": "Cancel (取消) an invoice of freee請求書. It stays visible as canceled and can be restored with freee_uncancel_invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Invoice id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/iv/invoices/{id}/cancel",
+        "bodyMapping": {
+          "company_id": "$company_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "freee_uncancel_invoice",
+      "description": "Restore an invoice that was canceled in freee請求書 (取消された請求書の復元), back to its previous status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Invoice id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/iv/invoices/{id}/uncancel",
+        "bodyMapping": {
+          "company_id": "$company_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "freee_list_quotations",
+      "description": "List quotations (見積書) of freee請求書: id, number, subject, partner, quotation and expiry dates, total, sending and cancel status. Up to 100 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "quotation_number": {
+            "type": "string",
+            "description": "Quotation number."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject."
+          },
+          "partner_ids": {
+            "type": "string",
+            "description": "Up to 3 partner ids, comma separated."
+          },
+          "sending_status": {
+            "type": "string",
+            "description": "sent or unsent.",
+            "enum": [
+              "sent",
+              "unsent"
+            ]
+          },
+          "cancel_status": {
+            "type": "string",
+            "description": "canceled or uncanceled.",
+            "enum": [
+              "canceled",
+              "uncanceled"
+            ]
+          },
+          "start_quotation_date": {
+            "type": "string",
+            "description": "Quotation date from, yyyy-mm-dd (JST)."
+          },
+          "end_quotation_date": {
+            "type": "string",
+            "description": "Quotation date to, yyyy-mm-dd (JST)."
+          },
+          "start_expiration_date": {
+            "type": "string",
+            "description": "Expiry date from, yyyy-mm-dd (JST)."
+          },
+          "end_expiration_date": {
+            "type": "string",
+            "description": "Expiry date to, yyyy-mm-dd (JST)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per call (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/iv/quotations",
+        "queryParams": {
+          "company_id": "$company_id",
+          "quotation_number": "$quotation_number",
+          "subject": "$subject",
+          "partner_ids": "$partner_ids",
+          "sending_status": "$sending_status",
+          "cancel_status": "$cancel_status",
+          "start_quotation_date": "$start_quotation_date",
+          "end_quotation_date": "$end_quotation_date",
+          "start_expiration_date": "$start_expiration_date",
+          "end_expiration_date": "$end_expiration_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freee_get_quotation",
+      "description": "Read one quotation (見積書) of freee請求書 with its lines and totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Quotation id."
+          }
+        },
+        "required": [
+          "company_id",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/iv/quotations/{id}",
+        "queryParams": {
+          "company_id": "$company_id"
+        }
+      }
+    },
+    {
+      "name": "freee_create_quotation",
+      "description": "Create a quotation (見積書) in freee請求書, created unsent. quotation_number is needed only when automatic numbering is off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Company (事業所) ID from freee_get_me or freee_list_companies."
+          },
+          "quotation_date": {
+            "type": "string",
+            "description": "Quotation date (見積日), yyyy-mm-dd (JST)."
+          },
+          "expiration_date": {
+            "type": "string",
+            "description": "Valid until (有効期限), yyyy-mm-dd (JST)."
+          },
+          "quotation_number": {
+            "type": "string",
+            "description": "Quotation number; only when automatic numbering is off."
+          },
+          "delivery_deadline": {
+            "type": "string",
+            "description": "Delivery deadline (納品期限)."
+          },
+          "delivery_location": {
+            "type": "string",
+            "description": "Delivery place (納品場所)."
+          },
+          "quotation_note": {
+            "type": "string",
+            "description": "Remarks printed on the quotation (備考)."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject (件名)."
+          },
+          "partner_id": {
+            "type": "integer",
+            "description": "Partner id from freee_list_partners; or partner_code."
+          },
+          "partner_code": {
+            "type": "string",
+            "description": "Partner code; or partner_id."
+          },
+          "partner_title": {
+            "type": "string",
+            "description": "Honorific after the partner name: 御中, 様 or (空白).",
+            "enum": [
+              "御中",
+              "様",
+              "(空白)"
+            ]
+          },
+          "partner_display_name": {
+            "type": "string",
+            "description": "Addressee shown on the document; default the partner name."
+          },
+          "partner_contact_name": {
+            "type": "string",
+            "description": "Contact person shown on the document."
+          },
+          "partner_contact_email_to": {
+            "type": "string",
+            "description": "Recipient email(s), comma separated; default the partner contact."
+          },
+          "tax_entry_method": {
+            "type": "string",
+            "description": "in: prices include tax (内税); out: prices exclude tax (外税).",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "tax_fraction": {
+            "type": "string",
+            "description": "Rounding of consumption tax: omit (切り捨て), round_up or round.",
+            "enum": [
+              "omit",
+              "round_up",
+              "round"
+            ]
+          },
+          "line_amount_fraction": {
+            "type": "string",
+            "description": "Rounding of line amounts: omit, round_up or round.",
+            "enum": [
+              "omit",
+              "round_up",
+              "round"
+            ]
+          },
+          "withholding_tax_entry_method": {
+            "type": "string",
+            "description": "Withholding tax computed on the price incl. tax (in) or excl. tax (out).",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "memo": {
+            "type": "string",
+            "description": "Internal memo (社内メモ), not printed."
+          },
+          "lines": {
+            "type": "array",
+            "description": "Lines: [{\"type\": \"item\", \"description\": \"Consulting October\", \"quantity\": 1, \"unit\": \"式\", \"unit_price\": \"100000\", \"tax_rate\": 10}]. type text lines carry only a description.",
+            "items": {
+              "type": "object",
+              "description": "One line.",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "item (default) or text.",
+                  "enum": [
+                    "item",
+                    "text"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description (摘要・品名)."
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity (up to 3 decimals); required for item lines."
+                },
+                "unit": {
+                  "type": "string",
+                  "description": "Unit, e.g. 個, 時間, 式."
+                },
+                "unit_price": {
+                  "type": "string",
+                  "description": "Unit price in JPY as a string, up to 3 decimals, e.g. \"12000\"."
+                },
+                "tax_rate": {
+                  "type": "number",
+                  "enum": [
+                    0,
+                    8,
+                    10
+                  ],
+                  "description": "Tax rate in percent: 10, 8 or 0; required for item lines."
+                },
+                "reduced_tax_rate": {
+                  "type": "boolean",
+                  "description": "true for the reduced 8% rate (only with tax_rate 8)."
+                },
+                "withholding": {
+                  "type": "boolean",
+                  "description": "true when the line is subject to withholding tax (源泉徴収)."
+                }
+              }
+            },
+            "minItems": 1
+          },
+          "template_id": {
+            "type": "integer",
+            "description": "Layout id; default layout when omitted."
+          }
+        },
+        "required": [
+          "company_id",
+          "quotation_date",
+          "partner_title",
+          "tax_entry_method",
+          "tax_fraction",
+          "withholding_tax_entry_method",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/iv/quotations",
+        "bodyMapping": {
+          "company_id": "$company_id",
+          "quotation_date": "$quotation_date",
+          "expiration_date": "$expiration_date",
+          "quotation_number": "$quotation_number",
+          "delivery_deadline": "$delivery_deadline",
+          "delivery_location": "$delivery_location",
+          "quotation_note": "$quotation_note",
+          "template_id": "$template_id",
+          "subject": "$subject",
+          "partner_id": "$partner_id",
+          "partner_code": "$partner_code",
+          "partner_title": "$partner_title",
+          "partner_display_name": "$partner_display_name",
+          "partner_contact_name": "$partner_contact_name",
+          "partner_contact_email_to": "$partner_contact_email_to",
+          "tax_entry_method": "$tax_entry_method",
+          "tax_fraction": "$tax_fraction",
+          "line_amount_fraction": "$line_amount_fraction",
+          "withholding_tax_entry_method": "$withholding_tax_entry_method",
+          "memo": "$memo",
+          "lines": "$lines"
+        }
+      }
+    }
+  ]
+}

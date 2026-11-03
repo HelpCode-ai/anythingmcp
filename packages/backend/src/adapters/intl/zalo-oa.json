@@ -1,0 +1,688 @@
+{
+  "slug": "zalo-oa",
+  "name": "Zalo Official Account",
+  "aliases": [
+    "Zalo OA",
+    "Zalo",
+    "Zalo Official Account API"
+  ],
+  "description": "Zalo Official Account (Vietnam): OA profile and message quota, followers and users with their details and labels, recent chats and conversations, consultation messages with text or an image, and the OA's articles. Uses a pasted OA access token, valid about 25 hours.",
+  "instructions": "## Zalo Official Account\nThis connector uses the **Zalo Official Account Open API** (`https://openapi.zalo.me`, v2.0 and v3.0 endpoints) of a Zalo OA: the OA profile and message quota, the people who follow or talk to the OA, their details and labels (tags), the recent chats and the messages of one conversation, consultation (customer care) messages with text or an image, and the OA's published articles.\n\n**Setup (about 5 minutes, and again every day: read the token note)**\n1. At https://developers.zalo.me create an app (or open yours), link it to your Official Account and, under **Official Account > OA permissions**, request the permission groups this connector uses: OA information management, user information management, user message management, sending messages and notifications via OA, and article management. An OA admin approves them.\n2. Open **Tools > API Explorer** (https://developers.zalo.me/tools/explorer), pick your app, choose the access token type **OA Access Token**, pick the OA, allow the requested permissions and copy the **access token**.\n3. Paste it into `ZALO_OA_ACCESS_TOKEN`. It is sent in the `access_token` header that Zalo requires.\n4. Run `zalo_oa_get_oa_info` to check it.\n\n**The token lasts about 25 hours.** Zalo issues OA access tokens for 25 hours (`expires_in` 90000 seconds) and renews them only through its own OAuth v4 flow, which sends the app secret in a `secret_key` header and replaces the refresh token on every use. AnythingMCP cannot run that renewal for this connector, so the token is pasted. When calls answer error -216 (`Access token is invalid`) or -220 (`access_token is expired or removed`), create a new token in API Explorer and save it in the connector settings. If you renew tokens in your own system, write each new access token into `ZALO_OA_ACCESS_TOKEN` through the AnythingMCP API.\n\n**Workflow**\n- The OA: `zalo_oa_get_oa_info` (name, id, verification, followers, service package) and `zalo_oa_get_quota` (consultation and transaction message quota of the OA or app).\n- People: `zalo_oa_list_users` pages through everyone who interacted with the OA (50 per page); `zalo_oa_filter_users` does the same with filters (label, last interaction period, follower or not). `zalo_oa_get_user` returns the name, alias, follower status, last interaction date, labels, notes and the information the user shared with the OA. `zalo_oa_update_user` sets the alias, your own customer id (`user_external_id`) and shared information.\n- Labels (tags): `zalo_oa_list_tags`, `zalo_oa_tag_user` (creates the label when it does not exist), `zalo_oa_untag_user` and `zalo_oa_delete_tag` (removes a label from the OA, installed switched off).\n- Conversations: `zalo_oa_list_recent_chats` shows the latest messages across all users (10 at most per call), `zalo_oa_get_conversation` the messages with one user (10 per call, newest first, page with `offset`).\n- Replying: `zalo_oa_get_user_quota` tells when the user last interacted and what can still be sent to them. `zalo_oa_send_text` sends a consultation text (set `quote_message_id` to reply to a specific message), `zalo_oa_send_image` a consultation message with one image from a public URL or an uploaded `attachment_id`. Both send a real message to a real person: show the text to the user and wait for a yes before sending.\n- Content: `zalo_oa_list_articles` lists the OA's articles or videos, `zalo_oa_get_article` returns one with its body.\n\n**When a consultation message can be sent**: only to a user who interacted with the OA in the last 7 days (sent a message, tapped a button, called...). From 1 January 2026 consultation messages within 48 hours of the user's last interaction are free and unlimited; later ones use the OA package quota or are charged. Error -230 or -232 means the user has not interacted recently enough; -213 that the user does not follow the OA; -227 that the account is locked or inactive.\n\n**Reading the answers**: every answer has `error` (0 = success) and `message`, with the payload in `data`. User ids, OA ids and message ids are long digit strings; keep them as strings. `src` in a message is 1 when the user sent it and 0 when the OA did. `time` and `sent_time` are Unix milliseconds; `user_last_interaction_date` is dd/MM/yyyy. Article dates (`create_date`, `update_date`) are Unix milliseconds.\n\n**Paging**: `offset` is the position of the first item (0 = newest message or first user). Users: `count` up to 50, `offset` up to 9951 (the API reaches the first 10,000 users), `total` gives the number of matches. Messages: `count` up to 10. Articles: `limit` items from `offset`, `total` in the answer.\n\n**Limits**: 4,000 requests per minute per app, plus a per-OA limit that depends on the OA package. Error -32 means the limit was reached: wait for the next minute.\n\n**Errors** arrive with HTTP 200 and a negative `error`: -216 or -220 an invalid or expired token (paste a new one), -223 the OA has not granted the app this permission, -224 the OA package does not include the feature, -201 an invalid parameter, -211 quota used up, -32 rate limit.\n\n**Out of scope**: transaction and promotion (broadcast) messages, ZNS template messages, file and sticker messages, GMF group chats, calls, article creation and the OA shop. Webhooks are configured in the Zalo app settings, not here.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "zalo",
+  "docsUrl": "https://developers.zalo.me/docs/official-account/bat-dau/kham-pha",
+  "prerequisites": "A Zalo Official Account, an app on developers.zalo.me linked to it with the OA permissions granted, and an OA access token from API Explorer (valid about 25 hours).",
+  "requiredEnvVars": [
+    "ZALO_OA_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "ZALO_OA_ACCESS_TOKEN": {
+      "label": "OA access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "developers.zalo.me, Tools, API Explorer: pick your app, token type OA Access Token and your OA, then copy the access token. It expires after about 25 hours; paste a new one when calls answer error -216 or -220.",
+      "link": "https://developers.zalo.me/tools/explorer",
+      "pattern": "^[A-Za-z0-9_.-]{20,}$",
+      "patternMessage": "Paste only the access token, without quotes, spaces or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Zalo refused the access token (error -216 or -220). OA access tokens expire after about 25 hours: create a new one in developers.zalo.me, Tools, API Explorer (token type OA Access Token) and paste it again.",
+    "403": "The OA has not granted your app this permission (error -223). In your app on developers.zalo.me request the OA permission groups and have an OA admin approve them, then create a new token.",
+    "429": "Zalo's rate limit was reached (error -32). Wait for the next minute and try again."
+  },
+  "probe": {
+    "tool": "zalo_oa_get_oa_info"
+  },
+  "connector": {
+    "name": "Zalo Official Account API",
+    "type": "REST",
+    "baseUrl": "https://openapi.zalo.me",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "access_token",
+      "apiKey": "{{ZALO_OA_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error",
+          "in": [
+            -216,
+            -220,
+            -219
+          ],
+          "messagePath": "message",
+          "status": 401
+        },
+        {
+          "path": "error",
+          "in": [
+            -223,
+            -224,
+            -212,
+            -209
+          ],
+          "messagePath": "message",
+          "status": 403
+        },
+        {
+          "path": "error",
+          "equals": -32,
+          "messagePath": "message",
+          "status": 429
+        },
+        {
+          "path": "error",
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "zalo_oa_get_oa_info",
+      "description": "Profile of the Official Account the token belongs to: OA id (`oaid`), name, description, alias, verification status, OA type, category, number of followers, avatar, cover and the service package with its validity and renewal dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2.0/oa/getoa"
+      }
+    },
+    {
+      "name": "zalo_oa_get_quota",
+      "description": "Message quota of the OA or the app: one row per quota asset with the product type (cs = consultation, transaction), the quota source (package, purchased, reward), expiry date, total and remaining messages. Read-only although sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quota_owner": {
+            "type": "string",
+            "enum": [
+              "OA",
+              "App"
+            ],
+            "default": "OA",
+            "description": "Whose quota to read: OA (default) or App."
+          },
+          "product_type": {
+            "type": "string",
+            "enum": [
+              "cs",
+              "transaction"
+            ],
+            "description": "Only this message type: cs (consultation) or transaction."
+          },
+          "quota_type": {
+            "type": "string",
+            "enum": [
+              "sub_quota",
+              "purchase_quota",
+              "reward_quota"
+            ],
+            "description": "Only this quota source: sub_quota (OA service package), purchase_quota (bought separately), reward_quota (from promotions)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3.0/oa/quota/message",
+        "bodyMapping": {
+          "quota_owner": "$quota_owner",
+          "product_type": "$product_type",
+          "quota_type": "$quota_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "zalo_oa_get_user_quota",
+      "description": "What the OA can still send to one user: the time of the user's last interaction with the OA (`last_interaction`, Unix milliseconds) and the daily and monthly promotion message allowance left for that user. Check it before sending a consultation message. Read-only although sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{5,20}$",
+            "description": "The user's id for this OA (`user_id` from zalo_oa_list_users, zalo_oa_list_recent_chats or a webhook), digits only."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3.0/oa/quota/message",
+        "bodyMapping": {
+          "user_id": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "zalo_oa_list_users",
+      "description": "Page through the users who interacted with the OA (followers and people who messaged it). Returns `total` and the `user_id`s of this page only; call zalo_oa_get_user for names and details. For filters use zalo_oa_filter_users.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9951,
+            "default": 0,
+            "description": "Position of the first user, 0 for the first page. At most 9951 (the API reaches the first 10,000 users)."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50,
+            "description": "Users per page, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3.0/oa/user/getlist",
+        "queryParams": {
+          "data": "{\"offset\":${offset},\"count\":${count}}"
+        }
+      }
+    },
+    {
+      "name": "zalo_oa_filter_users",
+      "description": "Page through the OA's users with filters: by label (tag), by when they last interacted, or by whether they follow the OA. Returns `total` and the `user_id`s of this page. Pass the filter as one JSON object in `query`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "JSON object with `offset` (required, 0 for the first page, at most 9951), `count` (required, at most 50) and any of: `tag_name` (a label from zalo_oa_list_tags), `last_interaction_period` (TODAY, YESTERDAY, L7D, L30D or a range YYYY_MM_DD:YYYY_MM_DD), `is_follower` (\"true\" or \"false\"). Example: {\"offset\":0,\"count\":50,\"tag_name\":\"VIP\",\"last_interaction_period\":\"L7D\"}"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3.0/oa/user/getlist",
+        "queryParams": {
+          "data": "$query"
+        }
+      }
+    },
+    {
+      "name": "zalo_oa_get_user",
+      "description": "Details of one user: display name, alias, your own customer id (`user_external_id`), whether the user follows the OA, last interaction date (dd/MM/yyyy), whether the account belongs to a minor (`is_sensitive`), labels and notes, and the information the user shared with the OA (name, phone, address, city, district, date of birth), which is null when nothing was shared.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{5,20}$",
+            "description": "The user's id for this OA (`user_id` from zalo_oa_list_users, zalo_oa_list_recent_chats or a webhook), digits only."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3.0/oa/user/detail",
+        "queryParams": {
+          "data": "{\"user_id\":\"${user_id}\"}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.avatars"
+          ]
+        }
+      }
+    },
+    {
+      "name": "zalo_oa_update_user",
+      "description": "Update what the OA stores about a user: the alias, your own customer id (`user_external_id`, unique per user) and the shared information (name, phone, address, date of birth). Fields you leave out stay as they are. Confirm the changes with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{5,20}$",
+            "description": "The user's id for this OA (`user_id` from zalo_oa_list_users, zalo_oa_list_recent_chats or a webhook), digits only."
+          },
+          "user_alias": {
+            "type": "string",
+            "description": "Alias the OA shows for this user."
+          },
+          "user_external_id": {
+            "type": "string",
+            "description": "The user's id in your own system. Each value can belong to one user only."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name in the shared information."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number in the shared information."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address in the shared information."
+          },
+          "user_dob": {
+            "type": "string",
+            "pattern": "^[0-9]{2}/[0-9]{2}/[0-9]{4}$",
+            "description": "Date of birth as dd/MM/yyyy, from 01/01/1970."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3.0/oa/user/update",
+        "bodyMapping": {
+          "user_id": "$user_id",
+          "user_alias": "$user_alias",
+          "user_external_id": "$user_external_id",
+          "shared_info": {
+            "name": "$name",
+            "phone": "$phone",
+            "address": "$address",
+            "user_dob": "$user_dob"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "zalo_oa_list_tags",
+      "description": "All labels (tags) defined in the OA, as a list of label names. Use them with zalo_oa_filter_users.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2.0/oa/tag/gettagsofoa"
+      }
+    },
+    {
+      "name": "zalo_oa_tag_user",
+      "description": "Put a label on a user. A label that does not exist yet is created. Labels are visible to the OA's staff only, not to the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{5,20}$",
+            "description": "The user's id for this OA (`user_id` from zalo_oa_list_users, zalo_oa_list_recent_chats or a webhook), digits only."
+          },
+          "tag_name": {
+            "type": "string",
+            "description": "Label name, e.g. VIP customer."
+          }
+        },
+        "required": [
+          "user_id",
+          "tag_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2.0/oa/tag/tagfollower",
+        "bodyMapping": {
+          "user_id": "$user_id",
+          "tag_name": "$tag_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "zalo_oa_untag_user",
+      "description": "Remove a label from one user. The label itself stays in the OA.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{5,20}$",
+            "description": "The user's id for this OA (`user_id` from zalo_oa_list_users, zalo_oa_list_recent_chats or a webhook), digits only."
+          },
+          "tag_name": {
+            "type": "string",
+            "description": "Name of the label to take off, as listed by zalo_oa_list_tags."
+          }
+        },
+        "required": [
+          "user_id",
+          "tag_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2.0/oa/tag/rmfollowerfromtag",
+        "bodyMapping": {
+          "user_id": "$user_id",
+          "tag_name": "$tag_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "zalo_oa_delete_tag",
+      "description": "Delete a label from the OA, which also takes it off every user who has it. Cannot be undone. Installed switched off; confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_name": {
+            "type": "string",
+            "description": "Name of the label to delete, as listed by zalo_oa_list_tags."
+          }
+        },
+        "required": [
+          "tag_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2.0/oa/tag/rmtag",
+        "bodyMapping": {
+          "tag_name": "$tag_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "zalo_oa_list_recent_chats",
+      "description": "The latest messages across all of the OA's conversations, newest first: sender and recipient ids and names, direction (`src` 1 = from the user, 0 = from the OA), type (text, photo, sticker, link, location, voice...), text or media URL and time (Unix milliseconds). At most 10 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first message, 0 = the newest."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 10,
+            "description": "Messages to return, at most 10."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2.0/oa/listrecentchat",
+        "queryParams": {
+          "data": "{\"offset\":${offset},\"count\":${count}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].from_avatar",
+            "data[*].to_avatar"
+          ]
+        }
+      }
+    },
+    {
+      "name": "zalo_oa_get_conversation",
+      "description": "Messages between the OA and one user, newest first, 10 at most per call: `message_id` (use it as `quote_message_id` to reply), direction (`src` 1 = from the user, 0 = from the OA), type, text or media URL and time (Unix milliseconds). Page back with `offset`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{5,20}$",
+            "description": "The user's id for this OA (`user_id` from zalo_oa_list_users, zalo_oa_list_recent_chats or a webhook), digits only."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first message, 0 = the newest."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 10,
+            "description": "Messages to return, at most 10."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2.0/oa/conversation",
+        "queryParams": {
+          "data": "{\"user_id\":${user_id},\"offset\":${offset},\"count\":${count}}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].from_avatar",
+            "data[*].to_avatar"
+          ]
+        }
+      }
+    },
+    {
+      "name": "zalo_oa_send_text",
+      "description": "Send a consultation (customer care) text message from the OA to a user, optionally as a reply quoting one of the user's messages. Only works for users who interacted with the OA in the last 7 days. This messages a real person: show the text and recipient and wait for a yes first. The answer carries the new `message_id` and which quota it used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{5,20}$",
+            "description": "The user's id for this OA (`user_id` from zalo_oa_list_users, zalo_oa_list_recent_chats or a webhook), digits only."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Message text, at most 2,000 characters."
+          },
+          "quote_message_id": {
+            "type": "string",
+            "description": "Optional `message_id` of the user's message to quote (from zalo_oa_get_conversation)."
+          }
+        },
+        "required": [
+          "user_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3.0/oa/message/cs",
+        "bodyMapping": {
+          "recipient": {
+            "user_id": "$user_id"
+          },
+          "message": {
+            "text": "$text",
+            "quote_message_id": "$quote_message_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "zalo_oa_send_image",
+      "description": "Send a consultation message with one image (JPG or PNG, at most 1 MB, best at 16:9) and an optional caption. Give either a public `image_url` or an `attachment_id` of an image uploaded to Zalo, not both. Only works for users who interacted with the OA in the last 7 days. Show the image and caption to the user and wait for a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{5,20}$",
+            "description": "The user's id for this OA (`user_id` from zalo_oa_list_users, zalo_oa_list_recent_chats or a webhook), digits only."
+          },
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of a JPG or PNG image, at most 1 MB."
+          },
+          "attachment_id": {
+            "type": "string",
+            "description": "Id of an image already uploaded to Zalo (instead of image_url)."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Optional caption, at most 2,000 characters."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3.0/oa/message/cs",
+        "bodyMapping": {
+          "recipient": {
+            "user_id": "$user_id"
+          },
+          "message": {
+            "text": "$text",
+            "attachment": {
+              "type": "template",
+              "payload": {
+                "template_type": "media",
+                "elements": [
+                  {
+                    "media_type": "image",
+                    "url": "$image_url",
+                    "attachment_id": "$attachment_id"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "zalo_oa_list_articles",
+      "description": "The OA's published content: articles (`type` normal) or videos (`type` video), with id, title, status, views, shares, creation and update time (Unix milliseconds), thumbnail and link, plus the `total`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "video"
+            ],
+            "default": "normal",
+            "description": "normal for articles (default), video for videos."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item, 0 for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items to return."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2.0/article/getslice",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "zalo_oa_get_article",
+      "description": "One article with its title, author, cover, description, status, comment setting and body blocks (text, images, videos). For a video item the answer is its upload and conversion status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "description": "Article id (`id` from zalo_oa_list_articles)."
+          }
+        },
+        "required": [
+          "article_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2.0/article/getdetail",
+        "queryParams": {
+          "id": "$article_id"
+        }
+      }
+    }
+  ]
+}

@@ -32,6 +32,8 @@ On an MCP server's page, the **Share this server** card gives you "Add to Cursor
 | **SOAP** | WSDL web services, WCF, legacy enterprise APIs | [Guide →](connectors/soap.md) |
 | **GraphQL** | GraphQL endpoints with introspection | [Guide →](connectors/graphql.md) |
 | **Database** | PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, MongoDB, SQLite | [Guide →](connectors/database.md) |
+| **Email (IMAP/SMTP)** | Any mailbox: IONOS, Strato, GMX, T-Online, Gmail (app password), self-hosted Dovecot | [Guide →](connectors/email.md) |
+| **File Search** | Search inside the documents of a folder: SFTP, FTP/FTPS, WebDAV/Nextcloud, S3, network folders; plus File Share links | [Guide →](connectors/file-search.md) |
 | **MCP Bridge** | Aggregate multiple MCP servers into one | [Guide →](connectors/mcp-bridge.md) |
 | **LOGIN_TOKEN auth** | APIs that POST credentials → return long-lived bearer | [Guide →](connectors/login-token-auth.md) |
 
@@ -94,7 +96,7 @@ Yes. AnythingMCP is licensed under the [GNU AGPL v3](../LICENSE), an OSI-approve
 <details>
 <summary><strong>Is AnythingMCP free?</strong></summary>
 
-Yes. AnythingMCP is free software under the AGPL v3 — free for internal company use, personal use, development, testing, evaluation and academic use. If you modify it and run it as a network service for others, the AGPL requires you to make your modified source available to those users. For commercial licensing without copyleft obligations: [info@helpcode.ai](mailto:info@helpcode.ai).
+Yes. AnythingMCP is free software under the AGPL v3. The self-hosted Community edition is free for any use, including commercial use, for up to 3 active users, with unlimited connectors and MCP servers. If you modify it and run it as a network service for others, the AGPL requires you to make your modified source available to those users. More users, single sign-on, SCIM, File Search beyond the 30-day trial and support come with Enterprise, on request: [contact us](https://anythingmcp.com/contact?plan=enterprise). Existing Starter and Team licence keys keep working. For commercial licensing without copyleft obligations: [info@helpcode.ai](mailto:info@helpcode.ai).
 </details>
 
 <details>

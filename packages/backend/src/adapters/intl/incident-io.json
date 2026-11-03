@@ -1,0 +1,1651 @@
+{
+  "slug": "incident-io",
+  "name": "incident.io",
+  "aliases": [
+    "incident io",
+    "incidentio"
+  ],
+  "description": "incident.io incident response: incidents with updates and timeline, severities, statuses, roles, types and custom fields, actions and follow-ups, alerts and alert sources, on-call schedules and escalations, users, teams and the catalog. Declare and edit incidents, post updates, resolve alerts and page people.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "incident-io",
+  "docsUrl": "https://docs.incident.io/api-reference",
+  "instructions": "## incident.io\nThis connector works with **incident.io** through its public REST API (`https://api.incident.io`): incidents with their updates and timeline, the configuration they use (severities, statuses, roles, types, custom fields, timestamps), actions and follow-ups, alerts and alert sources, on-call schedules and escalations, users, teams and the catalog. It can declare and edit incidents, post updates, manage actions and follow-ups, resolve alerts and page people.\n\n**Setup (2 minutes)**\n1. In incident.io open **Settings, API keys** (https://app.incident.io/settings/api-keys) and click **Add new**. Only an admin (or a role allowed to manage API keys) can do this.\n2. Name the key and tick what it may do. For reading, at least view data (viewer), plus catalog, schedules and on-call viewing; private incidents need their own permission. For writing: create incidents, edit incidents, manage actions and follow-ups, create escalations, and so on. A tool the key lacks a permission for answers 403.\n3. Copy the key (it is shown once) into `INCIDENT_IO_API_KEY` and run `incident_io_get_identity`: it shows the key's name and roles.\n\n**Workflow**\n- What is going on: `incident_io_list_incidents` with `status_category: [\"live\"]` (Active in the app) or `[\"triage\"]`, then `incident_io_get_incident`, `incident_io_list_incident_updates` and `incident_io_list_incident_timeline_items`. Advanced filters on custom fields or roles go in `extra_filters`.\n- Look up ids first: `incident_io_list_severities`, `incident_io_list_incident_statuses`, `incident_io_list_incident_roles`, `incident_io_list_incident_types`, `incident_io_list_custom_fields`, `incident_io_get_custom_field`, `incident_io_list_custom_field_options`, `incident_io_list_incident_timestamps`, `incident_io_list_users`, `incident_io_get_user`.\n- Declare and run an incident: `incident_io_create_incident` (needs an `idempotency_key` and `visibility`; use mode `test` for a try), then `incident_io_create_incident_update` for each update (it can change status and severity), and `incident_io_edit_incident` for other changes such as roles, custom fields, summary or closing it.\n- Tasks: `incident_io_list_actions`, `incident_io_get_action`, `incident_io_create_action`, `incident_io_update_action`. After the incident: `incident_io_list_follow_ups`, `incident_io_get_follow_up`, `incident_io_create_follow_up`, `incident_io_update_follow_up`.\n- Alerts: `incident_io_list_alerts` (status firing), `incident_io_get_alert`, `incident_io_list_incident_alerts`, `incident_io_resolve_alert`; sources: `incident_io_list_alert_sources`, `incident_io_get_alert_source`.\n- On-call: `incident_io_list_schedules`, `incident_io_get_schedule`, `incident_io_list_schedule_entries` for who is on call in a window; `incident_io_list_escalation_paths`, `incident_io_list_escalations`; page someone with `incident_io_create_escalation`.\n- Organisation and catalog: `incident_io_list_teams`, `incident_io_list_catalog_types`, `incident_io_get_catalog_type`, `incident_io_list_catalog_entries` (search with `identifier`), `incident_io_get_catalog_entry`.\n\n**Before writing**: a new standard incident opens a channel and alerts people, an update is shared with responders and subscribers, and an escalation pages people on call. Confirm with the user first. Reuse the same `idempotency_key` when retrying a create, so a retry does not create a second incident, update or page.\n\n**Reading the answers**: ids are ULIDs (26 characters, e.g. 01FCNDV6P870EA6S7TK1DSYDG0); the human reference is `reference` (INC-123). Times are ISO 8601 in UTC. Status categories in the API: triage, live (Active), learning (Post-incident), paused, closed, declined, canceled, merged. Severity `rank`: higher is more severe. Custom field option lists and alert source secret tokens are left out of the answers.\n\n**Paging**: lists return `pagination_meta` with `after`; call again with `after` set to it until it is missing. `page_size` is 25 by default, up to 250 for most lists (alerts and catalog entries send 25 unless you pass another). `incident_io_list_schedule_entries` pages by putting `pagination_meta.after` into `entry_window_start`.\n\n**Errors**: 401 means a wrong or deleted key, 403 a key without the needed permission (`incident_io_get_identity` shows its roles), 404 an unknown id, 422 a validation error whose `errors` name the field (e.g. a status transition that is not allowed), 429 the rate limit (1200 requests a minute per key).",
+  "prerequisites": "An incident.io account and an API key from Settings, API keys, with the permissions the tools need.",
+  "requiredEnvVars": [
+    "INCIDENT_IO_API_KEY"
+  ],
+  "envVarMeta": {
+    "INCIDENT_IO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "incident.io, Settings, API keys, Add new: tick the permissions the connector needs (view data for reads; create and edit incidents, manage follow-ups and on-call for writes) and copy the key.",
+      "link": "https://app.incident.io/settings/api-keys",
+      "pattern": "^(?!Bearer\\s)[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the key, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "incident.io refused the key: it is wrong or was deleted. Create a new one under Settings, API keys.",
+    "403": "The key works but lacks the permission for this call. Edit the key under Settings, API keys and tick the missing permission.",
+    "429": "incident.io rate-limited the key. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "incident_io_get_identity"
+  },
+  "connector": {
+    "name": "incident.io API",
+    "type": "REST",
+    "baseUrl": "https://api.incident.io",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{INCIDENT_IO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/v1/identity"
+  },
+  "tools": [
+    {
+      "name": "incident_io_get_identity",
+      "description": "Show which API key the connector uses: its name, the organisation's dashboard URL and the roles (permissions) granted to it, e.g. viewer, incident_creator, incident_editor, on_call_viewer, escalation_creator. Use it to check the key and to see why a call is refused.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/identity"
+      }
+    },
+    {
+      "name": "incident_io_list_incidents",
+      "description": "List incidents, newest first: id, reference (INC-123), name, summary, status and status category, severity, type, mode, visibility, role assignments, custom field values, timestamps, Slack channel and permalink. Filter by status category, status, severity, type, mode and created or updated date; combine filters with filter_mode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Order (default newest first).",
+            "enum": [
+              "created_at_newest_first",
+              "created_at_oldest_first"
+            ]
+          },
+          "filter_mode": {
+            "type": "string",
+            "description": "all (default): every filter must match; any: one is enough.",
+            "enum": [
+              "all",
+              "any"
+            ]
+          },
+          "status_category": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "triage",
+                "live",
+                "learning",
+                "paused",
+                "closed",
+                "declined",
+                "canceled",
+                "merged"
+              ]
+            },
+            "description": "Only incidents in these status categories. API names: triage, live (shown as Active), learning (Post-incident), paused, closed, declined, canceled, merged."
+          },
+          "status_category_not_in": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "triage",
+                "live",
+                "learning",
+                "paused",
+                "closed",
+                "declined",
+                "canceled",
+                "merged"
+              ]
+            },
+            "description": "Leave out incidents in these status categories, e.g. [\"closed\", \"declined\", \"canceled\", \"merged\"]."
+          },
+          "status_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only incidents with these status ids, from `incident_io_list_incident_statuses`."
+          },
+          "severity_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only incidents with these severity ids, from `incident_io_list_severities`."
+          },
+          "severity_gte": {
+            "type": "string",
+            "description": "Only incidents at least as severe as this severity id (by rank)."
+          },
+          "incident_type_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only incidents of these type ids, from `incident_io_list_incident_types`."
+          },
+          "mode": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "standard",
+                "retrospective",
+                "test",
+                "tutorial"
+              ]
+            },
+            "description": "Only these modes (default standard and retrospective; test and tutorial are hidden)."
+          },
+          "created_at_gte": {
+            "type": "string",
+            "description": "Created on or after this date, YYYY-MM-DD."
+          },
+          "created_at_lte": {
+            "type": "string",
+            "description": "Created on or before this date, YYYY-MM-DD."
+          },
+          "updated_at_gte": {
+            "type": "string",
+            "description": "Updated on or after this date, YYYY-MM-DD."
+          },
+          "extra_filters": {
+            "type": "string",
+            "description": "Further filters as a query string, for custom fields and roles, e.g. `custom_field[01FCN...][one_of]=01FCO...` or `incident_role[01FH5...][is_blank]=true` (URL-encode values)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/incidents",
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after",
+          "sort_by": "$sort_by",
+          "filter_mode": "$filter_mode",
+          "status_category[one_of]": "$status_category",
+          "status_category[not_in]": "$status_category_not_in",
+          "status[one_of]": "$status_id",
+          "severity[one_of]": "$severity_id",
+          "severity[gte]": "$severity_gte",
+          "incident_type[one_of]": "$incident_type_id",
+          "mode[one_of]": "$mode",
+          "created_at[gte]": "$created_at_gte",
+          "created_at[lte]": "$created_at_lte",
+          "updated_at[gte]": "$updated_at_gte",
+          "__rawquery": "$extra_filters"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "incidents[*].custom_field_entries[*].custom_field.options"
+          ]
+        }
+      }
+    },
+    {
+      "name": "incident_io_get_incident",
+      "description": "Get one incident with everything on it: reference, name, summary, status, severity, type, mode, visibility, role assignments, custom field values, timestamps (reported, accepted, resolved), duration metrics, Slack channel, postmortem link and permalink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id (a ULID such as 01FDAG4SAP5TYPT98WGR2N7W91), from `incident_io_list_incidents` (`incidents[].id`)."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/incidents/{incident_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "incident.custom_field_entries[*].custom_field.options"
+          ]
+        }
+      }
+    },
+    {
+      "name": "incident_io_create_incident",
+      "description": "Declare an incident: name, summary, severity, status, type, visibility and mode, with role assignments and custom field values. A standard incident opens a Slack or Teams channel and alerts the team; use mode test to try it out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "description": "Any unique string for this request (e.g. a UUID). Sending the same key again returns the first result instead of creating a duplicate."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "public (anyone in the workspace can join) or private (invite-only).",
+            "enum": [
+              "public",
+              "private"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Short title of the incident."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Longer description of what is happening (Markdown)."
+          },
+          "severity_id": {
+            "type": "string",
+            "description": "Severity id, from `incident_io_list_severities`."
+          },
+          "incident_status_id": {
+            "type": "string",
+            "description": "Starting status id, from `incident_io_list_incident_statuses` (default the first active status, or triage when the type starts in triage)."
+          },
+          "incident_type_id": {
+            "type": "string",
+            "description": "Incident type id, from `incident_io_list_incident_types`."
+          },
+          "mode": {
+            "type": "string",
+            "description": "standard (default), retrospective (to record a past incident), test or tutorial.",
+            "enum": [
+              "standard",
+              "retrospective",
+              "test",
+              "tutorial"
+            ]
+          },
+          "incident_role_assignments": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Roles to assign, each {\"incident_role_id\": \"<id from incident_io_list_incident_roles>\", \"assignee\": {\"email\": \"jane@example.com\"}} (assignee by `id`, `email` or `slack_user_id`)."
+          },
+          "custom_field_entries": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Custom field values, each {\"custom_field_id\": \"<id>\", \"values\": [{\"value_option_id\": \"<id>\"}]}; use value_text, value_numeric, value_link or value_catalog_entry_id by field type, and [] to clear. Ids from `incident_io_list_custom_fields` and `incident_io_list_custom_field_options`."
+          },
+          "incident_timestamp_values": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Timestamp values, each {\"incident_timestamp_id\": \"<id from incident_io_list_incident_timestamps>\", \"value\": \"2026-10-30T09:00:00Z\"}."
+          },
+          "slack_channel_name_override": {
+            "type": "string",
+            "description": "Name for the incident's Slack channel instead of the generated one."
+          },
+          "slack_team_id": {
+            "type": "string",
+            "description": "Slack workspace (team) id to create the channel in, for Slack Enterprise Grid."
+          }
+        },
+        "required": [
+          "idempotency_key",
+          "visibility"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/incidents",
+        "bodyMapping": {
+          "idempotency_key": "$idempotency_key",
+          "visibility": "$visibility",
+          "name": "$name",
+          "summary": "$summary",
+          "severity_id": "$severity_id",
+          "incident_status_id": "$incident_status_id",
+          "incident_type_id": "$incident_type_id",
+          "mode": "$mode",
+          "incident_role_assignments": "$incident_role_assignments",
+          "custom_field_entries": "$custom_field_entries",
+          "incident_timestamp_values": "$incident_timestamp_values",
+          "slack_channel_name_override": "$slack_channel_name_override",
+          "slack_team_id": "$slack_team_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "incident_io_edit_incident",
+      "description": "Edit an incident: rename it, change its summary, severity or status (resolve it by moving to a closed status), assign roles, set custom fields, timestamps or the call link. Only the fields you pass change. Posts to the incident channel when notify_incident_channel is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id (a ULID such as 01FDAG4SAP5TYPT98WGR2N7W91), from `incident_io_list_incidents` (`incidents[].id`)."
+          },
+          "notify_incident_channel": {
+            "type": "boolean",
+            "description": "Tell the responders in the incident's Slack or Teams channel about this change."
+          },
+          "name": {
+            "type": "string",
+            "description": "New title."
+          },
+          "summary": {
+            "type": "string",
+            "description": "New summary (Markdown)."
+          },
+          "severity_id": {
+            "type": "string",
+            "description": "New severity id, from `incident_io_list_severities`."
+          },
+          "incident_status_id": {
+            "type": "string",
+            "description": "New status id, from `incident_io_list_incident_statuses`. Allowed: another status in the same category, or a later category (e.g. live to learning or closed)."
+          },
+          "call_url": {
+            "type": "string",
+            "description": "Link of the incident call (Zoom, Meet, Teams)."
+          },
+          "slack_channel_name_override": {
+            "type": "string",
+            "description": "New name for the incident's Slack channel."
+          },
+          "incident_role_assignments": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Roles to assign, each {\"incident_role_id\": \"<id from incident_io_list_incident_roles>\", \"assignee\": {\"email\": \"jane@example.com\"}} (assignee by `id`, `email` or `slack_user_id`)."
+          },
+          "custom_field_entries": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Custom field values, each {\"custom_field_id\": \"<id>\", \"values\": [{\"value_option_id\": \"<id>\"}]}; use value_text, value_numeric, value_link or value_catalog_entry_id by field type, and [] to clear. Ids from `incident_io_list_custom_fields` and `incident_io_list_custom_field_options`."
+          },
+          "incident_timestamp_values": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Timestamp values, each {\"incident_timestamp_id\": \"<id from incident_io_list_incident_timestamps>\", \"value\": \"2026-10-30T09:00:00Z\"}."
+          }
+        },
+        "required": [
+          "incident_id",
+          "notify_incident_channel"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/incidents/{incident_id}/actions/edit",
+        "bodyMapping": {
+          "notify_incident_channel": "$notify_incident_channel",
+          "incident": {
+            "name": "$name",
+            "summary": "$summary",
+            "severity_id": "$severity_id",
+            "incident_status_id": "$incident_status_id",
+            "call_url": "$call_url",
+            "slack_channel_name_override": "$slack_channel_name_override",
+            "incident_role_assignments": "$incident_role_assignments",
+            "custom_field_entries": "$custom_field_entries",
+            "incident_timestamp_values": "$incident_timestamp_values"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "incident_io_list_incident_updates",
+      "description": "List the updates of an incident (or of all incidents), newest first: message, new status and severity, who posted it and when.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Only updates of this incident id. Leave empty for updates of every incident."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/incident_updates",
+        "queryParams": {
+          "incident_id": "$incident_id",
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_create_incident_update",
+      "description": "Post an update to an incident: a message for responders and stakeholders, optionally moving it to another status or severity at the same time. Shared in the incident channel like an update from the app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "description": "Any unique string for this request (e.g. a UUID). Sending the same key again returns the first result instead of creating a duplicate."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `incident_io_list_incidents`."
+          },
+          "message": {
+            "type": "string",
+            "description": "What changed and what happens next (Markdown)."
+          },
+          "to_incident_status_id": {
+            "type": "string",
+            "description": "Move the incident to this status id, from `incident_io_list_incident_statuses`."
+          },
+          "to_severity_id": {
+            "type": "string",
+            "description": "Move the incident to this severity id, from `incident_io_list_severities`."
+          }
+        },
+        "required": [
+          "idempotency_key",
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/incident_updates",
+        "bodyMapping": {
+          "idempotency_key": "$idempotency_key",
+          "incident_id": "$incident_id",
+          "message": "$message",
+          "to_incident_status_id": "$to_incident_status_id",
+          "to_severity_id": "$to_severity_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "incident_io_list_incident_timeline_items",
+      "description": "List the timeline of one incident: the items added to it (notes, pinned messages, updates) with their time and author, in order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `incident_io_list_incidents`."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "incident_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/incident_timeline_items",
+        "queryParams": {
+          "incident_id": "$incident_id",
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_list_severities",
+      "description": "List the severities configured in incident.io (e.g. Minor, Major, Critical) with id, name, description and rank (higher is more severe). Ids feed create, edit and filter calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/severities"
+      }
+    },
+    {
+      "name": "incident_io_list_incident_statuses",
+      "description": "List the incident statuses (e.g. Investigating, Fixing, Monitoring, Closed) with id, name, description, rank and category (triage, live, learning, paused, closed, declined, canceled, merged).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/incident_statuses"
+      }
+    },
+    {
+      "name": "incident_io_list_incident_roles",
+      "description": "List the incident roles (e.g. Incident Lead, Communications) with id, name, description, the instructions shown to the assignee and whether the role is required.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/incident_roles"
+      }
+    },
+    {
+      "name": "incident_io_list_incident_types",
+      "description": "List the incident types (e.g. Security, Platform) with id, name, description, whether it is the default, whether incidents start in triage and whether they must be private.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/incident_types"
+      }
+    },
+    {
+      "name": "incident_io_list_custom_fields",
+      "description": "List the custom fields of incidents with id, name, description and type (single_select, multi_select, text, link, numeric), and for catalog-backed fields the catalog type.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/custom_fields"
+      }
+    },
+    {
+      "name": "incident_io_get_custom_field",
+      "description": "Get one custom field: name, description, type and, for catalog fields, the catalog type it draws its values from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "custom_field_id": {
+            "type": "string",
+            "description": "Custom field id, from `incident_io_list_custom_fields`."
+          }
+        },
+        "required": [
+          "custom_field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/custom_fields/{custom_field_id}"
+      }
+    },
+    {
+      "name": "incident_io_list_custom_field_options",
+      "description": "List the options of a single or multi select custom field: id (value_option_id), value and sort key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "custom_field_id": {
+            "type": "string",
+            "description": "Custom field id, from `incident_io_list_custom_fields`."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "custom_field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/custom_field_options",
+        "queryParams": {
+          "custom_field_id": "$custom_field_id",
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_list_incident_timestamps",
+      "description": "List the incident timestamps tracked for every incident (reported at, accepted at, impact started, resolved at, ...) with their ids, for `incident_timestamp_values`.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/incident_timestamps"
+      }
+    },
+    {
+      "name": "incident_io_list_actions",
+      "description": "List actions (tasks done during an incident), optionally of one incident: id, description, status (outstanding, completed, not_doing), assignee and times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Only actions of this incident id."
+          },
+          "incident_mode": {
+            "type": "string",
+            "description": "Only from incidents of this mode (default standard and retrospective).",
+            "enum": [
+              "standard",
+              "retrospective",
+              "test",
+              "tutorial",
+              "stream"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/actions",
+        "queryParams": {
+          "incident_id": "$incident_id",
+          "incident_mode": "$incident_mode",
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_get_action",
+      "description": "Get one action: description, status, assignee, incident and completion time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "description": "Action id, from `incident_io_list_actions`."
+          }
+        },
+        "required": [
+          "action_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/actions/{action_id}"
+      }
+    },
+    {
+      "name": "incident_io_create_action",
+      "description": "Add an action to an incident: a task to do now, optionally assigned to a user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `incident_io_list_incidents`."
+          },
+          "description": {
+            "type": "string",
+            "description": "What needs doing (Markdown)."
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User id to assign it to, from `incident_io_list_users`."
+          }
+        },
+        "required": [
+          "incident_id",
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/actions",
+        "bodyMapping": {
+          "incident_id": "$incident_id",
+          "description": "$description",
+          "assignee_id": "$assignee_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "incident_io_update_action",
+      "description": "Update an action: mark it completed or not_doing (or outstanding again), reassign it or change its text. The API replaces the action, so pass the description and status every time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "description": "Action id, from `incident_io_list_actions`."
+          },
+          "description": {
+            "type": "string",
+            "description": "Text of the action (send the current one to keep it)."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "outstanding",
+              "completed",
+              "not_doing"
+            ]
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User id to assign it to, from `incident_io_list_users`."
+          }
+        },
+        "required": [
+          "action_id",
+          "description",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/actions/{action_id}",
+        "bodyMapping": {
+          "description": "$description",
+          "status": "$status",
+          "assignee_id": "$assignee_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "incident_io_list_follow_ups",
+      "description": "List follow-ups (work to do after an incident), optionally of one incident or team: id, title, description, status, priority, assignee, labels and the linked external issue (Jira, Linear, ...).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Only follow-ups of this incident id."
+          },
+          "assignee_team_id": {
+            "type": "string",
+            "description": "Only follow-ups assigned to this team id, from `incident_io_list_teams`."
+          },
+          "incident_mode": {
+            "type": "string",
+            "description": "Only from incidents of this mode (default standard and retrospective).",
+            "enum": [
+              "standard",
+              "retrospective",
+              "test",
+              "tutorial",
+              "stream"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/follow_ups",
+        "queryParams": {
+          "incident_id": "$incident_id",
+          "assignee_team_id": "$assignee_team_id",
+          "incident_mode": "$incident_mode",
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_get_follow_up",
+      "description": "Get one follow-up: title, description, status, priority, category, assignee, labels, incident and the linked external issue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "follow_up_id": {
+            "type": "string",
+            "description": "Follow-up id, from `incident_io_list_follow_ups`."
+          }
+        },
+        "required": [
+          "follow_up_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/follow_ups/{follow_up_id}"
+      }
+    },
+    {
+      "name": "incident_io_create_follow_up",
+      "description": "Add a follow-up to an incident: a title, optional description, assignee or team, priority, category and labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id, from `incident_io_list_incidents`."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the follow-up."
+          },
+          "description": {
+            "type": "string",
+            "description": "Details (Markdown)."
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User id to assign it to, from `incident_io_list_users`."
+          },
+          "assignee_team_id": {
+            "type": "string",
+            "description": "Team id to assign it to, from `incident_io_list_teams`."
+          },
+          "follow_up_priority_option_id": {
+            "type": "string",
+            "description": "Priority option id, as shown on existing follow-ups (`priority.id`)."
+          },
+          "follow_up_category_id": {
+            "type": "string",
+            "description": "Category id, as shown on existing follow-ups."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Labels for the follow-up."
+          },
+          "external_issue_reference_id": {
+            "type": "string",
+            "description": "Id of an existing external issue (Jira, Linear, ...) to link it to."
+          }
+        },
+        "required": [
+          "incident_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/follow_ups",
+        "bodyMapping": {
+          "incident_id": "$incident_id",
+          "title": "$title",
+          "description": "$description",
+          "assignee_id": "$assignee_id",
+          "assignee_team_id": "$assignee_team_id",
+          "follow_up_priority_option_id": "$follow_up_priority_option_id",
+          "follow_up_category_id": "$follow_up_category_id",
+          "labels": "$labels",
+          "external_issue_reference_id": "$external_issue_reference_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "incident_io_update_follow_up",
+      "description": "Update a follow-up: complete it or mark it not_doing, reassign it, change priority, labels or text. The API replaces the follow-up, so pass the title and status every time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "follow_up_id": {
+            "type": "string",
+            "description": "Follow-up id, from `incident_io_list_follow_ups`."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "outstanding",
+              "completed",
+              "not_doing"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the follow-up."
+          },
+          "description": {
+            "type": "string",
+            "description": "Details (Markdown)."
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User id to assign it to, from `incident_io_list_users`."
+          },
+          "assignee_team_id": {
+            "type": "string",
+            "description": "Team id to assign it to, from `incident_io_list_teams`."
+          },
+          "follow_up_priority_option_id": {
+            "type": "string",
+            "description": "Priority option id, as shown on existing follow-ups (`priority.id`)."
+          },
+          "follow_up_category_id": {
+            "type": "string",
+            "description": "Category id, as shown on existing follow-ups."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Labels for the follow-up."
+          }
+        },
+        "required": [
+          "follow_up_id",
+          "title",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/follow_ups/{follow_up_id}",
+        "bodyMapping": {
+          "status": "$status",
+          "title": "$title",
+          "description": "$description",
+          "assignee_id": "$assignee_id",
+          "assignee_team_id": "$assignee_team_id",
+          "follow_up_priority_option_id": "$follow_up_priority_option_id",
+          "follow_up_category_id": "$follow_up_category_id",
+          "labels": "$labels"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "incident_io_list_alerts",
+      "description": "List alerts received from monitoring tools, newest first: id, title, description, status (firing, resolved), alert source, deduplication key, attributes and times. Filter by status, source, deduplication key or creation date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "firing",
+                "resolved"
+              ]
+            },
+            "description": "Only alerts with these statuses."
+          },
+          "alert_source_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only alerts from these alert source ids, from `incident_io_list_alert_sources`."
+          },
+          "deduplication_key": {
+            "type": "string",
+            "description": "Only the alert with this deduplication key."
+          },
+          "created_at_gte": {
+            "type": "string",
+            "description": "Created on or after this date, YYYY-MM-DD."
+          },
+          "created_at_lte": {
+            "type": "string",
+            "description": "Created on or before this date, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/alerts",
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after",
+          "status[one_of]": "$status",
+          "alert_source[one_of]": "$alert_source_id",
+          "deduplication_key[is]": "$deduplication_key",
+          "created_at[gte]": "$created_at_gte",
+          "created_at[lte]": "$created_at_lte"
+        }
+      }
+    },
+    {
+      "name": "incident_io_get_alert",
+      "description": "Get one alert with its title, description, status, source, deduplication key, attributes, source URL and times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alert_id": {
+            "type": "string",
+            "description": "Alert id, from `incident_io_list_alerts`."
+          }
+        },
+        "required": [
+          "alert_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/alerts/{alert_id}"
+      }
+    },
+    {
+      "name": "incident_io_resolve_alert",
+      "description": "Resolve a firing alert by hand, e.g. when the source will not send a resolve event. Incidents and escalations it started may resolve too, depending on the alert route.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alert_id": {
+            "type": "string",
+            "description": "Alert id, from `incident_io_list_alerts`."
+          }
+        },
+        "required": [
+          "alert_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/alerts/{alert_id}/actions/resolve"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "incident_io_list_incident_alerts",
+      "description": "List the links between alerts and incidents: which alerts are attached to an incident, or which incidents an alert belongs to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "Only alerts attached to this incident id."
+          },
+          "alert_id": {
+            "type": "string",
+            "description": "Only incidents this alert id is attached to."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/incident_alerts",
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after",
+          "incident_id": "$incident_id",
+          "alert_id": "$alert_id"
+        }
+      }
+    },
+    {
+      "name": "incident_io_list_alert_sources",
+      "description": "List the alert sources (Datadog, Grafana, Prometheus, CloudWatch, HTTP, email, heartbeat, ...) with id, name, type, the template that builds alerts and the owning teams. Secret tokens are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/alert_sources"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "alert_sources[*].secret_token"
+          ]
+        }
+      }
+    },
+    {
+      "name": "incident_io_get_alert_source",
+      "description": "Get one alert source: name, type, template (title, description, attributes), filters, owning teams and source-specific options. The secret token is left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "alert_source_id": {
+            "type": "string",
+            "description": "Alert source id, from `incident_io_list_alert_sources`."
+          }
+        },
+        "required": [
+          "alert_source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/alert_sources/{alert_source_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "alert_source.secret_token"
+          ]
+        }
+      }
+    },
+    {
+      "name": "incident_io_list_schedules",
+      "description": "List on-call schedules with id, name, time zone, rotations and layers, and (with page_size 25 or less) the current and next shifts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/schedules",
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_get_schedule",
+      "description": "Get one on-call schedule: time zone, rotations with their layers, handover times and members, and the current shifts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_id": {
+            "type": "string",
+            "description": "Schedule id, from `incident_io_list_schedules`."
+          }
+        },
+        "required": [
+          "schedule_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/schedules/{schedule_id}"
+      }
+    },
+    {
+      "name": "incident_io_list_schedule_entries",
+      "description": "Show who is on call on a schedule in a time window: the final entries after overrides, each with user, start and end. Answers who is on call now when the window is around the current time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_id": {
+            "type": "string",
+            "description": "Schedule id, from `incident_io_list_schedules`."
+          },
+          "entry_window_start": {
+            "type": "string",
+            "description": "Start of the window, ISO 8601 (e.g. 2026-10-30T00:00:00Z). For the next page pass `pagination_meta.after` here and keep entry_window_end."
+          },
+          "entry_window_end": {
+            "type": "string",
+            "description": "End of the window, ISO 8601."
+          }
+        },
+        "required": [
+          "schedule_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/schedule_entries",
+        "queryParams": {
+          "schedule_id": "$schedule_id",
+          "entry_window_start": "$entry_window_start",
+          "entry_window_end": "$entry_window_end"
+        }
+      }
+    },
+    {
+      "name": "incident_io_list_escalation_paths",
+      "description": "List the escalation paths (who gets paged in which order, through which schedules and users) with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/escalation_paths",
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_list_escalations",
+      "description": "List escalations (pages sent to people) with id, title, status (pending, triggered, acked, resolved, expired, cancelled, snoozed, ...), escalation path, related alert and incident and times. Filter by status, escalation path or incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "triggered",
+                "acked",
+                "resolved",
+                "expired",
+                "cancelled",
+                "snoozed",
+                "delayed",
+                "pending_repeat"
+              ]
+            },
+            "description": "Only escalations with these statuses."
+          },
+          "escalation_path_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only escalations of these escalation path ids, from `incident_io_list_escalation_paths`."
+          },
+          "incident_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only escalations connected to these incident ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/escalations",
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after",
+          "status[one_of]": "$status",
+          "escalation_path[one_of]": "$escalation_path_id",
+          "incident[one_of]": "$incident_id"
+        }
+      }
+    },
+    {
+      "name": "incident_io_create_escalation",
+      "description": "Page people: start an escalation that follows an escalation path, or notifies the given users directly, with a title included in every notification. This wakes people up; confirm first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "description": "Any unique string for this request (e.g. a UUID). Sending the same key again returns the first result instead of creating a duplicate."
+          },
+          "title": {
+            "type": "string",
+            "description": "What the page is about, shown in every notification."
+          },
+          "description": {
+            "type": "string",
+            "description": "More details for the people paged."
+          },
+          "escalation_path_id": {
+            "type": "string",
+            "description": "Escalation path to follow, from `incident_io_list_escalation_paths`."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "User ids to page directly instead of (or as well as) a path, from `incident_io_list_users`."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "Incident id to link the escalation to."
+          }
+        },
+        "required": [
+          "idempotency_key",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/escalations",
+        "bodyMapping": {
+          "idempotency_key": "$idempotency_key",
+          "title": "$title",
+          "description": "$description",
+          "escalation_path_id": "$escalation_path_id",
+          "user_ids": "$user_ids",
+          "incident_id": "$incident_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "incident_io_list_users",
+      "description": "List the users of the organisation with id, name, email, Slack user id and role. Find someone's id by email or Slack id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only the user with this email address."
+          },
+          "slack_user_id": {
+            "type": "string",
+            "description": "Only the user with this Slack user id."
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Also include deactivated users and users not active yet."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users",
+        "queryParams": {
+          "email": "$email",
+          "slack_user_id": "$slack_user_id",
+          "include_inactive": "$include_inactive",
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_get_user",
+      "description": "Get one user: name, email, Slack user id, base role and custom roles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id, from `incident_io_list_users`."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users/{user_id}"
+      }
+    },
+    {
+      "name": "incident_io_list_teams",
+      "description": "List the teams of the organisation with id and name; team ids are used for follow-ups and alert source ownership.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/teams",
+        "queryParams": {
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_list_catalog_types",
+      "description": "List the catalog types (services, teams, features, environments, ...) with id, name, description, type name, attribute schema and whether they are synced from an external source.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalog_types"
+      }
+    },
+    {
+      "name": "incident_io_get_catalog_type",
+      "description": "Get one catalog type with its attribute schema (names, types, which attributes link to other types).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_type_id": {
+            "type": "string",
+            "description": "Catalog type id, from `incident_io_list_catalog_types`."
+          }
+        },
+        "required": [
+          "catalog_type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalog_types/{catalog_type_id}"
+      }
+    },
+    {
+      "name": "incident_io_list_catalog_entries",
+      "description": "List the entries of one catalog type (e.g. every service) with id, name, external id, aliases, rank and attribute values. Look up one entry by its id, external id, alias or name with identifier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_type_id": {
+            "type": "string",
+            "description": "Catalog type id, from `incident_io_list_catalog_types`."
+          },
+          "identifier": {
+            "type": "string",
+            "description": "Only entries matching this id, external id or alias (and name, when the type uses names as identifiers)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 250 (default 25).",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination_meta.after` of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "catalog_type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalog_entries",
+        "queryParams": {
+          "catalog_type_id": "$catalog_type_id",
+          "identifier": "$identifier",
+          "page_size": "$page_size",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "incident_io_get_catalog_entry",
+      "description": "Get one catalog entry with its attribute values; with expand true also the entries that link to it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_entry_id": {
+            "type": "string",
+            "description": "Catalog entry id, from `incident_io_list_catalog_entries`."
+          },
+          "expand": {
+            "type": "boolean",
+            "description": "Include the links from other entries to this one (default: only its own forward links)."
+          }
+        },
+        "required": [
+          "catalog_entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/catalog_entries/{catalog_entry_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    }
+  ]
+}

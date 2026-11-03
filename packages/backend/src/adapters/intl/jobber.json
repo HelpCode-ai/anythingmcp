@@ -1,0 +1,812 @@
+{
+  "slug": "jobber",
+  "name": "Jobber",
+  "aliases": [
+    "GetJobber",
+    "Jobber field service"
+  ],
+  "description": "Jobber field service software for home service businesses: clients and properties, requests, quotes, jobs and scheduled visits, invoices, users and products and services, through Jobber's GraphQL API with OAuth. Can create clients, jobs, quotes and invoices; it cannot email or approve quotes and invoices.",
+  "region": "intl",
+  "category": "field-service",
+  "icon": "jobber",
+  "docsUrl": "https://developer.getjobber.com/docs/",
+  "instructions": "## Jobber\nThis connector works with **Jobber** (home service business software for landscaping, cleaning, HVAC, plumbing and similar trades) through its GraphQL API (`https://api.getjobber.com/api/graphql`): clients and properties, requests, quotes, jobs and visits, invoices, users and the products and services list. It can create clients, jobs, quotes and invoices.\n\n**Setup (about 10 minutes, needs a Jobber admin)**\n1. Sign up at the Jobber Developer Center (https://developer.getjobber.com) and click **Create App**.\n2. Set the **OAuth Callback URL** to `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n3. Tick the **scopes** the AI needs: read for Clients, Requests, Quotes, Jobs, Scheduled Items, Invoices, Users and Products and Services; write only for what it may change (Clients, Jobs, Quotes, Invoices). Jobber sets the scopes on the app, not in the sign-in link. Keep **Refresh token rotation** on.\n4. Save, copy the **Client ID** and **Client Secret** into `JOBBER_CLIENT_ID` and `JOBBER_CLIENT_SECRET`, install, then click **Authorize with Provider** and allow access as an admin of the Jobber account. Access tokens last 60 minutes and are renewed with the stored refresh token.\n5. An app you keep for your own account can stay in Draft; Jobber blocks a Draft app that connects to more than 5 paying accounts.\n\nEvery call sends the `X-JOBBER-GRAPHQL-VERSION: 2026-05-12` header. Jobber supports a version for at least 12 months; responses carry `extensions.versioning` with a warning when it is about to expire.\n\n**Workflow**\n- Account and team: `jobber_get_account`, `jobber_list_users`, `jobber_list_products`.\n- Clients: `jobber_list_clients` (search_term or filter), `jobber_get_client` (emails, phones, properties with their ids, latest jobs and invoices), `jobber_list_properties`. Change them with `jobber_create_client`, `jobber_update_client`, `jobber_archive_client`.\n- Requests and quotes: `jobber_list_requests`, `jobber_get_request`, `jobber_list_quotes`, `jobber_get_quote`, `jobber_create_quote`.\n- Jobs and schedule: `jobber_list_jobs`, `jobber_get_job`, `jobber_list_visits` (filter by `startAt` for a day or week), `jobber_create_job`, `jobber_update_job`, `jobber_close_job`.\n- Billing: `jobber_list_invoices` (filter by status, e.g. `past_due`), `jobber_get_invoice`, `jobber_create_invoice`, `jobber_mark_invoice_sent`.\n- Anything else: `jobber_graphql_query` runs any read. Look up a type first with `query { __type(name: \"Job\") { fields { name } } }`. `jobber_graphql_mutation` and `jobber_graphql_subscription` are installed switched off; `jobber_graphql_schema_url` and `jobber_graphql_schema` cannot load a schema file, because Jobber publishes none outside the Developer Center.\n\n**Reading the answers**: ids are encoded strings (`Z2lkOi8v...`), reuse them as returned. Times are ISO 8601 in UTC; convert them to the business's time zone. Amounts are plain numbers in the account currency. Status values in filters are lower case (`requires_invoicing`, `awaiting_payment`); visit statuses come back in upper case. `jobberWebUri` opens the record in Jobber.\n\n**Filters and paging**: list tools take `first` (20 by default) and `after`; continue with `after` = `pageInfo.endCursor` while `pageInfo.hasNextPage` is true. `filter` is the API's filter object for that list (see each tool); date ranges are `{ \"after\": ..., \"before\": ... }`. A job belongs to a property, not directly to a client: read the client's properties first.\n\n**Writes**: mutations answer `userErrors`; an empty list means success, otherwise read the message and path. Jobber's API cannot send quotes or invoices by email or approve quotes; the user does that in Jobber. Show the user what will be created or changed and wait for a yes.\n\n**Switched off at install**: `jobber_close_job`; it deletes incomplete visits, which cannot be undone, so an admin switches it on when the team needs it.\n\n**Limits and errors**: each app and account has a query-cost budget of 10,000 points that refills at 500 points a second; a query over budget answers a `THROTTLED` error, wait a few seconds and retry with a smaller `first`. Separately, more than 2,500 requests in 5 minutes answer 429. 401 means the authorization expired or was revoked (authorize again); an error naming a missing scope means the app lacks it (add the scope, then authorize again).",
+  "prerequisites": "A Jobber account with admin access and an app created in the Jobber Developer Center (Client ID and Client Secret) with the callback URL of this AnythingMCP instance.",
+  "appRegistrationUrl": "https://developer.getjobber.com/apps",
+  "requiredEnvVars": [
+    "JOBBER_CLIENT_ID",
+    "JOBBER_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "JOBBER_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "JOBBER_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Jobber Developer Center, Apps, your app: the Client ID.",
+      "link": "https://developer.getjobber.com/apps",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the client ID, without spaces."
+    },
+    "JOBBER_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Jobber Developer Center, Apps, your app: the Client Secret.",
+      "link": "https://developer.getjobber.com/apps",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the client secret, without spaces."
+    },
+    "JOBBER_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "secret": true,
+      "advanced": true,
+      "help": "Leave empty: Authorize with Provider fills it in. With refresh token rotation on, Jobber replaces it on every renewal, so a token used once elsewhere no longer works."
+    }
+  },
+  "verifyHints": {
+    "401": "Jobber refused the token. Click Authorize with Provider again; check that the Client ID and secret belong to the same app.",
+    "403": "The app lacks a scope for this data. Add it in the Jobber Developer Center and authorize again.",
+    "429": "Jobber is rate limiting this app (2,500 requests per 5 minutes or the query-cost budget). Wait and try again."
+  },
+  "probe": {
+    "tool": "jobber_get_account"
+  },
+  "connector": {
+    "name": "Jobber GraphQL API",
+    "type": "GRAPHQL",
+    "baseUrl": "https://api.getjobber.com/api/graphql",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{JOBBER_CLIENT_ID}}",
+      "clientSecret": "{{JOBBER_CLIENT_SECRET}}",
+      "refreshToken": "{{JOBBER_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://api.getjobber.com/api/oauth/authorize",
+      "tokenUrl": "https://api.getjobber.com/api/oauth/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "X-JOBBER-GRAPHQL-VERSION": "2026-05-12"
+    },
+    "config": {
+      "graphqlBuiltinsOff": [
+        "mutation",
+        "subscription"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "jobber_get_account",
+      "description": "The connected Jobber account: id and company name. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Account { account { id name } }"
+      }
+    },
+    {
+      "name": "jobber_list_users",
+      "description": "Users (team members) of the account: id, full name, email, phone, admin and owner flags, status. Use the ids when you need to know who is assigned to a visit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (20 by default). Big pages cost more query points.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListUsers($first: Int, $after: String) { users(first: $first, after: $after) { nodes { id name { full } email { raw } phone { friendly } isAccountAdmin isAccountOwner status } pageInfo { hasNextPage endCursor } totalCount } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "jobber_list_clients",
+      "description": "List or search clients (customers and leads): id, name, first and last name, company, isCompany, isLead, isArchived, primary email and phone, balance, created and updated times, link to Jobber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_term": {
+            "type": "string",
+            "description": "Free text search (names, numbers, addresses, titles)."
+          },
+          "filter": {
+            "type": "object",
+            "description": "ClientFilterAttributes, e.g. {\"isLead\": true} or {\"isArchived\": false}. Ask jobber_graphql_query with __type(name: \"ClientFilterAttributes\") for every key."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (20 by default). Big pages cost more query points.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListClients($first: Int, $after: String, $searchTerm: String, $filter: ClientFilterAttributes) { clients(first: $first, after: $after, searchTerm: $searchTerm, filter: $filter) { nodes { id name firstName lastName companyName isCompany isLead isArchived email phone balance createdAt updatedAt jobberWebUri } pageInfo { hasNextPage endCursor } totalCount } }",
+        "queryParams": {
+          "searchTerm": "$search_term",
+          "filter": "$filter",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "jobber_get_client",
+      "description": "One client with emails, phones, billing address, tags, properties (service addresses with ids), the 10 latest jobs and invoices, balance and link to Jobber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id (an encoded id string from a list)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetClient($id: EncodedId!) { client(id: $id) { id name firstName lastName companyName isCompany isLead isArchived balance email phone emails { id address primary description } phones { id number primary description smsAllowed } billingAddress { street1 street2 city province postalCode country } tags { nodes { label } } properties { id address { street1 street2 city province postalCode country } } jobs(first: 10) { nodes { id jobNumber title jobStatus createdAt } } invoices(first: 10) { nodes { id invoiceNumber invoiceStatus issuedDate dueDate amounts { total invoiceBalance } } } createdAt updatedAt jobberWebUri } }",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "jobber_list_properties",
+      "description": "Properties (service addresses where the work happens): id, name, address, whether it is the billing address, the client it belongs to. Jobs and quotes need a property id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (20 by default). Big pages cost more query points.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListProperties($first: Int, $after: String) { properties(first: $first, after: $after) { nodes { id name isBillingAddress address { street1 street2 city province postalCode country } client { id name } jobberWebUri } pageInfo { hasNextPage endCursor } totalCount } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "jobber_list_requests",
+      "description": "Requests (incoming work requests and booking forms): id, title, status, source, contact name, company, email, phone, client and property, created and updated times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_term": {
+            "type": "string",
+            "description": "Free text search (names, numbers, addresses, titles)."
+          },
+          "filter": {
+            "type": "object",
+            "description": "RequestFilterAttributes, e.g. {\"updatedAt\": {\"after\": \"2026-10-01T00:00:00Z\"}} (ranges are { after, before } with ISO 8601 times)."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (20 by default). Big pages cost more query points.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListRequests($first: Int, $after: String, $searchTerm: String, $filter: RequestFilterAttributes) { requests(first: $first, after: $after, searchTerm: $searchTerm, filter: $filter) { nodes { id title requestStatus source contactName companyName email phone createdAt updatedAt jobberWebUri client { id name } property { id } } pageInfo { hasNextPage endCursor } totalCount } }",
+        "queryParams": {
+          "searchTerm": "$search_term",
+          "filter": "$filter",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "jobber_get_request",
+      "description": "One request with its assessment visit (time, instructions, completion), contact details, client and property address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Request id (an encoded id string from a list)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetRequest($id: EncodedId!) { request(id: $id) { id title requestStatus source contactName companyName email phone createdAt updatedAt jobberWebUri client { id name } property { id address { street1 street2 city province postalCode country } } assessment { id title instructions startAt endAt allDay isComplete completedAt } } }",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "jobber_list_quotes",
+      "description": "Quotes (estimates): id, number, title, status, amounts (subtotal, discount, tax, total, deposit), client, property, created, updated and sent times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_term": {
+            "type": "string",
+            "description": "Free text search (names, numbers, addresses, titles)."
+          },
+          "filter": {
+            "type": "object",
+            "description": "QuoteFilterAttributes, e.g. {\"status\": \"awaiting_response\"} or {\"clientId\": \"...\"}. Status values: draft, awaiting_response, archived, approved, converted, changes_requested."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (20 by default). Big pages cost more query points.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListQuotes($first: Int, $after: String, $searchTerm: String, $filter: QuoteFilterAttributes) { quotes(first: $first, after: $after, searchTerm: $searchTerm, filter: $filter) { nodes { id quoteNumber title quoteStatus createdAt updatedAt sentAt amounts { subtotal discountAmount taxAmount total depositAmount } client { id name } property { id } jobberWebUri } pageInfo { hasNextPage endCursor } totalCount } }",
+        "queryParams": {
+          "searchTerm": "$search_term",
+          "filter": "$filter",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "jobber_get_quote",
+      "description": "One quote with message, line items (name, description, quantity, unit price, total), amounts, client, property and the jobs it became.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Quote id (an encoded id string from a list)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetQuote($id: EncodedId!) { quote(id: $id) { id quoteNumber title quoteStatus message createdAt updatedAt sentAt jobberWebUri client { id name } property { id address { street1 street2 city province postalCode country } } lineItems { nodes { id name description quantity unitPrice totalPrice } } amounts { subtotal discountAmount taxAmount total depositAmount } jobs { nodes { id jobNumber title } } } }",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "jobber_list_jobs",
+      "description": "List or search jobs (work orders): id, job number, title, status, start and end, completed time, total, client, property address, created and updated times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_term": {
+            "type": "string",
+            "description": "Free text search (names, numbers, addresses, titles)."
+          },
+          "filter": {
+            "type": "object",
+            "description": "JobFilterAttributes, e.g. {\"status\": \"requires_invoicing\"} or {\"createdAt\": {\"after\": \"2026-10-01T00:00:00Z\"}}. Status values: requires_invoicing, archived, late, today, upcoming, action_required, on_hold, unscheduled, active, expiring_within_30_days."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (20 by default). Big pages cost more query points.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListJobs($first: Int, $after: String, $searchTerm: String, $filter: JobFilterAttributes) { jobs(first: $first, after: $after, searchTerm: $searchTerm, filter: $filter) { nodes { id jobNumber title jobStatus startAt endAt completedAt total createdAt updatedAt jobberWebUri client { id name } property { id address { street1 street2 city province postalCode country } } } pageInfo { hasNextPage endCursor } totalCount } }",
+        "queryParams": {
+          "searchTerm": "$search_term",
+          "filter": "$filter",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "jobber_get_job",
+      "description": "One job with instructions, status, dates, total, client, property address and visit counts (past, scheduled, unscheduled, incomplete).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Job id (an encoded id string from a list)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetJob($id: EncodedId!) { job(id: $id) { id jobNumber title jobStatus instructions startAt endAt completedAt total createdAt updatedAt jobberWebUri client { id name } property { id address { street1 street2 city province postalCode country } } visitsInfo { futureCount incompleteTotal pastCount scheduledCount unscheduledCount } } }",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "jobber_list_visits",
+      "description": "Visits (scheduled appointments of jobs): id, title, start and end, all-day flag, status, completion, instructions, job with its client, assigned users. Filter by start time to read a schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "VisitFilterAttributes, e.g. {\"startAt\": {\"after\": \"2026-11-02T00:00:00Z\", \"before\": \"2026-11-09T00:00:00Z\"}} (ranges are { after, before } with ISO 8601 times)."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, e.g. [{\"key\": \"START_AT\", \"direction\": \"ASCENDING\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (20 by default). Big pages cost more query points.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListVisits($first: Int, $after: String, $filter: VisitFilterAttributes, $sort: [VisitsSortInput!]) { visits(first: $first, after: $after, filter: $filter, sort: $sort) { nodes { id title startAt endAt allDay visitStatus isComplete instructions job { id jobNumber title client { id name } } assignedUsers(first: 10) { nodes { id name { full } } } } pageInfo { hasNextPage endCursor } totalCount } }",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "jobber_list_invoices",
+      "description": "Invoices: id, number, status, issued and due dates, amounts (total, balance, payments), client, the job it bills.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "InvoiceFilterAttributes, e.g. {\"status\": \"past_due\"}. Status values: draft, awaiting_payment, paid, past_due, bad_debt, sent_not_due, voided."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort keys, e.g. [{\"key\": \"DUE_DATE\", \"direction\": \"DESCENDING\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (20 by default). Big pages cost more query points.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListInvoices($first: Int, $after: String, $filter: InvoiceFilterAttributes, $sort: [InvoiceSortInput!]) { invoices(first: $first, after: $after, filter: $filter, sort: $sort) { nodes { id invoiceNumber subject invoiceStatus issuedDate dueDate createdAt updatedAt jobberWebUri amounts { subtotal taxAmount total paymentsTotal invoiceBalance } client { id name } jobs(first: 1) { nodes { id jobNumber title } } } pageInfo { hasNextPage endCursor } totalCount } }",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "jobber_get_invoice",
+      "description": "One invoice with message, line items (name, description, quantity, unit price, total), amounts, client and jobs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Invoice id (an encoded id string from a list)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query GetInvoice($id: EncodedId!) { invoice(id: $id) { id invoiceNumber subject invoiceStatus message issuedDate dueDate createdAt updatedAt jobberWebUri client { id name email } jobs { nodes { id jobNumber title } } lineItems { nodes { id name description quantity unitPrice totalPrice } } amounts { subtotal discountAmount taxAmount paymentsTotal invoiceBalance total } } }",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "jobber_list_products",
+      "description": "Products and services of the price list: id, name, description, category, default unit price, internal unit cost, markup, taxable, visible, duration in minutes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100 (20 by default). Big pages cost more query points.",
+            "default": 20
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from pageInfo.endCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListProducts($first: Int, $after: String) { products(first: $first, after: $after) { nodes { id name description category defaultUnitCost internalUnitCost markup taxable visible durationMinutes } pageInfo { hasNextPage endCursor } totalCount } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "jobber_create_client",
+      "description": "Create a client. Pass the ClientCreateInput object: firstName, lastName, companyName, emails [{address, primary, description}], phones [{number, primary, smsAllowed}]. Answers the new client id, or userErrors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client": {
+            "type": "object",
+            "description": "ClientCreateInput, e.g. {\"firstName\": \"Ana\", \"lastName\": \"Lopez\", \"emails\": [{\"address\": \"ana@example.com\", \"primary\": true}], \"phones\": [{\"number\": \"555-0100\", \"primary\": true}]}."
+          }
+        },
+        "required": [
+          "client"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateClient($input: ClientCreateInput!) { clientCreate(input: $input) { client { id name firstName lastName companyName email phone jobberWebUri } userErrors { message path } } }",
+        "queryParams": {
+          "input": "$client"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "jobber_update_client",
+      "description": "Change a client. Pass the ClientEditInput object: firstName, lastName, companyName; emails and phones change by list: emailsToAdd, emailsToEdit (each with the email's own id from jobber_get_client), emailsToDelete, and the same for phones. Answers the client or userErrors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "changes": {
+            "type": "object",
+            "description": "ClientEditInput, e.g. {\"companyName\": \"Lopez Landscaping\", \"emailsToEdit\": [{\"id\": \"...\", \"address\": \"new@example.com\"}]}."
+          }
+        },
+        "required": [
+          "client_id",
+          "changes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation EditClient($clientId: EncodedId!, $input: ClientEditInput!) { clientEdit(clientId: $clientId, input: $input) { client { id name firstName lastName companyName email phone } userErrors { message path } } }",
+        "queryParams": {
+          "clientId": "$client_id",
+          "input": "$changes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "jobber_archive_client",
+      "description": "Archive a client so it no longer shows in active lists. Nothing is deleted; Jobber can unarchive it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation ArchiveClient($clientId: EncodedId!) { clientArchive(clientId: $clientId) { client { id name isArchived } userErrors { message path } } }",
+        "queryParams": {
+          "clientId": "$client_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "jobber_create_job",
+      "description": "Create a job at a property (take the property id from jobber_get_client or jobber_list_properties). invoicing_type FIXED_PRICE or VISIT_BASED, invoicing_schedule ON_COMPLETION, PERIODIC, PER_VISIT or NEVER. Visits are scheduled in Jobber. Answers the new job or userErrors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Instructions for the team."
+          },
+          "invoicing_type": {
+            "type": "string",
+            "description": "How the job is priced.",
+            "enum": [
+              "FIXED_PRICE",
+              "VISIT_BASED"
+            ],
+            "default": "FIXED_PRICE"
+          },
+          "invoicing_schedule": {
+            "type": "string",
+            "description": "When the job is billed.",
+            "enum": [
+              "ON_COMPLETION",
+              "PERIODIC",
+              "PER_VISIT",
+              "NEVER"
+            ],
+            "default": "ON_COMPLETION"
+          }
+        },
+        "required": [
+          "property_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateJob($propertyId: EncodedId!, $title: String, $instructions: String, $invoicingType: BillingStrategy!, $invoicingSchedule: BillingFrequencyEnum!) { jobCreate(input: { propertyId: $propertyId, title: $title, instructions: $instructions, invoicing: { invoicingType: $invoicingType, invoicingSchedule: $invoicingSchedule } }) { job { id jobNumber title jobStatus jobberWebUri client { id name } } userErrors { message path } } }",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "title": "$title",
+          "instructions": "$instructions",
+          "invoicingType": "$invoicing_type",
+          "invoicingSchedule": "$invoicing_schedule"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "jobber_update_job",
+      "description": "Change the title or instructions of a job. Status changes happen through jobber_close_job or in Jobber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "instructions": {
+            "type": "string",
+            "description": "New instructions."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation EditJob($jobId: EncodedId!, $title: String, $instructions: String) { jobEdit(jobId: $jobId, input: { title: $title, instructions: $instructions }) { job { id jobNumber title jobStatus } userErrors { message path } } }",
+        "queryParams": {
+          "jobId": "$job_id",
+          "title": "$title",
+          "instructions": "$instructions"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "jobber_close_job",
+      "description": "Close a job. incomplete_visits decides what happens to visits not done yet: DESTROY_ALL deletes every incomplete visit, COMPLETE_PAST_DESTROY_FUTURE completes past ones and deletes future ones. Deleted visits cannot be restored. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id."
+          },
+          "incomplete_visits": {
+            "type": "string",
+            "description": "What to do with incomplete visits.",
+            "enum": [
+              "DESTROY_ALL",
+              "COMPLETE_PAST_DESTROY_FUTURE"
+            ]
+          }
+        },
+        "required": [
+          "job_id",
+          "incomplete_visits"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CloseJob($jobId: EncodedId!, $modifyIncompleteVisitsBy: IncompleteVisitDecisionEnum!) { jobClose(jobId: $jobId, input: { modifyIncompleteVisitsBy: $modifyIncompleteVisitsBy }) { job { id jobNumber title jobStatus completedAt } userErrors { message path } } }",
+        "queryParams": {
+          "jobId": "$job_id",
+          "modifyIncompleteVisitsBy": "$incomplete_visits"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "jobber_create_quote",
+      "description": "Create a draft quote. Pass the QuoteCreateAttributes object: clientId, propertyId, title, message and lineItems [{name, description, quantity, unitPrice, saveToProductsAndServices: false}] (at least one). Jobber's API cannot send or approve quotes: the user sends it from Jobber.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quote": {
+            "type": "object",
+            "description": "QuoteCreateAttributes, e.g. {\"clientId\": \"...\", \"propertyId\": \"...\", \"title\": \"Spring cleanup\", \"lineItems\": [{\"name\": \"Mulching\", \"quantity\": 3, \"unitPrice\": 45, \"saveToProductsAndServices\": false}]}."
+          }
+        },
+        "required": [
+          "quote"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateQuote($attributes: QuoteCreateAttributes!) { quoteCreate(attributes: $attributes) { quote { id quoteNumber title quoteStatus amounts { total } jobberWebUri } userErrors { message path } } }",
+        "queryParams": {
+          "attributes": "$quote"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "jobber_create_invoice",
+      "description": "Create a draft invoice. Pass the InvoiceCreateInput object: clientId, jobId (optional), subject, dueDetails {dueDate (YYYY-MM-DD) or invoiceNet (days)}, tax {taxCalculationMethod: EXCLUSIVE or INCLUSIVE}, lineItems [{name, description, quantity, unitPrice}] (at least one).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice": {
+            "type": "object",
+            "description": "InvoiceCreateInput, e.g. {\"clientId\": \"...\", \"subject\": \"October service\", \"dueDetails\": {\"invoiceNet\": 30}, \"tax\": {\"taxCalculationMethod\": \"EXCLUSIVE\"}, \"lineItems\": [{\"name\": \"Lawn care\", \"quantity\": 4, \"unitPrice\": 60}]}."
+          }
+        },
+        "required": [
+          "invoice"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateInvoice($input: InvoiceCreateInput!) { invoiceCreate(input: $input) { invoice { id invoiceNumber subject invoiceStatus amounts { total } jobberWebUri } userErrors { message path } } }",
+        "queryParams": {
+          "input": "$invoice"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "jobber_mark_invoice_sent",
+      "description": "Mark an invoice as sent (for invoices delivered outside Jobber). It only changes the status; nothing is emailed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Invoice id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation MarkInvoiceSent($id: EncodedId!) { invoiceMarkAsSent(id: $id) { invoice { id invoiceNumber invoiceStatus } userErrors { message path } } }",
+        "queryParams": {
+          "id": "$id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

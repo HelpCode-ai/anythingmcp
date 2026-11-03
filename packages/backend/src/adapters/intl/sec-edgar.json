@@ -1,0 +1,424 @@
+{
+  "slug": "sec-edgar",
+  "name": "SEC EDGAR",
+  "aliases": [
+    "EDGAR",
+    "U.S. Securities and Exchange Commission",
+    "SEC filings",
+    "data.sec.gov"
+  ],
+  "description": "Read U.S. SEC EDGAR filings and financial data: find a company's CIK, its profile and recent filings (10-K, 10-Q, 8-K, Form 4), XBRL financial statement values per concept and cross-company frames, full-text search of filings since 2001 and filing document lists. Free, no key; a contact User-Agent is required.",
+  "instructions": "## SEC EDGAR\nThis connector reads the public **EDGAR** APIs of the U.S. Securities and Exchange Commission: filer profiles and filing histories and XBRL financial data from `https://data.sec.gov`, EDGAR full-text search and company lookup from `https://efts.sec.gov`, and filing folders from the EDGAR archive on `https://www.sec.gov`. It covers every SEC filer: US listed companies, foreign private issuers, funds and insiders. Everything is read-only.\n\n**Setup**: no account or key. SEC policy requires every automated request to declare who sends it in the `User-Agent` header, with a contact e-mail, and blocks requests without it (403). Enter in `SEC_EDGAR_USER_AGENT` your organisation name and an e-mail address where the SEC can reach you, e.g. `Example Research LLC admin@example.com`. Keep within 10 requests per second.\n\n**CIK**: every filer has a Central Index Key. The data.sec.gov tools want it padded to 10 digits (`0000320193`); `sec_edgar_get_filing_index` also accepts it without zeros.\n\n**Workflow**\n- Name or ticker to CIK: `sec_edgar_search_companies` (e.g. NVDA gives 1045810, pad it to 0001045810).\n- Company profile and recent filings: `sec_edgar_get_submissions`. `recentFilings` holds parallel lists: entry n of `accessionNumber`, `form`, `filingDate`, `reportDate` and `primaryDocument` describes the same filing, newest first (100 at most; `totalRecentFilings` tells how many the full list has). Earlier history: pass a file name from `olderFilingFiles` to `sec_edgar_get_older_filings`.\n- Financial statement numbers: `sec_edgar_get_company_facts` lists the concepts a company reports (us-gaap, ifrs-full, dei); `sec_edgar_get_company_concept` returns all reported values of one, e.g. `us-gaap` `NetIncomeLoss` in `USD`. Revenue is often `Revenues` or `RevenueFromContractWithCustomerExcludingAssessedTax` depending on the company: check the concept list.\n- Cross-company comparisons: `sec_edgar_get_frames` (one concept, one calendar period, 250 largest values); `CY2024` for a full year, `CY2024Q3` for a quarter, `CY2024Q4I` for a balance sheet date.\n- Find filings by content: `sec_edgar_full_text_search` with `q` (\"exact phrase\"), `forms`, `startdt` and `enddt`, `ciks` or `entityName`. Without `q` it lists the latest filings of a form, e.g. today's 8-Ks.\n- Open a filing: `sec_edgar_get_filing_index` with CIK and accession number without dashes; then link the document as `https://www.sec.gov/Archives/edgar/data/<cik>/<accession without dashes>/<file name>`. A full-text hit's `id` is `<accession>:<file name>`.\n\n**Reading the XBRL data**: values are in the unit given (USD, shares, USD-per-shares), not in thousands. `fy` and `fp` (FY, Q1 to Q4) are the fiscal year and period of the filing that reported the value; `start` and `end` give the actual period. The same period appears in several filings (a 10-K repeats prior years): to get one value per period, prefer the entries with a `frame` (e.g. CY2024), which the SEC assigns to the value best matching a calendar period. Quarterly 10-Q values can be year-to-date: compare `start` and `end`. `form` and `filed` show where and when a value was reported.\n\n**Limits and errors**: at most 10 requests per second per sender. 403 means the `User-Agent` is missing or not accepted, or the rate limit was exceeded (the SEC then blocks the address for about 10 minutes). 404 means an unknown CIK, concept, unit or period (not every company reports every concept). Full-text search covers filings since 2001, returns 100 hits per page and at most 10,000 hits per query; narrow it with forms and dates.\n\n**Out of scope**: the bulk ZIP archives, company_tickers.json (about 1 MB; use `sec_edgar_search_companies` instead), reading full filing documents (often megabytes of HTML) and EDGAR filing submission are not part of this connector. The full-text search and company lookup endpoints on efts.sec.gov power the EDGAR website and are not part of the SEC's documented API, so they may change.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "sec-edgar",
+  "docsUrl": "https://www.sec.gov/search-filings/edgar-application-programming-interfaces",
+  "requiredEnvVars": [
+    "SEC_EDGAR_USER_AGENT"
+  ],
+  "envVarMeta": {
+    "SEC_EDGAR_USER_AGENT": {
+      "label": "User-Agent with contact e-mail",
+      "kind": "setting",
+      "help": "SEC policy: name the organisation or person sending the requests and a contact e-mail, e.g. \"Example Research LLC admin@example.com\". Requests without it are refused with 403.",
+      "link": "https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data",
+      "example": "Example Research LLC admin@example.com",
+      "pattern": "^\\S.*\\s\\S+@\\S+\\.[A-Za-z]{2,}$",
+      "patternMessage": "Write a name followed by a contact e-mail address, e.g. Example Research LLC admin@example.com."
+    }
+  },
+  "verifyHints": {
+    "403": "The SEC refused the request. Check that SEC_EDGAR_USER_AGENT holds a name and a real contact e-mail (SEC policy), and that you stay within 10 requests per second; after a block, wait 10 minutes.",
+    "404": "EDGAR found nothing at this address: check the CIK (10 digits with leading zeros) or the concept name."
+  },
+  "probe": {
+    "tool": "sec_edgar_full_text_search",
+    "params": {
+      "forms": "10-K"
+    }
+  },
+  "connector": {
+    "name": "SEC EDGAR",
+    "type": "REST",
+    "baseUrl": "https://data.sec.gov",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "{{SEC_EDGAR_USER_AGENT}}"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error",
+          "matches": ".",
+          "messagePath": "error",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "sec_edgar_search_companies",
+      "description": "Find SEC filers (companies, funds, individuals) by name or ticker and get their CIK, the key every other EDGAR tool needs. Returns up to 10 matches with CIK, name and tickers, best first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keysTyped": {
+            "type": "string",
+            "description": "Company name, part of it, or ticker, e.g. nvidia, NVDA, berkshire."
+          }
+        },
+        "required": [
+          "keysTyped"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://efts.sec.gov/LATEST/search-index",
+        "queryParams": {
+          "keysTyped": "$keysTyped"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "companies": {
+              "$from": "$.hits.hits[*]",
+              "$select": {
+                "cik": "_id",
+                "name": "_source.entity",
+                "tickers": "_source.tickers"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sec_edgar_get_submissions",
+      "description": "Get a filer's EDGAR profile and its 100 most recent filings: name, tickers, exchanges, SIC industry, fiscal year end, state of incorporation, addresses, former names, and per filing the accession number, form type (10-K, 10-Q, 8-K, 4, DEF 14A...), filing and report date and primary document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cik": {
+            "type": "string",
+            "pattern": "^\\d{10}$",
+            "description": "Central Index Key padded with leading zeros to 10 digits, e.g. 0000320193 for Apple. Get it from sec_edgar_search_companies."
+          }
+        },
+        "required": [
+          "cik"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/submissions/CIK{cik}.json"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{cik: cik, name: name, tickers: tickers, exchanges: exchanges, entityType: entityType, sic: sic, sicDescription: sicDescription, category: category, fiscalYearEnd: fiscalYearEnd, stateOfIncorporation: stateOfIncorporation, ein: ein, lei: lei, website: website, phone: phone, addresses: addresses, formerNames: formerNames, recentFilings: {accessionNumber: filings.recent.accessionNumber[:100], form: filings.recent.form[:100], filingDate: filings.recent.filingDate[:100], reportDate: filings.recent.reportDate[:100], primaryDocument: filings.recent.primaryDocument[:100], primaryDocDescription: filings.recent.primaryDocDescription[:100], items: filings.recent.items[:100], isXBRL: filings.recent.isXBRL[:100]}, totalRecentFilings: length(filings.recent.accessionNumber), olderFilingFiles: filings.files}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sec_edgar_get_older_filings",
+      "description": "Get the older part of a filer's filing history: one of the files listed in olderFilingFiles of sec_edgar_get_submissions (each holds up to a few thousand filings). Returns parallel lists of accession number, form, filing date, report date and primary document, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_name": {
+            "type": "string",
+            "pattern": "^CIK\\d{10}-submissions-\\d{3}\\.json$",
+            "description": "File name from olderFilingFiles, e.g. CIK0000320193-submissions-001.json."
+          }
+        },
+        "required": [
+          "file_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/submissions/{file_name}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{filings: length(accessionNumber), accessionNumber: accessionNumber, form: form, filingDate: filingDate, reportDate: reportDate, primaryDocument: primaryDocument}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sec_edgar_get_company_facts",
+      "description": "List every XBRL concept a company has reported to the SEC (Company Facts API), per taxonomy: the names of its us-gaap, ifrs-full, dei and srt concepts. The full facts file is several megabytes, so this returns the concept names only; read the values of one concept with sec_edgar_get_company_concept.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cik": {
+            "type": "string",
+            "pattern": "^\\d{10}$",
+            "description": "Central Index Key padded with leading zeros to 10 digits, e.g. 0000320193 for Apple. Get it from sec_edgar_search_companies."
+          }
+        },
+        "required": [
+          "cik"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/xbrl/companyfacts/CIK{cik}.json"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{cik: cik, entityName: entityName, taxonomies: keys(facts), dei: keys(facts.dei || `{}`), us_gaap: keys(facts.\"us-gaap\" || `{}`), ifrs_full: keys(facts.\"ifrs-full\" || `{}`), srt: keys(facts.srt || `{}`)}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sec_edgar_get_company_concept",
+      "description": "Get every value a company reported for one XBRL concept (Company Concept API), e.g. Revenues or NetIncomeLoss: per unit (USD, shares, USD-per-shares) the period start and end, value, fiscal year and period (FY, Q1-Q4), form, filing date, accession number and calendar frame.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cik": {
+            "type": "string",
+            "pattern": "^\\d{10}$",
+            "description": "Central Index Key padded with leading zeros to 10 digits, e.g. 0000320193 for Apple. Get it from sec_edgar_search_companies."
+          },
+          "taxonomy": {
+            "type": "string",
+            "enum": [
+              "us-gaap",
+              "ifrs-full",
+              "dei",
+              "srt",
+              "invest"
+            ],
+            "description": "XBRL taxonomy: us-gaap (US companies), ifrs-full (foreign filers reporting under IFRS), dei (cover page data such as shares outstanding), srt, invest."
+          },
+          "tag": {
+            "type": "string",
+            "description": "XBRL concept name, case-sensitive, e.g. Revenues, RevenueFromContractWithCustomerExcludingAssessedTax, NetIncomeLoss, EarningsPerShareDiluted, Assets, Liabilities, StockholdersEquity, CashAndCashEquivalentsAtCarryingValue, AccountsPayableCurrent, or dei EntityCommonStockSharesOutstanding. List a company's concepts with sec_edgar_get_company_facts."
+          }
+        },
+        "required": [
+          "cik",
+          "taxonomy",
+          "tag"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/xbrl/companyconcept/CIK{cik}/{taxonomy}/{tag}.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sec_edgar_get_frames",
+      "description": "Compare all companies on one XBRL concept for one calendar period (Frames API), e.g. Revenues for CY2024 or Assets at CY2025Q4I. Returns the concept label, the number of reporting companies and the 250 largest values with CIK, company name, location, period end and accession number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taxonomy": {
+            "type": "string",
+            "enum": [
+              "us-gaap",
+              "ifrs-full",
+              "dei",
+              "srt",
+              "invest"
+            ],
+            "description": "XBRL taxonomy: us-gaap (US companies), ifrs-full (foreign filers reporting under IFRS), dei (cover page data such as shares outstanding), srt, invest."
+          },
+          "tag": {
+            "type": "string",
+            "description": "XBRL concept name, case-sensitive, e.g. Revenues, RevenueFromContractWithCustomerExcludingAssessedTax, NetIncomeLoss, EarningsPerShareDiluted, Assets, Liabilities, StockholdersEquity, CashAndCashEquivalentsAtCarryingValue, AccountsPayableCurrent, or dei EntityCommonStockSharesOutstanding. List a company's concepts with sec_edgar_get_company_facts."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit of measure: USD, shares, USD-per-shares (per-share amounts), pure (ratios) or another currency such as EUR."
+          },
+          "period": {
+            "type": "string",
+            "pattern": "^CY\\d{4}(Q[1-4]I?)?$",
+            "description": "Calendar period: CY2024 (annual, about 365 days), CY2024Q2 (quarter, about 91 days) or CY2024Q4I (instant at quarter end, for balance sheet items such as Assets)."
+          }
+        },
+        "required": [
+          "taxonomy",
+          "tag",
+          "unit",
+          "period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/xbrl/frames/{taxonomy}/{tag}/{unit}/{period}.json"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{taxonomy: taxonomy, tag: tag, ccp: ccp, uom: uom, label: label, description: description, companies: pts, largest: reverse(sort_by(data, &val))[:250]}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sec_edgar_full_text_search",
+      "description": "Full-text search of EDGAR filings since 2001 (EDGAR Full-Text Search): find filings that mention words or an exact \"phrase\", filtered by form type, date range, company (CIK or name) and business location; without words it lists the latest filings of a form. Returns the total and up to 100 hits per page with form, filing date, period, company, CIK, accession number and document file name, plus counts per form type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Words to find; wrap a phrase in double quotes, e.g. \"supply chain disruption\". Leave empty to list filings by the other filters."
+          },
+          "forms": {
+            "type": "string",
+            "description": "Comma-separated form types, e.g. 10-K,10-Q or 8-K or S-1 or 4 or DEF 14A. Amendments are included."
+          },
+          "startdt": {
+            "type": "string",
+            "description": "First filing date, YYYY-MM-DD; use together with enddt."
+          },
+          "enddt": {
+            "type": "string",
+            "description": "Last filing date, YYYY-MM-DD."
+          },
+          "ciks": {
+            "type": "string",
+            "description": "Comma-separated CIKs, 10 digits each, e.g. 0000320193."
+          },
+          "entityName": {
+            "type": "string",
+            "description": "Company or person name to match in the filer names, when the CIK is not known."
+          },
+          "locationCodes": {
+            "type": "string",
+            "description": "Business location: a two-letter US state code (CA, NY, TX) or an EDGAR country code."
+          },
+          "from": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9900,
+            "description": "Offset of the first hit, in steps of 100 (0, 100, 200...)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://efts.sec.gov/LATEST/search-index",
+        "queryParams": {
+          "q": "$q",
+          "forms": "$forms",
+          "startdt": "$startdt",
+          "enddt": "$enddt",
+          "ciks": "$ciks",
+          "entityName": "$entityName",
+          "locationCodes": "$locationCodes",
+          "from": "$from"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "total": "$.hits.total.value",
+            "totalIsLowerBound": "$.hits.total.relation",
+            "hits": {
+              "$from": "$.hits.hits[*]",
+              "$select": {
+                "id": "_id",
+                "accessionNumber": "_source.adsh",
+                "form": "_source.form",
+                "fileType": "_source.file_type",
+                "description": "_source.file_description",
+                "filingDate": "_source.file_date",
+                "periodEnding": "_source.period_ending",
+                "companies": "_source.display_names",
+                "ciks": "_source.ciks",
+                "locations": "_source.biz_locations",
+                "items": "_source.items"
+              }
+            },
+            "forms": {
+              "$from": "$.aggregations.form_filter.buckets[*]",
+              "$select": {
+                "form": "key",
+                "count": "doc_count"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sec_edgar_get_filing_index",
+      "description": "List the documents of one EDGAR filing (the filing folder in the EDGAR archive): file names, types and sizes of the main document, exhibits, XBRL files and the full submission text. Build a document URL as https://www.sec.gov/Archives/edgar/data/<cik>/<accession without dashes>/<file name>.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cik": {
+            "type": "string",
+            "pattern": "^\\d{1,10}$",
+            "description": "CIK of the filer, with or without leading zeros, e.g. 320193."
+          },
+          "accession": {
+            "type": "string",
+            "pattern": "^\\d{18}$",
+            "description": "Accession number without dashes, 18 digits, e.g. 000032019325000079 for 0000320193-25-000079."
+          }
+        },
+        "required": [
+          "cik",
+          "accession"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/index.json"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "folder": "$.directory.name",
+            "files": {
+              "$from": "$.directory.item[*]",
+              "$select": {
+                "name": "name",
+                "size": "size",
+                "lastModified": "last-modified"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

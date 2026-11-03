@@ -1,0 +1,328 @@
+{
+  "slug": "immich",
+  "name": "Immich",
+  "description": "Let your AI read your Immich photo library: how many photos and videos you have, your albums and who they are shared with, the date, place, camera and people of a photo, the people Immich recognised and how many pictures were taken each month. Read-only: it never uploads, edits or deletes anything. Works with self-hosted Immich 3.0 or newer.",
+  "instructions": "## Immich\nThis connector reads one **Immich** photo library (Immich 3.0 or newer) through its REST API with an API key: the user and storage usage, photo and video counts, albums and who they are shared with, single photos and videos with their EXIF data, the recognised people, places and a month-by-month timeline. It is **read-only**: every tool is a GET request. It cannot upload, edit, favourite, archive, trash or delete assets, change albums, tags or people, or download originals, thumbnails or videos.\n\n**Setup (about 3 minutes)**\n1. Set `IMMICH_URL` to the address you open Immich at, without `/api` and without a trailing slash, for example `https://photos.example.com` or `http://192.168.1.10:2283` (the default port is 2283).\n2. Log in to Immich as the user whose library the AI should read, open **Account Settings, API Keys, New API Key** and grant only `user.read`, `asset.read`, `asset.statistics`, `album.read` and `person.read`. No admin account is needed, and these five permissions are the way to keep the key's access small. Copy the key (it is shown once) into `IMMICH_API_KEY`. It is sent in the `x-api-key` header.\n3. Check the setup with `immich_get_my_user`.\n\n**Where Immich runs**\n- **Self-hosted AnythingMCP**: Immich usually lives on a home server or NAS (`http://192.168.x.x:2283`). The outbound SSRF guard blocks private and local addresses by default, so an administrator must allow the host through the `SSRF_ALLOWED_HOSTS` environment variable or the allowlist in the admin settings.\n- **AnythingMCP Cloud**: Cloud can only reach an Immich server exposed on the public internet over HTTPS (for example behind a reverse proxy). A private IP or a local hostname is refused, and the allowlist cannot be changed on Cloud.\n\n**Privacy**: an API key reads one person's photos, faces and locations. An Immich key only sees the library of the user who created it (plus albums shared with that user). Assign this connector only to MCP servers whose users may see this library. Server file paths, checksums, thumbhashes, OAuth ids and license keys are removed from the answers.\n\n**How to work**\n1. Totals: `immich_get_asset_statistics`. Without filters it counts every asset that is not in the trash, archived ones included; `visibility=timeline` matches the main timeline, `isTrashed=true` counts only the trash.\n2. Albums: `immich_list_albums` (`isShared=true` for shared albums, `isOwned=true` for your own), then `immich_get_album` for one album's members, asset count and date range.\n3. People: `immich_search_people` by name to get a person id.\n4. \"How many per month\": `immich_get_timeline_buckets` with `personId`, `albumId`, `tagId` or `isFavorite`; it returns one `{timeBucket, count}` per month, newest first, with `timeBucket` as the first day of the month (`2026-10-01`). The same trash and archive rules as the statistics apply.\n5. One photo or video: `immich_get_asset` for the dates, camera, lens, exposure, GPS, city, country, people and tags.\n6. Places: `immich_search_places` by name for coordinates.\n\n**Identifiers**: all ids are UUIDs. Album ids come from `immich_list_albums`, person ids from `immich_search_people`, asset ids from `albumThumbnailAssetId` in album answers, and tag ids from the `tags` of `immich_get_asset`.\n\n**Common errors**\n- 401: the API key is wrong or was deleted. 401 \"Elevated permission is required\": the locked folder, which an API key cannot read.\n- 403 \"Missing required permission\": the key lacks one of the five permissions above.\n- 400 \"Not found or no ... access\": no asset or album with that id in this library (Immich answers 400, not 404).\n- 400 \"Validation failed\": an id is not a UUID, a value is not allowed, or `name` is missing on people or place search.\n- 404 everywhere: `IMMICH_URL` is wrong or already ends in `/api`.\n- Connection refused or blocked: on self-hosted, allow the host in the SSRF allowlist; on Cloud, the server must be public over HTTPS.\n\n**Out of scope**: smart and metadata search (POST requests), uploads and any change, downloading originals, thumbnails or videos, the locked folder, shared links, memories, admin endpoints and API key management.",
+  "region": "intl",
+  "category": "storage",
+  "icon": "immich",
+  "docsUrl": "https://api.immich.app",
+  "prerequisites": "An Immich 3.0 or newer server reachable from AnythingMCP (on Cloud: public over HTTPS) and an API key with the permissions user.read, asset.read, asset.statistics, album.read and person.read. No admin account needed. About 3 minutes.",
+  "requiredEnvVars": [
+    "IMMICH_URL",
+    "IMMICH_API_KEY"
+  ],
+  "envVarMeta": {
+    "IMMICH_URL": {
+      "label": "Immich URL",
+      "kind": "address",
+      "help": "The address you open Immich at, without /api and without a trailing slash (default port 2283). On AnythingMCP Cloud it must be public over HTTPS.",
+      "example": "http://192.168.1.10:2283",
+      "pattern": "^(?!.*/api/?$)https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https:// or http://, without /api and without a trailing slash, e.g. https://photos.example.com or http://192.168.1.10:2283."
+    },
+    "IMMICH_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Immich: Account Settings, API Keys, New API Key. Grant user.read, asset.read, asset.statistics, album.read and person.read. The key is shown once. No admin account is needed.",
+      "link": "https://api.immich.app/authentication",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste only the API key, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Immich refused the API key: it is wrong or was deleted. Create a new one under Account Settings, API Keys.",
+    "403": "Immich accepted the key but it lacks a permission for this request. Grant user.read, asset.read, asset.statistics, album.read and person.read.",
+    "404": "Nothing answered at this address. Check IMMICH_URL: the address you open Immich at, without /api and without a trailing slash."
+  },
+  "probe": {
+    "tool": "immich_get_my_user"
+  },
+  "connector": {
+    "name": "Immich API",
+    "type": "REST",
+    "baseUrl": "{{IMMICH_URL}}/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{IMMICH_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/server/ping"
+  },
+  "tools": [
+    {
+      "name": "immich_get_my_user",
+      "description": "Get the Immich user behind the API key: id, name, email, whether it is an admin, and the storage quota and usage in bytes. Use it to check the setup. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "license",
+            "oauthId",
+            "profileImagePath"
+          ]
+        }
+      }
+    },
+    {
+      "name": "immich_get_asset_statistics",
+      "description": "Count the photos and videos in the library: {images, videos, total}. Without filters it counts every asset not in the trash, archived ones included. Use visibility=timeline for the main timeline only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "isFavorite": {
+            "type": "boolean",
+            "description": "Optional: true for favourites only, false for non-favourites only."
+          },
+          "isTrashed": {
+            "type": "boolean",
+            "description": "Optional: true counts only assets in the trash. Without it, trashed assets are left out."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "timeline",
+              "archive",
+              "hidden"
+            ],
+            "description": "Optional: timeline for assets on the main timeline, archive for archived assets, hidden for assets hidden by Immich (e.g. the video part of a live photo). Without it, archived assets are counted too."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assets/statistics",
+        "queryParams": {
+          "isFavorite": "$isFavorite",
+          "isTrashed": "$isTrashed",
+          "visibility": "$visibility"
+        }
+      }
+    },
+    {
+      "name": "immich_list_albums",
+      "description": "List the albums this user owns or that are shared with them, shortened to id, name, description, asset count, shared flag, date range, thumbnail asset id, owner and members. The id is what immich_get_album and immich_get_timeline_buckets take. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "isShared": {
+            "type": "boolean",
+            "description": "Optional: true for shared albums only (shared with you or by you), false for albums nobody else can see."
+          },
+          "isOwned": {
+            "type": "boolean",
+            "description": "Optional: true for albums you own, false for albums other users shared with you."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional: only albums with exactly this name, e.g. Holidays 2026."
+          },
+          "assetId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Optional asset id (UUID) from immich_get_asset: only albums that contain this asset."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/albums",
+        "queryParams": {
+          "isShared": "$isShared",
+          "isOwned": "$isOwned",
+          "name": "$name",
+          "assetId": "$assetId"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "[].{id: id, albumName: albumName, description: description, assetCount: assetCount, shared: shared, startDate: startDate, endDate: endDate, albumThumbnailAssetId: albumThumbnailAssetId, owner: albumUsers[?role=='owner'].user.name | [0], members: albumUsers[?role!='owner'].{name: user.name, role: role}}"
+        }
+      }
+    },
+    {
+      "name": "immich_get_album",
+      "description": "Get one album by id: name, description, asset count, first and last photo date, thumbnail asset id, sharing and every member with their role. It does not list the album's assets. Immich answers 400 if the album does not exist. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Album id (UUID) from immich_list_albums, e.g. 1e80e25e-4f5f-48cf-8807-e25209774beb."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/albums/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "albumUsers[*].user.profileImagePath"
+          ]
+        }
+      }
+    },
+    {
+      "name": "immich_get_asset",
+      "description": "Get one photo or video by id: file name, type, capture and upload dates, favourite, archive and trash state, EXIF data (camera, lens, exposure, GPS, city, country), the recognised people and the tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Asset id (UUID), e.g. albumThumbnailAssetId from immich_list_albums or immich_get_album."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assets/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "originalPath",
+            "checksum",
+            "thumbhash",
+            "owner.profileImagePath",
+            "people[*].thumbnailPath"
+          ]
+        }
+      }
+    },
+    {
+      "name": "immich_search_people",
+      "description": "Find people Immich recognised by face, by name: id, name, birth date, favourite and hidden flags. The id is what immich_get_timeline_buckets takes as personId. Unnamed people cannot be found by name. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name or start of a name as set in Immich, e.g. Anna."
+          },
+          "withHidden": {
+            "type": "boolean",
+            "description": "Optional: true to include people hidden in Immich."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/person",
+        "queryParams": {
+          "name": "$name",
+          "withHidden": "$withHidden"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].thumbnailPath"
+          ]
+        }
+      }
+    },
+    {
+      "name": "immich_get_timeline_buckets",
+      "description": "Count assets per month: one {timeBucket, count} per month that has assets, newest first, timeBucket being the first day of the month (2026-10-01). Use it for 'how many photos of Anna each month', filtered by person, album, tag or favourites. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Optional person id (UUID) from immich_search_people."
+          },
+          "albumId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Optional album id (UUID) from immich_list_albums."
+          },
+          "tagId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Optional tag id (UUID) from the tags of an asset returned by immich_get_asset."
+          },
+          "isFavorite": {
+            "type": "boolean",
+            "description": "Optional: true for favourites only, false for non-favourites only."
+          },
+          "isTrashed": {
+            "type": "boolean",
+            "description": "Optional: true counts only assets in the trash. Without it, trashed assets are left out."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "timeline",
+              "archive",
+              "hidden"
+            ],
+            "description": "Optional: timeline for assets on the main timeline, archive for archived assets, hidden for assets hidden by Immich (e.g. the video part of a live photo). Without it, archived assets are counted too."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timeline/buckets",
+        "queryParams": {
+          "personId": "$personId",
+          "albumId": "$albumId",
+          "tagId": "$tagId",
+          "isFavorite": "$isFavorite",
+          "isTrashed": "$isTrashed",
+          "visibility": "$visibility"
+        }
+      }
+    },
+    {
+      "name": "immich_search_places",
+      "description": "Find places by name in Immich's built-in geocoding data: name, region (admin1name, admin2name), latitude and longitude, e.g. to place a photo's city on a map. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Place name or start of it, e.g. Berlin or Arezzo."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/places",
+        "queryParams": {
+          "name": "$name"
+        }
+      }
+    }
+  ]
+}

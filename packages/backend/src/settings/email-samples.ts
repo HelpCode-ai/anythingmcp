@@ -2,7 +2,9 @@ import type { EmailBrandContext } from './email-layout';
 import type { TrustStats } from '../public-stats/trust-stats.format';
 import {
   RenderedEmail,
+  type RetentionOffer,
   activationReminderEmail,
+  appApprovedEmail,
   cardTrialOfferEmail,
   connectorAuthEmail,
   existingAccountEmail,
@@ -12,6 +14,8 @@ import {
   passwordResetEmail,
   trialLifecycleEmail,
   trialWinbackEmail,
+  trialBlockedCallsEmail,
+  trialEndedBusinessEmail,
   verificationEmail,
 } from './email-templates';
 
@@ -24,6 +28,15 @@ export const SAMPLE_CLOUD_URL = 'https://cloud.anythingmcp.com';
 export const SAMPLE_MARKETING_URL = 'https://anythingmcp.com';
 /** When the sample trials ended: the first win-back goes out a day later. */
 const SAMPLE_TRIAL_ENDED_AT = new Date('2026-10-07T09:30:00Z');
+/** The sample win-back codes, as the licence site mints them, valid 14 days. */
+const SAMPLE_CODES_EXPIRE_AT = new Date('2026-10-22T09:30:00Z');
+const SAMPLE_LOCKED: RetentionOffer = {
+  kind: 'locked',
+  monthlyCode: 'KEEP-7F3K9Q',
+  yearlyCode: 'KEEP-Y4M8RT',
+  codesExpireAt: SAMPLE_CODES_EXPIRE_AT,
+};
+const SAMPLE_PERSONAL: RetentionOffer = { kind: 'personal', code: 'KEEP-P6W2XN', codesExpireAt: SAMPLE_CODES_EXPIRE_AT };
 /** When the sample trial of the card-trial offer ends. */
 const SAMPLE_TRIAL_ENDS_AT = new Date('2026-10-18T09:30:00Z');
 
@@ -80,6 +93,20 @@ export const EMAIL_SAMPLES: EmailSample[] = [
       ),
   },
   {
+    id: 'app-approved-etsy',
+    render: (ctx, n) =>
+      appApprovedEmail(
+        {
+          name: n.name,
+          providerName: 'Etsy',
+          connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector`,
+          prompt: 'Show my last 10 Etsy orders',
+          promptUrl: 'https://claude.ai/new?q=Show%20my%20last%2010%20Etsy%20orders',
+        },
+        ctx,
+      ),
+  },
+  {
     id: 'license-key',
     render: (ctx, n) => licenseKeyEmail({ name: n.name, licenseKey: 'AMCP-7Q2K-9XWD-4MRT-HB3N' }, ctx),
   },
@@ -91,6 +118,23 @@ export const EMAIL_SAMPLES: EmailSample[] = [
   {
     id: 'onboarding-day1',
     render: (ctx, n) => onboardingReminderEmail({ name: n.name, dayNumber: 1, cloudUrl: SAMPLE_CLOUD_URL }, unsub(ctx)),
+  },
+  {
+    id: 'onboarding-day1-quick',
+    render: (ctx, n) =>
+      onboardingReminderEmail(
+        {
+          name: n.name,
+          dayNumber: 1,
+          cloudUrl: SAMPLE_CLOUD_URL,
+          quickSetups: [
+            { label: 'Telegram bot', url: 'https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP' },
+            { label: 'Odoo', url: 'https://claude.ai/new?q=Connect%20my%20Odoo%20to%20AnythingMCP' },
+            { label: 'Shopify store', url: 'https://claude.ai/new?q=Connect%20my%20Shopify%20store%20to%20AnythingMCP' },
+          ],
+        },
+        unsub(ctx),
+      ),
   },
   {
     id: 'onboarding-day2',
@@ -146,19 +190,12 @@ export const EMAIL_SAMPLES: EmailSample[] = [
       ),
   },
   {
-    id: 'winback-discount-first',
+    id: 'winback-locked-first',
     render: (ctx, n) =>
       trialWinbackEmail(
         {
           name: n.name,
-          offer: {
-            kind: 'discount',
-            percentOff: 30,
-            promoCode: 'START30',
-            stage: 'first',
-            trialEndedAt: SAMPLE_TRIAL_ENDED_AT,
-            successfulCalls: 148,
-          },
+          offer: { kind: 'offer', offer: SAMPLE_LOCKED, stage: 'first', trialEndedAt: SAMPLE_TRIAL_ENDED_AT, successfulCalls: 148 },
           cloudUrl: SAMPLE_CLOUD_URL,
           marketingUrl: SAMPLE_MARKETING_URL,
         },
@@ -166,20 +203,12 @@ export const EMAIL_SAMPLES: EmailSample[] = [
       ),
   },
   {
-    // A/B test arm of the first win-back: private users without a business app.
-    id: 'winback-discount-first-month',
+    id: 'winback-locked-final',
     render: (ctx, n) =>
       trialWinbackEmail(
         {
           name: n.name,
-          offer: {
-            kind: 'firstMonth',
-            price: '€5.99',
-            regularPrice: '€19',
-            promoCode: 'STARTER599',
-            trialEndedAt: SAMPLE_TRIAL_ENDED_AT,
-            successfulCalls: 37,
-          },
+          offer: { kind: 'offer', offer: SAMPLE_LOCKED, stage: 'final', trialEndedAt: SAMPLE_TRIAL_ENDED_AT, successfulCalls: 0 },
           cloudUrl: SAMPLE_CLOUD_URL,
           marketingUrl: SAMPLE_MARKETING_URL,
         },
@@ -187,19 +216,25 @@ export const EMAIL_SAMPLES: EmailSample[] = [
       ),
   },
   {
-    id: 'winback-discount-final',
+    id: 'winback-personal-first',
     render: (ctx, n) =>
       trialWinbackEmail(
         {
           name: n.name,
-          offer: {
-            kind: 'discount',
-            percentOff: 50,
-            promoCode: 'WINBACK50',
-            stage: 'final',
-            trialEndedAt: SAMPLE_TRIAL_ENDED_AT,
-            successfulCalls: 0,
-          },
+          offer: { kind: 'offer', offer: SAMPLE_PERSONAL, stage: 'first', trialEndedAt: SAMPLE_TRIAL_ENDED_AT, successfulCalls: 37 },
+          cloudUrl: SAMPLE_CLOUD_URL,
+          marketingUrl: SAMPLE_MARKETING_URL,
+        },
+        unsub(ctx),
+      ),
+  },
+  {
+    id: 'winback-personal-final',
+    render: (ctx, n) =>
+      trialWinbackEmail(
+        {
+          name: n.name,
+          offer: { kind: 'offer', offer: SAMPLE_PERSONAL, stage: 'final', trialEndedAt: SAMPLE_TRIAL_ENDED_AT, successfulCalls: 5 },
           cloudUrl: SAMPLE_CLOUD_URL,
           marketingUrl: SAMPLE_MARKETING_URL,
         },
@@ -213,6 +248,60 @@ export const EMAIL_SAMPLES: EmailSample[] = [
         {
           name: n.name,
           offer: { kind: 'help', trialEndedAt: SAMPLE_TRIAL_ENDED_AT },
+          cloudUrl: SAMPLE_CLOUD_URL,
+          marketingUrl: SAMPLE_MARKETING_URL,
+        },
+        unsub(ctx),
+      ),
+  },
+  {
+    // The AI kept calling a tool after the trial ended. `other` stands in for
+    // the OAuth client's self-chosen name, so the escaping is exercised.
+    id: 'blocked-calls',
+    render: (ctx, n) =>
+      trialBlockedCallsEmail(
+        {
+          name: n.name,
+          clientName: n.other || null,
+          appName: 'Etsy',
+          attempts: 6,
+          offer: SAMPLE_LOCKED,
+          trialEndedAt: SAMPLE_TRIAL_ENDED_AT,
+          cloudUrl: SAMPLE_CLOUD_URL,
+          marketingUrl: SAMPLE_MARKETING_URL,
+        },
+        unsub(ctx),
+      ),
+  },
+  {
+    // The same, for a workspace that never made a successful call.
+    id: 'blocked-calls-never-used',
+    render: (ctx, n) =>
+      trialBlockedCallsEmail(
+        {
+          name: n.name,
+          clientName: n.other || null,
+          appName: 'Etsy',
+          attempts: 3,
+          neverUsed: true,
+          offer: SAMPLE_PERSONAL,
+          trialEndedAt: SAMPLE_TRIAL_ENDED_AT,
+          cloudUrl: SAMPLE_CLOUD_URL,
+          marketingUrl: SAMPLE_MARKETING_URL,
+        },
+        unsub(ctx),
+      ),
+  },
+  {
+    // The expiry day of a business workspace: a plain email from Matteo.
+    id: 'trial-ended-business',
+    render: (ctx, n) =>
+      trialEndedBusinessEmail(
+        {
+          name: n.name,
+          recap: { connectors: 3, successfulCalls: 412, topConnector: n.other || 'Odoo' },
+          extendUrl: `${SAMPLE_CLOUD_URL}/api/license/extend?token=sample-org.1760000000.sample-signature`,
+          offer: SAMPLE_LOCKED,
           cloudUrl: SAMPLE_CLOUD_URL,
           marketingUrl: SAMPLE_MARKETING_URL,
         },
@@ -260,14 +349,33 @@ export const EMAIL_SAMPLES: EmailSample[] = [
 /** Ids of the samples that must carry an unsubscribe line. */
 export const MARKETING_SAMPLE_IDS = new Set([
   'onboarding-day1',
+  'onboarding-day1-quick',
   'onboarding-day2',
   'onboarding-client-connected',
   'activation-connect-client',
   'activation-test-connector',
-  'winback-discount-first',
-  'winback-discount-first-month',
-  'winback-discount-final',
+  'winback-locked-first',
+  'winback-locked-final',
+  'winback-personal-first',
+  'winback-personal-final',
   'winback-help',
+  'blocked-calls',
+  'blocked-calls-never-used',
+  'trial-ended-business',
   'card-trial-offer',
   'card-trial-offer-plans',
 ]);
+
+/** Samples that carry a price offer: the "no price talk" check does not apply. */
+export const OFFER_SAMPLE_IDS = new Set([
+  'winback-locked-first',
+  'winback-locked-final',
+  'winback-personal-first',
+  'winback-personal-final',
+  'blocked-calls',
+  'blocked-calls-never-used',
+  'trial-ended-business',
+]);
+
+/** Samples written as a personal plain email, without the shared layout. */
+export const PLAIN_SAMPLE_IDS = new Set(['trial-ended-business']);

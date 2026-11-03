@@ -9,6 +9,7 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { ODataEngine } from './engines/odata.engine';
+import { EmailEngine } from './engines/email.engine';
 import { GraphqlSchemaService } from './engines/graphql-schema.service';
 import { OpenApiParser } from './parsers/openapi.parser';
 import { WsdlParser } from './parsers/wsdl.parser';
@@ -19,10 +20,12 @@ import { HarParser } from './parsers/har.parser';
 import { McpOAuthService } from './mcp-oauth.service';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 import { ShopeeAuthController } from './shopee-auth.controller';
+import { WebhookIngestController } from './webhook-ingest.controller';
 import { CatalogResyncService } from './catalog-resync.service';
 import { CatalogReconciler } from './catalog-reconciler.service';
 import { LicenseModule } from '../license/license.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
+import { FileSearchCoreModule } from '../file-search/file-search-core.module';
 import { IdentityProvidersModule } from '../identity-providers/identity-providers.module';
 
 const ENGINES = [
@@ -32,6 +35,7 @@ const ENGINES = [
   McpClientEngine,
   DatabaseEngine,
   ODataEngine,
+  EmailEngine,
 ];
 
 const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser, HarParser];
@@ -45,8 +49,8 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 // not each log in.
 @Module({
   // IdentityProvidersModule: SsoService, for signing in on the connect page.
-  imports: [McpServerModule, McpServersModule, LicenseModule, IdentityProvidersModule],
-  controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, ToolsController],
+  imports: [McpServerModule, McpServersModule, LicenseModule, IdentityProvidersModule, FileSearchCoreModule],
+  controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, ToolsController, WebhookIngestController],
   providers: [
     ConnectorsService,
     McpOAuthService,

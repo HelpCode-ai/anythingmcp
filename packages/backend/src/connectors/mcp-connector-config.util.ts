@@ -33,3 +33,22 @@ export function localMcpToolName(remoteName: string, prefix?: string): string {
     ? normalized
     : `${prefix}${normalized}`;
 }
+
+/**
+ * The connector variables a remote MCP tool may get as arguments: only the
+ * names that are top-level properties of its input schema. Every variable,
+ * credentials included, used to be added to the arguments of every call (the
+ * REST engines need all of them for `$name` in paths and bodies), so a bridge
+ * sent its own API key or token to the remote server as a tool argument,
+ * where it could end up in the vendor's logs or be refused as unknown.
+ */
+export function envVarsForMcpTool(
+  envVars: Record<string, string>,
+  parameters: unknown,
+): Record<string, string> {
+  const props = (parameters as { properties?: unknown } | null | undefined)?.properties;
+  if (!props || typeof props !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(envVars).filter(([name]) => Object.prototype.hasOwnProperty.call(props, name)),
+  );
+}

@@ -1,0 +1,1745 @@
+{
+  "slug": "google-admin",
+  "name": "Google Workspace Admin",
+  "aliases": [
+    "Google Admin",
+    "Admin SDK",
+    "G Suite Admin",
+    "Google Workspace Directory"
+  ],
+  "description": "Google Workspace administration for AI agents: users (create, update, suspend, sign out), aliases, groups and members, organizational units, admin roles and assignments, ChromeOS and mobile devices, domains, plus audit logs and usage reports. Admin SDK, OAuth2, admin account required.",
+  "instructions": "## Google Workspace Admin\nThis connector manages a Google Workspace (or Cloud Identity) account through the **Admin SDK**: the **Directory API** (`https://admin.googleapis.com/admin/directory/v1`: users, aliases, groups and members, organizational units, admin roles and role assignments, ChromeOS and mobile devices, domains) and the **Reports API** (`/admin/reports/v1`: audit logs and usage statistics). It always works on the account of the Google user who authorizes it (`my_customer`).\n\n**Who can use it**: the authorizing Google account must be a **Workspace administrator**. A **Super Admin** can use every tool. A delegated admin works for the parts their role covers, as long as the role also has the matching **Admin API privileges** (Admin console → Account → Admin roles → the role → Privileges → Admin API): Users (read, create, update) for user and alias tools, Groups for group and member tools, Organization Units for org unit tools, Reports for the audit and usage tools, Services → Chrome OS and Mobile Device Management for devices, Domain Settings for domains. Roles and role assignments need Super Admin or the Admin API privilege **Roles Management**. A regular user gets 403 `Not Authorized to access this resource/api` on every call. Use a dedicated admin account with the smallest role that covers the work.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Admin SDK API** (it covers Directory and Reports).\n2. **APIs & Services → OAuth consent screen**: choose **Internal** (the project must belong to the same Google Workspace organization; simplest). For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n5. On the connector page, click **Authorize with Provider** and sign in with the **admin** account. The refresh token is stored encrypted and access tokens are renewed automatically.\n6. If the Admin console restricts third-party apps (**Security → Access and data control → API controls**), mark this OAuth client as **Trusted**, otherwise sign-in ends with `admin_policy_enforced`.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Sheets, Search Console, Analytics, Ads, Admin). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scopes**: `admin.directory.user`, `admin.directory.user.security` (sign out), `admin.directory.group` (groups and members), `admin.directory.orgunit`, `admin.directory.rolemanagement`, read-only scopes for ChromeOS devices, mobile devices, domains and the customer, and `admin.reports.audit.readonly` plus `admin.reports.usage.readonly`. For a read-only setup, replace the first five with their `.readonly` variants (`admin.directory.user.readonly`, `admin.directory.group.readonly`, `admin.directory.orgunit.readonly`, `admin.directory.rolemanagement.readonly`) and drop `admin.directory.user.security` in the connector's OAuth settings, authorize again, and disable every create, update, add, assign, suspend, sign-out and undelete tool.\n\n**Switched off at install**: `google_admin_delete_user`, `google_admin_delete_group`, `google_admin_remove_group_member`, `google_admin_delete_user_alias` and `google_admin_delete_role_assignment`; they cannot be undone (a deleted user can only be restored for 20 days, a group never), so an admin switches them on when the team needs them.\n\n**Start here**: `google_admin_get_customer` checks the connection and shows the customer id and primary domain; `google_admin_list_domains` and `google_admin_get_domain` list the domains, `google_admin_list_domain_aliases` the alias domains.\n\n**Users**\n- Find: `google_admin_list_users` with `query` (e.g. `isSuspended=true`, `orgUnitPath='/Sales'`, `isEnrolledIn2Sv=false`, `isAdmin=true`, `email:anna*`), then `google_admin_get_user` for one person. `user_key` accepts the primary email, an alias or the immutable `id`.\n- Onboard: `google_admin_create_user` (initial password, `change_password_at_next_login` true), then `google_admin_add_group_member` and `google_admin_update_user` for title, department, manager or org unit. Extra addresses with `google_admin_add_user_alias`; list them with `google_admin_list_user_aliases`.\n- Offboard or incident: `google_admin_suspend_user` (reversible with `google_admin_unsuspend_user`) and `google_admin_sign_out_user` to end all sessions; set a new password with `google_admin_update_user`. Deleting (`google_admin_delete_user`) loses mail and files unless they were transferred first in the Admin console; `google_admin_undelete_user` restores within 20 days by user `id`.\n- `google_admin_update_user` only changes the fields you send; lists (`organizations`, `phones`, `relations`) replace the whole list.\n\n**Groups**: `google_admin_list_groups` (search with `query`, e.g. `email:sales*`), `google_admin_list_user_groups` for one user's groups, `google_admin_get_group`, `google_admin_create_group`, `google_admin_update_group`, `google_admin_delete_group`. Members: `google_admin_list_group_members` (with `include_derived_membership` for nested groups), `google_admin_get_group_member`, `google_admin_has_group_member` (direct or nested, users only), `google_admin_add_group_member`, `google_admin_update_group_member` (role, delivery), `google_admin_remove_group_member`.\n\n**Organizational units**: `google_admin_list_org_units` (`type` \"all\" for the whole tree), `google_admin_get_org_unit`, `google_admin_create_org_unit`, `google_admin_update_org_unit`. In tool paths an org unit is written **without** the leading slash (`Sales/EMEA`) or as `id:<orgUnitId>`; in user fields (`org_unit_path`, `parent_org_unit_path`) **with** it (`/Sales/EMEA`). Moving users is done on the user with `google_admin_update_user`.\n\n**Admin roles**: `google_admin_list_roles` and `google_admin_get_role` show roles and privileges; `google_admin_list_role_assignments` shows who is an admin (filter by `user_key` or `role_id`; `assignedTo` is a user or group id, resolve it with `google_admin_get_user` or `google_admin_get_group`); `google_admin_get_role_assignment` reads one. `google_admin_assign_role` grants a role (needs the immutable user or group id and `scope_type`); `google_admin_delete_role_assignment` takes it away. A quick list of super admins: `google_admin_list_users` with `query` `isAdmin=true`.\n\n**Devices** (read-only): `google_admin_list_chromeos_devices` and `google_admin_get_chromeos_device` (by `deviceId`); `google_admin_list_mobile_devices` and `google_admin_get_mobile_device` (by `resourceId`). Search syntax: `status:provisioned`, `user:anna@example.com`, `sync:..2026-06-01` (not synced since). Blocking or wiping devices stays in the Admin console.\n\n**Reports**\n- Audit logs: `google_admin_list_activities` with `application_name` (`login`, `admin`, `drive`, `token`, `groups`, `mobile`, `meet`, `gmail`, `calendar`, `chrome`, `saml`, `user_accounts`...) and `user_key` `all` or one user. Narrow with `start_time`/`end_time` (RFC 3339, UTC) and `event_name`, e.g. `login_failure` or `suspicious_login` on `login`, `download` on `drive`, `authorize` on `token`. Results are newest first; most logs go back about 6 months (Drive and some others longer on higher editions). Events take minutes to hours to appear.\n- Usage: `google_admin_get_customer_usage` (account totals for one day) and `google_admin_get_user_usage` (per user, `user_key` `all`). `date` is `YYYY-MM-DD` in **Pacific Time** and data is 1-3 days late: a too recent date returns a warning such as `PARTIAL_DATA_AVAILABLE` or `DATA_NOT_AVAILABLE`; step back a day. Select values with `parameters` (`accounts:last_login_time`, `accounts:used_quota_in_mb`, `gmail:num_emails_sent`, `accounts:is_2sv_enrolled`) and filter users with `filters` (`accounts:last_login_time<2026-07-01T00:00:00.000Z`).\n\n**Reading the answers**: times are RFC 3339 in UTC (`lastLoginTime` `1970-01-01T00:00:00.000Z` means never signed in); domain `creationTime` is epoch milliseconds. Ids (`id`, `orgUnitId`, `roleId`, `roleAssignmentId`, `deviceId`, `resourceId`) are stable; emails can change.\n\n**Paging**: list tools return `nextPageToken`; call again with `page_token` until it is missing. Page sizes: users 500, groups and members 200, ChromeOS 300, mobile 100, activities and user usage 1,000.\n\n**Limits and errors**\n- Quota: Google limits queries per minute per project and per user; 403 `quotaExceeded`, `rateLimitExceeded` or 429 means wait a minute and retry, and prefer one search over many single reads. Creating many users or groups at once can need a few minutes before they are visible.\n- 401: authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*): click **Authorize with Provider** again.\n- 403 `Not Authorized to access this resource/api`: the signed-in account is not an admin, or its role lacks the Admin API privilege for this area. 403 `Request had insufficient authentication scopes`: authorize again after a scope change. 403 \"Admin SDK API has not been used in project\": enable the API (step 1).\n- 404 `Resource Not Found: userKey`: no such user, alias or id. 409 `Entity already exists`: the email, alias or member is already taken. 400 `Invalid Input`: check the email domain belongs to the account and the password length.\n\n**Out of scope here**: Gmail and Drive content (use the Gmail and Google Drive connectors), group settings (Groups Settings API), licenses (Enterprise License Manager API), device wipe or block, and data transfer at offboarding.",
+  "region": "intl",
+  "category": "productivity",
+  "icon": "google-admin",
+  "docsUrl": "https://developers.google.com/workspace/admin/directory/reference/rest",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Admin SDK API is not enabled in the Google Cloud project, or the Google account that authorized the connector is not a Workspace administrator (or its admin role lacks the Admin API privileges). Enable the API under APIs & Services → Library and authorize with an admin account.",
+    "rate_limited": "The Admin SDK is throttling this project. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "google_admin_get_customer"
+  },
+  "prerequisites": "A Google Workspace or Cloud Identity **administrator** account (Super Admin, or a delegated admin role with Admin API privileges), a Google Cloud project with the **Admin SDK API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. About 10 minutes.",
+  "connector": {
+    "name": "Google Workspace Admin",
+    "type": "REST",
+    "baseUrl": "https://admin.googleapis.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/admin.directory.user https://www.googleapis.com/auth/admin.directory.user.security https://www.googleapis.com/auth/admin.directory.group https://www.googleapis.com/auth/admin.directory.orgunit https://www.googleapis.com/auth/admin.directory.rolemanagement https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly https://www.googleapis.com/auth/admin.directory.device.mobile.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.reports.audit.readonly https://www.googleapis.com/auth/admin.reports.usage.readonly"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/admin/directory/v1/customers/my_customer"
+  },
+  "tools": [
+    {
+      "name": "google_admin_get_customer",
+      "description": "Read the Google Workspace account itself: customer id (starts with C), primary domain, organization name and postal address, language, alternate email and creation time. Cheap; use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customers/my_customer"
+      }
+    },
+    {
+      "name": "google_admin_list_domains",
+      "description": "List the domains of the Workspace account: the primary domain and every secondary domain, each with verified, isPrimary, creationTime (epoch milliseconds) and its domain aliases.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/domains"
+      }
+    },
+    {
+      "name": "google_admin_get_domain",
+      "description": "Read one domain of the account: whether it is verified and primary, when it was added, and its domain aliases.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_name": {
+            "type": "string",
+            "description": "The domain name, e.g. \"example.com\"."
+          }
+        },
+        "required": [
+          "domain_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/domains/{domain_name}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_admin_list_domain_aliases",
+      "description": "List domain aliases (domains that mirror another domain, so every user also receives mail at user@alias-domain), with their parent domain and verification state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_domain_name": {
+            "type": "string",
+            "description": "Only aliases of this domain, e.g. \"example.com\". Leave empty for all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/domainaliases",
+        "queryParams": {
+          "parentDomainName": "$parent_domain_name"
+        }
+      }
+    },
+    {
+      "name": "google_admin_list_users",
+      "description": "List or search the users of the Workspace account (up to 500 per page): primaryEmail, name, id, orgUnitPath, isAdmin, suspended, archived, lastLoginTime, creationTime, isEnrolledIn2Sv, aliases. Search with `query`, e.g. \"isSuspended=true\", \"orgUnitPath='/Sales'\", \"name:'Jane'\", \"email:jane*\", \"isAdmin=true\", \"isEnrolledIn2Sv=false\". Page with page_token = nextPageToken until it is missing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search expression, e.g. \"isSuspended=false orgUnitPath='/Sales'\" (clauses separated by spaces are ANDed), \"email:anna*\", \"name:'Anna Rossi'\", \"isAdmin=true\", \"isEnrolledIn2Sv=false\", \"lastLoginTime<2026-01-01\". Leave empty for every user."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort by \"email\", \"givenName\" or \"familyName\".",
+            "enum": [
+              "email",
+              "givenName",
+              "familyName"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "\"ASCENDING\" or \"DESCENDING\"; only with order_by.",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ]
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Users per page, 1-500. Default 100.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          },
+          "projection": {
+            "type": "string",
+            "description": "\"basic\" (default) leaves out custom schema fields; \"full\" includes them.",
+            "enum": [
+              "basic",
+              "full"
+            ]
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true lists users deleted in the last 20 days instead (they can be restored with google_admin_undelete_user)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/users",
+        "queryParams": {
+          "customer": "my_customer",
+          "query": "$query",
+          "orderBy": "$order_by",
+          "sortOrder": "$sort_order",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token",
+          "projection": "$projection",
+          "showDeleted": "$show_deleted"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_user",
+      "description": "Read one user's full admin view: name, primaryEmail, aliases, orgUnitPath, suspended and suspensionReason, isAdmin, isDelegatedAdmin, 2-Step Verification enrolment and enforcement, lastLoginTime, creationTime, recovery email and phone, phones, organizations (title, department), relations (manager) and external ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "The user's primary email address, one of their alias addresses, or their immutable user `id` (from google_admin_list_users)."
+          },
+          "projection": {
+            "type": "string",
+            "description": "\"basic\" (default) leaves out custom schema fields; \"full\" includes them.",
+            "enum": [
+              "basic",
+              "full"
+            ]
+          }
+        },
+        "required": [
+          "user_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/users/{user_key}",
+        "encodePathParams": true,
+        "queryParams": {
+          "projection": "$projection",
+          "viewType": "admin_view"
+        }
+      }
+    },
+    {
+      "name": "google_admin_create_user",
+      "description": "Create a user account in Google Workspace. Needs a primary email on one of the account's domains, a first and last name and an initial password (8-100 characters). A new account may need a few minutes before it can sign in and may use a Workspace license.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "primary_email": {
+            "type": "string",
+            "description": "The new address, e.g. \"anna.rossi@example.com\"; the domain must belong to the account (google_admin_list_domains)."
+          },
+          "given_name": {
+            "type": "string",
+            "description": "First name, up to 60 characters."
+          },
+          "family_name": {
+            "type": "string",
+            "description": "Last name, up to 60 characters."
+          },
+          "password": {
+            "type": "string",
+            "description": "Initial password in clear text, 8-100 ASCII characters. Share it with the person over a safe channel and keep change_password_at_next_login true."
+          },
+          "change_password_at_next_login": {
+            "type": "boolean",
+            "description": "true (recommended) makes the user pick their own password at first sign-in."
+          },
+          "org_unit_path": {
+            "type": "string",
+            "description": "Organizational unit with the leading slash, e.g. \"/Sales\". Default \"/\" (the top level)."
+          },
+          "recovery_email": {
+            "type": "string",
+            "description": "Personal recovery email address."
+          },
+          "recovery_phone": {
+            "type": "string",
+            "description": "Recovery phone in E.164 format, e.g. \"+393331234567\"."
+          }
+        },
+        "required": [
+          "primary_email",
+          "given_name",
+          "family_name",
+          "password"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/admin/directory/v1/users",
+        "bodyMapping": {
+          "primaryEmail": "$primary_email",
+          "name": {
+            "givenName": "$given_name",
+            "familyName": "$family_name"
+          },
+          "password": "$password",
+          "changePasswordAtNextLogin": "$change_password_at_next_login",
+          "orgUnitPath": "$org_unit_path",
+          "recoveryEmail": "$recovery_email",
+          "recoveryPhone": "$recovery_phone"
+        }
+      }
+    },
+    {
+      "name": "google_admin_update_user",
+      "description": "Change fields of an existing user; fields left out stay as they are. Renaming the primary email keeps the old address as an alias. Lists such as phones and organizations replace the whole list, so read the user first and send the complete list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "The user's primary email address, one of their alias addresses, or their immutable user `id` (from google_admin_list_users)."
+          },
+          "name": {
+            "type": "object",
+            "description": "New name: {\"givenName\": \"Anna\", \"familyName\": \"Rossi\"}.",
+            "properties": {
+              "givenName": {
+                "type": "string"
+              },
+              "familyName": {
+                "type": "string"
+              }
+            }
+          },
+          "primary_email": {
+            "type": "string",
+            "description": "New primary email address on one of the account's domains."
+          },
+          "org_unit_path": {
+            "type": "string",
+            "description": "Move the user to this organizational unit, with the leading slash, e.g. \"/Sales/EMEA\"."
+          },
+          "password": {
+            "type": "string",
+            "description": "New password in clear text, 8-100 ASCII characters."
+          },
+          "change_password_at_next_login": {
+            "type": "boolean",
+            "description": "true forces a password change at the next sign-in."
+          },
+          "recovery_email": {
+            "type": "string",
+            "description": "Personal recovery email address."
+          },
+          "recovery_phone": {
+            "type": "string",
+            "description": "Recovery phone in E.164 format, e.g. \"+393331234567\"."
+          },
+          "include_in_global_address_list": {
+            "type": "boolean",
+            "description": "false hides the user from the directory / global address list."
+          },
+          "organizations": {
+            "type": "array",
+            "description": "Job information, replaces the whole list: [{\"title\": \"Sales Manager\", \"department\": \"Sales\", \"primary\": true}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "phones": {
+            "type": "array",
+            "description": "Phone numbers, replaces the whole list: [{\"value\": \"+39 02 1234567\", \"type\": \"work\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "relations": {
+            "type": "array",
+            "description": "Relations, replaces the whole list, e.g. the manager: [{\"value\": \"boss@example.com\", \"type\": \"manager\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "user_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/admin/directory/v1/users/{user_key}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "primaryEmail": "$primary_email",
+          "orgUnitPath": "$org_unit_path",
+          "password": "$password",
+          "changePasswordAtNextLogin": "$change_password_at_next_login",
+          "recoveryEmail": "$recovery_email",
+          "recoveryPhone": "$recovery_phone",
+          "includeInGlobalAddressList": "$include_in_global_address_list",
+          "organizations": "$organizations",
+          "phones": "$phones",
+          "relations": "$relations"
+        }
+      }
+    },
+    {
+      "name": "google_admin_suspend_user",
+      "description": "Suspend a user: they can no longer sign in and stop receiving mail, but the account, its data and licenses stay. Undo with google_admin_unsuspend_user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "The user's primary email address, one of their alias addresses, or their immutable user `id` (from google_admin_list_users)."
+          }
+        },
+        "required": [
+          "user_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/admin/directory/v1/users/{user_key}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "suspended": true
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_admin_unsuspend_user",
+      "description": "Reactivate a suspended user so they can sign in again. A user suspended by Google for abuse (suspensionReason other than ADMIN) may stay suspended.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "The user's primary email address, one of their alias addresses, or their immutable user `id` (from google_admin_list_users)."
+          }
+        },
+        "required": [
+          "user_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/admin/directory/v1/users/{user_key}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "suspended": false
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_admin_sign_out_user",
+      "description": "Sign a user out of every web and device session and reset their sign-in cookies, e.g. after a lost laptop or a suspected compromise. Their password is not changed; combine with update_user (password) when the account may be compromised.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "The user's primary email address, one of their alias addresses, or their immutable user `id` (from google_admin_list_users)."
+          }
+        },
+        "required": [
+          "user_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/admin/directory/v1/users/{user_key}/signOut",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_admin_undelete_user",
+      "description": "Restore a user deleted in the last 20 days (super admin only). Needs the user's immutable id, not the email: find it with google_admin_list_users and show_deleted true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Immutable id of the deleted user (the `id` from google_admin_list_users with show_deleted true)."
+          },
+          "org_unit_path": {
+            "type": "string",
+            "description": "Organizational unit to restore the user into, with the leading slash. Default \"/\"."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/admin/directory/v1/users/{user_id}/undelete",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "orgUnitPath": "$org_unit_path"
+        }
+      }
+    },
+    {
+      "name": "google_admin_delete_user",
+      "description": "Delete a user account. Their mail, Drive files and calendar go with it unless transferred first in the Admin console; it can be restored for 20 days with google_admin_undelete_user, after that it is gone. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "The user's primary email address, one of their alias addresses, or their immutable user `id` (from google_admin_list_users)."
+          }
+        },
+        "required": [
+          "user_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/admin/directory/v1/users/{user_key}",
+        "encodePathParams": true
+      },
+      "enabled": false,
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_admin_list_user_aliases",
+      "description": "List a user's email aliases (extra addresses that deliver to the same mailbox).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "The user's primary email address, one of their alias addresses, or their immutable user `id` (from google_admin_list_users)."
+          }
+        },
+        "required": [
+          "user_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/users/{user_key}/aliases",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_admin_add_user_alias",
+      "description": "Add an email alias to a user, e.g. \"info@example.com\". The alias domain must belong to the account; a user can have up to 30 aliases.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "The user's primary email address, one of their alias addresses, or their immutable user `id` (from google_admin_list_users)."
+          },
+          "alias": {
+            "type": "string",
+            "description": "The alias address to add, e.g. \"sales@example.com\"."
+          }
+        },
+        "required": [
+          "user_key",
+          "alias"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/admin/directory/v1/users/{user_key}/aliases",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "alias": "$alias"
+        }
+      }
+    },
+    {
+      "name": "google_admin_delete_user_alias",
+      "description": "Remove an email alias from a user; mail to that address bounces afterwards. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "The user's primary email address, one of their alias addresses, or their immutable user `id` (from google_admin_list_users)."
+          },
+          "alias": {
+            "type": "string",
+            "description": "The alias address to remove."
+          }
+        },
+        "required": [
+          "user_key",
+          "alias"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/admin/directory/v1/users/{user_key}/aliases/{alias}",
+        "encodePathParams": true
+      },
+      "enabled": false,
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_admin_list_groups",
+      "description": "List or search the groups of the Workspace account (up to 200 per page): email, name, description, directMembersCount, aliases, id. Search with `query`, e.g. \"email:sales*\", \"name:'Sales Team'\", \"memberKey=anna@example.com\". Page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search expression, e.g. \"email:sales*\", \"name:'Sales'\" or \"memberKey=anna@example.com\" (groups that user belongs to). Leave empty for every group."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort by \"email\".",
+            "enum": [
+              "email"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "\"ASCENDING\" or \"DESCENDING\"; only with order_by.",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ]
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Groups per page, 1-200. Default 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/groups",
+        "queryParams": {
+          "customer": "my_customer",
+          "query": "$query",
+          "orderBy": "$order_by",
+          "sortOrder": "$sort_order",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_admin_list_user_groups",
+      "description": "List the groups one user (or one group) is a direct member of.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "Email address or immutable id of the user, or of a group to see which groups contain it."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Groups per page, 1-200. Default 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "user_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/groups",
+        "queryParams": {
+          "userKey": "$user_key",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_group",
+      "description": "Read one group: email, name, description, aliases, directMembersCount and whether an admin created it. Its settings (who can post, join, view) are in the Groups Settings API, not here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "description": "The group's email address, one of its aliases, or its immutable group `id` (from google_admin_list_groups)."
+          }
+        },
+        "required": [
+          "group_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/groups/{group_key}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_admin_create_group",
+      "description": "Create a group (mailing list and access group) with an email on one of the account's domains. It starts without members; add them with google_admin_add_group_member.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The group address, e.g. \"sales@example.com\"."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name, e.g. \"Sales Team\"."
+          },
+          "description": {
+            "type": "string",
+            "description": "What the group is for, up to 4,096 characters."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/admin/directory/v1/groups",
+        "bodyMapping": {
+          "email": "$email",
+          "name": "$name",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "google_admin_update_group",
+      "description": "Change a group's email, name or description; fields left out stay as they are. Changing the email keeps the old address as an alias.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "description": "The group's email address, one of its aliases, or its immutable group `id` (from google_admin_list_groups)."
+          },
+          "email": {
+            "type": "string",
+            "description": "New group address."
+          },
+          "name": {
+            "type": "string",
+            "description": "New display name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          }
+        },
+        "required": [
+          "group_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/admin/directory/v1/groups/{group_key}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "email": "$email",
+          "name": "$name",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "google_admin_delete_group",
+      "description": "Delete a group with its membership list and archive; access granted through it to Drive files, calendars or apps ends. It cannot be restored. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "description": "The group's email address, one of its aliases, or its immutable group `id` (from google_admin_list_groups)."
+          }
+        },
+        "required": [
+          "group_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/admin/directory/v1/groups/{group_key}",
+        "encodePathParams": true
+      },
+      "enabled": false,
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_admin_list_group_members",
+      "description": "List the members of a group (up to 200 per page): email, role (OWNER, MANAGER, MEMBER), type (USER, GROUP, CUSTOMER, EXTERNAL), status and id. Page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "description": "The group's email address, one of its aliases, or its immutable group `id` (from google_admin_list_groups)."
+          },
+          "roles": {
+            "type": "string",
+            "description": "Only members with these roles, comma-separated: \"OWNER\", \"MANAGER\", \"MEMBER\" or e.g. \"OWNER,MANAGER\"."
+          },
+          "include_derived_membership": {
+            "type": "boolean",
+            "description": "true also lists members of nested groups (indirect members)."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Members per page, 1-200. Default 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "group_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/groups/{group_key}/members",
+        "encodePathParams": true,
+        "queryParams": {
+          "roles": "$roles",
+          "includeDerivedMembership": "$include_derived_membership",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_group_member",
+      "description": "Read one member of a group: role, type, status and delivery setting. 404 means the address is not a direct member.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "description": "The group's email address, one of its aliases, or its immutable group `id` (from google_admin_list_groups)."
+          },
+          "member_key": {
+            "type": "string",
+            "description": "The member's email address or immutable id: a user, a group nested in the group, or a customer id for 'all users in the domain'."
+          }
+        },
+        "required": [
+          "group_key",
+          "member_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/groups/{group_key}/members/{member_key}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_admin_has_group_member",
+      "description": "Check whether a user is a member of a group, directly or through nested groups. Returns {\"isMember\": true|false}. Works for users only, not for nested groups as member_key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "description": "The group's email address, one of its aliases, or its immutable group `id` (from google_admin_list_groups)."
+          },
+          "member_key": {
+            "type": "string",
+            "description": "The user's email address or immutable id."
+          }
+        },
+        "required": [
+          "group_key",
+          "member_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/groups/{group_key}/hasMember/{member_key}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_admin_add_group_member",
+      "description": "Add a user, another group or an external address to a group. 409 \"Member already exists\" means it is already in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "description": "The group's email address, one of its aliases, or its immutable group `id` (from google_admin_list_groups)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Address of the user, group or external person to add."
+          },
+          "role": {
+            "type": "string",
+            "description": "\"MEMBER\" (default), \"MANAGER\" or \"OWNER\".",
+            "enum": [
+              "MEMBER",
+              "MANAGER",
+              "OWNER"
+            ]
+          },
+          "delivery_settings": {
+            "type": "string",
+            "description": "Email delivery for this member: \"ALL_MAIL\" (every message), \"DAILY\" (digest), \"DIGEST\" (up to 25 messages bundled), \"DISABLED\" (none) or \"NONE\" (no subscription).",
+            "enum": [
+              "ALL_MAIL",
+              "DAILY",
+              "DIGEST",
+              "DISABLED",
+              "NONE"
+            ]
+          }
+        },
+        "required": [
+          "group_key",
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/admin/directory/v1/groups/{group_key}/members",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "email": "$email",
+          "role": "$role",
+          "delivery_settings": "$delivery_settings"
+        }
+      }
+    },
+    {
+      "name": "google_admin_update_group_member",
+      "description": "Change a group member's role (OWNER, MANAGER, MEMBER) or their mail delivery setting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "description": "The group's email address, one of its aliases, or its immutable group `id` (from google_admin_list_groups)."
+          },
+          "member_key": {
+            "type": "string",
+            "description": "The member's email address or immutable id: a user, a group nested in the group, or a customer id for 'all users in the domain'."
+          },
+          "role": {
+            "type": "string",
+            "description": "\"MEMBER\" (default), \"MANAGER\" or \"OWNER\".",
+            "enum": [
+              "MEMBER",
+              "MANAGER",
+              "OWNER"
+            ]
+          },
+          "delivery_settings": {
+            "type": "string",
+            "description": "Email delivery for this member: \"ALL_MAIL\" (every message), \"DAILY\" (digest), \"DIGEST\" (up to 25 messages bundled), \"DISABLED\" (none) or \"NONE\" (no subscription).",
+            "enum": [
+              "ALL_MAIL",
+              "DAILY",
+              "DIGEST",
+              "DISABLED",
+              "NONE"
+            ]
+          }
+        },
+        "required": [
+          "group_key",
+          "member_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/admin/directory/v1/groups/{group_key}/members/{member_key}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "role": "$role",
+          "delivery_settings": "$delivery_settings"
+        }
+      }
+    },
+    {
+      "name": "google_admin_remove_group_member",
+      "description": "Remove a member from a group; access granted through the group ends at once. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "description": "The group's email address, one of its aliases, or its immutable group `id` (from google_admin_list_groups)."
+          },
+          "member_key": {
+            "type": "string",
+            "description": "The member's email address or immutable id: a user, a group nested in the group, or a customer id for 'all users in the domain'."
+          }
+        },
+        "required": [
+          "group_key",
+          "member_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/admin/directory/v1/groups/{group_key}/members/{member_key}",
+        "encodePathParams": true
+      },
+      "enabled": false,
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_admin_list_org_units",
+      "description": "List organizational units (the tree that settings and policies apply to): name, orgUnitPath, orgUnitId, parentOrgUnitPath, description. Without org_unit_path it starts at the top; type \"all\" returns the whole tree.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_unit_path": {
+            "type": "string",
+            "description": "Start below this unit: path without the leading slash, e.g. \"Sales\", or \"id:...\" . Leave empty for the top level."
+          },
+          "type": {
+            "type": "string",
+            "description": "\"children\" (default, direct children), \"all\" (every unit below) or \"allIncludingParent\" (also the unit itself).",
+            "enum": [
+              "all",
+              "children",
+              "allIncludingParent"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/orgunits",
+        "queryParams": {
+          "orgUnitPath": "$org_unit_path",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_org_unit",
+      "description": "Read one organizational unit: name, path, id, parent and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_unit_path": {
+            "type": "string",
+            "description": "Organizational unit path without the leading slash (e.g. \"Sales/EMEA\"), or its id prefixed with \"id:\" (e.g. \"id:03ph8a2z1k3xyz\"). Get both from google_admin_list_org_units."
+          }
+        },
+        "required": [
+          "org_unit_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/orgunits/{org_unit_path}"
+      }
+    },
+    {
+      "name": "google_admin_create_org_unit",
+      "description": "Create an organizational unit under a parent unit, e.g. \"EMEA\" under \"/Sales\". Move users into it with google_admin_update_user (org_unit_path).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the new unit, e.g. \"EMEA\"."
+          },
+          "parent_org_unit_path": {
+            "type": "string",
+            "description": "Full path of the parent with the leading slash, e.g. \"/Sales\", or \"/\" for the top level."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the unit."
+          }
+        },
+        "required": [
+          "name",
+          "parent_org_unit_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/admin/directory/v1/customer/my_customer/orgunits",
+        "bodyMapping": {
+          "name": "$name",
+          "parentOrgUnitPath": "$parent_org_unit_path",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "google_admin_update_org_unit",
+      "description": "Rename an organizational unit, change its description or move it under another parent (its users and sub-units move with it).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_unit_path": {
+            "type": "string",
+            "description": "Organizational unit path without the leading slash (e.g. \"Sales/EMEA\"), or its id prefixed with \"id:\" (e.g. \"id:03ph8a2z1k3xyz\"). Get both from google_admin_list_org_units."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "parent_org_unit_path": {
+            "type": "string",
+            "description": "New parent path with the leading slash, to move the unit."
+          }
+        },
+        "required": [
+          "org_unit_path"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/admin/directory/v1/customer/my_customer/orgunits/{org_unit_path}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "parentOrgUnitPath": "$parent_org_unit_path"
+        }
+      }
+    },
+    {
+      "name": "google_admin_list_roles",
+      "description": "List the admin roles of the account, prebuilt (Super Admin, Groups Admin, User Management Admin, Help Desk Admin...) and custom: roleId, roleName, description, isSystemRole, isSuperAdminRole and rolePrivileges.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_results": {
+            "type": "integer",
+            "description": "Roles per page, 1-100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/roles",
+        "queryParams": {
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_role",
+      "description": "Read one admin role with its full list of privileges (serviceId and privilegeName).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "description": "The roleId from google_admin_list_roles."
+          }
+        },
+        "required": [
+          "role_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/roles/{role_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_admin_list_role_assignments",
+      "description": "List who holds which admin role: roleAssignmentId, roleId, assignedTo (a user or group id), assigneeType, scopeType (CUSTOMER = whole account, ORG_UNIT = one unit) and orgUnitId. Filter by user or role; map ids to names with google_admin_get_user and google_admin_list_roles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "Only assignments of this user or group (email or id)."
+          },
+          "role_id": {
+            "type": "string",
+            "description": "Only assignments of this roleId."
+          },
+          "include_indirect_role_assignments": {
+            "type": "boolean",
+            "description": "true also lists roles the user holds through a group; needs user_key."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Assignments per page, 1-200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/roleassignments",
+        "queryParams": {
+          "userKey": "$user_key",
+          "roleId": "$role_id",
+          "includeIndirectRoleAssignments": "$include_indirect_role_assignments",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_role_assignment",
+      "description": "Read one admin role assignment by its id: role, assignee id and type, scope and org unit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "role_assignment_id": {
+            "type": "string",
+            "description": "The roleAssignmentId from google_admin_list_role_assignments."
+          }
+        },
+        "required": [
+          "role_assignment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/roleassignments/{role_assignment_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_admin_assign_role",
+      "description": "Give a user or group an admin role, for the whole account or one organizational unit. assigned_to is the user's or group's immutable id (from google_admin_get_user or google_admin_get_group), not the email. Only a super admin can assign the Super Admin role.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "description": "The roleId to assign, from google_admin_list_roles."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "Immutable id of the user or group that receives the role."
+          },
+          "scope_type": {
+            "type": "string",
+            "description": "\"CUSTOMER\" (the whole account) or \"ORG_UNIT\" (only users in one organizational unit; then set org_unit_id).",
+            "enum": [
+              "CUSTOMER",
+              "ORG_UNIT"
+            ]
+          },
+          "org_unit_id": {
+            "type": "string",
+            "description": "With scope_type ORG_UNIT: the orgUnitId (without the \"id:\" prefix) from google_admin_list_org_units."
+          }
+        },
+        "required": [
+          "role_id",
+          "assigned_to",
+          "scope_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/admin/directory/v1/customer/my_customer/roleassignments",
+        "bodyMapping": {
+          "roleId": "$role_id",
+          "assignedTo": "$assigned_to",
+          "scopeType": "$scope_type",
+          "orgUnitId": "$org_unit_id"
+        }
+      }
+    },
+    {
+      "name": "google_admin_delete_role_assignment",
+      "description": "Take an admin role away from a user or group by deleting the role assignment. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "role_assignment_id": {
+            "type": "string",
+            "description": "The roleAssignmentId from google_admin_list_role_assignments."
+          }
+        },
+        "required": [
+          "role_assignment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/admin/directory/v1/customer/my_customer/roleassignments/{role_assignment_id}",
+        "encodePathParams": true
+      },
+      "enabled": false,
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_admin_list_chromeos_devices",
+      "description": "List managed ChromeOS devices (Chromebooks, Chromeboxes, kiosks; up to 300 per page): deviceId, serialNumber, model, status (ACTIVE, DISABLED, DEPROVISIONED...), osVersion, lastSync, annotatedUser, annotatedAssetId, orgUnitPath, autoUpdateExpiration. Search with `query`, e.g. \"status:provisioned\", \"user:anna\", \"sync:2026-01-01..\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search string, e.g. \"status:provisioned\", \"user:anna@example.com\", \"sn:5CD81\" (serial), \"sync:..2026-06-01\" (not synced since), \"os:15\". Leave empty for every device."
+          },
+          "org_unit_path": {
+            "type": "string",
+            "description": "Only devices in this organizational unit: full path with the leading slash, e.g. \"/Sales\", or its id."
+          },
+          "include_child_org_units": {
+            "type": "boolean",
+            "description": "With org_unit_path: true also returns devices in its sub-units."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort by \"annotatedLocation\", \"annotatedUser\", \"lastSync\", \"notes\", \"serialNumber\" or \"status\".",
+            "enum": [
+              "annotatedLocation",
+              "annotatedUser",
+              "lastSync",
+              "notes",
+              "serialNumber",
+              "status"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "\"ASCENDING\" or \"DESCENDING\"; only with order_by.",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ]
+          },
+          "projection": {
+            "type": "string",
+            "description": "\"BASIC\" (default) returns the main fields; \"FULL\" adds every field, e.g. recent users, CPU and disk reports for ChromeOS.",
+            "enum": [
+              "BASIC",
+              "FULL"
+            ]
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Devices per page, 1-300. Default 100.",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/devices/chromeos",
+        "queryParams": {
+          "query": "$query",
+          "orgUnitPath": "$org_unit_path",
+          "includeChildOrgunits": "$include_child_org_units",
+          "orderBy": "$order_by",
+          "sortOrder": "$sort_order",
+          "projection": "$projection",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_chromeos_device",
+      "description": "Read one ChromeOS device by its deviceId: hardware, OS and firmware versions, enrolment, last sync and user, network addresses, auto-update expiration; FULL adds recent users and CPU, memory and disk reports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "The deviceId from google_admin_list_chromeos_devices."
+          },
+          "projection": {
+            "type": "string",
+            "description": "\"BASIC\" (default) returns the main fields; \"FULL\" adds every field, e.g. recent users, CPU and disk reports for ChromeOS.",
+            "enum": [
+              "BASIC",
+              "FULL"
+            ]
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/devices/chromeos/{device_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "projection": "$projection"
+        }
+      }
+    },
+    {
+      "name": "google_admin_list_mobile_devices",
+      "description": "List mobile devices (Android and iOS phones and tablets) that sync with Google Workspace (up to 100 per page): resourceId, email, name, model, os, type, status (APPROVED, BLOCKED, PENDING...), firstSync, lastSync. Search with `query`, e.g. \"status:pending\", \"email:anna\", \"model:pixel\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search string, e.g. \"status:pending\", \"email:anna@example.com\", \"os:android\", \"model:iphone\", \"sync:..2026-06-01\". Leave empty for every device."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort by \"deviceId\", \"email\", \"lastSync\", \"model\", \"name\", \"os\", \"status\" or \"type\".",
+            "enum": [
+              "deviceId",
+              "email",
+              "lastSync",
+              "model",
+              "name",
+              "os",
+              "status",
+              "type"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "\"ASCENDING\" or \"DESCENDING\"; only with order_by.",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ]
+          },
+          "projection": {
+            "type": "string",
+            "description": "\"BASIC\" (default) returns the main fields; \"FULL\" adds every field, e.g. recent users, CPU and disk reports for ChromeOS.",
+            "enum": [
+              "BASIC",
+              "FULL"
+            ]
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Devices per page, 1-100. Default 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/devices/mobile",
+        "queryParams": {
+          "query": "$query",
+          "orderBy": "$order_by",
+          "sortOrder": "$sort_order",
+          "projection": "$projection",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_mobile_device",
+      "description": "Read one mobile device by its resourceId: owner, model, OS version, status, compromised status, encryption, first and last sync and the apps reported by managed Android devices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_id": {
+            "type": "string",
+            "description": "The resourceId from google_admin_list_mobile_devices (not the deviceId)."
+          },
+          "projection": {
+            "type": "string",
+            "description": "\"BASIC\" (default) returns the main fields; \"FULL\" adds every field, e.g. recent users, CPU and disk reports for ChromeOS.",
+            "enum": [
+              "BASIC",
+              "FULL"
+            ]
+          }
+        },
+        "required": [
+          "resource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/directory/v1/customer/my_customer/devices/mobile/{resource_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "projection": "$projection"
+        }
+      }
+    },
+    {
+      "name": "google_admin_list_activities",
+      "description": "Audit log: who did what and when in one Google Workspace application, newest first (up to 1,000 per page). Each item has id.time (UTC), actor.email, ipAddress and events[] with name and parameters. Examples: application_name \"login\" (sign-ins, failures, suspicious logins), \"admin\" (Admin console changes), \"drive\" (file views, downloads, sharing), \"token\" (third-party app access), \"groups\", \"mobile\", \"meet\", \"gmail\", \"calendar\", \"chrome\", \"saml\", \"user_accounts\" (password and 2SV changes).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "application_name": {
+            "type": "string",
+            "description": "Which audit log to read.",
+            "enum": [
+              "access_transparency",
+              "admin",
+              "calendar",
+              "chat",
+              "drive",
+              "gcp",
+              "gmail",
+              "gplus",
+              "groups",
+              "groups_enterprise",
+              "jamboard",
+              "login",
+              "meet",
+              "mobile",
+              "rules",
+              "saml",
+              "token",
+              "user_accounts",
+              "context_aware_access",
+              "chrome",
+              "data_studio",
+              "keep",
+              "vault",
+              "gemini_in_workspace_apps",
+              "classroom",
+              "assignments",
+              "cloud_search",
+              "tasks",
+              "data_migration",
+              "meet_hardware",
+              "directory_sync",
+              "ldap",
+              "profile",
+              "access_evaluation",
+              "admin_data_action",
+              "contacts",
+              "takeout",
+              "graduation",
+              "voice",
+              "chrome_sync",
+              "workspace_studio",
+              "gemini_notebook"
+            ]
+          },
+          "user_key": {
+            "type": "string",
+            "description": "\"all\" (default) for every user, or one user's email or profile id.",
+            "default": "all"
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Earliest event, RFC 3339 in UTC, e.g. \"2026-10-01T00:00:00Z\". Most logs keep about 6 months."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Latest event, RFC 3339, e.g. \"2026-10-30T23:59:59Z\". Default now."
+          },
+          "event_name": {
+            "type": "string",
+            "description": "Only this event, e.g. \"login_failure\", \"login_success\", \"suspicious_login\" (login); \"download\", \"change_user_access\" (drive); \"authorize\" (token); \"CREATE_USER\", \"CHANGE_PASSWORD\" (admin)."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Comma-separated conditions on event parameters, e.g. \"doc_id==1AbC\" or \"login_type==google_password\"; operators ==, <>, <, <=, >, >=."
+          },
+          "actor_ip_address": {
+            "type": "string",
+            "description": "Only events from this IP address (IPv4 or IPv6)."
+          },
+          "org_unit_id": {
+            "type": "string",
+            "description": "Only users of this organizational unit, as \"id:\" plus the orgUnitId, e.g. \"id:03ph8a2z1k3xyz\"."
+          },
+          "group_id_filter": {
+            "type": "string",
+            "description": "Only users in these groups, e.g. \"id:03ab12cd,id:04ef56gh\" (group ids from google_admin_get_group)."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Events per page, 1-1000. Default 1000.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "application_name",
+          "user_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/reports/v1/activity/users/{user_key}/applications/{application_name}",
+        "encodePathParams": true,
+        "queryParams": {
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "eventName": "$event_name",
+          "filters": "$filters",
+          "actorIpAddress": "$actor_ip_address",
+          "orgUnitID": "$org_unit_id",
+          "groupIdFilter": "$group_id_filter",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_customer_usage",
+      "description": "Account-wide usage statistics for one day: active users, licenses, Gmail volume, Drive storage, Meet minutes, 2SV adoption, etc. Each parameter comes as name plus intValue, stringValue, boolValue or datetimeValue. Data arrives 1-3 days late: a recent date answers with a warning and no data, so step one day back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Day of the report, YYYY-MM-DD in Pacific Time; usually 2-3 days ago or earlier.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "parameters": {
+            "type": "string",
+            "description": "Only these values, comma-separated as app:name, e.g. \"accounts:num_users,accounts:num_30day_logins,gmail:num_emails_sent,drive:num_owned_items_created,meet:total_call_minutes\". Leave empty for every value."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/reports/v1/usage/dates/{date}",
+        "queryParams": {
+          "parameters": "$parameters",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_admin_get_user_usage",
+      "description": "Per-user usage statistics for one day: last login, emails sent and received, Drive storage used, 2SV enrolment, Meet calls, etc. user_key \"all\" lists every user (up to 1,000 per page). Data arrives 1-3 days late.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_key": {
+            "type": "string",
+            "description": "\"all\" (default) for every user, or one user's email or profile id.",
+            "default": "all"
+          },
+          "date": {
+            "type": "string",
+            "description": "Day of the report, YYYY-MM-DD in Pacific Time; usually 2-3 days ago or earlier.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "parameters": {
+            "type": "string",
+            "description": "Only these values, comma-separated as app:name, e.g. \"accounts:last_login_time,accounts:used_quota_in_mb,gmail:num_emails_sent,accounts:is_2sv_enrolled\". Leave empty for every value."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Only users matching these conditions, comma-separated, e.g. \"accounts:last_login_time<2026-07-01T00:00:00.000Z\" or \"accounts:used_quota_in_mb>10000\"."
+          },
+          "org_unit_id": {
+            "type": "string",
+            "description": "Only users of this organizational unit, as \"id:\" plus the orgUnitId."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Users per page, 1-1000. Default 1000.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "user_key",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/admin/reports/v1/usage/users/{user_key}/dates/{date}",
+        "encodePathParams": true,
+        "queryParams": {
+          "parameters": "$parameters",
+          "filters": "$filters",
+          "orgUnitID": "$org_unit_id",
+          "maxResults": "$max_results",
+          "pageToken": "$page_token"
+        }
+      }
+    }
+  ]
+}

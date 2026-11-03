@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は ERP、E コマース、REST、SOAP、SQL の各システムを Claude と ChatGPT 用の MCP ツールに変換します。562 のコネクター、うち 27 は API キー不要。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は Claude、ChatGPT、Copilot、Gemini を ERP、E コマース、REST、SOAP、SQL の各システムと社内のファイルサーバーにつなぎます。694 のコネクターに加え、社内メモリ、AI スキル、ファイル検索も備えています。" width="100%" />
 </p>
 
-<h1 align="center">AnythingMCP：セルフホスト型 MCP ゲートウェイ</h1>
+<h1 align="center">AnythingMCP：企業の頭脳になるオープンソースの MCP ゲートウェイ</h1>
 
 <p align="center">
   <a href="https://www.star-history.com/helpcode-ai/anythingmcp">
@@ -18,8 +18,9 @@
 </p>
 
 <p align="center">
-  <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、REST/OpenAPI、SOAP、GraphQL、OData、SQL のあらゆるシステムを Claude、ChatGPT、Copilot 用の MCP ツールに変換します。</strong><br/>
-  SAP、Etsy、weclapp、Amazon Seller などを含む 562 種類の既製アダプターを同梱しており、うち 27 は API キー不要です。
+  <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、Claude、ChatGPT、Copilot、Gemini を、自社で使っているソフトウェアやファイルサーバー上の文書につなぎます。</strong><br/>
+  ゲートウェイの上には企業の頭脳を保持します。システム同士のつながりを表すナレッジグラフ、AI スキル、社内メモリです。すべての AI クライアントで共有され、ユーザーごとのロールで範囲が制限されます。<br/>
+  SAP、Odoo、weclapp、Amazon Seller などを含む 694 種類の既製アダプターで 12,000 以上のツールを提供しており、うち 35 は API キー不要です。
 </p>
 
 <p align="center">
@@ -31,12 +32,37 @@
 </p>
 
 <p align="center">
+  <strong>AnythingMCP Cloud で 16,000 以上のワークスペース</strong> · <strong>月間 150 万回以上の AI ツール呼び出し</strong> · <strong>Claude 公式ディレクトリに掲載</strong>
+</p>
+
+<p align="center">
   <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>クラウド版を 7 日間無料で試す</strong></a> · <a href="https://claude.ai/directory/anythingmcp">Claude に追加</a> · <a href="#run-it-yourself">自分で動かす</a> · <a href="docs/guides.md">ドキュメント</a> · <a href="https://anythingmcp.com/ja/guides">コネクターガイド</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
 **Claude への 1 つの質問に、Etsy、SAP、物流 API のデータで答えます。**
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
+
+---
+
+<a id="what-your-ai-gets"></a>
+
+## AI が手にするもの
+
+ゲートウェイは呼び出しを転送するだけです。企業の頭脳はそれに加えて、文書がどこにあるか、システム同士がどうつながっているか、会社がすでに何を決めたかを知っています。AnythingMCP は、1 つの MCP エンドポイントを通じて、その両方をすべての AI クライアントに提供します。
+
+| | 内容 | エディション |
+|---|---|---|
+| **すべてのシステムを 1 つのエンドポイントで** | 692 のカタログコネクター、または独自の REST/OpenAPI、SOAP、GraphQL、OData、SQL、IMAP/SMTP、MCP のソース。ツールは実行時に登録されます。[コネクター](#connect-any-api-soap-service-or-database) | すべて |
+| **File Search（ファイル検索）** | SFTP、FTP/FTPS、WebDAV（Nextcloud、NAS）、S3、ネットワーク共有をインデックス化します。PDF の全ページ、列名付きの Excel の行、Word、PowerPoint、添付ファイル付きの Outlook メールが対象です。AI はファイル、ページ、日付を示して回答します。[File Search](docs/connectors/file-search.md) | Cloud、セルフホストは Enterprise |
+| **File Share（ファイル共有）** | フォルダー内のファイルや AI が書き出したファイル（CSV エクスポート、レポート）の一時的なダウンロードリンク。社内向けにも公開にもでき、有効期限と取り消しに対応します。[File Share](docs/connectors/file-search.md) | Cloud、セルフホストは Enterprise |
+| **社内メモリ** | ある AI クライアントで保存した事実や好みを、別のクライアントでも見つけられます。Claude で一度伝えたことを Copilot が使います。個人用と会社用の範囲があり、フォルダーとロールで制限できます。[メモリ](docs/memory.md) | Enterprise |
+| **AI スキル** | エージェントが従う手順です。手で書くか、実際のリクエストや修正したエラーから学習し、管理者が承認します。[AI スキル](docs/knowledge-graph.md#ai-skills) | すべて |
+| **ナレッジグラフ** | システム同士のつながりです。エージェントは指示されなくても、あるシステムの顧客を別のシステムの注文と結び付けられます。[ナレッジグラフ](docs/knowledge-graph.md) | すべて |
+| **Code Mode** | 機密情報もネットワークもない隔離されたサンドボックスで、複数のツールを呼び出す短いプログラムを 1 つ実行します。5 段階の照会が 1 回の呼び出しで済みます。[Code Mode](docs/code-mode.md) | すべて（書き込みは Enterprise） |
+| **ガバナンス** | ロールとツールごとの権限、モデルに届く前にフィールドを削除するレスポンスマッピング、すべての呼び出しの監査ログ。ディレクトリと連携する SSO と SCIM。[セキュリティ](#security-and-governance) | すべて（SSO/SCIM は Enterprise） |
+
+セルフホストの Community エディションは AGPL-3.0 のもとで、商用利用を含むあらゆる用途に無料で使えます。アクティブユーザーは 3 人まで、コネクターと MCP サーバーは無制限です。ユーザーの追加、シングルサインオン、SCIM、30 日間のトライアル後の File Search、サポートは Enterprise で提供します。Enterprise はお問い合わせベースです：[お問い合わせ](https://anythingmcp.com/contact?plan=enterprise)。管理者は **Settings → License** でシングルサインオンと SCIM を 30 日間試せます。既存の Starter と Team のライセンスキーは引き続き使えます。
 
 ---
 
@@ -67,7 +93,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 <br/>
 
-[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) は同じ AGPL コードを、ドイツ・**フランクフルト**で当社が運用するものです。7 日間の無料トライアルがあります。まずクラウドで自社の API を試し、認証情報を外に出したくなくなった時点で社内に移せます。コネクターはどちらでも同じです。DPA/AVV は [info@helpcode.ai](mailto:info@helpcode.ai) までご依頼ください。SSO と SCIM はセルフホスト版のみです。
+[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) は同じ AGPL コードを、ドイツ・**フランクフルト**で当社が運用するものです。7 日間の無料トライアルがあります。まずクラウドで自社の API を試し、認証情報を外に出したくなくなった時点で社内に移せます。コネクターはどちらでも同じです。DPA/AVV は [info@helpcode.ai](mailto:info@helpcode.ai) までご依頼ください。SSO と SCIM はセルフホスト版のみで、Enterprise ライセンスが必要です。
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
 &nbsp;
@@ -101,6 +127,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 | **GraphQL** | イントロスペクションでクエリとミューテーションをツールにするか、操作を自分で定義します | [GraphQL](docs/connectors/graphql.md) · [ガイド](https://anythingmcp.com/ja/guides/graphql-to-mcp) |
 | **OData**（SAP Gateway を含む） | 各サービスの `$metadata` を読み取り、エンティティセット、キー、SAP の業務ラベルをモデルに見せます。V2 と V4 に対応 | [OData](docs/connectors/odata.md) · [ガイド](https://anythingmcp.com/ja/guides/odata-to-mcp) |
 | **SQL と MongoDB** | PostgreSQL、MySQL、MariaDB、SQL Server、Oracle、SAP HANA、SQLite、MongoDB：スキーマ、サンプル、クエリの各ツール。既定で読み取り専用 | [データベース](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [ガイド](https://anythingmcp.com/ja/guides/database-to-mcp) · [デモ：sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **メール（IMAP/SMTP）** | あらゆるメールボックス（IONOS、Strato、GMX、T-Online、アプリパスワードを使う Gmail、自社のメールサーバー）：フォルダー一覧、検索、添付ファイル付きの閲覧、フラグ、移動、下書きの保存、送信 | [メール](docs/connectors/email.md) |
 | **別の MCP サーバー** | そのツールを検出し、同じ認証と監査のもとで自社のツールと並べて提供します | [MCP ブリッジ](docs/connectors/mcp-bridge.md) |
 
 ツールは実行時に登録され、再起動は不要です。コネクターごとの `{{VAR}}` の値はサーバー側で埋め込まれ、AI には見えません。
@@ -111,7 +138,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 ## コネクターカタログ
 
-562 個のアダプターで 2,400 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
+694 個のアダプターで 12,000 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
 
 | カテゴリー | 例 |
 |---|---|
@@ -194,13 +221,13 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 ## セキュリティとガバナンス
 
-すべてが自社のインフラ上で動くため、外部に出すデータを自分で決められます。OAuth2、RBAC、SSO、SCIM はセルフホスト版に含まれており、有料プラン専用の機能ではありません。
+すべてが自社のインフラ上で動くため、外部に出すデータを自分で決められます。OAuth2、ロール、ツールごとの権限、レスポンスマッピング、監査ログはすべてのエディションに含まれます。SSO と SCIM には Enterprise ライセンスが必要です（30 日間のトライアルが組み込まれています）。
 
 - **レスポンスマッピング。** ツールごとに、モデルに渡すフィールドを宣言します。顧客の IBAN や従業員の給与を削除したり、残すフィールドだけを指定したりできます。エディターは実際の応答で変換前後を表示します。同梱のあるアダプターは 12,172 B から 1,072 B（−91%）になり、その分のコンテキストウィンドウも節約できます。マッピングが壊れた場合は既定で元の応答を返します。絶対に外に出してはいけないフィールドを持つツールでは `"fallbackToRaw": false` を設定すると、代わりに呼び出しが失敗します。
 - **重要な場面では読み取り専用。** すべてのツールに MCP アノテーション（`readOnlyHint`、`destructiveHint`）が付き、操作から自動で導出され、ツールごとに上書きできます。ロール単位のツールのホワイトリストで、読み取りしかできない MCP サーバーを公開できます。ERP ではまずここから始めるのがおすすめです。データベースのクエリツールは単一の SELECT だけを実行し、書き込みや複数文の連結をブロックします。
 - **あらゆる認証方式に対応。** OAuth2（PKCE と Client Credentials）、Bearer、API キー、Basic、HMAC リクエスト署名、[LOGIN_TOKEN](docs/connectors/login-token-auth.md)、OAuth 1.0a。認証情報は AES-256-GCM で暗号化して保存します。
 - **監査ログ。** すべてのツール呼び出しを、入力、出力、所要時間、ステータスとともに自社のデータベースに記録します。モデルが見ていない上流の完全な応答も含まれます。
-- **[SSO](docs/sso.md) と [SCIM](docs/scim-entra-setup.md)。** Entra ID、Google、Okta、Auth0、任意の OIDC プロバイダー。サインインのたびにディレクトリのグループからロールを同期し、ディレクトリで無効化されたユーザーはワークスペースへのアクセスと MCP API キーを同時に失います。
+- **[SSO](docs/sso.md) と [SCIM](docs/scim-entra-setup.md)（Enterprise）。** Entra ID、Google、Okta、Auth0、任意の OIDC プロバイダー。サインインのたびにディレクトリのグループからロールを同期し、ディレクトリで無効化されたユーザーはワークスペースへのアクセスと MCP API キーを同時に失います。
 
 ```json
 {
@@ -230,14 +257,17 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 ---
 
-<a id="knowledge-graph-and-ai-skills"></a>
+<a id="company-brain-knowledge-graph-ai-skills-and-memory"></a>
 
-## ナレッジグラフと AI スキル
+## 企業の頭脳：ナレッジグラフ、AI スキル、社内メモリ
 
 呼び出しを転送するだけでは、難しい部分がエージェントに残ります。次にどのツールを呼ぶべきか、そして自社で言う「未完了の注文」が何を指すのか、です。AnythingMCP はその両方を学習し、追加のツール呼び出しではなくコンテキストとして返します。
 
 - **ナレッジグラフ。** ワークスペースごとに、エンティティ（顧客、注文、製品）とコネクターをまたぐ関係を表したマップです。ツール定義と実際の呼び出しから構築され、手動でも編集できます。保存するのはフィールド名と関係だけで、値は保存しません。各サーバーは `kg_how_to_obtain` ツールでこれを提供するため、エージェントは Shopware の注文から DHL の追跡番号にたどり着く方法を尋ねられます。
-- **AI スキル。** 繰り返される使い方を小さなルール（例：「本日の売上には注文ステータス 2、3、4 を含む」）にまとめます。適用、編集、却下はあなたが決め、適用したものはサーバーの指示に組み込まれます。
+- **AI スキル。** 繰り返される使い方を小さなルール（例：「本日の売上には注文ステータス 2、3、4 を含む」）や段階的な手順にまとめます。手で書くことも、実際のリクエストや修正したエラーから学習させることもできます。スキルはバージョン管理され、管理者が承認してからサーバーの指示に組み込まれます。
+- **社内メモリ（Enterprise）。** AI クライアントは `memory_save` で事実、好み、メモを保存し、`memory_search` で再び見つけます。ワークスペースに接続したどのクライアントからでも同じです。*マイメモリ*は 1 人のユーザーだけのものです。*社内メモリ*（例：「STAMMKUNDE は枠契約のある顧客を指す」）は全員のためのもので、ロールで制限されたフォルダーに整理されます。メモリは人が書いた情報として提供され、指示として扱われることはありません。[メモリのガイド](docs/memory.md)
+
+アシスタントを替えても、頭脳はそのまま残ります。今日は Copilot、明日は Claude、今夜は n8n のエージェントでも、どれも同じグラフ、スキル、メモリを参照します。
 
 AI による処理は既定でオフで、お手持ちの OpenAI、OpenRouter、Anthropic のキーを使います。グラフ、エディター、MCP ツールはキーなしでも動きます。[ナレッジグラフのガイド](docs/knowledge-graph.md)
 
@@ -270,6 +300,18 @@ REST コネクターを作成し、仕様を URL か貼り付けでインポー�
 ### Claude で SQL Server、Oracle、PostgreSQL を安全にクエリできますか？
 クエリツールは既定で読み取り専用です。加えて、SELECT 権限だけを持つデータベースユーザーを使い、モデルがパラメーターだけを渡す静的クエリを優先し、ロールごとにツールをホワイトリスト化してください。レスポンスマッピングでモデルに渡してはいけない列を削除でき、すべてのクエリが監査ログに記録されます。
 
+### 社内のファイルサーバーにある文書を Claude や ChatGPT で検索するには？
+**File Search** コネクターを追加し、SFTP、FTP/FTPS、WebDAV（Nextcloud、ownCloud、Synology や QNAP の NAS）、S3、マウントしたネットワーク共有でフォルダーを指定します。AnythingMCP は PDF をページ単位で、Excel を列名付きの行単位でインデックス化し、Word、PowerPoint、Outlook メールにも対応します。インデックスは自動で同期され、すべての AI クライアントに `search`、`find`、`grep`、`read` のツールを提供します。回答にはファイル、ページ、日付が示されます。ロールごとのフォルダー権限は Enterprise で利用できます。[File Search のドキュメント](docs/connectors/file-search.md)
+
+### ChatGPT、Claude、Copilot で同じ社内メモリを共有できますか？
+はい。ワークスペースメモリ（Enterprise）を使うと、ある AI クライアントから保存した内容をほかのクライアントからも見つけられます。メモリはクライアントではなく AnythingMCP にあるためです。個人の項目は作成者だけのもので、会社の項目はフォルダーとロールの範囲内で共有されます。[メモリのドキュメント](docs/memory.md)
+
+### AI エージェントにとっての「企業の頭脳」とは何ですか？
+ツールへのアクセスに加えて AI が必要とする知識のことです。文書がどこにあるか、システム同士がどうつながっているか（ナレッジグラフ）、会社がどう仕事を進めるか（AI スキル）、会社が何を決めたか（社内メモリ）。AnythingMCP はそのすべてを自社のインスタンスに保持し、各ユーザーのロールの範囲内で、あらゆる MCP クライアントに提供します。
+
+### AI エージェントに自社のツールを使うコードを安全に実行させられますか？
+Code Mode では、短い JavaScript プログラムが 1 ステップで複数のツールを呼び出します。プログラムは独立したコードランナーコンテナで実行され、ファイルシステム、ネットワーク、環境変数、機密情報にはアクセスできません。呼び出せるのはそのユーザーがすでに使えるツールだけで、内部の各呼び出しも直接の呼び出しと同じように権限管理と監査の対象になります。運用者が有効にするまではオフです。[Code Mode のドキュメント](docs/code-mode.md)
+
 ### Shopware、WooCommerce、Amazon Seller Central を Claude に接続するには？
 お使いのショップやマーケットプレイスの [E コマースアダプター](#e-commerce--marketplace-connectors)をインストールして認可します。WooCommerce には 49 のツールがあり、Amazon Seller Central は公式の Selling Partner API を使い、Shopware 6 アダプターは Store API でストアフロントのカタログを読み取ります。
 
@@ -293,4 +335,4 @@ PR を送る前に[コントリビューションガイド](.github/CONTRIBUTING
 
 ## License
 
-[GNU Affero General Public License v3](LICENSE)（AGPL-3.0-only）のもとで**オープンソース**です。自社内での商用利用は当初から認められています。コピーレフトの義務が生じるのは、AnythingMCP を改変し、その改変版をネットワーク経由で他者に提供する場合だけです。`ee/` 配下のクラウド運用者向けコードは別ライセンスで、セルフホストには不要です。[ライセンス FAQ](docs/license-faq.md) を参照してください。
+[GNU Affero General Public License v3](LICENSE)（AGPL-3.0-only）のもとで**オープンソース**です。自社内での商用利用は当初から認められています。コピーレフトの義務が生じるのは、AnythingMCP を改変し、その改変版をネットワーク経由で他者に提供する場合だけです。`ee/` 配下のコード（クラウド運用、File Search の同期エンジン、エディションのライセンス管理）は AnythingMCP Commercial License のもとにあり、ゲートウェイの実行には不要です。[ライセンス FAQ](docs/license-faq.md) を参照してください。

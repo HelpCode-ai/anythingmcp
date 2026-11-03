@@ -136,6 +136,9 @@ describe('mistral adapter: static spec conformance', () => {
   it('accepts a key and refuses pasted headers or spaces', () => {
     const re = new RegExp(a.envVarMeta.MISTRAL_API_KEY.pattern!);
     expect(re.test(FAKE_KEY)).toBe(true);
+    // Keys made in Mistral Studio are not only letters and digits (a customer's
+    // fresh Studio key was refused on 1 Nov): accept any key without whitespace.
+    for (const studio of [`${FAKE_KEY}-_.`, `ms_${FAKE_KEY}`]) expect(re.test(studio)).toBe(true);
     for (const bad of ['', `Bearer ${FAKE_KEY}`, `${FAKE_KEY} `, 'short']) expect(re.test(bad)).toBe(false);
   });
 

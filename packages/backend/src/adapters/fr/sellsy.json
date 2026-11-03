@@ -1,12 +1,12 @@
 {
   "slug": "sellsy",
   "name": "Sellsy",
-  "description": "Sellsy — French CRM and invoicing: companies, contacts, opportunities, invoices, estimates, items and payments, plus contact and company edits. REST API v2, OAuth 2.0 client credentials.",
+  "description": "Sellsy, the French CRM and invoicing suite: companies, individuals and contacts, opportunities and pipelines, estimates, orders, invoices, credit notes, payments, catalogue items, tasks, comments and calendar events, with search, creates and edits. REST API v2, OAuth 2.0 client credentials.",
   "region": "fr",
   "category": "crm",
   "icon": "sellsy",
   "docsUrl": "https://api.sellsy.com/doc/v2/",
-  "instructions": "**Getting credentials**\n1. Sign in to Sellsy, open **Paramètres → API** and create an **application** in the developer area.\n2. Choose the *client credentials* flow — it authorises the application against your own account with no browser consent step. You receive a **client id** and **client secret**.\n3. Set `SELLSY_CLIENT_ID` and `SELLSY_CLIENT_SECRET`. AnythingMCP mints and refreshes the access token on its own.\n\n**This is API v2**, at `https://api.sellsy.com/v2`. Sellsy's v1 was an entirely different, single-endpoint RPC API — if you find an example that POSTs everything to one URL with a `request` parameter, that is v1 and it does not apply here.\n\n**Searching is a POST.** Sellsy's v2 list endpoints have a sibling `/search` that takes a JSON body of `{\"filters\": {...}}`. It is far more expressive than the query parameters on the plain list, which is why the search tools below are POSTs that read.\n\n**Sellsy validates every argument against its spec.** `order`, `direction` and `embed` accept only the listed values, and the search filters reject unknown keys (`ids`, `updated` on companies) and bare dates where a date-time is expected (`created.start` must be `2026-01-01T00:00:00+00:00`, not `2026-01-01`). A 400 \"invalid arguments\" almost always means one of these.\n\n**`embed` resolves relationships.** A document returns its `related` parties as ids; `embed[]=contact` and similar bring them back inline and save a round of calls. Each endpoint has its own list of allowed embeds.\n\n**Paging**: `limit` (max 100) and `offset`, where `offset` is the opaque `pagination.offset` token of the previous response.\n\n**Amounts are strings in the document's currency**, with the tax detail in a separate `amounts` object. `total_amount_without_taxes` and `total_amount` are both present, and confusing them is how a revenue figure ends up 20% wrong.\n\n**Writes**: `sellsy_edit_contact` and `sellsy_edit_company` change records in the live CRM; send only the fields that change. The Sellsy API application needs write access to contacts and companies; with read-only rights they answer 403.\n\n**Cloud reachability**: api.sellsy.com is public with a valid certificate.",
+  "instructions": "## Sellsy\nThis connector calls the **Sellsy API v2** (`https://api.sellsy.com/v2`), the French CRM and invoicing suite: companies, individuals and contacts, opportunities and pipelines, estimates, orders, deliveries, invoices, credit notes, payments, the item catalogue, tasks, comments, calendar events, staff, files and subscriptions.\n\n**Getting credentials**\n1. Sign in to Sellsy, open **Settings, API** (Paramètres, API) and create an **application** in the developer area.\n2. Choose the *client credentials* flow: it authorises the application against your own account with no browser consent step. You receive a **client id** and **client secret**.\n3. Give the application the scopes it needs: read access for the areas you want to query (companies, contacts, individuals, opportunities, estimates, invoices, credit-notes, orders, deliveries, payments, items, taxes, tasks, comments, calendars, activities, staffs, files, custom-fields, subscriptions, search, accounts) and write access only where the AI should create or change records.\n4. Set `SELLSY_CLIENT_ID` and `SELLSY_CLIENT_SECRET`. AnythingMCP mints and refreshes the access token on its own.\n\n**This is API v2**, at `https://api.sellsy.com/v2`. Sellsy's v1 was an entirely different, single-endpoint RPC API: if you find an example that POSTs everything to one URL with a `request` parameter, that is v1 and it does not apply here.\n\n**Workflow**\n- Find anything by text first: `sellsy_search` (like the search bar; narrow with `type`).\n- Companies: `sellsy_list_companies`, `sellsy_search_companies`, `sellsy_get_company`, `sellsy_create_company`, `sellsy_edit_company`; their people with `sellsy_list_company_contacts`, `sellsy_link_contact_to_company`; addresses with `sellsy_list_company_addresses`, `sellsy_create_company_address`; custom fields with `sellsy_get_company_custom_fields`, `sellsy_update_company_custom_fields`; attachments with `sellsy_list_company_files` and `sellsy_get_file`.\n- Contacts (people at companies): `sellsy_list_contacts`, `sellsy_search_contacts`, `sellsy_get_contact`, `sellsy_list_contact_companies`, `sellsy_create_contact`, `sellsy_edit_contact`.\n- Individuals (private customers, a separate object from contacts): `sellsy_list_individuals`, `sellsy_search_individuals`, `sellsy_get_individual`, `sellsy_create_individual`, `sellsy_edit_individual`.\n- Pipeline: `sellsy_list_opportunities`, `sellsy_search_opportunities`, `sellsy_get_opportunity`; set-up data from `sellsy_list_opportunity_pipelines`, `sellsy_list_pipeline_steps`, `sellsy_list_opportunity_sources`, `sellsy_list_opportunity_categories`; changes with `sellsy_create_opportunity`, `sellsy_update_opportunity`, `sellsy_move_opportunity_step`. `sellsy_update_opportunity` is a partial update: list every field you send in `only`.\n- Sales documents: estimates with `sellsy_list_estimates`, `sellsy_search_estimates`, `sellsy_get_estimate`, `sellsy_create_estimate`, `sellsy_update_estimate_status`; orders and deliveries with `sellsy_list_orders`, `sellsy_search_orders`, `sellsy_get_order`, `sellsy_list_deliveries`; invoices with `sellsy_list_invoices`, `sellsy_search_invoices`, `sellsy_get_invoice`, `sellsy_create_invoice`, `sellsy_validate_invoice`, `sellsy_list_invoice_payments`, `sellsy_list_invoice_credit_notes`, `sellsy_list_invoice_files`; credit notes with `sellsy_list_credit_notes`, `sellsy_search_credit_notes`, `sellsy_get_credit_note`.\n- Money in: `sellsy_list_payments`, `sellsy_search_payments`, `sellsy_get_payment`, `sellsy_list_payment_methods`. Recurring invoicing: `sellsy_list_subscriptions`, `sellsy_get_subscription` (open beta at Sellsy).\n- Catalogue: `sellsy_list_items`, `sellsy_search_items`, `sellsy_get_item`, `sellsy_get_item_prices`, `sellsy_create_item`, `sellsy_edit_item`; reference data for documents with `sellsy_list_taxes`, `sellsy_list_units`, `sellsy_list_currencies`, `sellsy_list_payment_terms`, `sellsy_list_rate_categories`.\n- Follow-up: tasks with `sellsy_list_tasks`, `sellsy_search_tasks`, `sellsy_get_task`, `sellsy_create_task`, `sellsy_update_task`, `sellsy_list_task_labels`; notes with `sellsy_list_comments`, `sellsy_search_comments`, `sellsy_create_comment`; meetings with `sellsy_list_calendar_events`, `sellsy_search_calendar_events`, `sellsy_get_calendar_event`, `sellsy_create_calendar_event`, `sellsy_update_calendar_event`, `sellsy_list_calendar_event_labels`; the activity feed with `sellsy_list_crm_activity`.\n- People and set-up: `sellsy_list_staffs`, `sellsy_get_staff`, `sellsy_list_teams`, `sellsy_list_custom_fields`, `sellsy_get_quotas`.\n\n**Searching is a POST.** Sellsy's v2 list endpoints have a sibling `/search` that takes a JSON body of `{\"filters\": {...}}`. It is far more expressive than the query parameters on the plain list, which is why the search tools are POSTs that only read.\n\n**Sellsy validates every argument against its spec.** `order`, `direction` and `embed` accept only the listed values, and the search filters reject unknown keys (`ids`, `updated` on companies) and bare dates where a date-time is expected (`created.start` must be `2026-01-01T00:00:00+00:00`, not `2026-01-01`; the document `date` filters on estimates and invoices take plain dates). A 400 \"invalid arguments\" almost always means one of these.\n\n**`embed` resolves relationships.** A document returns its `related` parties as ids; `embed[]=contact` and similar bring them back inline and save a round of calls. Each endpoint has its own list of allowed embeds; `cf.<id>` adds a custom field.\n\n**Linking records**: tasks, comments and events take `related` as `[{\"type\": \"company\", \"id\": 123}]` (one record); documents take `related` with one client company or individual and optional contact and opportunities. Ids are integers. Staff ids (`owner_id`, `assigned_staff_ids`) come from `sellsy_list_staffs`; `sellsy_get_staff` with `me` is the API user.\n\n**Paging**: `limit` (max 100, default 25) and `offset`, where `offset` is the opaque `pagination.offset` token of the previous response; `pagination.total` is the number of matches.\n\n**Amounts are strings in the document's currency**, with the tax detail in a separate `amounts` object. `total_amount_without_taxes` and `total_amount` are both present, and confusing them is how a revenue figure ends up 20% wrong. Invoice statuses: draft, due, payinprogress, paid, late, cancelled. Dates are ISO 8601; document dates are YYYY-MM-DD.\n\n**Writes** change the live CRM and accounting: confirm each one with the user first and send only the fields that change. Created estimates and invoices start as drafts; `sellsy_validate_invoice` gives an invoice its final number and cannot be undone, and under French e-invoicing rules may transmit it. The Sellsy application needs the matching write scopes; with read-only rights a write answers 403. Orders and deliveries also answer 403 when the account plan or the application scopes do not include them; the other documents keep working.\n\n**Limits and errors**: Sellsy applies per-account API quotas (`sellsy_get_quotas`); a 429 means wait and retry. Errors come as `{\"error\": {\"code\", \"message\", \"context\", \"details\"}}`, where `details` names the field that was refused. 401: the client id or secret is wrong or the application was deleted. 403: a scope is missing. 404: the id does not exist in this account.\n\n**Cloud reachability**: api.sellsy.com is public with a valid certificate.\n\n**Switched off at install**: `sellsy_validate_invoice`, because a validated invoice gets its final number and can no longer be edited or deleted; an admin switches it on when the team needs it.",
   "requiredEnvVars": [
     "SELLSY_CLIENT_ID",
     "SELLSY_CLIENT_SECRET"
@@ -137,6 +137,9 @@
         "bodyMapping": {
           "filters": "$filters"
         }
+      },
+      "annotations": {
+        "readOnlyHint": true
       }
     },
     {
@@ -215,7 +218,7 @@
     },
     {
       "name": "sellsy_list_invoices",
-      "description": "List invoices with their number, date, due date, client, net and gross totals and payment status — the receivables view.",
+      "description": "List invoices with their number, date, due date, client, net and gross totals and payment status: the receivables view.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -270,7 +273,7 @@
     },
     {
       "name": "sellsy_search_invoices",
-      "description": "Search invoices with Sellsy's filter object — by status, date range, client or amount. A POST that only reads.",
+      "description": "Search invoices with Sellsy's filter object: by status, date range, client or amount. A POST that only reads.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -323,6 +326,9 @@
         "bodyMapping": {
           "filters": "$filters"
         }
+      },
+      "annotations": {
+        "readOnlyHint": true
       }
     },
     {
@@ -357,7 +363,7 @@
     },
     {
       "name": "sellsy_list_estimates",
-      "description": "List estimates (devis) with their number, date, client, total and acceptance status — what is out with prospects and not yet won.",
+      "description": "List estimates (devis) with their number, date, client, total and acceptance status: what is out with prospects and not yet won.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -405,7 +411,7 @@
     },
     {
       "name": "sellsy_list_opportunities",
-      "description": "List CRM opportunities with their name, client, amount, funnel step and expected close date — the pipeline view.",
+      "description": "List CRM opportunities with their name, client, amount, funnel step and expected close date: the pipeline view.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -582,6 +588,3454 @@
         "method": "PUT",
         "path": "/companies/{companyId}",
         "bodyTemplate": "${fields}"
+      }
+    },
+    {
+      "name": "sellsy_create_company",
+      "description": "Create a company (a client, prospect or supplier). Returns the new company with its id. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "prospect",
+              "client",
+              "supplier"
+            ],
+            "description": "Kind of company."
+          },
+          "name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Main e-mail address."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website URL."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Your own reference (client code)."
+          },
+          "note": {
+            "type": "string",
+            "description": "Free note on the company."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Staff id of the owner (sellsy_list_staffs)."
+          },
+          "legal_france": {
+            "type": "object",
+            "description": "French legal identifiers, e.g. {\"siret\": \"...\", \"siren\": \"...\", \"vat\": \"FR...\", \"ape_naf_code\": \"...\", \"company_type\": \"SAS\"}."
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies",
+        "bodyMapping": {
+          "type": "$type",
+          "name": "$name",
+          "email": "$email",
+          "phone_number": "$phone_number",
+          "website": "$website",
+          "reference": "$reference",
+          "note": "$note",
+          "owner_id": "$owner_id",
+          "legal_france": "$legal_france"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_company_contacts",
+      "description": "List the contacts (people) linked to a company, with name, e-mail, phones, position and their roles at the company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Sellsy company id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: invoicing_address, delivery_address, opportunities, estimates, invoices, orders, deliveries, proposals, proposals_ids, acl, smart_tags, owner, company, or cf.<customFieldId>. Any other value is a 400."
+          }
+        },
+        "required": [
+          "companyId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{companyId}/contacts",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_link_contact_to_company",
+      "description": "Link an existing contact to a company, optionally with roles (e.g. [\"main\", \"invoicing\", \"dunning\"]). Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Sellsy company id."
+          },
+          "contactId": {
+            "type": "number",
+            "description": "Numeric Sellsy contact id."
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Roles of the contact at the company: main, dunning, invoicing, or a custom role id."
+          }
+        },
+        "required": [
+          "companyId",
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies/{companyId}/contacts/{contactId}",
+        "bodyMapping": {
+          "roles": "$roles"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_company_addresses",
+      "description": "List the addresses of a company (invoicing, delivery and others) with their ids, for use as invoicing_address_id or delivery_address_id on documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Sellsy company id."
+          }
+        },
+        "required": [
+          "companyId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{companyId}/addresses"
+      }
+    },
+    {
+      "name": "sellsy_create_company_address",
+      "description": "Add an address to a company. The first address becomes the invoicing and delivery address unless set otherwise. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Sellsy company id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Label of the address, e.g. \"Head office\"."
+          },
+          "address_line_1": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "address_line_2": {
+            "type": "string",
+            "description": "Second address line."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country code, e.g. FR."
+          },
+          "is_invoicing_address": {
+            "type": "boolean",
+            "description": "Use as invoicing address."
+          },
+          "is_delivery_address": {
+            "type": "boolean",
+            "description": "Use as delivery address."
+          }
+        },
+        "required": [
+          "companyId",
+          "name",
+          "address_line_1",
+          "postal_code",
+          "city",
+          "country_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/companies/{companyId}/addresses",
+        "bodyMapping": {
+          "name": "$name",
+          "address_line_1": "$address_line_1",
+          "address_line_2": "$address_line_2",
+          "postal_code": "$postal_code",
+          "city": "$city",
+          "country_code": "$country_code",
+          "is_invoicing_address": "$is_invoicing_address",
+          "is_delivery_address": "$is_delivery_address"
+        }
+      }
+    },
+    {
+      "name": "sellsy_get_company_custom_fields",
+      "description": "Read the custom field values of a company: field id, name, type and value. Field definitions are in sellsy_list_custom_fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Sellsy company id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          }
+        },
+        "required": [
+          "companyId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{companyId}/custom-fields",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "sellsy_update_company_custom_fields",
+      "description": "Set custom field values on a company. Only the listed fields change. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Sellsy company id."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The values to set, e.g. [{\"id\": 1542, \"value\": \"Gold\"}]; id is the custom field id from sellsy_list_custom_fields."
+          }
+        },
+        "required": [
+          "companyId",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/companies/{companyId}/custom-fields",
+        "bodyTemplate": "${values}"
+      }
+    },
+    {
+      "name": "sellsy_list_company_files",
+      "description": "List the directories and files attached to a company (contracts, scans, exports), with file ids for sellsy_get_file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "number",
+            "description": "Numeric Sellsy company id."
+          }
+        },
+        "required": [
+          "companyId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{companyId}/files"
+      }
+    },
+    {
+      "name": "sellsy_list_individuals",
+      "description": "List individuals (private persons who are clients, prospects or suppliers in their own right, unlike contacts who belong to a company) with name, e-mail, phones and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "name",
+              "id",
+              "created_at",
+              "updated_at"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: invoicing_address, delivery_address, main_contact, dunning_contact, invoicing_contact, opportunities, estimates, invoices, orders, deliveries, proposals, proposals_ids, acl, smart_tags, owner, or cf.<customFieldId>. Any other value is a 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/individuals",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_individuals",
+      "description": "Search individual with Sellsy's filter object (a POST that only reads). Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy individual filters. Allowed keys: name (string), email (string), type (array of prospect|client|supplier), is_archived (boolean), id (array of integer ids), country_code (string), postal_code (array of strings), reference (array of strings), favourite_filter (integer), created ({\"start\", \"end\"}), updated_at ({\"start\", \"end\"}). Dates must be full ISO 8601 date-times, e.g. {\"created\": {\"start\": \"2026-01-01T00:00:00+00:00\"}}; a bare date is rejected. Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "name",
+              "id",
+              "created_at",
+              "updated_at"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/individuals/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_get_individual",
+      "description": "Read one individual in full: name, contact details, type, addresses, owner and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "individualId": {
+            "type": "number",
+            "description": "Numeric Sellsy individual id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: invoicing_address, delivery_address, main_contact, dunning_contact, invoicing_contact, opportunities, estimates, invoices, orders, deliveries, proposals, proposals_ids, acl, smart_tags, owner, or cf.<customFieldId>. Any other value is a 400."
+          }
+        },
+        "required": [
+          "individualId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/individuals/{individualId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_create_individual",
+      "description": "Create an individual (a private person as client, prospect or supplier). Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "prospect",
+              "client",
+              "supplier"
+            ],
+            "description": "Kind of individual."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "civility": {
+            "type": "string",
+            "enum": [
+              "mr",
+              "mrs",
+              "ms"
+            ],
+            "description": "Civility."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "mobile_number": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Your own reference."
+          },
+          "note": {
+            "type": "string",
+            "description": "Free note."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Staff id of the owner."
+          }
+        },
+        "required": [
+          "type",
+          "last_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/individuals",
+        "bodyMapping": {
+          "type": "$type",
+          "last_name": "$last_name",
+          "first_name": "$first_name",
+          "civility": "$civility",
+          "email": "$email",
+          "phone_number": "$phone_number",
+          "mobile_number": "$mobile_number",
+          "reference": "$reference",
+          "note": "$note",
+          "owner_id": "$owner_id"
+        }
+      }
+    },
+    {
+      "name": "sellsy_edit_individual",
+      "description": "Change fields of an individual. Send only the fields that change, e.g. {\"email\": \"...\", \"type\": \"client\"}; field names are those of sellsy_get_individual. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "individualId": {
+            "type": "number",
+            "description": "Numeric Sellsy individual id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "The fields to change, as a JSON object."
+          }
+        },
+        "required": [
+          "individualId",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/individuals/{individualId}",
+        "bodyTemplate": "${fields}"
+      }
+    },
+    {
+      "name": "sellsy_search_contacts",
+      "description": "Search contact with Sellsy's filter object (a POST that only reads). Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy contact filters. Allowed keys: last_name (string), email (string), phone_number (string), mobile_number (string), companies (array of company ids), individuals (array of individual ids), id (array of integer ids), is_linked (boolean), country_code (string), postal_code (array of strings), favourite_filter (integer), created / updated / birth_date ({\"start\", \"end\"}). Dates must be full ISO 8601 date-times, e.g. {\"created\": {\"start\": \"2026-01-01T00:00:00+00:00\"}}; a bare date is rejected. Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "name",
+              "created_at"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_create_contact",
+      "description": "Create a contact (a person, usually working at a company). Link it to a company afterwards with sellsy_link_contact_to_company. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "civility": {
+            "type": "string",
+            "enum": [
+              "mr",
+              "mrs",
+              "ms"
+            ],
+            "description": "Civility."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "mobile_number": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "position": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "note": {
+            "type": "string",
+            "description": "Free note."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Staff id of the owner."
+          }
+        },
+        "required": [
+          "last_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "last_name": "$last_name",
+          "first_name": "$first_name",
+          "civility": "$civility",
+          "email": "$email",
+          "phone_number": "$phone_number",
+          "mobile_number": "$mobile_number",
+          "position": "$position",
+          "note": "$note",
+          "owner_id": "$owner_id"
+        }
+      }
+    },
+    {
+      "name": "sellsy_get_opportunity",
+      "description": "Read one opportunity: name, status, pipeline and step, amount, probability, due date, source, related company or individual, contacts, assigned staff and note.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunityId": {
+            "type": "number",
+            "description": "Numeric Sellsy opportunity id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: estimates, individual, invoices, orders, deliveries, proformas, creditnotes, estimates_ids, invoices_ids, orders_ids, deliveries_ids, proformas_ids, creditnotes_ids, proposals, proposals_ids, assigned_staffs, company, contacts, acl, currency, smart_tags, or cf.<customFieldId>. Any other value is a 400."
+          }
+        },
+        "required": [
+          "opportunityId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities/{opportunityId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_opportunities",
+      "description": "Search opportunity with Sellsy's filter object (a POST that only reads). Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy opportunity filters. Allowed keys: name (string), number (string), statuses (array of open|won|lost|cancelled|closed|late), pipeline (array of pipeline ids), step (array of step ids), amount ({\"min\", \"max\"}), related_objects (array of {\"type\": company|individual, \"id\": n}), assigned_staffs, owners (arrays of staff ids), favourite_filter (integer), created / updated_status / due_date ({\"start\", \"end\"}). Dates must be full ISO 8601 date-times, e.g. {\"created\": {\"start\": \"2026-01-01T00:00:00+00:00\"}}; a bare date is rejected. Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "created",
+              "step_rank",
+              "due_date",
+              "amount"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunities/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_create_opportunity",
+      "description": "Create an opportunity in a pipeline step for a company or individual. Get pipeline and step ids from sellsy_list_opportunity_pipelines and sellsy_list_pipeline_steps. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Opportunity name."
+          },
+          "pipeline": {
+            "type": "integer",
+            "description": "Pipeline id."
+          },
+          "step": {
+            "type": "integer",
+            "description": "Step id within that pipeline."
+          },
+          "related": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Exactly one company or individual, plus optional contacts: [{\"type\": \"company\", \"id\": 123}] or [{\"type\": \"individual\", \"id\": 45}]."
+          },
+          "amount": {
+            "type": "string",
+            "description": "Potential amount in the account default currency, e.g. \"12000.00\"."
+          },
+          "probability": {
+            "type": "integer",
+            "description": "Probability of winning, 0-100."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Expected closing date, YYYY-MM-DD."
+          },
+          "source": {
+            "type": "integer",
+            "description": "Source id from sellsy_list_opportunity_sources."
+          },
+          "note": {
+            "type": "string",
+            "description": "Free note."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Staff id of the owner (default: the API user)."
+          },
+          "assigned_staff_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Staff ids assigned to the opportunity."
+          },
+          "contact_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Contact ids responsible on the client side."
+          }
+        },
+        "required": [
+          "name",
+          "pipeline",
+          "step",
+          "related"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunities",
+        "bodyMapping": {
+          "name": "$name",
+          "pipeline": "$pipeline",
+          "step": "$step",
+          "related": "$related",
+          "amount": "$amount",
+          "probability": "$probability",
+          "due_date": "$due_date",
+          "source": "$source",
+          "note": "$note",
+          "owner_id": "$owner_id",
+          "assigned_staff_ids": "$assigned_staff_ids",
+          "contact_ids": "$contact_ids"
+        }
+      }
+    },
+    {
+      "name": "sellsy_update_opportunity",
+      "description": "Partly update an opportunity, e.g. mark it won or lost, change its amount or due date. List every field you send in only; Sellsy ignores the others. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunityId": {
+            "type": "number",
+            "description": "Numeric Sellsy opportunity id."
+          },
+          "only": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "owner_id",
+                "status",
+                "pipeline",
+                "step",
+                "amount",
+                "probability",
+                "origin",
+                "due_date",
+                "note"
+              ]
+            },
+            "description": "Names of the fields to update, e.g. [\"status\", \"amount\"]."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Staff id of the new owner."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "won",
+              "lost",
+              "cancelled",
+              "closed",
+              "late"
+            ],
+            "description": "New status."
+          },
+          "pipeline": {
+            "type": "integer",
+            "description": "New pipeline id."
+          },
+          "step": {
+            "type": "integer",
+            "description": "New step id."
+          },
+          "amount": {
+            "type": "number",
+            "description": "New potential amount."
+          },
+          "probability": {
+            "type": "number",
+            "description": "New probability, 0-100."
+          },
+          "origin": {
+            "type": "string",
+            "description": "Origin of the opportunity."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "New expected closing date, YYYY-MM-DD."
+          },
+          "note": {
+            "type": "string",
+            "description": "New note."
+          }
+        },
+        "required": [
+          "opportunityId",
+          "only"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/opportunities/{opportunityId}",
+        "queryParams": {
+          "only[]": "$only"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "owner_id": "$owner_id",
+          "status": "$status",
+          "pipeline": "$pipeline",
+          "step": "$step",
+          "amount": "$amount",
+          "probability": "$probability",
+          "origin": "$origin",
+          "due_date": "$due_date",
+          "note": "$note"
+        }
+      }
+    },
+    {
+      "name": "sellsy_move_opportunity_step",
+      "description": "Move an opportunity to another step of its pipeline (the kanban move), optionally placing it before another opportunity. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunityId": {
+            "type": "number",
+            "description": "Numeric Sellsy opportunity id."
+          },
+          "step": {
+            "type": "integer",
+            "description": "Target step id from sellsy_list_pipeline_steps."
+          },
+          "before_sibling": {
+            "type": "integer",
+            "description": "Id of the opportunity to place it before; leave out to put it last."
+          }
+        },
+        "required": [
+          "opportunityId",
+          "step"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/opportunities/{opportunityId}/step-rank",
+        "bodyMapping": {
+          "step": "$step",
+          "before_sibling": "$before_sibling"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_opportunity_pipelines",
+      "description": "List the opportunity pipelines (sales funnels) with their ids and names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "rank"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities/pipelines",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_pipeline_steps",
+      "description": "List the steps of one pipeline in order, with id, name, rank and default probability. embed opportunities_number adds how many opportunities sit in each step.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipelineId": {
+            "type": "number",
+            "description": "Numeric Sellsy pipeline id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "rank",
+              "probability"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: opportunities_number. Any other value is a 400."
+          }
+        },
+        "required": [
+          "pipelineId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities/pipelines/{pipelineId}/steps",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_opportunity_sources",
+      "description": "List the opportunity sources (where leads come from: website, trade fair, referral...) with their ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "rank"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities/sources",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_opportunity_categories",
+      "description": "List the categories that group opportunity sources; embed sources returns the sources of each category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: sources. Any other value is a 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities/categories",
+        "queryParams": {
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_get_estimate",
+      "description": "Read one estimate (devis) in full: number, date, expiry date, status, related parties, rows with quantity, price and VAT, totals and the PDF link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "estimateId": {
+            "type": "number",
+            "description": "Numeric Sellsy estimate id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: company, individual, contact, invoicing_address, delivery_address, issuer_address, currency, acl, payment_method_ids, fiscal_year, smart_tags, payment_terms, settings, rate_category, proposals, proposals_ids, or cf.<customFieldId>. Any other value is a 400."
+          }
+        },
+        "required": [
+          "estimateId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimates/{estimateId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_estimates",
+      "description": "Search estimate with Sellsy's filter object (a POST that only reads). Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy estimate filters. Allowed keys: status (array of draft|sent|read|accepted|refused|expired|advanced|partialinvoiced|invoiced|cancelled), date ({\"start\", \"end\"} as plain dates YYYY-MM-DD), created / updated ({\"start\", \"end\"} as full date-times), related_objects (array of {\"type\": company|individual|opportunity, \"id\": n}), contacts, owners, assigned_staff_ids (arrays of ids), number (string), currency (string), favourite_filter (integer). Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "number",
+              "created",
+              "date",
+              "expiry_date",
+              "amount"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/estimates/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_create_estimate",
+      "description": "Create an estimate (devis) as a draft. Send the document as an object; the totals are computed by Sellsy. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "object",
+            "description": "The estimate. Required: related, e.g. [{\"type\": \"company\", \"id\": 123}] (a company, individual or opportunity; add {\"type\": \"contact\", \"id\": n} for the contact). Common fields: date and expiry_date (YYYY-MM-DD), subject, currency (e.g. EUR), note, assigned_staff_id, contact_id, invoicing_address_id, payment_terms ({\"id\": n}), rows: an array of rows, each {\"type\": \"single\", \"reference\": \"...\", \"description\": \"...\", \"unit_amount\": \"100.00\", \"quantity\": \"2\", \"tax_id\": n, \"unit_id\": n} for a free line, {\"type\": \"catalog\", \"related\": {\"type\": \"product\"|\"service\", \"id\": itemId}, \"quantity\": \"1\"} for a catalogue item, or {\"type\": \"comment\", \"text\": \"...\"}, {\"type\": \"title\", \"text\": \"...\"}, {\"type\": \"sub-total\"}, {\"type\": \"break-line\"}, {\"type\": \"break-page\"}."
+          }
+        },
+        "required": [
+          "document"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/estimates",
+        "bodyTemplate": "${document}"
+      }
+    },
+    {
+      "name": "sellsy_update_estimate_status",
+      "description": "Change the status of an estimate, e.g. to accepted when the client signed or refused when they declined. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "estimateId": {
+            "type": "number",
+            "description": "Numeric Sellsy estimate id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "sent",
+              "read",
+              "accepted",
+              "refused",
+              "expired",
+              "advanced",
+              "partialinvoiced",
+              "invoiced",
+              "cancelled"
+            ],
+            "description": "New status."
+          }
+        },
+        "required": [
+          "estimateId",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/estimates/{estimateId}/status",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "sellsy_create_invoice",
+      "description": "Create an invoice as a draft (it gets its final number when validated with sellsy_validate_invoice). Send the document as an object; the totals are computed by Sellsy. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "object",
+            "description": "The invoice. Required: related, e.g. [{\"type\": \"company\", \"id\": 123}] (one client company or individual, optionally a contact and opportunities). Common fields: date (YYYY-MM-DD), subject, currency (e.g. EUR), payment_terms ({\"id\": n} from sellsy_list_payment_terms), note, order_reference, assigned_staff_id, invoicing_address_id, payment_method_ids, rows: an array of rows, each {\"type\": \"single\", \"reference\": \"...\", \"description\": \"...\", \"unit_amount\": \"100.00\", \"quantity\": \"2\", \"tax_id\": n, \"unit_id\": n} for a free line, {\"type\": \"catalog\", \"related\": {\"type\": \"product\"|\"service\", \"id\": itemId}, \"quantity\": \"1\"} for a catalogue item, or {\"type\": \"comment\", \"text\": \"...\"}, {\"type\": \"title\", \"text\": \"...\"}, {\"type\": \"sub-total\"}, {\"type\": \"break-line\"}, {\"type\": \"break-page\"}."
+          }
+        },
+        "required": [
+          "document"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices",
+        "bodyTemplate": "${document}"
+      }
+    },
+    {
+      "name": "sellsy_validate_invoice",
+      "description": "Validate a draft invoice: it gets its definitive number, can no longer be edited and is due. Under French e-invoicing rules this may also send it. Irreversible: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "number",
+            "description": "Numeric Sellsy invoice id."
+          },
+          "date": {
+            "type": "string",
+            "description": "Invoice date to set, YYYY-MM-DD (depending on the conformity settings it may not be in the future)."
+          },
+          "einvoicing_flow": {
+            "type": "string",
+            "enum": [
+              "einvoicing",
+              "ereporting"
+            ],
+            "description": "E-invoicing flow; leave out for the recommended one."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/{invoiceId}/validate",
+        "bodyMapping": {
+          "date": "$date",
+          "einvoicing_flow": "$einvoicing_flow"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "sellsy_list_invoice_payments",
+      "description": "List the payments recorded on one invoice: amount, date, payment method and status. Use it to see what is still open on an invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "number",
+            "description": "Numeric Sellsy invoice id."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "paid_at",
+              "id"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoiceId}/payments",
+        "queryParams": {
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_invoice_credit_notes",
+      "description": "List the credit notes linked to one invoice (refunds and corrections), with number and amounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "number",
+            "description": "Numeric Sellsy invoice id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoiceId}/credit-notes",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_invoice_files",
+      "description": "List the directories and files attached to one invoice, with file ids for sellsy_get_file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "number",
+            "description": "Numeric Sellsy invoice id."
+          }
+        },
+        "required": [
+          "invoiceId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoiceId}/files"
+      }
+    },
+    {
+      "name": "sellsy_list_credit_notes",
+      "description": "List credit notes (avoirs) with number, date, client, amounts and status (draft, stored, partialspend, spent, cancelled).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "number",
+              "created",
+              "date",
+              "amount"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: fiscal_year, related, contact, company, individual, currency, owner, acl, smart_tags, invoicing_address, delivery_address, issuer_address, payment_method_ids, rate_category, proposals, proposals_ids, or cf.<customFieldId>. Any other value is a 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credit-notes",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_credit_notes",
+      "description": "Search credit note with Sellsy's filter object (a POST that only reads). Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy credit note filters. Allowed keys: status (array of draft|stored|partialspend|spent|cancelled), related_objects (array of {\"type\": company|individual, \"id\": n}), updated ({\"start\", \"end\"} as full ISO 8601 date-times), is_deposit (boolean), lifecycle_status (array of integer codes), favourite_filter (integer). Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "number",
+              "created",
+              "date",
+              "amount"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/credit-notes/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_get_credit_note",
+      "description": "Read one credit note in full: rows, totals, status, related parties and the invoices it refers to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "creditNoteId": {
+            "type": "number",
+            "description": "Numeric Sellsy credit note id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: fiscal_year, related, contact, company, individual, currency, owner, acl, smart_tags, invoicing_address, delivery_address, issuer_address, payment_method_ids, rate_category, proposals, proposals_ids, or cf.<customFieldId>. Any other value is a 400."
+          }
+        },
+        "required": [
+          "creditNoteId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credit-notes/{creditNoteId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_orders",
+      "description": "List sales orders (bons de commande) with number, date, client, amount, status and delivery status (order_status: none, wait, picking, sent, partialsent).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "number",
+              "created",
+              "date",
+              "amount",
+              "due_date",
+              "order_status"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: acl, related, contact, individual, company, fiscal_year, currency, smart_tags, owner, payment_terms, invoicing_address, delivery_address, issuer_address, settings, assigned_staff, payment_method_ids, rate_category, proposals, proposals_ids, or cf.<customFieldId>. Any other value is a 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_orders",
+      "description": "Search order with Sellsy's filter object (a POST that only reads). Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy order filters. Allowed keys: status (array of draft|sent|read|accepted|expired|advanced|invoiced|partialinvoiced|cancelled), order_status (array of none|wait|picking|sent|partialsent), related_objects (array of {\"type\": company|individual, \"id\": n}), updated ({\"start\", \"end\"} as full ISO 8601 date-times), favourite_filter (integer). Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "number",
+              "created",
+              "date",
+              "amount",
+              "due_date",
+              "order_status"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_get_order",
+      "description": "Read one sales order in full: rows, totals, status, delivery status and related parties.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "number",
+            "description": "Numeric Sellsy order id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: acl, related, contact, individual, company, fiscal_year, currency, smart_tags, owner, payment_terms, invoicing_address, delivery_address, issuer_address, settings, assigned_staff, payment_method_ids, rate_category, proposals, proposals_ids, or cf.<customFieldId>. Any other value is a 400."
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{orderId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_deliveries",
+      "description": "List delivery notes (bons de livraison) with number, date, client and delivery status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "number",
+              "created",
+              "date",
+              "amount",
+              "delivery_status"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deliveries",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_payments",
+      "description": "List payments received or made, with amount, currency, paid date, payment method, status and the documents they settle.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "paid_date"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: acl, company, individual. Any other value is a 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_payments",
+      "description": "Search payment with Sellsy's filter object (a POST that only reads). Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy payment filters. Allowed keys: status (array of pending|confirmed|rejected|failed|refund), related_objects (array of {\"type\": company|individual, \"id\": n}). Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "paid_date"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_get_payment",
+      "description": "Read one payment: amount, date, method, status, number and the documents it is allocated to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentId": {
+            "type": "number",
+            "description": "Numeric Sellsy payment id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: acl, company, individual. Any other value is a 400."
+          }
+        },
+        "required": [
+          "paymentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/{paymentId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_payment_methods",
+      "description": "List the payment methods of the account (transfer, card, cheque, direct debit...) with their ids for payment_method_ids on documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "rank"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/methods",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_get_item",
+      "description": "Read one catalogue item: type, reference, name, description, reference price, purchase price, VAT, unit and accounting codes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric Sellsy item id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: proposals, proposals_ids, or cf.<customFieldId>. Any other value is a 400."
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{itemId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_items",
+      "description": "Search item with Sellsy's filter object (a POST that only reads). Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy item filters. Allowed keys: type (array of product|service|shipping|packaging), name (string), reference (string), is_archived (boolean), favourite_filter (integer). Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "created_at"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_create_item",
+      "description": "Create a catalogue item (product or service). Prices are strings, excluding tax unless is_reference_price_taxes_free is false. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "product",
+              "service"
+            ],
+            "description": "Kind of item."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Unique item reference (SKU)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description printed on documents."
+          },
+          "reference_price": {
+            "type": "string",
+            "description": "Selling price, e.g. \"49.90\"."
+          },
+          "is_reference_price_taxes_free": {
+            "type": "boolean",
+            "description": "true when reference_price excludes tax."
+          },
+          "purchase_amount": {
+            "type": "string",
+            "description": "Purchase price excluding tax."
+          },
+          "tax_id": {
+            "type": "integer",
+            "description": "Tax id from sellsy_list_taxes."
+          },
+          "unit_id": {
+            "type": "integer",
+            "description": "Unit id from sellsy_list_units."
+          }
+        },
+        "required": [
+          "type",
+          "reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items",
+        "bodyMapping": {
+          "type": "$type",
+          "reference": "$reference",
+          "name": "$name",
+          "description": "$description",
+          "reference_price": "$reference_price",
+          "is_reference_price_taxes_free": "$is_reference_price_taxes_free",
+          "purchase_amount": "$purchase_amount",
+          "tax_id": "$tax_id",
+          "unit_id": "$unit_id"
+        }
+      }
+    },
+    {
+      "name": "sellsy_edit_item",
+      "description": "Change fields of a catalogue item. Send only the fields that change, e.g. {\"reference_price\": \"52.00\"} or {\"is_archived\": true}; field names are those of sellsy_get_item. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric Sellsy item id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "The fields to change, as a JSON object."
+          }
+        },
+        "required": [
+          "itemId",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{itemId}",
+        "bodyTemplate": "${fields}"
+      }
+    },
+    {
+      "name": "sellsy_get_item_prices",
+      "description": "Read the prices of an item per rate category (price lists), with amounts with and without tax.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric Sellsy item id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{itemId}/prices",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_taxes",
+      "description": "List the VAT rates (taxes) of the account with id, rate and label, for tax_id on items and document rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "rank"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "include_ecotax": {
+            "type": "boolean",
+            "description": "Also return eco taxes."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/taxes",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction",
+          "include_ecotax": "$include_ecotax"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_units",
+      "description": "List the units of measure (piece, hour, day, kg...) with their ids, for unit_id on items and rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "rank"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/units",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_currencies",
+      "description": "List the currencies available on the account, with code and symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/currencies",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_payment_terms",
+      "description": "List the payment terms of the account (on order, 30 days, end of month...) with their ids, for payment_terms on invoices and estimates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "rank"
+            ],
+            "description": "Sort field."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment-terms",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_rate_categories",
+      "description": "List the rate categories (price lists such as retail or wholesale) with their ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rate-categories",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_custom_fields",
+      "description": "List the custom field definitions of the account: id, name, code, type, options and which objects they apply to. The id is what cf.<id> embeds and custom field updates expect.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/custom-fields",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_tasks",
+      "description": "List tasks (to-dos) with title, due date, status (todo or done), label, priority, assignees and the record they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: owner, assigned_staffs, related, company, individual, contact, acl. Any other value is a 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_tasks",
+      "description": "Search task with Sellsy's filter object (a POST that only reads). For example every open task due this week. Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy task filters. Allowed keys: statuses (array of todo|done), due_date / created ({\"start\", \"end\"}), owners, assigned_staffs (arrays of staff ids), labels (array of label ids), related_objects (array of {\"type\", \"id\"}), companies, individuals, contacts (arrays of ids), priority ({\"min\", \"max\"}). Dates must be full ISO 8601 date-times, e.g. {\"created\": {\"start\": \"2026-01-01T00:00:00+00:00\"}}; a bare date is rejected. Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "due_date"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_get_task",
+      "description": "Read one task: title, description, due date, status, label, priority, reminders, assignees and the related record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "number",
+            "description": "Numeric Sellsy task id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: owner, assigned_staffs, related, company, individual, contact, acl. Any other value is a 400."
+          }
+        },
+        "required": [
+          "taskId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/{taskId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_create_task",
+      "description": "Create a task (to-do) on a record, e.g. a follow-up call on a company. Needs a label from sellsy_list_task_labels. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date and time, ISO 8601, e.g. 2026-11-05T10:00:00+01:00."
+          },
+          "label_id": {
+            "type": "integer",
+            "description": "Task label id from sellsy_list_task_labels."
+          },
+          "related": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The record this is attached to, at most one: [{\"type\": \"company\", \"id\": 123}]. type is one of opportunity, company, individual, contact, estimate, invoice, creditnote, order, delivery, model, purchase-invoice, purchase-creditnote, purchase-order, purchase-delivery, item."
+          },
+          "description": {
+            "type": "string",
+            "description": "Details of the task."
+          },
+          "assigned_staff_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Staff ids the task is assigned to."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Priority level."
+          },
+          "is_private": {
+            "type": "boolean",
+            "description": "Visible only to the owner and assignees."
+          }
+        },
+        "required": [
+          "due_date",
+          "label_id",
+          "related"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": {
+          "title": "$title",
+          "due_date": "$due_date",
+          "label_id": "$label_id",
+          "related": "$related",
+          "description": "$description",
+          "assigned_staff_ids": "$assigned_staff_ids",
+          "priority": "$priority",
+          "is_private": "$is_private"
+        }
+      }
+    },
+    {
+      "name": "sellsy_update_task",
+      "description": "Update a task, e.g. set status done, move the due date or reassign it. Send only the fields that change. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "number",
+            "description": "Numeric Sellsy task id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "done"
+            ],
+            "description": "New status."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "New due date and time, ISO 8601."
+          },
+          "label_id": {
+            "type": "integer",
+            "description": "New label id."
+          },
+          "assigned_staff_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "New list of assignees (replaces the old one)."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "New priority level."
+          }
+        },
+        "required": [
+          "taskId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tasks/{taskId}",
+        "bodyMapping": {
+          "status": "$status",
+          "title": "$title",
+          "description": "$description",
+          "due_date": "$due_date",
+          "label_id": "$label_id",
+          "assigned_staff_ids": "$assigned_staff_ids",
+          "priority": "$priority"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_task_labels",
+      "description": "List the task labels (types such as call, e-mail, meeting) with their ids, for label_id when creating tasks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "rank",
+              "id"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/labels",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_comments",
+      "description": "List comments (notes left on companies, contacts, opportunities and documents) with text, author, date and related record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "updated",
+              "created"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: owner, related, company, individual, contact, acl. Any other value is a 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/comments",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_comments",
+      "description": "Search comment with Sellsy's filter object (a POST that only reads). For example every note on one company. Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy comment filters. Allowed keys: related_objects (array of {\"type\", \"id\"}), companies, individuals, contacts, owners (arrays of ids), parent_id (integer), created / updated ({\"start\", \"end\"}). Dates must be full ISO 8601 date-times, e.g. {\"created\": {\"start\": \"2026-01-01T00:00:00+00:00\"}}; a bare date is rejected. Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "updated",
+              "created"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/comments/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_create_comment",
+      "description": "Add a comment (note) to a record, e.g. a summary of a call on a company or opportunity. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Text of the comment (HTML allowed)."
+          },
+          "related": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The record this is attached to, at most one: [{\"type\": \"company\", \"id\": 123}]. type is one of opportunity, company, individual, contact, estimate, invoice, creditnote, order, delivery, model, purchase-invoice, purchase-creditnote, purchase-order, purchase-delivery, item."
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "Id of the comment this replies to."
+          },
+          "mentioned_staff_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Staff ids to mention (they are notified)."
+          }
+        },
+        "required": [
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/comments",
+        "bodyMapping": {
+          "description": "$description",
+          "related": "$related",
+          "parent_id": "$parent_id",
+          "mentioned_staff_ids": "$mentioned_staff_ids"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_calendar_events",
+      "description": "List calendar events (meetings, appointments) with title, start and end, label, participants and related record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: company, contact, individual, owner, related, participants, acl. Any other value is a 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendar-events",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search_calendar_events",
+      "description": "Search calendar event with Sellsy's filter object (a POST that only reads). For example the meetings of next week. Only the documented filter keys are accepted; an unknown key or a bare date where a date-time is expected is a 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Sellsy calendar event filters. Allowed keys: due_date ({\"start\", \"end\"}), owners (array of staff ids), labels (array of label ids), related_objects (array of {\"type\", \"id\"}), companies, individuals, contacts (arrays of ids), participants (array of objects), priority ({\"min\", \"max\"}), provider_ids (array of strings). Dates must be full ISO 8601 date-times, e.g. {\"created\": {\"start\": \"2026-01-01T00:00:00+00:00\"}}; a bare date is rejected. Pass {} for no filter."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "due_date"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calendar-events/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        },
+        "bodyMapping": {
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sellsy_get_calendar_event",
+      "description": "Read one calendar event: title, description, start and end, all-day flag, label, participants and related record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "number",
+            "description": "Numeric Sellsy calendar event id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: company, contact, individual, owner, related, participants, acl. Any other value is a 400."
+          }
+        },
+        "required": [
+          "eventId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendar-events/{eventId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_create_calendar_event",
+      "description": "Create a calendar event (meeting or appointment), optionally linked to a record and with participants. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Event title."
+          },
+          "datetime_start": {
+            "type": "string",
+            "description": "Start, ISO 8601 date-time, e.g. 2026-11-05T10:00:00+01:00."
+          },
+          "datetime_end": {
+            "type": "string",
+            "description": "End, ISO 8601 date-time."
+          },
+          "label_id": {
+            "type": "integer",
+            "description": "Event label id from sellsy_list_calendar_event_labels."
+          },
+          "description": {
+            "type": "string",
+            "description": "Details of the event."
+          },
+          "all_day": {
+            "type": "boolean",
+            "description": "All-day event."
+          },
+          "is_private": {
+            "type": "boolean",
+            "description": "Private event."
+          },
+          "related": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The record this is attached to, at most one: [{\"type\": \"company\", \"id\": 123}]. type is one of opportunity, company, individual, contact, estimate, invoice, creditnote, order, delivery, model, purchase-invoice, purchase-creditnote, purchase-order, purchase-delivery, item."
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Participants, e.g. [{\"type\": \"staff\", \"id\": 12}, {\"type\": \"contact\", \"id\": 34}]."
+          }
+        },
+        "required": [
+          "title",
+          "datetime_start",
+          "datetime_end",
+          "label_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calendar-events",
+        "bodyMapping": {
+          "title": "$title",
+          "datetime_start": "$datetime_start",
+          "datetime_end": "$datetime_end",
+          "label_id": "$label_id",
+          "description": "$description",
+          "all_day": "$all_day",
+          "is_private": "$is_private",
+          "related": "$related",
+          "participants": "$participants"
+        }
+      }
+    },
+    {
+      "name": "sellsy_update_calendar_event",
+      "description": "Update a calendar event, e.g. move it or change its title. Send only the fields that change. Writes to the live CRM: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "number",
+            "description": "Numeric Sellsy calendar event id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "datetime_start": {
+            "type": "string",
+            "description": "New start, ISO 8601 date-time."
+          },
+          "datetime_end": {
+            "type": "string",
+            "description": "New end, ISO 8601 date-time."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "label_id": {
+            "type": "integer",
+            "description": "New label id."
+          },
+          "all_day": {
+            "type": "boolean",
+            "description": "All-day event."
+          }
+        },
+        "required": [
+          "eventId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/calendar-events/{eventId}",
+        "bodyMapping": {
+          "title": "$title",
+          "datetime_start": "$datetime_start",
+          "datetime_end": "$datetime_end",
+          "description": "$description",
+          "label_id": "$label_id",
+          "all_day": "$all_day"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_calendar_event_labels",
+      "description": "List the calendar event labels (meeting, call, demo...) with their ids, for label_id when creating events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "rank",
+              "id"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendar-events/labels",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_crm_activity",
+      "description": "Read the CRM activity feed: e-mails, calls, meetings, comments and other events logged on records, with date, author and label. Useful for \"what happened with this account lately\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "date",
+              "due_date",
+              "event",
+              "author",
+              "more.label"
+            ],
+            "description": "Sort field."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activities/crm",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "direction": "$direction"
+        }
+      }
+    },
+    {
+      "name": "sellsy_list_staffs",
+      "description": "List the staff members (users of the Sellsy account) with id, name, e-mail and status. Staff ids are what owner_id and assigned_staff_ids expect.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "id",
+              "name"
+            ],
+            "description": "Sort field."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: preferences, acl, licenses, preferences_calendar. Any other value is a 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffs",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "order": "$order",
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_get_staff",
+      "description": "Read one staff member. Pass \"me\" as staffId for the user the API application acts as.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "staffId": {
+            "type": "string",
+            "description": "Numeric staff id, or \"me\"."
+          }
+        },
+        "required": [
+          "staffId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staffs/{staffId}"
+      }
+    },
+    {
+      "name": "sellsy_list_teams",
+      "description": "List the teams of the Sellsy account (groups of staff members) with their ids and members.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 25)."
+          },
+          "offset": {
+            "type": "string",
+            "description": "`pagination.offset` from the previous response (an opaque seek token). A plain page number (0, 1, 2...) also works, up to the first 100,000 results."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "sellsy_get_file",
+      "description": "Read one file attached in Sellsy: name, size, type, the record it belongs to and its download link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "number",
+            "description": "Numeric Sellsy file id."
+          }
+        },
+        "required": [
+          "fileId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{fileId}"
+      }
+    },
+    {
+      "name": "sellsy_list_subscriptions",
+      "description": "List subscriptions (recurring invoicing plans) with client, frequency, amounts and next invoice date. Sellsy marks this route as open beta.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions"
+      }
+    },
+    {
+      "name": "sellsy_get_subscription",
+      "description": "Read one subscription (recurring invoicing plan); embed payment_installments adds its installments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "number",
+            "description": "Numeric Sellsy subscription id."
+          },
+          "embed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Related objects to return inline. Allowed values only: payment_installments. Any other value is a 400."
+          }
+        },
+        "required": [
+          "subscriptionId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions/{subscriptionId}",
+        "queryParams": {
+          "embed[]": "$embed"
+        }
+      }
+    },
+    {
+      "name": "sellsy_search",
+      "description": "Search the whole account by text, like the search bar: companies, individuals, contacts, opportunities, items, documents and staff. Narrow it with type. Use it first when the user names a client or a document number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search text (name, e-mail, document number...)."
+          },
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Object types to search: company, company.client, company.prospect, company.supplier, individual, contact, opportunity, item, item.product, item.service, document, document.estimate, document.invoice, document.order, document.delivery, document.creditnote, staff (and the other types of the Sellsy docs)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per type (only used together with type)."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "Include (true) or exclude (false) archived records."
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "type[]": "$type",
+          "limit": "$limit",
+          "archived": "$archived"
+        }
+      }
+    },
+    {
+      "name": "sellsy_get_quotas",
+      "description": "Read the API quotas of the account: requests allowed and used in the current windows. Check it before long paging runs.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quotas"
       }
     }
   ]

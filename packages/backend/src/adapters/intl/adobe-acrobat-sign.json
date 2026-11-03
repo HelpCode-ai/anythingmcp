@@ -1,0 +1,1287 @@
+{
+  "slug": "adobe-acrobat-sign",
+  "name": "Adobe Acrobat Sign",
+  "aliases": [
+    "Adobe Sign",
+    "EchoSign",
+    "Acrobat Sign"
+  ],
+  "description": "Let your AI work with Adobe Acrobat Sign: find agreements and check who has signed, read participants, events, form data, signing links, the signed PDF and audit trail, send documents or library templates for signature, remind or cancel, and browse templates, web forms, users, groups, workflows and webhooks. REST API v6, signed in as an Acrobat Sign user.",
+  "region": "intl",
+  "category": "e-signature",
+  "icon": "adobe-acrobat-sign",
+  "docsUrl": "https://developer.adobe.com/acrobat-sign/docs/overview/",
+  "instructions": "## Adobe Acrobat Sign\nThis connector works with **Adobe Acrobat Sign** (formerly Adobe Sign, EchoSign) through its **REST API v6** on your account's shard (`https://api.<shard>.adobesign.com/api/rest/v6`): agreements (find, read status, participants, events, form data, signing links, signed PDF and audit trail), creating and sending agreements from uploaded files or library templates, reminders and cancellation, library documents, web forms, users, groups, workflows and webhooks. It runs as the Acrobat Sign user who authorized it (OAuth 2.0), within that user's permissions.\n\n**Setup (about 15 minutes; an account admin creates the app)**\n1. Sign in to Acrobat Sign as an account admin. Note your **shard** from the browser address: `https://secure.na1.adobesign.com/...` means `na1` (others: `na2`, `na3`, `na4`, `eu1`, `eu2`, `jp1`, `au1`, `in1`, `sg1`). Put it into `ADOBE_SIGN_SHARD`. Developer accounts (free, for testing) work the same way.\n2. Open **Account → Acrobat Sign API → API Applications**, click **+**, give it a name and display name, and choose domain **CUSTOMER**.\n3. Select the new application and click **Configure OAuth for Application**. Set the **Redirect URI** to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself (https, exact match).\n4. On the same page enable these scopes: `user_read`, `agreement_read`, `agreement_write`, `agreement_send`, `library_read`, `widget_read`, `workflow_read`, `webhook_read`. Pick the modifier **self** for a personal connector; account admins may pick **account** to reach every user's agreements (see Scopes). Save.\n5. Click **View/Edit** on the application and copy the **Application ID** into `ADOBE_SIGN_CLIENT_ID` and the **Client Secret** into `ADOBE_SIGN_CLIENT_SECRET`. Install.\n6. On the connector page click **Authorize with Provider** and sign in to Acrobat Sign. Then run `adobe_acrobat_sign_get_base_uris`: `apiAccessPoint` must contain your shard; if it shows another one, correct `ADOBE_SIGN_SHARD` and authorize again.\n\n**Scopes**: the connector asks for `user_read agreement_read agreement_write agreement_send library_read widget_read workflow_read webhook_read`, which means the `:self` modifier: the signed-in user's own agreements, templates and web forms. An account admin who wants the AI to see the whole account can change them in the connector's OAuth settings to `agreement_read:account`, `user_read:account` and so on (the same modifiers must be enabled on the application), and authorize again. `adobe_acrobat_sign_list_users` needs `user_read:account`.\n\n**Tokens**: access tokens last one hour and are renewed automatically through `/oauth/v2/refresh` on the shard. A refresh token unused for 60 days expires; then click **Authorize with Provider** again.\n\n**Workflow**\n- Status of an agreement: `adobe_acrobat_sign_search_agreements` (text, status, dates, participant email) or `adobe_acrobat_sign_list_agreements`, then `adobe_acrobat_sign_get_agreement` and `adobe_acrobat_sign_get_agreement_members` (who still has to sign), `adobe_acrobat_sign_list_agreement_events` (history), `adobe_acrobat_sign_list_reminders`.\n- Results: `adobe_acrobat_sign_get_agreement_form_data` (entered values, CSV), `adobe_acrobat_sign_list_agreement_documents`, `adobe_acrobat_sign_get_combined_document_url` or `adobe_acrobat_sign_download_combined_document` (signed PDF), `adobe_acrobat_sign_download_audit_trail` (audit report PDF).\n- Send for signature: upload a file with `adobe_acrobat_sign_upload_transient_document` (or pick a template with `adobe_acrobat_sign_list_library_documents`, `adobe_acrobat_sign_get_library_document` and `adobe_acrobat_sign_list_library_document_form_fields`), then `adobe_acrobat_sign_create_agreement` with `state` IN_PROCESS. Create as DRAFT and call `adobe_acrobat_sign_send_agreement` later to review first. `adobe_acrobat_sign_get_signing_urls` gives the signing link of the current signer (for in-person or embedded signing).\n- Follow up: `adobe_acrobat_sign_create_reminder`, `adobe_acrobat_sign_cancel_agreement`.\n- Web forms: `adobe_acrobat_sign_list_web_forms`, `adobe_acrobat_sign_get_web_form`, `adobe_acrobat_sign_get_web_form_form_data`, `adobe_acrobat_sign_list_web_form_agreements`.\n- Account: `adobe_acrobat_sign_get_base_uris`, `adobe_acrobat_sign_get_user` (`me` for the signed-in user), `adobe_acrobat_sign_list_users`, `adobe_acrobat_sign_list_groups`, `adobe_acrobat_sign_list_group_users`, `adobe_acrobat_sign_list_workflows`, `adobe_acrobat_sign_get_workflow`, `adobe_acrobat_sign_list_webhooks`, `adobe_acrobat_sign_get_webhook`.\n\n**Sending is real: confirm first.** `adobe_acrobat_sign_create_agreement` with IN_PROCESS and `adobe_acrobat_sign_send_agreement` email the recipients; `adobe_acrobat_sign_cancel_agreement` cannot be undone; reminders email people. Show the user the documents, the recipients in order and the message, and send only after a clear yes.\n\n**Creating an agreement**: `file_infos` takes one entry per document: `{\"transientDocumentId\": ...}`, `{\"libraryDocumentId\": ...}` or `{\"urlFileInfo\": {\"url\": ..., \"name\": ..., \"mimeType\": ...}}` (Adobe fetches a public URL itself). `participant_sets` lists recipients with `order` (1, 2, ...) and `role` (SIGNER, APPROVER, ACCEPTOR, FORM_FILLER, CERTIFIED_RECIPIENT). Without signature fields in the document (text tags or template fields), Acrobat Sign adds a signature block at the end. `merge_field_info` pre-fills template fields by name. Transient documents expire after 7 days.\n\n**Reading the answers**: agreement `status` is OUT_FOR_SIGNATURE, OUT_FOR_APPROVAL, SIGNED, APPROVED, ACCEPTED, FORM_FILLED, DELIVERED, CANCELLED, EXPIRED, DRAFT, AUTHORING, ... Dates are ISO 8601 in UTC. Member `status` such as WAITING_FOR_MY_SIGNATURE, NOT_YET_VISIBLE or COMPLETED shows each participant's step. Form data comes as CSV text. PDFs (`adobe_acrobat_sign_download_combined_document`, `adobe_acrobat_sign_download_audit_trail`) are handed over as file attachments, up to 10 MB.\n\n**Paging**: list tools return `page.nextCursor`; pass it as `cursor` until it is missing. `adobe_acrobat_sign_search_agreements` pages with `start_index` (`searchPageInfo.nextIndex`), up to 100 results per page and 10,000 in total.\n\n**Limits**: Acrobat Sign throttles API calls per user and per account depending on the plan; a 429 answer carries Retry-After (seconds).\n\n**Common errors**\n- 401 `INVALID_ACCESS_TOKEN`: the authorization expired or was revoked; authorize again. 401 right after authorizing usually means a wrong `ADOBE_SIGN_SHARD`.\n- 403 `PERMISSION_DENIED` or `INVALID_API_ACCESS_POINT`: the scope or its modifier is missing (for example `user_read:account` for users), the user may not see that agreement, or the call went to the wrong shard.\n- 404 `INVALID_AGREEMENT_ID` (or another `INVALID_..._ID`): wrong id, or the agreement belongs to another user and the scope is `:self`.\n- 400 `INVALID_ARGUMENTS`, `MISSING_REQUIRED_PARAM`, `INVALID_EMAIL`: a field is missing or wrong; the message names it.\n- 404 `AGREEMENT_NOT_EXPOSED` on signing URLs: the agreement is still being prepared; wait a few seconds and ask again.\n\n**Switched off at install**: `adobe_acrobat_sign_cancel_agreement`, which cannot be undone; an admin switches it on when the team needs it.",
+  "prerequisites": "An Acrobat Sign account (Business, Enterprise or a free developer account) and an account admin to create an API application with the redirect URI below and the listed OAuth scopes. About 15 minutes.",
+  "requiredEnvVars": [
+    "ADOBE_SIGN_SHARD",
+    "ADOBE_SIGN_CLIENT_ID",
+    "ADOBE_SIGN_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://secure.adobesign.com/account/accountSettingsPage#pageId::API_APPLICATIONS",
+  "envVarMeta": {
+    "ADOBE_SIGN_SHARD": {
+      "label": "Shard (data center)",
+      "kind": "address",
+      "help": "The part between secure. and .adobesign.com in your browser address when signed in, e.g. na1, na2, na3, na4, eu1, eu2, jp1, au1, in1, sg1. adobe_acrobat_sign_get_base_uris confirms it.",
+      "example": "na1",
+      "pattern": "^[a-z]{2}[0-9]{1,2}$",
+      "patternMessage": "Use only the shard code such as na1 or eu2, not the full address."
+    },
+    "ADOBE_SIGN_CLIENT_ID": {
+      "label": "Application ID",
+      "kind": "credential",
+      "help": "Account, Acrobat Sign API, API Applications, select the application, View/Edit: Application ID.",
+      "link": "https://secure.adobesign.com/account/accountSettingsPage#pageId::API_APPLICATIONS",
+      "pattern": "^[A-Za-z0-9_*-]{10,}$",
+      "patternMessage": "Paste the Application ID without spaces."
+    },
+    "ADOBE_SIGN_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same View/Edit dialog: Client Secret.",
+      "link": "https://secure.adobesign.com/account/accountSettingsPage#pageId::API_APPLICATIONS",
+      "pattern": "^\\S{10,}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Acrobat Sign refused the access token. Check that ADOBE_SIGN_SHARD matches your account (adobe_acrobat_sign_get_base_uris shows it) and click Authorize with Provider again.",
+    "403": "The application or user lacks a scope for this call. Enable the scopes listed in the instructions under Configure OAuth for Application (with the account modifier for account-wide data), then authorize again.",
+    "rate_limited": "Acrobat Sign is throttling this account. Wait the seconds given in Retry-After and try again."
+  },
+  "probe": {
+    "tool": "adobe_acrobat_sign_get_base_uris"
+  },
+  "connector": {
+    "name": "Adobe Acrobat Sign REST API v6",
+    "type": "REST",
+    "baseUrl": "https://api.{{ADOBE_SIGN_SHARD}}.adobesign.com/api/rest/v6",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{ADOBE_SIGN_CLIENT_ID}}",
+      "clientSecret": "{{ADOBE_SIGN_CLIENT_SECRET}}",
+      "authorizationUrl": "https://secure.{{ADOBE_SIGN_SHARD}}.adobesign.com/public/oauth/v2",
+      "tokenUrl": "https://api.{{ADOBE_SIGN_SHARD}}.adobesign.com/oauth/v2/token",
+      "refreshUrl": "https://api.{{ADOBE_SIGN_SHARD}}.adobesign.com/oauth/v2/refresh",
+      "tokenAuthMethod": "client_secret_post",
+      "scopes": "user_read agreement_read agreement_write agreement_send library_read widget_read workflow_read webhook_read"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/baseUris"
+  },
+  "tools": [
+    {
+      "name": "adobe_acrobat_sign_get_base_uris",
+      "description": "The API and web hosts of the account (apiAccessPoint, webAccessPoint), e.g. https://api.na1.adobesign.com/. Use it to check the connection and that ADOBE_SIGN_SHARD is right.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/baseUris"
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_user",
+      "description": "Read a user of the account: id, email, name, company, accountType, status, isAccountAdmin and primary group. user_id \"me\" returns the user who authorized the connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id from adobe_acrobat_sign_list_users, or me for the signed-in user.",
+            "default": "me"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_agreements",
+      "description": "List the agreements of the signed-in user, newest first: id, name, status (OUT_FOR_SIGNATURE, SIGNED, APPROVED, CANCELLED, EXPIRED, DRAFT, AUTHORING, ...), displayDate, participants and groupId. Filter by externalId or group. For text search, status and date filters use adobe_acrobat_sign_search_agreements.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "Only agreements created with this external id (case-sensitive)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Only agreements of this group, from adobe_acrobat_sign_list_groups."
+          },
+          "show_hidden": {
+            "type": "boolean",
+            "description": "true includes agreements the user has hidden."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: page.nextCursor of the previous answer. Leave it out for the first page; when nextCursor is missing there is nothing more."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (the account default applies when left out).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements",
+        "queryParams": {
+          "externalId": "$external_id",
+          "groupId": "$group_id",
+          "showHiddenAgreements": "$show_hidden",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_search_agreements",
+      "description": "Search agreements, web forms and library documents the user can see, by text (names, participant emails and names, messages, external ids, field content) and filters: status, role, type, created or modified date, participant email. Sorted and paged with start_index. Read-only, although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to look for; leave empty to filter only."
+          },
+          "status": {
+            "type": "array",
+            "description": "Statuses, e.g. [\"OUT_FOR_SIGNATURE\", \"WAITING_FOR_MY_SIGNATURE\", \"SIGNED\", \"CANCELLED\", \"EXPIRED\", \"DRAFT\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "role": {
+            "type": "array",
+            "description": "Roles of the user on the agreement, e.g. [\"SENDER\"] or [\"SIGNER\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "array",
+            "description": "Asset types: AGREEMENT, MEGASIGN_PARENT, MEGASIGN_CHILD, WIDGET, WIDGET_INSTANCE, LIBRARY_TEMPLATE.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "participant_email": {
+            "type": "array",
+            "description": "Only agreements with these participant emails.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "external_id": {
+            "type": "array",
+            "description": "Only agreements with these external ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_date": {
+            "type": "object",
+            "description": "Created-date range as ISO 8601: {\"range\": {\"gt\": \"2026-10-01T00:00:00Z\", \"lt\": \"2026-11-01T00:00:00Z\"}} (or min and max; do not mix the two styles)."
+          },
+          "modified_date": {
+            "type": "object",
+            "description": "Modified-date range, same shape as created_date."
+          },
+          "queryable_fields": {
+            "type": "array",
+            "description": "Search the text only in these fields: title, note, message, originalFileName, email, fullName, companyName, externalId, agreementId, textFieldContent, ...",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort_by_field": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "CREATED_DATE",
+              "MODIFIED_DATE",
+              "EXPIRATION_DATE",
+              "NAME",
+              "STATUS",
+              "SENDER"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "start_index": {
+            "type": "integer",
+            "description": "0-based offset of the first result (below 10,000). Use searchPageInfo.nextIndex of the previous answer.",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search",
+        "bodyMapping": {
+          "scope": [
+            "AGREEMENT_ASSETS"
+          ],
+          "query": "$query",
+          "agreementAssetsCriteria": {
+            "status": "$status",
+            "role": "$role",
+            "type": "$type",
+            "participantEmail": "$participant_email",
+            "externalId": "$external_id",
+            "createdDate": "$created_date",
+            "modifiedDate": "$modified_date",
+            "queryableFields": "$queryable_fields",
+            "sortByField": "$sort_by_field",
+            "sortOrder": "$sort_order",
+            "startIndex": "$start_index",
+            "pageSize": "$page_size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_agreement",
+      "description": "Read one agreement: name, status, sender, participant sets (role, order, members and their status), cc list, message, created and expiration dates, signatureType, locale, externalId and the documents it was made from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}"
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_agreement_members",
+      "description": "Who is on an agreement and where they stand: participant sets with role, order and status, each member with participant id, email and status (e.g. WAITING_FOR_MY_SIGNATURE, COMPLETED), plus the sender and cc members. Use the participant ids for reminders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          },
+          "include_next_participant_set": {
+            "type": "boolean",
+            "description": "true also returns the participants who act next."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}/members",
+        "queryParams": {
+          "includeNextParticipantSet": "$include_next_participant_set"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_agreement_events",
+      "description": "The audit events of an agreement in order: created, sent, emailed, viewed, signed, delegated, reminder sent, completed, with date, actor email, participant and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}/events"
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_agreement_form_data",
+      "description": "The values participants entered in the form fields of an agreement, as CSV text (one row per participant, one column per field). Only the sender can read it; by default only for completed agreements.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          },
+          "allow_in_process": {
+            "type": "boolean",
+            "description": "true also returns data of agreements still in process."
+          },
+          "participant_id": {
+            "type": "string",
+            "description": "Only the data of this participant (id from adobe_acrobat_sign_get_agreement_members)."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}/formData",
+        "queryParams": {
+          "allowInProcessAgreement": "$allow_in_process",
+          "participantId": "$participant_id"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_signing_urls",
+      "description": "The e-sign page links of the participants who must act now (signingUrlSetInfos with email and esignUrl). Available a few seconds after an agreement is sent; until then Adobe answers AGREEMENT_NOT_EXPOSED: wait and ask again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          },
+          "expiry": {
+            "type": "integer",
+            "description": "Link lifetime in seconds (30 to 315360000); the account setting applies when left out.",
+            "minimum": 30
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}/signingUrls",
+        "queryParams": {
+          "expiry": "$expiry"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_combined_document_url",
+      "description": "A temporary download URL of the agreement as one PDF (signed copy once completed), optionally with the audit report and supporting documents attached.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          },
+          "attach_audit_report": {
+            "type": "boolean",
+            "description": "true appends the audit report (default false)."
+          },
+          "attach_supporting_documents": {
+            "type": "boolean",
+            "description": "true attaches the supporting documents participants uploaded (default true)."
+          },
+          "version_id": {
+            "type": "string",
+            "description": "A specific version of the agreement (latestVersionId and earlier); the latest by default."
+          },
+          "participant_id": {
+            "type": "string",
+            "description": "The document as this participant sees it; the caller's view by default."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}/combinedDocument/url",
+        "queryParams": {
+          "attachAuditReport": "$attach_audit_report",
+          "attachSupportingDocuments": "$attach_supporting_documents",
+          "versionId": "$version_id",
+          "participantId": "$participant_id"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_download_combined_document",
+      "description": "Download the agreement as one PDF file (the signed copy once completed), handed over as a file attachment, not as text. Use adobe_acrobat_sign_get_combined_document_url for a link instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          },
+          "attach_audit_report": {
+            "type": "boolean",
+            "description": "true appends the audit report (default false)."
+          },
+          "attach_supporting_documents": {
+            "type": "boolean",
+            "description": "true attaches the supporting documents (default true)."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}/combinedDocument",
+        "queryParams": {
+          "attachAuditReport": "$attach_audit_report",
+          "attachSupportingDocuments": "$attach_supporting_documents"
+        }
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_agreement_documents",
+      "description": "List the documents of an agreement: document id, name, mimeType, number of pages, and supporting documents uploaded by participants with their field names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          },
+          "version_id": {
+            "type": "string",
+            "description": "A specific version of the agreement; the latest by default."
+          },
+          "participant_id": {
+            "type": "string",
+            "description": "The documents as this participant sees them."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}/documents",
+        "queryParams": {
+          "versionId": "$version_id",
+          "participantId": "$participant_id"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_download_audit_trail",
+      "description": "Download the audit trail report of an agreement as a PDF file attachment (who did what and when, with IP addresses and the transaction id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}/auditTrail"
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_reminders",
+      "description": "List the reminders set on an agreement: reminder id, recipients (participant ids), frequency, status, last and next send date, note.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses to return: ACTIVE, CANCELED, COMPLETE."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/agreements/{agreement_id}/reminders",
+        "queryParams": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_library_documents",
+      "description": "List the library documents (reusable templates) the user can use: id, name, templateTypes (DOCUMENT, FORM_FIELD_LAYER), sharingMode (USER, GROUP, ACCOUNT, GLOBAL), status and modified date. Use an id in adobe_acrobat_sign_create_agreement.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Only library documents of this group."
+          },
+          "show_hidden": {
+            "type": "boolean",
+            "description": "true includes hidden library documents."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: page.nextCursor of the previous answer. Leave it out for the first page; when nextCursor is missing there is nothing more."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (the account default applies when left out).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/libraryDocuments",
+        "queryParams": {
+          "groupId": "$group_id",
+          "showHiddenLibraryDocuments": "$show_hidden",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_library_document",
+      "description": "Read one library document (template): name, owner, sharing mode, template types, status, created date and the files it contains.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "library_document_id": {
+            "type": "string",
+            "description": "Library document (template) id, from adobe_acrobat_sign_list_library_documents."
+          }
+        },
+        "required": [
+          "library_document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/libraryDocuments/{library_document_id}"
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_library_document_form_fields",
+      "description": "List the form fields of a library document: name, inputType (TEXT_FIELD, SIGNATURE, CHECKBOX, DATE, ...), assignee (which participant fills it), required, default value and position. Field names are what mergeFieldInfo pre-fills.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "library_document_id": {
+            "type": "string",
+            "description": "Library document (template) id, from adobe_acrobat_sign_list_library_documents."
+          }
+        },
+        "required": [
+          "library_document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/libraryDocuments/{library_document_id}/formFields"
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_web_forms",
+      "description": "List the web forms (widgets): id, name, status (ACTIVE, AUTHORING, DRAFT), the public url signers open, javascript embed code and modified date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Only web forms of this group."
+          },
+          "show_hidden": {
+            "type": "boolean",
+            "description": "true includes hidden web forms."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: page.nextCursor of the previous answer. Leave it out for the first page; when nextCursor is missing there is nothing more."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (the account default applies when left out).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/widgets",
+        "queryParams": {
+          "groupId": "$group_id",
+          "showHiddenWidgets": "$show_hidden",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_web_form",
+      "description": "Read one web form: name, status, public url, participants, completion and verification settings, and the documents it uses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "widget_id": {
+            "type": "string",
+            "description": "Web form (widget) id, from adobe_acrobat_sign_list_web_forms."
+          }
+        },
+        "required": [
+          "widget_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/widgets/{widget_id}"
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_web_form_form_data",
+      "description": "The data signers entered in a web form, as CSV text (one row per submission).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "widget_id": {
+            "type": "string",
+            "description": "Web form (widget) id, from adobe_acrobat_sign_list_web_forms."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: page.nextCursor of the previous answer. Leave it out for the first page; when nextCursor is missing there is nothing more."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (the account default applies when left out).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "widget_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/widgets/{widget_id}/formData",
+        "queryParams": {
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_web_form_agreements",
+      "description": "List the agreements created when people filled in and signed a web form: id, name, status, participant email and date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "widget_id": {
+            "type": "string",
+            "description": "Web form (widget) id, from adobe_acrobat_sign_list_web_forms."
+          },
+          "show_hidden": {
+            "type": "boolean",
+            "description": "true includes hidden agreements."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: page.nextCursor of the previous answer. Leave it out for the first page; when nextCursor is missing there is nothing more."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (the account default applies when left out).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "widget_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/widgets/{widget_id}/agreements",
+        "queryParams": {
+          "showHiddenAgreements": "$show_hidden",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_users",
+      "description": "List the users of the Acrobat Sign account: id, email, name, company, isAccountAdmin. Needs an account admin who authorized the user_read scope with the :account modifier; others get a permission error.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_admin_filter": {
+            "type": "string",
+            "description": "Only admins, only non-admins, or all (default).",
+            "enum": [
+              "ADMIN_ONLY",
+              "NON_ADMIN_ONLY",
+              "ALL"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: page.nextCursor of the previous answer. Leave it out for the first page; when nextCursor is missing there is nothing more."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (the account default applies when left out).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "accountAdminFilter": "$account_admin_filter",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_groups",
+      "description": "List the groups of the account: id, name, createdDate and whether it is the default group. Group ids filter agreements, templates and web forms.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: page.nextCursor of the previous answer. Leave it out for the first page; when nextCursor is missing there is nothing more."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (the account default applies when left out).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups",
+        "queryParams": {
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_group_users",
+      "description": "List the users of one group: id, email, name, and whether they are group admins.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group id, from adobe_acrobat_sign_list_groups."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: page.nextCursor of the previous answer. Leave it out for the first page; when nextCursor is missing there is nothing more."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (the account default applies when left out).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/users",
+        "queryParams": {
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_workflows",
+      "description": "List the custom send workflows available to the user: id, name, displayName, status, scope and modified date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Only workflows of this group."
+          },
+          "include_draft": {
+            "type": "boolean",
+            "description": "true includes draft workflows."
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "description": "true includes inactive workflows."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflows",
+        "queryParams": {
+          "groupId": "$group_id",
+          "includeDraftWorkflows": "$include_draft",
+          "includeInactiveWorkflows": "$include_inactive"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_workflow",
+      "description": "Read one workflow: its recipients list (roles, order, editable or fixed emails), documents, cc, expiration and authentication settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "description": "Workflow id, from adobe_acrobat_sign_list_workflows."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group the workflow belongs to, when needed."
+          }
+        },
+        "required": [
+          "workflow_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflows/{workflow_id}",
+        "queryParams": {
+          "groupId": "$group_id"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_list_webhooks",
+      "description": "List the webhooks of the account or user: id, name, scope, state (ACTIVE or INACTIVE), subscribed events, resource type and target URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "show_inactive": {
+            "type": "boolean",
+            "description": "true includes inactive webhooks."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Only webhooks of this scope.",
+            "enum": [
+              "ACCOUNT",
+              "GROUP",
+              "USER",
+              "RESOURCE"
+            ]
+          },
+          "resource_type": {
+            "type": "string",
+            "description": "Only webhooks on this resource type.",
+            "enum": [
+              "AGREEMENT",
+              "WIDGET",
+              "MEGASIGN",
+              "LIBRARY_DOCUMENT"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Paging cursor: page.nextCursor of the previous answer. Leave it out for the first page; when nextCursor is missing there is nothing more."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page (the account default applies when left out).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks",
+        "queryParams": {
+          "showInActiveWebhooks": "$show_inactive",
+          "scope": "$scope",
+          "resourceType": "$resource_type",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_get_webhook",
+      "description": "Read one webhook: name, scope, state, subscribed events, URL, and the conditional parameters that decide what the notification carries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_id": {
+            "type": "string",
+            "description": "Webhook id, from adobe_acrobat_sign_list_webhooks."
+          }
+        },
+        "required": [
+          "webhook_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks/{webhook_id}"
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_upload_transient_document",
+      "description": "Upload a file (PDF, Word, Excel, image, ...) from a URL as a transient document and get its transientDocumentId, to use in adobe_acrobat_sign_create_agreement within 7 days. AnythingMCP downloads the URL and sends the bytes (up to 10 MB).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "description": "Public or pre-signed URL of the file to upload.",
+            "format": "uri"
+          },
+          "file_name": {
+            "type": "string",
+            "description": "File name with extension, e.g. contract.pdf. Adobe shows it as the document name."
+          },
+          "mime_type": {
+            "type": "string",
+            "description": "MIME type, e.g. application/pdf; Adobe guesses it from the name when left out."
+          }
+        },
+        "required": [
+          "file_url",
+          "file_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transientDocuments",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "File": {
+            "__file": "$file_url"
+          },
+          "File-Name": "$file_name",
+          "Mime-Type": "$mime_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_create_agreement",
+      "description": "Create an agreement from a transient document, a library document (template) or a file URL. state IN_PROCESS sends it for signature at once (emails go out); DRAFT keeps it unsent; AUTHORING lets the sender place fields in Acrobat Sign first. Confirm the documents, recipients and their order with the user before sending. Returns the agreement id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Agreement name, shown to recipients in emails and on the signing page."
+          },
+          "file_infos": {
+            "type": "array",
+            "description": "Documents, each one of: {\"transientDocumentId\": \"...\"} (from adobe_acrobat_sign_upload_transient_document), {\"libraryDocumentId\": \"...\"} (a template), or {\"urlFileInfo\": {\"url\": \"https://...\", \"name\": \"contract.pdf\", \"mimeType\": \"application/pdf\"}}.",
+            "items": {
+              "type": "object",
+              "description": "One document."
+            },
+            "minItems": 1
+          },
+          "participant_sets": {
+            "type": "array",
+            "description": "Recipients in signing order, e.g. [{\"order\": 1, \"role\": \"SIGNER\", \"memberInfos\": [{\"email\": \"anna@example.com\"}]}, {\"order\": 2, \"role\": \"APPROVER\", \"memberInfos\": [{\"email\": \"boss@example.com\"}]}]. Roles: SIGNER, APPROVER, ACCEPTOR, CERTIFIED_RECIPIENT, FORM_FILLER, DELEGATE_TO_SIGNER, ... Several members in one set means any one of them may act. Sets with the same order act in parallel.",
+            "items": {
+              "type": "object",
+              "description": "One participant set: order, role, memberInfos [{email}], optional label, name, privateMessage."
+            },
+            "minItems": 1
+          },
+          "state": {
+            "type": "string",
+            "description": "IN_PROCESS sends now; DRAFT saves without sending; AUTHORING opens it for field placement.",
+            "enum": [
+              "IN_PROCESS",
+              "DRAFT",
+              "AUTHORING"
+            ]
+          },
+          "signature_type": {
+            "type": "string",
+            "description": "ESIGN (default) for electronic signatures, WRITTEN for wet-ink signatures uploaded back.",
+            "enum": [
+              "ESIGN",
+              "WRITTEN"
+            ],
+            "default": "ESIGN"
+          },
+          "message": {
+            "type": "string",
+            "description": "Message to the recipients, shown in the email and on the signing page."
+          },
+          "ccs": {
+            "type": "array",
+            "description": "People who get a copy, e.g. [{\"email\": \"legal@example.com\"}].",
+            "items": {
+              "type": "object",
+              "description": "{\"email\": \"...\"}"
+            }
+          },
+          "expiration_time": {
+            "type": "string",
+            "description": "Deadline to sign, ISO 8601 with Z, e.g. 2026-11-30T18:00:00Z. Counts from sending."
+          },
+          "reminder_frequency": {
+            "type": "string",
+            "description": "Automatic reminders to recipients who have not acted.",
+            "enum": [
+              "DAILY_UNTIL_SIGNED",
+              "WEEKDAILY_UNTIL_SIGNED",
+              "EVERY_OTHER_DAY_UNTIL_SIGNED",
+              "EVERY_THIRD_DAY_UNTIL_SIGNED",
+              "EVERY_FIFTH_DAY_UNTIL_SIGNED",
+              "WEEKLY_UNTIL_SIGNED",
+              "ONCE"
+            ]
+          },
+          "merge_field_info": {
+            "type": "array",
+            "description": "Pre-fill form fields of the documents, e.g. [{\"fieldName\": \"CustomerName\", \"defaultValue\": \"ACME Ltd\"}]. Field names from adobe_acrobat_sign_list_library_document_form_fields.",
+            "items": {
+              "type": "object",
+              "description": "{\"fieldName\": \"...\", \"defaultValue\": \"...\"}"
+            }
+          },
+          "external_id": {
+            "type": "object",
+            "description": "Your own reference, {\"id\": \"ORDER-1234\"}; visible to participants through the API, so no secrets."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Send on behalf of this group (its settings and branding apply)."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of emails and the signing page, e.g. en_US, de_DE, it_IT, fr_FR."
+          }
+        },
+        "required": [
+          "name",
+          "file_infos",
+          "participant_sets",
+          "state"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/agreements",
+        "bodyMapping": {
+          "name": "$name",
+          "fileInfos": "$file_infos",
+          "participantSetsInfo": "$participant_sets",
+          "state": "$state",
+          "signatureType": "$signature_type",
+          "message": "$message",
+          "ccs": "$ccs",
+          "expirationTime": "$expiration_time",
+          "reminderFrequency": "$reminder_frequency",
+          "mergeFieldInfo": "$merge_field_info",
+          "externalId": "$external_id",
+          "groupId": "$group_id",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_send_agreement",
+      "description": "Send a DRAFT or AUTHORING agreement for signature (state IN_PROCESS): the first recipients get their emails. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/agreements/{agreement_id}/state",
+        "bodyMapping": {
+          "state": "IN_PROCESS"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "adobe_acrobat_sign_cancel_agreement",
+      "description": "Cancel an agreement that is out for signature (state CANCELLED). Recipients can no longer sign; with notify_others they get an email with the comment. Cannot be undone: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Reason for the cancellation, shown to recipients when they are notified."
+          },
+          "notify_others": {
+            "type": "boolean",
+            "description": "true emails the recipients about the cancellation (default false).",
+            "default": false
+          }
+        },
+        "required": [
+          "agreement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/agreements/{agreement_id}/state",
+        "bodyMapping": {
+          "state": "CANCELLED",
+          "agreementCancellationInfo": {
+            "comment": "$comment",
+            "notifyOthers": "$notify_others"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "adobe_acrobat_sign_create_reminder",
+      "description": "Remind participants who have not acted yet: send a reminder now (frequency ONCE) or on a schedule until they sign. Participant ids from adobe_acrobat_sign_get_agreement_members.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "Agreement id, from adobe_acrobat_sign_list_agreements, adobe_acrobat_sign_search_agreements or adobe_acrobat_sign_create_agreement."
+          },
+          "participant_ids": {
+            "type": "array",
+            "description": "Participant ids to remind (members of the current participant set).",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "note": {
+            "type": "string",
+            "description": "Personal note included in the reminder email."
+          },
+          "frequency": {
+            "type": "string",
+            "description": "ONCE (default) or a repeating schedule until signed.",
+            "enum": [
+              "ONCE",
+              "DAILY_UNTIL_SIGNED",
+              "WEEKDAILY_UNTIL_SIGNED",
+              "EVERY_OTHER_DAY_UNTIL_SIGNED",
+              "EVERY_THIRD_DAY_UNTIL_SIGNED",
+              "EVERY_FIFTH_DAY_UNTIL_SIGNED",
+              "WEEKLY_UNTIL_SIGNED"
+            ]
+          },
+          "first_reminder_delay": {
+            "type": "integer",
+            "description": "Hours before the first reminder is sent (0 or empty: now).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "agreement_id",
+          "participant_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/agreements/{agreement_id}/reminders",
+        "bodyMapping": {
+          "recipientParticipantIds": "$participant_ids",
+          "status": "ACTIVE",
+          "note": "$note",
+          "frequency": "$frequency",
+          "firstReminderDelay": "$first_reminder_delay"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    }
+  ]
+}

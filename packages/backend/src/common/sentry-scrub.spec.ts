@@ -1,5 +1,5 @@
 import type { Event } from '@sentry/nestjs';
-import { cutQueries, isMcpTransportError, scrubBreadcrumb, scrubEvent, scrubSpan, stripQuery, type StreamedSpan } from './sentry-scrub';
+import { IGNORED_ERRORS, cutQueries, isMcpTransportError, scrubBreadcrumb, scrubEvent, scrubSpan, stripQuery, type StreamedSpan } from './sentry-scrub';
 
 describe('sentry-scrub', () => {
   it('keeps only method, bare URL and user-agent of the request', () => {
@@ -158,5 +158,13 @@ describe('sentry-scrub', () => {
       } as Event),
     ).toBe(false);
     expect(isMcpTransportError({ message: 'plain' } as Event)).toBe(false);
+  });
+
+  it("ignores raw-body's client errors, and only those", () => {
+    const ignored = (message: string) => IGNORED_ERRORS.some((re) => re.test(message));
+    expect(ignored('request aborted')).toBe(true);
+    expect(ignored('request entity too large')).toBe(true);
+    expect(ignored('Request failed with status code 413')).toBe(false);
+    expect(ignored('request entity too large for connector X')).toBe(false);
   });
 });

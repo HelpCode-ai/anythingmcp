@@ -343,6 +343,7 @@ describe('KgSkillService.getForCaller', () => {
     expect(where.AND[0]).toEqual({
       organizationId: 'org-A',
       status: 'applied',
+      kind: { not: 'code' },
       OR: [{ mcpServerId: { in: ['srv-1'] } }, { connectorId: { in: ['c-1'] } }],
     });
     expect(where.AND[1]).toEqual({ OR: [{ id: 's1' }, { title: { equals: 's1', mode: 'insensitive' } }] });
@@ -667,5 +668,85 @@ describe('KgSkillService review fixes', () => {
     const text = (await svc.activeSkillsText(ORG, 'srv', [], 'full'))!;
     expect(text.length).toBeLessThan(30_000);
     expect(text).toContain('skill_get "s0"');
+  });
+});
+
+/** Agent-proposed code tools: inert proposals an admin approves into a tool. */
+describe('KgSkillService.proposeCodeTool', () => {
+  const ORG = 'org-A';
+  const base = {
+    connectorId: 'c1',
+    usesConnectorIds: ['c1', 'c2'],
+    name: 'Sum two tools',
+    description: 'Adds the results of tool_a and tool_b',
+    code: "const a = await amcp.run('tool_a', {}); return a;",
+    rationale: 'Seen three times this week',
+    mcpServerId: 'srv',
+  };
+
+  it('stores a pending, invoker, read-only code proposal with its payload', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'p1' });
+    const svc = new KgSkillService({ kgSkillSuggestion: { create } } as any, {} as any);
+    const res = await svc.proposeCodeTool(ORG, base);
+    expect(res).toEqual({ id: 'p1' });
+    const data = create.mock.calls[0][0].data;
+    expect(data).toEqual(
+      expect.objectContaining({
+        organizationId: ORG,
+        connectorId: 'c1',
+        mcpServerId: 'srv',
+        kind: 'code',
+        source: 'agent',
+        status: 'pending',
+        title: 'Sum two tools',
+      }),
+    );
+    // Payload is the candidate McpTool; authority is locked down at proposal time.
+    expect(data.payload.endpointMapping).toEqual(
+      expect.objectContaining({ method: 'code', runAs: 'invoker', allowWrites: false }),
+    );
+    expect(data.payload.endpointMapping.uses).toEqual([{ connectorId: 'c1' }, { connectorId: 'c2' }]);
+    expect(data.payload.connectorId).toBe('c1');
+    // The program is only in the payload, never in `body` (a servable field).
+    expect(data.body).toBeUndefined();
+  });
+
+  it('rejects an empty name, empty code, or no connectors', async () => {
+    const create = jest.fn();
+    const svc = new KgSkillService({ kgSkillSuggestion: { create } } as any, {} as any);
+    await expect(svc.proposeCodeTool(ORG, { ...base, name: '  ' })).rejects.toThrow(/name/i);
+    await expect(svc.proposeCodeTool(ORG, { ...base, code: '' })).rejects.toThrow(/code/i);
+    await expect(svc.proposeCodeTool(ORG, { ...base, usesConnectorIds: [] })).rejects.toThrow(/connector/i);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('never activates a code proposal through apply()', async () => {
+    const update = jest.fn();
+    const svc = new KgSkillService(
+      {
+        kgSkillSuggestion: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'p1', organizationId: ORG, kind: 'code' }),
+          update,
+        },
+      } as any,
+      {} as any,
+    );
+    await expect(svc.apply(ORG, 'p1')).rejects.toThrow(/proposal/i);
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+/** A code proposal must never be served to a model as a skill. */
+describe('KgSkillService code proposals are not served', () => {
+  const ORG = 'org-A';
+  it('excludes kind="code" from the active-skills query', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
+    await svc.activeSkillsText(ORG, 'srv', ['c1']);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'applied', kind: { not: 'code' } }),
+      }),
+    );
   });
 });

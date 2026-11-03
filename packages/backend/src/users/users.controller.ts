@@ -15,7 +15,6 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
-  ConflictException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -27,7 +26,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service';
 import { SEAT_LIMIT, seatLimitMessage } from '../ee/licensing/edition.service';
-import { normalizeEmail, sameEmail } from '../common/email.util';
+import { sameEmail } from '../common/email.util';
 
 class RevokeSessionsDto {
   @ApiPropertyOptional({
@@ -46,7 +45,7 @@ class UpdateProfileDto {
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ description: 'Email. Triggers re-verification on change.' })
+  @ApiPropertyOptional({ description: 'Email. Must be the current address: users cannot change their own.' })
   @IsOptional()
   @IsEmail()
   email?: string;
@@ -166,29 +165,22 @@ export class UsersController {
     const data: any = {};
     if (dto.name) data.name = dto.name;
     if (dto.email) {
-      // Cloud: the address is the verified identity (sign-in, password reset,
-      // billing), and this endpoint neither re-verifies nor asks for the
-      // password. A stolen session could otherwise move the account to
-      // another address and take it over through a reset. The app never
-      // changes it from here; support does, on request. Self-hosted operators
-      // keep the old behaviour.
-      if (process.env.DEPLOYMENT_MODE === 'cloud') {
-        const current = await this.usersService.findById(req.user.sub);
-        if (!sameEmail(dto.email, current?.email)) {
-          throw new BadRequestException(
-            'Your email address cannot be changed here. Contact support@anythingmcp.com to change it.',
-          );
-        }
-      } else {
-        // Stored normalised, and refused when another account already has
-        // the address in any case: the unique index only sees exact
-        // spellings, so `Name@Example.com` would otherwise sit next to
-        // `name@example.com` as a second account.
-        const owners = await this.usersService.findAllByEmail(dto.email);
-        if (owners.some((u) => u.id !== req.user.sub)) {
-          throw new ConflictException('Email already registered');
-        }
-        data.email = normalizeEmail(dto.email);
+      // The address is the account's identity, and this endpoint neither
+      // re-verifies it nor asks for the password. A user who could set any
+      // address would become someone else wherever that identity is trusted:
+      // `{{amcp.user_email}}` forwards it to connected systems, which act with
+      // that person's permissions; on Cloud a stolen session could also move
+      // the account and take it over through a password reset. So nobody
+      // changes it from here, on Cloud or self-hosted. Sending the current
+      // address back is accepted, so a client that echoes the whole profile
+      // keeps working.
+      const current = await this.usersService.findById(req.user.sub);
+      if (!sameEmail(dto.email, current?.email)) {
+        throw new BadRequestException(
+          process.env.DEPLOYMENT_MODE === 'cloud'
+            ? 'Your email address cannot be changed here. Contact support@anythingmcp.com to change it.'
+            : 'Your email address cannot be changed here. Ask your administrator to change it.',
+        );
       }
     }
 

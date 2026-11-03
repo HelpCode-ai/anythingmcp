@@ -391,6 +391,12 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `SMTP_PASS` | No | SMTP password |
 | `SMTP_FROM` | No | Sender address (default: `AnythingMCP <SMTP_USER>`) |
 | `SMTP_REPLY_TO` | No | Reply-To address, for when `SMTP_FROM` is a noreply address |
+| `RETENTION_SMTP_HOST` | No | Cloud only: a second SMTP server for the trial lifecycle, win-back and blocked-call emails. Without it they go through the SMTP above, with `RETENTION_SMTP_REPLY_TO` as Reply-To when set. Self-hosted sends none of these emails |
+| `RETENTION_SMTP_PORT` | No | Its port (default: 587). 465 or 2465 use implicit TLS, any other port STARTTLS |
+| `RETENTION_SMTP_USER` | No | Its username |
+| `RETENTION_SMTP_PASS` | No | Its password |
+| `RETENTION_SMTP_FROM` | No | Its sender, e.g. `Your Name <support@example.com>` (default: the `SMTP_FROM` sender) |
+| `RETENTION_SMTP_REPLY_TO` | No | Reply-To of those emails, with either sender |
 | `COMPOSE_PROFILES` | No | Set to `proxy` to enable Caddy reverse proxy |
 | `DOMAIN` | No | Domain for Caddy SSL certificate (e.g., `example.com`) |
 | `ACME_EMAIL` | No | Email for Let's Encrypt certificate notifications |
@@ -403,6 +409,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `SOCIAL_MICROSOFT_CLIENT_ID` / `SOCIAL_MICROSOFT_CLIENT_SECRET` | No | Cloud only: enables "Continue with Microsoft" (personal and work accounts). Redirect URI `<FRONTEND_URL>/auth/social/microsoft/callback`; add the `email` and `xms_edov` optional ID-token claims |
 | `SOCIAL_GITHUB_CLIENT_ID` / `SOCIAL_GITHUB_CLIENT_SECRET` | No | Cloud only: enables "Continue with GitHub". Callback URL `<FRONTEND_URL>/auth/social/github/callback` |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
+| `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](#license-verification); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
 ---
 
@@ -421,10 +428,22 @@ AnythingMCP is fully self-hosted, but makes **optional** network calls to `anyth
 
 **Data sent:**
 - License key
-- Instance ID (a random UUID generated on first startup, used to identify the installation)
+- Instance ID (a random UUID generated on first startup, used to identify the installation; sent on activation and registration)
 - Email and name (only during community license registration)
+- Usage counts, with each verification (`/api/license/verify`), as query parameters:
 
-**Data NOT sent:** No API credentials, connector configurations, tool definitions, user data, audit logs, or any operational data.
+  | Parameter | Value |
+  |-----------|-------|
+  | `activeUsers` | Users with at least one active workspace membership, across the instance: the same count as the Community user limit |
+  | `connectors` | Number of connectors on the instance |
+  | `mcpServers` | Number of MCP servers on the instance |
+  | `version` | The AnythingMCP version, e.g. `0.52.0` |
+
+  Only numbers and the version: no names, emails, connector names or URLs. They tell us which Community instances are growing past the Community edition. Set `LICENSE_USAGE_REPORT=false` to send only the license key. If counting fails, the key is verified without the counts. AnythingMCP Cloud never sends them.
+
+**Data NOT sent:** No API credentials, connector configurations, tool definitions, user data, audit logs, or any other operational data.
+
+**File Search trial:** on Community, the 30-day File Search trial starts only with a registered license key. The free Community key counts: register it under **Settings → License**, and it arrives by email. A trial that was already running before this rule keeps File Search until it ends.
 
 **If the service is unreachable:** The application continues to work normally. License verification failures are logged as warnings and do not block functionality.
 

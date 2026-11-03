@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import {
   identityProviders,
   roles as rolesApi,
@@ -13,12 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/toast';
 
-const ORG_ROLE_OPTIONS = [
-  { value: '', label: 'Leave unchanged' },
-  { value: 'VIEWER', label: 'Viewer' },
-  { value: 'EDITOR', label: 'Editor' },
-  { value: 'ADMIN', label: 'Admin' },
-];
+const ORG_ROLES = ['', 'VIEWER', 'EDITOR', 'ADMIN'] as const;
 
 const blankRow = (): RoleMapping => ({
   externalId: '',
@@ -41,7 +37,9 @@ export function RoleMappingsPanel({
   provider: IdentityProvider;
   token: string;
 }) {
+  const t = useTranslations('settingsSso.mappings');
   const toast = useToast();
+  const orgRoleOptions = ORG_ROLES.map((value) => ({ value, label: t(`orgRoles.${value || 'unchanged'}`) }));
   const [rows, setRows] = useState<RoleMapping[]>([]);
   const [available, setAvailable] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +60,7 @@ export function RoleMappingsPanel({
         if (!cancelled) {
           toast.show({
             tone: 'error',
-            title: 'Could not load mappings',
+            title: t('loadFailed'),
             description: err.message,
           });
         }
@@ -104,9 +102,9 @@ export function RoleMappingsPanel({
         token,
       );
       setRows(saved.length > 0 ? saved : [blankRow()]);
-      toast.show({ tone: 'success', title: 'Mappings saved' });
+      toast.show({ tone: 'success', title: t('saved') });
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not save', description: err.message });
+      toast.show({ tone: 'error', title: t('saveFailed'), description: err.message });
     } finally {
       setSaving(false);
     }
@@ -117,7 +115,7 @@ export function RoleMappingsPanel({
   const labelClass = 'block text-[11.5px] font-medium text-[var(--text-3)] mb-1';
 
   if (loading) {
-    return <p className="text-[13px] text-[var(--text-3)] py-4">Loading mappings...</p>;
+    return <p className="text-[13px] text-[var(--text-3)] py-4">{t('loading')}</p>;
   }
 
   const isGroups = provider.roleSyncSource === 'GROUPS';
@@ -126,44 +124,34 @@ export function RoleMappingsPanel({
     <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-3">
       <div>
         <h4 className="text-[13px] font-semibold text-[var(--text)]">
-          {isGroups ? 'Group mappings' : 'App role mappings'}
+          {isGroups ? t('groupsTitle') : t('appRolesTitle')}
         </h4>
         <p className="text-[11.5px] text-[var(--text-3)] mt-1 max-w-2xl">
           {isGroups && provider.scimEnabled ? (
-            <>
-              Groups assigned to the application in Entra appear here automatically once
-              provisioning has run. Assign MCP roles to each; a group with no roles grants
-              nothing. You can still add a group by object ID if it has not been pushed yet.
-            </>
+            t('groupsScimHelp')
           ) : isGroups ? (
-            <>
-              Enter the group&apos;s <strong>object ID</strong>, not its name — Microsoft does
-              not make group names unique, so matching on one would let anyone able to create
-              a group grant themselves a role. Find it in Entra under Groups → the group →
-              Overview → Object Id. Only groups <em>assigned to the application</em> appear in
-              the token.
-            </>
+            t.rich('groupsHelp', {
+              strong: (chunks) => <strong>{chunks}</strong>,
+              em: (chunks) => <em>{chunks}</em>,
+            })
           ) : (
-            <>
-              Enter the app role&apos;s <strong>value</strong> from the application manifest
-              (for example <code>amcp.einkauf</code>), not its display name.
-            </>
+            t.rich('appRolesHelp', {
+              strong: (chunks) => <strong>{chunks}</strong>,
+              code: (chunks) => <code>{chunks}</code>,
+            })
           )}
         </p>
       </div>
 
       {provider.scimEnabled && !isGroups && (
         <p className="text-[12px] text-[var(--warn,#b45309)] bg-[var(--surface-2)] rounded-[9px] px-3 py-2">
-          Roles are read from application roles at sign-in. Group changes pushed over SCIM will
-          not change anyone&apos;s roles between sign-ins — switch &ldquo;Read roles from&rdquo;
-          to groups to get that.
+          {t('scimAppRolesWarning')}
         </p>
       )}
 
       {!provider.roleSyncEnabled && (
         <p className="text-[12px] text-[var(--warn,#b45309)] bg-[var(--surface-2)] rounded-[9px] px-3 py-2">
-          Role sync is turned off for this provider, so these mappings are stored but never
-          applied. Turn it on under Edit.
+          {t('syncOff')}
         </p>
       )}
 
@@ -176,12 +164,12 @@ export function RoleMappingsPanel({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <div className="md:col-span-2">
                 <label className={labelClass}>
-                  {isGroups ? 'Group object ID' : 'App role value'}
+                  {isGroups ? t('groupId') : t('appRoleValue')}
                   {row.scimManaged && (
-                    <Badge tone="neutral" className="ml-2">from SCIM</Badge>
+                    <Badge tone="neutral" className="ml-2">{t('fromScim')}</Badge>
                   )}
                   {row.scimManaged && row.scimMemberCount != null && (
-                    <span className="ml-2 font-normal">{row.scimMemberCount} member{row.scimMemberCount === 1 ? '' : 's'}</span>
+                    <span className="ml-2 font-normal">{t('members', { count: row.scimMemberCount })}</span>
                   )}
                 </label>
                 <input
@@ -196,7 +184,7 @@ export function RoleMappingsPanel({
                 />
               </div>
               <div>
-                <label className={labelClass}>Name (for humans)</label>
+                <label className={labelClass}>{t('label')}</label>
                 <input
                   className={inputClass}
                   value={row.label ?? ''}
@@ -209,23 +197,23 @@ export function RoleMappingsPanel({
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <div>
-                <label className={labelClass}>Workspace role</label>
+                <label className={labelClass}>{t('workspaceRole')}</label>
                 <AppSelect
                   value={row.userRole ?? ''}
                   onValueChange={(v) =>
                     patch(i, { userRole: (v || null) as RoleMapping['userRole'] })
                   }
-                  options={ORG_ROLE_OPTIONS}
+                  options={orgRoleOptions}
                 />
               </div>
               <div className="md:col-span-2">
-                <label className={labelClass}>MCP roles</label>
+                <label className={labelClass}>{t('mcpRoles')}</label>
                 <MultiSelect
                   value={row.mcpRoleIds}
                   onValueChange={(ids) => patch(i, { mcpRoleIds: ids })}
                   options={available.map((r) => ({ value: r.id, label: r.name }))}
-                  placeholder="No roles — grants nothing"
-                  emptyMessage="No MCP roles exist yet — create one under Roles"
+                  placeholder={t('noRolesPlaceholder')}
+                  emptyMessage={t('noRoles')}
                 />
               </div>
             </div>
@@ -233,7 +221,7 @@ export function RoleMappingsPanel({
             <div className="flex justify-end">
               {row.scimManaged ? (
                 <span className="text-[11.5px] text-[var(--text-3)]">
-                  Unassign the group from the application in Entra to remove it.
+                  {t('scimRemoveHint')}
                 </span>
               ) : (
                 <button
@@ -241,7 +229,7 @@ export function RoleMappingsPanel({
                   className="text-[11.5px] text-[var(--danger,#dc2626)] hover:underline"
                   onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
                 >
-                  Remove
+                  {t('remove')}
                 </button>
               )}
             </div>
@@ -251,21 +239,16 @@ export function RoleMappingsPanel({
 
       <div className="flex items-center gap-2">
         <Button size="sm" variant="secondary" onClick={() => setRows((rs) => [...rs, blankRow()])}>
-          Add mapping
+          {t('add')}
         </Button>
         <Button size="sm" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save mappings'}
+          {saving ? t('saving') : t('save')}
         </Button>
       </div>
 
       <p className="text-[11.5px] text-[var(--text-3)] max-w-2xl">
-        A user in several mapped groups receives the <strong>union</strong> of their MCP roles
-        and the <strong>most privileged</strong> workspace role. Roles an admin assigned by
-        hand are never removed by a sync.
-        {provider.roleSyncFallback === 'DENY_ALL' && (
-          <> Someone who matches nothing is given a &ldquo;No access (SSO)&rdquo; role, which
-          grants no tools.</>
-        )}
+        {t.rich('footer', { strong: (chunks) => <strong>{chunks}</strong> })}
+        {provider.roleSyncFallback === 'DENY_ALL' && <> {t('footerDenyAll')}</>}
       </p>
     </div>
   );

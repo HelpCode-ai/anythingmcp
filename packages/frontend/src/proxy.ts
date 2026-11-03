@@ -50,6 +50,12 @@ export function proxy(request: NextRequest) {
     // rewrite — without these an unauthenticated sign-in would be bounced to
     // /login, which is the page the user is trying to reach through.
     pathname.startsWith('/sso') ||
+    // File Share links (#1387): public links open for anyone with the token;
+    // the page itself asks internal-link visitors to sign in.
+    pathname.startsWith('/f/') ||
+    // Setup links from an AI client: the page opens a session from the
+    // sign-in just made to connect that client, or sends to /login itself.
+    pathname.startsWith('/s/') ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/.well-known') ||
     pathname === '/authorize' ||

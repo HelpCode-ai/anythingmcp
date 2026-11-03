@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ReturnAssistant } from './shared-toolset';
+import type { ReturnAssistant, SharedToolsetProfile } from './shared-toolset';
 
 /**
  * Connector setup through the shared `/mcp` endpoint.
@@ -27,6 +27,26 @@ export interface SetupContext {
    * setup page can send the user back to it. Absent when unknown.
    */
   assistant?: ReturnAssistant | null;
+  /**
+   * The tool set this connection gets, which decides the catalog connectors it
+   * may find and install (see sharedEndpointAccess). Absent is treated as the
+   * stricter ChatGPT one.
+   */
+  profile?: SharedToolsetProfile;
+}
+
+/**
+ * Where a setup call comes from, for the events it records. Set by the
+ * server only, never from a tool's arguments; absent means the chat's own
+ * setup tools, recorded as via 'mcp'.
+ */
+export interface SetupCallOptions {
+  /**
+   * 'mcp_search_fallback': the catalog lookup anythingmcp_search_tools makes
+   * when nothing in the workspace matches; 'post_approve': an app picked on
+   * the page after approving an AI client.
+   */
+  via?: 'mcp_search_fallback' | 'post_approve';
 }
 
 export interface SetupCallResult {
@@ -37,10 +57,11 @@ export interface SetupCallResult {
 export interface SharedSetupProvider {
   /** Whether this caller may install connectors in that workspace (ADMIN or EDITOR). */
   canSetUp(ctx: SetupContext): Promise<boolean>;
-  find(ctx: SetupContext, args: { query?: string; limit?: number }): Promise<SetupCallResult>;
+  find(ctx: SetupContext, args: { query?: string; limit?: number }, opts?: SetupCallOptions): Promise<SetupCallResult>;
   install(
     ctx: SetupContext,
     args: { adapter?: string; settings?: Record<string, unknown> },
+    opts?: SetupCallOptions,
   ): Promise<SetupCallResult>;
   status(ctx: SetupContext): Promise<SetupCallResult>;
 }

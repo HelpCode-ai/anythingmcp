@@ -29,6 +29,8 @@
     }
   },
   "signIn": {
+    "continueAs": "Continue as {email}",
+    "continueAsHint": "You signed in here a moment ago to connect your AI assistant.",
     "title": "Sign in",
     "subtitle": "Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent",
     "emailVerified": "Email verified successfully! You can now sign in.",
@@ -148,11 +150,11 @@
     "question": "How will you use Anything<brand>MCP</brand>?",
     "changeLater": "You can change this later under Settings → License.",
     "personal": {
-      "title": "Personal, education or evaluation",
-      "description": "Community edition, free, for up to 3 users. We email you a community key so you get security and release notices."
+      "title": "Community edition, free",
+      "description": "Free under AGPL-3.0 for any use, including commercial use, for up to 3 active users. We email you a community key so you get security and release notices."
     },
     "company": {
-      "title": "For a company or team",
+      "title": "More users or single sign-on",
       "description": "Try Enterprise free for 30 days: more users, single sign-on with Entra ID, Google or Okta, and SCIM. No payment details."
     },
     "haveKey": "I have a license key",
@@ -168,7 +170,7 @@
     "activate": {
       "title": "Activate License",
       "subtitle": "Enter your license key to activate Anything<brand>MCP</brand>",
-      "available": "Starter, Team and Enterprise license keys are available at <link>anythingmcp.com</link>."
+      "available": "Enterprise license keys are available on request: <link>contact us</link>. Existing Starter and Team keys keep working."
     },
     "keyLabel": "License Key",
     "submit": "Activate License",
@@ -648,6 +650,11 @@
       "skillsAuto": "Automatic: full text while short, otherwise a list to open on demand",
       "skillsInline": "Always the full text",
       "skillsIndex": "Always a list (the AI opens a skill with skill_get)",
+      "codeMode": "Code mode",
+      "codeModeOff": "Off (no code execution)",
+      "codeModeTools": "Saved code tools only",
+      "codeModeInline": "Saved code tools + inline code",
+      "codeModeHint": "Lets AI clients run short programs that orchestrate the tools on this server in one step. Off by default and needs a configured code-runner. Inline also exposes the generic code_execute tool to roles that allow it.",
       "skillsHint": "How this server's <link>AI Skills</link> reach the AI client. A list keeps the instructions short; long procedures are always opened on demand.",
       "save": "Save"
     }
@@ -665,7 +672,8 @@
     "exportFailed": "Export failed: {error}",
     "healthCheckFailed": "Health check failed: {error}",
     "types": {
-      "database": "Database"
+      "database": "Database",
+      "email": "Email (IMAP/SMTP)"
     },
     "menu": {
       "healthCheck": "Health check",
@@ -931,7 +939,11 @@
       "providerError": "{name} answered with an error.",
       "suggest": "Set up {name} instead",
       "suggestOther": "Set up the other connector instead",
-      "saveAnyway": "Save anyway"
+      "saveAnyway": "Save anyway",
+      "appPendingTitle": "{name} does not accept these keys yet.",
+      "appPendingBody": "If your app is new, {name} reviews it, usually within a few days: we'll e-mail you when it's approved, nothing else to do. If your app is already active, copy the shared secret again from your app page. Your keys are saved.",
+      "appPendingOpen": "Open the connector",
+      "switchTo": "Switch to {name}"
     },
     "field": {
       "required": "Required",
@@ -941,7 +953,16 @@
       "stored": "Stored. Leave empty to keep it",
       "hide": "Hide",
       "show": "Show",
-      "open": "Open"
+      "open": "Open",
+      "fix": {
+        "sentence": "{changes}: {value}",
+        "and": "and",
+        "scheme": "add https:// in front",
+        "https": "use https:// instead of http://",
+        "slash": "remove the / at the end",
+        "www": "remove the www.",
+        "path": "remove {removed} after the host"
+      }
     },
     "advanced": "Advanced",
     "guide": {
@@ -949,7 +970,10 @@
       "back": "Back",
       "checking": "Checking…",
       "continue": "Continue",
-      "tickHint": "Tick the box above once it is done."
+      "tickHint": "Tick the box above once it is done.",
+      "saveAndCheck": "Save and check with {name}",
+      "waitHint": "Continue opens once {name} has approved your app.",
+      "keysFirst": "Enter your keys in the step before first."
     },
     "title": {
       "finish": "Finish setting up {name}",
@@ -999,6 +1023,17 @@
       "fillPrevious": "{action}: fill in the previous step first.",
       "screenshot": "Screenshot from {date}; the page may look slightly different now.",
       "problems": "Common problems"
+    },
+    "wait": {
+      "checking": "Asking {name} about your app…",
+      "notYet": "{name} has not approved your app yet",
+      "checkedAt": "Last checked at {time}. This page checks again whenever you come back to it.",
+      "checkAgain": "Check again",
+      "checkingShort": "Checking…",
+      "activeAlready": "Already approved, but this still waits? Enter the keys again",
+      "saved": "Your keys are saved. You can close this page: when you come back, it opens at this step.",
+      "ready": "{name} approved your app.",
+      "readyNext": "Continue with the next step."
     }
   },
   "setupSuccess": {
@@ -1116,6 +1151,10 @@
       "DATABASE": {
         "name": "Database",
         "description": "Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, or SQLite. Supports read-only or read-write mode."
+      },
+      "EMAIL": {
+        "name": "Email (IMAP/SMTP)",
+        "description": "Connect any mailbox: IONOS, Strato, GMX, web.de, T-Online, Gmail with an app password, your own mail server. Read, search, file and send mail."
       }
     },
     "configure": "Configure {type}",
@@ -1219,6 +1258,47 @@
     "creating": "Creating...",
     "create": "Create connector",
     "testConnection": "Test connection"
+  },
+  "emailSettings": {
+    "provider": "Provider",
+    "providerPlaceholder": "Choose to fill in the servers…",
+    "providerHint": "Fills in the servers and ports. Any other provider: copy them from its help pages (incoming/outgoing server).",
+    "imapHost": "IMAP server (incoming)",
+    "smtpHost": "SMTP server (outgoing)",
+    "port": "Port",
+    "securityLabel": "Security",
+    "security": {
+      "tls": "SSL/TLS",
+      "starttls": "STARTTLS",
+      "none": "None (plaintext)"
+    },
+    "smtpHint": "Leave the SMTP server empty for a read-only connector that cannot send.",
+    "username": "Username",
+    "password": "Password or app password",
+    "keepUsername": "Unchanged (type to replace)",
+    "keepPassword": "Unchanged (type to replace)",
+    "passwordHint": "The username is usually the full e-mail address. Gmail, Yahoo, iCloud and Fastmail need an app password. Microsoft 365 and Outlook.com do not accept passwords here: use the Microsoft Outlook connector.",
+    "separateSmtpLogin": "Sending uses a different login",
+    "smtpUsername": "SMTP username",
+    "smtpPassword": "SMTP password",
+    "fromAddress": "From address",
+    "fromAddressPlaceholder": "Default: the username",
+    "fromName": "From name",
+    "advanced": "Folders and certificates",
+    "sentFolder": "Sent folder",
+    "draftsFolder": "Drafts folder",
+    "autoDetected": "Detected automatically",
+    "saveSent": "Copy of sent mail",
+    "saveSentAuto": "Automatic (Gmail files its own copy)",
+    "saveSentAlways": "Always file a copy in Sent",
+    "saveSentNever": "Never file a copy",
+    "allowSelfSigned": "Accept a self-signed certificate",
+    "allowSelfSignedHint": "Only for a mail server on your own network whose certificate is not from a public authority.",
+    "cloudNote": "AnythingMCP Cloud connects only with encryption, to public mail servers on the standard ports (IMAP 993/143, SMTP 465/587/2525). Its hosting provider blocks outgoing SMTP on 465 and 587, so sending usually fails there: answer with drafts, or use a provider with SMTP on port 2525. Sending and deleting start switched off.",
+    "selfHostedNote": "A mail server on your own network needs its host on the outbound allowlist (Admin > Settings). Sending and deleting start switched off: turn them on in the tool list.",
+    "catalogManaged": "This connector was installed from the catalog: its servers and login come from its variables. Change them under Environment variables.",
+    "summary": "IMAP {imap} · SMTP {smtp}",
+    "noSmtp": "not set (read-only)"
   },
   "connectorDetail": {
     "back": "Connectors",
@@ -1412,7 +1492,8 @@
       "nothingToUpdate": "Nothing to update.",
       "envSaved": "Environment variables saved",
       "envSavedWarnings": "Environment variables saved. {warnings}",
-      "discoveryFailed": "Discovery failed: {message}"
+      "discoveryFailed": "Discovery failed: {message}",
+      "authorizationFailed": "Authorization failed: {message}"
     }
   },
   "userCredentials": {
@@ -1441,6 +1522,1951 @@
       "cancel": "Cancel",
       "saving": "Saving…",
       "switch": "Switch"
+    }
+  },
+  "connectorTools": {
+    "title": "MCP Tools ({count})",
+    "cancelImport": "Cancel Import",
+    "importTools": "Import Tools",
+    "autoImport": "Auto-Import from Spec",
+    "discovering": "Discovering...",
+    "discover": "Discover from MCP Server",
+    "cancel": "Cancel",
+    "addTool": "Add Tool",
+    "import": {
+      "title": "Import Tools From",
+      "sources": {
+        "openapi": "OpenAPI / Swagger",
+        "postman": "Postman Collection",
+        "curl": "cURL Command",
+        "har": "HAR file (browser capture)",
+        "graphql": "GraphQL Introspection",
+        "wsdl": "WSDL",
+        "json": "JSON Definition",
+        "mcp": "MCP Discovery",
+        "odata": "OData $metadata"
+      },
+      "placeholders": {
+        "openapi": "Paste OpenAPI JSON/YAML or enter URL...",
+        "postman": "Paste Postman Collection JSON or enter URL...",
+        "graphql": "Enter GraphQL endpoint URL...",
+        "wsdl": "Enter WSDL URL...",
+        "mcp": "Optional — leave empty to use the connector's Base URL",
+        "odata": "Optional — paste a $metadata document instead of fetching it"
+      },
+      "servicePath": "Service path",
+      "servicePathPlaceholder": "Leave empty: the base URL is the service",
+      "servicePathHint": "Its $metadata is read with this connector's credentials. Each entity set becomes a list tool and a get tool.",
+      "entitySets": "Entity sets (optional)",
+      "entitySetsPlaceholder": "A_BusinessPartner, A_Customer — empty for all",
+      "url": "URL (fetch spec from URL)",
+      "harFile": "HAR file",
+      "harHint": "From your browser's DevTools: Network tab → right-click → \"Save all as HAR\". HAR files contain session cookies and tokens — response bodies, cookies and credential headers are removed in your browser before anything is uploaded.",
+      "harReady": "{name} — ready to import.",
+      "harReading": "Reading {name}...",
+      "harTooBig": "This capture is still {size} after removing response bodies and cookies, which is over what the server accepts. Re-capture a smaller session (fewer requests) and try again.",
+      "harOtherOrigin": "None of the {count} request(s) in this capture were made to {url}. Capture a session against that host and try again.",
+      "harOtherOriginNoUrl": "None of the {count} request(s) in this capture were made to the connector's base URL. Capture a session against that host and try again.",
+      "harReadError": "Could not read this file: {message}",
+      "contentCurl": "cURL Command(s)",
+      "contentJson": "JSON Tool Definitions",
+      "contentOther": "Or paste content directly",
+      "importing": "Importing...",
+      "import": "Import"
+    },
+    "empty": "No tools configured. Import from a spec, Postman collection, or cURL command, or add tools manually.",
+    "card": {
+      "enabled": "enabled",
+      "disabled": "disabled",
+      "deprecated": "deprecated",
+      "deprecatedTitle": "Removed from the source spec on {date}. Role assignments and history are preserved.",
+      "mapped": "mapped",
+      "mappedTitle": "A response mapping shapes this tool's output before it reaches the AI client. Edit it under Response Mapping.",
+      "params": "{count} params",
+      "paramsFromEnv": " ({count} from env)",
+      "paramsFromEnvTitle": "{count} parameter(s) auto-filled from environment variables",
+      "query": "{count} query",
+      "body": "{count} body",
+      "headers": "{count} headers",
+      "test": "Test",
+      "close": "Close",
+      "edit": "Edit",
+      "hints": "Hints",
+      "closeHints": "Close hints",
+      "hintsTitle": "MCP annotations — tells agents whether this tool is read-only, destructive, idempotent.",
+      "disable": "Disable",
+      "enable": "Enable",
+      "proxy": "Proxy",
+      "proxyTitle": "Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs.",
+      "delete": "Delete",
+      "showSql": "Show full SQL",
+      "showPath": "Show full path",
+      "hideSql": "Hide SQL",
+      "hidePath": "Hide path"
+    },
+    "playground": {
+      "autoFilled": "Auto-filled from env:",
+      "autoFilledNote": " — injected at runtime, no need to include in test params",
+      "input": "Input Parameters (JSON)",
+      "running": "Running...",
+      "runTest": "Run Test",
+      "response": "Response",
+      "success": "Success ({ms}ms)",
+      "error": "Error ({ms}ms)",
+      "viewMapped": "Mapped (what the AI sees)",
+      "viewRaw": "Raw API response",
+      "mappingFailed": "Response mapping failed ({error}) — the raw response is being returned. Fix it under Edit → Response Mapping.",
+      "kind": {
+        "authFailed": "Credentials rejected:",
+        "badRequest": "Invalid request:",
+        "notFound": "Not found:",
+        "rateLimited": "Rate limited:",
+        "upstreamError": "Upstream error:",
+        "unreachable": "Unreachable:",
+        "error": "Failed:"
+      },
+      "empty": "Click \"Run Test\" to execute this tool..."
+    },
+    "msg": {
+      "firstRun": "Running your first tool call…",
+      "created": "Tool created successfully.",
+      "updated": "Tool updated successfully."
+    }
+  },
+  "toolEditor": {
+    "titleEdit": "Edit Tool",
+    "titleCreate": "Create Tool",
+    "cancel": "Cancel",
+    "saving": "Saving...",
+    "update": "Update Tool",
+    "create": "Create Tool",
+    "name": "Tool Name",
+    "nameHint": "snake_case, shown to the AI model",
+    "description": "Description",
+    "descriptionPlaceholder": "Fetch a list of users with optional filtering",
+    "descriptionHint": "Clear description helps the AI decide when to use this tool",
+    "toolType": "Tool Type",
+    "native": {
+      "REST": "API Call",
+      "ODATA": "OData Call",
+      "GRAPHQL": "GraphQL Operation",
+      "SOAP": "SOAP Operation",
+      "DATABASE": "SQL Query",
+      "MCP": "Remote Tool Call",
+      "WEBHOOK": "Webhook",
+      "other": "Native"
+    },
+    "staticText": "Static Text",
+    "staticResponse": "Static Response Text",
+    "staticPlaceholder": "# Instructions\n\nDescribe how to use this tool or provide hardcoded information.\n\nMarkdown formatting is supported.",
+    "staticHint": "This text is returned directly without making any API call. Use it for instructions, documentation, or hardcoded responses.",
+    "operationType": "Operation Type",
+    "graphqlQuery": "GraphQL Query / Mutation",
+    "graphqlHint": "Use $variables in the query — map them to parameters below as \"GraphQL Variable\"",
+    "sqlTemplate": "SQL Query Template",
+    "sqlHint": "Use $param_name to reference parameters. Only SELECT queries are allowed.",
+    "soapOperation": "SOAP Operation",
+    "soapHint": "The SOAP operation/method name from the WSDL",
+    "portPath": "Port / Path",
+    "method": "Method",
+    "path": "Path",
+    "pathHint": "Use {example} for path parameters — they auto-create parameters below",
+    "requestBody": "Request Body",
+    "bodyFields": "Body Fields",
+    "bodyTemplate": "Body Template (JSON)",
+    "bodyMapping": "Body Mapping (JSON)",
+    "invalidJson": "Not valid JSON — saving is disabled until this parses.",
+    "bodyMappingHint": "Sent as the request body, structure preserved. Use <code>$param</code> for tool arguments and <code>{connectorVar}</code> / <code>{contextVar}</code> for connector and caller-context values. Shown automatically when the stored mapping is nested — editing it here keeps it intact.",
+    "encoding": "Encoding:",
+    "bodyTemplateHint": "Use <code>{example}</code> for dynamic values. All other fields are sent as-is. Parameters are auto-extracted below.",
+    "params": {
+      "title": "Input Parameters",
+      "hint": "Define what the AI model can pass to this tool, and where each value goes in the API request",
+      "add": "Add parameter",
+      "envBanner": "Auto-filled from env:",
+      "envBannerHint": "These parameters are injected from environment variables at runtime and hidden from the AI.",
+      "empty": "No parameters yet. Add one for each value the AI model should be able to pass in.",
+      "name": "Name",
+      "type": "Type",
+      "description": "Description",
+      "mapsTo": "Maps To",
+      "req": "Req",
+      "envTitle": "This parameter is auto-filled from an environment variable and hidden from the AI",
+      "descriptionPlaceholder": "Describe this parameter…",
+      "fileType": "file (from URL)",
+      "required": "Required",
+      "remove": "Remove",
+      "removeTitle": "Remove parameter",
+      "removeNamed": "Remove parameter {name}",
+      "queryOverrides": "Query Key Overrides",
+      "queryKey": "query key",
+      "headerOverrides": "Header Name Overrides",
+      "headerName": "header name"
+    },
+    "targets": {
+      "path": "Path Parameter",
+      "query": "Query Parameter",
+      "body": "Body Field",
+      "header": "Header Value",
+      "graphqlVar": "GraphQL Variable",
+      "soap": "SOAP Parameter",
+      "sql": "SQL Parameter",
+      "passThrough": "Pass-through Parameter"
+    },
+    "cacheTtl": "Response Cache TTL",
+    "cacheSeconds": "seconds (0 = no caching)",
+    "cacheHint": "Cache identical requests in Redis to reduce API calls. Common values: 60 (1 min), 300 (5 min), 3600 (1 hour).",
+    "preview": "Preview generated mapping (JSON)",
+    "codeText": "Code Tool",
+    "codeProgram": "Program",
+    "codeProgramHint": "An async JavaScript body. Call other tools with await amcp.run(name, args), amcp.search(query), amcp.describe(name). The tool inputs are available as args. Return the result.",
+    "codeUses": "Uses (connectors)",
+    "codeUsesHint": "JSON array of the connectors this code tool may call. Each entry gives a connectorId and an optional list of tool names; omit the tools list to allow all of a connector. Only connectors from this workspace.",
+    "codeRunAs": "Run as",
+    "codeRunAsInvoker": "Invoker (the caller's own permissions)",
+    "codeRunAsDefiner": "Definer (admin-curated; admins only)",
+    "codeAllowWrites": "Allow write tools",
+    "codeAllowWritesHint": "Off = the program may only call read-only tools. Writes require Enterprise."
+  },
+  "responseMapping": {
+    "title": "Response Mapping",
+    "intro": "Shape the API response before it reaches the AI client. Fewer tokens, and only the fields this tool actually needs leave your workspace. Off = the raw response is returned unchanged.",
+    "modes": {
+      "off": "Off",
+      "select": "Field selection",
+      "jmespath": "JMESPath"
+    },
+    "outputTemplate": "Output template (JSON)",
+    "insertExample": "Insert example",
+    "invalidJson": "Not valid JSON — saving is disabled until this parses.",
+    "selectHint": "Keys are the output names. A leaf is a path (<code>$.a.b</code>, <code>items[*].id</code>, <code>list[-1].x</code>), a static value (<code>\"= my-source\"</code>), or <code>{reshape}</code> to reshape every element of an array. A path that does not resolve is left out.",
+    "exclude": "Exclude paths (one per line)",
+    "excludeHint": "Removed before the template runs. Use this alone (no template) to drop a few noisy fields while keeping everything else.",
+    "expression": "JMESPath expression",
+    "expressionHint": "Full JMESPath, including functions — use this for computed values such as <code>length(devices)</code> or filters like <code>{filter}</code>.",
+    "fallback": "Fall back to the raw response if the mapping fails",
+    "maxSize": "Max response size",
+    "bytes": "bytes (0 = no limit)",
+    "previewTitle": "Runs the mapping against the most recent real response for this tool. No API call is made.",
+    "previewTitleDisabled": "Save the tool and run it once to get a real response to preview against.",
+    "previewing": "Previewing…",
+    "preview": "Preview with last real response",
+    "sampleFrom": " · sample from {date}",
+    "previewFailed": "Preview failed",
+    "mappingFailed": "Mapping failed ({error}) — the raw response is shown.",
+    "raw": "Raw response",
+    "mapped": "What the AI client receives"
+  },
+  "toolAnnotations": {
+    "hints": {
+      "readOnlyHint": {
+        "label": "Read-only",
+        "help": "The tool cannot change anything. Agents probe read-only tools much more freely — set this for searches exposed over POST."
+      },
+      "destructiveHint": {
+        "label": "Destructive",
+        "help": "The write removes or overwrites data, rather than only adding to it. Only meaningful when the tool is not read-only."
+      },
+      "idempotentHint": {
+        "label": "Idempotent",
+        "help": "Calling it again with the same arguments changes nothing further. Only meaningful when the tool is not read-only."
+      },
+      "openWorldHint": {
+        "label": "Open world",
+        "help": "Talks to an external system whose contents we cannot bound. False for a database or a static payload."
+      }
+    },
+    "loading": "Loading hints…",
+    "intro": "Hints MCP clients read before calling this tool — most importantly whether it is read-only. They are inferred from the connector; override them only when the inference is wrong (typically a read-only search exposed over POST).",
+    "title": "Title",
+    "titlePlaceholder": "Derived from the tool name",
+    "ignored": "(ignored for read-only tools)",
+    "auto": "Auto",
+    "autoYes": "Auto (yes)",
+    "autoNo": "Auto (no)",
+    "yes": "Yes",
+    "no": "No",
+    "advertised": "Advertised to clients",
+    "none": "— none —",
+    "resetDone": "Reset to derived values",
+    "saved": "Saved",
+    "error": "Error: {message}",
+    "saving": "Saving…",
+    "save": "Save hints",
+    "reset": "Reset to derived"
+  },
+  "settingsNav": {
+    "sections": {
+      "organization": "Organization"
+    },
+    "items": {
+      "profile": {
+        "label": "Profile",
+        "description": "Name, email, password"
+      },
+      "connections": {
+        "label": "Connections",
+        "description": "What each AI client can reach"
+      },
+      "organization": {
+        "label": "General",
+        "description": "Workspace and new orgs"
+      },
+      "users": {
+        "label": "Users",
+        "description": "Members and invitations"
+      },
+      "roles": {
+        "label": "Roles",
+        "description": "MCP tool access control"
+      },
+      "identityProviders": {
+        "label": "Single sign-on",
+        "description": "Microsoft, Google, Okta"
+      },
+      "license": {
+        "label": "License",
+        "description": "Plan, billing, subscription"
+      },
+      "admin": {
+        "label": "Administration",
+        "description": "SMTP, alerts, footer links"
+      },
+      "fileShare": {
+        "label": "File Share",
+        "description": "Temporary download links"
+      }
+    }
+  },
+  "settingsProfile": {
+    "authModes": {
+      "none": "None (not recommended)",
+      "legacy": "Legacy (Bearer Token / API Key)",
+      "oauth2": "OAuth 2.0 (Authorization Code + Client Credentials)",
+      "both": "Both (OAuth 2.0 + Legacy)"
+    },
+    "toast": {
+      "requestsErased": "{count} captured request(s) erased",
+      "learningOptedOut": "Your requests are no longer used for skill learning",
+      "learningReset": "Your choice was removed; your admin's setting applies",
+      "couldNotSave": "Could not save",
+      "tipsOn": "Tips and offers turned on",
+      "tipsOff": "Unsubscribed from tips and offers",
+      "couldNotConnect": "Could not connect",
+      "accountConnected": "Account connected",
+      "accountDisconnected": "Account disconnected",
+      "couldNotDisconnect": "Could not disconnect",
+      "profileUpdated": "Profile updated",
+      "profileUpdateFailed": "Profile update failed",
+      "passwordsDoNotMatch": "Passwords do not match",
+      "passwordChangeFailed": "Password change failed",
+      "passwordChanged": "Password changed"
+    },
+    "confirmUnlink": "Disconnect \"{name}\"? You will need your password to sign in afterwards.",
+    "confirmSocialUnlink": "Disconnect {name}? You will no longer be able to sign in with it.",
+    "error": "Error: {message}",
+    "couldNotUpdateProfile": "Could not update profile",
+    "couldNotChangePassword": "Could not change password",
+    "incorrectPassword": "Incorrect password.",
+    "deleteFailed": "Failed to delete account.",
+    "onlyAdmin": "You are the only admin of these organizations.",
+    "couldNotStartSignIn": "Could not start the sign-in.",
+    "profile": {
+      "title": "Profile",
+      "email": "Email",
+      "name": "Name",
+      "role": "Role",
+      "save": "Save Profile"
+    },
+    "emailPrefs": {
+      "title": "Email preferences",
+      "label": "Tips and offers by email",
+      "body": "Setup tips while your workspace is new, and offers after a trial. Emails about your account, such as sign-in codes and plan notices, are always sent."
+    },
+    "learning": {
+      "title": "Skill learning",
+      "effective": "Your requests to AI clients connected to this workspace are recorded with the tool calls they lead to, so admins can turn recurring needs into workspace skills.",
+      "optedOut": "You opted out: your requests are not recorded for skill learning in this workspace.",
+      "adminOff": "Your admin has turned skill learning off for you in this workspace.",
+      "label": "Use my requests for skill learning",
+      "body": "Unchecking it always wins. Checking it again only removes your opt-out: whether your requests are used is then up to your admin.",
+      "erase": "Erase my captured requests"
+    },
+    "password": {
+      "title": "Change Password",
+      "current": "Current Password",
+      "new": "New Password",
+      "newPlaceholder": "Min. 8 characters",
+      "confirm": "Confirm New Password",
+      "confirmPlaceholder": "Repeat new password",
+      "submit": "Change Password"
+    },
+    "linked": {
+      "title": "Connected accounts",
+      "body": "Connect your directory account to sign in without a password. Your administrator cannot do this for you — the connection is only trusted because you made it while signed in.",
+      "connectedLastUsed": "Connected · last used {date}",
+      "connected": "Connected",
+      "notConnected": "Not connected",
+      "working": "Working...",
+      "disconnect": "Disconnect",
+      "connect": "Connect"
+    },
+    "social": {
+      "title": "Sign-in methods",
+      "body": "Sign in to AnythingMCP with one of these accounts instead of your password.",
+      "noPassword": "Your account has no password yet. <link>Set a password</link> to also sign in with your email address.",
+      "lastUsed": "last used {date}"
+    },
+    "mcpAuth": {
+      "title": "MCP Server Authentication",
+      "body": "Configure how MCP clients (Claude, ChatGPT, Cursor) authenticate to your server.",
+      "method": "Auth Method",
+      "loading": "Loading...",
+      "active": "Active",
+      "oauthTitle": "OAuth 2.0 Endpoints",
+      "oauthNote": "Supports Authorization Code (with PKCE) and Client Credentials grant types. MCP clients like Claude Desktop will auto-discover these endpoints.",
+      "legacyTitle": "Legacy Authentication",
+      "legacyBody": "Set <code>MCP_BEARER_TOKEN</code> or <code>MCP_API_KEY</code> in your environment variables.",
+      "modeNote": "Auth mode is configured via the <code>MCP_AUTH_MODE</code> environment variable. Set it to <code>oauth2</code>, <code>legacy</code>, <code>both</code>, or <code>none</code>."
+    },
+    "apiKeys": {
+      "title": "MCP API Keys",
+      "body": "API keys are now managed per MCP server. Go to <link>MCP Servers</link> to generate and manage keys for each server."
+    },
+    "danger": {
+      "title": "Danger Zone",
+      "body": "Permanently delete your account. This will remove your profile, password reset tokens, email verification tokens, MCP API keys, connectors, and MCP server configurations. Audit logs are retained without your identifying information.",
+      "button": "Delete my account"
+    },
+    "deleteDialog": {
+      "title": "Delete account",
+      "descPassword": "This action cannot be undone. Enter your password and type <strong>DELETE</strong> to confirm.",
+      "descNoPassword": "This action cannot be undone. Type <strong>DELETE</strong> to confirm. If you signed in more than 10 minutes ago, you will be asked to sign in again first.",
+      "blockingTitle": "Cannot delete — you are the only admin of:",
+      "blockingHint": "Promote another admin or delete those organizations first.",
+      "password": "Password",
+      "typeConfirm": "Type <code>DELETE</code> to confirm",
+      "reauth": "Sign in again with {provider}",
+      "cancel": "Cancel",
+      "deleting": "Deleting…",
+      "submit": "Delete my account"
+    }
+  },
+  "settingsConnections": {
+    "loadFailed": "Could not load connections",
+    "emptySelection": "Choose at least one MCP server, or the whole workspace.",
+    "notAvailable": "That selection is not available to you.",
+    "updated": "Updated. It applies to this connection’s next request.",
+    "revokedMsg": "{client} can no longer reach anything.",
+    "loading": "Loading…",
+    "title": "Connected AI clients",
+    "intro": "What each client can reach through your shared MCP endpoint. Changes apply on its next request — no need to reconnect.",
+    "empty": "Nothing is connected yet. Add your MCP endpoint in Claude, ChatGPT, Meta Muse or Cursor, and it will appear here once you authorize it.",
+    "revoked": "Revoked",
+    "reachesNothing": "Reaches nothing. Choose below to allow it again.",
+    "everythingIn": "Everything in {workspace}",
+    "nothingSelected": "Nothing selected",
+    "change": "Change",
+    "revoke": "Revoke",
+    "connectorCount": "{count, plural, one {# connector} other {# connectors}}",
+    "wholeWorkspace": "Everything in this workspace",
+    "wholeWorkspaceHint": "including connectors not on a server",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "settingsOrg": {
+    "updated": "Organization updated successfully",
+    "updateFailed": "Failed to update organization",
+    "deleteFailed": "Failed to delete organization",
+    "membersSignedOut": "{count} member(s) signed out everywhere.",
+    "crossOrg": "{count} of them also belong to other workspaces and were signed out there too.",
+    "keysDeactivated": "{count} MCP API key(s) deactivated.",
+    "revokeFailed": "Failed to revoke sessions",
+    "created": "Organization created! Switching...",
+    "createFailed": "Failed to create organization",
+    "title": "Organization",
+    "introAdmin": "Manage your workspace settings. All members of this organization share connectors, MCP servers, and tools.",
+    "introMember": "View your current organization and create new workspaces.",
+    "name": "Organization Name",
+    "namePlaceholder": "My Workspace",
+    "id": "Organization ID",
+    "yourRole": "Your Role",
+    "createdAt": "Created",
+    "saving": "Saving...",
+    "save": "Save Changes",
+    "features": {
+      "title": "Features",
+      "onlyAdmins": "Only admins can change this",
+      "kg": {
+        "label": "Knowledge Graph",
+        "description": "Auto-discovers relationships between your connectors' entities (from tool definitions and real usage) and exposes them to agents. Disabling it stops graph building, hides the page, and removes the MCP helper tool."
+      },
+      "llm": {
+        "label": "AI enrichment",
+        "description": "Let an LLM suggest extra relationships the heuristics miss (e.g. that a CRM person, a billing customer and a support user are the same person). Only entity and field names are sent — never your data. Suggestions await your confirmation. May incur model costs."
+      },
+      "edgeAutoApply": {
+        "label": "Auto-apply high-confidence connections",
+        "description": "When AI enrichment suggests a connection it is confident about (≥ 0.90), add it to the graph automatically instead of leaving it for manual review. Lower-confidence links still wait for your confirmation. No extra model cost — it only changes how existing suggestions are handled."
+      },
+      "captureIntent": {
+        "label": "Capture user intent",
+        "description": "Adds an optional parameter to every MCP tool asking the agent for the user's original request. Captures the context behind each call so the graph can be optimized and skills suggested over time. This is the default for every user: override it per user under Settings → Users (Skill learning), and each user can opt out in their own settings."
+      },
+      "autoExtend": {
+        "label": "Scheduled AI extension",
+        "description": "On a schedule (roughly daily), let the AI extend the graph and generate skills from the captured user intents — so your network and skills keep improving on their own. Cost-careful: it only runs every so often, skips when nothing changed, and stays off until you enable it. Requires AI enrichment + Capture user intent."
+      },
+      "skillAutoApply": {
+        "label": "Auto-apply high-confidence skills",
+        "description": "When AI generates a skill it is confident about (≥ 0.90), apply it automatically instead of leaving it as a suggestion to review. Lower-confidence skills still wait for manual approval."
+      }
+    },
+    "security": {
+      "title": "Security",
+      "body": "Sign every member out of the dashboard and of every connected AI client, including clients that hold a refresh token. Nobody loses their role or access; everyone simply has to sign in again. Use it after a suspected credential leak or a change in your identity provider. MCP API keys are not sessions and are left alone unless you say otherwise.",
+      "button": "Sign everyone out"
+    },
+    "revokeDialog": {
+      "title": "Sign everyone out",
+      "description": "Every member of <strong>{name}</strong> will have to sign in again, on the dashboard and in every AI client. Members who also belong to other workspaces are signed out there too. To confirm, type the organization name below.",
+      "typeConfirm": "Type <code>{name}</code> to confirm",
+      "alsoMe": "Also sign me out",
+      "alsoMeHint": "Keep this on if the compromised session might be yours. You will be taken to the login page right away.",
+      "alsoKeys": "Also deactivate every MCP API key in this workspace",
+      "alsoKeysHint": "API keys are not sessions: without this, every <code>mcp_…</code> key keeps working. Deactivated keys cannot be restored.",
+      "cancel": "Cancel",
+      "signingOut": "Signing out…",
+      "submit": "Sign everyone out"
+    },
+    "danger": {
+      "title": "Danger Zone",
+      "body": "Permanently delete this organization, including all members, connectors, MCP servers, API keys, custom roles, pending invitations, and settings. Other members will be migrated to their next-oldest workspace if they have one. This action cannot be undone.",
+      "button": "Delete this organization"
+    },
+    "deleteDialog": {
+      "title": "Delete organization",
+      "description": "This deletes <strong>{name}</strong> and everything it contains. To confirm, type the organization name below.",
+      "typeConfirm": "Type <code>{name}</code> to confirm",
+      "cancel": "Cancel",
+      "deleting": "Deleting…",
+      "submit": "Delete organization"
+    },
+    "myOrgs": {
+      "title": "My Organizations",
+      "joined": "{role} · Joined {date}",
+      "active": "Active",
+      "switch": "Switch",
+      "createTitle": "Create New Organization",
+      "createPlaceholder": "New organization name",
+      "creating": "Creating...",
+      "create": "Create Organization"
+    }
+  },
+  "settingsUsers": {
+    "memoryLevels": {
+      "none": "No access",
+      "read": "Read company memory",
+      "personal": "Personal",
+      "contribute": "Contribute"
+    },
+    "memoryDefault": "Default ({level, select, none {no access} read {read} personal {personal} other {contribute}})",
+    "learningDefaultOn": "Default (on)",
+    "learningDefaultOff": "Default (off)",
+    "on": "On",
+    "off": "Off",
+    "error": "Error: {message}",
+    "roleUpdated": "Role updated to {role}",
+    "learningUpdated": "{count, plural, one {Skill learning updated for # user.} other {Skill learning updated for # users.}}",
+    "requestsErased": "{count} captured request(s) erased.",
+    "memoryUpdated": "{count, plural, one {Memory access updated for # user.} other {Memory access updated for # users.}}",
+    "confirmEraseMemory": "{count, plural, one {Erase the personal memory of # user in this workspace?} other {Erase the personal memory of # users in this workspace?}}\n\nIt is deleted without being shown to you. This cannot be undone.",
+    "memoryErased": "{count} personal memory item(s) erased.",
+    "confirmDeactivate": "Deactivate {email}?\n\nTheir sessions end now, their MCP keys stop working and they lose access to this workspace. You can reactivate them later.",
+    "deactivated": "User deactivated",
+    "reactivated": "User reactivated. Revoked MCP keys stay revoked — they can create a new one.",
+    "signedOut": "{email} has been signed out everywhere and must sign in again.",
+    "keysDeactivated": "{count} MCP API key(s) deactivated.",
+    "otherWorkspaces": "They were also signed out of {count} other workspace(s).",
+    "revokeFailed": "Failed to revoke sessions",
+    "confirmDelete": "Remove {email} from this workspace? If this is their only workspace the account is deleted. This cannot be undone.",
+    "deleted": "User deleted",
+    "confirmRevokeInvite": "Revoke invitation for {email}?",
+    "inviteRevoked": "Invitation revoked",
+    "accessDenied": {
+      "title": "Access Denied",
+      "body": "Only administrators can access this page.",
+      "back": "Back to Settings"
+    },
+    "revokeDialog": {
+      "title": "Sign out everywhere",
+      "description": "<strong>{email}</strong> will be signed out of the dashboard and of every connected AI client (Claude, ChatGPT, Cursor, …), including clients that hold a refresh token. They keep their role and access, and simply have to sign in again. If they belong to other workspaces, they are signed out there too.",
+      "alsoKeys": "Also deactivate their MCP API keys in this workspace",
+      "alsoKeysHint": "API keys are not sessions: without this, any <code>mcp_…</code> key they created keeps working. Deactivated keys cannot be restored.",
+      "cancel": "Cancel",
+      "signingOut": "Signing out…",
+      "submit": "Sign out everywhere"
+    },
+    "title": "User Management",
+    "intro": "Manage users and send invitations.",
+    "seats": "{used} of {limit} users on this instance.",
+    "seatsOver": "{used} users on this instance, {limit} included.",
+    "cancel": "Cancel",
+    "inviteUser": "Invite User",
+    "dismiss": "dismiss",
+    "licenseSeats": "Your license includes {limit} users. For more users, contact us about Enterprise under <link>Settings → License</link>.",
+    "invite": {
+      "title": "Invite a New User",
+      "body": "Send an invitation email. The user will receive a link to create their account with the specified role.",
+      "email": "Email",
+      "appRole": "App Role",
+      "mcpRole": "MCP Tool Role",
+      "noRestriction": "No restriction (full access)",
+      "emailFailed": "Failed to send email:",
+      "link": "Invitation link (share manually):",
+      "sending": "Sending...",
+      "send": "Send Invitation"
+    },
+    "bulk": {
+      "selected": "{count} selected · Skill learning:",
+      "eraseWhenOff": "When turning off, also erase the requests already captured from them",
+      "clear": "Clear selection",
+      "memory": "Memory:",
+      "eraseMemory": "Erase personal memory"
+    },
+    "loading": "Loading...",
+    "table": {
+      "selectAll": "Select all users",
+      "select": "Select {email}",
+      "email": "Email",
+      "name": "Name",
+      "status": "Status",
+      "role": "Role",
+      "mcpRole": "MCP Role",
+      "learning": "Skill learning",
+      "learningHint": "Whether this user's requests to AI clients may be used to suggest workspace skills. Default follows Settings → Organization → Capture user intent.",
+      "memory": "Memory",
+      "memoryHint": "What this user's AI clients may do with workspace memory. Default follows the Memory page settings.",
+      "date": "Date",
+      "actions": "Actions",
+      "you": "you",
+      "deactivated": "Deactivated",
+      "active": "Active",
+      "fullAccess": "Full access",
+      "noRole": "No role",
+      "noRoleHint": "No MCP role assigned. Unrestricted only while this workspace has no tool whitelist; once any role restricts tools, a member without a role gets none.",
+      "optedOut": "opted out",
+      "optedOutHint": "This user opted out themselves. Their requests are not used, whatever is set here.",
+      "reactivate": "Reactivate",
+      "signOutHint": "Force this member to sign in again on every client",
+      "signOut": "Sign out everywhere",
+      "deactivate": "Deactivate",
+      "delete": "Delete",
+      "pending": "Pending",
+      "expired": "Expired",
+      "default": "Default",
+      "expires": "Expires: {date}",
+      "revoke": "Revoke"
+    },
+    "footer": "{users, plural, one {# user} other {# users}}{invites, plural, =0 {} one {, # pending invitation} other {, # pending invitations}} total. The first registered user automatically becomes ADMIN."
+  },
+  "settingsRoles": {
+    "error": "Error: {message}",
+    "created": "Role created",
+    "updated": "Role updated",
+    "confirmDelete": "Delete role \"{name}\"? Users with this role will be unassigned.",
+    "deleted": "Role deleted",
+    "toolAccessUpdated": "Tool access updated",
+    "assigned": "MCP role assigned",
+    "accessDenied": {
+      "title": "Access Denied",
+      "body": "Only administrators can access this page.",
+      "back": "Back to Settings"
+    },
+    "dismiss": "dismiss",
+    "loading": "Loading...",
+    "title": "Custom Roles",
+    "intro": "Create roles to control which MCP tools different users can access. Users without a role have full access. ADMIN always has full access.",
+    "cancel": "Cancel",
+    "createRole": "Create Role",
+    "form": {
+      "name": "Role Name",
+      "namePlaceholder": "e.g. Read Only, Support Team",
+      "description": "Description",
+      "descriptionPlaceholder": "What this role is for...",
+      "create": "Create"
+    },
+    "empty": "No custom roles yet. Create one to start restricting tool access.",
+    "save": "Save",
+    "system": "system",
+    "userCount": "{count, plural, one {# user} other {# users}}",
+    "toolCount": "{count, plural, one {# tool assigned} other {# tools assigned}}",
+    "manageTools": "Manage Tools",
+    "edit": "Edit",
+    "delete": "Delete",
+    "access": {
+      "title": "Select tools this role can access",
+      "body": "Only checked tools will be available to users with this role. If no tools are selected, the role has no MCP tool access.",
+      "noTools": "No tools available. Create connectors and tools first.",
+      "selectAll": "Select all ({count})",
+      "deselectAll": "Deselect all",
+      "selected": "{selected}/{total} selected",
+      "search": "Search tools...",
+      "all": "All",
+      "none": "None",
+      "saving": "Saving...",
+      "save": "Save ({count} tools)"
+    },
+    "assign": {
+      "title": "User MCP Role Assignment",
+      "intro": "Assign MCP roles to users to control which tools they can access via MCP. Users without a role have unrestricted access. ADMIN users always have full access.",
+      "user": "User",
+      "appRole": "App Role",
+      "mcpRole": "MCP Tool Role",
+      "fullAccess": "Full access (admin)",
+      "noRestriction": "No restriction (full access)"
+    }
+  },
+  "settingsAdmin": {
+    "error": "Error: {message}",
+    "accessDenied": {
+      "title": "Access Denied",
+      "body": "Only administrators can access this page.",
+      "back": "Back to Settings"
+    },
+    "remove": "Remove",
+    "copy": "Copy",
+    "copied": "Copied",
+    "smtp": {
+      "saved": "SMTP configuration saved",
+      "testing": "Testing connection...",
+      "confirmRemove": "Remove the workspace SMTP configuration? Emails will be sent by the platform mail service instead.",
+      "removed": "SMTP configuration removed — emails now use the platform mail service",
+      "title": "Email / SMTP Configuration",
+      "intro": "Configure SMTP settings for password reset emails and notifications.",
+      "host": "SMTP Host",
+      "port": "Port",
+      "user": "Username",
+      "password": "Password",
+      "passwordKeep": "••••••••  (enter new to update)",
+      "passwordPlaceholder": "SMTP password",
+      "from": "From Address (optional)",
+      "secure": "Use SSL/TLS (port 465)",
+      "save": "Save SMTP Config",
+      "test": "Test Connection"
+    },
+    "alerts": {
+      "types": {
+        "json": "Generic JSON webhook",
+        "slack": "Slack incoming webhook"
+      },
+      "saved": "Alert webhook saved",
+      "sendingTest": "Sending test alert...",
+      "testDelivered": "Test alert delivered",
+      "deliveryFailed": "delivery failed",
+      "confirmRemove": "Remove the connector-failure alert webhook? Alerts will stop firing for this organization.",
+      "removed": "Alert webhook removed",
+      "title": "Connector Failure Alerts",
+      "intro": "Get a webhook or Slack notification when a connector keeps failing, instead of finding out from the logs.",
+      "url": "Webhook URL",
+      "cloudHttps": "On AnythingMCP Cloud the URL must use https.",
+      "payloadType": "Payload type",
+      "enabled": "Enabled",
+      "threshold": "Failure threshold",
+      "window": "Window (minutes)",
+      "cooldown": "Cooldown (minutes)",
+      "summary": "Alerts after {threshold} failures of the same connector within {window} minutes, then waits {cooldown} minutes before alerting again.",
+      "rotate": "Rotate signing secret on save",
+      "secretOnce": "Signing secret, shown once. Copy it now:",
+      "secretHelp": "Use this to verify the <code>X-AnythingMCP-Signature</code> header (<code>sha256=</code> HMAC of the timestamp and the body; Slack ignores it). It will not be shown again.",
+      "savedIt": "I have saved it",
+      "save": "Save Alert Webhook",
+      "saveUrlFirst": "Save the new URL first",
+      "sendTest": "Send Test Alert"
+    },
+    "footer": {
+      "saved": "Footer links saved",
+      "title": "Footer Links",
+      "intro": "Add links for Impressum, Privacy Policy, Terms of Service, etc. These appear in the footer of every page.",
+      "labelPlaceholder": "Label (e.g., Privacy Policy)",
+      "add": "+ Add Link",
+      "save": "Save Footer Links"
+    },
+    "about": {
+      "title": "About this instance",
+      "unavailable": "Version info unavailable.",
+      "version": "Version",
+      "commit": "commit",
+      "built": "built {date}",
+      "copied": "Copied to clipboard",
+      "copyFailed": "Copy failed",
+      "copy": "Copy version info"
+    }
+  },
+  "settingsLicense": {
+    "errors": {
+      "activate": "Failed to activate license",
+      "invalid": "License is invalid",
+      "verify": "Verification failed",
+      "register": "Failed to register community license",
+      "portal": "Failed to open the billing portal",
+      "trial": "Failed to activate trial"
+    },
+    "verified": "License verified successfully",
+    "none": "None",
+    "statuses": {
+      "active": "active",
+      "expired": "expired",
+      "invalid": "invalid",
+      "revoked": "revoked",
+      "pending": "pending"
+    },
+    "adminOnly": "Only administrators can manage the license.",
+    "title": "License & Plan",
+    "intro": "Manage your Anything MCP license",
+    "currentPlan": "Current Plan",
+    "licenseKey": "License key",
+    "noLicense": "No license registered yet.",
+    "activating": "Activating...",
+    "startTrial": "Start 7-Day Free Trial",
+    "communityHint": "Optional for Community: a free key by email gets you security and release notices.",
+    "registering": "Registering...",
+    "registerCommunity": "Register Free Community License",
+    "fields": {
+      "plan": "Plan",
+      "status": "Status",
+      "expires": "Expires",
+      "lastVerified": "Last Verified",
+      "trialDaysLeft": "Trial Days Left",
+      "days": "{count} days",
+      "instanceId": "Instance ID"
+    },
+    "verifying": "Verifying...",
+    "verify": "Verify Now",
+    "billing": {
+      "opening": "Opening…",
+      "updatePayment": "Update payment method",
+      "keepPlan": "Keep my plan",
+      "manage": "Manage subscription & billing",
+      "cancel": "Cancel subscription"
+    },
+    "features": {
+      "title": "Features",
+      "yes": "Yes",
+      "no": "No",
+      "unlimited": "Unlimited"
+    },
+    "key": {
+      "change": "Change License Key",
+      "activate": "Activate License Key",
+      "changePlan": "To move to another plan, <link>change it in the billing portal</link> — your current subscription is switched and prorated, not duplicated.",
+      "purchase": "Purchase a license at <link>anythingmcp.com</link>",
+      "selfHosted": "Enter the license key you received from us. Existing Starter and Team keys keep working.",
+      "submit": "Activate"
+    },
+    "upgrade": {
+      "title": "Upgrade Plan",
+      "payBody": "Choose a plan to keep AnythingMCP Cloud running after your trial. This address has had a subscription before, so the plan starts and is billed when you check out.",
+      "cardBody": "Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is charged before {date}, and you can cancel anytime.",
+      "cardBodyNoDate": "Add a payment method to keep AnythingMCP Cloud running after your trial. Nothing is charged before your trial ends, and you can cancel anytime.",
+      "choosePlan": "Choose a plan",
+      "addPayment": "Add payment method",
+      "compare": "Compare plans",
+      "body": "Upgrade to a paid plan to continue using AnythingMCP Cloud after your trial ends.",
+      "viewPlans": "View Plans"
+    },
+    "activate": {
+      "redirecting": "Redirecting to settings…",
+      "noKey": "No license key was provided in the URL.",
+      "malformed": "The license key in the URL is malformed.",
+      "adminOnly": "Only administrators can activate a license key. Ask your admin to sign in.",
+      "activated": "License activated successfully.",
+      "backToClient": "Taking you back to finish connecting your AI client…",
+      "failed": "Failed to activate license.",
+      "title": "License Activation",
+      "preparing": "Preparing…",
+      "activating": "Activating your license…",
+      "key": "Key:",
+      "goToSettings": "Go to License Settings"
+    }
+  },
+  "settingsSso": {
+    "types": {
+      "ENTRA": {
+        "label": "Microsoft Entra ID",
+        "fields": {
+          "tenantId": {
+            "label": "Directory (tenant) ID",
+            "help": "The tenant GUID from your app registration overview. A directory name such as contoso.onmicrosoft.com is not accepted."
+          }
+        }
+      },
+      "GOOGLE": {
+        "label": "Google Workspace",
+        "fields": {
+          "hostedDomain": {
+            "label": "Workspace domain",
+            "help": "Strongly recommended. Without it Google is not authoritative for a non-gmail.com address, so any Google account could sign in."
+          }
+        }
+      },
+      "OKTA": {
+        "label": "Okta",
+        "hint": "Use your Okta domain, e.g. https://acme.okta.com. Custom domains are not yet supported.",
+        "fields": {
+          "authorizationServerId": {
+            "label": "Authorization server ID (optional)"
+          }
+        }
+      },
+      "AUTH0": {
+        "label": "Auth0",
+        "hint": "Self-hosted deployments only.",
+        "fields": {
+          "rolesClaimNamespace": {
+            "label": "Roles claim namespace",
+            "help": "Auth0 silently drops custom claims that are not namespaced — the sign-in succeeds and the roles are simply missing."
+          }
+        }
+      },
+      "GITHUB": {
+        "label": "GitHub",
+        "hint": "GitHub is not an OpenID Connect provider, so there is no discovery document to test.",
+        "fields": {
+          "organization": {
+            "label": "Restrict to organization (optional)"
+          }
+        }
+      },
+      "OIDC": {
+        "label": "Generic OpenID Connect",
+        "hint": "Self-hosted deployments only.",
+        "fields": {
+          "groupsClaimName": {
+            "label": "Groups claim name (optional)"
+          }
+        }
+      }
+    },
+    "toast": {
+      "loadFailed": "Could not load providers",
+      "enforced": "Single sign-on required",
+      "passwordReenabled": "Password sign-in re-enabled",
+      "enforceFailed": "Could not change enforcement",
+      "updated": "Provider updated",
+      "created": "Provider created",
+      "saveFailed": "Could not save",
+      "deleted": "Provider deleted",
+      "deleteFailed": "Could not delete",
+      "copyFailed": "Could not copy",
+      "testOk": "Connection OK",
+      "testFailed": "Connection failed",
+      "testError": "Test failed"
+    },
+    "confirmEnforce": "Require single sign-on for this workspace?\n\nPassword sign-in stops working for every member. Your recovery codes become the only way in if the identity provider becomes unreachable.",
+    "confirmDelete": "Delete \"{name}\"? Anyone who signs in through it will lose access, and members with password sign-in disabled will be locked out.",
+    "accessDenied": {
+      "title": "Access Denied",
+      "body": "Only administrators can access this page.",
+      "back": "Back to Settings"
+    },
+    "cloud": {
+      "title": "Not available on AnythingMCP Cloud",
+      "body": "Single sign-on, SCIM provisioning and role sync are part of the self-hosted edition, where the instance belongs to one company. On Cloud, members sign in with their email and password."
+    },
+    "loading": "Loading...",
+    "title": "Single sign-on",
+    "intro": "Let members sign in with your organization's identity provider instead of a password. Share the sign-in link below with them — it is the entry point for this workspace.",
+    "cancel": "Cancel",
+    "add": "Add provider",
+    "copy": "Copy",
+    "copied": "Copied",
+    "form": {
+      "provider": "Provider",
+      "typeLocked": "The provider type cannot be changed after creation — the stored settings were validated against it. Create a new provider instead.",
+      "name": "Display name",
+      "namePlaceholder": "Sign in with Microsoft",
+      "nameHelp": "Shown on the sign-in button.",
+      "issuer": "Issuer URL",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "keepBlank": "(leave blank to keep)",
+      "secretHidden": "The secret is never sent back to the browser, so it cannot be shown here.",
+      "secretExpires": "Secret expires on (optional)",
+      "secretExpiresHelp": "Microsoft caps client secrets at 24 months. Recording the date here turns a silent expiry into a warning.",
+      "jit": "Create accounts on first sign-in",
+      "jitHelp": "Off by default. With this on, anyone who can authenticate at your identity provider joins this workspace as a Viewer — including guests you may have invited there for other reasons.",
+      "roleSync": "Sync roles from the directory on every sign-in",
+      "roleSyncHelp": "Rights are then maintained where joiners and leavers are already handled. Roles an admin assigned by hand are never removed by a sync.",
+      "source": "Read roles from",
+      "sources": {
+        "GROUPS": "Security / Microsoft 365 groups",
+        "APP_ROLES": "Application roles"
+      },
+      "sourceHelp": "Groups reuse what the directory already maintains, at the cost of matching on object IDs rather than readable names. Application roles read better but have to be declared in the app manifest first.",
+      "fallback": "When nothing matches",
+      "fallbacks": {
+        "DENY_ALL": "Grant no tools",
+        "KEEP_EXISTING": "Leave existing roles alone",
+        "DEFAULT_ROLE": "Grant a default role"
+      },
+      "fallbackHelp": "“Grant no tools” is the default deliberately: it assigns an explicit no-tools role, so the outcome does not depend on whether this workspace has set up tool whitelists yet.",
+      "defaultRoles": "Default MCP roles",
+      "defaultRolesPlaceholder": "Pick at least one role",
+      "noRoles": "No MCP roles exist yet — create one under Roles",
+      "defaultRolesHelp": "Granted to anyone whose groups match no mapping. Leave it empty and the fallback behaves exactly like “Grant no tools”.",
+      "active": "Active",
+      "defaultRoleMissing": "“Grant a default role” needs at least one default MCP role. Pick one above, or choose a different fallback.",
+      "saving": "Saving...",
+      "saveChanges": "Save changes",
+      "create": "Create provider"
+    },
+    "empty": "No identity providers configured. Members sign in with a password.",
+    "list": {
+      "inactive": "Inactive",
+      "ssoRequired": "SSO required",
+      "secretExpiring": "Secret expiring",
+      "jit": "Creates accounts on first sign-in",
+      "testing": "Testing...",
+      "test": "Test",
+      "edit": "Edit",
+      "delete": "Delete",
+      "hideMappings": "Hide role mappings",
+      "mappings": "Role mappings",
+      "hideScim": "Hide provisioning",
+      "scim": "Provisioning (SCIM)",
+      "enforce": "Require single sign-on"
+    },
+    "recovery": {
+      "generateFailed": "Could not generate codes",
+      "title": "Recovery codes",
+      "intro": "Single-use codes that sign you in when the identity provider cannot be reached — an expired client secret, a tenant migration, a claim that stopped arriving. Requiring single sign-on is only possible once you hold some.",
+      "saveNow": "Save these now — they cannot be shown again.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "download": "Download",
+      "savedThem": "I have saved them",
+      "generating": "Generating...",
+      "generate": "Generate recovery codes",
+      "regenerate": "Regenerate",
+      "noneYet": "None yet.",
+      "unused": "{unused} of {total} unused.",
+      "regenerateWarning": "Regenerating invalidates the current set."
+    },
+    "mappings": {
+      "orgRoles": {
+        "unchanged": "Leave unchanged",
+        "VIEWER": "Viewer",
+        "EDITOR": "Editor",
+        "ADMIN": "Admin"
+      },
+      "loadFailed": "Could not load mappings",
+      "saved": "Mappings saved",
+      "saveFailed": "Could not save",
+      "loading": "Loading mappings...",
+      "groupsTitle": "Group mappings",
+      "appRolesTitle": "App role mappings",
+      "groupsScimHelp": "Groups assigned to the application in Entra appear here automatically once provisioning has run. Assign MCP roles to each; a group with no roles grants nothing. You can still add a group by object ID if it has not been pushed yet.",
+      "groupsHelp": "Enter the group's <strong>object ID</strong>, not its name — Microsoft does not make group names unique, so matching on one would let anyone able to create a group grant themselves a role. Find it in Entra under Groups → the group → Overview → Object Id. Only groups <em>assigned to the application</em> appear in the token.",
+      "appRolesHelp": "Enter the app role's <strong>value</strong> from the application manifest (for example <code>amcp.einkauf</code>), not its display name.",
+      "scimAppRolesWarning": "Roles are read from application roles at sign-in. Group changes pushed over SCIM will not change anyone's roles between sign-ins — switch “Read roles from” to groups to get that.",
+      "syncOff": "Role sync is turned off for this provider, so these mappings are stored but never applied. Turn it on under Edit.",
+      "groupId": "Group object ID",
+      "appRoleValue": "App role value",
+      "fromScim": "from SCIM",
+      "members": "{count, plural, one {# member} other {# members}}",
+      "label": "Name (for humans)",
+      "workspaceRole": "Workspace role",
+      "mcpRoles": "MCP roles",
+      "noRolesPlaceholder": "No roles — grants nothing",
+      "noRoles": "No MCP roles exist yet — create one under Roles",
+      "scimRemoveHint": "Unassign the group from the application in Entra to remove it.",
+      "remove": "Remove",
+      "add": "Add mapping",
+      "saving": "Saving...",
+      "save": "Save mappings",
+      "footer": "A user in several mapped groups receives the <strong>union</strong> of their MCP roles and the <strong>most privileged</strong> workspace role. Roles an admin assigned by hand are never removed by a sync.",
+      "footerDenyAll": "Someone who matches nothing is given a “No access (SSO)” role, which grants no tools."
+    },
+    "scim": {
+      "toast": {
+        "loadFailed": "Could not load provisioning status",
+        "copyFailed": "Copy failed",
+        "copyManually": "Select the value and copy it manually.",
+        "changeFailed": "Provisioning change failed",
+        "enabled": "Provisioning enabled",
+        "rotated": "Token rotated",
+        "resyncFailed": "Resync failed",
+        "disabled": "Provisioning disabled"
+      },
+      "confirmRotate": "Rotate the SCIM token?\n\nThe current token stops working immediately. Entra provisioning fails until you paste the new token into the enterprise application.",
+      "confirmDisable": "Turn off SCIM provisioning?\n\nEntra will no longer be able to create, update or deactivate accounts here. Existing accounts, memberships and roles are left as they are.",
+      "resync": {
+        "title": "{count, plural, one {Resynced # member} other {Resynced # members}}",
+        "changed": "{count} changed",
+        "unchanged": "{count} unchanged",
+        "failed": "{count} failed",
+        "lastAdmin": "{count} last-admin protected",
+        "button": "Resync roles now"
+      },
+      "title": "Provisioning (SCIM)",
+      "intro": "Let Entra create accounts, update them, and — the part that matters — deactivate them the moment someone is disabled or removed in the directory, with no sign-in required. Without this, a leaver keeps any MCP key they already hold until an administrator deactivates them by hand.",
+      "entraOnly": "Provisioning is available for Microsoft Entra ID providers.",
+      "saveNow": "Save the token now — it cannot be shown again.",
+      "tenantUrl": "Tenant URL",
+      "secretToken": "Secret token",
+      "copy": "Copy",
+      "copied": "Copied",
+      "hide": "Hide",
+      "reveal": "Reveal",
+      "savedIt": "I have saved it",
+      "enabling": "Enabling...",
+      "enable": "Enable provisioning",
+      "unlinked": "{count, plural, one {# existing member have no Microsoft identity yet — Entra will report a conflict for them until they sign in with Microsoft once.} other {# existing members have no Microsoft identity yet — Entra will report a conflict for them until they sign in with Microsoft once.}}",
+      "issued": "Token issued {date}",
+      "lastRequest": "Last request from Entra {date}",
+      "never": "never",
+      "stale": "stale",
+      "users": "Users provisioned {count}",
+      "groups": "Groups synced {count}",
+      "rotate": "Rotate token",
+      "resyncNeedsSync": "Turn on role sync under Edit first",
+      "resyncNeedsGroups": "Only applies when roles are read from groups",
+      "disable": "Disable",
+      "steps": {
+        "show": "How to set this up in Entra",
+        "s1": "Entra admin center → <strong>Enterprise applications</strong> → <strong>New application</strong> →<strong> Create your own application</strong> → <em>Integrate any other application you don't find in the gallery</em>. Name it something like <em>AnythingMCP provisioning</em>.",
+        "s1b": "This has to be a <strong>second, non-gallery app</strong>: the app you registered for sign-in came from<em> App registrations</em>, and Entra leaves <strong>Get started</strong> greyed out on those with “automatic provisioning … is not supported”.",
+        "s2": "<strong>Users and groups → Add user/group</strong>: assign the same groups you assigned to the sign-in app. Assignment does not carry over between the two apps, and only assigned groups are provisioned.",
+        "s3": "<strong>Provisioning</strong> → Provisioning Mode: <strong>Automatic</strong>.",
+        "s4": "<strong>Connectivity</strong> (older tenants show this inline as <em>Admin Credentials</em>): authentication method <strong>Bearer authentication</strong>, then paste the <strong>Tenant URL</strong> and the <strong>Secret Token</strong> above → <strong>Test connection</strong>. Entra refuses to save until the test passes.",
+        "s5": "<strong>Attribute mapping</strong>: leave <code>userName</code> ← <code>userPrincipalName</code> and<code> active</code> as they are, but <strong>change <code>externalId</code></strong> — its stock source is <code>mailNickname</code>, it must be <code>objectId</code>. Otherwise the same person ends up with one account from SCIM and another from sign-in.",
+        "s6": "Settings → Scope: <em>Sync only assigned users and groups</em>. Only groups assigned under <strong>Users and groups</strong> are provisioned — the same rule as the groups claim.",
+        "s7": "<strong>Save</strong>, then <strong>Start provisioning</strong>. The first cycle creates <em>every</em> assigned user; later ones run about every 40 minutes.",
+        "s8": "To test one user without waiting: <strong>Provision on demand</strong>. Use it again after disabling the user in Entra."
+      }
+    }
+  },
+  "adminPages": {
+    "backToDashboard": "Back to Dashboard",
+    "users": {
+      "inviteNoSmtp": "SMTP not configured. Share this invitation link manually:",
+      "joined": "Joined",
+      "unrestricted": "Unrestricted"
+    },
+    "roles": {
+      "title": "MCP Role Management",
+      "selectAll": "Select all"
+    },
+    "settings": {
+      "title": "Admin Settings"
+    },
+    "ssrf": {
+      "saved": "SSRF allowlist saved",
+      "title": "SSRF allowlist",
+      "intro": "Hostnames (or <code>*.suffix</code> wildcards / plain IPs) that the SSRF guard will let through when they resolve to a private network address. Needed when connectors call services on the internal network — e.g. a Docker-compose service like <code>koch-filesystem-bridge</code>.",
+      "warning": "⚠ Use with caution. Anything added here can be reached by every connector in every organization on this deployment. Do not add hosts you don't fully trust.",
+      "envHosts": "From <code>SSRF_ALLOWED_HOSTS</code> env var (read-only):",
+      "list": "Admin-editable list (one host per line)",
+      "save": "Save allowlist"
+    }
+  },
+  "knowledgeGraph": {
+    "title": "Knowledge Graph",
+    "counts": "{nodes} entities · {edges} relationships",
+    "countsBuilt": "{nodes} entities · {edges} relationships · built {date}",
+    "status": {
+      "loadFailed": "Failed to load graph",
+      "enriching": "Asking the model for relationship suggestions…",
+      "noChanges": "No changes since the last enrichment.",
+      "suggested": "AI suggested {count} relationship(s){hasModel, select, yes { ({model})} other {}}. Review them in the “suggested” layer.",
+      "enrichFailed": "Enrichment failed",
+      "rebuilding": "Rebuilding graph…",
+      "rebuilt": "Rebuilt: {nodes} entities, {edges} relationships from {connectors} connectors.",
+      "rebuildFailed": "Rebuild failed",
+      "saved": "Saved",
+      "saveFailed": "Save failed",
+      "entityDeleted": "Entity deleted",
+      "deleteFailed": "Delete failed",
+      "connectionAdded": "Connection added",
+      "entityAdded": "Entity added",
+      "createFailed": "Create failed"
+    },
+    "enriching": "Enriching…",
+    "enrich": "Enrich with AI",
+    "rebuilding": "Rebuilding…",
+    "rebuild": "Rebuild graph",
+    "layer": "Layer",
+    "sources": {
+      "STATIC": "static",
+      "OBSERVED": "observed",
+      "MANUAL": "manual",
+      "LLM": "llm"
+    },
+    "showSuggested": "show suggested",
+    "minConfidence": "min confidence",
+    "skillsLink": "Skills →",
+    "loading": "Loading graph…",
+    "disabled": "The Knowledge Graph is disabled for this workspace.",
+    "disabledHint": "An admin can enable it in Settings → Organization → Features.",
+    "emptyAdmin": "No graph yet. Click “Rebuild graph” to generate it from your connectors and usage.",
+    "emptyMember": "No graph yet. Ask an admin to build the graph.",
+    "explore": "Explore",
+    "exploreHint": "Click an entity to see its fields and links, or an edge to inspect (and edit) a relationship.",
+    "kinds": {
+      "references": "references",
+      "produces_consumes": "data flow",
+      "parent_child": "parent / child",
+      "same_identity": "same identity",
+      "related": "related"
+    },
+    "edgeStatus": {
+      "suggested": "suggested",
+      "active": "active",
+      "rejected": "rejected"
+    },
+    "node": {
+      "connector": "connector",
+      "labelPlaceholder": "Label",
+      "descriptionPlaceholder": "Description (shown to AI clients reading the graph)",
+      "deleteTitle": "Delete this entity and its links",
+      "fields": "Fields ({count})",
+      "connections": "Connections ({count})",
+      "tools": "Tools ({count})"
+    },
+    "edge": {
+      "kind": "Kind",
+      "matchKey": "Match key",
+      "confidence": "Confidence",
+      "observations": "Observations",
+      "note": "Description (served to AI clients)",
+      "notePlaceholder": "Why these entities are linked…",
+      "saveChanges": "Save changes",
+      "confirm": "Confirm",
+      "reject": "Reject"
+    },
+    "addNode": {
+      "open": "+ Add entity",
+      "title": "New entity",
+      "labelPlaceholder": "Label (e.g. Loyalty tier)",
+      "connector": "Belongs to connector…",
+      "description": "Description (optional, served to AI clients)",
+      "submit": "Add entity"
+    },
+    "addEdge": {
+      "open": "+ Add connection",
+      "title": "New connection",
+      "from": "From entity…",
+      "to": "To entity…",
+      "submit": "Add"
+    },
+    "graph": {
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "fit": "Fit graph to view",
+      "fitTitle": "Fit to view"
+    },
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "aiSkills": {
+    "title": "AI Skills",
+    "tabs": {
+      "all": "All",
+      "pending": "Suggested",
+      "applied": "Active",
+      "dismissed": "Dismissed"
+    },
+    "badge": {
+      "pending": "Suggested",
+      "applied": "Active",
+      "dismissed": "Dismissed"
+    },
+    "codeProposal": {
+      "badge": "Code tool proposal",
+      "created": "Created",
+      "meta": "{scope} · proposed by an agent · read-only, runs with the caller's permissions",
+      "createTool": "Create tool",
+      "dismiss": "Dismiss",
+      "deleteAria": "Delete proposal",
+      "why": "Why:",
+      "does": "Does:",
+      "program": "Program ({count, number} characters)",
+      "note": "Creating it adds a read-only code tool on {connector}. To let it write data or run with the author's rights, edit it afterwards on the connector's tools page.",
+      "theConnector": "the connector",
+      "createFailed": "Could not create the tool."
+    },
+    "status": {
+      "loadFailed": "Failed to load",
+      "analyzingServer": "Analyzing the server context…",
+      "analyzingIntents": "Analyzing captured intents…",
+      "generated": "Generated {count} suggestion(s).",
+      "noPatterns": "No new patterns found yet.",
+      "generationFailed": "Generation failed",
+      "consolidating": "Consolidating active skills with AI…",
+      "proposedMerge": "Proposed {proposed} merged skill(s) replacing {replaced} active ones. Review them under Suggested: applying one deactivates the skills it replaces.",
+      "nothingToMerge": "Nothing to merge ({before} active skill(s)).",
+      "consolidationFailed": "Consolidation failed",
+      "lookingForErrors": "Looking for calls that failed and were fixed…",
+      "proposedFromErrors": "Proposed {count} skill(s) from fixed errors. Review them under Suggested.",
+      "noFixedErrors": "No recurring fixed errors yet. Only calls of users who contribute to skill learning are used.",
+      "errorsFailed": "Could not look at the errors",
+      "created": "Skill created (live for MCP)."
+    },
+    "scopeThisServer": "this server",
+    "scopeConnectors": "connectors",
+    "scopeTitle": "Scope for Generate / Consolidate",
+    "scopeAria": "Scope for Generate and Consolidate",
+    "fromConnectors": "From connectors",
+    "forServer": "For server: {name}",
+    "consolidateTitle": "Merge the active skills in this scope into fewer, non-redundant ones",
+    "consolidating": "Consolidating…",
+    "consolidate": "Consolidate",
+    "generating": "Generating…",
+    "generate": "Generate with AI",
+    "actionsLabel": "Skill actions",
+    "generateScope": "Generate with AI · {scope}",
+    "consolidateScope": "Consolidate · {scope}",
+    "looking": "Looking…",
+    "learn": "Learn from fixed errors",
+    "learnHint": "Proposes a rule when calls failed and worked after an argument changed format. No AI model needed.",
+    "close": "Close",
+    "newSkill": "New skill",
+    "intro": "Rules and procedures for recurring tasks, scoped to one connector or to a whole MCP server. <hl>Active</hl> skills reach that server's AI clients on connect, as full text or as a list they open with <code>skill_get</code> (set per server). Long procedures are always opened on demand.",
+    "emptyTitle": "No skills yet",
+    "emptyAdmin": "Skills are generated from captured intents. Turn on <link>Capture user intent and AI enrichment</link>, let some tool calls run, then use Generate with AI.",
+    "emptyMember": "They are generated from captured tool-call intents. Ask an admin to generate them.",
+    "searchPlaceholder": "Search skills…",
+    "loading": "Loading…",
+    "noMatch": "No skills match this filter.",
+    "pager": {
+      "range": "{from}–{to} of {total}",
+      "prev": "← Prev",
+      "page": "Page {page} / {total}",
+      "next": "Next →"
+    },
+    "card": {
+      "historyFailed": "Could not load the history",
+      "server": "server: {name}",
+      "connector": "connector: {name}",
+      "workspace": "workspace",
+      "confidence": "confidence {value}",
+      "examples": "{count} example(s)",
+      "opened": "opened {count}×",
+      "openedLast": "opened {count}×, last {date}",
+      "notOpened": "not opened yet",
+      "activate": "Activate",
+      "apply": "Apply",
+      "deactivate": "Deactivate",
+      "deleteAria": "Delete skill",
+      "when": "When:",
+      "do": "Do:",
+      "replaces": "Replaces {count} active skills: applying it deactivates them (they stay, with their history).",
+      "procedure": "Procedure ({count, number} characters)",
+      "hideHistory": "Hide history",
+      "history": "History ({count, plural, one {# earlier version} other {# earlier versions}})",
+      "replaced": "replaced {date}",
+      "historyProcedure": "Procedure: {count, number} characters"
+    },
+    "sources": {
+      "llm": "AI-generated",
+      "mergeProposal": "merge proposal",
+      "mergedByAi": "merged by AI",
+      "errors": "learned from fixed errors",
+      "finder": "from Skills Finder",
+      "manual": "written by hand"
+    },
+    "form": {
+      "titlePlaceholder": "Title",
+      "whenPlaceholder": "When to use",
+      "instructionPlaceholder": "Instruction",
+      "procedurePlaceholder": "Full procedure (optional, markdown): steps, field rules, output format. Opened on demand with skill_get.",
+      "folder": "Folder",
+      "folderOption": "Folder: {name}",
+      "noFolder": "No folder",
+      "noFolderTop": "No folder (top level)",
+      "createFailed": "Create failed",
+      "newTitlePlaceholder": "Title (e.g. Always confirm the delivery address)",
+      "newWhenPlaceholder": "When to use (optional)",
+      "newInstructionPlaceholder": "Instruction for the agent (imperative guidance)",
+      "newProcedurePlaceholder": "Full procedure (optional, markdown): steps, field rules, output format. The AI opens it with skill_get when the skill applies.",
+      "scopePlaceholder": "Scope… (where this skill applies)",
+      "mcpServers": "MCP servers",
+      "connectors": "Connectors",
+      "serverOption": "Server: {name}",
+      "connectorOption": "Connector: {name}",
+      "creating": "Creating…",
+      "create": "Create skill",
+      "createdHint": "Created as active → immediately available to the MCP server."
+    },
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "memory": {
+    "title": "Memory",
+    "loadFailed": "Could not load memory",
+    "loading": "Loading…",
+    "access": {
+      "none": "No access",
+      "read": "Read company memory",
+      "personal": "Personal memory + read company memory",
+      "contribute": "Personal memory + propose to company memory"
+    },
+    "tabs": {
+      "personal": "My memory",
+      "organization": "Company memory",
+      "pending": "To review"
+    },
+    "intro": "Facts, preferences and notes your AI clients save and find again, in any client connected to a server of this workspace. <hl>My memory</hl> is visible only to you. <hl>Company memory</hl> is shared with everyone; AI clients can propose additions, which admins and editors review unless the workspace saves them automatically.",
+    "accessAdmin": "Your access in this workspace: <hl>{level}</hl> · set per user under <link>Settings → Users</link>",
+    "accessMember": "Your access in this workspace: <hl>{level}</hl> · set by your admin",
+    "searchPlaceholder": "Search memory…",
+    "saved": "Saved.",
+    "empty": {
+      "personal": "Nothing saved yet. Ask your AI client to remember something, or add it above.",
+      "pending": "Nothing waiting for review.",
+      "organization": "The company memory is empty."
+    },
+    "pager": {
+      "range": "{from}–{to} of {total}",
+      "prev": "← Prev",
+      "page": "Page {page} / {total}",
+      "next": "Next →"
+    },
+    "form": {
+      "saveFailed": "Could not save",
+      "placeholderOrganization": "Add to the company memory, e.g. \"STAMMKUNDE means a customer with a framework agreement\"",
+      "placeholderPersonal": "Add to your memory, e.g. \"Answer me in Italian, numbers as tables\"",
+      "kind": "Kind",
+      "folder": "Folder",
+      "noFolder": "No folder",
+      "tagsPlaceholder": "Tags, comma separated (optional)",
+      "aboutPlaceholder": "About (optional), e.g. customer",
+      "aboutTitle": "The kind of thing this is about, as the knowledge graph names it. AI clients get it when they look that entity up.",
+      "saving": "Saving…",
+      "addCompany": "Add to company memory",
+      "remember": "Remember",
+      "noSecrets": "Never store passwords, tokens or keys: they are refused."
+    },
+    "kinds": {
+      "fact": "Fact",
+      "preference": "Preference",
+      "note": "Note"
+    },
+    "kindBadges": {
+      "fact": "fact",
+      "preference": "preference",
+      "note": "note"
+    },
+    "card": {
+      "actionFailed": "Action failed",
+      "viaAi": "saved by an AI client",
+      "viaAiClient": "saved by an AI client ({client})",
+      "viaDashboard": "added in the dashboard",
+      "pending": "waiting for review",
+      "rejected": "rejected",
+      "about": "about {about}",
+      "approve": "Approve",
+      "reject": "Reject",
+      "deleteAria": "Delete memory item"
+    },
+    "settings": {
+      "title": "Workspace settings",
+      "writeMode": "Company memory from AI clients",
+      "approval": "Needs approval by an admin or editor",
+      "auto": "Saved automatically",
+      "writeModeHint": "Applies to users allowed to propose to the company memory. Either way you see who saved what, and can edit or delete it here.",
+      "defaultAccess": "Default access for users",
+      "defaultAccessHint": "For users set to Default under Settings → Users, including new ones.",
+      "saving": "Saving…",
+      "save": "Save settings"
+    },
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "knowledgeFolders": {
+    "title": "Folders",
+    "createFailed": "Could not create the folder",
+    "newInside": "New folder inside {path}",
+    "newTop": "New top-level folder",
+    "new": "+ New",
+    "inside": "Inside {path}",
+    "name": "Folder name",
+    "create": "Create",
+    "allSkills": "All skills",
+    "allMemory": "All company memory",
+    "notInFolder": "Not in a folder",
+    "limited": "Limited to roles:",
+    "lockTitle": "Limited to roles",
+    "editAria": "Edit folder {path}",
+    "emptyHint": "Folders group skills and company memory by topic, for people and for AI clients.",
+    "saveFailed": "Could not save",
+    "confirmDeleteUp": "Delete the folder \"{path}\"?\n\nIts subfolders, skills and memory move to the folder above. Nothing else is deleted.",
+    "confirmDeleteTop": "Delete the folder \"{path}\"?\n\nIts subfolders, skills and memory move to the top level. Nothing else is deleted.",
+    "deleteFailed": "Could not delete",
+    "descriptionPlaceholder": "What belongs here (shown to AI clients)",
+    "parent": "Parent folder",
+    "topLevel": "Top level",
+    "visibleTo": "Visible to",
+    "noneChecked": "None checked: the whole workspace. Admins always see every folder.",
+    "noRoles": "No roles yet: create them under Settings → Roles.",
+    "visibleToList": "Visible to: {roles}",
+    "aRole": "a role",
+    "enterprise": "Limiting folders to roles is part of Enterprise.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "fileSearch": {
+    "title": "File Search",
+    "subtitle": "Let AI search inside the documents of a folder: PDF, Excel, Word, PowerPoint, Outlook",
+    "back": "New connector",
+    "loading": "Loading…",
+    "cancel": "Cancel",
+    "backStep": "Back",
+    "upgrade": "Upgrade",
+    "adminOnly": "Only workspace administrators can set up File Search connectors.",
+    "defaultName": "Documents",
+    "worker": {
+      "down": "File Search is not running on this server.",
+      "downHint": "The files worker or the text extractor is not reachable. An administrator starts them with the Compose profile \"files\" (see the File Search docs)."
+    },
+    "steps": {
+      "label": "Setup steps",
+      "source": "Source",
+      "test": "Test",
+      "scan": "Scan",
+      "describe": "Describe",
+      "activate": "Activate"
+    },
+    "source": {
+      "protocol": "Where are the files?",
+      "cloudNote": "AnythingMCP Cloud reaches servers on the internet. For a share in your office network use SFTP or WebDAV on the NAS, or run AnythingMCP self-hosted next to it.",
+      "presets": "Shortcuts",
+      "name": "Name",
+      "namePlaceholder": "Supplier price lists",
+      "nameHint": "Shown to the AI and in tool names, so name the content, not the server.",
+      "ftpMode": "Encryption",
+      "host": "Server",
+      "port": "Port",
+      "webdavUrl": "WebDAV address",
+      "s3Endpoint": "S3 endpoint",
+      "webdavHint": "Nextcloud: Files → Settings → WebDAV shows the address. Synology: install WebDAV Server and use HTTPS (port 5006).",
+      "bucket": "Bucket",
+      "region": "Region",
+      "accessKey": "Access key",
+      "secretKey": "Secret key",
+      "username": "User name",
+      "authMode": "Sign in with",
+      "privateKey": "Private key",
+      "passphrase": "Key passphrase (if any)",
+      "password": "Password",
+      "passwordKeep": "Leave empty to keep the saved password",
+      "appPasswordHint": "Nextcloud and ownCloud: create an app password under Security → Devices & sessions.",
+      "localFolder": "Folder",
+      "folder": "Folder to index",
+      "localRoots": "Allowed folders: {roots}",
+      "noLocalRoots": "No folder is allowed yet. An administrator sets FILE_SOURCE_ROOTS to the mounted folders AnythingMCP may read.",
+      "folderHint": "Everything below this folder is included. You choose subfolders after the scan.",
+      "plainFtpWarning": "Plain FTP sends the password unencrypted over the internet. I understand and accept this (better: use FTPS or SFTP).",
+      "next": "Test connection"
+    },
+    "protocols": {
+      "sftp": {
+        "title": "SFTP",
+        "description": "SSH file transfer. Most NAS and Linux servers, Hetzner Storage Box."
+      },
+      "ftp": {
+        "title": "FTP / FTPS",
+        "description": "FTP with TLS (explicit or implicit), e.g. Fritz!Box, web hosting."
+      },
+      "webdav": {
+        "title": "WebDAV / Nextcloud",
+        "description": "Nextcloud, ownCloud, Synology and QNAP WebDAV."
+      },
+      "local": {
+        "title": "Network folder",
+        "description": "A share or volume mounted into this self-hosted install (SMB, NFS)."
+      },
+      "s3": {
+        "title": "S3 bucket",
+        "description": "AWS S3, DigitalOcean Spaces, MinIO, Hetzner, Wasabi."
+      }
+    },
+    "presets": {
+      "nextcloud": "Nextcloud",
+      "synology": "Synology NAS",
+      "qnap": "QNAP NAS",
+      "fritzbox": "Fritz!Box",
+      "hetzner": "Hetzner Storage Box",
+      "owncloud": "ownCloud"
+    },
+    "ftpModes": {
+      "ftps": "FTPS (explicit, port 21)",
+      "ftps-implicit": "FTPS (implicit, port 990)",
+      "ftp": "Plain FTP (unencrypted)"
+    },
+    "authModes": {
+      "password": "Password",
+      "key": "SSH key"
+    },
+    "test": {
+      "checklist": "Connection test",
+      "steps": {
+        "resolve": "Server address",
+        "connect": "Server reachable",
+        "handshake": "Encrypted connection",
+        "fingerprint": "Server identity",
+        "login": "Login",
+        "folder": "Folder readable"
+      },
+      "intro": "AnythingMCP connects to the server, signs in and lists the folder. Nothing is saved until the test passes.",
+      "running": "Testing the connection…",
+      "ok": "Connected. {n} entries in the folder.",
+      "again": "Test again",
+      "next": "Save and continue"
+    },
+    "fingerprint": {
+      "title": "Confirm the server's identity",
+      "ssh": "This is the fingerprint of the server's SSH host key. Compare it with the one your administrator or the NAS shows. Once confirmed, AnythingMCP refuses to connect if it ever changes, which protects you from a server pretending to be yours.",
+      "tls": "The server uses a certificate no public authority vouches for, which is normal for a NAS or router. Compare its fingerprint with the one the device shows; once confirmed, only this certificate is accepted.",
+      "confirmLabel": "I checked this fingerprint and it belongs to our server.",
+      "confirm": "Confirm and test again"
+    },
+    "scan": {
+      "intro": "The scan lists the whole folder without indexing anything: how many files are in each subfolder, which types and years. It also reads a few small sample documents to describe the content. Then you choose what to include.",
+      "useAi": "Write the description with AI",
+      "aiConsent": "Folder names, file names and the first 2,000 characters of up to 20 sample files are sent to {provider}. Personal data in the samples is masked.",
+      "aiPolicyOff": "AI drafting is switched off by your workspace policy; the description is built from the folder structure.",
+      "aiUnavailable": "No AI model is configured on this server; the description is built from the folder structure.",
+      "start": "Scan folder",
+      "phase": {
+        "connecting": "Connecting…",
+        "listing": "Listing the folder…",
+        "sampling": "Reading sample documents…",
+        "describing": "Writing the description…",
+        "done": "Done"
+      },
+      "progress": "{files} files in {dirs} folders so far",
+      "cancel": "Cancel scan",
+      "retry": "Scan again",
+      "stats": {
+        "files": "Files",
+        "folders": "Folders",
+        "size": "Size",
+        "years": "Years"
+      },
+      "truncated": "The folder is very large: the scan stopped counting. Choose a subfolder in step 1 for an exact count.",
+      "folders": "Folders to include",
+      "archivesUnticked": "{n} archive folders unticked",
+      "types": "File types",
+      "typesHint": "No type selected = every type. Other files are still found by name.",
+      "age": "Changed in",
+      "ageAll": "Any time",
+      "ageYears": "The last {n} years",
+      "again": "Scan again",
+      "next": "Continue"
+    },
+    "typeGroups": {
+      "pdf": "PDF",
+      "excel": "Excel / CSV",
+      "word": "Word",
+      "powerpoint": "PowerPoint",
+      "email": "E-mail",
+      "text": "Text",
+      "drawing": "Drawings (SVG, DXF)",
+      "code": "Code & config"
+    },
+    "describe": {
+      "intro": "This text tells the AI what the folder contains and how to search it. Every MCP server with this connector passes it on. Check it and add what only you know.",
+      "writing": "Writing the description…",
+      "byAi": "Written by AI ({model}). Check it before saving.",
+      "byRules": "Built from the folder structure and the sample documents.",
+      "summary": "One-line summary",
+      "summaryHint": "Appears in every tool description. {n} characters left.",
+      "instructions": "Instructions for the AI",
+      "instructionsHint": "What the documents are, how folders are named, what to watch out for.",
+      "terms": "Frequent terms (click to add to the summary)",
+      "preview": "What the AI sees",
+      "previewText": "Search the text of every document in the folder \"{name}\" ({summary})…",
+      "prompts": "Questions it can answer",
+      "withAi": "With AI",
+      "regenerate": "Write again",
+      "next": "Continue"
+    },
+    "activate": {
+      "prefix": "Tool prefix",
+      "prefixHint": "Tools will be named like {example}.",
+      "interval": "Sync",
+      "higherPlan": "higher plan",
+      "intervalHint": "New and changed files are picked up on every sync. Search keeps working while a sync runs.",
+      "servers": "Add to MCP servers",
+      "noServers": "There is no MCP server yet. You can add the connector to one later.",
+      "serversHint": "Only roles that have these tools can use them.",
+      "summary": "{files} files ({size}) will be indexed, then synced {interval}.",
+      "activating": "Activating…",
+      "cta": "Activate and start the first sync",
+      "ocr": "Read scanned pages (OCR)",
+      "ocrHint": "Scanned PDFs without a text layer are read with text recognition. Slower; available with Enterprise."
+    },
+    "interval": {
+      "weekly": "weekly",
+      "daily": "daily",
+      "hourly": "hourly",
+      "hours": "every {n} hours",
+      "minutes": "every {n} minutes"
+    },
+    "budget": {
+      "selected": "Selected: {files} files, {size}",
+      "unlimited": "No limit on your plan",
+      "plan": "{plan} plan: {max} files",
+      "textFiles": "{n} with readable text",
+      "nameOnly": "{n} found by name only",
+      "tooLarge": "{n} larger than {max} (listed, not read)",
+      "others": "+ {n} in your other File Search connectors",
+      "bytes": "Volume {used} of {max}",
+      "overWithNext": "The selection is larger than your plan. Untick folders or file types, or upgrade: the {plan} plan includes {max} files.",
+      "over": "The selection is larger than your plan. Untick folders or file types."
+    },
+    "tree": {
+      "collapse": "Collapse {name}",
+      "expand": "Expand {name}",
+      "include": "Include {name}",
+      "archive": "archive",
+      "files": "{n} files",
+      "filter": "Filter folders",
+      "label": "Folders",
+      "empty": "No folders match."
+    },
+    "locked": {
+      "title": "File Search is part of the paid editions",
+      "titleEnterprise": "File Search after the trial is part of Enterprise",
+      "point1": "Search inside PDF, Excel, Word and Outlook files from Claude, ChatGPT, Copilot and other AI clients.",
+      "point2": "SFTP, FTP/FTPS, WebDAV and network folders, synced in the background.",
+      "point3": "Temporary download links, permissions per role, audit log.",
+      "startTrial": "Start the free 30-day trial",
+      "buy": "Buy a licence",
+      "contactEnterprise": "Contact us about Enterprise",
+      "activate": "Activate a licence",
+      "keyToStart": "Register a free Community key under Settings → License to start the 30-day File Search trial. The key is free and arrives by email.",
+      "keyDuringTrial": "Register a free Community key under Settings → License to use File Search during the trial. The key is free and arrives by email.",
+      "registerKey": "Register a free Community key"
+    },
+    "card": {
+      "title": "File Search",
+      "description": "Search inside the documents of a folder: SFTP, FTP, WebDAV, NAS or a network share."
+    },
+    "shareConnector": {
+      "title": "File Share",
+      "text": "Lets AI clients publish files they create as temporary download links. Links, limits and the workspace policy are managed in Settings.",
+      "manage": "Open File Share settings"
+    },
+    "panel": {
+      "draftTitle": "Setup not finished",
+      "draftText": "This connector was tested but not activated yet: it has no tools and does not sync.",
+      "continueSetup": "Continue setup",
+      "paused": {
+        "paused_quota": "Sync paused: the folder outgrew your plan",
+        "paused_licence": "Sync paused: File Search needs a licence",
+        "paused_error": "Sync paused: the server could not be reached",
+        "paused_admin": "Sync paused by an administrator",
+        "stillSearching": "The AI still searches the files indexed until {date}."
+      },
+      "upgradeTo": "Upgrade to {plan}",
+      "editSelection": "Edit selection",
+      "resume": "Resume",
+      "resumed": "Resumed. The next sync starts within a minute.",
+      "indexed": "Indexed",
+      "ofFiles": "of {n} files",
+      "size": "Size",
+      "chars": "{n} characters of text",
+      "lastSync": "Last sync",
+      "nextSync": "Next sync",
+      "now": "running now",
+      "planUsage": "{used} of {max} files on the {plan} plan (all File Search connectors)",
+      "nearLimit": "{pct} % used",
+      "syncQueued": "Sync started.",
+      "syncing": "Syncing…",
+      "syncNow": "Sync now",
+      "pause": "Pause",
+      "pausedMsg": "Sync paused.",
+      "scheduleSaved": "Schedule saved.",
+      "manualLeft": "Manual syncs left today: {n}",
+      "description": "What the AI is told about this folder",
+      "edit": "Edit",
+      "newDraft": "The last scan wrote a new description.",
+      "reviewDraft": "Review it",
+      "save": "Save",
+      "descriptionSaved": "Description saved; the tools were updated.",
+      "noDescription": "No description yet.",
+      "runs": "Recent syncs",
+      "runCounters": "{listed} files listed, {added} new or changed, {extracted} read, {deleted} removed",
+      "noRuns": "No sync has run yet.",
+      "problems": "{n} files need attention",
+      "problemsHint": "They are still found by name. Files that fail three times are retried only when they change.",
+      "folders": "Folders in the index",
+      "hide": "Hide",
+      "show": "Show"
+    },
+    "states": {
+      "active": "Active",
+      "syncing": "Syncing",
+      "draft": "Draft",
+      "paused_quota": "Paused: plan limit",
+      "paused_licence": "Paused: licence",
+      "paused_error": "Paused: connection",
+      "paused_admin": "Paused"
+    },
+    "runStatus": {
+      "running": "Running",
+      "succeeded": "Done",
+      "partial": "In progress",
+      "paused": "Paused",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "entryStatus": {
+      "failed": "Could not be read (will retry)",
+      "gave_up": "Could not be read",
+      "skipped_size": "Larger than the plan allows",
+      "pending": "Waiting to be read",
+      "name_only": "Found by name only",
+      "indexed": "Indexed"
+    },
+    "rules": {
+      "title": "Folder permissions",
+      "intro": "Limit roles to some folders of this connector. A role without rules sees everything; with rules it sees only the allowed folders, and deny wins.",
+      "enterprise": "Folder permissions by role are available with AnythingMCP Enterprise. Until then, connect each folder as its own connector and give it to the right roles.",
+      "role": "Role",
+      "effect": "Allow or deny",
+      "allow": "Allow",
+      "deny": "Deny",
+      "folder": "Folder",
+      "remove": "Remove",
+      "add": "Add rule",
+      "saved": "Folder permissions saved."
+    },
+    "limit": {
+      "title": "Your plan’s File Search connectors are in use",
+      "text": "The {plan} plan includes {max} File Search connector(s), and all are set up. Upgrade, or delete one you no longer need.",
+      "next": "The {plan} plan includes {max}.",
+      "manage": "Manage connectors"
+    },
+    "pager": {
+      "label": "Pages",
+      "range": "{from}–{to} of {total}",
+      "prev": "Previous",
+      "next": "Next"
+    },
+    "searchHint": {
+      "title": "Want your AI to search inside the documents?",
+      "body": "File Search indexes the PDF, Word, Excel and Outlook files on your NAS, server or storage and keeps the index in sync, so the AI finds what is written in them, not only the file names.",
+      "cta": "Set up File Search",
+      "for": "Opens the wizard for {name}."
+    }
+  },
+  "fileShare": {
+    "title": "File Share",
+    "subtitle": "Temporary download links for files from your folders or written by AI. Links expire on their own and the file is deleted.",
+    "locked": {
+      "title": "File Share is not part of this plan",
+      "text": "Upgrade to let AI clients hand out files as temporary links.",
+      "cta": "See plans"
+    },
+    "usage": {
+      "title": "Your limits ({plan})",
+      "stored": "Stored in active links",
+      "today": "New links today",
+      "validity": "Longest validity",
+      "hours": "{n} hours",
+      "noLimit": "No limit",
+      "fileSize": "Largest file",
+      "publicOn": "Public links are allowed.",
+      "publicOff": "Public links are switched off; links open only for signed-in members.",
+      "days": "{n} days"
+    },
+    "connector": {
+      "title": "Links from AI chats",
+      "on": "The connector \"{name}\" lets AI clients publish files they write (CSV, reports) as links.",
+      "off": "Add the File Share connector so AI clients can publish files they write (CSV, reports) as links.",
+      "add": "Add File Share connector",
+      "added": "File Share connector added to your default MCP server."
+    },
+    "links": {
+      "title": "Links",
+      "empty": "No active links.",
+      "loading": "Loading…",
+      "public": "public",
+      "internal": "internal",
+      "until": "until {date}",
+      "noExpiry": "no expiry",
+      "downloads": "{n, plural, one {# download} other {# downloads}}",
+      "by": "by {name}",
+      "revoke": "Revoke",
+      "revoked": "Link revoked and file deleted.",
+      "count": "{n, plural, one {# active link} other {# active links}}",
+      "search": "Search by file name",
+      "searchLabel": "Search links",
+      "allAccess": "All links",
+      "onlyPublic": "Public only",
+      "onlyInternal": "Internal only",
+      "mine": "Only mine",
+      "noMatch": "No link matches these filters.",
+      "confirm": "Revoke this link and delete the file?",
+      "confirmYes": "Revoke",
+      "cancel": "Cancel",
+      "expiresIn": "expires in {time}"
+    },
+    "policy": {
+      "title": "File Search and File Share policy",
+      "intro": "Applies to every File Search connector and link in this workspace.",
+      "enterprise": "Workspace policies are available with AnythingMCP Enterprise.",
+      "saved": "Policy saved.",
+      "maxTtl": "Longest link validity (hours)",
+      "maxTtlPlaceholder": "Plan default",
+      "publicLinks": {
+        "label": "Allow public links",
+        "hint": "Off: links open only for signed-in members of this workspace."
+      },
+      "aiDrafting": {
+        "label": "Allow AI to draft folder descriptions",
+        "hint": "Off: the setup never sends folder names or samples to an AI model."
+      },
+      "allowPlainFtp": {
+        "label": "Allow plain (unencrypted) FTP",
+        "hint": "Off: only SFTP and FTPS can be connected."
+      },
+      "locked": "With AnythingMCP Enterprise an administrator can switch off public links, AI drafting and plain FTP, and cap how long links stay valid.",
+      "on": "on",
+      "off": "off",
+      "planDefault": "plan default"
+    },
+    "link": {
+      "loading": "Loading…",
+      "notFound": "This link does not exist.",
+      "unavailable": "This link is not available",
+      "sharedBy": "Shared by",
+      "access": "Access",
+      "internal": "Members of the workspace",
+      "public": "Anyone with the link",
+      "expires": "Expires",
+      "never": "Never",
+      "state": {
+        "expired": "This link has expired.",
+        "revoked": "This link was revoked.",
+        "exhausted": "This link reached its download limit."
+      },
+      "signIn": "Sign in to download",
+      "download": "Download",
+      "preparing": "Preparing…",
+      "warning": "Only open files from people you trust. AnythingMCP does not check files for viruses."
     }
   }
 }

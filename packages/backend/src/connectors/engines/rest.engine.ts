@@ -25,7 +25,11 @@ import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
-import { toolMaxResponseBytes } from '../../common/response-size-limit';
+import {
+  DEFAULT_TOOL_TIMEOUT_MS,
+  toolResponseLimitBytes,
+  toolTimeoutMs,
+} from './request-limits.util';
 import { assertNoResponseBodyError } from './response-error.util';
 import { escapeXmlValue } from '../../common/xml-escape.util';
 import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
@@ -64,6 +68,9 @@ const NOT_SENT_CODES = ['EAI_AGAIN', 'ECONNREFUSED', 'EPROTO'];
  * exchange after the API received it. The API may have run the request.
  */
 const MAYBE_SENT_CODES = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'];
+
+/** The codes axios raises when the request ran past its timeout. */
+const TIMEOUT_CODES = ['ETIMEDOUT', 'ECONNABORTED'];
 
 /**
  * Retry-After as milliseconds: delay-seconds or an HTTP date (RFC 9110
@@ -187,6 +194,12 @@ export class RestEngine {
       // Hand back an XML body as the text it arrived as instead of parsing
       // it into an object. The OData engine needs `$metadata` verbatim.
       rawBody?: boolean;
+      // Per-tool limits for slow or large calls (image generation): the
+      // timeout in ms (1 s to 180 s, default 30 s) and the upstream body
+      // limit in bytes (at most 50 MB, default TOOL_MAX_RESPONSE_BYTES).
+      // Clamped, never off; see request-limits.util.ts.
+      timeoutMs?: unknown;
+      maxResponseBytes?: unknown;
     },
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
@@ -287,15 +300,16 @@ export class RestEngine {
         ...config.headers,
         ...resolvedEndpointHeaders,
       },
-      timeout: 30000,
+      timeout: toolTimeoutMs(endpointMapping.timeoutMs),
       // The bytes as they arrived: a text body is decoded and parsed as axios
       // always did, a file (image, PDF, …) becomes a BinaryBody instead of a
       // string of replacement characters. See binary-response.util.ts.
       responseType: 'arraybuffer',
       transformResponse: [(data: unknown, headers?: unknown) => decodeResponseBody(data, headers)],
       // Stop reading a body over the tool response limit instead of parsing
-      // tens of MB on the event loop. See response-size-limit.ts.
-      maxContentLength: toolMaxResponseBytes(),
+      // tens of MB on the event loop. See response-size-limit.ts. A tool may
+      // raise it for a body whose bulk responseMapping.images takes out.
+      maxContentLength: toolResponseLimitBytes(endpointMapping.maxResponseBytes),
     };
     // A form-data body is a one-shot stream: every send (a retry, a redirect
     // that keeps the body) needs a fresh one, built by this.
@@ -761,7 +775,15 @@ export class RestEngine {
         if (attempt > 0) rebuildBody(axiosConfig, outbound.data);
         return await outboundRequest(axiosConfig, outbound);
       } catch (error) {
-        const transient = this.isTransientError(error, method);
+        // A tool that raised its timeout (endpointMapping.timeoutMs) is slow
+        // on purpose. Running it again after a timeout would wait that long
+        // up to four times, so even an idempotent one is not retried then.
+        const slowTimeout =
+          (axiosConfig.timeout ?? 0) > DEFAULT_TOOL_TIMEOUT_MS &&
+          error instanceof AxiosError &&
+          !error.response &&
+          TIMEOUT_CODES.includes(error.code ?? '');
+        const transient = !slowTimeout && this.isTransientError(error, method);
         const delay = transient ? this.retryDelayMs(error, attempt, delaysMs) : null;
         if (delay === null) {
           // Warn, not debug: production runs at info, so a call that burned
@@ -936,10 +958,29 @@ export class RestEngine {
    *                             parameter as sent, '' when absent)
    * `credentialParams` are query parameters a token provider adds (Shopee's
    * access_token and shop_id); they win over a tool's own parameters.
+   *
+   * Sorted-parameter signing, opt-in (the Alibaba IOP gateways: AliExpress,
+   * Alibaba.com, Lazada). Also on the query-signing path only:
+   *   template variables        `${sortedParams}`: every parameter sent, as
+   *                             key + value with no separators, sorted by
+   *                             key. The query as sent (statics, credential
+   *                             parameters and the timestamp included) and,
+   *                             for an application/x-www-form-urlencoded body,
+   *                             its fields. Arrays and objects contribute the
+   *                             pairs the serializer sends for them; the
+   *                             signature parameter itself and empty values
+   *                             are left out (the IOP SDKs skip them too).
+   *                             `${apiPath}`: the request path below the
+   *                             connector's baseUrl, without the query
+   *                             (`/auth/token/create` under `.../rest`).
+   *   signature.encoding        'hex-upper': hex in capitals
+   *   signature.timestampFormat 's' (default, Unix seconds) | 'ms'
+   *                             (milliseconds), for `${timestamp}`,
+   *                             timestampParam and timestampHeader alike
    */
   private applyHmacSignature(
     axiosConfig: AxiosRequestConfig,
-    config: { authType: string; authConfig?: Record<string, unknown> },
+    config: { authType: string; authConfig?: Record<string, unknown>; baseUrl?: string },
     credentialParams?: Record<string, string>,
   ): void {
     if (config.authType !== 'HMAC' || !config.authConfig) return;
@@ -950,9 +991,12 @@ export class RestEngine {
     const encoding = String(sig.encoding ?? 'hex') === 'base64' ? 'base64' : 'hex';
     const secret = String(sig.secret ?? '');
     const headerName = String(sig.headerName ?? 'Signature');
-    const timestamp = String(Math.floor(Date.now() / 1000));
 
     const extended = usesExtendedHmac(sig, credentialParams);
+    const timestamp =
+      extended && String(sig.timestampFormat ?? 's') === 'ms'
+        ? String(Date.now())
+        : String(Math.floor(Date.now() / 1000));
     if (extended) {
       // Static and credential parameters first, so the query below (and the
       // signature over it) includes them. A tool's own parameter of the same
@@ -1004,15 +1048,23 @@ export class RestEngine {
 
     // Kaufland's documented string: the four parts joined by newlines, with
     // no newline after the timestamp.
+    const signParam = String(sig.paramName ?? 'sign');
     const canonical = extended
       ? renderExtendedHmacTemplate(String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}'), {
           method: String(axiosConfig.method ?? 'GET').toUpperCase(),
           url,
           path,
           pathname: pathnameOf(url),
+          apiPath: apiPathOf(url, config.baseUrl),
           body,
           timestamp,
           query: params,
+          sortedParams: () =>
+            sortedParamsString(
+              params,
+              formBodyOf(axiosConfig),
+              String(sig.placement ?? 'header') === 'query' ? signParam : undefined,
+            ),
         })
       : String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}')
           .replace(/\\n/g, '\n')
@@ -1022,13 +1074,14 @@ export class RestEngine {
           .replace(/\$\{body\}/g, body)
           .replace(/\$\{timestamp\}/g, timestamp);
 
-    const digest = createHmac(algorithm, secret)
+    const rawDigest = createHmac(algorithm, secret)
       .update(canonical, 'utf8')
       .digest(encoding as 'hex' | 'base64');
+    const digest = extended && String(sig.encoding) === 'hex-upper' ? rawDigest.toUpperCase() : rawDigest;
 
     const extra = (sig.extraHeaders as Record<string, string> | undefined) ?? {};
     if (extended && String(sig.placement ?? 'header') === 'query') {
-      axiosConfig.params = { ...params, [String(sig.paramName ?? 'sign')]: digest };
+      axiosConfig.params = { ...params, [signParam]: digest };
       axiosConfig.paramsSerializer = serializeRepeatedParams;
       axiosConfig.headers = { ...axiosConfig.headers, ...extra };
       if (sig.timestampHeader) {
@@ -1259,8 +1312,59 @@ export function usesExtendedHmac(
     sig.paramName !== undefined ||
     sig.timestampParam !== undefined ||
     sig.queryParams !== undefined ||
+    sig.timestampFormat !== undefined ||
+    sig.encoding === 'hex-upper' ||
+    /\$\{(sortedParams|apiPath)\}/.test(String(sig.template ?? '')) ||
     credentialParams !== undefined
   );
+}
+
+/**
+ * The request path below the connector's base URL, without the query:
+ * `/auth/token/create` for `https://api-sg.aliexpress.com/rest/auth/token/create`
+ * under the base URL `https://api-sg.aliexpress.com/rest`. The whole path
+ * when the URL is not below the base URL.
+ */
+function apiPathOf(url: string, baseUrl: string | undefined): string {
+  const pathname = pathnameOf(url);
+  if (!baseUrl) return pathname;
+  const basePath = pathnameOf(baseUrl).replace(/\/+$/, '');
+  if (!basePath) return pathname;
+  if (pathname === basePath) return '';
+  return pathname.startsWith(`${basePath}/`) ? pathname.slice(basePath.length) : pathname;
+}
+
+/**
+ * The fields of an application/x-www-form-urlencoded body, in the order
+ * sent; empty for any other body.
+ */
+function formBodyOf(axiosConfig: AxiosRequestConfig): Array<[string, string]> {
+  const headers = (axiosConfig.headers ?? {}) as Record<string, unknown>;
+  const contentType = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1];
+  if (!String(contentType ?? '').toLowerCase().includes('application/x-www-form-urlencoded')) return [];
+  const data = axiosConfig.data;
+  if (typeof data === 'string') return [...new URLSearchParams(data).entries()];
+  if (data instanceof URLSearchParams) return [...data.entries()];
+  return [];
+}
+
+/**
+ * `${sortedParams}`: every query parameter and form field as sent, sorted by
+ * key (code unit order, i.e. ASCII order for ASCII names) and concatenated as
+ * key + value with no separators. The signature parameter and empty values
+ * are left out, as the Alibaba IOP SDKs do. Keys that repeat keep the order
+ * they are sent in.
+ */
+export function sortedParamsString(
+  query: Record<string, unknown>,
+  formFields: Array<[string, string]> = [],
+  excludeKey?: string,
+): string {
+  return [...flattenParams(query), ...formFields]
+    .filter(([k, v]) => k !== excludeKey && v !== '')
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${k}${v}`)
+    .join('');
 }
 
 /** The path of a URL without its query; the input as given when it is relative. */
@@ -1285,21 +1389,29 @@ export function renderExtendedHmacTemplate(
     url: string;
     path: string;
     pathname: string;
+    apiPath?: string;
     body: string;
     timestamp: string;
     query: Record<string, unknown>;
+    /** Computed only when the template asks for it. */
+    sortedParams?: () => string;
   },
 ): string {
   return template
     .replace(/\\n/g, '\n')
-    .replace(/\$\{(method|url|path|pathname|body|timestamp|query\.([^{}]+))\}/g, (_m, name: string, q?: string) => {
-      if (q !== undefined) {
-        const v = vars.query[q];
-        if (v === undefined || v === null) return '';
-        return Array.isArray(v) ? v.map(String).join(',') : String(v);
-      }
-      return String(vars[name as Exclude<keyof typeof vars, 'query'>]);
-    });
+    .replace(
+      /\$\{(method|url|path|pathname|apiPath|body|timestamp|sortedParams|query\.([^{}]+))\}/g,
+      (_m, name: string, q?: string) => {
+        if (q !== undefined) {
+          const v = vars.query[q];
+          if (v === undefined || v === null) return '';
+          return Array.isArray(v) ? v.map(String).join(',') : String(v);
+        }
+        if (name === 'sortedParams') return vars.sortedParams ? vars.sortedParams() : '';
+        if (name === 'apiPath') return vars.apiPath ?? vars.pathname;
+        return String(vars[name as 'method' | 'url' | 'path' | 'pathname' | 'body' | 'timestamp']);
+      },
+    );
 }
 
 /**
@@ -1341,12 +1453,20 @@ function serializeParams(
   params: Record<string, unknown>,
   spaces: '+' | '%20',
 ): string {
-  const parts: string[] = [];
+  return flattenParams(params)
+    .map(([k, v]) => `${encodeQueryComponent(k, spaces)}=${encodeQueryComponent(v, spaces)}`)
+    .join('&');
+}
+
+/**
+ * The key/value pairs serializeParams writes, in order and before
+ * percent-encoding (see serializeRepeatedParams for the shapes).
+ */
+function flattenParams(params: Record<string, unknown>): Array<[string, string]> {
+  const parts: Array<[string, string]> = [];
   const push = (key: string, value: unknown) => {
     if (value === undefined || value === null) return;
-    parts.push(
-      `${encodeQueryComponent(key, spaces)}=${encodeQueryComponent(String(value), spaces)}`,
-    );
+    parts.push([key, String(value)]);
   };
   // Every level below the top one is indexed: `k[0]`, `k[name]`.
   const pushNested = (key: string, value: unknown) => {
@@ -1372,7 +1492,7 @@ function serializeParams(
       push(key, value);
     }
   }
-  return parts.join('&');
+  return parts;
 }
 
 /**

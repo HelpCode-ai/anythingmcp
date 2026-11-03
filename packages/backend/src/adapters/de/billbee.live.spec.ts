@@ -58,6 +58,19 @@ describe('billbee adapter — static spec conformance', () => {
     expect(paths).toContain('/customers/{id}/orders');
     expect(paths).toContain('/shipment/shippingproviders');
   });
+
+  it('writes through the documented order, shipment and stock endpoints', () => {
+    const map = Object.fromEntries(a.tools.map((t) => [t.name, t.endpointMapping]));
+    expect(map.billbee_set_order_state).toMatchObject({ method: 'PUT', path: '/orders/{id}/orderstate' });
+    expect(map.billbee_add_shipment_to_order).toMatchObject({ method: 'POST', path: '/orders/{id}/shipment' });
+    expect(map.billbee_ship_order_with_label).toMatchObject({ method: 'POST', path: '/shipment/shipwithlabel' });
+    expect(map.billbee_update_stock).toMatchObject({ method: 'POST', path: '/products/updatestock' });
+    expect(map.billbee_add_order_tags).toMatchObject({ method: 'POST', path: '/orders/{id}/tags' });
+    expect(map.billbee_update_order).toMatchObject({ method: 'PATCH', path: '/orders/{id}' });
+    expect(map.billbee_update_product).toMatchObject({ method: 'PATCH', path: '/products/{id}' });
+    expect(map.billbee_create_invoice).toMatchObject({ method: 'POST', path: '/orders/CreateInvoice/{id}' });
+    expect(map.billbee_list_stocks).toMatchObject({ method: 'GET', path: '/products/stocks' });
+  });
 });
 
 const maybe = process.env.RUN_BILLBEE_LIVE ? describe : describe.skip;

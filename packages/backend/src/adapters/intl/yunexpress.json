@@ -1,0 +1,579 @@
+{
+  "slug": "yunexpress",
+  "name": "YunExpress",
+  "description": "Ship cross-border parcels with YunExpress (云途物流) from an AI agent: destination countries, shipping methods and goods types, freight quotes, shipment orders with tracking numbers, labels, last-mile carriers, tracking events and charged fees, weight changes and interceptions. OMS API with a Basic token from customer code and API secret.",
+  "aliases": [
+    "Yun Express",
+    "YunTu",
+    "云途物流",
+    "Yuntu Logistics"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "yunexpress",
+  "docsUrl": "https://www.yunexpress.cn",
+  "instructions": "## YunExpress\nThis connector uses the **YunExpress OMS API** (云途物流, version 1.4.x) on `http://oms.api.yunexpress.com`: destination countries, shipping methods and goods types, freight quotes, shipment orders (waybills) with tracking numbers, labels, last-mile carriers, tracking and charged fees.\n\n**Setup (about 5 minutes)**\n1. Sign in to the YunExpress customer center (www.yunexpress.cn or your YunExpress customer portal) and open the **API** section. Note your **customer code** (客户编号, e.g. C12345) and the **API secret** (API密钥); apply for the key there if there is none.\n2. YunExpress authenticates with `Authorization: Basic <token>`, where the token is the Base64 of `customer code&API secret` (an ampersand, not a colon). Compute it once on your computer, for example `printf '%s' 'C12345&YourApiSecret' | base64`, and paste the result into `YUNEXPRESS_API_TOKEN`. It is stored encrypted.\n3. Install and run `yunexpress_list_countries`.\n\n**Note on the newer open platform**: YunExpress also runs an open platform (open.yunexpress.cn, `openapi.yunexpress.cn`) that signs every request with a millisecond timestamp and an OAuth token. This connector uses the OMS API, which most accounts keep using; the OMS host answers over plain HTTP only.\n\n**Ship a parcel**: `yunexpress_list_countries` and `yunexpress_list_shipping_methods` (with CountryCode) for the possible methods, `yunexpress_list_goods_types` for goods restrictions, `yunexpress_get_price_quote` for fees and delivery days, then `yunexpress_create_orders` (1 to 10 orders per call). Each result has `Success`, `WayBillNumber`, `TrackingNumber` and `TrackType` (1 tracking number available, 2 pending, 3 none). When the tracking number is pending, ask `yunexpress_get_tracking_numbers` later. Print with `yunexpress_get_labels` (temporary PDF URL).\n\n**After shipping**: `yunexpress_get_order` (order data and status), `yunexpress_get_sender`, `yunexpress_get_tracking` (events as your display settings allow), `yunexpress_get_full_tracking` (whole history where supported), `yunexpress_get_carriers` (last-mile carrier and its number) and `yunexpress_get_shipping_fee` (fees charged). Change the forecast weight with `yunexpress_update_weight`, stop a parcel with `yunexpress_intercept_order`, and remove an order that YunExpress has not received with `yunexpress_delete_order` (switched off).\n\n**Writes: confirm first.** Creating orders books real shipments, intercepting and deleting change them. Before each write show the user the orders (receiver, method, weight, customs declaration) and wait for a yes. After an unclear timeout on a write, read the order with `yunexpress_get_order` before trying again, so it is not booked twice.\n\n**Numbers and units**: weights in **kg** (up to 3 decimals), dimensions in whole **cm**, declared values (`UnitPrice`) per unit in the stated `CurrencyCode`. `OrderNumber` accepts the YunExpress waybill number, your customer order number or the tracking number; for intercept and delete, `OrderType` says which one (1 waybill, 2 customer order, 3 tracking number).\n\n**Tracking codes**: package state 0 unknown, 1 submitted, 2 in transit, 3 delivered, 4 received, 5 cancelled, 6 delivery failed, 7 returned. Tracking status 0 not found, 10 pre-advice, 20 in transit, 30 ready for pickup, 40 failed, 50 delivered, 60 exception, 80 unknown, 90 returned, 100 cancelled.\n\n**Answers and errors**: every answer has `Code` (`0000` success), `Message`, the data in `Item` or `Items`, and a `RequestId` to quote to YunExpress support. Common codes: 1001 submission failed, 1002 wrong customer code or secret, 1003 signature error, 1004 parameter error, 1006 no data, 1011 partial success, 2004 duplicate customer order number, 2005 order exists, 2006 no tracking number for this method, 2009 weight must be positive, 2010 the method does not serve the destination, 10000 request limit reached, 9999 platform error. A wrong token is answered with HTTP 421 and `ResultCode` 401.\n",
+  "requiredEnvVars": [
+    "YUNEXPRESS_API_TOKEN"
+  ],
+  "prerequisites": "A YunExpress customer account with API access: the customer code and API secret from the API section of the YunExpress customer center.",
+  "envVarMeta": {
+    "YUNEXPRESS_API_TOKEN": {
+      "label": "API token (Base64 of customer code&secret)",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Base64 of your customer code, an ampersand and your API secret, e.g. printf '%s' 'C12345&YourApiSecret' | base64. Customer code and secret are in the API section of the YunExpress customer center.",
+      "pattern": "^[A-Za-z0-9+/]{8,}={0,2}$",
+      "patternMessage": "Paste the Base64 token alone (letters, digits, + and /, maybe = at the end), not the code and secret themselves."
+    }
+  },
+  "verifyHints": {
+    "401": "YunExpress refused the token. YUNEXPRESS_API_TOKEN must be the Base64 of customer code&API secret (with an ampersand).",
+    "421": "YunExpress refused the token (ResultCode 401). Recompute YUNEXPRESS_API_TOKEN as the Base64 of customer code&API secret.",
+    "rate_limited": "YunExpress answered with its request limit (code 10000). Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "yunexpress_list_countries"
+  },
+  "connector": {
+    "name": "YunExpress OMS API",
+    "type": "REST",
+    "baseUrl": "http://oms.api.yunexpress.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Basic {{YUNEXPRESS_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "ResultCode",
+          "equals": "401",
+          "messagePath": "ResultDesc",
+          "status": 401
+        },
+        {
+          "path": "Code",
+          "in": [
+            "1002",
+            "1003"
+          ],
+          "messagePath": "Message",
+          "status": 401
+        },
+        {
+          "path": "Code",
+          "equals": "1006",
+          "messagePath": "Message",
+          "status": 404
+        },
+        {
+          "path": "Code",
+          "equals": "10000",
+          "messagePath": "Message",
+          "status": 429
+        },
+        {
+          "path": "Code",
+          "equals": "9999",
+          "messagePath": "Message",
+          "status": 502
+        },
+        {
+          "path": "Code",
+          "in": [
+            "1001",
+            "1004",
+            "2004",
+            "2005",
+            "2006",
+            "2008",
+            "2009",
+            "2010"
+          ],
+          "messagePath": "Message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "yunexpress_list_countries",
+      "description": "List the destination countries YunExpress ships to with their two-letter codes and names, for CountryCode in quotes and orders. Also the install check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Common/GetCountry"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_list_shipping_methods",
+      "description": "List the shipping methods (logistics products) of your account with code, Chinese and English name and whether they are tracked; with CountryCode only the methods that serve that country. The code is the ShippingMethodCode of an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "CountryCode": {
+            "type": "string",
+            "description": "Two-letter destination country code, e.g. DE; leave out for all methods."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Common/GetShippingMethods",
+        "queryParams": {
+          "CountryCode": "$CountryCode"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_list_goods_types",
+      "description": "List the goods types (id and name) YunExpress distinguishes, e.g. general goods or goods with batteries.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Common/GetGoodsType"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_get_price_quote",
+      "description": "Quote the freight for a parcel to a country: per shipping method the base, registration, fuel and other fees, total, currency, billable weight and delivery days. Check a method here before using it in an order; do not pick only the cheapest without checking goods restrictions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "CountryCode": {
+            "type": "string",
+            "description": "Two-letter destination country code."
+          },
+          "Weight": {
+            "type": "number",
+            "description": "Weight in kg, up to 3 decimals, e.g. 0.125."
+          },
+          "Length": {
+            "type": "integer",
+            "description": "Length in whole cm (default 1)."
+          },
+          "Width": {
+            "type": "integer",
+            "description": "Width in whole cm (default 1)."
+          },
+          "Height": {
+            "type": "integer",
+            "description": "Height in whole cm (default 1)."
+          },
+          "PackageType": {
+            "type": "integer",
+            "description": "0 general goods, 1 with battery, 2 special goods.",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "PostCode": {
+            "type": "string",
+            "description": "Destination postal code, for remote-area surcharges."
+          }
+        },
+        "required": [
+          "CountryCode",
+          "Weight"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Freight/GetPriceTrial",
+        "queryParams": {
+          "CountryCode": "$CountryCode",
+          "Weight": "$Weight",
+          "Length": "$Length",
+          "Width": "$Width",
+          "Height": "$Height",
+          "PackageType": "$PackageType",
+          "PostCode": "$PostCode"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_get_tracking_numbers",
+      "description": "Get the tracking numbers of orders by your customer order numbers (comma-separated), for methods where the tracking number arrives after the order. Results are cached for 30 minutes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "CustomerOrderNumber": {
+            "type": "string",
+            "description": "One or more customer order numbers, comma-separated."
+          }
+        },
+        "required": [
+          "CustomerOrderNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Waybill/GetTrackingNumber",
+        "queryParams": {
+          "CustomerOrderNumber": "$CustomerOrderNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_get_order",
+      "description": "Get one shipment order: waybill number, customer order number, tracking number, shipping method, status, weights, receiver, parcels (customs declaration) and fees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "OrderNumber": {
+            "type": "string",
+            "description": "Waybill number, your customer order number or the tracking number."
+          }
+        },
+        "required": [
+          "OrderNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/WayBill/GetOrder",
+        "queryParams": {
+          "OrderNumber": "$OrderNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_get_sender",
+      "description": "Get the sender address YunExpress holds for an order (for methods that need a sender address).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "OrderNumber": {
+            "type": "string",
+            "description": "Waybill number, your customer order number or the tracking number."
+          }
+        },
+        "required": [
+          "OrderNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/WayBill/GetSender",
+        "queryParams": {
+          "OrderNumber": "$OrderNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_get_tracking",
+      "description": "Track a parcel: package state, tracking status, last-mile carrier, proof of delivery and the events with time, place and description, shown as your tracking display settings allow.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "OrderNumber": {
+            "type": "string",
+            "description": "Waybill number, your customer order number or the tracking number."
+          }
+        },
+        "required": [
+          "OrderNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Tracking/GetTrackInfo",
+        "queryParams": {
+          "OrderNumber": "$OrderNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_get_full_tracking",
+      "description": "Get the full tracking history of a parcel (origin and last-mile events) regardless of display settings, for the shipping methods that support it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "OrderNumber": {
+            "type": "string",
+            "description": "Waybill number, your customer order number or the tracking number."
+          }
+        },
+        "required": [
+          "OrderNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Tracking/GetTrackAllInfo",
+        "queryParams": {
+          "OrderNumber": "$OrderNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_get_shipping_fee",
+      "description": "Get the fees actually charged for a waybill (freight, surcharges, chargeable weight), once YunExpress has weighed and billed it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "wayBillNumber": {
+            "type": "string",
+            "description": "YunExpress waybill number."
+          }
+        },
+        "required": [
+          "wayBillNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/Freight/GetShippingFeeDetail",
+        "queryParams": {
+          "wayBillNumber": "$wayBillNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_get_labels",
+      "description": "Get the shipping labels of up to 50 orders as a temporary PDF URL. Pass waybill numbers, customer order numbers or tracking numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderNumbers": {
+            "type": "array",
+            "description": "Up to 50 waybill, customer order or tracking numbers.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderNumbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/Label/Print",
+        "bodyTemplate": "${orderNumbers}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_get_carriers",
+      "description": "Get the last-mile carrier and its tracking number for orders (waybill, customer order or tracking numbers), to track on the local carrier site.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderNumbers": {
+            "type": "array",
+            "description": "Waybill, customer order or tracking numbers.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderNumbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/Waybill/GetCarrier",
+        "bodyTemplate": "${orderNumbers}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yunexpress_create_orders",
+      "description": "Create shipment orders (waybills), 1 to 10 per call. Each needs CustomerOrderNumber, ShippingMethodCode, Length, Width, Height, PackageCount, Weight, Receiver and Parcels (customs lines). The answer gives per order Success, WayBillNumber, TrackingNumber and Remark. Books real shipments: show receiver, method and declaration and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "description": "Order objects as YunExpress documents them, e.g. [{\"CustomerOrderNumber\": \"SO-1001\", \"ShippingMethodCode\": \"THPHR\", \"PackageCount\": 1, \"Weight\": 0.25, \"Length\": 20, \"Width\": 15, \"Height\": 5, \"Receiver\": {\"CountryCode\": \"DE\", \"FirstName\": \"Anna\", \"LastName\": \"Muster\", \"Street\": \"Hauptstr. 1\", \"City\": \"Berlin\", \"Zip\": \"10115\", \"Phone\": \"...\"}, \"Parcels\": [{\"EName\": \"T-shirt\", \"CName\": \"T恤\", \"Quantity\": 1, \"UnitPrice\": 9.9, \"UnitWeight\": 0.25, \"CurrencyCode\": \"USD\", \"HSCode\": \"610910\"}]}]. Add IossCode for EU IOSS shipments.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "orders"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/WayBill/CreateOrder",
+        "bodyTemplate": "${orders}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "yunexpress_update_weight",
+      "description": "Change the forecast weight of a submitted order before YunExpress weighs it. Confirm the new weight with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "OrderNumber": {
+            "type": "string",
+            "description": "Waybill number, your customer order number or the tracking number."
+          },
+          "Weight": {
+            "type": "number",
+            "description": "New weight in kg, up to 3 decimals."
+          }
+        },
+        "required": [
+          "OrderNumber",
+          "Weight"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/WayBill/UpdateWeight",
+        "bodyMapping": {
+          "OrderNumber": "$OrderNumber",
+          "Weight": "$Weight"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yunexpress_intercept_order",
+      "description": "Ask YunExpress to stop (intercept) a submitted or received order before it leaves, with a reason. Name the order and reason and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "OrderType": {
+            "type": "integer",
+            "description": "What OrderNumber is: 1 YunExpress waybill number, 2 your customer order number, 3 tracking number.",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          },
+          "OrderNumber": {
+            "type": "string",
+            "description": "Waybill number, your customer order number or the tracking number."
+          },
+          "Remark": {
+            "type": "string",
+            "description": "Reason for the interception (required)."
+          }
+        },
+        "required": [
+          "OrderType",
+          "OrderNumber",
+          "Remark"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/WayBill/Intercept",
+        "bodyMapping": {
+          "OrderType": "$OrderType",
+          "OrderNumber": "$OrderNumber",
+          "Remark": "$Remark"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "yunexpress_delete_order",
+      "description": "Delete a draft or submitted order that YunExpress has not received yet. Cannot be undone. Installed switched off; name the order and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "OrderType": {
+            "type": "integer",
+            "description": "What OrderNumber is: 1 YunExpress waybill number, 2 your customer order number, 3 tracking number.",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          },
+          "OrderNumber": {
+            "type": "string",
+            "description": "Waybill number, your customer order number or the tracking number."
+          }
+        },
+        "required": [
+          "OrderType",
+          "OrderNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/WayBill/Delete",
+        "bodyMapping": {
+          "OrderType": "$OrderType",
+          "OrderNumber": "$OrderNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

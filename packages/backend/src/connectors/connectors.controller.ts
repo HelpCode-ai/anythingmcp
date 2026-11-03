@@ -60,6 +60,8 @@ import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
+import { checkAdapterEnvValues, describeFieldProblems, normalizeAdapterEnvValues } from '../adapters/env-var-checks';
+import { resolveDerivedEnvVars, withDerivedValues } from '../adapters/derived-settings';
 import { resolvePkce } from './oauth-authorize-settings';
 import { isMachineGrant } from './oauth-grant.util';
 import { mcpPathOf } from './mcp-connector-config.util';
@@ -93,6 +95,9 @@ import {
 } from './odata/odata-builtins';
 import { parseODataTools } from './parsers/odata.parser';
 import { normalizeSettings } from './engines/odata.engine';
+import { buildEmailBuiltinTools } from './email/email-builtins';
+import { buildWebhookBuiltinTools, wantsWebhookBuiltins, webhookToolPrefix } from './webhook-builtins';
+import { EmailConnectorError, emailToolPrefix, resolveEmailSettings } from './email/email-settings';
 import { computeSetupState } from './connector-setup-status.util';
 import { EditionService } from '../ee/licensing/edition.service';
 import {
@@ -217,6 +222,30 @@ class CreateConnectorDto {
   @IsOptional()
   @IsString()
   instructions?: string;
+
+  @ApiPropertyOptional({
+    description: 'Opt this connector into inbound webhook ingestion, regardless of its type.',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  webhookEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Which signature scheme verifies inbound deliveries. Only "stripe" is supported today.',
+    enum: ['stripe'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['stripe'])
+  webhookProvider?: string;
+
+  @ApiPropertyOptional({
+    description: 'The signing secret for the chosen webhookProvider. Encrypted at rest; never returned by any API.',
+  })
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string;
 }
 
 class UpdateConnectorDto {
@@ -290,6 +319,28 @@ class UpdateConnectorDto {
   @IsOptional()
   @IsString()
   instructions?: string;
+
+  @ApiPropertyOptional({ description: 'Opt this connector into inbound webhook ingestion, regardless of its type.' })
+  @IsOptional()
+  @IsBoolean()
+  webhookEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Which signature scheme verifies inbound deliveries. Only "stripe" is supported today.',
+    enum: ['stripe'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['stripe'])
+  webhookProvider?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The signing secret for the chosen webhookProvider. Write-only like authConfig: never returned by any API, and omitting it (or sending empty) leaves the stored secret unchanged.',
+  })
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string;
 }
 
 class UpdateOAuthConfigDto {
@@ -755,7 +806,12 @@ export class ConnectorsController {
   @ApiOperation({ summary: 'Create a new connector' })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
     this.assertCanCreate(req);
+    if ((dto.type as string) === 'FILE_SEARCH') {
+      // Set up through the File Search wizard: test, scan, describe, activate.
+      throw new BadRequestException('File Search connectors are set up with the File Search wizard (POST /api/file-search/connectors).');
+    }
     this.assertUsableBaseUrl(dto.baseUrl, dto.type);
+    if (dto.type === 'EMAIL') this.assertUsableEmailSettings(dto.config, dto.baseUrl);
     // A key typed into the URL or a header (`https://api.telegram.org/bot<token>`)
     // moves into an encrypted variable and is referenced as {{VAR}}.
     const secrets = new SecretExtractor(dto.name, dto.envVars);
@@ -870,6 +926,68 @@ export class ConnectorsController {
       );
     }
 
+    // Email connectors have no endpoints to map: the mailbox is the API, and
+    // the fixed tool set (list folders, search, read, flag, move, draft,
+    // send) is created with the connector.
+    if (dto.type === 'EMAIL') {
+      const builtinTools = buildEmailBuiltinTools({
+        prefix: emailToolPrefix({
+          toolPrefix: (dto.config as { email?: { toolPrefix?: unknown } } | undefined)?.email?.toolPrefix,
+          name: dto.name,
+        }),
+        displayName: dto.name,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: connector.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+              // send and delete start switched off (email-builtins.ts).
+              isEnabled: tool.enabled !== false,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // skip duplicates
+        }
+      }
+      await this.mcpServer.reloadConnectorTools(connector.id);
+      this.logger.log(`Auto-created ${builtinTools.length} email tools for connector ${connector.id}`);
+    }
+
+    // Webhook-enabled connectors get the one builtin tool that reads back
+    // what webhook-ingest.controller.ts stored for them. Any connector type
+    // may opt in (dto.webhookEnabled), not just a dedicated connector type.
+    if (wantsWebhookBuiltins(dto.webhookEnabled)) {
+      const builtinTools = buildWebhookBuiltinTools({
+        prefix: webhookToolPrefix({
+          toolPrefix: (dto.config as { webhook?: { toolPrefix?: unknown } } | undefined)?.webhook?.toolPrefix,
+          name: dto.name,
+        }),
+        displayName: dto.name,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: connector.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // skip duplicates
+        }
+      }
+      await this.mcpServer.reloadConnectorTools(connector.id);
+      this.logger.log(`Auto-created ${builtinTools.length} webhook tool(s) for connector ${connector.id}`);
+    }
+
     // Put the connector on a server straight away. Assigning it was a separate
     // page most people never found: of the 84 workspaces that imported a
     // working connector in the last fortnight, 49 never attached it to
@@ -897,6 +1015,61 @@ export class ConnectorsController {
    * from the catalog, and its tenant fields are single labels; a hand-built
    * connector keeps its template as the base URL itself.
    */
+  /**
+   * Refuse, field by field, a catalog connector variable this edit changes to
+   * a value its adapter cannot use (env-var-checks.ts). Only changed values
+   * are checked, so a stored value never blocks an unrelated edit; a
+   * hand-built connector has no adapter and is not checked.
+   */
+  private assertCatalogValues(
+    connector: { envVars?: unknown; config?: unknown },
+    next: Record<string, string>,
+  ): void {
+    const slug = (connector.config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
+    const adapter = typeof slug === 'string' ? getAdapter(slug) : undefined;
+    if (!adapter) return;
+    const stored = (connector.envVars as Record<string, unknown> | null) ?? {};
+    const changed = Object.keys(next).filter((name) => next[name] !== stored[name]);
+    if (changed.length === 0) return;
+    const fields = checkAdapterEnvValues(adapter, next, changed);
+    if (Object.keys(fields).length > 0) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'invalid_values',
+        fields,
+        message: describeFieldProblems(fields),
+      });
+    }
+  }
+
+  /**
+   * The variables with the adapter's derived settings (derived-settings.ts)
+   * looked up again for each source this edit changes: Atlassian's cloudId
+   * when the site changes, removed when the site is cleared. A site that
+   * answers without one is refused on its field, as in the setup form.
+   */
+  private async withDerivedSettings(
+    connector: { envVars?: unknown; config?: unknown },
+    next: Record<string, string>,
+  ): Promise<Record<string, string>> {
+    const slug = (connector.config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
+    const adapter = typeof slug === 'string' ? getAdapter(slug) : undefined;
+    if (!adapter?.derivedEnvVars) return next;
+    const stored = (connector.envVars as Record<string, unknown> | null) ?? {};
+    const changed = Object.keys({ ...stored, ...next }).filter((name) => next[name] !== stored[name]);
+    if (changed.length === 0) return next;
+    const derived = await resolveDerivedEnvVars(adapter, next, { only: changed });
+    if (Object.keys(derived.fields).length > 0) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'invalid_values',
+        fields: derived.fields,
+        message: describeFieldProblems(derived.fields),
+      });
+    }
+    return (withDerivedValues(next, derived) ?? {}) as Record<string, string>;
+  }
+
   private normalizeVariables(
     connector: { baseUrl: string | null; type: string; config?: unknown },
     values: Record<string, string>,
@@ -905,7 +1078,8 @@ export class ConnectorsController {
     const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
     return normalizeAddressVariables(
       adapter ? adapter.connector.baseUrl : connector.baseUrl,
-      values,
+      // The adapter's own clean-ups, as at install (env-var-checks.ts).
+      adapter ? normalizeAdapterEnvValues(adapter, values) : values,
       connector.type,
       { singleLabel: !!adapter },
     );
@@ -916,6 +1090,65 @@ export class ConnectorsController {
    * Single-label hostnames are only refused on cloud — self-hosted instances
    * legitimately reach services by Docker network name.
    */
+  /**
+   * The email settings must be usable before anything is saved: an IMAP host,
+   * and on Cloud encryption and standard ports (email-settings.ts). Values
+   * that are still {{VARIABLES}} are checked when the call resolves them.
+   */
+  private assertUsableEmailSettings(config: unknown, baseUrl?: string): void {
+    const email = (config as { email?: Record<string, unknown> } | undefined)?.email;
+    const templated = JSON.stringify(email ?? {}).includes('{{');
+    if (templated) return;
+    try {
+      resolveEmailSettings(email, { cloud: this.deployment.isCloud(), baseUrl });
+    } catch (err) {
+      if (err instanceof EmailConnectorError) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * An email connector's login is edited without the stored values (they are
+   * never sent to the browser): an empty username or password keeps the
+   * stored one. The separate SMTP login is kept when the request leaves it
+   * out, replaced when it names one (an empty SMTP password keeps the stored
+   * one), and removed when smtpUsername is sent empty.
+   */
+  private mergeEmailAuthConfig(
+    stored: string | null,
+    incoming: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    // Nothing sent: the stored login stays as it is.
+    if (!incoming || typeof incoming !== 'object') return undefined;
+    let current: Record<string, unknown> = {};
+    if (stored) {
+      try {
+        current = JSON.parse(decrypt(stored, this.encryptionKey)) as Record<string, unknown>;
+      } catch {
+        current = {};
+      }
+    }
+    const given = (key: string) => {
+      const v = incoming[key];
+      return typeof v === 'string' && v !== '' ? v : undefined;
+    };
+    const merged: Record<string, unknown> = {};
+    const keep = (key: string, value: unknown) => {
+      if (value !== undefined) merged[key] = value;
+    };
+    keep('username', given('username') ?? current.username);
+    keep('password', given('password') ?? current.password);
+    keep('mechanism', given('mechanism') ?? current.mechanism);
+    if (!('smtpUsername' in incoming)) {
+      keep('smtpUsername', current.smtpUsername);
+      keep('smtpPassword', current.smtpPassword);
+    } else if (given('smtpUsername')) {
+      keep('smtpUsername', given('smtpUsername'));
+      keep('smtpPassword', given('smtpPassword') ?? current.smtpPassword);
+    }
+    return merged;
+  }
+
   private assertUsableBaseUrl(baseUrl: string, type: string): void {
     const problem = validateBaseUrl(baseUrl, {
       type,
@@ -1076,8 +1309,14 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
+    if ((connector.type as string) === 'FILE_SEARCH' && (dto.config !== undefined || dto.baseUrl !== undefined || dto.authConfig !== undefined)) {
+      throw new BadRequestException('Change the source of a File Search connector on its Files tab.');
+    }
     if (dto.baseUrl !== undefined) {
       this.assertUsableBaseUrl(dto.baseUrl, connector.type);
+    }
+    if ((connector.type as string) === 'EMAIL' && dto.config && 'email' in (dto.config as object)) {
+      this.assertUsableEmailSettings(dto.config, dto.baseUrl ?? connector.baseUrl);
     }
     // Switching to OAuth 1.0a writes a whole authConfig through this route,
     // so it gets the same check as PATCH :id/oauth1-config.
@@ -1091,12 +1330,17 @@ export class ConnectorsController {
     // means "unchanged", not "erase".
     const ctx = secretContext(connector);
     const data = { ...dto };
+    if ((connector.type as string) === 'EMAIL') {
+      data.authConfig = this.mergeEmailAuthConfig(connector.authConfig, dto.authConfig);
+    }
     if (dto.envVars) {
       // Cleaned as in PUT :id/env-vars: this route stores variables too.
       data.envVars = this.normalizeVariables(
         { ...connector, baseUrl: dto.baseUrl ?? connector.baseUrl },
         mergeMaskedEnvVars(dto.envVars, connector.envVars, ctx),
       );
+      this.assertCatalogValues(connector, data.envVars);
+      data.envVars = await this.withDerivedSettings(connector, data.envVars);
     }
     if (dto.headers) {
       data.headers = mergeMaskedHeaders(dto.headers, connector.headers, ctx);
@@ -1147,6 +1391,60 @@ export class ConnectorsController {
       data.config = Object.fromEntries(merged);
     }
     const updated = await this.connectorsService.update(id, data);
+
+    // webhookEnabled flipping off -> on or on -> off creates/removes the one
+    // builtin tool a webhook-enabled connector ships with (webhook-builtins.ts).
+    // Create only ran at connector creation (see POST above); without this, a
+    // connector that opted in later via this route got no tool, and one that
+    // opted out kept serving a tool for an endpoint that now answers 401 to
+    // everything.
+    if (!connector.webhookEnabled && updated.webhookEnabled) {
+      const builtinTools = buildWebhookBuiltinTools({
+        prefix: webhookToolPrefix({
+          toolPrefix: (updated.config as { webhook?: { toolPrefix?: unknown } } | null)?.webhook
+            ?.toolPrefix,
+          name: updated.name,
+        }),
+        displayName: updated.name,
+      });
+      for (const tool of builtinTools) {
+        try {
+          await this.prisma.mcpTool.create({
+            data: {
+              connectorId: updated.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters as any,
+              endpointMapping: tool.endpointMapping as any,
+            },
+          });
+        } catch (err: any) {
+          if (err.code !== 'P2002') throw err; // already exists
+        }
+      }
+      this.logger.log(
+        `Auto-created ${builtinTools.length} webhook tool(s) for connector ${updated.id} (webhookEnabled turned on)`,
+      );
+    } else if (connector.webhookEnabled && !updated.webhookEnabled) {
+      // Matched by endpointMapping.method, not by recomputing the tool's
+      // name: a rename or toolPrefix change in the same request must not
+      // leave the old tool behind under its original name.
+      const connectorTools =
+        (connector as { tools?: Array<{ id: string; endpointMapping: unknown }> }).tools ?? [];
+      const webhookToolIds = connectorTools
+        .filter(
+          (t: { endpointMapping: unknown }) =>
+            (t.endpointMapping as { method?: string } | null)?.method === 'webhook_recent_events',
+        )
+        .map((t: { id: string }) => t.id);
+      if (webhookToolIds.length > 0) {
+        await this.prisma.mcpTool.deleteMany({ where: { id: { in: webhookToolIds } } });
+        this.logger.log(
+          `Removed ${webhookToolIds.length} webhook tool(s) for connector ${updated.id} (webhookEnabled turned off)`,
+        );
+      }
+    }
+
     // The registry keeps its own copy of the connector — base URL, headers,
     // auth — and reads it on every call. Without this, a changed base URL
     // showed in the form and was ignored by every tool until the next
@@ -2066,7 +2364,14 @@ export class ConnectorsController {
     // A tenant field (`{{FRESHDESK_DOMAIN}}.freshdesk.com`) pasted as the
     // whole address keeps only the label it stands for, as at install;
     // without it the edit stored `acme.freshdesk.com/api/v2.freshdesk.com/…`.
-    const envVars = this.normalizeVariables(connector, kept);
+    const normalized = this.normalizeVariables(connector, kept);
+    // The same field checks as the install form: this editor used to store
+    // what the form would have refused (an Odoo address with /web after the
+    // host, a CRM page where the Bitrix24 webhook URL goes).
+    this.assertCatalogValues(connector, normalized);
+    // Settings looked up from a changed value (Atlassian's cloudId when the
+    // site changes) are stored, or dropped, with it.
+    const envVars = (await this.withDerivedSettings(connector, normalized)) as Record<string, string>;
 
     const updateData: {
       envVars: Record<string, string>;

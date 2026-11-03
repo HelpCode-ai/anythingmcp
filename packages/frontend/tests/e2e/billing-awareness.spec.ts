@@ -220,6 +220,27 @@ test.describe('a declined card (cloud)', () => {
   });
 });
 
+test.describe('trial-ended wall (cloud)', () => {
+  test('lets someone who does not buy reach the profile and delete their account', async ({ page }) => {
+    await cloudSession(page, {
+      license: { plan: 'trial', status: 'active', trialDaysLeft: 0, expiresAt: iso(Date.now() - DAY), features: {} },
+    });
+    // The profile page's own lists; registered last, so they win over the catch-all.
+    await page.route(/\/api\/auth\/(sso\/providers|social\/identities)$/, (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify(route.request().url().endsWith('/sso/providers') ? [] : { hasPassword: true, providers: [] }),
+      }),
+    );
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('link', { name: 'Delete your account' }).click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Delete my account' })).toBeVisible();
+  });
+});
+
 test.describe('promotion code through sign-up (cloud)', () => {
   test('a code on the sign-up link is kept and applied to the card trial checkout', async ({ page }) => {
     await cloudSession(page, { signedIn: false });

@@ -1,0 +1,2643 @@
+{
+  "slug": "gohighlevel",
+  "name": "GoHighLevel",
+  "aliases": [
+    "HighLevel",
+    "LeadConnector",
+    "GHL"
+  ],
+  "description": "GoHighLevel (HighLevel, LeadConnector) CRM for one sub-account: contacts with tags, notes and tasks, conversations and sending SMS, email or WhatsApp, opportunities and pipelines, calendars and appointments, users, custom fields, workflows, form and survey submissions, invoices, payments and Social Planner posts.",
+  "region": "intl",
+  "category": "crm",
+  "icon": "gohighlevel",
+  "docsUrl": "https://marketplace.gohighlevel.com/docs/",
+  "instructions": "## GoHighLevel\nThis connector uses the **HighLevel API v2** (`https://services.leadconnectorhq.com`, the platform also sold as GoHighLevel and LeadConnector) for one **sub-account** (location): contacts with notes, tasks and tags, conversations and sending SMS, email or WhatsApp, opportunities and pipelines, calendars and appointments, users, custom fields, workflows, form and survey submissions, invoices, payments and the Social Planner.\n\n**Setup (5 minutes, sub-account admin)**\n1. In the sub-account open **Settings**, **Private Integrations** and click **Create new Integration**. Name it (e.g. AnythingMCP) and select the scopes the tools need: `locations.readonly`, `locations/customFields.readonly`, `locations/tags.readonly`, `contacts.readonly`, `contacts.write`, `conversations.readonly`, `conversations/message.readonly`, `conversations/message.write`, `opportunities.readonly`, `opportunities.write`, `calendars.readonly`, `calendars/events.readonly`, `calendars/events.write`, `users.readonly`, `workflows.readonly`, `forms.readonly`, `surveys.readonly`, `invoices.readonly`, `invoices.write`, `payments/orders.readonly`, `payments/transactions.readonly`, `payments/subscriptions.readonly`, `socialplanner/account.readonly`, `socialplanner/post.readonly`, `socialplanner/post.write`. Leave out the write scopes the AI should not have.\n2. Copy the token (it starts with `pit-`, shown once) into `GOHIGHLEVEL_API_TOKEN`. It is sent as `Authorization: Bearer <token>`.\n3. Copy the **Location ID** from **Settings**, **Business Profile** (or the URL `.../location/<id>/...`) into `GOHIGHLEVEL_LOCATION_ID`. Every tool works in that sub-account.\n4. Run `gohighlevel_get_location` to check both.\n\nThe connector sends the required `Version` header itself (2021-07-28, and 2021-04-15 for conversations and calendars).\n\n**Workflow**\n- Setup data: `gohighlevel_get_location`, `gohighlevel_list_custom_fields` (ids for `customFields`), `gohighlevel_list_tags`, `gohighlevel_list_users` and `gohighlevel_get_user` (ids for `assignedTo`), `gohighlevel_list_pipelines` (pipeline and stage ids), `gohighlevel_list_calendars`, `gohighlevel_list_workflows`.\n- Contacts: find with `gohighlevel_search_contacts`, read with `gohighlevel_get_contact`; `gohighlevel_create_contact`, `gohighlevel_upsert_contact` (no duplicates by email or phone), `gohighlevel_update_contact`; tags with `gohighlevel_add_contact_tags` and `gohighlevel_remove_contact_tags`; notes with `gohighlevel_list_contact_notes` and `gohighlevel_create_contact_note`; tasks with `gohighlevel_list_contact_tasks`, `gohighlevel_create_contact_task`, `gohighlevel_update_contact_task`; `gohighlevel_list_contact_appointments`.\n- Automations: `gohighlevel_add_contact_to_workflow` and `gohighlevel_remove_contact_from_workflow` (only published workflows), or add a tag that a workflow triggers on.\n- Conversations: `gohighlevel_search_conversations` (by contact or unread), `gohighlevel_get_conversation`, `gohighlevel_list_messages`, and `gohighlevel_send_message` to send SMS, email, WhatsApp or social messages. Sending reaches the contact at once and may cost SMS or email credits: show the user the text and recipient and wait for a yes. Contacts with DND on a channel are not reached on it.\n- Sales: `gohighlevel_search_opportunities`, `gohighlevel_get_opportunity`, `gohighlevel_create_opportunity`, `gohighlevel_update_opportunity` (move stage), `gohighlevel_update_opportunity_status` (won, lost).\n- Booking: `gohighlevel_get_free_slots`, then `gohighlevel_create_appointment`; `gohighlevel_list_calendar_events`, `gohighlevel_get_appointment`, `gohighlevel_update_appointment` (reschedule, confirm, cancel, no-show).\n- Leads from forms: `gohighlevel_list_forms`, `gohighlevel_list_form_submissions`, `gohighlevel_list_surveys`, `gohighlevel_list_survey_submissions`.\n- Money: `gohighlevel_list_invoices`, `gohighlevel_get_invoice`, `gohighlevel_create_invoice`, `gohighlevel_send_invoice`; `gohighlevel_list_orders`, `gohighlevel_get_order`, `gohighlevel_list_transactions`, `gohighlevel_get_transaction`, `gohighlevel_list_subscriptions`.\n- Social Planner: `gohighlevel_list_social_accounts`, `gohighlevel_list_social_posts`, `gohighlevel_create_social_post` (publishes at the scheduled time; confirm first).\n\n**Reading the answers**: ids are 20-character strings. Dates on records are ISO 8601 in UTC; calendar free slots and events take Unix time in **milliseconds**; appointment start and end are ISO 8601 with an offset; opportunity search dates are mm-dd-yyyy; form, survey, invoice and payment filters take YYYY-MM-DD. Invoice and payment amounts are in currency units (120.5 = 120.50), not cents. Phone numbers are E.164.\n\n**Paging**: contacts use `page` and `page_limit` (up to 500 per page, 10,000 results in total; beyond that pass `search_after` from the last contact). Opportunities use `page` and `limit` (up to 100) or `startAfter` and `startAfterId` from `meta`. Conversations use `limit` and `start_after_date`; messages `last_message_id` with `nextPage`. Invoices and payments use `limit` and `offset`; forms and surveys `page` and `limit`.\n\n**Limits and errors**: HighLevel allows 100 requests per 10 seconds and 200,000 per day per sub-account (429 above that). 401 means a wrong or deleted token; 403 or \"The token is not authorized for this scope\" means the Private Integration lacks that scope (edit it and add the scope); 422 lists invalid fields; 400 \"Version header was not found\" should not happen through this connector.",
+  "prerequisites": "A HighLevel sub-account with admin rights to create a Private Integration (Settings, Private Integrations) and its Location ID.",
+  "requiredEnvVars": [
+    "GOHIGHLEVEL_API_TOKEN",
+    "GOHIGHLEVEL_LOCATION_ID"
+  ],
+  "envVarMeta": {
+    "GOHIGHLEVEL_API_TOKEN": {
+      "label": "Private Integration token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Sub-account Settings, Private Integrations, Create new Integration: select the scopes, then copy the token (starts with pit-, shown once).",
+      "link": "https://help.gohighlevel.com/support/solutions/articles/155000003054-private-integrations-everything-you-need-to-know",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste only the token, without spaces, quotes or a Bearer prefix."
+    },
+    "GOHIGHLEVEL_LOCATION_ID": {
+      "label": "Location ID",
+      "kind": "setting",
+      "help": "Sub-account Settings, Business Profile: the Location ID (also in the URL after /location/).",
+      "example": "ve9EPM428h8vShlRW1KT",
+      "pattern": "^[A-Za-z0-9]{10,40}$",
+      "patternMessage": "The Location ID is a string of letters and digits, usually 20 characters."
+    }
+  },
+  "verifyHints": {
+    "401": "HighLevel refused the token. Copy the Private Integration token again or create a new one under Settings, Private Integrations; check that it belongs to the sub-account in GOHIGHLEVEL_LOCATION_ID.",
+    "403": "The token works but lacks a scope or the sub-account. Edit the Private Integration, add the scopes listed in the setup and save; check the Location ID.",
+    "429": "HighLevel allows 100 requests per 10 seconds and 200,000 a day per sub-account. Wait and try again."
+  },
+  "probe": {
+    "tool": "gohighlevel_get_location"
+  },
+  "connector": {
+    "name": "HighLevel API v2",
+    "type": "REST",
+    "baseUrl": "https://services.leadconnectorhq.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{GOHIGHLEVEL_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Version": "2021-07-28"
+    },
+    "healthcheckPath": "/locations/{{GOHIGHLEVEL_LOCATION_ID}}"
+  },
+  "tools": [
+    {
+      "name": "gohighlevel_get_location",
+      "description": "Details of the configured sub-account (location): name, address, phone, email, website, timezone, business info and settings. Needs no ids; checks the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations/{{GOHIGHLEVEL_LOCATION_ID}}"
+      }
+    },
+    {
+      "name": "gohighlevel_list_custom_fields",
+      "description": "List the custom fields of the sub-account with id, name, fieldKey (contact.my_field), data type, picklist options and model (contact or opportunity). Ids are needed to set customFields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "contact, opportunity or all (default contact).",
+            "enum": [
+              "contact",
+              "opportunity",
+              "all"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations/{{GOHIGHLEVEL_LOCATION_ID}}/customFields",
+        "queryParams": {
+          "model": "$model"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_tags",
+      "description": "List the contact tags defined in the sub-account with id and name.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations/{{GOHIGHLEVEL_LOCATION_ID}}/tags"
+      }
+    },
+    {
+      "name": "gohighlevel_search_contacts",
+      "description": "Search contacts of the sub-account by free text (name, email, phone, company) and/or filters, sorted and paged. Returns contacts with id, name, email, phone, tags, source, assignedTo and dates, plus total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Free-text search over name, email, phone and company."
+          },
+          "filters": {
+            "type": "array",
+            "description": "Filters: [{\"field\": \"tags\", \"operator\": \"contains\", \"value\": [\"vip\"]}, {\"field\": \"dateAdded\", \"operator\": \"range\", \"value\": {\"gte\": \"2026-10-01T00:00:00Z\", \"lte\": \"2026-10-31T23:59:59Z\"}}]. Operators: eq, not_eq, contains, not_contains, exists, not_exists, range. Fields such as firstNameLowerCase, lastNameLowerCase, email, phone, tags, assignedTo, dnd, dateAdded, dateUpdated, source, customFields.<id>. Wrap alternatives in {\"group\": \"OR\", \"filters\": [...]}.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort: [{\"field\": \"dateAdded\", \"direction\": \"desc\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1 (page x pageLimit up to 10,000)."
+          },
+          "page_limit": {
+            "type": "integer",
+            "description": "Contacts per page, at most 500 (default 20)."
+          },
+          "search_after": {
+            "type": "array",
+            "description": "For deep paging beyond 10,000: the searchAfter value of the last contact of the previous page.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/search",
+        "bodyMapping": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "query": "$query",
+          "filters": "$filters",
+          "sort": "$sort",
+          "page": "$page",
+          "pageLimit": "$page_limit",
+          "searchAfter": "$search_after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gohighlevel_get_contact",
+      "description": "Get one contact by id with name, email, phone, address, tags, source, DND settings, custom field values, assigned user, followers and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}"
+      }
+    },
+    {
+      "name": "gohighlevel_create_contact",
+      "description": "Create a contact in the sub-account with name, email, phone, address, tags, source, custom fields and assigned user. Fails on a duplicate email or phone when the sub-account forbids duplicates; use gohighlevel_upsert_contact then.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name, if not split."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number in E.164, e.g. +4915112345678."
+          },
+          "companyName": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter country code, e.g. DE."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website URL."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone, e.g. Europe/Berlin."
+          },
+          "source": {
+            "type": "string",
+            "description": "Lead source, e.g. website form."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags; on create and update they replace the contact's tags (use gohighlevel_add_contact_tags to add).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "customFields": {
+            "type": "array",
+            "description": "Custom field values: [{\"id\": \"<field id>\", \"field_value\": \"...\"}] with ids from gohighlevel_list_custom_fields.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "dnd": {
+            "type": "boolean",
+            "description": "Do not disturb on all channels."
+          },
+          "dndSettings": {
+            "type": "object",
+            "description": "Per channel DND: {\"SMS\": {\"status\": \"active\"}, \"Email\": {\"status\": \"inactive\"}}; channels Call, Email, SMS, WhatsApp, GMB, FB."
+          },
+          "assignedTo": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/",
+        "bodyMapping": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "name": "$name",
+          "email": "$email",
+          "phone": "$phone",
+          "companyName": "$companyName",
+          "address1": "$address1",
+          "city": "$city",
+          "state": "$state",
+          "postalCode": "$postalCode",
+          "country": "$country",
+          "website": "$website",
+          "timezone": "$timezone",
+          "source": "$source",
+          "tags": "$tags",
+          "customFields": "$customFields",
+          "dnd": "$dnd",
+          "dndSettings": "$dndSettings",
+          "assignedTo": "$assignedTo"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_upsert_contact",
+      "description": "Create a contact or update the existing one with the same email or phone (following the sub-account's duplicate settings). Returns the contact and whether it is new.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name, if not split."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number in E.164, e.g. +4915112345678."
+          },
+          "companyName": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter country code, e.g. DE."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website URL."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone, e.g. Europe/Berlin."
+          },
+          "source": {
+            "type": "string",
+            "description": "Lead source, e.g. website form."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags; on create and update they replace the contact's tags (use gohighlevel_add_contact_tags to add).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "customFields": {
+            "type": "array",
+            "description": "Custom field values: [{\"id\": \"<field id>\", \"field_value\": \"...\"}] with ids from gohighlevel_list_custom_fields.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "dnd": {
+            "type": "boolean",
+            "description": "Do not disturb on all channels."
+          },
+          "dndSettings": {
+            "type": "object",
+            "description": "Per channel DND: {\"SMS\": {\"status\": \"active\"}, \"Email\": {\"status\": \"inactive\"}}; channels Call, Email, SMS, WhatsApp, GMB, FB."
+          },
+          "assignedTo": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/upsert",
+        "bodyMapping": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "name": "$name",
+          "email": "$email",
+          "phone": "$phone",
+          "companyName": "$companyName",
+          "address1": "$address1",
+          "city": "$city",
+          "state": "$state",
+          "postalCode": "$postalCode",
+          "country": "$country",
+          "website": "$website",
+          "timezone": "$timezone",
+          "source": "$source",
+          "tags": "$tags",
+          "customFields": "$customFields",
+          "dnd": "$dnd",
+          "dndSettings": "$dndSettings",
+          "assignedTo": "$assignedTo"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_update_contact",
+      "description": "Update a contact by id: name, email, phone, address, tags (replaces the list), DND, custom fields, source or assigned user. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name, if not split."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number in E.164, e.g. +4915112345678."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter country code, e.g. DE."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website URL."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone, e.g. Europe/Berlin."
+          },
+          "source": {
+            "type": "string",
+            "description": "Lead source, e.g. website form."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags; on create and update they replace the contact's tags (use gohighlevel_add_contact_tags to add).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "customFields": {
+            "type": "array",
+            "description": "Custom field values: [{\"id\": \"<field id>\", \"field_value\": \"...\"}] with ids from gohighlevel_list_custom_fields.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "dnd": {
+            "type": "boolean",
+            "description": "Do not disturb on all channels."
+          },
+          "dndSettings": {
+            "type": "object",
+            "description": "Per channel DND: {\"SMS\": {\"status\": \"active\"}, \"Email\": {\"status\": \"inactive\"}}; channels Call, Email, SMS, WhatsApp, GMB, FB."
+          },
+          "assignedTo": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{contact_id}",
+        "bodyMapping": {
+          "firstName": "$firstName",
+          "lastName": "$lastName",
+          "name": "$name",
+          "email": "$email",
+          "phone": "$phone",
+          "address1": "$address1",
+          "city": "$city",
+          "state": "$state",
+          "postalCode": "$postalCode",
+          "country": "$country",
+          "website": "$website",
+          "timezone": "$timezone",
+          "source": "$source",
+          "tags": "$tags",
+          "customFields": "$customFields",
+          "dnd": "$dnd",
+          "dndSettings": "$dndSettings",
+          "assignedTo": "$assignedTo"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_add_contact_tags",
+      "description": "Add tags to a contact without touching its other tags. Tags can start workflows that trigger on Contact Tag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags to add.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "contact_id",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/tags",
+        "bodyMapping": {
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_remove_contact_tags",
+      "description": "Remove the given tags from a contact; its other tags stay. Removing a tag can end tag-based automations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags to remove.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "contact_id",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}/tags",
+        "bodyMapping": {
+          "tags": "$tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "gohighlevel_list_contact_notes",
+      "description": "List the notes on a contact with id, body, user and date added.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/notes"
+      }
+    },
+    {
+      "name": "gohighlevel_create_contact_note",
+      "description": "Add a note to a contact, e.g. a call summary. Optionally attribute it to a user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "body": {
+            "type": "string",
+            "description": "Note text."
+          },
+          "userId": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          }
+        },
+        "required": [
+          "contact_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/notes",
+        "bodyMapping": {
+          "body": "$body",
+          "userId": "$userId"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_contact_tasks",
+      "description": "List the tasks of a contact with id, title, body, due date, completed flag and assigned user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/tasks"
+      }
+    },
+    {
+      "name": "gohighlevel_create_contact_task",
+      "description": "Create a follow-up task on a contact with title, description, due date and assigned user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "body": {
+            "type": "string",
+            "description": "Task description."
+          },
+          "dueDate": {
+            "type": "string",
+            "description": "Due date-time, ISO 8601, e.g. 2026-11-05T09:00:00Z."
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "Whether the task is done."
+          },
+          "assignedTo": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          }
+        },
+        "required": [
+          "contact_id",
+          "title",
+          "dueDate",
+          "completed"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/tasks",
+        "bodyMapping": {
+          "title": "$title",
+          "body": "$body",
+          "dueDate": "$dueDate",
+          "completed": "$completed",
+          "assignedTo": "$assignedTo"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_update_contact_task",
+      "description": "Update a contact task: title, description, due date, assignee, or mark it completed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task id from gohighlevel_list_contact_tasks."
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "body": {
+            "type": "string",
+            "description": "Task description."
+          },
+          "dueDate": {
+            "type": "string",
+            "description": "Due date-time, ISO 8601, e.g. 2026-11-05T09:00:00Z."
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "Whether the task is done."
+          },
+          "assignedTo": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          }
+        },
+        "required": [
+          "task_id",
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{contact_id}/tasks/{task_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "body": "$body",
+          "dueDate": "$dueDate",
+          "completed": "$completed",
+          "assignedTo": "$assignedTo"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_contact_appointments",
+      "description": "List the calendar appointments of a contact with id, calendar, title, status, start and end time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/appointments"
+      }
+    },
+    {
+      "name": "gohighlevel_add_contact_to_workflow",
+      "description": "Enroll a contact in a published workflow, now or from a given start time. The workflow then runs its actions (messages, waits, updates) for that contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "workflow_id": {
+            "type": "string",
+            "description": "Workflow id from gohighlevel_list_workflows."
+          },
+          "eventStartTime": {
+            "type": "string",
+            "description": "Start time for date-based workflows, ISO 8601, e.g. 2026-11-01T10:00:00+01:00."
+          }
+        },
+        "required": [
+          "workflow_id",
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{contact_id}/workflow/{workflow_id}",
+        "bodyMapping": {
+          "eventStartTime": "$eventStartTime"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_remove_contact_from_workflow",
+      "description": "Remove a contact from a workflow so its remaining steps do not run for that contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "workflow_id": {
+            "type": "string",
+            "description": "Workflow id from gohighlevel_list_workflows."
+          }
+        },
+        "required": [
+          "workflow_id",
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}/workflow/{workflow_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "gohighlevel_list_workflows",
+      "description": "List the workflows of the sub-account with id, name, status (draft or published) and dates. Only published workflows accept contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflows/",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_search_conversations",
+      "description": "Search conversations (one thread per contact across SMS, email, WhatsApp, Facebook, Instagram, chat) by contact, text, assignee, status or last message type. Returns id, contact, last message and unread count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "User ids, comma-separated, or unassigned."
+          },
+          "status": {
+            "type": "string",
+            "description": "all, read, unread, starred or recents.",
+            "enum": [
+              "all",
+              "read",
+              "unread",
+              "starred",
+              "recents"
+            ]
+          },
+          "last_message_type": {
+            "type": "string",
+            "description": "Only conversations whose last message is of this type, e.g. TYPE_SMS, TYPE_EMAIL, TYPE_WHATSAPP, TYPE_CALL."
+          },
+          "sort": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "last_message_date (default) or last_manual_message_date.",
+            "enum": [
+              "last_message_date",
+              "last_manual_message_date"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Conversations per page (default 20)."
+          },
+          "start_after_date": {
+            "type": "integer",
+            "description": "Paging: the sort value (timestamp in ms) of the last conversation of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/search",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "contactId": "$contact_id",
+          "query": "$query",
+          "assignedTo": "$assigned_to",
+          "status": "$status",
+          "lastMessageType": "$last_message_type",
+          "sort": "$sort",
+          "sortBy": "$sort_by",
+          "limit": "$limit",
+          "startAfterDate": "$start_after_date"
+        },
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_get_conversation",
+      "description": "Get one conversation by id: contact, channel, assigned user, unread count, starred flag and last message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from gohighlevel_search_conversations."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}",
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_messages",
+      "description": "List the messages of a conversation, newest first: direction (inbound or outbound), type, body, status, attachments and date. Page with last_message_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Messages per page (default 20, at most 100)."
+          },
+          "last_message_id": {
+            "type": "string",
+            "description": "Paging: lastMessageId from the previous page."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only these message types, comma-separated, e.g. TYPE_SMS,TYPE_EMAIL."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{conversation_id}/messages",
+        "queryParams": {
+          "limit": "$limit",
+          "lastMessageId": "$last_message_id",
+          "type": "$type"
+        },
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_send_message",
+      "description": "Send an SMS, email, WhatsApp, Instagram, Facebook or live chat message to a contact through the sub-account, now or scheduled. Email needs subject and html or message; SMS uses message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Channel.",
+            "enum": [
+              "SMS",
+              "Email",
+              "WhatsApp",
+              "IG",
+              "FB",
+              "Custom",
+              "Live_Chat",
+              "RCS",
+              "TIKTOK"
+            ]
+          },
+          "contactId": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the message (SMS, WhatsApp, chat) or plain text of an email."
+          },
+          "html": {
+            "type": "string",
+            "description": "HTML body of an email."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject."
+          },
+          "emailFrom": {
+            "type": "string",
+            "description": "Sender address for email, e.g. \"Anna <anna@example.com>\"; default the sub-account's sender."
+          },
+          "emailTo": {
+            "type": "string",
+            "description": "Send the email to this address instead of the contact's main email."
+          },
+          "emailCc": {
+            "type": "array",
+            "description": "Cc addresses.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "emailBcc": {
+            "type": "array",
+            "description": "Bcc addresses.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Attachment URLs.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fromNumber": {
+            "type": "string",
+            "description": "Sender phone number for SMS, E.164."
+          },
+          "toNumber": {
+            "type": "string",
+            "description": "Recipient number if different from the contact's phone, E.164."
+          },
+          "templateId": {
+            "type": "string",
+            "description": "Message template id."
+          },
+          "replyMessageId": {
+            "type": "string",
+            "description": "Message id this replies to (email threads)."
+          },
+          "threadId": {
+            "type": "string",
+            "description": "Email thread id."
+          },
+          "scheduledTimestamp": {
+            "type": "integer",
+            "description": "Send later: UTC Unix timestamp in seconds."
+          }
+        },
+        "required": [
+          "type",
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/messages",
+        "bodyMapping": {
+          "type": "$type",
+          "contactId": "$contactId",
+          "message": "$message",
+          "html": "$html",
+          "subject": "$subject",
+          "emailFrom": "$emailFrom",
+          "emailTo": "$emailTo",
+          "emailCc": "$emailCc",
+          "emailBcc": "$emailBcc",
+          "attachments": "$attachments",
+          "fromNumber": "$fromNumber",
+          "toNumber": "$toNumber",
+          "templateId": "$templateId",
+          "replyMessageId": "$replyMessageId",
+          "threadId": "$threadId",
+          "scheduledTimestamp": "$scheduledTimestamp"
+        },
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_pipelines",
+      "description": "List the opportunity pipelines of the sub-account with their stages (id, name, position). Pipeline and stage ids are needed to create or move opportunities.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities/pipelines",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_search_opportunities",
+      "description": "Search opportunities (deals) by text, pipeline, stage, status, contact, assignee or date. Returns name, monetary value, status, stage, contact and dates with meta.total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search text (name, contact email or phone)."
+          },
+          "pipeline_id": {
+            "type": "string",
+            "description": "Pipeline id from gohighlevel_list_pipelines."
+          },
+          "pipeline_stage_id": {
+            "type": "string",
+            "description": "Stage id."
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "status": {
+            "type": "string",
+            "description": "open, won, lost, abandoned or all.",
+            "enum": [
+              "open",
+              "won",
+              "lost",
+              "abandoned",
+              "all"
+            ]
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          },
+          "date": {
+            "type": "string",
+            "description": "Created from this date, mm-dd-yyyy."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Created up to this date, mm-dd-yyyy."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. added_asc or added_desc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1."
+          },
+          "startAfter": {
+            "type": "string",
+            "description": "Cursor paging: meta.startAfter of the previous page."
+          },
+          "startAfterId": {
+            "type": "string",
+            "description": "Cursor paging: meta.startAfterId of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities/search",
+        "queryParams": {
+          "location_id": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "q": "$q",
+          "pipeline_id": "$pipeline_id",
+          "pipeline_stage_id": "$pipeline_stage_id",
+          "contact_id": "$contact_id",
+          "status": "$status",
+          "assigned_to": "$assigned_to",
+          "date": "$date",
+          "endDate": "$endDate",
+          "order": "$order",
+          "limit": "$limit",
+          "page": "$page",
+          "startAfter": "$startAfter",
+          "startAfterId": "$startAfterId"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_get_opportunity",
+      "description": "Get one opportunity by id: name, pipeline and stage, status, monetary value, contact, assigned user, custom fields and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "Opportunity id from gohighlevel_search_opportunities."
+          }
+        },
+        "required": [
+          "opportunity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opportunities/{opportunity_id}"
+      }
+    },
+    {
+      "name": "gohighlevel_create_opportunity",
+      "description": "Create an opportunity (deal) for a contact in a pipeline stage with name, status, value, assignee and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipelineId": {
+            "type": "string",
+            "description": "Pipeline id."
+          },
+          "pipelineStageId": {
+            "type": "string",
+            "description": "Stage id within the pipeline."
+          },
+          "name": {
+            "type": "string",
+            "description": "Opportunity name."
+          },
+          "status": {
+            "type": "string",
+            "description": "open, won, lost or abandoned.",
+            "enum": [
+              "open",
+              "won",
+              "lost",
+              "abandoned"
+            ]
+          },
+          "monetaryValue": {
+            "type": "number",
+            "description": "Deal value in the sub-account currency."
+          },
+          "assignedTo": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          },
+          "customFields": {
+            "type": "array",
+            "description": "Custom field values: [{\"id\": \"<field id>\", \"field_value\": \"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "contactId": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          }
+        },
+        "required": [
+          "pipelineId",
+          "name",
+          "status",
+          "contactId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/opportunities/",
+        "bodyMapping": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "pipelineId": "$pipelineId",
+          "pipelineStageId": "$pipelineStageId",
+          "name": "$name",
+          "status": "$status",
+          "monetaryValue": "$monetaryValue",
+          "assignedTo": "$assignedTo",
+          "customFields": "$customFields",
+          "contactId": "$contactId"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_update_opportunity",
+      "description": "Update an opportunity: move it to another stage or pipeline, rename, change value, status, assignee or custom fields. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "Opportunity id from gohighlevel_search_opportunities."
+          },
+          "pipelineId": {
+            "type": "string",
+            "description": "Pipeline id."
+          },
+          "pipelineStageId": {
+            "type": "string",
+            "description": "Stage id within the pipeline."
+          },
+          "name": {
+            "type": "string",
+            "description": "Opportunity name."
+          },
+          "status": {
+            "type": "string",
+            "description": "open, won, lost or abandoned.",
+            "enum": [
+              "open",
+              "won",
+              "lost",
+              "abandoned"
+            ]
+          },
+          "monetaryValue": {
+            "type": "number",
+            "description": "Deal value in the sub-account currency."
+          },
+          "assignedTo": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          },
+          "customFields": {
+            "type": "array",
+            "description": "Custom field values: [{\"id\": \"<field id>\", \"field_value\": \"...\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "opportunity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/opportunities/{opportunity_id}",
+        "bodyMapping": {
+          "pipelineId": "$pipelineId",
+          "pipelineStageId": "$pipelineStageId",
+          "name": "$name",
+          "status": "$status",
+          "monetaryValue": "$monetaryValue",
+          "assignedTo": "$assignedTo",
+          "customFields": "$customFields"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_update_opportunity_status",
+      "description": "Set only the status of an opportunity: open, won, lost (optionally with a lost reason) or abandoned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "Opportunity id from gohighlevel_search_opportunities."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "open",
+              "won",
+              "lost",
+              "abandoned"
+            ]
+          },
+          "lostReasonId": {
+            "type": "string",
+            "description": "Lost reason id when status is lost."
+          }
+        },
+        "required": [
+          "opportunity_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/opportunities/{opportunity_id}/status",
+        "bodyMapping": {
+          "status": "$status",
+          "lostReasonId": "$lostReasonId"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_calendars",
+      "description": "List the calendars of the sub-account with id, name, type, team members, slot duration and widget settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "groupId": {
+            "type": "string",
+            "description": "Only calendars of this group."
+          },
+          "showDrafted": {
+            "type": "boolean",
+            "description": "Include draft calendars (default true)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendars/",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "groupId": "$groupId",
+          "showDrafted": "$showDrafted"
+        },
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_get_free_slots",
+      "description": "Free booking slots of a calendar between two dates (at most 31 days apart), grouped by day, in the requested time zone. Use before gohighlevel_create_appointment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id from gohighlevel_list_calendars."
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "Start as Unix time in milliseconds."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "End as Unix time in milliseconds (at most 31 days after start)."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for the slots, e.g. Europe/Berlin."
+          },
+          "userId": {
+            "type": "string",
+            "description": "Only slots of this team member."
+          }
+        },
+        "required": [
+          "calendar_id",
+          "startDate",
+          "endDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendars/{calendar_id}/free-slots",
+        "queryParams": {
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "timezone": "$timezone",
+          "userId": "$userId"
+        },
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_calendar_events",
+      "description": "List appointments and events between two times for a calendar, a user or a calendar group (one of the three is required), with contact, status, start and end.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "startTime": {
+            "type": "string",
+            "description": "Start as Unix time in milliseconds."
+          },
+          "endTime": {
+            "type": "string",
+            "description": "End as Unix time in milliseconds."
+          },
+          "calendarId": {
+            "type": "string",
+            "description": "Calendar id."
+          },
+          "userId": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          },
+          "groupId": {
+            "type": "string",
+            "description": "Calendar group id."
+          }
+        },
+        "required": [
+          "startTime",
+          "endTime"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendars/events",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "startTime": "$startTime",
+          "endTime": "$endTime",
+          "calendarId": "$calendarId",
+          "userId": "$userId",
+          "groupId": "$groupId"
+        },
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_get_appointment",
+      "description": "Get one appointment by id: calendar, contact, assigned user, title, status, address or meeting link, start and end time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "description": "Appointment (event) id."
+          }
+        },
+        "required": [
+          "appointment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calendars/events/appointments/{appointment_id}",
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_create_appointment",
+      "description": "Book an appointment for a contact in a calendar at a start time, with status, assigned user, location and notes. Check gohighlevel_get_free_slots first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendarId": {
+            "type": "string",
+            "description": "Calendar id."
+          },
+          "contactId": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title."
+          },
+          "startTime": {
+            "type": "string",
+            "description": "Start, ISO 8601 with offset, e.g. 2026-11-05T10:00:00+01:00."
+          },
+          "endTime": {
+            "type": "string",
+            "description": "End, ISO 8601 with offset; default start plus the calendar slot duration."
+          },
+          "appointmentStatus": {
+            "type": "string",
+            "description": "new, confirmed, cancelled, showed, noshow or invalid.",
+            "enum": [
+              "new",
+              "confirmed",
+              "cancelled",
+              "showed",
+              "noshow",
+              "invalid"
+            ]
+          },
+          "assignedUserId": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          },
+          "address": {
+            "type": "string",
+            "description": "Meeting address or link."
+          },
+          "meetingLocationType": {
+            "type": "string",
+            "description": "custom, zoom, gmeet, phone, address, ms_teams or google.",
+            "enum": [
+              "custom",
+              "zoom",
+              "gmeet",
+              "phone",
+              "address",
+              "ms_teams",
+              "google"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "Notes for the appointment."
+          },
+          "ignoreFreeSlotValidation": {
+            "type": "boolean",
+            "description": "Book even if the slot is not free (default false)."
+          },
+          "toNotify": {
+            "type": "boolean",
+            "description": "Send the calendar notifications and run its workflows (default true)."
+          }
+        },
+        "required": [
+          "calendarId",
+          "contactId",
+          "startTime"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calendars/events/appointments",
+        "bodyMapping": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "calendarId": "$calendarId",
+          "contactId": "$contactId",
+          "title": "$title",
+          "startTime": "$startTime",
+          "endTime": "$endTime",
+          "appointmentStatus": "$appointmentStatus",
+          "assignedUserId": "$assignedUserId",
+          "address": "$address",
+          "meetingLocationType": "$meetingLocationType",
+          "description": "$description",
+          "ignoreFreeSlotValidation": "$ignoreFreeSlotValidation",
+          "toNotify": "$toNotify"
+        },
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_update_appointment",
+      "description": "Update an appointment: reschedule, change status (confirmed, cancelled, showed, noshow), assignee, title, location or notes. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "description": "Appointment (event) id."
+          },
+          "calendarId": {
+            "type": "string",
+            "description": "Move to this calendar."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title."
+          },
+          "startTime": {
+            "type": "string",
+            "description": "Start, ISO 8601 with offset, e.g. 2026-11-05T10:00:00+01:00."
+          },
+          "endTime": {
+            "type": "string",
+            "description": "End, ISO 8601 with offset; default start plus the calendar slot duration."
+          },
+          "appointmentStatus": {
+            "type": "string",
+            "description": "new, confirmed, cancelled, showed, noshow or invalid.",
+            "enum": [
+              "new",
+              "confirmed",
+              "cancelled",
+              "showed",
+              "noshow",
+              "invalid"
+            ]
+          },
+          "assignedUserId": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          },
+          "address": {
+            "type": "string",
+            "description": "Meeting address or link."
+          },
+          "meetingLocationType": {
+            "type": "string",
+            "description": "custom, zoom, gmeet, phone, address, ms_teams or google.",
+            "enum": [
+              "custom",
+              "zoom",
+              "gmeet",
+              "phone",
+              "address",
+              "ms_teams",
+              "google"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "Notes for the appointment."
+          },
+          "ignoreFreeSlotValidation": {
+            "type": "boolean",
+            "description": "Book even if the slot is not free (default false)."
+          },
+          "toNotify": {
+            "type": "boolean",
+            "description": "Send the calendar notifications and run its workflows (default true)."
+          }
+        },
+        "required": [
+          "appointment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/calendars/events/appointments/{appointment_id}",
+        "bodyMapping": {
+          "calendarId": "$calendarId",
+          "title": "$title",
+          "startTime": "$startTime",
+          "endTime": "$endTime",
+          "appointmentStatus": "$appointmentStatus",
+          "assignedUserId": "$assignedUserId",
+          "address": "$address",
+          "meetingLocationType": "$meetingLocationType",
+          "description": "$description",
+          "ignoreFreeSlotValidation": "$ignoreFreeSlotValidation",
+          "toNotify": "$toNotify"
+        },
+        "headers": {
+          "Version": "2021-04-15"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_users",
+      "description": "List the users (team members) of the sub-account with id, name, email, phone, role and permissions. User ids are used for assignedTo fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_get_user",
+      "description": "Get one user by id: name, email, phone, role, type, permissions and the sub-accounts it can access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "gohighlevel_list_forms",
+      "description": "List the forms of the sub-account with id and name; form ids filter gohighlevel_list_form_submissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": {
+            "type": "integer",
+            "description": "Forms to skip."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Forms per page."
+          },
+          "type": {
+            "type": "string",
+            "description": "Form type filter."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "skip": "$skip",
+          "limit": "$limit",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_form_submissions",
+      "description": "List form submissions with contact id, name, email, the submitted fields and date. Filter by form, contact or date range (default the last month).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "formId": {
+            "type": "string",
+            "description": "Form id from gohighlevel_list_forms."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 20)."
+          },
+          "q": {
+            "type": "string",
+            "description": "Search by contact id, name, email or phone."
+          },
+          "startAt": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD (default one month ago)."
+          },
+          "endAt": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD (default today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/submissions",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "formId": "$formId",
+          "page": "$page",
+          "limit": "$limit",
+          "q": "$q",
+          "startAt": "$startAt",
+          "endAt": "$endAt"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_surveys",
+      "description": "List the surveys of the sub-account with id and name; survey ids filter gohighlevel_list_survey_submissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skip": {
+            "type": "integer",
+            "description": "Surveys to skip."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Surveys per page."
+          },
+          "type": {
+            "type": "string",
+            "description": "Survey type filter."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/surveys/",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "skip": "$skip",
+          "limit": "$limit",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_survey_submissions",
+      "description": "List survey submissions with contact, answers and date. Filter by survey, contact or date range (default the last month).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "surveyId": {
+            "type": "string",
+            "description": "Survey id from gohighlevel_list_surveys."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, at most 100 (default 20)."
+          },
+          "q": {
+            "type": "string",
+            "description": "Search by contact id, name, email or phone."
+          },
+          "startAt": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD (default one month ago)."
+          },
+          "endAt": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD (default today)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/surveys/submissions",
+        "queryParams": {
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "surveyId": "$surveyId",
+          "page": "$page",
+          "limit": "$limit",
+          "q": "$q",
+          "startAt": "$startAt",
+          "endAt": "$endAt"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_invoices",
+      "description": "List invoices of the sub-account with number, name, contact, status (draft, sent, paid, void, partially_paid, ...), total, amount due, currency, issue and due date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Invoices per page.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Invoices to skip.",
+            "default": 0
+          },
+          "status": {
+            "type": "string",
+            "description": "Only this status, e.g. sent, paid, draft, void."
+          },
+          "contactId": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search by invoice id, name, email or phone."
+          },
+          "startAt": {
+            "type": "string",
+            "description": "Issued from this date, YYYY-MM-DD."
+          },
+          "endAt": {
+            "type": "string",
+            "description": "Issued up to this date, YYYY-MM-DD."
+          },
+          "paymentMode": {
+            "type": "string",
+            "description": "live, test or default.",
+            "enum": [
+              "default",
+              "live",
+              "test"
+            ]
+          },
+          "sortOrder": {
+            "type": "string",
+            "description": "ascend or descend by issue date.",
+            "enum": [
+              "ascend",
+              "descend"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/",
+        "queryParams": {
+          "altId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "altType": "location",
+          "limit": "$limit",
+          "offset": "$offset",
+          "status": "$status",
+          "contactId": "$contactId",
+          "search": "$search",
+          "startAt": "$startAt",
+          "endAt": "$endAt",
+          "paymentMode": "$paymentMode",
+          "sortOrder": "$sortOrder",
+          "sortField": "issueDate"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_get_invoice",
+      "description": "Get one invoice by id: number, contact and business details, line items, discount, taxes, totals, amount paid and due, status, dates and payment link details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id from gohighlevel_list_invoices."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}",
+        "queryParams": {
+          "altId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "altType": "location"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_create_invoice",
+      "description": "Create a draft invoice for a contact with line items, currency, issue and due date, business details, discount and terms. Send it with gohighlevel_send_invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Invoice name."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title printed on the invoice, e.g. INVOICE."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency code, e.g. USD or EUR."
+          },
+          "items": {
+            "type": "array",
+            "description": "Line items: [{\"name\": \"Consulting\", \"description\": \"October\", \"currency\": \"EUR\", \"amount\": 120, \"qty\": 5}] (amount per unit in currency units).",
+            "items": {
+              "type": "object"
+            }
+          },
+          "contactDetails": {
+            "type": "object",
+            "description": "Billed contact: {\"id\": \"<contact id>\", \"name\": \"Anna Weber\", \"email\": \"anna@example.com\", \"phoneNo\": \"+49...\", \"companyName\": \"...\", \"address\": {...}}."
+          },
+          "businessDetails": {
+            "type": "object",
+            "description": "Your business on the invoice: {\"name\": \"...\", \"address\": {...}, \"phoneNo\": \"...\", \"website\": \"...\", \"logoUrl\": \"...\"}."
+          },
+          "issueDate": {
+            "type": "string",
+            "description": "Issue date, YYYY-MM-DD."
+          },
+          "dueDate": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "discount": {
+            "type": "object",
+            "description": "Discount: {\"type\": \"percentage\", \"value\": 10} or {\"type\": \"fixed\", \"value\": 50}; {\"type\": \"percentage\", \"value\": 0} for none."
+          },
+          "sentTo": {
+            "type": "object",
+            "description": "Recipients: {\"email\": [\"anna@example.com\"], \"phoneNo\": [\"+49...\"]}."
+          },
+          "termsNotes": {
+            "type": "string",
+            "description": "Terms and notes printed on the invoice (HTML allowed)."
+          },
+          "invoiceNumber": {
+            "type": "string",
+            "description": "Invoice number; default the next number from the sub-account settings."
+          },
+          "liveMode": {
+            "type": "boolean",
+            "description": "true for live payments, false for test mode."
+          }
+        },
+        "required": [
+          "name",
+          "currency",
+          "items",
+          "contactDetails",
+          "businessDetails",
+          "issueDate",
+          "discount",
+          "sentTo",
+          "liveMode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/",
+        "bodyMapping": {
+          "altId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "altType": "location",
+          "name": "$name",
+          "title": "$title",
+          "currency": "$currency",
+          "items": "$items",
+          "contactDetails": "$contactDetails",
+          "businessDetails": "$businessDetails",
+          "issueDate": "$issueDate",
+          "dueDate": "$dueDate",
+          "discount": "$discount",
+          "sentTo": "$sentTo",
+          "termsNotes": "$termsNotes",
+          "invoiceNumber": "$invoiceNumber",
+          "liveMode": "$liveMode"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_send_invoice",
+      "description": "Send an invoice to the contact by email, SMS, both, or mark it as sent manually. The contact receives a payment link; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id from gohighlevel_list_invoices."
+          },
+          "userId": {
+            "type": "string",
+            "description": "User id sending the invoice (from gohighlevel_list_users)."
+          },
+          "action": {
+            "type": "string",
+            "description": "sms_and_email, email, sms or send_manually.",
+            "enum": [
+              "sms_and_email",
+              "send_manually",
+              "email",
+              "sms"
+            ]
+          },
+          "liveMode": {
+            "type": "boolean",
+            "description": "true for live payments, false for test mode."
+          },
+          "sentFrom": {
+            "type": "object",
+            "description": "Sender: {\"fromName\": \"...\", \"fromEmail\": \"...\"}."
+          }
+        },
+        "required": [
+          "invoice_id",
+          "userId",
+          "action",
+          "liveMode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/{invoice_id}/send",
+        "bodyMapping": {
+          "altId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "altType": "location",
+          "userId": "$userId",
+          "action": "$action",
+          "liveMode": "$liveMode",
+          "sentFrom": "$sentFrom"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_orders",
+      "description": "List payment orders (funnel, store and payment link sales) with contact, amount, currency, status, payment status and date. Filter by status, contact, date or search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Order status, e.g. completed."
+          },
+          "paymentStatus": {
+            "type": "string",
+            "description": "paid, unpaid, refunded or partially_paid.",
+            "enum": [
+              "paid",
+              "unpaid",
+              "refunded",
+              "partially_paid"
+            ]
+          },
+          "paymentMode": {
+            "type": "string",
+            "description": "live or test.",
+            "enum": [
+              "live",
+              "test"
+            ]
+          },
+          "contactId": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search by order name."
+          },
+          "startAt": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD."
+          },
+          "endAt": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/orders",
+        "queryParams": {
+          "altId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "status": "$status",
+          "paymentStatus": "$paymentStatus",
+          "paymentMode": "$paymentMode",
+          "contactId": "$contactId",
+          "search": "$search",
+          "startAt": "$startAt",
+          "endAt": "$endAt",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_get_order",
+      "description": "Get one order by id: contact, line items with products and prices, amount, currency, status, payment status, source and fulfillment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id from gohighlevel_list_orders."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/orders/{order_id}",
+        "queryParams": {
+          "altId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_transactions",
+      "description": "List payment transactions (charges and refunds) with contact, amount, currency, status, payment provider, source (funnel, invoice, store) and date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentMode": {
+            "type": "string",
+            "description": "live or test.",
+            "enum": [
+              "live",
+              "test"
+            ]
+          },
+          "contactId": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "subscriptionId": {
+            "type": "string",
+            "description": "Only transactions of this subscription."
+          },
+          "entityId": {
+            "type": "string",
+            "description": "Only transactions of this entity (e.g. invoice id)."
+          },
+          "entitySourceType": {
+            "type": "string",
+            "description": "Source, e.g. funnel, invoice or store."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search by name."
+          },
+          "startAt": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD."
+          },
+          "endAt": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/transactions",
+        "queryParams": {
+          "altId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "altType": "location",
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "paymentMode": "$paymentMode",
+          "contactId": "$contactId",
+          "subscriptionId": "$subscriptionId",
+          "entityId": "$entityId",
+          "entitySourceType": "$entitySourceType",
+          "search": "$search",
+          "startAt": "$startAt",
+          "endAt": "$endAt",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_get_transaction",
+      "description": "Get one payment transaction by id: amount, currency, status, contact, provider charge id, source entity and refund state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction id."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/transactions/{transaction_id}",
+        "queryParams": {
+          "altId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "altType": "location",
+          "locationId": "{{GOHIGHLEVEL_LOCATION_ID}}"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_subscriptions",
+      "description": "List recurring payment subscriptions with contact, product, amount, interval, status and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paymentMode": {
+            "type": "string",
+            "description": "live or test.",
+            "enum": [
+              "live",
+              "test"
+            ]
+          },
+          "contactId": {
+            "type": "string",
+            "description": "Contact id from gohighlevel_search_contacts."
+          },
+          "entityId": {
+            "type": "string",
+            "description": "Only subscriptions of this entity."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search by name."
+          },
+          "startAt": {
+            "type": "string",
+            "description": "From this date, YYYY-MM-DD."
+          },
+          "endAt": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (default 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/subscriptions",
+        "queryParams": {
+          "altId": "{{GOHIGHLEVEL_LOCATION_ID}}",
+          "altType": "location",
+          "paymentMode": "$paymentMode",
+          "contactId": "$contactId",
+          "entityId": "$entityId",
+          "search": "$search",
+          "startAt": "$startAt",
+          "endAt": "$endAt",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "gohighlevel_list_social_accounts",
+      "description": "List the social media accounts connected to the Social Planner (Facebook, Instagram, LinkedIn, Google Business, TikTok, X, ...) with their account ids for posting.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/social-media-posting/{{GOHIGHLEVEL_LOCATION_ID}}/accounts"
+      }
+    },
+    {
+      "name": "gohighlevel_list_social_posts",
+      "description": "List Social Planner posts in a date range: content, accounts, media, status (scheduled, published, draft, failed) and schedule date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fromDate": {
+            "type": "string",
+            "description": "From this date-time, ISO 8601, e.g. 2026-10-01T00:00:00.000Z."
+          },
+          "toDate": {
+            "type": "string",
+            "description": "Up to this date-time, ISO 8601."
+          },
+          "type": {
+            "type": "string",
+            "description": "all (default), recent, scheduled, draft, failed, in_review, published, in_progress or deleted.",
+            "enum": [
+              "all",
+              "recent",
+              "scheduled",
+              "draft",
+              "failed",
+              "in_review",
+              "published",
+              "in_progress",
+              "deleted"
+            ]
+          },
+          "accounts": {
+            "type": "string",
+            "description": "Only these account ids, comma-separated."
+          },
+          "skip": {
+            "type": "string",
+            "description": "Posts to skip, as a string.",
+            "default": "0"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Posts per page, as a string.",
+            "default": "10"
+          },
+          "includeUsers": {
+            "type": "string",
+            "description": "\"true\" to include the creating users.",
+            "default": "false"
+          }
+        },
+        "required": [
+          "fromDate",
+          "toDate"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/social-media-posting/{{GOHIGHLEVEL_LOCATION_ID}}/posts/list",
+        "bodyMapping": {
+          "fromDate": "$fromDate",
+          "toDate": "$toDate",
+          "type": "$type",
+          "accounts": "$accounts",
+          "skip": "$skip",
+          "limit": "$limit",
+          "includeUsers": "$includeUsers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "gohighlevel_create_social_post",
+      "description": "Create a Social Planner post for one or more connected accounts: text, media, as draft or scheduled for a date. Publishes publicly at the scheduled time; confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountIds": {
+            "type": "array",
+            "description": "Account ids from gohighlevel_list_social_accounts.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "Post text (trimmed to each platform's limit)."
+          },
+          "media": {
+            "type": "array",
+            "description": "Media: [{\"url\": \"https://...\", \"type\": \"image/png\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "type": {
+            "type": "string",
+            "description": "post, story or reel.",
+            "enum": [
+              "post",
+              "story",
+              "reel"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "draft or scheduled.",
+            "enum": [
+              "draft",
+              "scheduled"
+            ]
+          },
+          "scheduleDate": {
+            "type": "string",
+            "description": "When to publish, ISO 8601, e.g. 2026-11-05T09:00:00.000Z."
+          },
+          "userId": {
+            "type": "string",
+            "description": "User id from gohighlevel_list_users."
+          },
+          "followUpComment": {
+            "type": "string",
+            "description": "First comment to add after publishing (not on TikTok and Google Business)."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Social Planner tag ids.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "accountIds",
+          "type",
+          "userId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/social-media-posting/{{GOHIGHLEVEL_LOCATION_ID}}/posts",
+        "bodyMapping": {
+          "accountIds": "$accountIds",
+          "summary": "$summary",
+          "media": "$media",
+          "type": "$type",
+          "status": "$status",
+          "scheduleDate": "$scheduleDate",
+          "userId": "$userId",
+          "followUpComment": "$followUpComment",
+          "tags": "$tags"
+        }
+      }
+    }
+  ]
+}

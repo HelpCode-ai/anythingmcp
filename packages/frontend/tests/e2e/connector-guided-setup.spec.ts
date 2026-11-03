@@ -169,6 +169,43 @@ test('OAuth: app keys Etsy does not accept yet keep the user here, instead of an
   await expect(page).toHaveURL(/\/connectors\/setup\/etsy/);
 });
 
+test('OAuth: keys Etsy refuses (app Pending, or a wrong secret) are kept, and the owner will be emailed', async ({ page }) => {
+  // Users waited days for Etsy's approval email and never came back; the
+  // backend now checks the kept keys again and emails on approval. Etsy
+  // answers the same 403 for a wrong shared secret of an active app, so the
+  // panel does not claim the app is unapproved.
+  const calls = await setup(page, {
+    etsyVerify: {
+      ok: false,
+      kind: 'auth_failed',
+      status: 403,
+      message: 'Etsy does not accept these app keys yet. A new Etsy app stays Pending until Etsy approves it.',
+      appPending: true,
+    },
+  });
+  await page.goto('/connectors/setup/etsy');
+  await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
+  await page.getByLabel('Shared secret').fill('s3cr3t0abc');
+  await page.getByRole('button', { name: 'Save and sign in to Etsy' }).click();
+  await expect(page.getByText('Etsy Open API v3 does not accept these keys yet.')).toBeVisible();
+  await expect(page.getByText("we'll e-mail you when it's approved, nothing else to do.")).toBeVisible();
+  await expect(page.getByText('If your app is already active, copy the shared secret again from your app page.')).toBeVisible();
+  await expect(page.getByText('has not approved your app')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Open the connector' })).toHaveAttribute('href', '/connectors/c9');
+  expect(calls.imports).toHaveLength(1);
+  expect(calls.imports[0].credentials).toMatchObject({
+    ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2',
+    ETSY_CLIENT_SECRET: 's3cr3t0abc',
+  });
+  expect(calls.authorize).toHaveLength(0);
+
+  // A second try stores the values on the kept connector, never a second one.
+  await page.getByRole('button', { name: 'Save and sign in to Etsy' }).click();
+  await expect.poll(() => calls.envVars.length).toBe(1);
+  expect(calls.imports).toHaveLength(1);
+  expect(calls.verify[1]).toMatchObject({ connectorId: 'c9' });
+});
+
 test('OAuth: back from the provider, shows the connector ready', async ({ page }) => {
   await setup(page);
   await page.goto('/connectors/setup/etsy?connector=c9&step=done&from=claude');

@@ -24,17 +24,31 @@ import { cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
+import { FilesPanel } from '@/components/file-search/files-panel';
+import Link from 'next/link';
+import {
+  EMPTY_EMAIL_FORM,
+  EmailSettingsFields,
+  emailBaseUrl,
+  emailFormFromConfig,
+  emailFormToAuthConfig,
+  emailFormToConfig,
+  emailLoginEdited,
+  type EmailFormState,
+} from '@/components/email-settings-fields';
 
-const IMPORT_SOURCES = [
-  { id: 'openapi', label: 'OpenAPI / Swagger', placeholder: 'Paste OpenAPI JSON/YAML or enter URL...' },
-  { id: 'postman', label: 'Postman Collection', placeholder: 'Paste Postman Collection JSON or enter URL...' },
-  { id: 'curl', label: 'cURL Command', placeholder: 'curl -X GET https://api.example.com/users -H "Authorization: Bearer {{token}}"' },
-  { id: 'har', label: 'HAR file (browser capture)', placeholder: '' },
-  { id: 'graphql', label: 'GraphQL Introspection', placeholder: 'Enter GraphQL endpoint URL...' },
-  { id: 'wsdl', label: 'WSDL', placeholder: 'Enter WSDL URL...' },
-  { id: 'json', label: 'JSON Definition', placeholder: '[\n  {\n    "name": "get_users",\n    "description": "Fetch users",\n    "parameters": { "type": "object", "properties": { "limit": { "type": "number" } } },\n    "endpointMapping": { "method": "GET", "path": "/users", "queryParams": { "limit": "$limit" } }\n  }\n]' },
-  { id: 'mcp', label: 'MCP Discovery', placeholder: "Optional — leave empty to use the connector's Base URL" },
-  { id: 'odata', label: 'OData $metadata', placeholder: 'Optional — paste a $metadata document instead of fetching it' },
+// Labels and the prose placeholders are in the connectorTools messages; the
+// code examples below are the same in every language.
+const IMPORT_SOURCES: { id: string; placeholder?: string }[] = [
+  { id: 'openapi' },
+  { id: 'postman' },
+  { id: 'curl', placeholder: 'curl -X GET https://api.example.com/users -H "Authorization: Bearer {{token}}"' },
+  { id: 'har', placeholder: '' },
+  { id: 'graphql' },
+  { id: 'wsdl' },
+  { id: 'json', placeholder: '[\n  {\n    "name": "get_users",\n    "description": "Fetch users",\n    "parameters": { "type": "object", "properties": { "limit": { "type": "number" } } },\n    "endpointMapping": { "method": "GET", "path": "/users", "queryParams": { "limit": "$limit" } }\n  }\n]' },
+  { id: 'mcp' },
+  { id: 'odata' },
 ];
 
 /** OData settings live under config.odata on ODATA connectors and OData-enabled REST connectors. */
@@ -160,8 +174,11 @@ function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; by
 }
 
 export default function ConnectorDetailPage() {
-  const { token, user } = useAuth();
+  const { token, user, deploymentMode } = useAuth();
   const t = useTranslations('connectorDetail');
+  const te = useTranslations('emailSettings');
+  const tt = useTranslations('connectorTools');
+  const tfs = useTranslations('fileSearch');
   const locale = useLocale();
   const authTypeLabel = useAuthTypeLabel();
   const params = useParams();
@@ -241,6 +258,8 @@ export default function ConnectorDetailPage() {
   const [editOdataSapClient, setEditOdataSapClient] = useState('');
   const [editOdataSapLanguage, setEditOdataSapLanguage] = useState('');
   const [editOdataServices, setEditOdataServices] = useState('');
+  // EMAIL: servers and sender from config.email; the login starts empty.
+  const [editEmail, setEditEmail] = useState<EmailFormState>(EMPTY_EMAIL_FORM);
   const [importEntitySets, setImportEntitySets] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
@@ -365,6 +384,7 @@ export default function ConnectorDetailPage() {
         setEditOdataSapClient(odata.sapClient ?? '');
         setEditOdataSapLanguage(odata.sapLanguage ?? '');
         setEditOdataServices(Array.isArray(odata.services) ? odata.services.join('\n') : '');
+        setEditEmail(emailFormFromConfig(c.config));
       }
       setToolList(c.tools || []);
       // Load env vars
@@ -526,7 +546,16 @@ export default function ConnectorDetailPage() {
           await connectors.updateOAuth1Config(id, oauth1Patch, token);
         }
       }
-      if (connector.type !== 'DATABASE' && connector.type !== 'MCP') {
+      if (connector.type === 'EMAIL') {
+        // A catalog install keeps its servers and login in variables.
+        if (!(connector.config as any)?.adapterSlug) {
+          data.baseUrl = emailBaseUrl(editEmail);
+          data.config = { email: emailFormToConfig(editEmail, (connector.config as any)?.email) };
+          if (emailLoginEdited(editEmail)) data.authConfig = emailFormToAuthConfig(editEmail);
+        } else {
+          delete data.baseUrl;
+        }
+      } else if (connector.type !== 'DATABASE' && connector.type !== 'MCP') {
         // Editor is pre-filled with current headers, so this round-trips
         // untouched headers and applies any edits/removals the user made.
         data.headers = headerRowsToObject(editHeaderRows);
@@ -665,19 +694,21 @@ export default function ConnectorDetailPage() {
       const { json, byteLength, droppedOtherOrigin } = slimHarForUpload(text, connector?.baseUrl);
       if (byteLength > HAR_MAX_UPLOAD_BYTES) {
         setHarError(
-          `This capture is still ${formatBytes(byteLength)} after removing response bodies and cookies, which is over what the server accepts. Re-capture a smaller session (fewer requests) and try again.`,
+          tt('import.harTooBig', { size: formatBytes(byteLength) }),
         );
         return;
       }
       if (droppedOtherOrigin > 0 && JSON.parse(json).log.entries.length === 0) {
         setHarError(
-          `None of the ${droppedOtherOrigin} request(s) in this capture were made to ${connector?.baseUrl ?? 'the connector\'s base URL'}. Capture a session against that host and try again.`,
+          connector?.baseUrl
+            ? tt('import.harOtherOrigin', { count: droppedOtherOrigin, url: connector.baseUrl })
+            : tt('import.harOtherOriginNoUrl', { count: droppedOtherOrigin }),
         );
         return;
       }
       setImportContent(json);
     } catch (err: any) {
-      setHarError(`Could not read this file: ${err.message}`);
+      setHarError(tt('import.harReadError', { message: err.message }));
     }
   };
 
@@ -714,7 +745,7 @@ export default function ConnectorDetailPage() {
         promptMcpAssignIfNeeded();
       }
     } catch (err: any) {
-      setMsg(`Import failed: ${err.message}`);
+      setMsg(t('msg.importFailed', { message: err.message }));
     } finally {
       setImporting(false);
     }
@@ -758,7 +789,7 @@ export default function ConnectorDetailPage() {
         return;
       }
       await tools.delete(id, deleteTarget.id, token);
-      setToolList((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      setToolList((prev) => prev.filter((x) => x.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err: any) {
       setMsg(t('msg.error', { message: err.message }));
@@ -773,10 +804,10 @@ export default function ConnectorDetailPage() {
     try {
       await tools.update(id, toolId, { isEnabled: !isEnabled }, token);
       setToolList((prev) =>
-        prev.map((t) => (t.id === toolId ? { ...t, isEnabled: !isEnabled } : t)),
+        prev.map((x) => (x.id === toolId ? { ...x, isEnabled: !isEnabled } : x)),
       );
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('msg.error', { message: err.message }));
     }
   };
 
@@ -784,15 +815,15 @@ export default function ConnectorDetailPage() {
     if (!token) return;
     // Optimistic flip; revert on error.
     setToolList((prev) =>
-      prev.map((t) => (t.id === toolId ? { ...t, useProxy: !useProxy } : t)),
+      prev.map((x) => (x.id === toolId ? { ...x, useProxy: !useProxy } : x)),
     );
     try {
       await tools.setProxy(id, toolId, !useProxy, token);
     } catch (err: any) {
       setToolList((prev) =>
-        prev.map((t) => (t.id === toolId ? { ...t, useProxy } : t)),
+        prev.map((x) => (x.id === toolId ? { ...x, useProxy } : x)),
       );
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('msg.error', { message: err.message }));
     }
   };
 
@@ -822,13 +853,13 @@ export default function ConnectorDetailPage() {
     if (!token || !toolList.length) return;
     const demoTool = searchParams.get('demoTool');
     if (!demoTool || searchParams.get('autorun') !== '1') return;
-    const tool = toolList.find((t: any) => t.name === demoTool);
+    const tool = toolList.find((x: any) => x.name === demoTool);
     if (!tool) return;
     demoRan.current = true;
     const params = findDemoByTool(demoTool)?.params ?? {};
     setTestingToolId(tool.id);
     setTestParams(JSON.stringify(params, null, 2));
-    setMsg('Running your first tool call…');
+    setMsg(tt('msg.firstRun'));
     void handleTestTool(tool.id, params);
     window.history.replaceState({}, '', `/connectors/${id}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -846,11 +877,11 @@ export default function ConnectorDetailPage() {
     try {
       const created = await tools.create(id, data, token);
       setShowNewTool(false);
-      setMsg(withSecretsNotice('Tool created successfully.', created));
+      setMsg(withSecretsNotice(tt('msg.created'), created));
       fetchConnector();
       promptMcpAssignIfNeeded();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('msg.error', { message: err.message }));
     } finally {
       setSavingTool(false);
     }
@@ -871,10 +902,10 @@ export default function ConnectorDetailPage() {
     try {
       const updated = await tools.update(id, toolId, data, token);
       setEditingToolId(null);
-      setMsg(withSecretsNotice('Tool updated successfully.', updated));
+      setMsg(withSecretsNotice(tt('msg.updated'), updated));
       fetchConnector();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('msg.error', { message: err.message }));
     } finally {
       setSavingTool(false);
     }
@@ -918,7 +949,7 @@ export default function ConnectorDetailPage() {
         setMsg(result.error);
       }
     } catch (err: any) {
-      setMsg(`Authorization failed: ${err.message}`);
+      setMsg(t('msg.authorizationFailed', { message: err.message }));
     } finally {
       setAuthorizing(false);
     }
@@ -936,7 +967,7 @@ export default function ConnectorDetailPage() {
         setMsg(result.error);
       }
     } catch (err: any) {
-      setMsg(`Authorization failed: ${err.message}`);
+      setMsg(t('msg.authorizationFailed', { message: err.message }));
     } finally {
       setAuthorizing(false);
     }
@@ -1013,9 +1044,13 @@ export default function ConnectorDetailPage() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
             {t('actions.test')}
           </Button>
+          {/* File Search is edited on its Files panel (source, selection, description). */}
+          {connector?.type !== 'FILE_SEARCH' && (
           <Button variant="secondary" size="md" onClick={() => setEditing(!editing)}>
             {editing ? t('actions.cancel') : t('actions.edit')}
           </Button>
+          )}
+          {connector?.type !== 'FILE_SEARCH' && (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <Button variant="secondary" size="md" title={t('actions.exportTitle')}>
@@ -1041,6 +1076,7 @@ export default function ConnectorDetailPage() {
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
+          )}
           <Button variant="outlineDanger" size="md" onClick={handleDelete}>
             {t('actions.delete')}
           </Button>
@@ -1237,7 +1273,22 @@ export default function ConnectorDetailPage() {
           </Card>
         )}
 
+        {/* File Search: sync state, selection, description (#1385). */}
+        {connector.type === 'FILE_SEARCH' && !(connector.config as { fileShare?: boolean } | null)?.fileShare && (
+          <FilesPanel connectorId={connector.id} />
+        )}
+        {connector.type === 'FILE_SEARCH' && (connector.config as { fileShare?: boolean } | null)?.fileShare && (
+          <Card className="p-[22px]">
+            <h3 className="text-sm font-semibold">{tfs('shareConnector.title')}</h3>
+            <p className="mt-1 text-[13px] text-[var(--text-2)]">{tfs('shareConnector.text')}</p>
+            <Link href="/settings/file-share" className="mt-3 inline-flex h-9 items-center rounded-[9px] border border-[var(--border)] px-3.5 text-[13px] font-semibold text-[var(--text-2)] hover:text-[var(--text)]">
+              {tfs('shareConnector.manage')}
+            </Link>
+          </Card>
+        )}
+
         {/* Connector Details */}
+        {connector.type !== 'FILE_SEARCH' && (
         <Card className="p-[22px]">
           <h3 className="text-sm font-semibold mb-4">{t('details.title')}</h3>
           {editing ? (
@@ -1251,6 +1302,18 @@ export default function ConnectorDetailPage() {
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
+              {connector.type === 'EMAIL' ? (
+                (connector.config as any)?.adapterSlug ? (
+                  <p className="text-xs text-[var(--text-3)]">{te('catalogManaged')}</p>
+                ) : (
+                  <EmailSettingsFields
+                    value={editEmail}
+                    onChange={setEditEmail}
+                    isCloud={deploymentMode === 'cloud'}
+                    existing
+                  />
+                )
+              ) : (
               <div>
                 <label className="block text-sm font-medium mb-1">{t('details.baseUrl')}</label>
                 <input
@@ -1260,6 +1323,7 @@ export default function ConnectorDetailPage() {
                   className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                 />
               </div>
+              )}
               {connector.type === 'REST' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">
@@ -1397,6 +1461,8 @@ export default function ConnectorDetailPage() {
                   </div>
                 </div>
               )}
+              {connector.type !== 'EMAIL' && (
+              <>
               <div>
                 <label className="block text-sm font-medium mb-1">{t('details.auth')}</label>
                 <AppSelect
@@ -1668,7 +1734,9 @@ export default function ConnectorDetailPage() {
                   {t('details.keepCredentials')}
                 </p>
               )}
-              {connector.type !== 'DATABASE' && connector.type !== 'MCP' && (
+              </>
+              )}
+              {connector.type !== 'DATABASE' && connector.type !== 'MCP' && connector.type !== 'EMAIL' && (
                 <HeadersEditor rows={editHeaderRows} onChange={setEditHeaderRows} maskedKeys={connector.maskedHeaders} />
               )}
               <div>
@@ -1697,6 +1765,22 @@ export default function ConnectorDetailPage() {
                 <p className="text-[var(--text-3)]">{t('details.authType')}</p>
                 <p className="font-medium">{authTypeLabel(connector.authType)}</p>
               </div>
+              {connector.type === 'EMAIL' && (
+                <div className="col-span-2 min-w-0">
+                  <p className="text-[var(--text-3)]">{te('imapHost')} / {te('smtpHost')}</p>
+                  <p className="font-medium font-mono text-xs break-all">
+                    {(() => {
+                      const email = (connector.config as any)?.email ?? {};
+                      const server = (host: unknown, port: unknown, security: unknown) =>
+                        host ? `${host}:${port ?? ''}${security ? ` (${security})` : ''}` : null;
+                      return te('summary', {
+                        imap: server(email.imapHost, email.imapPort, email.imapSecurity) ?? connector.baseUrl,
+                        smtp: server(email.smtpHost, email.smtpPort, email.smtpSecurity) ?? te('noSmtp'),
+                      });
+                    })()}
+                  </p>
+                </div>
+              )}
               {connector.type === 'DATABASE' && (
                 <div>
                   <p className="text-[var(--text-3)]">{t('details.accessMode')}</p>
@@ -1741,6 +1825,7 @@ export default function ConnectorDetailPage() {
             </div>
           )}
         </Card>
+        )}
 
         {/* Who signs in: one shared authorization, or each user (Enterprise) */}
         {connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
@@ -1799,6 +1884,7 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* Environment Variables */}
+        {connector.type !== 'FILE_SEARCH' && (
         <Card className="p-[22px]">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -1875,20 +1961,24 @@ export default function ConnectorDetailPage() {
             </div>
           )}
         </Card>
+        )}
 
         {/* Tools Section */}
         <Card className="p-[22px]">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <h3 className="text-sm font-semibold">
-              MCP Tools ({toolList.length})
+              {tt('title', { count: toolList.length })}
             </h3>
             <div className="flex gap-2 flex-wrap">
-              <Button variant="secondary" size="md" onClick={() => setShowImport(!showImport)}>
-                {showImport ? 'Cancel Import' : 'Import Tools'}
-              </Button>
+              {/* An email connector's tools are its built-ins: nothing to import. */}
+              {connector.type !== 'EMAIL' && connector.type !== 'FILE_SEARCH' && (
+                <Button variant="secondary" size="md" onClick={() => setShowImport(!showImport)}>
+                  {showImport ? tt('cancelImport') : tt('importTools')}
+                </Button>
+              )}
               {(connector.type === 'REST' || connector.type === 'GRAPHQL' || connector.type === 'SOAP') && (
                 <Button variant="secondary" size="md" onClick={handleImportSpec}>
-                  Auto-Import from Spec
+                  {tt('autoImport')}
                 </Button>
               )}
               {connector.type === 'MCP' && (
@@ -1899,19 +1989,21 @@ export default function ConnectorDetailPage() {
                   disabled={discovering}
                   className="border-[var(--t-purple-fg)] text-[var(--t-purple-fg)] hover:bg-[var(--t-purple-bg)] hover:text-[var(--t-purple-fg)]"
                 >
-                  {discovering ? 'Discovering...' : 'Discover from MCP Server'}
+                  {discovering ? tt('discovering') : tt('discover')}
                 </Button>
               )}
+              {connector.type !== 'FILE_SEARCH' && (
               <Button variant="primary" size="md" onClick={() => setShowNewTool(!showNewTool)}>
-                {showNewTool ? 'Cancel' : 'Add Tool'}
+                {showNewTool ? tt('cancel') : tt('addTool')}
               </Button>
+              )}
             </div>
           </div>
 
           {/* Import Panel */}
           {showImport && (
             <div className="border border-[var(--border)] rounded-[14px] bg-[var(--surface-2)] p-4 mb-4 space-y-3">
-              <h4 className="text-sm font-semibold">Import Tools From</h4>
+              <h4 className="text-sm font-semibold">{tt('import.title')}</h4>
               <div className="flex gap-2 flex-wrap">
                 {IMPORT_SOURCES.filter((src) => src.id !== 'odata' || hasOData(connector)).map((src) => (
                   <button
@@ -1923,7 +2015,7 @@ export default function ConnectorDetailPage() {
                         : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] hover:border-[var(--brand)]'
                     }`}
                   >
-                    {src.label}
+                    {tt(`import.sources.${src.id}`)}
                   </button>
                 ))}
               </div>
@@ -1931,7 +2023,7 @@ export default function ConnectorDetailPage() {
               {importSource === 'odata' && (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium mb-1">Service path</label>
+                    <label className="block text-xs font-medium mb-1">{tt('import.servicePath')}</label>
                     <input
                       type="text"
                       value={importUrl}
@@ -1939,21 +2031,21 @@ export default function ConnectorDetailPage() {
                       placeholder={
                         (connector.config as any)?.odata?.sap || (connector.config as any)?.odata?.sapClient
                           ? '/sap/opu/odata/sap/API_BUSINESS_PARTNER'
-                          : 'Leave empty: the base URL is the service'
+                          : tt('import.servicePathPlaceholder')
                       }
                       className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                     />
                     <p className="text-[11.5px] text-[var(--text-3)] mt-1">
-                      Its $metadata is read with this connector&apos;s credentials. Each entity set becomes a list tool and a get tool.
+                      {tt('import.servicePathHint')}
                     </p>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium mb-1">Entity sets (optional)</label>
+                    <label className="block text-xs font-medium mb-1">{tt('import.entitySets')}</label>
                     <input
                       type="text"
                       value={importEntitySets}
                       onChange={(e) => setImportEntitySets(e.target.value)}
-                      placeholder="A_BusinessPartner, A_Customer — empty for all"
+                      placeholder={tt('import.entitySetsPlaceholder')}
                       className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                     />
                   </div>
@@ -1962,7 +2054,7 @@ export default function ConnectorDetailPage() {
 
               {importSource !== 'curl' && importSource !== 'json' && importSource !== 'odata' && importSource !== 'har' && (
                 <div>
-                  <label className="block text-xs font-medium mb-1">URL (fetch spec from URL)</label>
+                  <label className="block text-xs font-medium mb-1">{tt('import.url')}</label>
                   <input
                     type="text"
                     value={importUrl}
@@ -1975,7 +2067,7 @@ export default function ConnectorDetailPage() {
 
               {importSource === 'har' ? (
                 <div>
-                  <label className="block text-xs font-medium mb-1">HAR file</label>
+                  <label className="block text-xs font-medium mb-1">{tt('import.harFile')}</label>
                   <input
                     type="file"
                     accept=".har,application/json"
@@ -1983,13 +2075,11 @@ export default function ConnectorDetailPage() {
                     className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]"
                   />
                   <p className="text-[11.5px] text-[var(--text-3)] mt-1">
-                    From your browser&apos;s DevTools: Network tab → right-click → &quot;Save all as HAR&quot;. HAR files contain
-                    session cookies and tokens — response bodies, cookies and credential headers are removed in your
-                    browser before anything is uploaded.
+                    {tt('import.harHint')}
                   </p>
                   {harFileName && !harError && (
                     <p className="text-[11.5px] text-[var(--text-3)] mt-1">
-                      {importContent ? `${harFileName} — ready to import.` : `Reading ${harFileName}...`}
+                      {importContent ? tt('import.harReady', { name: harFileName }) : tt('import.harReading', { name: harFileName })}
                     </p>
                   )}
                   {harError && <p className="text-[11.5px] text-[var(--danger)] mt-1">{harError}</p>}
@@ -1997,13 +2087,13 @@ export default function ConnectorDetailPage() {
               ) : (
                 <div>
                   <label className="block text-xs font-medium mb-1">
-                    {importSource === 'curl' ? 'cURL Command(s)' : importSource === 'json' ? 'JSON Tool Definitions' : 'Or paste content directly'}
+                    {importSource === 'curl' ? tt('import.contentCurl') : importSource === 'json' ? tt('import.contentJson') : tt('import.contentOther')}
                   </label>
                   <textarea
                     value={importContent}
                     onChange={(e) => setImportContent(e.target.value)}
                     rows={6}
-                    placeholder={IMPORT_SOURCES.find((s) => s.id === importSource)?.placeholder}
+                    placeholder={IMPORT_SOURCES.find((s) => s.id === importSource)?.placeholder ?? tt(`import.placeholders.${importSource}`)}
                     className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm bg-[var(--surface)] font-mono focus:outline-none focus:border-[var(--border-strong)]"
                   />
                 </div>
@@ -2015,7 +2105,7 @@ export default function ConnectorDetailPage() {
                 onClick={handleImportTools}
                 disabled={importing || (importSource !== 'odata' && !importContent && !importUrl)}
               >
-                {importing ? 'Importing...' : 'Import'}
+                {importing ? tt('import.importing') : tt('import.import')}
               </Button>
             </div>
           )}
@@ -2035,7 +2125,7 @@ export default function ConnectorDetailPage() {
 
           {toolList.length === 0 ? (
             <p className="text-sm text-[var(--text-3)] py-4 text-center">
-              No tools configured. Import from a spec, Postman collection, or cURL command, or add tools manually.
+              {tt('empty')}
             </p>
           ) : (
             <div className="space-y-3">
@@ -2072,24 +2162,24 @@ export default function ConnectorDetailPage() {
                               </span>
                             )}
                             <Badge tone={tool.isEnabled ? 'success' : 'neutral'} className="flex-shrink-0">
-                              {tool.isEnabled ? 'enabled' : 'disabled'}
+                              {tool.isEnabled ? tt('card.enabled') : tt('card.disabled')}
                             </Badge>
                             {tool.deprecatedAt && (
                               <Badge
                                 tone="warn"
                                 className="flex-shrink-0"
-                                title={`Removed from the source spec on ${new Date(tool.deprecatedAt).toLocaleString()}. Role assignments and history are preserved.`}
+                                title={tt('card.deprecatedTitle', { date: new Date(tool.deprecatedAt).toLocaleString(locale) })}
                               >
-                                deprecated
+                                {tt('card.deprecated')}
                               </Badge>
                             )}
                             {tool.responseMapping?.transform && (
                               <Badge
                                 tone="info"
                                 className="flex-shrink-0"
-                                title="A response mapping shapes this tool's output before it reaches the AI client. Edit it under Response Mapping."
+                                title={tt('card.mappedTitle')}
                               >
-                                mapped
+                                {tt('card.mapped')}
                               </Badge>
                             )}
                           </div>
@@ -2107,20 +2197,20 @@ export default function ConnectorDetailPage() {
                               const envCovered = allParams.filter((k) => envKeys.has(k)).length;
                               return (
                                 <span>
-                                  {allParams.length} params{envCovered > 0 && (
-                                    <span className="text-[var(--brand)]" title={`${envCovered} parameter(s) auto-filled from environment variables`}> ({envCovered} from env)</span>
+                                  {tt('card.params', { count: allParams.length })}{envCovered > 0 && (
+                                    <span className="text-[var(--brand)]" title={tt('card.paramsFromEnvTitle', { count: envCovered })}>{tt('card.paramsFromEnv', { count: envCovered })}</span>
                                   )}
                                 </span>
                               );
                             })()}
                             {tool.endpointMapping?.queryParams && (
-                              <span>{Object.keys(tool.endpointMapping.queryParams).length} query</span>
+                              <span>{tt('card.query', { count: Object.keys(tool.endpointMapping.queryParams).length })}</span>
                             )}
                             {tool.endpointMapping?.bodyMapping && (
-                              <span>{Object.keys(tool.endpointMapping.bodyMapping).length} body</span>
+                              <span>{tt('card.body', { count: Object.keys(tool.endpointMapping.bodyMapping).length })}</span>
                             )}
                             {tool.endpointMapping?.headers && (
-                              <span>{Object.keys(tool.endpointMapping.headers).length} headers</span>
+                              <span>{tt('card.headers', { count: Object.keys(tool.endpointMapping.headers).length })}</span>
                             )}
                           </div>
                         </div>
@@ -2149,8 +2239,11 @@ export default function ConnectorDetailPage() {
                             }}
                             className="inline-flex items-center justify-center rounded-[7px] border border-[var(--brand)] bg-[var(--brand-tint)] text-[var(--brand)] px-2.5 py-1 text-xs font-semibold transition-colors hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
                           >
-                            {testingToolId === tool.id ? 'Close' : 'Test'}
+                            {testingToolId === tool.id ? tt('card.close') : tt('card.test')}
                           </button>
+                          {/* File Search tools are built in: their definition comes from the
+                              connector, so they can be switched off but not edited or deleted. */}
+                          {connector?.type !== 'FILE_SEARCH' && (
                           <button
                             onClick={() => {
                               setEditingToolId(tool.id);
@@ -2158,27 +2251,28 @@ export default function ConnectorDetailPage() {
                             }}
                             className="inline-flex items-center justify-center rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
                           >
-                            Edit
+                            {tt('card.edit')}
                           </button>
+                          )}
                           <button
                             onClick={() =>
                               setHintsToolId(hintsToolId === tool.id ? null : tool.id)
                             }
-                            title="MCP annotations — tells agents whether this tool is read-only, destructive, idempotent."
+                            title={tt('card.hintsTitle')}
                             className="inline-flex items-center justify-center rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
                           >
-                            {hintsToolId === tool.id ? 'Close hints' : 'Hints'}
+                            {hintsToolId === tool.id ? tt('card.closeHints') : tt('card.hints')}
                           </button>
                           <button
                             onClick={() => handleToggleTool(tool.id, tool.isEnabled)}
                             className="inline-flex items-center justify-center rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs font-medium transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)]"
                           >
-                            {tool.isEnabled ? 'Disable' : 'Enable'}
+                            {tool.isEnabled ? tt('card.disable') : tt('card.enable')}
                           </button>
-                          {proxyAvailable && (
+                          {proxyAvailable && connector?.type !== 'FILE_SEARCH' && (
                             <label
                               className="flex items-center gap-1 rounded-[7px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] px-2.5 py-1 text-xs cursor-pointer transition-colors hover:border-[var(--border-strong)]"
-                              title="Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs."
+                              title={tt('card.proxyTitle')}
                             >
                               <input
                                 type="checkbox"
@@ -2186,15 +2280,17 @@ export default function ConnectorDetailPage() {
                                 onChange={() => handleToggleProxy(tool.id, !!tool.useProxy)}
                                 className="accent-[var(--brand)]"
                               />
-                              Proxy
+                              {tt('card.proxy')}
                             </label>
                           )}
+                          {connector?.type !== 'FILE_SEARCH' && (
                           <button
                             onClick={() => handleDeleteTool(tool.id, tool.name)}
                             className="inline-flex items-center justify-center rounded-[7px] border border-[var(--danger)] bg-transparent text-[var(--danger)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--t-danger-bg)]"
                           >
-                            Delete
+                            {tt('card.delete')}
                           </button>
+                          )}
                         </div>
                       </div>
 
@@ -2219,17 +2315,17 @@ export default function ConnectorDetailPage() {
                             <div className="flex items-start gap-2 px-3 py-2 mb-3 rounded-[9px] bg-[var(--brand-tint)] border border-[var(--brand)] text-xs text-[var(--text-2)]">
                               <span className="text-sm leading-none mt-0.5">&#9889;</span>
                               <span>
-                                <strong>Auto-filled from env:</strong>{' '}
+                                <strong>{tt('playground.autoFilled')}</strong>{' '}
                                 {envCoveredParams.map((p) => (
                                   <code key={p} className="mx-0.5 px-1 py-0.5 rounded bg-[var(--surface-2)] font-mono text-[11px]">{p}</code>
                                 ))}
-                                <span className="text-[var(--text-3)]"> — injected at runtime, no need to include in test params</span>
+                                <span className="text-[var(--text-3)]">{tt('playground.autoFilledNote')}</span>
                               </span>
                             </div>
                           )}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
-                              <label className="block text-xs font-medium mb-1">Input Parameters (JSON)</label>
+                              <label className="block text-xs font-medium mb-1">{tt('playground.input')}</label>
                               <textarea
                                 value={testParams}
                                 onChange={(e) => setTestParams(e.target.value)}
@@ -2238,15 +2334,15 @@ export default function ConnectorDetailPage() {
                                 placeholder='{ "param": "value" }'
                               />
                               <Button variant="primary" size="sm" className="mt-2" onClick={() => handleTestTool(tool.id)} disabled={testRunning}>
-                                {testRunning ? 'Running...' : 'Run Test'}
+                                {testRunning ? tt('playground.running') : tt('playground.runTest')}
                               </Button>
                             </div>
                             <div>
                               <label className="block text-xs font-medium mb-1">
-                                Response
+                                {tt('playground.response')}
                                 {toolTestResult && (
                                   <span className={`ml-2 ${toolTestResult.ok ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
-                                    {toolTestResult.ok ? 'Success' : 'Error'} ({toolTestResult.durationMs}ms)
+                                    {tt(toolTestResult.ok ? 'playground.success' : 'playground.error', { ms: toolTestResult.durationMs })}
                                   </span>
                                 )}
                               </label>
@@ -2266,7 +2362,7 @@ export default function ConnectorDetailPage() {
                                           : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)]',
                                       )}
                                     >
-                                      {view === 'mapped' ? 'Mapped (what the AI sees)' : 'Raw API response'}
+                                      {view === 'mapped' ? tt('playground.viewMapped') : tt('playground.viewRaw')}
                                     </button>
                                   ))}
                                   <span className="text-[11px] text-[var(--text-3)]">
@@ -2279,8 +2375,7 @@ export default function ConnectorDetailPage() {
                               )}
                               {toolTestResult?.ok && typeof toolTestResult.mappingError === 'string' && (
                                 <div className="mb-2 rounded-[9px] border border-[var(--t-warn-bg)] bg-[var(--t-warn-bg)] px-3 py-2 text-xs text-[var(--t-warn-fg)]">
-                                  Response mapping failed ({String(toolTestResult.mappingError)}) — the
-                                  raw response is being returned. Fix it under Edit → Response Mapping.
+                                  {tt('playground.mappingFailed', { error: String(toolTestResult.mappingError) })}
                                 </div>
                               )}
                               {toolTestResult && typeof toolTestResult.note === 'string' && (
@@ -2298,13 +2393,13 @@ export default function ConnectorDetailPage() {
                                   }
                                 >
                                   <span className="font-semibold mr-1">
-                                    {toolTestResult.kind === 'auth_failed' && 'Credentials rejected:'}
-                                    {toolTestResult.kind === 'bad_request' && 'Invalid request:'}
-                                    {toolTestResult.kind === 'not_found' && 'Not found:'}
-                                    {toolTestResult.kind === 'rate_limited' && 'Rate limited:'}
-                                    {toolTestResult.kind === 'upstream_error' && 'Upstream error:'}
-                                    {toolTestResult.kind === 'unreachable' && 'Unreachable:'}
-                                    {toolTestResult.kind === 'error' && 'Failed:'}
+                                    {toolTestResult.kind === 'auth_failed' && tt('playground.kind.authFailed')}
+                                    {toolTestResult.kind === 'bad_request' && tt('playground.kind.badRequest')}
+                                    {toolTestResult.kind === 'not_found' && tt('playground.kind.notFound')}
+                                    {toolTestResult.kind === 'rate_limited' && tt('playground.kind.rateLimited')}
+                                    {toolTestResult.kind === 'upstream_error' && tt('playground.kind.upstreamError')}
+                                    {toolTestResult.kind === 'unreachable' && tt('playground.kind.unreachable')}
+                                    {toolTestResult.kind === 'error' && tt('playground.kind.error')}
                                   </span>
                                   {String(toolTestResult.hint)}
                                 </div>
@@ -2321,7 +2416,7 @@ export default function ConnectorDetailPage() {
                                         2,
                                       )
                                     : JSON.stringify(toolTestResult, null, 2)
-                                  : 'Click "Run Test" to execute this tool...'}
+                                  : tt('playground.empty')}
                               </pre>
                             </div>
                           </div>
@@ -2388,6 +2483,7 @@ function normalizeTokenAuthMethod(method: string | undefined): string {
  * to 40 lines). Long ones show their first line and open on request.
  */
 function ToolPathSummary({ path }: { path: string }) {
+  const tt = useTranslations('connectorTools');
   const [open, setOpen] = useState(false);
   const oneLine = path.replace(/\s+/g, ' ').trim();
   if (oneLine.length <= 120 && !path.includes('\n')) {
@@ -2410,7 +2506,9 @@ function ToolPathSummary({ path }: { path: string }) {
         className="self-start text-[var(--brand)] hover:underline"
         aria-expanded={open}
       >
-        {open ? 'Hide' : 'Show full'} {/^\s*(select|with)\b/i.test(path) ? 'SQL' : 'path'}
+        {/^\s*(select|with)\b/i.test(path)
+          ? tt(open ? 'card.hideSql' : 'card.showSql')
+          : tt(open ? 'card.hidePath' : 'card.showPath')}
       </button>
     </span>
   );

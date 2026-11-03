@@ -1,0 +1,304 @@
+{
+  "slug": "mem0",
+  "name": "Mem0",
+  "aliases": ["Mem0 Platform", "Mem0 AI", "mem0ai"],
+  "description": "Give your AI a long-term memory with the Mem0 Platform: store facts from conversations per user, agent or session, search them by meaning, list, read, correct and trace the history of memories, and see users, agents, profiles, processing events and usage.",
+  "region": "intl",
+  "category": "data",
+  "icon": "mem0",
+  "docsUrl": "https://docs.mem0.ai/api-reference",
+  "prerequisites": "A Mem0 Platform account (app.mem0.ai) and an API key from its dashboard. The free plan has monthly limits on stored memories and searches. About 2 minutes.",
+  "requiredEnvVars": ["MEM0_API_KEY"],
+  "envVarMeta": {
+    "MEM0_API_KEY": {
+      "label": "Mem0 API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "app.mem0.ai, Dashboard, API Keys, Create API Key. The key belongs to one organization and project; memories are read and written there.",
+      "link": "https://app.mem0.ai/dashboard/api-keys",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the key as Mem0 shows it, without the word Token and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Mem0 refused the API key: it is wrong or was revoked. Create a new one at https://app.mem0.ai/dashboard/api-keys.",
+    "rate_limited": "Mem0 rate limited the key or the plan's monthly limit is reached. Check usage with the stats tool or in the Mem0 dashboard."
+  },
+  "probe": { "tool": "mem0_ping" },
+  "connector": {
+    "name": "Mem0 Platform API",
+    "type": "REST",
+    "baseUrl": "https://api.mem0.ai",
+    "authType": "API_KEY",
+    "authConfig": { "headerName": "Authorization", "apiKey": "Token {{MEM0_API_KEY}}" },
+    "headers": { "Accept": "application/json", "User-Agent": "AnythingMCP" },
+    "healthcheckPath": "/v1/ping/"
+  },
+  "instructions": "## Mem0\nThis connector uses the **Mem0 Platform API** (`https://api.mem0.ai`): a managed long-term memory for AI apps. Mem0 extracts short facts (\"prefers vegetarian food\", \"lives in Lyon\") from conversations, stores them per **user**, **agent**, **app** or **run** (session), and finds them again by meaning.\n\n**Setup (2 minutes)**\n1. Sign in at https://app.mem0.ai.\n2. Open **API Keys** (https://app.mem0.ai/dashboard/api-keys), create a key and copy it. The key belongs to one organization and project.\n3. Paste it into `MEM0_API_KEY`. It is sent as `Authorization: Token <key>`.\n4. Run `mem0_ping`: it returns the organization, project and account email the key works on.\n\n**Scoping (important)**: every memory belongs to at least one entity id: `user_id`, `agent_id`, `app_id` or `run_id`. Use stable ids from the user's own system (an email hash, a customer number), never a guess. Searching and listing need a `filters` object with at least one of them, e.g. `{\"user_id\": \"alice\"}`, or combined: `{\"AND\": [{\"user_id\": \"alice\"}, {\"agent_id\": \"support-bot\"}]}`. Filters also take `OR`, `NOT` and the operators `in`, `gte`, `lte`, `gt`, `lt`, `ne`, `contains`, `icontains`, e.g. `{\"created_at\": {\"gte\": \"2026-01-01\"}}`.\n\n**Workflow**\n- Remember: `mem0_add_memories` with `messages` (`[{\"role\": \"user\", \"content\": \"...\"}, {\"role\": \"assistant\", \"content\": \"...\"}]`) and an entity id. Extraction runs asynchronously: the answer is `status` `PENDING` with an `event_id`; `mem0_get_event` shows when it `SUCCEEDED` and which memories were added or changed. `infer: false` stores each message verbatim and answers at once. Tell the user what you are about to store when it is personal.\n- Recall: `mem0_search_memories` with a natural-language `query` and `filters`; results carry `memory`, `score` (relevance), `categories`, `metadata` and dates. Raise `top_k` for more hits, set `rerank: true` for better ordering.\n- Browse: `mem0_list_memories` lists every memory matching `filters`, newest first, with `page` and `page_size`; `mem0_get_memory` reads one; `mem0_get_memory_history` shows how it changed (old and new text, event ADD, UPDATE or DELETE, and the input that caused it).\n- Correct: `mem0_update_memory` replaces a memory's `text`, `metadata` or `expiration_date`. Confirm the memory id with the user first.\n- Entities: `mem0_list_entities` lists the users, agents, apps and runs with memories and their counts; `mem0_get_entity` reads one; `mem0_get_user_profile` returns the profile Mem0 builds for a user (generated in the background; a 200 with a `status` means it is not ready yet). `mem0_create_user` registers a user id with metadata before any memory exists.\n- Activity and usage: `mem0_list_events` lists add and search operations with their status; `mem0_get_event` reads one; `mem0_get_stats` shows totals of memories, add and search events and the plan's search limit.\n\n**Switched off at install**: `mem0_delete_memory` and `mem0_delete_entity`; they cannot be undone (deleting an entity removes all of its memories), so an admin switches them on when the team needs them. Bulk delete of all memories is not part of this connector.\n\n**Reading answers**: ids are UUIDs. Dates are ISO 8601, UTC. List answers carry `count`, `next` and `previous` (URLs; a null `next` means the last page). `categories` are Mem0's own tags such as `food`, `travel`, `professional_details`.\n\n**Limits**: plans limit stored memories and search (retrieval) calls per month; `mem0_get_stats` shows `total_retrieval_events_limit`. `mem0_list_memories` pages through results; prefer `mem0_search_memories` to answer a question.\n\n**Errors**: 400 missing or invalid filters (search and list reject a top-level `user_id`; put it in `filters`), no entity id on add, or a bad date format; 401 invalid key; 404 unknown memory, entity or event; 429 rate or plan limit reached, wait and do not loop.",
+  "tools": [
+    {
+      "name": "mem0_ping",
+      "description": "Check the Mem0 API key and show the organization id, project id and account email it works on.",
+      "endpointMapping": { "method": "GET", "path": "/v1/ping/" }
+    },
+    {
+      "name": "mem0_add_memories",
+      "description": "Store memories from a conversation in Mem0: Mem0 extracts the lasting facts and saves them under the given user, agent, app or run (at least one id is required). Runs asynchronously: returns an event_id to check with mem0_get_event; with infer false the messages are stored verbatim at once. Counts against the plan's memory limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "object" },
+            "description": "Conversation to learn from, oldest first: [{\"role\": \"user\", \"content\": \"I'm vegetarian and allergic to nuts.\"}, {\"role\": \"assistant\", \"content\": \"Noted.\"}]."
+          },
+          "user_id": { "type": "string", "description": "User the memories belong to." },
+          "agent_id": { "type": "string", "description": "Agent the memories belong to." },
+          "app_id": { "type": "string", "description": "App the memories belong to." },
+          "run_id": { "type": "string", "description": "Run or session the memories belong to." },
+          "metadata": { "type": "object", "description": "Your own key-value metadata attached to every extracted memory, e.g. {\"source\": \"support-chat\"}." },
+          "infer": { "type": "boolean", "description": "false stores each message verbatim without extraction (synchronous). Default true." },
+          "expiration_date": { "type": "string", "description": "YYYY-MM-DD after which the memories are hidden from search and lists." },
+          "custom_instructions": { "type": "string", "description": "Instructions for what to extract in this call, overriding the project's setting." },
+          "includes": { "type": "string", "description": "Hint of what to include, e.g. food preferences." },
+          "excludes": { "type": "string", "description": "Hint of what to leave out, e.g. health data." },
+          "immutable": { "type": "boolean", "description": "true keeps the stored memories out of later updates and merges." }
+        },
+        "required": ["messages"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/memories/add/",
+        "bodyMapping": {
+          "messages": "$messages",
+          "user_id": "$user_id",
+          "agent_id": "$agent_id",
+          "app_id": "$app_id",
+          "run_id": "$run_id",
+          "metadata": "$metadata",
+          "infer": "$infer",
+          "expiration_date": "$expiration_date",
+          "custom_instructions": "$custom_instructions",
+          "includes": "$includes",
+          "excludes": "$excludes",
+          "immutable": "$immutable"
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false }
+    },
+    {
+      "name": "mem0_search_memories",
+      "description": "Search Mem0 memories by meaning with a natural-language query, within filters that name at least one user_id, agent_id, app_id or run_id. Returns the most relevant memories with score, categories, metadata and dates. Counts as a retrieval call on the plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "What to look for, e.g. What does the user eat?" },
+          "filters": { "type": "object", "description": "Scope and conditions, at least one entity id: {\"user_id\": \"alice\"} or {\"AND\": [{\"user_id\": \"alice\"}, {\"categories\": {\"contains\": \"food\"}}]}." },
+          "top_k": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Number of results, default 10." },
+          "threshold": { "type": "number", "minimum": 0, "maximum": 1, "description": "Minimum relevance score, default 0.1; 0 disables the cut." },
+          "rerank": { "type": "boolean", "description": "true reorders the hits with Mem0's reranker (slower, better ordering)." },
+          "categories": { "type": "array", "items": { "type": "string" }, "description": "Only memories tagged with any of these categories." },
+          "fields": { "type": "array", "items": { "type": "string" }, "description": "Return only these fields per memory, e.g. [\"id\", \"memory\", \"score\"]." },
+          "show_expired": { "type": "boolean", "description": "true also returns memories past their expiration_date." }
+        },
+        "required": ["query", "filters"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/memories/search/",
+        "bodyMapping": {
+          "query": "$query",
+          "filters": "$filters",
+          "top_k": "$top_k",
+          "threshold": "$threshold",
+          "rerank": "$rerank",
+          "categories": "$categories",
+          "fields": "$fields",
+          "show_expired": "$show_expired"
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "mem0_list_memories",
+      "description": "List all Mem0 memories that match filters (at least one user_id, agent_id, app_id or run_id), page by page, with optional date range, categories and keyword. Answer carries count, next and results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": { "type": "object", "description": "Scope and conditions, at least one entity id: {\"user_id\": \"alice\"}; also AND, OR, NOT and operators such as {\"created_at\": {\"gte\": \"2026-01-01\"}}." },
+          "page": { "type": "integer", "minimum": 1, "default": 1, "description": "Page number, starting at 1." },
+          "page_size": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Memories per page, default 50." },
+          "start_date": { "type": "string", "description": "Only memories created on or after this date (YYYY-MM-DD)." },
+          "end_date": { "type": "string", "description": "Only memories created on or before this date (YYYY-MM-DD)." },
+          "categories": { "type": "array", "items": { "type": "string" }, "description": "Only memories tagged with any of these categories." },
+          "keywords": { "type": "string", "description": "Free-text keyword filter on top of filters." },
+          "fields": { "type": "array", "items": { "type": "string" }, "description": "Return only these fields, e.g. [\"id\", \"memory\", \"created_at\"]." },
+          "show_expired": { "type": "boolean", "description": "true also lists memories past their expiration_date." }
+        },
+        "required": ["filters"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/memories/",
+        "queryParams": { "page": "$page", "page_size": "$page_size" },
+        "bodyMapping": {
+          "filters": "$filters",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "categories": "$categories",
+          "keywords": "$keywords",
+          "fields": "$fields",
+          "show_expired": "$show_expired"
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "mem0_get_memory",
+      "description": "Read one Mem0 memory by id: its text, user, agent, app and session ids, metadata, categories, creation, update and expiration dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "memory_id": { "type": "string", "description": "Memory id (UUID) from a search or list." }
+        },
+        "required": ["memory_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/memories/{memory_id}/" }
+    },
+    {
+      "name": "mem0_update_memory",
+      "description": "Replace the text, metadata or expiration date of one Mem0 memory, e.g. to correct a wrong fact. The old text stays in mem0_get_memory_history. Confirm the memory and the new text with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "memory_id": { "type": "string", "description": "Memory id (UUID)." },
+          "text": { "type": "string", "description": "New text of the memory." },
+          "metadata": { "type": "object", "description": "New metadata; replaces the existing metadata." },
+          "expiration_date": { "type": "string", "description": "New expiration date YYYY-MM-DD." }
+        },
+        "required": ["memory_id"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/memories/{memory_id}/",
+        "bodyMapping": { "text": "$text", "metadata": "$metadata", "expiration_date": "$expiration_date" }
+      }
+    },
+    {
+      "name": "mem0_get_memory_history",
+      "description": "Show how one Mem0 memory changed over time: each entry has the old and new text, the event (ADD, UPDATE, DELETE), the conversation input that caused it and the timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "memory_id": { "type": "string", "description": "Memory id (UUID)." }
+        },
+        "required": ["memory_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/memories/{memory_id}/history/" }
+    },
+    {
+      "name": "mem0_list_entities",
+      "description": "List the users, agents, apps and runs that have memories in the Mem0 project, with their type, name, memory count and dates, plus totals per type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, starting at 1." },
+          "page_size": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Entities per page." }
+        }
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/entities/", "queryParams": { "page": "$page", "page_size": "$page_size" } }
+    },
+    {
+      "name": "mem0_get_entity",
+      "description": "Read one Mem0 entity (a user, agent, app or run): id, name, owner, metadata and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": { "type": "string", "enum": ["user", "agent", "app", "run"], "description": "Kind of entity." },
+          "entity_id": { "type": "string", "description": "The entity's id as used when memories were added, e.g. the user_id." }
+        },
+        "required": ["entity_type", "entity_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v2/entities/{entity_type}/{entity_id}/" }
+    },
+    {
+      "name": "mem0_get_user_profile",
+      "description": "Read the memory profile Mem0 builds for a user: a summary of who they are and what they prefer. Built in the background; a 200 answer with a status and no profile means it is not ready yet, 404 means the user is unknown.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "string", "description": "The user_id used when memories were added." }
+        },
+        "required": ["user_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v2/entities/user/{user_id}/profile/" }
+    },
+    {
+      "name": "mem0_create_user",
+      "description": "Register a user id in the Mem0 project with optional metadata, before any memory is added for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "string", "description": "Stable user id from your own system." },
+          "metadata": { "type": "object", "description": "Key-value metadata about the user, e.g. {\"plan\": \"pro\"}." }
+        },
+        "required": ["user_id"]
+      },
+      "endpointMapping": { "method": "POST", "path": "/v1/users/", "bodyMapping": { "user_id": "$user_id", "metadata": "$metadata" } },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false }
+    },
+    {
+      "name": "mem0_list_events",
+      "description": "List the memory operations of the Mem0 project (add and search events) with type, status (PENDING, RUNNING, SUCCEEDED, FAILED), payload, results, latency and dates. Answer carries count, next and results.",
+      "endpointMapping": { "method": "GET", "path": "/v1/events/" }
+    },
+    {
+      "name": "mem0_get_event",
+      "description": "Read one Mem0 event, e.g. the event_id returned by mem0_add_memories: status, the memories it added, updated or deleted, latency, timestamps and the error if it failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string", "description": "Event id (UUID)." }
+        },
+        "required": ["event_id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/v1/event/{event_id}/" }
+    },
+    {
+      "name": "mem0_get_stats",
+      "description": "Show Mem0 usage statistics: total memories, add events, search (retrieval) events and the plan's retrieval limit, and memories per user, agent and run.",
+      "endpointMapping": { "method": "GET", "path": "/v1/stats/" }
+    },
+    {
+      "name": "mem0_delete_memory",
+      "description": "Delete one Mem0 memory permanently. It cannot be restored. Installed switched off. Confirm the memory id and text with the user before calling.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "memory_id": { "type": "string", "description": "Memory id (UUID) to delete." },
+          "delete_linked": { "type": "boolean", "description": "true also deletes memories linked to this one; the answer then has cascade_count." }
+        },
+        "required": ["memory_id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/v1/memories/{memory_id}/", "queryParams": { "delete_linked": "$delete_linked" } },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "mem0_delete_entity",
+      "description": "Delete a Mem0 user, agent, app or run together with all of its memories. It cannot be undone. Installed switched off. Confirm with the user before calling.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": { "type": "string", "enum": ["user", "agent", "app", "run"], "description": "Kind of entity." },
+          "entity_id": { "type": "string", "description": "The entity's id." }
+        },
+        "required": ["entity_type", "entity_id"]
+      },
+      "endpointMapping": { "method": "DELETE", "path": "/v2/entities/{entity_type}/{entity_id}/" },
+      "annotations": { "destructiveHint": true }
+    }
+  ]
+}

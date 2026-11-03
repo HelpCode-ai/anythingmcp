@@ -41,6 +41,83 @@ store, on /welcome and in the chat matches them like the name; they are never
 displayed. Keep them to names that clearly mean this app, each at most 40
 characters; a misspelling needs no alias, the search tolerates typos.
 
+`envVarMeta.<VAR>.pattern` (with `patternMessage`) is enforced on every path
+that writes the variable: the setup form, the pre-save check, the install
+(also "Save anyway" and a chat install) and the connector's variable editor.
+Those paths also refuse, field by field, an address or credential still
+holding an example (`host`, `example.com`, `your-api-key`, `<...>`,
+`PASTE_KEY_HERE`) and a credential pasted more than once (the same string
+repeated). See `packages/backend/src/adapters/env-var-checks.ts`.
+
+`verifyHints` maps a status (`"401"`) or failure kind (`"auth_failed"`,
+`"unreachable"`) to what the setup check tells the user. A tool call that
+the API answers 401 uses the adapter's `"401"` (or `"auth_failed"`) hint too
+when no built-in rule matches, followed by a link to the connector's page,
+so a connector saved without a passing check hears the same advice. Hints are
+read from the catalog at call time and reach installed connectors without
+"Apply update". Declare a `probe` (a read call with fixed `params`) when no
+GET without required parameters exists; without one the setup check is
+skipped and a wrong key is only found at the first call. An adapter for a
+vendor's MCP server (`connector.type` `MCP`) without a `probe` is checked by
+listing the server's tools, which catches a refused token. A hint written as
+`{ "hint": "…", "field": "VAR" }` is also shown under that variable on the
+setup form.
+
+A probe can still fail when the call answers: an MCP tool result with
+`isError: true` fails the check, and `probe.failWhen` lists answers that mean
+the connector cannot work although nothing was refused. Each rule's `matches`
+is a case-insensitive regular expression over the answer's text (for an MCP
+tool, the text of its result); the first match fails the check with its
+`hint`, under `field` when it names one, as `kind` (default `auth_failed`):
+
+```json
+"probe": {
+  "tool": "atlassian_discover",
+  "params": { "query": "get issue details" },
+  "failWhen": [
+    {
+      "matches": "missing the scope claim|\"searchableProducts\"\\s*:\\s*\\[\\s*\\]",
+      "hint": "This API token has no scopes. Create an 'API token with scopes' …",
+      "field": "ATLASSIAN_API_TOKEN"
+    }
+  ]
+}
+```
+
+`derivedEnvVars` declares settings the user should not have to look up,
+found at setup from a host they do know. Each entry names the variable that
+holds the host (`fromHost`, declared in `optionalEnvVars` or
+`requiredEnvVars`), a public `url` starting with `https://{{<fromHost>}}/`,
+the dotted `path` of the value in its JSON answer, an optional `pattern` the
+value must match, and the `error` shown under the host field when the host
+answers without a value (`{{host}}` is replaced by it). The host is stored as
+a bare lower-case host (`https://Acme.atlassian.net/` becomes
+`acme.atlassian.net`). The lookup runs at the setup check, at install and in
+the connector's variable editor when the host changes; when the host does not
+answer at all (timeout, 5xx), the connector is saved without the value. See
+`packages/backend/src/adapters/derived-settings.ts`:
+
+```json
+"derivedEnvVars": {
+  "ATLASSIAN_CLOUD_ID": {
+    "fromHost": "ATLASSIAN_SITE",
+    "url": "https://{{ATLASSIAN_SITE}}/_edge/tenant_info",
+    "path": "cloudId",
+    "pattern": "^[0-9a-fA-F-]{36}$",
+    "error": "No Atlassian site answers at {{host}}."
+  }
+}
+```
+
+`instructionFacts` are sentences added to a catalog connector's instructions
+when they are served to a model (initialize, the workspace guide), each only
+when every `{{VAR}}` it names is set on the connector. Only non-secret
+variables (declared or derived) may be named. Stored instructions never
+resolve `{{VAR}}`, so this is how a per-workspace fact (the Atlassian site and
+its cloudId) reaches the model. Facts are read from the catalog when the
+instructions are served and reach installed connectors without "Apply
+update". See `packages/backend/src/adapters/instruction-facts.ts`.
+
 ### Tools
 
 Each entry in `tools` needs a string `name`, a useful `description`, and its
@@ -114,6 +191,16 @@ or `private_key_jwt`, which signs a short-lived client assertion with a private
 key instead of sending a secret (see
 [REST connectors](connectors/rest.md#signed-client-assertion-private_key_jwt)).
 
+The browser sign-in ("Authorize with Provider") sends this server's callback
+URL (`<SERVER_URL>/api/mcp-oauth/callback`) as `redirect_uri`. A provider that
+wants something else there names it in `authConfig.providerRedirectUri`, which
+is then sent on the authorization request and on the code exchange alike.
+eBay is the case: its `redirect_uri` is the app's RuName, and the RuName's
+"Auth Accepted URL" in eBay's developer portal points at the callback URL.
+Use a variable (`"providerRedirectUri": "{{EBAY_RUNAME}}"`); until it has a
+value, the sign-in asks for it instead of starting. `authConfig.pkce: false`
+leaves out the PKCE challenge and verifier for providers that do not use them.
+
 A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
 connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
 also sent on the token requests: the authorization-code exchange, refreshes
@@ -153,6 +240,59 @@ The body is signed exactly as it will be sent — signing a different rendering
 of the same object is the usual way an HMAC integration fails with an error
 that blames the key.
 
+#### Query signing (opt-in)
+
+Some platforms put the digest and the timestamp in the query instead of a
+header. These fields switch to that path; a signature without any of them is
+computed exactly as described above.
+
+| Field | Meaning |
+|-------|---------|
+| `placement` | `header` (default) or `query`: the digest goes into the query parameter `paramName`. |
+| `paramName` | Name of that query parameter, default `sign`. |
+| `timestampParam` | Sends the timestamp as this query parameter. |
+| `timestampFormat` | `s` (default, Unix seconds) or `ms` (milliseconds), for `${timestamp}`, `timestampParam` and `timestampHeader` alike. |
+| `queryParams` | Static query parameters added to every call (an app key, a fixed `sign_method`), signed like the others. |
+| `encoding` | Also `hex-upper`: hex in capitals. |
+
+On this path the template may also use:
+
+- `${pathname}`: the URL path without the query.
+- `${apiPath}`: the path below the connector's `baseUrl`, without the query
+  (`/auth/token/create` when `baseUrl` is `https://api-sg.aliexpress.com/rest`).
+- `${query.NAME}`: the value of one query parameter as sent, empty when absent.
+- `${sortedParams}`: every parameter sent, sorted by name (ASCII order) and
+  concatenated as name + value with no separators. It covers the query as sent,
+  including `queryParams`, the timestamp and parameters a token provider adds,
+  and the fields of an `application/x-www-form-urlencoded` body. An array or
+  object contributes the same pairs the query serializer sends for it
+  (`ids=1&ids=2`, `page[size]=20`). The signature parameter itself and empty
+  values are left out.
+
+Variables are replaced in one pass, so a value that contains `${body}` is
+signed as that literal text. Shopee (`intl/shopee.json`) signs
+`${query.partner_id}${pathname}${timestamp}...`. The Alibaba IOP gateways
+(AliExpress, see `intl/aliexpress-affiliate.json`) sign every parameter:
+
+```json
+"signature": {
+  "algorithm": "sha256",
+  "encoding": "hex-upper",
+  "secret": "{{ALIEXPRESS_APP_SECRET}}",
+  "placement": "query",
+  "paramName": "sign",
+  "timestampParam": "timestamp",
+  "timestampFormat": "ms",
+  "queryParams": { "app_key": "{{ALIEXPRESS_APP_KEY}}", "sign_method": "sha256" },
+  "template": "${sortedParams}"
+}
+```
+
+Their `/sync?method=...` business calls sign `${sortedParams}` (the `method`
+parameter is one of them); calls on their `/rest` gateway put the API path in
+front: `${apiPath}${sortedParams}`. JSON-valued parameters go in a form body
+with the `__json` marker, which `${sortedParams}` signs as its JSON text.
+
 ### MCP adapters (a vendor's own MCP server)
 
 When a vendor already runs an official MCP server, the adapter bridges it
@@ -167,7 +307,10 @@ version it runs. The adapter's `tools` array is a snapshot: it is what the
 catalog shows, the fallback installed when the server cannot be reached at
 install, and the place for policy. A snapshot tool with `"enabled": false`
 installs switched off, and `annotations` set there fill the hints the server
-leaves out (the server's own hints win).
+leaves out (the server's own hints win). `omitParameters` (an array of
+top-level parameter names) drops those parameters from the schema the server
+lists, at install and on every **Discover tools**, for vendor fields such as
+attribution that a workspace has no use for.
 Each tool's `endpointMapping` is `{ "method": "<remote tool name>", "path": "/mcp" }`
 (`"/"` for a server at the root of its host, together with
 `connector.config.mcpPath: "/"`).
@@ -282,9 +425,21 @@ menus deep. Adapters without one keep the form.
   `capturedAt`. Leave it out rather than add a mock-up.
 - `confirm`: a checkbox the user ticks before continuing, for a step that
   happens at the provider.
+- `saveAndCheck: true`: for a provider that must approve the user's app
+  before the keys work (Etsy). Continue saves the step's `fields` on the
+  connector (unfinished, so the AI cannot use it yet) and asks the provider
+  about the keys with the adapter's `checkBeforeAuthorization`. Needs
+  `fields`, and cannot be the last step.
+- `waitForProvider: true`: the step right after a `saveAndCheck` step, shown
+  only while the provider refuses the saved keys and skipped once it accepts
+  them. It tells the user what they are waiting for; the page checks again
+  whenever they come back to it and offers "Check again", and Continue opens
+  once the keys are accepted. No `fields` or `confirm`.
 
 The guide is not part of the catalog fingerprint: rewording it does not mark
-installed connectors as out of date. Progress is kept in the browser only.
+installed connectors as out of date. Progress is kept in the browser, with
+the id of a connector saved by a `saveAndCheck` step, so a user coming back
+days later continues with the keys they entered.
 
 ### Adapter file errors
 
@@ -486,6 +641,35 @@ The selected headers are added to the tool result next to the body, and a
 - The audit log keeps storing the bare body. Headers are cached together with it when `cacheTtl` is set.
 - REST connectors only. Tools that did not set `exposeHeaders` behave exactly as before.
 
+### Slow or large responses (`timeoutMs`, `maxResponseBytes`)
+
+A REST call times out after 30 s, and the engine stops reading an upstream body
+larger than `TOOL_MAX_RESPONSE_BYTES` (10 MB by default). Image generation needs
+more of both: a 2K or 4K picture can take a minute, and its base64 inside the
+JSON can pass 10 MB before [`images`](#images-in-the-response-images) takes it
+out of the result. A tool can set its own values on the endpoint mapping:
+
+```json
+{
+  "method": "POST",
+  "path": "/models/{model}:generateContent",
+  "timeoutMs": 120000,
+  "maxResponseBytes": 41943040
+}
+```
+
+- `timeoutMs`: milliseconds, clamped to 1 000 – 180 000. Absent: 30 000.
+- `maxResponseBytes`: bytes of the upstream body, at most 50 MB (52 428 800), or
+  `TOOL_MAX_RESPONSE_BYTES` when that is set higher. A lower value than the
+  global one is allowed. Absent: `TOOL_MAX_RESPONSE_BYTES`.
+- `maxResponseBytes` only applies to the body the API sends. The result text the
+  client receives is still held to `TOOL_MAX_RESPONSE_BYTES`, so raise it only
+  where `responseMapping` takes the bulk out (base64 images).
+- A call that times out with a raised `timeoutMs` is not retried, whatever its
+  method; a POST, PATCH or DELETE is never retried after a timeout anyway.
+- REST connectors only. Tools without these keys behave exactly as before, on
+  Cloud and self-hosted alike.
+
 ### By Connector Type
 
 | Connector | method | path | queryParams | bodyMapping | headers |
@@ -496,6 +680,7 @@ The selected headers are added to the tool result next to the body, and a
 | **SOAP** | SOAP operation name | Port/binding path | — | SOAP parameters | HTTP headers |
 | **Database** | `query` or `static` | SQL/MongoDB query with `$param` | — | — | — |
 | **MCP** | Remote tool name | — | — | Passed through | — |
+| **Email** | `static`, or a built-in `email_list_folders` / `email_search` / `email_get_message` / `email_get_attachment` / `email_set_flags` / `email_move` / `email_delete` / `email_save_draft` / `email_send` (see [Email](connectors/email.md)) | — | — | — (arguments are read directly) | — |
 
 ### Static tools
 
@@ -876,7 +1061,10 @@ Behaviour worth knowing:
   API key or bearer token, and in anonymous mode, there is no user — the variable resolves to an **empty
   string** rather than leaking a literal `{{amcp.…}}` to the target.
 - **Non-spoofable.** The values are resolved server-side from the authenticated request and merged *after*
-  connector env vars, so neither a workspace variable nor a tool argument can shadow them.
+  connector env vars, so neither a workspace variable nor a tool argument can shadow them. Users cannot
+  change their own e-mail address either (`PUT /api/users/me` refuses a new one, on Cloud and self-hosted),
+  so `{{amcp.user_email}}` is the address the account was created with, or the one your identity provider
+  sets through SCIM.
 - **Typos are rejected** when you save the tool, since at runtime an unknown reserved variable would silently
   resolve to empty.
 - These variables apply to `baseUrl`, connector headers and the whole endpoint mapping — `path`,

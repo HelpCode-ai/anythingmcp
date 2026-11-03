@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { recoveryCodes as api, type RecoveryCodeStatus } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/toast';
@@ -20,6 +21,7 @@ export function RecoveryCodesCard({
   token: string;
   onChanged?: () => void;
 }) {
+  const t = useTranslations('settingsSso.recovery');
   const toast = useToast();
   const [status, setStatus] = useState<RecoveryCodeStatus | null>(null);
   const [issued, setIssued] = useState<string[] | null>(null);
@@ -50,7 +52,7 @@ export function RecoveryCodesCard({
       await load();
       onChanged?.();
     } catch (err: any) {
-      toast.show({ tone: 'error', title: 'Could not generate codes', description: err.message });
+      toast.show({ tone: 'error', title: t('generateFailed'), description: err.message });
     } finally {
       setBusy(false);
     }
@@ -65,6 +67,7 @@ export function RecoveryCodesCard({
 
   const handleDownload = () => {
     if (!issued) return;
+    // The file keeps its English text, like the other downloads.
     const body = [
       'AnythingMCP recovery codes',
       `Generated ${new Date().toISOString()}`,
@@ -87,11 +90,9 @@ export function RecoveryCodesCard({
 
   return (
     <div className="mt-5 pt-4 border-t border-[var(--border)]">
-      <h4 className="text-[13px] font-semibold text-[var(--text)]">Recovery codes</h4>
+      <h4 className="text-[13px] font-semibold text-[var(--text)]">{t('title')}</h4>
       <p className="text-[11.5px] text-[var(--text-3)] mt-1 max-w-2xl">
-        Single-use codes that sign you in when the identity provider cannot be reached — an
-        expired client secret, a tenant migration, a claim that stopped arriving. Requiring
-        single sign-on is only possible once you hold some.
+        {t('intro')}
       </p>
 
       {issued ? (
@@ -103,7 +104,7 @@ export function RecoveryCodesCard({
             page.
           */}
           <p className="text-[12px] text-[var(--text)] font-medium">
-            Save these now — they cannot be shown again.
+            {t('saveNow')}
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
             {issued.map((c) => (
@@ -117,28 +118,28 @@ export function RecoveryCodesCard({
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={handleCopy}>
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t('copied') : t('copy')}
             </Button>
             <Button size="sm" variant="secondary" onClick={handleDownload}>
-              Download
+              {t('download')}
             </Button>
             <Button size="sm" onClick={() => setIssued(null)}>
-              I have saved them
+              {t('savedThem')}
             </Button>
           </div>
         </div>
       ) : (
         <div className="mt-3 flex items-center gap-3 flex-wrap">
           <Button size="sm" variant={none ? undefined : 'secondary'} onClick={handleGenerate} disabled={busy}>
-            {busy ? 'Generating...' : none ? 'Generate recovery codes' : 'Regenerate'}
+            {busy ? t('generating') : none ? t('generate') : t('regenerate')}
           </Button>
           <span className="text-[12px] text-[var(--text-3)]">
             {status === null
               ? ''
               : status.total === 0
-                ? 'None yet.'
-                : `${status.unused} of ${status.total} unused.`}
-            {status && status.total > 0 && ' Regenerating invalidates the current set.'}
+                ? t('noneYet')
+                : t('unused', { unused: status.unused, total: status.total })}
+            {status && status.total > 0 && ` ${t('regenerateWarning')}`}
           </span>
         </div>
       )}

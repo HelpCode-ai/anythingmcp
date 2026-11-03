@@ -1,0 +1,2434 @@
+{
+  "slug": "constant-contact",
+  "name": "Constant Contact",
+  "aliases": [
+    "ConstantContact",
+    "CTCT"
+  ],
+  "description": "Constant Contact email marketing: contacts with consent status, lists, tags, custom fields and segments, bulk list and tag changes, email campaigns built from HTML with preview, test and scheduled send, and campaign, link and contact reports. V3 API with OAuth.",
+  "region": "intl",
+  "category": "email",
+  "icon": "constant-contact",
+  "docsUrl": "https://developer.constantcontact.com/api_guide/getting_started.html",
+  "appRegistrationUrl": "https://app.constantcontact.com/pages/dma/portal",
+  "instructions": "## Constant Contact\nThis connector uses the **Constant Contact V3 API** (`https://api.cc.email/v3`), the email marketing service for small businesses: contacts with their email consent, lists, tags, custom fields and segments, email campaigns (create from HTML, set the audience, preview, test, schedule) and the reports of sent campaigns and of single contacts. It signs in with OAuth through an application you register in the Constant Contact developer portal. Events, SMS campaigns, social posts and partner endpoints are not part of it.\n\n**Setup (about 10 minutes)**\n1. Open the V3 developer portal at https://app.constantcontact.com/pages/dma/portal and sign in with the Constant Contact login of the account you want to connect (new applications are private: until Constant Contact approves them, only the user who created the app can authorize it).\n2. Click **New Application**, give it a name (users see it on the consent screen), choose **Authorization Code Flow and Implicit Flow** and a refresh token type: **Rotating Refresh Tokens** (recommended) or **Long Lived Refresh Tokens**. Create it.\n3. Open the app (**Edit**), add the redirect URI `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself, then click **Generate Client Secret**. The secret is shown only once. Save.\n4. Copy the **API Key** into `CONSTANT_CONTACT_CLIENT_ID` and the secret into `CONSTANT_CONTACT_CLIENT_SECRET`, leave `CONSTANT_CONTACT_REFRESH_TOKEN` empty and install.\n5. Click **Authorize with Provider** and sign in to Constant Contact. The connector asks for the scopes `account_read contact_data campaign_data offline_access` (`offline_access` is what returns a refresh token). Run `constant_contact_get_account_summary` to check.\n\n**Tokens**: an access token lasts 24 hours and is renewed automatically with the refresh token. With rotating refresh tokens every renewal returns a new refresh token and the previous one stops working, so do not use the stored token elsewhere; with long-lived ones the same token keeps working. Either kind expires when it is not used for 180 days: then authorize again. What the agent may do also depends on the privileges of the Constant Contact user who signed in (`constant_contact_get_user_privileges`).\n\n**Workflow**\n- Account: `constant_contact_get_account_summary`, `constant_contact_list_account_emails` (the confirmed sender addresses), `constant_contact_get_user_privileges`.\n- Find contacts: `constant_contact_list_contacts` (by `email`, status, lists, tags, segment, dates; `include` adds lists, tags, custom fields, phones, addresses), `constant_contact_get_contact`, `constant_contact_get_contact_counts`.\n- Add or change contacts: `constant_contact_create_or_update_contact` is the safe default (by email, partial update, adds to lists). `constant_contact_create_contact` fails when the email exists. `constant_contact_update_contact` replaces the whole contact, so read it first. `constant_contact_delete_contact` is installed switched off.\n- Lists: `constant_contact_list_contact_lists`, `constant_contact_get_contact_list`, `constant_contact_create_contact_list`, `constant_contact_update_contact_list`; `constant_contact_delete_contact_list` is installed switched off. Membership in bulk: `constant_contact_add_contacts_to_lists`, `constant_contact_remove_contacts_from_lists`.\n- Tags: `constant_contact_list_tags`, `constant_contact_get_tag`, `constant_contact_create_tag`, `constant_contact_update_tag`, `constant_contact_add_tags_to_contacts`, `constant_contact_remove_tags_from_contacts`.\n- Custom fields and segments: `constant_contact_list_custom_fields`, `constant_contact_get_custom_field`, `constant_contact_create_custom_field`; `constant_contact_list_segments`, `constant_contact_get_segment`.\n- Bulk changes run in the background and return an `activity_id`: follow it with `constant_contact_get_activity` until `state` is completed; `constant_contact_list_activities` shows recent ones.\n- Campaigns: `constant_contact_list_email_campaigns`, then `constant_contact_get_email_campaign` for its activities; work on the activity with role `primary_email`: `constant_contact_get_email_campaign_activity`, `constant_contact_get_email_preview`, `constant_contact_get_email_schedule`, `constant_contact_get_email_send_history`.\n- Build and send an email: `constant_contact_create_email_campaign` (your HTML with `[[trackingImage]]`, sender from `constant_contact_list_account_emails`), `constant_contact_update_email_campaign_activity` to set `contact_list_ids` or `segment_ids`, `constant_contact_rename_email_campaign` if needed, `constant_contact_get_email_preview` and `constant_contact_send_test_email` to check, then `constant_contact_schedule_email_campaign_activity` (installed switched off) and `constant_contact_unschedule_email_campaign_activity` to stop a scheduled send.\n- Results: `constant_contact_list_email_campaign_summaries` for recent campaigns, `constant_contact_get_email_campaign_stats` by campaign, `constant_contact_get_email_campaign_activity_stats` by activity, `constant_contact_get_email_links_report` per link, `constant_contact_get_email_tracking_report` for the contacts behind each number. One contact: `constant_contact_get_contact_activity_details`, `constant_contact_get_contact_activity_summary`, `constant_contact_get_contact_open_click_rates`.\n\n**Sending and consent are real: confirm first.** Scheduling sends to every contact on the lists and cannot be undone once sending starts. Show the user the subject, sender, audience and time and schedule only after a clear yes. Add contacts only when they agreed to receive email from the business; never set `permission_to_send` to explicit for people who did not opt in. Unsubscribed contacts cannot be re-subscribed through the API without their own action.\n\n**Reading the answers**: ids of contacts, lists, tags, custom fields, campaigns and campaign activities are UUIDs; segment ids are integers. A campaign has several activities: reports, previews, tests and schedules take the `campaign_activity_id` of the `primary_email` activity, not the `campaign_id`. Times are ISO 8601 in UTC (`2026-10-30T14:05:00.000Z`). Campaign `current_status`: Draft, Scheduled, Executing, Done, Error, Removed. Email `permission_to_send`: explicit, implicit, not_set, pending_confirmation, temp_hold, unsubscribed. Report counts are unique contacts unless the report says otherwise; rates are percentages.\n\n**Paging**: list answers carry `_links.next.href` while more pages exist; stop when it is missing. Contacts, lists, tags, custom fields, activities and campaigns use a `cursor=` value in that link: pass it as `cursor`. Reports and segments use `next=`: pass it as `next`. Keep the other filters the same between pages.\n\n**Limits**: 10,000 requests a day per application key (reset at 00:00 UTC) and 4 requests a second; over either the API answers 429 (`quota_exceeded` or `throttled`). Test emails: 50 recipients a day.\n\n**Errors**: 401 an expired or revoked token (authorize again); 403 a missing scope or user privilege (check `constant_contact_get_user_privileges`); 404 an unknown id; 409 a duplicate (an email, list, tag or campaign name that already exists); 400 with `error_key` and `error_message` for invalid input; 202 from `constant_contact_list_contacts` with a segment while the result is still being built (ask again).",
+  "prerequisites": "A Constant Contact account and an application registered in the V3 developer portal (Authorization Code flow) with its API key and client secret.",
+  "requiredEnvVars": [
+    "CONSTANT_CONTACT_CLIENT_ID",
+    "CONSTANT_CONTACT_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "CONSTANT_CONTACT_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "CONSTANT_CONTACT_CLIENT_ID": {
+      "label": "API key (client ID)",
+      "kind": "credential",
+      "help": "Constant Contact V3 developer portal, My Applications, Edit: the API Key of your application. It is the OAuth client ID.",
+      "link": "https://app.constantcontact.com/pages/dma/portal"
+    },
+    "CONSTANT_CONTACT_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Generate Client Secret on the same application page. It is shown only once; generate a new one if it is lost.",
+      "link": "https://app.constantcontact.com/pages/dma/portal"
+    },
+    "CONSTANT_CONTACT_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "secret": true,
+      "advanced": true,
+      "help": "Leave empty: Authorize with Provider fills it in. With rotating refresh tokens a token that was already used once no longer works."
+    }
+  },
+  "verifyHints": {
+    "401": "Constant Contact did not accept the token. Authorize the connector again; check that the API key and client secret belong to the same application and that the refresh token was not used elsewhere.",
+    "403": "The token lacks a scope or the Constant Contact user lacks a privilege for this call. Authorize again with all scopes, or sign in with an account owner or a user with that permission.",
+    "429": "The daily request limit (10,000 a day) or the limit of 4 requests a second was reached. Wait and try again; the daily limit resets at 00:00 UTC."
+  },
+  "probe": {
+    "tool": "constant_contact_get_account_summary"
+  },
+  "connector": {
+    "name": "Constant Contact V3 API",
+    "type": "REST",
+    "baseUrl": "https://api.cc.email/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{CONSTANT_CONTACT_CLIENT_ID}}",
+      "clientSecret": "{{CONSTANT_CONTACT_CLIENT_SECRET}}",
+      "refreshToken": "{{CONSTANT_CONTACT_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://authz.constantcontact.com/oauth2/default/v1/authorize",
+      "tokenUrl": "https://authz.constantcontact.com/oauth2/default/v1/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "account_read contact_data campaign_data offline_access"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/account/summary"
+  },
+  "tools": [
+    {
+      "name": "constant_contact_get_account_summary",
+      "description": "Account details of the connected Constant Contact account: organization name, contact email and phone, website, time zone, country, state and the encoded account id. Optionally the physical address and company logo. Needs no ids; use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "extra_fields": {
+            "type": "string",
+            "description": "Extra details, comma-separated: physical_address, company_logo."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/summary",
+        "queryParams": {
+          "extra_fields": "$extra_fields"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_list_account_emails",
+      "description": "Email addresses of the account with their confirm status (CONFIRMED or UNCONFIRMED) and roles. A campaign's from_email and reply_to_email must be a CONFIRMED address from this list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "confirm_status": {
+            "type": "string",
+            "description": "Only addresses with this status.",
+            "enum": [
+              "CONFIRMED",
+              "UNCONFIRMED"
+            ]
+          },
+          "role_code": {
+            "type": "string",
+            "description": "Only addresses with this role.",
+            "enum": [
+              "CONTACT",
+              "BILLING",
+              "REPLY_TO",
+              "JOURNALING",
+              "OTHER"
+            ]
+          },
+          "email_address": {
+            "type": "string",
+            "description": "Look up one address."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/emails",
+        "queryParams": {
+          "confirm_status": "$confirm_status",
+          "role_code": "$role_code",
+          "email_address": "$email_address"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_user_privileges",
+      "description": "Privileges of the Constant Contact user who authorized the connector (for example contacts:write, campaign:send, ui:campaign:metrics). Use it when a call answers 403 to see which privilege is missing.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/user/privileges"
+      }
+    },
+    {
+      "name": "constant_contact_list_contacts",
+      "description": "Search contacts, newest changes not guaranteed first. Filter by email, status, lists, tags, segment or created, updated and opt-out dates; add sub-resources with include. Returns contacts[] with contact_id, email_address (address, permission_to_send, opt-in and opt-out data), names and the included sub-resources, plus _links.next.href when more pages exist. Deleted contacts are left out unless status is all or deleted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Find the contact with this exact email address."
+          },
+          "status": {
+            "type": "string",
+            "description": "Contact status, one or more comma-separated: all, active, deleted, not_set, pending_confirmation, temp_hold, unsubscribed."
+          },
+          "lists": {
+            "type": "string",
+            "description": "Only members of these lists: up to 25 list ids, comma-separated."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Only contacts with these tags: up to 50 tag ids, comma-separated."
+          },
+          "segment_id": {
+            "type": "string",
+            "description": "Only contacts matching this segment (from constant_contact_list_segments). Can only be combined with limit; the API may answer 202 while it builds the result, then ask again."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Created after this time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Created before this time, ISO 8601."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated after this time, ISO 8601."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated before this time, ISO 8601."
+          },
+          "optout_after": {
+            "type": "string",
+            "description": "Unsubscribed after this time, ISO 8601."
+          },
+          "optout_before": {
+            "type": "string",
+            "description": "Unsubscribed before this time, ISO 8601."
+          },
+          "sms_status": {
+            "type": "string",
+            "description": "SMS status, comma-separated: all, explicit, unsubscribed, pending_confirmation, not_set."
+          },
+          "include": {
+            "type": "string",
+            "description": "Sub-resources to add, comma-separated: custom_fields, list_memberships, phone_numbers, street_addresses, taggings, notes. Without it only the basic fields come back."
+          },
+          "include_count": {
+            "type": "boolean",
+            "description": "true adds contacts_count, the number of contacts that match."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Contacts per page, 1-500 (default 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the value of the cursor query parameter in _links.next.href of the previous answer (the text after cursor=). Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "email": "$email",
+          "status": "$status",
+          "lists": "$lists",
+          "tags": "$tags",
+          "segment_id": "$segment_id",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before",
+          "optout_after": "$optout_after",
+          "optout_before": "$optout_before",
+          "sms_status": "$sms_status",
+          "include": "$include",
+          "include_count": "$include_count",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_contact",
+      "description": "One contact by id with its email permission, opt-in and opt-out details and, with include, its lists, tags, custom fields, phone numbers, addresses and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (UUID), from constant_contact_list_contacts."
+          },
+          "include": {
+            "type": "string",
+            "description": "Sub-resources to add, comma-separated: custom_fields, list_memberships, phone_numbers, street_addresses, taggings, notes. Without it only the basic fields come back."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_contact_counts",
+      "description": "Total number of contacts in the account and how many are in each email consent state (explicit, implicit, pending confirmation, unsubscribed). With include new_subscriber also the subscribers of the last 30 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "new_subscriber adds the number of contacts that subscribed in the last 30 days.",
+            "enum": [
+              "new_subscriber"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/counts",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_create_contact",
+      "description": "Create a new contact. Fails with 409 when the email address already exists: use constant_contact_create_or_update_contact to add or update by email. Only add people who agreed to receive email from the business.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address of the contact (up to 80 characters)."
+          },
+          "permission_to_send": {
+            "type": "string",
+            "description": "Email permission: explicit (the person opted in), implicit (an existing business relationship), not_set, pending_confirmation. Set explicit or implicit only when the contact really gave that consent.",
+            "enum": [
+              "explicit",
+              "implicit",
+              "not_set",
+              "pending_confirmation"
+            ]
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name (up to 50 characters)."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name (up to 50 characters)."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title (up to 50 characters)."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name (up to 50 characters)."
+          },
+          "birthday_month": {
+            "type": "integer",
+            "description": "Birthday month, 1-12; send together with birthday_day.",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "birthday_day": {
+            "type": "integer",
+            "description": "Birthday day, 1-31; send together with birthday_month.",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "anniversary": {
+            "type": "string",
+            "description": "Anniversary date, e.g. 2026-04-30 or 04/30/2026."
+          },
+          "list_memberships": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List ids (UUIDs) the contact belongs to, up to 50, from constant_contact_list_contact_lists."
+          },
+          "taggings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag ids (UUIDs) to put on the contact, from constant_contact_list_tags."
+          },
+          "custom_fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "custom_field_id": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "custom_field_id"
+              ]
+            },
+            "description": "Custom field values: [{\"custom_field_id\": \"<uuid from constant_contact_list_custom_fields>\", \"value\": \"Gold\"}]."
+          },
+          "phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phone_number": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "home",
+                    "work",
+                    "mobile",
+                    "other"
+                  ]
+                }
+              }
+            },
+            "description": "Phone numbers: [{\"phone_number\": \"+1 555 0100\", \"kind\": \"work\"}]; kind is home, work, mobile or other. At most 3."
+          },
+          "street_addresses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "home",
+                    "work",
+                    "other"
+                  ]
+                },
+                "street": {
+                  "type": "string"
+                },
+                "city": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "postal_code": {
+                  "type": "string"
+                },
+                "country": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "description": "Postal addresses: [{\"kind\": \"work\", \"street\": \"...\", \"city\": \"...\", \"state\": \"...\", \"postal_code\": \"...\", \"country\": \"...\"}]. At most 3."
+          },
+          "create_source": {
+            "type": "string",
+            "description": "Who is adding the contact: Account (you, on behalf of the business) or Contact (the person signed up themselves). Default Account.",
+            "enum": [
+              "Account",
+              "Contact"
+            ],
+            "default": "Account"
+          }
+        },
+        "required": [
+          "email",
+          "create_source"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "email_address": {
+            "address": "$email",
+            "permission_to_send": "$permission_to_send"
+          },
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "job_title": "$job_title",
+          "company_name": "$company_name",
+          "create_source": "$create_source",
+          "birthday_month": "$birthday_month",
+          "birthday_day": "$birthday_day",
+          "anniversary": "$anniversary",
+          "list_memberships": "$list_memberships",
+          "taggings": "$taggings",
+          "custom_fields": "$custom_fields",
+          "phone_numbers": "$phone_numbers",
+          "street_addresses": "$street_addresses"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_create_or_update_contact",
+      "description": "Add a contact by email address or update the existing one, and add it to one or more lists. Updates are partial: only the fields you send change, and lists and custom fields are added to the existing ones. Returns the contact_id and action (created or updated). New contacts get permission explicit, or pending_confirmation when the account uses Confirmed Opt-in. Use it only for people who agreed to receive email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address that identifies the contact (up to 50 characters here)."
+          },
+          "list_memberships": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List ids (UUIDs) to add the contact to, 1 to 50, from constant_contact_list_contact_lists.",
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number (up to 25 characters)."
+          },
+          "anniversary": {
+            "type": "string",
+            "description": "Anniversary date, e.g. 2026-04-30."
+          },
+          "birthday_month": {
+            "type": "integer",
+            "description": "Birthday month, 1-12; with birthday_day.",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "birthday_day": {
+            "type": "integer",
+            "description": "Birthday day, 1-31; with birthday_month.",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "custom_fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "custom_field_id": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "custom_field_id"
+              ]
+            },
+            "description": "Custom field values: [{\"custom_field_id\": \"<uuid>\", \"value\": \"...\"}]."
+          },
+          "street_address": {
+            "type": "object",
+            "description": "One postal address: {\"kind\": \"home\", \"street\": \"...\", \"city\": \"...\", \"state\": \"...\", \"postal_code\": \"...\", \"country\": \"...\"}; kind (home, work, other) is required inside it.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "home",
+                  "work",
+                  "other"
+                ]
+              },
+              "street": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "postal_code": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "required": [
+          "email",
+          "list_memberships"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/sign_up_form",
+        "bodyMapping": {
+          "email_address": "$email",
+          "list_memberships": "$list_memberships",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "job_title": "$job_title",
+          "company_name": "$company_name",
+          "phone_number": "$phone_number",
+          "anniversary": "$anniversary",
+          "birthday_month": "$birthday_month",
+          "birthday_day": "$birthday_day",
+          "custom_fields": "$custom_fields",
+          "street_address": "$street_address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_update_contact",
+      "description": "Replace a contact's data. This is a full update: name, job, company, birthday and anniversary fields you leave out are cleared. Read the contact first with constant_contact_get_contact and send every field again with your change. Sub-resources (lists, tags, custom fields, phones, addresses) you leave out stay as they are; ones you send replace the current values. Updating a deleted contact restores it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address of the contact (up to 80 characters)."
+          },
+          "permission_to_send": {
+            "type": "string",
+            "description": "Email permission: explicit (the person opted in), implicit (an existing business relationship), not_set, pending_confirmation. Set explicit or implicit only when the contact really gave that consent.",
+            "enum": [
+              "explicit",
+              "implicit",
+              "not_set",
+              "pending_confirmation"
+            ]
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name (up to 50 characters)."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name (up to 50 characters)."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title (up to 50 characters)."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name (up to 50 characters)."
+          },
+          "birthday_month": {
+            "type": "integer",
+            "description": "Birthday month, 1-12; send together with birthday_day.",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "birthday_day": {
+            "type": "integer",
+            "description": "Birthday day, 1-31; send together with birthday_month.",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "anniversary": {
+            "type": "string",
+            "description": "Anniversary date, e.g. 2026-04-30 or 04/30/2026."
+          },
+          "list_memberships": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List ids (UUIDs) the contact belongs to, up to 50, from constant_contact_list_contact_lists."
+          },
+          "taggings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag ids (UUIDs) to put on the contact, from constant_contact_list_tags."
+          },
+          "custom_fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "custom_field_id": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "custom_field_id"
+              ]
+            },
+            "description": "Custom field values: [{\"custom_field_id\": \"<uuid from constant_contact_list_custom_fields>\", \"value\": \"Gold\"}]."
+          },
+          "phone_numbers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phone_number": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "home",
+                    "work",
+                    "mobile",
+                    "other"
+                  ]
+                }
+              }
+            },
+            "description": "Phone numbers: [{\"phone_number\": \"+1 555 0100\", \"kind\": \"work\"}]; kind is home, work, mobile or other. At most 3."
+          },
+          "street_addresses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "home",
+                    "work",
+                    "other"
+                  ]
+                },
+                "street": {
+                  "type": "string"
+                },
+                "city": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "postal_code": {
+                  "type": "string"
+                },
+                "country": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "description": "Postal addresses: [{\"kind\": \"work\", \"street\": \"...\", \"city\": \"...\", \"state\": \"...\", \"postal_code\": \"...\", \"country\": \"...\"}]. At most 3."
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (UUID), from constant_contact_list_contacts."
+          },
+          "update_source": {
+            "type": "string",
+            "description": "Who makes the change: Account (default) or Contact. Account also restores a deleted contact.",
+            "enum": [
+              "Account",
+              "Contact"
+            ],
+            "default": "Account"
+          }
+        },
+        "required": [
+          "contact_id",
+          "email",
+          "update_source"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{contact_id}",
+        "bodyMapping": {
+          "email_address": {
+            "address": "$email",
+            "permission_to_send": "$permission_to_send"
+          },
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "job_title": "$job_title",
+          "company_name": "$company_name",
+          "update_source": "$update_source",
+          "birthday_month": "$birthday_month",
+          "birthday_day": "$birthday_day",
+          "anniversary": "$anniversary",
+          "list_memberships": "$list_memberships",
+          "taggings": "$taggings",
+          "custom_fields": "$custom_fields",
+          "phone_numbers": "$phone_numbers",
+          "street_addresses": "$street_addresses"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_delete_contact",
+      "description": "Delete a contact. Deleted contacts get no email and do not count as active, but can be restored (constant_contact_update_contact or constant_contact_create_or_update_contact). To stop email to someone, unsubscribing in Constant Contact is usually the right step instead. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (UUID), from constant_contact_list_contacts."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_list_contact_lists",
+      "description": "Contact lists of the account with list_id, name, description, favorite flag and, with include_membership_count, the number of members.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Find one list by its full name."
+          },
+          "status": {
+            "type": "string",
+            "description": "List status, comma-separated: all, active, deleted."
+          },
+          "include_membership_count": {
+            "type": "string",
+            "description": "Add membership_count: active counts only mailable contacts, all counts every member.",
+            "enum": [
+              "active",
+              "all"
+            ]
+          },
+          "include_count": {
+            "type": "boolean",
+            "description": "true adds lists_count, the number of lists that match."
+          },
+          "channel_type": {
+            "type": "string",
+            "description": "email (default) or sms lists.",
+            "enum": [
+              "email",
+              "sms"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Lists per page, 1-1000 (default 50).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the value of the cursor query parameter in _links.next.href of the previous answer (the text after cursor=). Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contact_lists",
+        "queryParams": {
+          "name": "$name",
+          "status": "$status",
+          "include_membership_count": "$include_membership_count",
+          "include_count": "$include_count",
+          "channel_type": "$channel_type",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_contact_list",
+      "description": "One contact list by id, optionally with its number of members.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Contact list id (UUID), from constant_contact_list_contact_lists."
+          },
+          "include_membership_count": {
+            "type": "string",
+            "description": "active or all, as in constant_contact_list_contact_lists.",
+            "enum": [
+              "active",
+              "all"
+            ]
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contact_lists/{list_id}",
+        "queryParams": {
+          "include_membership_count": "$include_membership_count"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_create_contact_list",
+      "description": "Create a contact list. The name must be unique in the account. Returns the new list_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "List name, unique, up to 255 characters."
+          },
+          "favorite": {
+            "type": "boolean",
+            "description": "Mark the list as a favorite in the UI."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the list."
+          }
+        },
+        "required": [
+          "name",
+          "favorite"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contact_lists",
+        "bodyMapping": {
+          "name": "$name",
+          "favorite": "$favorite",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_update_contact_list",
+      "description": "Rename a list or change its description or favorite flag. Send name and favorite every time; a description you leave out is cleared.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Contact list id (UUID), from constant_contact_list_contact_lists."
+          },
+          "name": {
+            "type": "string",
+            "description": "List name, unique, up to 255 characters."
+          },
+          "favorite": {
+            "type": "boolean",
+            "description": "Favorite flag."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the list."
+          }
+        },
+        "required": [
+          "list_id",
+          "name",
+          "favorite"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contact_lists/{list_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "favorite": "$favorite",
+          "description": "$description"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_delete_contact_list",
+      "description": "Delete a contact list and its memberships (the contacts stay in the account). Runs as a background activity: the answer holds an activity link to follow with constant_contact_get_activity. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "Contact list id (UUID), from constant_contact_list_contact_lists."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contact_lists/{list_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_add_contacts_to_lists",
+      "description": "Add contacts to one or more lists as a background activity. Pick the contacts with source (contact ids, other lists, tags, all active contacts or a segment). Returns activity_id; check it with constant_contact_get_activity. A contact can be on at most 50 lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "description": "Which contacts: {\"contact_ids\": [...]} (up to 500), {\"list_ids\": [...]}, {\"tag_ids\": [...]}, {\"all_active_contacts\": true} or {\"segment_id\": 12}. Use exactly one of these keys.",
+            "properties": {
+              "contact_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "list_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tag_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "all_active_contacts": {
+                "type": "boolean"
+              },
+              "segment_id": {
+                "type": "integer"
+              }
+            }
+          },
+          "list_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Target list ids (UUIDs) to add the contacts to.",
+            "minItems": 1
+          },
+          "exclude": {
+            "type": "object",
+            "properties": {
+              "contact_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Contacts to leave out, only with list_ids or all_active_contacts as source: {\"contact_ids\": [\"<uuid>\"]}."
+          }
+        },
+        "required": [
+          "source",
+          "list_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/activities/add_list_memberships",
+        "bodyMapping": {
+          "source": "$source",
+          "list_ids": "$list_ids",
+          "exclude": "$exclude"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_remove_contacts_from_lists",
+      "description": "Remove contacts from one or more lists as a background activity (the contacts stay in the account). Pick the contacts with source (contact ids, lists, tags or all active contacts). Returns activity_id for constant_contact_get_activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "description": "Which contacts: {\"contact_ids\": [...]} (up to 500), {\"list_ids\": [...]}, {\"tag_ids\": [...]} or {\"all_active_contacts\": true}. Use exactly one of these keys.",
+            "properties": {
+              "contact_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "list_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tag_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "all_active_contacts": {
+                "type": "boolean"
+              }
+            }
+          },
+          "list_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List ids (UUIDs) to remove the contacts from.",
+            "minItems": 1
+          },
+          "exclude": {
+            "type": "object",
+            "properties": {
+              "contact_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Contacts to leave out, only with list_ids or all_active_contacts as source: {\"contact_ids\": [\"<uuid>\"]}."
+          }
+        },
+        "required": [
+          "source",
+          "list_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/activities/remove_list_memberships",
+        "bodyMapping": {
+          "source": "$source",
+          "list_ids": "$list_ids",
+          "exclude": "$exclude"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_list_tags",
+      "description": "Tags of the account with tag_id, name, tag_source and, with include_count, the number of tagged contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_count": {
+            "type": "boolean",
+            "description": "true adds contacts_count per tag."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Tags per page, up to 500 (default 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the value of the cursor query parameter in _links.next.href of the previous answer (the text after cursor=). Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contact_tags",
+        "queryParams": {
+          "include_count": "$include_count",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_tag",
+      "description": "One tag by id, optionally with the number of contacts that carry it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id (UUID), from constant_contact_list_tags."
+          },
+          "include_count": {
+            "type": "boolean",
+            "description": "true adds contacts_count."
+          }
+        },
+        "required": [
+          "tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contact_tags/{tag_id}",
+        "queryParams": {
+          "include_count": "$include_count"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_create_tag",
+      "description": "Create a tag. The name must be unique (up to 255 characters). Returns the new tag_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tag name, unique, up to 255 characters."
+          },
+          "tag_source": {
+            "type": "string",
+            "description": "Optional note on where the tagged contacts come from, e.g. a trade show name."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contact_tags",
+        "bodyMapping": {
+          "name": "$name",
+          "tag_source": "$tag_source"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_update_tag",
+      "description": "Rename a tag. The new name must be unique in the account; the tag_source cannot be changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_id": {
+            "type": "string",
+            "description": "Tag id (UUID), from constant_contact_list_tags."
+          },
+          "name": {
+            "type": "string",
+            "description": "New tag name."
+          }
+        },
+        "required": [
+          "tag_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contact_tags/{tag_id}",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_add_tags_to_contacts",
+      "description": "Put one or more tags on contacts as a background activity. Pick the contacts with source (contact ids, lists, tags, all active contacts or new subscribers). Returns activity_id for constant_contact_get_activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "description": "Which contacts: {\"contact_ids\": [...]} (up to 500), {\"list_ids\": [...]}, {\"tag_ids\": [...]}, {\"all_active_contacts\": true} or {\"new_subscriber\": true}. Use exactly one of these keys.",
+            "properties": {
+              "contact_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "list_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tag_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "all_active_contacts": {
+                "type": "boolean"
+              },
+              "new_subscriber": {
+                "type": "boolean"
+              }
+            }
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag ids (UUIDs) to add.",
+            "minItems": 1
+          },
+          "exclude": {
+            "type": "object",
+            "properties": {
+              "contact_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Contacts to leave out, only with list_ids or all_active_contacts as source: {\"contact_ids\": [\"<uuid>\"]}."
+          }
+        },
+        "required": [
+          "source",
+          "tag_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/activities/contacts_taggings_add",
+        "bodyMapping": {
+          "source": "$source",
+          "tag_ids": "$tag_ids",
+          "exclude": "$exclude"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_remove_tags_from_contacts",
+      "description": "Take one or more tags off contacts as a background activity (the tags themselves stay). Pick the contacts with source as in constant_contact_add_tags_to_contacts. Returns activity_id for constant_contact_get_activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "description": "Which contacts: {\"contact_ids\": [...]}, {\"list_ids\": [...]}, {\"tag_ids\": [...]}, {\"all_active_contacts\": true} or {\"new_subscriber\": true}. Use exactly one of these keys.",
+            "properties": {
+              "contact_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "list_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tag_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "all_active_contacts": {
+                "type": "boolean"
+              },
+              "new_subscriber": {
+                "type": "boolean"
+              }
+            }
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag ids (UUIDs) to remove.",
+            "minItems": 1
+          },
+          "exclude": {
+            "type": "object",
+            "properties": {
+              "contact_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Contacts to leave out, only with list_ids or all_active_contacts as source: {\"contact_ids\": [\"<uuid>\"]}."
+          }
+        },
+        "required": [
+          "source",
+          "tag_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/activities/contacts_taggings_remove",
+        "bodyMapping": {
+          "source": "$source",
+          "tag_ids": "$tag_ids",
+          "exclude": "$exclude"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_list_custom_fields",
+      "description": "Custom contact fields of the account with custom_field_id, label, name, type and, for select fields, the choices. Use the ids when setting custom_fields on a contact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Fields per page, 1-100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the value of the cursor query parameter in _links.next.href of the previous answer (the text after cursor=). Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contact_custom_fields",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_custom_field",
+      "description": "One custom field by id with its label, name, type, metadata and select choices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "custom_field_id": {
+            "type": "string",
+            "description": "Custom field id (UUID), from constant_contact_list_custom_fields."
+          }
+        },
+        "required": [
+          "custom_field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contact_custom_fields/{custom_field_id}"
+      }
+    },
+    {
+      "name": "constant_contact_create_custom_field",
+      "description": "Create a custom contact field. The label must be unique. Returns the new custom_field_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Field name shown in Constant Contact, up to 50 characters."
+          },
+          "type": {
+            "type": "string",
+            "description": "Data type: string (short text), text_area, number, currency, date, datetime, boolean, single_select, multi_select.",
+            "enum": [
+              "string",
+              "text_area",
+              "number",
+              "currency",
+              "date",
+              "datetime",
+              "boolean",
+              "single_select",
+              "multi_select"
+            ]
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "choice_label": {
+                  "type": "string"
+                },
+                "display_order": {
+                  "type": "integer"
+                }
+              }
+            },
+            "description": "For single_select and multi_select: [{\"choice_label\": \"Gold\", \"display_order\": 1}, ...]; up to 20 choices for checkbox and radio, 100 for dropdown."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional details: display_type (checkbox, radio or dropdown for selects), decimal_places, currency_code, integer, allow_negative, display_format for dates."
+          }
+        },
+        "required": [
+          "label",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contact_custom_fields",
+        "bodyMapping": {
+          "label": "$label",
+          "type": "$type",
+          "choices": "$choices",
+          "metadata": "$metadata"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_list_segments",
+      "description": "Segments (saved contact filters) of the account with segment_id, name and dates. Deleted segments are left out. Use a segment_id in constant_contact_list_contacts or as the audience of a campaign.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort_by": {
+            "type": "string",
+            "description": "name (A-Z) or date (most recently edited first, default).",
+            "enum": [
+              "name",
+              "date"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Segments per page (default 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "next": {
+            "type": "string",
+            "description": "Next page: the value of the next query parameter in _links.next.href of the previous answer (the text after next=). Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments",
+        "queryParams": {
+          "sort_by": "$sort_by",
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_segment",
+      "description": "One segment with its criteria (segment_criteria as JSON text).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "integer",
+            "description": "Segment id (an integer), from constant_contact_list_segments."
+          }
+        },
+        "required": [
+          "segment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments/{segment_id}"
+      }
+    },
+    {
+      "name": "constant_contact_list_activities",
+      "description": "Background activities (bulk list and tag changes, imports, exports, deletes) with their state and percent done, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "Only activities in this state.",
+            "enum": [
+              "processing",
+              "completed",
+              "cancelled",
+              "failed",
+              "timed_out"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Activities per page, 1-500 (default 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the value of the cursor query parameter in _links.next.href of the previous answer (the text after cursor=). Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activities",
+        "queryParams": {
+          "state": "$state",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_activity",
+      "description": "Status of one background activity: state (initialized, processing, completed, cancelled, failed, timed_out), percent_done, counts and any errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "activity_id": {
+            "type": "string",
+            "description": "Activity id returned by a bulk tool (add or remove list members or tags, delete a list), or from constant_contact_list_activities."
+          }
+        },
+        "required": [
+          "activity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activities/{activity_id}"
+      }
+    },
+    {
+      "name": "constant_contact_list_email_campaigns",
+      "description": "Email campaigns of the account with campaign_id, name, current_status (Draft, Scheduled, Executing, Done, Error, Removed), type and created and updated times. Includes deleted (Removed) campaigns. Use constant_contact_get_email_campaign for the activity ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after_date": {
+            "type": "string",
+            "description": "Only campaigns updated after this time, ISO 8601."
+          },
+          "before_date": {
+            "type": "string",
+            "description": "Only campaigns updated before this time, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Campaigns per page, 1-500 (default 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the value of the cursor query parameter in _links.next.href of the previous answer (the text after cursor=). Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails",
+        "queryParams": {
+          "after_date": "$after_date",
+          "before_date": "$before_date",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_email_campaign",
+      "description": "One email campaign with its status and campaign_activities: each with campaign_activity_id and role (primary_email is the email itself, permalink, resend for resends to non-openers). Most other campaign tools need the primary_email activity id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Email campaign id (UUID), from constant_contact_list_email_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails/{campaign_id}"
+      }
+    },
+    {
+      "name": "constant_contact_get_email_campaign_activity",
+      "description": "One email campaign activity: subject, from and reply-to, preheader, format_type, current_status, the contact_list_ids or segment_ids it goes to and, with include, the HTML, the footer address and the permalink.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Extra properties, comma-separated: html_content, physical_address_in_footer, permalink_url, document_properties."
+          }
+        },
+        "required": [
+          "campaign_activity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails/activities/{campaign_activity_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_create_email_campaign",
+      "description": "Create a draft email campaign from your own HTML (custom code email, format_type 5). The HTML must contain [[trackingImage]] for opens to be tracked. from_email and reply_to_email must be CONFIRMED addresses from constant_contact_list_account_emails. Returns campaign_id and campaign_activities; then set the audience with constant_contact_update_email_campaign_activity. Nothing is sent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Campaign name, unique in the account, up to 80 characters (not shown to recipients)."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "from_name": {
+            "type": "string",
+            "description": "Sender name, up to 100 characters."
+          },
+          "from_email": {
+            "type": "string",
+            "description": "Sender address: a CONFIRMED account email address."
+          },
+          "reply_to_email": {
+            "type": "string",
+            "description": "Reply-to address: a CONFIRMED account email address."
+          },
+          "html_content": {
+            "type": "string",
+            "description": "Full HTML of the email, up to 150,000 characters, including [[trackingImage]] (for example right after <body>)."
+          },
+          "preheader": {
+            "type": "string",
+            "description": "Preview text shown after the subject in most inboxes, up to 200 characters."
+          },
+          "physical_address_in_footer": {
+            "type": "object",
+            "description": "Sender address shown in the footer, required by anti-spam law: {\"address_line1\": \"...\", \"city\": \"...\", \"postal_code\": \"...\", \"country_code\": \"US\", \"state_code\": \"MA\", \"organization_name\": \"...\"}. address_line1, country_code and organization_name are required inside it. Leave out to use the account address.",
+            "properties": {
+              "address_line1": {
+                "type": "string"
+              },
+              "address_line2": {
+                "type": "string"
+              },
+              "address_line3": {
+                "type": "string"
+              },
+              "address_optional": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "country_code": {
+                "type": "string"
+              },
+              "organization_name": {
+                "type": "string"
+              },
+              "postal_code": {
+                "type": "string"
+              },
+              "state_code": {
+                "type": "string"
+              },
+              "state_non_us_name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "address_line1",
+              "country_code",
+              "organization_name"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "subject",
+          "from_name",
+          "from_email",
+          "reply_to_email",
+          "html_content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/emails",
+        "bodyMapping": {
+          "name": "$name",
+          "email_campaign_activities": [
+            {
+              "format_type": 5,
+              "from_name": "$from_name",
+              "from_email": "$from_email",
+              "reply_to_email": "$reply_to_email",
+              "subject": "$subject",
+              "preheader": "$preheader",
+              "html_content": "$html_content",
+              "physical_address_in_footer": "$physical_address_in_footer"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "constant_contact_update_email_campaign_activity",
+      "description": "Change a draft (or sent, for some fields) primary_email activity: subject, sender, HTML, preheader, footer address and the audience (contact_list_ids or segment_ids). This replaces the activity: read it first with constant_contact_get_email_campaign_activity (include html_content,physical_address_in_footer) and send every field again with your change. Setting the lists here is the step before scheduling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "from_name": {
+            "type": "string",
+            "description": "Sender name."
+          },
+          "from_email": {
+            "type": "string",
+            "description": "Sender address: a CONFIRMED account email address."
+          },
+          "reply_to_email": {
+            "type": "string",
+            "description": "Reply-to address: a CONFIRMED account email address."
+          },
+          "html_content": {
+            "type": "string",
+            "description": "Full HTML (custom code emails, format_type 5); include [[trackingImage]]. Leave out for emails built in the Constant Contact editor."
+          },
+          "preheader": {
+            "type": "string",
+            "description": "Preview text."
+          },
+          "contact_list_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Lists (UUIDs) the email goes to. Use either lists or segment_ids."
+          },
+          "segment_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Segment (one id) the email goes to, instead of lists.",
+            "maxItems": 1
+          },
+          "physical_address_in_footer": {
+            "type": "object",
+            "description": "Sender address shown in the footer, required by anti-spam law: {\"address_line1\": \"...\", \"city\": \"...\", \"postal_code\": \"...\", \"country_code\": \"US\", \"state_code\": \"MA\", \"organization_name\": \"...\"}. address_line1, country_code and organization_name are required inside it. Leave out to use the account address.",
+            "properties": {
+              "address_line1": {
+                "type": "string"
+              },
+              "address_line2": {
+                "type": "string"
+              },
+              "address_line3": {
+                "type": "string"
+              },
+              "address_optional": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "country_code": {
+                "type": "string"
+              },
+              "organization_name": {
+                "type": "string"
+              },
+              "postal_code": {
+                "type": "string"
+              },
+              "state_code": {
+                "type": "string"
+              },
+              "state_non_us_name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "address_line1",
+              "country_code",
+              "organization_name"
+            ]
+          }
+        },
+        "required": [
+          "campaign_activity_id",
+          "subject",
+          "from_name",
+          "from_email",
+          "reply_to_email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/emails/activities/{campaign_activity_id}",
+        "bodyMapping": {
+          "subject": "$subject",
+          "from_name": "$from_name",
+          "from_email": "$from_email",
+          "reply_to_email": "$reply_to_email",
+          "html_content": "$html_content",
+          "preheader": "$preheader",
+          "contact_list_ids": "$contact_list_ids",
+          "segment_ids": "$segment_ids",
+          "physical_address_in_footer": "$physical_address_in_footer"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_rename_email_campaign",
+      "description": "Rename an email campaign (the internal name, not the subject). The name must be unique, up to 80 characters; Removed campaigns cannot be renamed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Email campaign id (UUID)."
+          },
+          "name": {
+            "type": "string",
+            "description": "New campaign name."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/emails/{campaign_id}",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_get_email_preview",
+      "description": "HTML preview of an email campaign activity, with contact and custom field variables filled from the account owner's data, plus the preview text. Use it to show the user what will be sent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          }
+        },
+        "required": [
+          "campaign_activity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails/activities/{campaign_activity_id}/previews"
+      }
+    },
+    {
+      "name": "constant_contact_send_test_email",
+      "description": "Send a test of an email campaign activity to up to 5 addresses (50 test recipients a day per account). Dynamic content is not personalized in tests. Does not reach the contact lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          },
+          "email_addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Recipients of the test, up to 5 addresses.",
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "personal_message": {
+            "type": "string",
+            "description": "Note shown above the email content in the test."
+          }
+        },
+        "required": [
+          "campaign_activity_id",
+          "email_addresses"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/emails/activities/{campaign_activity_id}/tests",
+        "bodyMapping": {
+          "email_addresses": "$email_addresses",
+          "personal_message": "$personal_message"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_email_schedule",
+      "description": "Scheduled send time of an email campaign activity; an empty array when it is not scheduled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          }
+        },
+        "required": [
+          "campaign_activity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails/activities/{campaign_activity_id}/schedules"
+      }
+    },
+    {
+      "name": "constant_contact_schedule_email_campaign_activity",
+      "description": "Send an email campaign activity to its lists or segment, now (scheduled_date \"0\") or at a time. This emails real contacts and cannot be taken back once sending starts: show the user subject, sender, audience and time and send only after a clear yes. The activity needs contact_list_ids or segment_ids first (constant_contact_update_email_campaign_activity). Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          },
+          "scheduled_date": {
+            "type": "string",
+            "description": "When to send: ISO 8601 date or time (2026-11-05T15:00:00Z), or \"0\" to send immediately."
+          }
+        },
+        "required": [
+          "campaign_activity_id",
+          "scheduled_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/emails/activities/{campaign_activity_id}/schedules",
+        "bodyMapping": {
+          "scheduled_date": "$scheduled_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "constant_contact_unschedule_email_campaign_activity",
+      "description": "Cancel the schedule of an email campaign activity in SCHEDULED status; it goes back to its previous status (usually DRAFT).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          }
+        },
+        "required": [
+          "campaign_activity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/emails/activities/{campaign_activity_id}/schedules"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "constant_contact_get_email_send_history",
+      "description": "Each time an email campaign activity was sent: date, number of contacts, the lists or segments used, and whether the send completed or failed with the reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          }
+        },
+        "required": [
+          "campaign_activity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails/activities/{campaign_activity_id}/send_history"
+      }
+    },
+    {
+      "name": "constant_contact_list_email_campaign_summaries",
+      "description": "Results of sent email campaigns, last sent first: per campaign the unique sends, opens, clicks, forwards, unsubscribes (optouts), bounces and spam reports, plus aggregate_percents over the page. The quick way to answer \"how did my last campaigns do\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Campaigns per page, up to 500 (default 50).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next": {
+            "type": "string",
+            "description": "Next page: the value of the next query parameter in _links.next.href of the previous answer (the text after next=). Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/summary_reports/email_campaign_summaries",
+        "queryParams": {
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_email_campaign_stats",
+      "description": "Stats for one or more email campaigns: counts (sends, opens, clicks, forwards, optouts, bounces, abuse, not opened) and percents (open, click, bounce rates) with the time of the last refresh. One unknown id makes the whole call fail with 404.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "string",
+            "description": "One or more campaign ids (UUIDs), comma-separated."
+          }
+        },
+        "required": [
+          "campaign_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/stats/email_campaigns/{campaign_ids}"
+      }
+    },
+    {
+      "name": "constant_contact_get_email_campaign_activity_stats",
+      "description": "Stats for up to 10 email campaign activities: counts per tracked action and the campaign each belongs to. Use it for resends and A/B parts, which have their own activity ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_ids": {
+            "type": "string",
+            "description": "Up to 10 campaign activity ids (UUIDs), comma-separated."
+          }
+        },
+        "required": [
+          "campaign_activity_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/stats/email_campaign_activities/{campaign_activity_ids}"
+      }
+    },
+    {
+      "name": "constant_contact_get_email_links_report",
+      "description": "Links in an email campaign activity with the number of unique contacts who clicked each and the link action. url_id from here filters the clicks report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          },
+          "no_clicks": {
+            "type": "boolean",
+            "description": "true also lists links nobody clicked."
+          }
+        },
+        "required": [
+          "campaign_activity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/email_reports/{campaign_activity_id}/links",
+        "queryParams": {
+          "no_clicks": "$no_clicks"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_email_tracking_report",
+      "description": "Contacts behind an email campaign activity's numbers, most recent first: who it was sent to, who opened (every open or unique opens), who did not open, who clicked (optionally one link), forwarded, unsubscribed or bounced, with email address, contact_id, time and device or bounce code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_activity_id": {
+            "type": "string",
+            "description": "Email campaign activity id (UUID), from campaign_activities in constant_contact_get_email_campaign (role primary_email for the email itself). Not the campaign id."
+          },
+          "report_type": {
+            "type": "string",
+            "description": "Which report: sends, opens, unique_opens, didnotopens, clicks, forwards, optouts (unsubscribes) or bounces.",
+            "enum": [
+              "sends",
+              "opens",
+              "unique_opens",
+              "didnotopens",
+              "clicks",
+              "forwards",
+              "optouts",
+              "bounces"
+            ]
+          },
+          "url_id": {
+            "type": "integer",
+            "description": "clicks only: one link, url_id from constant_contact_get_email_links_report."
+          },
+          "bounce_code": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "bounces only: bounce codes to include, e.g. [\"B\", \"D\"]: B non-existent address, D undeliverable, F full mailbox, S suspended, V vacation or autoreply, X other, Z blocked."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, up to 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "next": {
+            "type": "string",
+            "description": "Next page: the value of the next query parameter in _links.next.href of the previous answer (the text after next=). Leave empty for the first page."
+          }
+        },
+        "required": [
+          "campaign_activity_id",
+          "report_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/email_reports/{campaign_activity_id}/tracking/{report_type}",
+        "queryParams": {
+          "url_id": "$url_id",
+          "bounce_code": "$bounce_code",
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_contact_activity_details",
+      "description": "What one contact did with your emails and landing pages, newest first: sends, opens, clicks, bounces, unsubscribes, forwards and landing page actions, with campaign activity and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (UUID), from constant_contact_list_contacts."
+          },
+          "tracking_activities_list": {
+            "type": "string",
+            "description": "Activity types, comma-separated: em_sends, em_opens, em_clicks, em_bounces, em_optouts, em_forwards, p_contact_open, p_contact_click, p_contact_add, p_contact_update. Required in practice."
+          },
+          "include_campaign_activity_names": {
+            "type": "boolean",
+            "description": "false leaves out the campaign names (faster). Default true."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1-100 (default 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "next": {
+            "type": "string",
+            "description": "Next page: the value of the next query parameter in _links.next.href of the previous answer (the text after next=). Leave empty for the first page."
+          }
+        },
+        "required": [
+          "contact_id",
+          "tracking_activities_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/contact_reports/{contact_id}/activity_details",
+        "queryParams": {
+          "tracking_activities_list": "$tracking_activities_list",
+          "include_campaign_activity_names": "$include_campaign_activity_names",
+          "limit": "$limit",
+          "next": "$next"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_contact_activity_summary",
+      "description": "The emails sent to one contact in a date range (up to the 200 most recent campaigns) with what the contact did with each: opens, clicks, forwards, bounces, unsubscribes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (UUID), from constant_contact_list_contacts."
+          },
+          "start": {
+            "type": "string",
+            "description": "Range start, ISO 8601 with offset, e.g. 2026-01-01T00:00:00-0500."
+          },
+          "end": {
+            "type": "string",
+            "description": "Range end, ISO 8601 with offset."
+          }
+        },
+        "required": [
+          "contact_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/contact_reports/{contact_id}/activity_summary",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      }
+    },
+    {
+      "name": "constant_contact_get_contact_open_click_rates",
+      "description": "Average open and click rate of one contact over a date range of up to 5 years, with the number of emails counted. All 0 when nothing was sent in the range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id (UUID), from constant_contact_list_contacts."
+          },
+          "start": {
+            "type": "string",
+            "description": "Range start, ISO 8601 with offset, e.g. 2026-01-01T00:00:00-0500."
+          },
+          "end": {
+            "type": "string",
+            "description": "Range end, ISO 8601 with offset."
+          }
+        },
+        "required": [
+          "contact_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/contact_reports/{contact_id}/open_and_click_rates",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      }
+    }
+  ]
+}

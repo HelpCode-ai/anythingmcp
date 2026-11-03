@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { AppShell } from '@/components/app-shell';
 import { cn } from '@/lib/utils';
@@ -14,6 +15,7 @@ const SETTINGS_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   '/settings/organization': BuildingIcon,
   '/settings/users': UsersIcon,
   '/settings/roles': ShieldIcon,
+  '/settings/file-share': ShareIcon,
   '/settings/identity-providers': FingerprintIcon,
   '/settings/license': KeyIcon,
   '/settings/admin': WrenchIcon,
@@ -21,13 +23,15 @@ const SETTINGS_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const t = useTranslations('settingsNav');
+  const tNav = useTranslations('nav');
   const { user, deploymentMode } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isCloud = deploymentMode === 'cloud';
   const visibleSections = getVisibleSettingsSections(SIDEBAR_SECTIONS, { isAdmin, isCloud });
 
   return (
-    <AppShell title="Settings">
+    <AppShell title={tNav('settings')}>
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[210px_1fr] lg:gap-8">
         {/* Settings sub-navigation */}
         {/* Below lg this is a scrolling strip. The scrollbar is hidden, so the
@@ -37,7 +41,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
             <div key={si} className="contents lg:block">
               {section.title && (
                 <div className="hidden items-center gap-1.5 px-2.5 pb-1 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)] lg:flex">
-                  {section.title}
+                  {section.id ? t(`sections.${section.id}`) : section.title}
                 </div>
               )}
               {section.items.map((item) => {
@@ -56,8 +60,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                   >
                     {Icon && <Icon size={15} />}
                     <div className="min-w-0">
-                      <div className="truncate">{item.label}</div>
-                      <div className="hidden truncate text-[11px] text-[var(--text-3)] lg:block">{item.description}</div>
+                      <div className="truncate">{t(`items.${item.id}.label`)}</div>
+                      <div className="hidden truncate text-[11px] text-[var(--text-3)] lg:block">{t(`items.${item.id}.description`)}</div>
                     </div>
                   </Link>
                 );
@@ -156,6 +160,15 @@ function FingerprintIcon({ size = 16 }: { size?: number }) {
       <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
       <path d="M8.65 22c.21-.66.45-1.32.57-2" />
       <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+    </svg>
+  );
+}
+
+function ShareIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   );
 }

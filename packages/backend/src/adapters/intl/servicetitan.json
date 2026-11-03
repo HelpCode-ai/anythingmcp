@@ -1,0 +1,3352 @@
+{
+  "slug": "servicetitan",
+  "name": "ServiceTitan",
+  "aliases": [
+    "Service Titan",
+    "ServiceTitan API"
+  ],
+  "description": "ServiceTitan field service management for HVAC, plumbing, electrical and other trades: customers and locations, leads, jobs and appointments, dispatch, capacity and technician shifts, technicians and business units, invoices and payments, estimates, pricebook services and materials, memberships and phone calls. Can create customers, book jobs, add appointments, reschedule, assign technicians, add notes and cancel jobs.",
+  "region": "intl",
+  "category": "field-service",
+  "icon": "servicetitan",
+  "docsUrl": "https://developer.servicetitan.io/docs/",
+  "instructions": "## ServiceTitan\nThis connector works with the **ServiceTitan API v2** (`https://api.servicetitan.io`) of one ServiceTitan account (tenant), for home and commercial service businesses (HVAC, plumbing, electrical, roofing, pest control): customers and locations (CRM), jobs and appointments (job planning), dispatch and capacity, technicians and settings, invoices and payments, estimates, the pricebook, memberships and phone calls.\n\n**Setup (about 15 minutes, needs a ServiceTitan admin)**\n1. Sign in to the ServiceTitan Developer Portal (https://developer.servicetitan.io) with an account that may create apps for your company and create a **custom app** for your own tenant. Under the app's API scopes tick the **read** scopes of the modules you want (CRM customers, locations, contacts and leads; JPM jobs, appointments, job notes, job history, job types, job cancel reasons, projects; Dispatch appointment assignments, teams, zones, technician shifts; Settings technicians, employees, business units, tag types; Accounting invoices, payments, payment types; Sales estimates; Pricebook services, materials, equipment, categories; Memberships; Telecom calls; Marketing campaigns) and the **write** scopes only for what the AI may change (CRM customers and locations, JPM jobs and appointments, Dispatch appointment assignments and `tn.dis.capacity:w` for capacity checks, Sales estimates). Copy the app's **App Key** into `SERVICETITAN_APP_KEY`.\n2. In ServiceTitan go to **Settings, Integrations, API Application Access**, connect the app (**Connect New App**, allow access) and click **Generate** to create the **Client ID** and **Client Secret**. Paste them into `SERVICETITAN_CLIENT_ID` and `SERVICETITAN_CLIENT_SECRET`. The same page shows the **Tenant ID** (a number): paste it into `SERVICETITAN_TENANT_ID`.\n3. Install. AnythingMCP gets an access token from `https://auth.servicetitan.io/connect/token` (OAuth client credentials, renewed automatically about every 15 minutes) and sends the App Key as the `ST-App-Key` header on every call. The check runs `servicetitan_list_customers`.\n\nCredentials of ServiceTitan's **integration** (sandbox) environment do not work here: this connector talks to production.\n\n**Workflow**\n- Find a customer: `servicetitan_list_customers` (name, phone, address), then `servicetitan_get_customer`, `servicetitan_list_customer_contacts`, `servicetitan_list_customer_notes`. Locations: `servicetitan_list_locations` (customer_id), `servicetitan_get_location`, `servicetitan_list_location_contacts`. Leads that did not book yet: `servicetitan_list_leads`.\n- New customer: `servicetitan_create_customer` (with at least one location), more sites with `servicetitan_create_location`; change with `servicetitan_update_customer`; notes with `servicetitan_add_customer_note`.\n- Book work: look up `servicetitan_list_business_units`, `servicetitan_list_job_types` and `servicetitan_list_campaigns`, check free slots with `servicetitan_get_capacity`, then `servicetitan_create_job` with the first appointment. More visits: `servicetitan_add_appointment`; move one: `servicetitan_reschedule_appointment`.\n- Jobs: `servicetitan_list_jobs` (status, customer, technician, dates), `servicetitan_get_job`, `servicetitan_get_job_history`, `servicetitan_list_job_notes`, `servicetitan_add_job_note`, `servicetitan_update_job`. Cancel with a reason from `servicetitan_list_job_cancel_reasons` via `servicetitan_cancel_job` (confirm with the user first). Larger work: `servicetitan_list_projects`.\n- Schedule and dispatch: `servicetitan_list_appointments`, `servicetitan_get_appointment`, `servicetitan_list_appointment_assignments`, `servicetitan_assign_technicians`, `servicetitan_unassign_technicians`, `servicetitan_list_technician_shifts`, `servicetitan_list_teams`, `servicetitan_list_zones`.\n- People and setup: `servicetitan_list_technicians`, `servicetitan_get_technician`, `servicetitan_list_employees`, `servicetitan_list_tag_types`.\n- Money: `servicetitan_list_invoices` (by customer, job or ids), `servicetitan_list_payments`, `servicetitan_list_payment_types`.\n- Sales: `servicetitan_list_estimates`, `servicetitan_get_estimate`, `servicetitan_list_estimate_items`; `servicetitan_sell_estimate` marks one sold.\n- Pricebook: `servicetitan_list_pricebook_services`, `servicetitan_list_pricebook_materials`, `servicetitan_list_pricebook_equipment` (search_text), `servicetitan_list_pricebook_categories`.\n- Memberships: `servicetitan_list_memberships`, `servicetitan_get_membership`, `servicetitan_list_membership_types`, `servicetitan_list_recurring_service_events` (maintenance visits due).\n- Calls: `servicetitan_list_calls`, `servicetitan_get_call`.\n\n**Reading the answers**: ids are integers. Times are UTC in ISO 8601 (`2026-10-30T14:00:00Z`); convert to the business's time zone before quoting them, and send UTC when booking. Accounting amounts (`total`, `balance`, `subTotal`) come as decimal strings in the account currency. A customer is the bill-to account; work happens at its locations, and every job belongs to one location.\n\n**Paging**: lists answer `{ page, pageSize, hasMore, totalCount, data }`. Ask for the next `page` while `hasMore` is true; `include_total` adds `totalCount`. `ids` filters take at most 50 comma-separated ids. Most lists return only active records unless `active` is `Any` or `False`. `modified_on_or_after` picks up changes since a date.\n\n**Writes**: updates change only the fields passed; list fields such as `tag_type_ids` replace the whole list. Show the user what will be booked, cancelled or changed and wait for a yes. Nothing here deletes records.\n\n**Limits and errors**: ServiceTitan limits requests per app and tenant and answers 429 when they come too fast; wait and retry. 401 means the client ID or secret is wrong or the app was disconnected; 403 means the app lacks the scope for that module (add it in the Developer Portal, then reconnect in API Application Access) or the App Key is missing or wrong; 404 an unknown id or a wrong tenant ID; 400 lists the invalid fields.",
+  "prerequisites": "A ServiceTitan account (tenant) and an admin who can create a custom app in the ServiceTitan Developer Portal (App Key) and connect it under Settings, Integrations, API Application Access (Client ID, Client Secret, Tenant ID).",
+  "requiredEnvVars": [
+    "SERVICETITAN_CLIENT_ID",
+    "SERVICETITAN_CLIENT_SECRET",
+    "SERVICETITAN_APP_KEY",
+    "SERVICETITAN_TENANT_ID"
+  ],
+  "envVarMeta": {
+    "SERVICETITAN_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "ServiceTitan, Settings, Integrations, API Application Access: the Client ID generated for your app (starts with cid.).",
+      "link": "https://developer.servicetitan.io/",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the client ID, without spaces."
+    },
+    "SERVICETITAN_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when you click Generate in API Application Access (starts with cs). Generate a new one if it is lost.",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the client secret, without spaces."
+    },
+    "SERVICETITAN_APP_KEY": {
+      "label": "App Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "ServiceTitan Developer Portal, your app: the Application Key (starts with ak1.). Sent as the ST-App-Key header.",
+      "link": "https://developer.servicetitan.io/",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the App Key, without spaces."
+    },
+    "SERVICETITAN_TENANT_ID": {
+      "label": "Tenant ID",
+      "kind": "setting",
+      "help": "The number of your ServiceTitan account, shown in Settings, Integrations, API Application Access.",
+      "example": "1234567890",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "The tenant ID is a number."
+    }
+  },
+  "verifyHints": {
+    "401": "ServiceTitan refused the client ID or secret. Generate them again in Settings, Integrations, API Application Access and check that the app is still connected.",
+    "403": "The app has no scope for this module, or the App Key is wrong. Add the scope to the app in the Developer Portal and reconnect it in API Application Access.",
+    "404": "Unknown tenant or record. Check SERVICETITAN_TENANT_ID.",
+    "429": "ServiceTitan is rate limiting this app. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "servicetitan_list_customers",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "connector": {
+    "name": "ServiceTitan API",
+    "type": "REST",
+    "baseUrl": "https://api.servicetitan.io",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{SERVICETITAN_CLIENT_ID}}",
+      "clientSecret": "{{SERVICETITAN_CLIENT_SECRET}}",
+      "tokenUrl": "https://auth.servicetitan.io/connect/token",
+      "tokenAuthMethod": "client_secret_post",
+      "extraHeaders": {
+        "ST-App-Key": "{{SERVICETITAN_APP_KEY}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/customers?pageSize=1"
+  },
+  "tools": [
+    {
+      "name": "servicetitan_list_customers",
+      "description": "List or search customers (bill-to accounts): id, name, type (Residential or Commercial), active, balance, bill-to address, doNotMail/doNotService flags, tag ids, created and modified times. Filter by name, phone, address parts, ids or change date. Answers { page, pageSize, hasMore, data }.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Customer name to look for."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number of one of the customer's contacts."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street of the bill-to address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or province."
+          },
+          "zip": {
+            "type": "string",
+            "description": "ZIP or postal code."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with + (ascending) or - (descending): +Id, -ModifiedOn, -CreatedOn."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/customers",
+        "queryParams": {
+          "name": "$name",
+          "phone": "$phone",
+          "street": "$street",
+          "city": "$city",
+          "state": "$state",
+          "zip": "$zip",
+          "ids": "$ids",
+          "active": "$active",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_get_customer",
+      "description": "One customer by id: name, type, address, balance, flags, custom fields, tag ids, merged-into id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Customer id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/customers/{id}"
+      }
+    },
+    {
+      "name": "servicetitan_list_customer_contacts",
+      "description": "Phone numbers and email addresses saved on a customer (type, value, memo).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Customer id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/customers/{id}/contacts",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_customer_notes",
+      "description": "Notes on a customer, newest last: text, pinned flag, author id, created time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Customer id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/customers/{id}/notes",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_create_customer",
+      "description": "Create a customer together with at least one service location. The bill-to address and every location need street, city, state, zip and country. Returns the new customer with its id; read the location ids with servicetitan_list_locations (customer_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Customer name (person or company)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Residential (default) or Commercial.",
+            "enum": [
+              "Residential",
+              "Commercial"
+            ]
+          },
+          "address": {
+            "type": "object",
+            "description": "Address: street, unit (optional), city, state, zip, country (all text; country e.g. USA, Canada).",
+            "properties": {
+              "street": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "zip": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "street",
+              "city",
+              "state",
+              "zip",
+              "country"
+            ]
+          },
+          "locations": {
+            "type": "array",
+            "description": "Service locations: each { name, address { street, unit, city, state, zip, country }, contacts (optional) }. At least one.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "address": {
+                  "type": "object",
+                  "description": "Address: street, unit (optional), city, state, zip, country (all text; country e.g. USA, Canada).",
+                  "properties": {
+                    "street": {
+                      "type": "string"
+                    },
+                    "unit": {
+                      "type": "string"
+                    },
+                    "city": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "zip": {
+                      "type": "string"
+                    },
+                    "country": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "street",
+                    "city",
+                    "state",
+                    "zip",
+                    "country"
+                  ]
+                },
+                "contacts": {
+                  "type": "array",
+                  "description": "Contact methods: each { type: Phone, MobilePhone, Email or Fax, value, memo (optional, e.g. office) }.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "Phone",
+                          "MobilePhone",
+                          "Email",
+                          "Fax"
+                        ]
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "memo": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "value"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "address"
+              ]
+            }
+          },
+          "contacts": {
+            "type": "array",
+            "description": "Contact methods: each { type: Phone, MobilePhone, Email or Fax, value, memo (optional, e.g. office) }.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "Phone",
+                    "MobilePhone",
+                    "Email",
+                    "Fax"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                },
+                "memo": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ]
+            }
+          },
+          "do_not_mail": {
+            "type": "boolean",
+            "description": "Flag the customer as do not mail."
+          },
+          "do_not_service": {
+            "type": "boolean",
+            "description": "Flag the customer as do not service."
+          },
+          "tag_type_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Tag type ids from servicetitan_list_tag_types."
+          }
+        },
+        "required": [
+          "name",
+          "address",
+          "locations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/customers",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "address": "$address",
+          "locations": "$locations",
+          "contacts": "$contacts",
+          "doNotMail": "$do_not_mail",
+          "doNotService": "$do_not_service",
+          "tagTypeIds": "$tag_type_ids"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_update_customer",
+      "description": "Change fields of a customer; only the fields you pass change. tag_type_ids replaces the whole tag list. Setting active false deactivates the customer (it can be reactivated).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Customer id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "type": {
+            "type": "string",
+            "description": "Residential or Commercial.",
+            "enum": [
+              "Residential",
+              "Commercial"
+            ]
+          },
+          "address": {
+            "type": "object",
+            "description": "Address: street, unit (optional), city, state, zip, country (all text; country e.g. USA, Canada).",
+            "properties": {
+              "street": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "zip": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "street",
+              "city",
+              "state",
+              "zip",
+              "country"
+            ]
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Active or inactive."
+          },
+          "do_not_mail": {
+            "type": "boolean",
+            "description": "Do not mail flag."
+          },
+          "do_not_service": {
+            "type": "boolean",
+            "description": "Do not service flag."
+          },
+          "tag_type_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Full list of tag type ids."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/customers/{id}",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "address": "$address",
+          "active": "$active",
+          "doNotMail": "$do_not_mail",
+          "doNotService": "$do_not_service",
+          "tagTypeIds": "$tag_type_ids"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_add_customer_note",
+      "description": "Add a note to a customer, optionally pinned and copied to its active locations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Customer id."
+          },
+          "text": {
+            "type": "string",
+            "description": "Note text."
+          },
+          "pin_to_top": {
+            "type": "boolean",
+            "description": "Pin the note."
+          },
+          "add_to_locations": {
+            "type": "boolean",
+            "description": "Also add it to the customer's active locations."
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/customers/{id}/notes",
+        "bodyMapping": {
+          "text": "$text",
+          "pinToTop": "$pin_to_top",
+          "addToLocations": "$add_to_locations"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_locations",
+      "description": "List or search service locations (where the work happens): id, customerId, name, address with coordinates, zone id, tax zone, active, tag ids. Filter by customer, name, address parts, ids or change date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Only locations of this customer."
+          },
+          "name": {
+            "type": "string",
+            "description": "Location name."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or province."
+          },
+          "zip": {
+            "type": "string",
+            "description": "ZIP or postal code."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with + (ascending) or - (descending): +Id, -ModifiedOn, -CreatedOn."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/locations",
+        "queryParams": {
+          "customerId": "$customer_id",
+          "name": "$name",
+          "street": "$street",
+          "city": "$city",
+          "state": "$state",
+          "zip": "$zip",
+          "ids": "$ids",
+          "active": "$active",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_get_location",
+      "description": "One service location by id: customer id, name, address, coordinates, zone, tax zone, custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Location id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/locations/{id}"
+      }
+    },
+    {
+      "name": "servicetitan_list_location_contacts",
+      "description": "Phone numbers and email addresses saved on a service location (type, value, memo).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Location id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/locations/{id}/contacts",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_create_location",
+      "description": "Add a service location (address where work is done) to an existing customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Customer the location belongs to."
+          },
+          "name": {
+            "type": "string",
+            "description": "Location name, e.g. the street address or Main office."
+          },
+          "address": {
+            "type": "object",
+            "description": "Address: street, unit (optional), city, state, zip, country (all text; country e.g. USA, Canada).",
+            "properties": {
+              "street": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "zip": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "street",
+              "city",
+              "state",
+              "zip",
+              "country"
+            ]
+          },
+          "contacts": {
+            "type": "array",
+            "description": "Contact methods: each { type: Phone, MobilePhone, Email or Fax, value, memo (optional, e.g. office) }.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "Phone",
+                    "MobilePhone",
+                    "Email",
+                    "Fax"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                },
+                "memo": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "customer_id",
+          "name",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/locations",
+        "bodyMapping": {
+          "customerId": "$customer_id",
+          "name": "$name",
+          "address": "$address",
+          "contacts": "$contacts"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_leads",
+      "description": "List leads (follow-ups for calls and forms that did not book a job yet): id, status (Open, Dismissed, Converted), customer and location ids, job type, campaign, priority, summary, follow-up date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Lead status.",
+            "enum": [
+              "Open",
+              "Dismissed",
+              "Converted"
+            ]
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Only leads of this customer."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with + (ascending) or - (descending): +Id, -ModifiedOn, -CreatedOn."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/crm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/leads",
+        "queryParams": {
+          "status": "$status",
+          "customerId": "$customer_id",
+          "ids": "$ids",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_campaigns",
+      "description": "Marketing campaigns (call sources such as Google Ads or a yard sign): id, name, category, active. Creating a job needs a campaign id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name contains this text."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/marketing/v2/tenant/{{SERVICETITAN_TENANT_ID}}/campaigns",
+        "queryParams": {
+          "name": "$name",
+          "ids": "$ids",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_jobs",
+      "description": "List jobs: id, job number, customer and location ids, business unit, job type, priority, campaign, jobStatus, summary, first appointment id, invoice id, total, created, modified and completed times. Filter by status, customer, location, technician, job type, business unit, appointment or completion dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_status": {
+            "type": "string",
+            "description": "Job status.",
+            "enum": [
+              "Scheduled",
+              "Dispatched",
+              "InProgress",
+              "Hold",
+              "Completed",
+              "Canceled"
+            ]
+          },
+          "number": {
+            "type": "string",
+            "description": "Job number."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Only jobs of this customer."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Only jobs at this location."
+          },
+          "technician_id": {
+            "type": "integer",
+            "description": "Only jobs with an appointment assigned to this technician."
+          },
+          "job_type_id": {
+            "type": "integer",
+            "description": "Only this job type."
+          },
+          "business_unit_id": {
+            "type": "integer",
+            "description": "Only this business unit."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only jobs of this project."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Priority.",
+            "enum": [
+              "Low",
+              "Normal",
+              "High",
+              "Urgent"
+            ]
+          },
+          "appointment_starts_on_or_after": {
+            "type": "string",
+            "description": "Jobs with any appointment starting at or after this UTC time, ISO 8601."
+          },
+          "appointment_starts_before": {
+            "type": "string",
+            "description": "Jobs with any appointment starting before this UTC time, ISO 8601."
+          },
+          "completed_on_or_after": {
+            "type": "string",
+            "description": "Jobs completed at or after this UTC time."
+          },
+          "completed_before": {
+            "type": "string",
+            "description": "Jobs completed before this UTC time."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with + (ascending) or - (descending): +Id, -ModifiedOn, -CreatedOn."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/jobs",
+        "queryParams": {
+          "jobStatus": "$job_status",
+          "number": "$number",
+          "customerId": "$customer_id",
+          "locationId": "$location_id",
+          "technicianId": "$technician_id",
+          "jobTypeId": "$job_type_id",
+          "businessUnitId": "$business_unit_id",
+          "projectId": "$project_id",
+          "priority": "$priority",
+          "appointmentStartsOnOrAfter": "$appointment_starts_on_or_after",
+          "appointmentStartsBefore": "$appointment_starts_before",
+          "completedOnOrAfter": "$completed_on_or_after",
+          "completedBefore": "$completed_before",
+          "ids": "$ids",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_get_job",
+      "description": "One job by id with status, customer, location, job type, business unit, campaign, summary, invoice id, tags and custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Job id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/jobs/{id}"
+      }
+    },
+    {
+      "name": "servicetitan_create_job",
+      "description": "Book a job with its first appointment(s) for a customer location. Needs ids from servicetitan_list_business_units, servicetitan_list_job_types and servicetitan_list_campaigns. Check free slots first with servicetitan_get_capacity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Customer id."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id (must belong to the customer)."
+          },
+          "business_unit_id": {
+            "type": "integer",
+            "description": "Business unit id."
+          },
+          "job_type_id": {
+            "type": "integer",
+            "description": "Job type id."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Priority.",
+            "enum": [
+              "Low",
+              "Normal",
+              "High",
+              "Urgent"
+            ]
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id (how the customer found you)."
+          },
+          "appointments": {
+            "type": "array",
+            "description": "Appointments: each { start, end, arrivalWindowStart, arrivalWindowEnd, technicianIds }, times in UTC ISO 8601. At least one.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "string"
+                },
+                "end": {
+                  "type": "string"
+                },
+                "arrivalWindowStart": {
+                  "type": "string"
+                },
+                "arrivalWindowEnd": {
+                  "type": "string"
+                },
+                "technicianIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ]
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "Job summary: what the customer needs (HTML allowed)."
+          },
+          "customer_po": {
+            "type": "string",
+            "description": "Customer purchase order number."
+          },
+          "tag_type_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Tag type ids."
+          }
+        },
+        "required": [
+          "customer_id",
+          "location_id",
+          "business_unit_id",
+          "job_type_id",
+          "priority",
+          "campaign_id",
+          "appointments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/jobs",
+        "bodyMapping": {
+          "customerId": "$customer_id",
+          "locationId": "$location_id",
+          "businessUnitId": "$business_unit_id",
+          "jobTypeId": "$job_type_id",
+          "priority": "$priority",
+          "campaignId": "$campaign_id",
+          "appointments": "$appointments",
+          "summary": "$summary",
+          "customerPo": "$customer_po",
+          "tagTypeIds": "$tag_type_ids"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_update_job",
+      "description": "Change fields of a job; only the fields you pass change. tag_type_ids replaces the whole tag list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Job id."
+          },
+          "summary": {
+            "type": "string",
+            "description": "New summary."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Priority.",
+            "enum": [
+              "Low",
+              "Normal",
+              "High",
+              "Urgent"
+            ]
+          },
+          "job_type_id": {
+            "type": "integer",
+            "description": "Job type id."
+          },
+          "business_unit_id": {
+            "type": "integer",
+            "description": "Business unit id."
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id."
+          },
+          "customer_po": {
+            "type": "string",
+            "description": "Customer PO."
+          },
+          "tag_type_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Full list of tag type ids."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/jobs/{id}",
+        "bodyMapping": {
+          "summary": "$summary",
+          "priority": "$priority",
+          "jobTypeId": "$job_type_id",
+          "businessUnitId": "$business_unit_id",
+          "campaignId": "$campaign_id",
+          "customerPo": "$customer_po",
+          "tagTypeIds": "$tag_type_ids"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_cancel_job",
+      "description": "Cancel a job with a reason from servicetitan_list_job_cancel_reasons and a memo. Its appointments are cancelled too. ServiceTitan can remove a cancellation later in the app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Job id."
+          },
+          "reason_id": {
+            "type": "integer",
+            "description": "Cancel reason id."
+          },
+          "memo": {
+            "type": "string",
+            "description": "Why the job is cancelled."
+          }
+        },
+        "required": [
+          "id",
+          "reason_id",
+          "memo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/jobs/{id}/cancel",
+        "bodyMapping": {
+          "reasonId": "$reason_id",
+          "memo": "$memo"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "servicetitan_list_job_cancel_reasons",
+      "description": "Job cancel reasons configured in the account: id, name, active. Needed by servicetitan_cancel_job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/job-cancel-reasons",
+        "queryParams": {
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_job_notes",
+      "description": "Notes on a job: text, pinned flag, author id and created time, oldest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Job id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/jobs/{id}/notes",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_add_job_note",
+      "description": "Add a note to a job (visible to the office and technicians), optionally pinned to the top.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Job id."
+          },
+          "text": {
+            "type": "string",
+            "description": "Note text."
+          },
+          "pin_to_top": {
+            "type": "boolean",
+            "description": "Pin the note."
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/jobs/{id}/notes",
+        "bodyMapping": {
+          "text": "$text",
+          "pinToTop": "$pin_to_top"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_get_job_history",
+      "description": "Status history of a job: each change with the event type, employee and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Job id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/jobs/{id}/history"
+      }
+    },
+    {
+      "name": "servicetitan_list_job_types",
+      "description": "Job types (e.g. AC repair, drain cleaning): id, name, duration in seconds, priority, business unit ids, skills, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the job type."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/job-types",
+        "queryParams": {
+          "name": "$name",
+          "ids": "$ids",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_appointments",
+      "description": "List job appointments (the scheduled visits): id, job id, appointment number, start and end, arrival window, status, special instructions, customer and location ids, unused flag. Filter by job, technician, customer, status or start time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "Appointments of this job."
+          },
+          "technician_id": {
+            "type": "integer",
+            "description": "Appointments assigned to this technician."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Appointments of this customer."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Appointments of jobs in this project."
+          },
+          "status": {
+            "type": "string",
+            "description": "Appointment status.",
+            "enum": [
+              "Scheduled",
+              "Dispatched",
+              "Working",
+              "Hold",
+              "Done",
+              "Canceled"
+            ]
+          },
+          "starts_on_or_after": {
+            "type": "string",
+            "description": "Starting at or after this UTC time, ISO 8601."
+          },
+          "starts_before": {
+            "type": "string",
+            "description": "Starting before this UTC time, ISO 8601."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with + (ascending) or - (descending): +Id, -ModifiedOn, -CreatedOn."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/appointments",
+        "queryParams": {
+          "jobId": "$job_id",
+          "technicianId": "$technician_id",
+          "customerId": "$customer_id",
+          "projectId": "$project_id",
+          "status": "$status",
+          "startsOnOrAfter": "$starts_on_or_after",
+          "startsBefore": "$starts_before",
+          "ids": "$ids",
+          "active": "$active",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_get_appointment",
+      "description": "One job appointment by id: job id, number, start and end, arrival window, status, special instructions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Appointment id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/appointments/{id}"
+      }
+    },
+    {
+      "name": "servicetitan_add_appointment",
+      "description": "Add another appointment (visit) to an existing job, optionally with technicians.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "Job id."
+          },
+          "start": {
+            "type": "string",
+            "description": "Start, UTC ISO 8601."
+          },
+          "end": {
+            "type": "string",
+            "description": "End, UTC ISO 8601."
+          },
+          "arrival_window_start": {
+            "type": "string",
+            "description": "Arrival window start, UTC, if the account uses arrival windows."
+          },
+          "arrival_window_end": {
+            "type": "string",
+            "description": "Arrival window end, UTC."
+          },
+          "technician_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Technician ids to assign."
+          },
+          "special_instructions": {
+            "type": "string",
+            "description": "Special instructions for the technician."
+          }
+        },
+        "required": [
+          "job_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/appointments",
+        "bodyMapping": {
+          "jobId": "$job_id",
+          "start": "$start",
+          "end": "$end",
+          "arrivalWindowStart": "$arrival_window_start",
+          "arrivalWindowEnd": "$arrival_window_end",
+          "technicianIds": "$technician_ids",
+          "specialInstructions": "$special_instructions"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_reschedule_appointment",
+      "description": "Move an appointment to a new start and end (and arrival window). Assigned technicians stay assigned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Appointment id."
+          },
+          "start": {
+            "type": "string",
+            "description": "New start, UTC ISO 8601."
+          },
+          "end": {
+            "type": "string",
+            "description": "New end, UTC ISO 8601."
+          },
+          "arrival_window_start": {
+            "type": "string",
+            "description": "New arrival window start, UTC."
+          },
+          "arrival_window_end": {
+            "type": "string",
+            "description": "New arrival window end, UTC."
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/appointments/{id}/reschedule",
+        "bodyMapping": {
+          "start": "$start",
+          "end": "$end",
+          "arrivalWindowStart": "$arrival_window_start",
+          "arrivalWindowEnd": "$arrival_window_end"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_projects",
+      "description": "Projects (multi-job work such as installs or construction): id, number, name, status, customer and location ids, job ids, start, target completion and actual completion dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Projects of this customer."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Projects at this location."
+          },
+          "job_id": {
+            "type": "integer",
+            "description": "The project that contains this job."
+          },
+          "status": {
+            "type": "string",
+            "description": "Project status name(s), comma-separated."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with + (ascending) or - (descending): +Id, -ModifiedOn, -CreatedOn."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jpm/v2/tenant/{{SERVICETITAN_TENANT_ID}}/projects",
+        "queryParams": {
+          "customerId": "$customer_id",
+          "locationId": "$location_id",
+          "jobId": "$job_id",
+          "status": "$status",
+          "ids": "$ids",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_appointment_assignments",
+      "description": "Which technicians are assigned to which appointments: assignment id, technician id and name, appointment id, job id, assigned time, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_ids": {
+            "type": "string",
+            "description": "Comma-separated appointment ids."
+          },
+          "job_id": {
+            "type": "integer",
+            "description": "Assignments of this job."
+          },
+          "technician_ids": {
+            "type": "string",
+            "description": "Comma-separated technician ids."
+          },
+          "appointment_starts_on_or_after": {
+            "type": "string",
+            "description": "Appointments starting at or after this UTC time."
+          },
+          "appointment_starts_before": {
+            "type": "string",
+            "description": "Appointments starting before this UTC time."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dispatch/v2/tenant/{{SERVICETITAN_TENANT_ID}}/appointment-assignments",
+        "queryParams": {
+          "appointmentIds": "$appointment_ids",
+          "jobId": "$job_id",
+          "technicianIds": "$technician_ids",
+          "appointmentStartsOnOrAfter": "$appointment_starts_on_or_after",
+          "appointmentStartsBefore": "$appointment_starts_before",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_assign_technicians",
+      "description": "Assign one or more technicians to a job appointment (dispatch).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "integer",
+            "description": "Job appointment id."
+          },
+          "technician_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Technician ids."
+          }
+        },
+        "required": [
+          "appointment_id",
+          "technician_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dispatch/v2/tenant/{{SERVICETITAN_TENANT_ID}}/appointment-assignments/assign-technicians",
+        "bodyMapping": {
+          "jobAppointmentId": "$appointment_id",
+          "technicianIds": "$technician_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "servicetitan_unassign_technicians",
+      "description": "Take one or more technicians off a job appointment (the appointment itself stays).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "integer",
+            "description": "Job appointment id."
+          },
+          "technician_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Technician ids."
+          }
+        },
+        "required": [
+          "appointment_id",
+          "technician_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dispatch/v2/tenant/{{SERVICETITAN_TENANT_ID}}/appointment-assignments/unassign-technicians",
+        "bodyMapping": {
+          "jobAppointmentId": "$appointment_id",
+          "technicianIds": "$technician_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "servicetitan_get_capacity",
+      "description": "Bookable capacity per time slot: for each slot the start and end, total and open hours, whether it is available and which technicians are free. Read-only even though it is a POST. Needs the tn.dis.capacity:w scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "starts_on_or_after": {
+            "type": "string",
+            "description": "Window start, ISO 8601."
+          },
+          "ends_on_or_before": {
+            "type": "string",
+            "description": "Window end, ISO 8601."
+          },
+          "business_unit_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Business units to calculate for."
+          },
+          "job_type_id": {
+            "type": "integer",
+            "description": "Job type whose duration is used."
+          },
+          "skill_based_availability": {
+            "type": "boolean",
+            "description": "Match technician skills to the job type.",
+            "default": false
+          }
+        },
+        "required": [
+          "starts_on_or_after",
+          "ends_on_or_before"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dispatch/v2/tenant/{{SERVICETITAN_TENANT_ID}}/capacity",
+        "bodyMapping": {
+          "startsOnOrAfter": "$starts_on_or_after",
+          "endsOnOrBefore": "$ends_on_or_before",
+          "businessUnitIds": "$business_unit_ids",
+          "jobTypeId": "$job_type_id",
+          "skillBasedAvailability": "$skill_based_availability"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "servicetitan_list_technician_shifts",
+      "description": "Technician shifts and time off: id, technician id, shift type (Normal, OnCall, TimeOff), start, end, title, note.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "technician_id": {
+            "type": "integer",
+            "description": "Shifts of this technician."
+          },
+          "starts_on_or_after": {
+            "type": "string",
+            "description": "Shifts starting at or after this time, ISO 8601."
+          },
+          "ends_on_or_before": {
+            "type": "string",
+            "description": "Shifts ending at or before this time, ISO 8601."
+          },
+          "shift_type": {
+            "type": "string",
+            "description": "Shift type.",
+            "enum": [
+              "Normal",
+              "OnCall",
+              "TimeOff"
+            ]
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dispatch/v2/tenant/{{SERVICETITAN_TENANT_ID}}/technician-shifts",
+        "queryParams": {
+          "technicianId": "$technician_id",
+          "startsOnOrAfter": "$starts_on_or_after",
+          "endsOnOrBefore": "$ends_on_or_before",
+          "shiftType": "$shift_type",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_teams",
+      "description": "Dispatch teams that group technicians on the dispatch board: id, name, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Include inactive teams."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dispatch/v2/tenant/{{SERVICETITAN_TENANT_ID}}/teams",
+        "queryParams": {
+          "includeInactive": "$include_inactive",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_zones",
+      "description": "Dispatch zones (service areas by ZIP or city): id, name, ZIPs, cities, technician and business unit ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dispatch/v2/tenant/{{SERVICETITAN_TENANT_ID}}/zones",
+        "queryParams": {
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_technicians",
+      "description": "Technicians: id, user id, name, email, phone, business unit, team, zone ids, role, login name, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name contains this text."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/v2/tenant/{{SERVICETITAN_TENANT_ID}}/technicians",
+        "queryParams": {
+          "name": "$name",
+          "ids": "$ids",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_get_technician",
+      "description": "One technician by id: name, contact details, business unit, team, zones, role and active flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Technician id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/v2/tenant/{{SERVICETITAN_TENANT_ID}}/technicians/{id}"
+      }
+    },
+    {
+      "name": "servicetitan_list_employees",
+      "description": "Office employees (dispatchers, CSRs, managers): id, user id, name, email, phone, role, business unit, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name contains this text."
+          },
+          "email": {
+            "type": "string",
+            "description": "Exact email address."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/v2/tenant/{{SERVICETITAN_TENANT_ID}}/employees",
+        "queryParams": {
+          "name": "$name",
+          "email": "$email",
+          "ids": "$ids",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_business_units",
+      "description": "Business units (trades or departments such as HVAC Service, Plumbing Install): id, name, official name, email, phone, address, currency, active. Needed to book jobs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name contains this text."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/v2/tenant/{{SERVICETITAN_TENANT_ID}}/business-units",
+        "queryParams": {
+          "name": "$name",
+          "ids": "$ids",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_tag_types",
+      "description": "Tag types used on customers, locations and jobs: id, name, color, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/v2/tenant/{{SERVICETITAN_TENANT_ID}}/tag-types",
+        "queryParams": {
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_invoices",
+      "description": "List invoices: id, reference number, invoice date, due date, subtotal, sales tax, total, balance, customer and location with addresses, job, business unit, review and sent status, line items (sku, description, quantity, price, total). Amounts are decimal strings. Filter by customer, job, ids, date, balance or status. There is no single-invoice route: pass ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated invoice ids."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Invoices of this customer."
+          },
+          "job_id": {
+            "type": "integer",
+            "description": "Invoices of this job."
+          },
+          "job_number": {
+            "type": "string",
+            "description": "Invoices of this job number."
+          },
+          "number": {
+            "type": "string",
+            "description": "Invoice reference number."
+          },
+          "business_unit_id": {
+            "type": "integer",
+            "description": "Invoices of this business unit."
+          },
+          "invoiced_on_or_after": {
+            "type": "string",
+            "description": "Invoice date on or after (ISO 8601)."
+          },
+          "invoiced_on_before": {
+            "type": "string",
+            "description": "Invoice date before (ISO 8601)."
+          },
+          "due_date_on_or_after": {
+            "type": "string",
+            "description": "Due date on or after."
+          },
+          "due_date_before": {
+            "type": "string",
+            "description": "Due date before."
+          },
+          "total_greater": {
+            "type": "number",
+            "description": "Total at least this amount."
+          },
+          "total_less": {
+            "type": "number",
+            "description": "Total at most this amount."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Pending",
+                "Posted",
+                "Exported"
+              ]
+            },
+            "description": "Transaction statuses."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Changed at or after this UTC time."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/v2/tenant/{{SERVICETITAN_TENANT_ID}}/invoices",
+        "queryParams": {
+          "ids": "$ids",
+          "customerId": "$customer_id",
+          "jobId": "$job_id",
+          "jobNumber": "$job_number",
+          "number": "$number",
+          "businessUnitId": "$business_unit_id",
+          "invoicedOnOrAfter": "$invoiced_on_or_after",
+          "invoicedOnBefore": "$invoiced_on_before",
+          "dueDateOnOrAfter": "$due_date_on_or_after",
+          "dueDateBefore": "$due_date_before",
+          "totalGreater": "$total_greater",
+          "totalLess": "$total_less",
+          "statuses": "$statuses",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].items[*].generalLedgerAccount",
+            "data[*].items[*].costOfSaleAccount",
+            "data[*].items[*].assetAccount"
+          ]
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_payments",
+      "description": "Customer payments: id, type, reference number, amount (total), paid date, customer, memo, and the invoices each payment was applied to. Filter by customer, invoice, paid date or batch.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Payments of this customer."
+          },
+          "applied_to_invoice_ids": {
+            "type": "string",
+            "description": "Comma-separated invoice ids the payments were applied to."
+          },
+          "paid_on_after": {
+            "type": "string",
+            "description": "Paid on or after this date (ISO 8601)."
+          },
+          "paid_on_before": {
+            "type": "string",
+            "description": "Paid before this date."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Changed at or after this UTC time."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/v2/tenant/{{SERVICETITAN_TENANT_ID}}/payments",
+        "queryParams": {
+          "customerId": "$customer_id",
+          "appliedToInvoiceIds": "$applied_to_invoice_ids",
+          "paidOnAfter": "$paid_on_after",
+          "paidOnBefore": "$paid_on_before",
+          "ids": "$ids",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_payment_types",
+      "description": "Payment types (cash, check, credit card, financing): id, name, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting/v2/tenant/{{SERVICETITAN_TENANT_ID}}/payment-types",
+        "queryParams": {
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_estimates",
+      "description": "List estimates (quotes with options shown to the customer): id, name, job id and number, customer, location, project, status { value, name } (Open, Sold, Dismissed), summary, subtotal, tax, sold on and by, items. Filter by job, project, location, status, sold date or total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "Estimates of this job."
+          },
+          "job_number": {
+            "type": "string",
+            "description": "Estimates of this job number."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Estimates of this project."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Estimates at this location."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status.",
+            "enum": [
+              "Open",
+              "Sold",
+              "Dismissed"
+            ]
+          },
+          "sold_after": {
+            "type": "string",
+            "description": "Sold after this time (ISO 8601)."
+          },
+          "sold_before": {
+            "type": "string",
+            "description": "Sold before this time."
+          },
+          "total_greater": {
+            "type": "number",
+            "description": "Total above this amount."
+          },
+          "total_less": {
+            "type": "number",
+            "description": "Total below this amount."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales/v2/tenant/{{SERVICETITAN_TENANT_ID}}/estimates",
+        "queryParams": {
+          "jobId": "$job_id",
+          "jobNumber": "$job_number",
+          "projectId": "$project_id",
+          "locationId": "$location_id",
+          "status": "$status",
+          "soldAfter": "$sold_after",
+          "soldBefore": "$sold_before",
+          "totalGreater": "$total_greater",
+          "totalLess": "$total_less",
+          "ids": "$ids",
+          "active": "$active",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_get_estimate",
+      "description": "One estimate by id with its line items (sku, description, quantity, unit rate, total).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Estimate id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales/v2/tenant/{{SERVICETITAN_TENANT_ID}}/estimates/{id}"
+      }
+    },
+    {
+      "name": "servicetitan_list_estimate_items",
+      "description": "Line items of estimates: id, estimate id, sku (id, name, type), description, quantity, unit rate, total, membership type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "estimate_id": {
+            "type": "integer",
+            "description": "Items of this estimate."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales/v2/tenant/{{SERVICETITAN_TENANT_ID}}/estimates/items",
+        "queryParams": {
+          "estimateId": "$estimate_id",
+          "ids": "$ids",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_sell_estimate",
+      "description": "Mark an estimate as sold by a technician or employee. ServiceTitan can unsell it again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Estimate id."
+          },
+          "sold_by": {
+            "type": "integer",
+            "description": "Id of the technician or employee who sold it."
+          }
+        },
+        "required": [
+          "id",
+          "sold_by"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sales/v2/tenant/{{SERVICETITAN_TENANT_ID}}/estimates/{id}/sell",
+        "bodyMapping": {
+          "soldBy": "$sold_by"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "servicetitan_list_pricebook_services",
+      "description": "Services (tasks sold to customers) in the pricebook: id, code, display name, description, price, member price, add-on price, hours, taxable, warranty, categories, linked materials and equipment. Search by text, filter by category or ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Text to match in display name, code or description (case-insensitive, partial)."
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "Comma-separated category ids (sub-categories included)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Changed at or after this UTC time."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with + (ascending) or - (descending): +Id, -ModifiedOn, -CreatedOn."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pricebook/v2/tenant/{{SERVICETITAN_TENANT_ID}}/services",
+        "queryParams": {
+          "searchText": "$search_text",
+          "categoryIds": "$category_ids",
+          "ids": "$ids",
+          "active": "$active",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].assets",
+            "data[*].externalData",
+            "data[*].otherVendors",
+            "data[*].account",
+            "data[*].costOfSaleAccount",
+            "data[*].assetAccount"
+          ]
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_pricebook_materials",
+      "description": "Materials (parts) in the pricebook: id, code, display name, description, cost, price, member price, unit of measure, inventory flag, primary vendor, categories. Search by text, filter by category or ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Text to match in display name, code or description (case-insensitive, partial)."
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "Comma-separated category ids (sub-categories included)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Changed at or after this UTC time."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with + (ascending) or - (descending): +Id, -ModifiedOn, -CreatedOn."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pricebook/v2/tenant/{{SERVICETITAN_TENANT_ID}}/materials",
+        "queryParams": {
+          "searchText": "$search_text",
+          "categoryIds": "$category_ids",
+          "ids": "$ids",
+          "active": "$active",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].assets",
+            "data[*].externalData",
+            "data[*].otherVendors",
+            "data[*].account",
+            "data[*].costOfSaleAccount",
+            "data[*].assetAccount"
+          ]
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_pricebook_equipment",
+      "description": "Equipment (installable units) in the pricebook: id, code, display name, manufacturer, model, price, cost, warranties, primary vendor, categories. Search by text, filter by category or ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Text to match in display name, code or description (case-insensitive, partial)."
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "Comma-separated category ids (sub-categories included)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Changed at or after this UTC time."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field with + (ascending) or - (descending): +Id, -ModifiedOn, -CreatedOn."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pricebook/v2/tenant/{{SERVICETITAN_TENANT_ID}}/equipment",
+        "queryParams": {
+          "searchText": "$search_text",
+          "categoryIds": "$category_ids",
+          "ids": "$ids",
+          "active": "$active",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].assets",
+            "data[*].externalData",
+            "data[*].otherVendors",
+            "data[*].account",
+            "data[*].costOfSaleAccount",
+            "data[*].assetAccount"
+          ]
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_pricebook_categories",
+      "description": "Pricebook categories: id, name, type (Services or Materials), parent, sub-categories, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_type": {
+            "type": "string",
+            "description": "Category type.",
+            "enum": [
+              "Services",
+              "Materials"
+            ]
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pricebook/v2/tenant/{{SERVICETITAN_TENANT_ID}}/categories",
+        "queryParams": {
+          "categoryType": "$category_type",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_memberships",
+      "description": "Customer memberships (maintenance plans): id, customer id, membership type, status (Active, Suspended, Expired, Canceled, Deleted), from and to dates, billing frequency, location, sold by.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_ids": {
+            "type": "string",
+            "description": "Comma-separated customer ids."
+          },
+          "status": {
+            "type": "string",
+            "description": "Membership status.",
+            "enum": [
+              "Active",
+              "Suspended",
+              "Expired",
+              "Canceled",
+              "Deleted"
+            ]
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/memberships/v2/tenant/{{SERVICETITAN_TENANT_ID}}/memberships",
+        "queryParams": {
+          "customerIds": "$customer_ids",
+          "status": "$status",
+          "ids": "$ids",
+          "active": "$active",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_get_membership",
+      "description": "One customer membership by id: type, status, dates, billing frequency, location and sold by.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Customer membership id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/memberships/v2/tenant/{{SERVICETITAN_TENANT_ID}}/memberships/{id}"
+      }
+    },
+    {
+      "name": "servicetitan_list_membership_types",
+      "description": "Membership types offered: id, name, duration and billing options, discounts, recurring services, active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_duration_billing": {
+            "type": "boolean",
+            "description": "Include duration and billing options."
+          },
+          "include_recurring_services": {
+            "type": "boolean",
+            "description": "Include recurring service types."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/memberships/v2/tenant/{{SERVICETITAN_TENANT_ID}}/membership-types",
+        "queryParams": {
+          "includeDurationBilling": "$include_duration_billing",
+          "includeRecurringServices": "$include_recurring_services",
+          "ids": "$ids",
+          "active": "$active",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_recurring_service_events",
+      "description": "Recurring service events (the planned maintenance visits of memberships): id, location, membership, recurring service, date, follow-up status, job id once booked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_id": {
+            "type": "integer",
+            "description": "Events at this location."
+          },
+          "job_id": {
+            "type": "integer",
+            "description": "The event booked as this job."
+          },
+          "status": {
+            "type": "string",
+            "description": "Follow-up status.",
+            "enum": [
+              "NotAttempted",
+              "Unreachable",
+              "Contacted",
+              "Won",
+              "Dismissed"
+            ]
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/memberships/v2/tenant/{{SERVICETITAN_TENANT_ID}}/recurring-service-events",
+        "queryParams": {
+          "locationId": "$location_id",
+          "jobId": "$job_id",
+          "status": "$status",
+          "ids": "$ids",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_list_calls",
+      "description": "Phone calls tracked by ServiceTitan: id, direction, from and to numbers, duration, call type and reason, campaign, agent, customer, location, job booked from the call, created time. Filter by creation time, caller number, number called, campaign, agent or minimum duration.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "caller_phone_number": {
+            "type": "string",
+            "description": "Caller's phone number."
+          },
+          "phone_number_called": {
+            "type": "string",
+            "description": "Number that was called (tracking number)."
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Calls of this campaign."
+          },
+          "agent_id": {
+            "type": "integer",
+            "description": "Calls handled by this agent."
+          },
+          "min_duration": {
+            "type": "integer",
+            "description": "Minimum duration in seconds."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids to fetch (at most 50)."
+          },
+          "active": {
+            "type": "string",
+            "description": "True (default): active only, False: inactive only, Any: both.",
+            "enum": [
+              "True",
+              "False",
+              "Any"
+            ]
+          },
+          "created_on_or_after": {
+            "type": "string",
+            "description": "Only records created at or after this UTC time, ISO 8601 (2026-10-01T00:00:00Z)."
+          },
+          "modified_on_or_after": {
+            "type": "string",
+            "description": "Only records changed at or after this UTC time, ISO 8601. Use it to pick up changes since a last sync."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field: Id, CreatedOn or ModifiedOn, prefixed with - for descending."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page (50 by default). Keep it at a few hundred or less."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return totalCount (slower on big lists)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/telecom/v3/tenant/{{SERVICETITAN_TENANT_ID}}/calls",
+        "queryParams": {
+          "callerPhoneNumber": "$caller_phone_number",
+          "phoneNumberCalled": "$phone_number_called",
+          "campaignId": "$campaign_id",
+          "agentId": "$agent_id",
+          "minDuration": "$min_duration",
+          "ids": "$ids",
+          "active": "$active",
+          "createdOnOrAfter": "$created_on_or_after",
+          "modifiedOnOrAfter": "$modified_on_or_after",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "includeTotal": "$include_total"
+        }
+      }
+    },
+    {
+      "name": "servicetitan_get_call",
+      "description": "One call by id with its details (lead call, customer, location, campaign, agent, recording available).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Call id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/telecom/v2/tenant/{{SERVICETITAN_TENANT_ID}}/calls/{id}"
+      }
+    }
+  ]
+}

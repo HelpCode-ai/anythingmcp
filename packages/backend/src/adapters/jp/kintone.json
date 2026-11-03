@@ -1,0 +1,1216 @@
+{
+  "slug": "kintone",
+  "name": "kintone",
+  "aliases": [
+    "Cybozu kintone",
+    "キントーン",
+    "サイボウズ kintone"
+  ],
+  "description": "kintone by Cybozu, the no-code business app platform: list apps, read form fields, layout, views and process management, search records with kintone queries and cursors, create and update records, change process status and assignees, read and post comments, upload and download files, and read spaces. REST API with an API token or a password login.",
+  "instructions": "## kintone\nThis connector uses the **kintone REST API** (`https://<your domain>/k/v1`) of kintone by Cybozu, the no-code business app platform used across Japan: apps and their form fields, layout, views and process management, records with kintone queries and cursors, record creation and updates, comments, process status changes, file upload and download, and spaces with their members and threads. Guest spaces (`/k/guest/...`) are not covered.\n\n**Setup (about 5 minutes)**\n1. Enter your kintone domain in `KINTONE_DOMAIN`, the host of your kintone URL without https:// and path: `example.cybozu.com` (Japan), `example.kintone.com` (US and other regions) or `example.cybozu.cn`. Domains behind Basic authentication or client certificates (セキュアアクセス) are not supported.\n2. Choose how the connector signs in. You can set one or both:\n   - **API token** (`KINTONE_API_TOKEN`, recommended for a few apps): open the app, **アプリの設定 (App Settings)**, tab **設定 (App Settings)**, **APIトークン (API Token)**, **生成する (Generate)**. Tick only the permissions the AI needs: **レコード閲覧 (View records)**, **レコード追加 (Add records)**, **レコード編集 (Edit records)**, and **レコード削除 (Delete records)** only if you switch on `kintone_delete_records`. Save, then click **アプリを更新 (Update App)**, or the token stays inactive. One token covers one app; for several apps join their tokens with commas (up to 9). Writes made with a token show the user **Administrator**.\n   - **Password login** (`KINTONE_PASSWORD_AUTH`): the Base64 text of `login name:password` of a kintone user, e.g. made with `printf '%s' 'login:password' | base64`. The connector then acts as that user and sees every app, space and record the user may see; it is also the only way to list apps and read spaces. Use a dedicated integration user with the rights you want the AI to have. When both are set, kintone uses the password login.\n3. Install. The install check (`kintone_get_api_list`) only proves the domain answers; run `kintone_get_app` with an app id to check the token, or `kintone_list_apps` to check the password login.\n\n**Workflow**\n- Find apps: `kintone_list_apps` (password login) or ask the user for the app id (the number after `/k/` in the app URL); `kintone_get_app` and `kintone_get_app_settings` describe one app. `kintone_get_api_list` lists what the domain offers.\n- Learn the app before touching records: `kintone_get_form_fields` gives every field code, type and option list; `kintone_get_form_layout` the visual grouping; `kintone_list_views` the saved views (a view filterCond can be reused as a query); `kintone_get_process_management` the statuses and actions.\n- Read records: `kintone_get_record` for one id, `kintone_list_records` with a query for up to 500 at a time (add `limit` and `offset` inside the query). Beyond 10,000 records use `kintone_create_cursor`, then `kintone_get_cursor_records` until `next` is false, and `kintone_delete_cursor` to stop early.\n- Write records: `kintone_create_record` or `kintone_create_records` (up to 100), `kintone_update_record` by id or a unique field, `kintone_update_records` for up to 100 changes or an upsert. Read the record first and send `revision` when several people edit the same app.\n- Process management: `kintone_update_status` runs an action (e.g. 承認する) and `kintone_update_assignees` changes the 作業者.\n- Comments: `kintone_list_comments` reads, `kintone_add_comment` posts with optional mentions.\n- Files: `kintone_download_file` with the fileKey from a FILE field; `kintone_upload_file` returns a temporary fileKey, which you then write into a FILE field.\n- Spaces (password login only): `kintone_get_space`, `kintone_list_space_members`, `kintone_add_thread_comment`.\n\n**Queries (`query`)**: field codes, not labels, with operators `=`, `!=`, `>`, `<`, `>=`, `<=`, `in (\"a\", \"b\")`, `not in`, `like \"text\"` (text fields), joined by `and` / `or`, then `order by field asc|desc`, `limit n` (at most 500) and `offset n` (at most 10,000). Dates are `\"2026-10-30\"`, date-times UTC `\"2026-10-30T00:00:00Z\"`; functions `TODAY()`, `THIS_MONTH()`, `LAST_WEEK()`, `LOGINUSER()`. Drop-down, radio and status values must match the option text exactly (e.g. `ステータス in (\"完了\")`).\n\n**Reading answers**: every field is `{\"type\": ..., \"value\": ...}`. Numbers and calculated values come as strings; date-times are UTC; `$id` is the record id and `$revision` its version. USER_SELECT and CREATOR values are `{code, name}` with the login name in `code`. FILE values list `fileKey`, `name`, `contentType` and `size`.\n\n**Limits**: 10,000 requests per app per day and 100 parallel requests per domain; 500 records per read, 100 per bulk write or delete, 10 comments per page, 10 open cursors per domain (each lives 10 minutes). Uploaded files must be attached within 3 days.\n\n**Errors**: kintone answers with `code`, `message` and, for input errors, `errors` per field. `CB_VA01` is invalid input (wrong field code, bad date, missing required field: read `errors`). `CB_NO02` means the token or user lacks the permission, or the token belongs to another app. `CB_WA01` is a failed password login. A 404 HTML page usually means a wrong `KINTONE_DOMAIN`.\n\n**Switched off at install**: `kintone_delete_records`; it cannot be undone, so an admin switches it on when the team needs it.",
+  "region": "jp",
+  "category": "productivity",
+  "icon": "kintone",
+  "docsUrl": "https://kintone.dev/en/docs/kintone/rest-api/",
+  "prerequisites": "A kintone subscription, and either an API token generated in the settings of each app the AI should use, or the login name and password of a kintone user (best a dedicated integration user).",
+  "requiredEnvVars": [
+    "KINTONE_DOMAIN"
+  ],
+  "optionalEnvVars": [
+    "KINTONE_API_TOKEN",
+    "KINTONE_PASSWORD_AUTH"
+  ],
+  "envVarMeta": {
+    "KINTONE_DOMAIN": {
+      "label": "kintone domain",
+      "kind": "setting",
+      "help": "The host of your kintone URL, without https:// and without a path: example.cybozu.com, example.kintone.com or example.cybozu.cn.",
+      "example": "example.cybozu.com",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*\\.(cybozu\\.com|kintone\\.com|cybozu\\.cn)$",
+      "patternMessage": "Enter only the host, e.g. example.cybozu.com or example.kintone.com, without https:// or /k/."
+    },
+    "KINTONE_API_TOKEN": {
+      "label": "API token (APIトークン)",
+      "kind": "credential",
+      "secret": true,
+      "help": "App, App Settings (アプリの設定), API Token (APIトークン), Generate (生成する), then Save and Update App (アプリを更新). For several apps, join the tokens with commas. Leave empty when you use the password login.",
+      "link": "https://kintone.dev/en/docs/common/authentication/",
+      "pattern": "^[A-Za-z0-9]+(,[A-Za-z0-9]+)*$",
+      "patternMessage": "One token, or several tokens separated by commas, without spaces."
+    },
+    "KINTONE_PASSWORD_AUTH": {
+      "label": "Password login (Base64 of login:password)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Base64 of 'login name:password' of a kintone user, e.g. printf '%s' 'login:password' | base64. Needed to list apps and read spaces; the connector then acts as that user. Leave empty to use only API tokens.",
+      "link": "https://kintone.dev/en/docs/common/authentication/",
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+      "patternMessage": "Paste the Base64 text only (letters, digits, + and /, maybe ending in =), not the login name and password themselves."
+    }
+  },
+  "verifyHints": {
+    "401": "kintone did not accept the credentials. Check the API token (and that the app was updated after generating it) or the Base64 password login.",
+    "403": "The credentials work but may not do this: an API token only reaches its own app and the permissions ticked for it, and apps lists and spaces need the password login.",
+    "404": "Nothing answered at this address. Check KINTONE_DOMAIN (e.g. example.cybozu.com) and the app or record id."
+  },
+  "probe": {
+    "tool": "kintone_get_api_list"
+  },
+  "connector": {
+    "name": "kintone REST API",
+    "type": "REST",
+    "baseUrl": "https://{{KINTONE_DOMAIN}}/k/v1",
+    "authType": "NONE"
+  },
+  "tools": [
+    {
+      "name": "kintone_get_api_list",
+      "description": "List the REST APIs this kintone domain offers (API ids such as records/get with links to their schema). kintone answers it without credentials, so it only proves the domain is right; it is the install check. Use kintone_get_app or kintone_list_apps to check the credentials.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/apis.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_list_apps",
+      "description": "List the apps the signed-in user can open: appId, code, name, description, spaceId, creator and dates. Filter by app ids, app codes, part of the name or space ids; up to 100 per call, page with offset. Needs KINTONE_PASSWORD_AUTH: kintone does not accept API tokens for this call. Read-only, although it is sent as a POST with X-HTTP-Method-Override: GET so that lists can be passed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "description": "Optional app ids to return (up to 100).",
+            "items": {
+              "type": "integer",
+              "description": "An app id."
+            },
+            "maxItems": 100
+          },
+          "codes": {
+            "type": "array",
+            "description": "Optional app codes (exact, case-sensitive; up to 100).",
+            "items": {
+              "type": "string",
+              "description": "An app code."
+            },
+            "maxItems": 100
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional part of the app name (case-insensitive), e.g. 案件 or Sales."
+          },
+          "space_ids": {
+            "type": "array",
+            "description": "Optional space ids: only apps created in these spaces.",
+            "items": {
+              "type": "integer",
+              "description": "A space id."
+            },
+            "maxItems": 100
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Apps per call, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many apps to skip, for paging (default 0).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/apps.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}",
+          "X-HTTP-Method-Override": "GET"
+        },
+        "bodyMapping": {
+          "ids": "$ids",
+          "codes": "$codes",
+          "name": "$name",
+          "spaceIds": "$space_ids",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kintone_get_app",
+      "description": "Read one app: appId, code, name, description, spaceId, threadId, creator, modifier and dates. Works with the API token of that app; a good first call to check a token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/app.json",
+        "queryParams": {
+          "id": "$id"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_get_form_fields",
+      "description": "Read the fields of an app (フォームの設定): for every field its code, label, type (SINGLE_LINE_TEXT, NUMBER, DATE, DROP_DOWN, USER_SELECT, SUBTABLE, FILE ...), required flag, options and defaults. Call it before querying or writing records: queries and writes use field codes, not labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "default",
+              "en",
+              "zh",
+              "ja",
+              "user"
+            ],
+            "description": "Language of the labels: default (the app default), ja, en, zh, or user (the language of the signed-in user). Omit for default."
+          }
+        },
+        "required": [
+          "app"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/app/form/fields.json",
+        "queryParams": {
+          "app": "$app",
+          "lang": "$lang"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_get_form_layout",
+      "description": "Read the form layout of an app: rows, groups and subtables with the field codes in the order users see them. Useful to understand which fields belong together.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          }
+        },
+        "required": [
+          "app"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/app/form/layout.json",
+        "queryParams": {
+          "app": "$app"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_list_views",
+      "description": "List the saved views (一覧) of an app with their type, shown fields, filter condition and sort. A view filterCond can be reused as the query of kintone_list_records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "default",
+              "en",
+              "zh",
+              "ja",
+              "user"
+            ],
+            "description": "Language of the labels: default (the app default), ja, en, zh, or user (the language of the signed-in user). Omit for default."
+          }
+        },
+        "required": [
+          "app"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/app/views.json",
+        "queryParams": {
+          "app": "$app",
+          "lang": "$lang"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_get_process_management",
+      "description": "Read the process management settings (プロセス管理) of an app: whether it is enabled, the statuses and the actions that move a record from one status to the next. Needed before kintone_update_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "default",
+              "en",
+              "zh",
+              "ja",
+              "user"
+            ],
+            "description": "Language of the labels: default (the app default), ja, en, zh, or user (the language of the signed-in user). Omit for default."
+          }
+        },
+        "required": [
+          "app"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/app/status.json",
+        "queryParams": {
+          "app": "$app",
+          "lang": "$lang"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_get_app_settings",
+      "description": "Read the general settings of an app: name, description, icon, theme, title field, decimal rounding and whether revisions and threads are enabled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "default",
+              "en",
+              "zh",
+              "ja",
+              "user"
+            ],
+            "description": "Language of the labels: default (the app default), ja, en, zh, or user (the language of the signed-in user). Omit for default."
+          }
+        },
+        "required": [
+          "app"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/app/settings.json",
+        "queryParams": {
+          "app": "$app",
+          "lang": "$lang"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_get_record",
+      "description": "Read one record with every field the caller may see, as {field code: {type, value}}, including $id, $revision, creator and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Record ID ($id, the record number without app code prefix)."
+          }
+        },
+        "required": [
+          "app",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record.json",
+        "queryParams": {
+          "app": "$app",
+          "id": "$id"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_list_records",
+      "description": "Search the records of an app with a kintone query, up to 500 per call. Returns records as {field code: {type, value}} and, with total_count true, the number of matches. Read-only, although it is sent as a POST with X-HTTP-Method-Override: GET so that long queries and field lists fit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "query": {
+            "type": "string",
+            "description": "kintone query on field codes, e.g. status in (\"未着手\", \"進行中\") and amount >= 10000 and created_datetime > \"2026-01-01T00:00:00Z\" order by $id desc limit 100 offset 0. Text uses like \"word\", dates YYYY-MM-DD, functions TODAY(), THIS_MONTH(), LOGINUSER(). limit is at most 500 and offset at most 10000; omit the query for the first 100 records."
+          },
+          "fields": {
+            "type": "array",
+            "description": "Optional field codes to return (e.g. [\"$id\", \"customer\", \"amount\"]); omit for all fields. Naming a subtable returns all its columns.",
+            "items": {
+              "type": "string",
+              "description": "A field code."
+            }
+          },
+          "total_count": {
+            "type": "boolean",
+            "description": "true also returns totalCount, the number of matching records (slower on big apps)."
+          }
+        },
+        "required": [
+          "app"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/records.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}",
+          "X-HTTP-Method-Override": "GET"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "query": "$query",
+          "fields": "$fields",
+          "totalCount": "$total_count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kintone_create_cursor",
+      "description": "Open a cursor to read more than 10,000 records (offset stops at 10,000). Returns a cursor id and totalCount; then call kintone_get_cursor_records with the id until next is false. A cursor lives 10 minutes, and a domain may hold 10 at once. Do not put limit or offset in the query. Read-only: it changes no records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional kintone query with filter and order by, without limit and offset, e.g. status in (\"完了\") order by $id asc."
+          },
+          "fields": {
+            "type": "array",
+            "description": "Optional field codes to return; omit for all fields.",
+            "items": {
+              "type": "string",
+              "description": "A field code."
+            }
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 500 (default 100).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "app"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/records/cursor.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "query": "$query",
+          "fields": "$fields",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kintone_get_cursor_records",
+      "description": "Read the next page of a cursor from kintone_create_cursor. Returns records and next; call again with the same id while next is true. The cursor is deleted automatically after the last page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Cursor id returned by kintone_create_cursor."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/records/cursor.json",
+        "queryParams": {
+          "id": "$id"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_delete_cursor",
+      "description": "Close a cursor you no longer need, to free one of the 10 cursors a domain may hold. It deletes no records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Cursor id returned by kintone_create_cursor."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/records/cursor.json",
+        "queryParams": {
+          "id": "$id"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "kintone_create_record",
+      "description": "Add one record to an app. Returns the new record id and revision. Needs the add permission (レコード追加) on the token or user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "record": {
+            "type": "object",
+            "description": "Field values keyed by field code, each as {\"value\": ...}: {\"customer\": {\"value\": \"ACME\"}, \"amount\": {\"value\": \"1200\"}, \"due\": {\"value\": \"2026-11-30\"}}. Use field codes from kintone_get_form_fields, not labels. Dates are YYYY-MM-DD, date-times UTC ISO 8601 (2026-11-30T09:00:00Z), numbers may be strings, CHECK_BOX and MULTI_SELECT take arrays, USER_SELECT takes [{\"code\": \"login name\"}], FILE takes [{\"fileKey\": \"...\"}] from kintone_upload_file, SUBTABLE takes {\"value\": [{\"value\": {\"col\": {\"value\": \"x\"}}}]}. Leave out fields you do not change; calculated, record number and automatic fields cannot be set."
+          }
+        },
+        "required": [
+          "app",
+          "record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/record.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "record": "$record"
+        }
+      }
+    },
+    {
+      "name": "kintone_create_records",
+      "description": "Add up to 100 records to an app in one call (all or nothing). Returns the new ids and revisions in order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "records": {
+            "type": "array",
+            "description": "Up to 100 records, each shaped like the record of kintone_create_record: {\"field code\": {\"value\": ...}}.",
+            "items": {
+              "type": "object",
+              "description": "One record keyed by field code."
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "app",
+          "records"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/records.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "records": "$records"
+        }
+      }
+    },
+    {
+      "name": "kintone_update_record",
+      "description": "Change fields of one record, found by id or by a unique field (update_key). Only the fields you send change; returns the new revision. Needs the edit permission (レコード編集). Process management status and assignees change through kintone_update_status and kintone_update_assignees instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Record ID. Give either id or update_key."
+          },
+          "update_key": {
+            "type": "object",
+            "description": "Instead of id: a field with \"値の重複を禁止する\" (unique values) and its value, {\"field\": \"order_no\", \"value\": \"A-1001\"}.",
+            "properties": {
+              "field": {
+                "type": "string",
+                "description": "Field code of a unique field."
+              },
+              "value": {
+                "type": "string",
+                "description": "Its value in the record to change."
+              }
+            },
+            "required": [
+              "field",
+              "value"
+            ]
+          },
+          "record": {
+            "type": "object",
+            "description": "Field values keyed by field code, each as {\"value\": ...}: {\"customer\": {\"value\": \"ACME\"}, \"amount\": {\"value\": \"1200\"}, \"due\": {\"value\": \"2026-11-30\"}}. Use field codes from kintone_get_form_fields, not labels. Dates are YYYY-MM-DD, date-times UTC ISO 8601 (2026-11-30T09:00:00Z), numbers may be strings, CHECK_BOX and MULTI_SELECT take arrays, USER_SELECT takes [{\"code\": \"login name\"}], FILE takes [{\"fileKey\": \"...\"}] from kintone_upload_file, SUBTABLE takes {\"value\": [{\"value\": {\"col\": {\"value\": \"x\"}}}]}. Leave out fields you do not change; calculated, record number and automatic fields cannot be set."
+          },
+          "revision": {
+            "type": "integer",
+            "description": "Optional optimistic lock: the record revision ($revision) you last read. The call fails if someone changed the record since. Omit (or -1) to skip the check."
+          }
+        },
+        "required": [
+          "app",
+          "record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/record.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "id": "$id",
+          "updateKey": "$update_key",
+          "record": "$record",
+          "revision": "$revision"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "kintone_update_records",
+      "description": "Change up to 100 records in one call (all or nothing), each by id or updateKey. With upsert true, a record whose updateKey matches nothing is added instead. Returns ids and revisions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "records": {
+            "type": "array",
+            "description": "Up to 100 entries: {\"id\": 12, \"record\": {...}, \"revision\": 3} or {\"updateKey\": {\"field\": \"order_no\", \"value\": \"A-1001\"}, \"record\": {...}}. record is shaped like in kintone_update_record.",
+            "items": {
+              "type": "object",
+              "description": "One change: id or updateKey, record, optional revision."
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "upsert": {
+            "type": "boolean",
+            "description": "true: add records whose updateKey is not found (each entry must use updateKey). Default false."
+          }
+        },
+        "required": [
+          "app",
+          "records"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/records.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "records": "$records",
+          "upsert": "$upsert"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "kintone_delete_records",
+      "description": "Delete up to 100 records of an app for good, by id. kintone has no recycle bin: deleted records and their comments cannot be restored. Installed switched off. Sent as a POST with X-HTTP-Method-Override: DELETE so the id list fits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "ids": {
+            "type": "array",
+            "description": "Record IDs to delete (up to 100).",
+            "items": {
+              "type": "integer",
+              "description": "A record id."
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "revisions": {
+            "type": "array",
+            "description": "Optional revisions in the same order as ids; a record changed since fails the call. -1 skips the check for that record.",
+            "items": {
+              "type": "integer",
+              "description": "Revision of the record at the same position."
+            }
+          }
+        },
+        "required": [
+          "app",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/records.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}",
+          "X-HTTP-Method-Override": "DELETE"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "ids": "$ids",
+          "revisions": "$revisions"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "kintone_list_comments",
+      "description": "Read the comments (コメント) of a record: id, text, creator, createdAt and mentions, newest first by default, at most 10 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "record": {
+            "type": "integer",
+            "description": "Record ID."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "desc (default) for newest first, asc for oldest first."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Comments to skip, for paging.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Comments per call, 1 to 10 (default 10). Page while older or newer is true.",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "app",
+          "record"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/comments.json",
+        "queryParams": {
+          "app": "$app",
+          "record": "$record",
+          "order": "$order",
+          "offset": "$offset",
+          "limit": "$limit"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_add_comment",
+      "description": "Post a comment on a record, optionally mentioning users, groups or departments (they are notified). Returns the comment id. With an API token the comment is posted as Administrator.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "record": {
+            "type": "integer",
+            "description": "Record ID."
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text, up to 65,535 characters; line breaks with \\n."
+          },
+          "mentions": {
+            "type": "array",
+            "description": "Optional mentions: [{\"code\": \"login name, group code or department code\", \"type\": \"USER\"}] with type USER, GROUP or ORGANIZATION. Up to 10.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Login name of the user, or the code of the group or department."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "USER",
+                    "GROUP",
+                    "ORGANIZATION"
+                  ],
+                  "description": "What the code names."
+                }
+              },
+              "required": [
+                "code",
+                "type"
+              ]
+            }
+          }
+        },
+        "required": [
+          "app",
+          "record",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/record/comment.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "record": "$record",
+          "comment": {
+            "text": "$text",
+            "mentions": "$mentions"
+          }
+        }
+      }
+    },
+    {
+      "name": "kintone_update_status",
+      "description": "Move a record to the next status with a process management action (e.g. 承認する). The action name must match one from kintone_get_process_management for the record current status; some actions need an assignee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Record ID."
+          },
+          "action": {
+            "type": "string",
+            "description": "Action name exactly as configured (in the language of the app default, or the user language), e.g. 処理開始."
+          },
+          "assignee": {
+            "type": "string",
+            "description": "Login name of the next assignee, when the next status lets the user pick one."
+          },
+          "revision": {
+            "type": "integer",
+            "description": "Optional optimistic lock: the record revision ($revision) you last read. The call fails if someone changed the record since. Omit (or -1) to skip the check."
+          }
+        },
+        "required": [
+          "app",
+          "id",
+          "action"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/record/status.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "id": "$id",
+          "action": "$action",
+          "assignee": "$assignee",
+          "revision": "$revision"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "kintone_update_assignees",
+      "description": "Replace the assignees (作業者) of a record in its current process management status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "description": "App ID (the number after /k/ in the app URL, e.g. 123 for https://example.cybozu.com/k/123/), from kintone_list_apps."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Record ID."
+          },
+          "assignees": {
+            "type": "array",
+            "description": "Login names of the new assignees (up to 100); an empty list removes all.",
+            "items": {
+              "type": "string",
+              "description": "A login name."
+            },
+            "maxItems": 100
+          },
+          "revision": {
+            "type": "integer",
+            "description": "Optional optimistic lock: the record revision ($revision) you last read. The call fails if someone changed the record since. Omit (or -1) to skip the check."
+          }
+        },
+        "required": [
+          "app",
+          "id",
+          "assignees"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/record/assignees.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyMapping": {
+          "app": "$app",
+          "id": "$id",
+          "assignees": "$assignees",
+          "revision": "$revision"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "kintone_download_file",
+      "description": "Download a file attached to a record. Take the fileKey from the FILE field of kintone_get_record (each entry has fileKey, name, contentType and size); the file is returned as an attachment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_key": {
+            "type": "string",
+            "description": "fileKey from a FILE field value of a record read just before (it is not the file name)."
+          }
+        },
+        "required": [
+          "file_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/file.json",
+        "queryParams": {
+          "fileKey": "$file_key"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "kintone_upload_file",
+      "description": "Upload a file from a URL to kintone and get a temporary fileKey. The file is attached only once you write [{\"fileKey\": \"...\"}] into a FILE field with kintone_create_record or kintone_update_record within 3 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the file to upload (fetched by the connector, up to 10 MB)."
+          }
+        },
+        "required": [
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/file.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "kintone_get_space",
+      "description": "Read a space (スペース): name, body, creator, member count, whether it is private or a guest space, and its attached apps. Needs KINTONE_PASSWORD_AUTH: kintone does not accept API tokens for spaces.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Space ID (the number after /k/#/space/ in the URL, or spaceId from kintone_list_apps)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/space.json",
+        "queryParams": {
+          "id": "$id"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_list_space_members",
+      "description": "List the members of a space: users, groups and departments, and who is a space admin. Needs KINTONE_PASSWORD_AUTH.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Space ID."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/space/members.json",
+        "queryParams": {
+          "id": "$id"
+        },
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        }
+      }
+    },
+    {
+      "name": "kintone_add_thread_comment",
+      "description": "Post a comment in a space thread, optionally with mentions. Needs KINTONE_PASSWORD_AUTH; the comment is posted as that user and members are notified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space": {
+            "type": "integer",
+            "description": "Space ID."
+          },
+          "thread": {
+            "type": "integer",
+            "description": "Thread ID (from the thread URL, or defaultThread of kintone_get_space)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text, up to 65,535 characters."
+          },
+          "mentions": {
+            "type": "array",
+            "description": "Optional mentions: [{\"code\": \"login name, group code or department code\", \"type\": \"USER\"}] with type USER, GROUP or ORGANIZATION. Up to 10.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Login name of the user, or the code of the group or department."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "USER",
+                    "GROUP",
+                    "ORGANIZATION"
+                  ],
+                  "description": "What the code names."
+                }
+              },
+              "required": [
+                "code",
+                "type"
+              ]
+            }
+          }
+        },
+        "required": [
+          "space",
+          "thread",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/space/thread/comment.json",
+        "headers": {
+          "X-Cybozu-API-Token": "${KINTONE_API_TOKEN}",
+          "X-Cybozu-Authorization": "${KINTONE_PASSWORD_AUTH}"
+        },
+        "bodyMapping": {
+          "space": "$space",
+          "thread": "$thread",
+          "comment": {
+            "text": "$text",
+            "mentions": "$mentions"
+          }
+        }
+      }
+    }
+  ]
+}

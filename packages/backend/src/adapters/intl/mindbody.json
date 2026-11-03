@@ -1,0 +1,2777 @@
+{
+  "slug": "mindbody",
+  "name": "Mindbody",
+  "aliases": [
+    "Mindbody Online",
+    "Mindbody Business",
+    "MBO"
+  ],
+  "description": "Studio and gym management in Mindbody: locations, programs, classes and schedules, rosters and waiting lists, appointments and free slots, enrollments, clients with passes, memberships, contracts and visits, sales, pricing options, products and staff. Books classes and appointments and manages clients.",
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "mindbody",
+  "docsUrl": "https://developers.mindbodyonline.com/PublicDocumentation/V6",
+  "instructions": "## Mindbody\nThis connector works with the **Mindbody Public API v6** (`https://api.mindbodyonline.com/public/v6`) for fitness studios, gyms, yoga and wellness businesses: site, locations, programs and session types, classes and class schedules, rosters and waiting lists, appointments and free slots, enrollments, clients with their passes, memberships, contracts, visits and purchases, sales, pricing options, products and staff. It books clients into classes, enrollments and appointments, updates appointments, creates and updates clients, checks clients in and adds contact logs.\n\n**Setup (10 minutes)**\n1. Create a developer account at https://developers.mindbodyonline.com and copy the **API key** of your source from the API credentials page. Until Mindbody approves the account for live sites, it works with the public sandbox site.\n2. The site owner activates your source for the site: get the activation link for the site id from the developer portal (or the API's `/site/activationcode`) and the owner opens it while signed in to Mindbody.\n3. Paste the key into `MINDBODY_API_KEY` and the site id (a number, shown in the business's Mindbody URL and settings) into `MINDBODY_SITE_ID`. The public sandbox site has the id -99.\n4. Enter the user name and password of a **staff member** of that site into `MINDBODY_USERNAME` and `MINDBODY_PASSWORD` (use a dedicated staff login with only the permissions the AI needs). The connector exchanges them for a staff user token at `/usertoken/issue` and renews it automatically.\n5. Run `mindbody_get_locations` to check the connection.\n\n**Workflow**\n- Site set-up: `mindbody_get_sites`, `mindbody_get_locations`, `mindbody_get_programs`, `mindbody_get_session_types`, `mindbody_get_resources`, `mindbody_get_staff`, `mindbody_get_staff_session_types`.\n- Class timetable: `mindbody_get_classes` (today by default; set start_date_time and end_date_time), `mindbody_get_class_descriptions`, `mindbody_get_class_schedules`, roster with `mindbody_get_class_visits`, waiting lists with `mindbody_get_waitlist_entries`.\n- Book a class: find the client (`mindbody_get_clients`), check a pass with `mindbody_get_client_services` (class_id), then `mindbody_add_client_to_class`; cancel with `mindbody_remove_client_from_class`; drop a waiting list entry with `mindbody_remove_from_waitlist`.\n- Appointments: free slots with `mindbody_get_bookable_items` or `mindbody_get_available_dates`, then `mindbody_add_appointment`; booked ones with `mindbody_get_staff_appointments` and the staff calendar with `mindbody_get_schedule_items`; change, confirm, mark arrived or cancel with `mindbody_update_appointment`.\n- Enrollments (workshops, courses): `mindbody_get_enrollments`, `mindbody_add_client_to_enrollment`.\n- Clients: `mindbody_get_clients`, `mindbody_get_client_complete_info`, `mindbody_get_client_visits`, `mindbody_get_client_schedule`, `mindbody_get_client_services`, `mindbody_get_active_client_memberships`, `mindbody_get_client_contracts`, `mindbody_get_client_purchases`, `mindbody_get_client_account_balances`, `mindbody_get_contact_logs`. New client: `mindbody_get_client_duplicates`, `mindbody_get_required_client_fields`, then `mindbody_add_client`; change with `mindbody_update_client`; check in at the front desk with `mindbody_add_arrival`; note a call with `mindbody_add_contact_log`.\n- Sales and catalog: `mindbody_get_sales`, `mindbody_get_transactions`, `mindbody_get_services` (pricing options), `mindbody_get_contracts`, `mindbody_get_packages`, `mindbody_get_products`.\n\n**Switched off at install**: `mindbody_cancel_single_class`; it cannot be undone, so an admin switches it on when the team needs it.\n\n**Test mode**: most writes take `test: true`, which validates the request and returns the result without saving. Use it when unsure.\n\n**Reading the answers**\n- Responses wrap the rows in a named list (`Classes`, `Clients`, `Appointments`, `Sales`, ...) next to `PaginationResponse` with `RequestedLimit`, `RequestedOffset`, `PageSize` and `TotalResults`. Field names are PascalCase.\n- Client ids are strings (`ClientId`, often a number in text form, set by the business); `UniqueId` is Mindbody's numeric id. Class, appointment, staff, location and program ids are integers.\n- Dates and times are in the **site's time zone**, without an offset (`2026-11-20T18:00:00`). Money is in the site currency, in major units.\n- A class is one occurrence; its `ClassDescription` is the class type and its `ClassScheduleId` the recurring schedule.\n\n**Paging**: `limit` (default 100, at most 200) and `offset`. Next page: offset + limit, until offset reaches `TotalResults`.\n\n**Limits and errors**: Mindbody counts API calls per site and bills them beyond a free allowance (see the pricing in the developer portal), so filter by date, location or ids instead of reading everything. 401 means a wrong API key, an inactive source for the site or a rejected staff login (`DeniedAccess`, `InvalidSiteId`); 403 a staff permission missing; 400 a business rule with the reason in `Error.Message` (for example no pricing option, class full, outside the booking window).",
+  "prerequisites": "A Mindbody developer account with an API key activated for the site, the site id, and a staff login of that site.",
+  "requiredEnvVars": [
+    "MINDBODY_API_KEY",
+    "MINDBODY_SITE_ID",
+    "MINDBODY_USERNAME",
+    "MINDBODY_PASSWORD"
+  ],
+  "envVarMeta": {
+    "MINDBODY_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "developers.mindbodyonline.com, API credentials: the API key of your source. Sent in the Api-Key header.",
+      "link": "https://developers.mindbodyonline.com",
+      "pattern": "^[A-Za-z0-9]{16,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    },
+    "MINDBODY_SITE_ID": {
+      "label": "Site ID",
+      "kind": "setting",
+      "help": "The numeric id of the business's Mindbody site, which must have activated your source. The sandbox site is -99.",
+      "example": "-99",
+      "pattern": "^-?[0-9]{1,10}$",
+      "patternMessage": "The site id is a number, for example 123456 (or -99 for the sandbox)."
+    },
+    "MINDBODY_USERNAME": {
+      "label": "Staff user name",
+      "kind": "credential",
+      "help": "User name (often the email) of a staff member of the site, used to get a staff user token."
+    },
+    "MINDBODY_PASSWORD": {
+      "label": "Staff password",
+      "kind": "credential",
+      "secret": true,
+      "help": "Password of that staff member."
+    }
+  },
+  "verifyHints": {
+    "401": "Mindbody refused the login. Check the API key, that the source is activated for this site id, and the staff user name and password.",
+    "403": "The staff member lacks a permission for this call. Give the staff login the needed permissions in Mindbody."
+  },
+  "probe": {
+    "tool": "mindbody_get_locations"
+  },
+  "connector": {
+    "name": "Mindbody Public API v6",
+    "type": "REST",
+    "baseUrl": "https://api.mindbodyonline.com",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://api.mindbodyonline.com/public/v6/usertoken/issue",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Api-Key": "{{MINDBODY_API_KEY}}",
+        "SiteId": "{{MINDBODY_SITE_ID}}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "Username": "${username}",
+        "Password": "${password}"
+      },
+      "username": "{{MINDBODY_USERNAME}}",
+      "password": "{{MINDBODY_PASSWORD}}",
+      "tokenJsonPath": "AccessToken",
+      "expiryJsonPath": "Expires",
+      "expiryFormat": "iso8601",
+      "tokenTTLSeconds": 86400,
+      "proactiveRefreshSeconds": 3600,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}",
+      "extraHeaders": {
+        "Api-Key": "{{MINDBODY_API_KEY}}",
+        "SiteId": "{{MINDBODY_SITE_ID}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "mindbody_get_sites",
+      "description": "Site (business) details the credentials can reach: name, description, contact, logo, currency, time zone, and whether online booking and other features are on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_ids": {
+            "type": "array",
+            "description": "Only these site ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "include_lead_channels": {
+            "type": "boolean",
+            "description": "Include lead channels."
+          },
+          "include_per_staff_pricing": {
+            "type": "boolean",
+            "description": "Include whether per-staff pricing is on."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/site/sites",
+        "queryParams": {
+          "request.siteIds": "$site_ids",
+          "request.includeLeadChannels": "$include_lead_channels",
+          "request.includePerStaffPricing": "$include_per_staff_pricing",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_locations",
+      "description": "Locations (studios, gyms, branches) of the site with id, name, address, phone, coordinates, tax rates and amenities. The location id filters classes, appointments and sales.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/site/locations",
+        "queryParams": {
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_programs",
+      "description": "Programs (service categories) of the site with id, name and schedule type (Class, Enrollment, Appointment, Resource, Media, Arrival). Program ids filter classes, services and session types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_type": {
+            "type": "string",
+            "description": "Only programs of this schedule type.",
+            "enum": [
+              "All",
+              "Class",
+              "Enrollment",
+              "Appointment",
+              "Resource",
+              "Media",
+              "Arrival"
+            ]
+          },
+          "online_only": {
+            "type": "boolean",
+            "description": "Only programs shown online."
+          },
+          "program_ids": {
+            "type": "array",
+            "description": "Only these program ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/site/programs",
+        "queryParams": {
+          "request.scheduleType": "$schedule_type",
+          "request.onlineOnly": "$online_only",
+          "request.programIds": "$program_ids",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_session_types",
+      "description": "Session types (bookable kinds of class or appointment, for example 60 minute massage) with id, name, program, default duration and whether they can be booked online.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "program_ids": {
+            "type": "array",
+            "description": "Only session types of these programs.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "online_only": {
+            "type": "boolean",
+            "description": "Only session types bookable online."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/site/sessiontypes",
+        "queryParams": {
+          "request.programIDs": "$program_ids",
+          "request.onlineOnly": "$online_only",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_resources",
+      "description": "Resources (rooms, equipment) that classes and appointments use, with location, program and schedule types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_ids": {
+            "type": "array",
+            "description": "Only these locations.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "program_ids": {
+            "type": "array",
+            "description": "Only these programs.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "resource_ids": {
+            "type": "array",
+            "description": "Only these resources.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "schedule_types": {
+            "type": "array",
+            "description": "Only these schedule types: All, Class, Enrollment, Appointment, Resource, Media, Arrival.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Include inactive resources."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/site/resources",
+        "queryParams": {
+          "request.locationIds": "$location_ids",
+          "request.programIds": "$program_ids",
+          "request.resourceIds": "$resource_ids",
+          "request.scheduleTypes": "$schedule_types",
+          "request.includeInactive": "$include_inactive",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_classes",
+      "description": "Scheduled classes (single occurrences) in a period with id, class description (name), start and end time, location, staff (teacher), capacity, booked and waitlist counts, whether it is canceled or substituted and the booking window. Default period is today.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date_time": {
+            "type": "string",
+            "description": "Start of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "End of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "class_ids": {
+            "type": "array",
+            "description": "Only these class ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "class_description_ids": {
+            "type": "array",
+            "description": "Only these class descriptions.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "class_schedule_ids": {
+            "type": "array",
+            "description": "Only these class schedules.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "location_ids": {
+            "type": "array",
+            "description": "Only these locations.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "program_ids": {
+            "type": "array",
+            "description": "Only these programs.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "session_type_ids": {
+            "type": "array",
+            "description": "Only these session types.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "staff_ids": {
+            "type": "array",
+            "description": "Only classes taught by these staff members.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "semester_ids": {
+            "type": "array",
+            "description": "Only these semesters.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Client id: also tells whether this client is booked and can book."
+          },
+          "unique_client_id": {
+            "type": "integer",
+            "description": "Unique client id, instead of client_id."
+          },
+          "hide_canceled_classes": {
+            "type": "boolean",
+            "description": "Leave out canceled classes."
+          },
+          "scheduling_window": {
+            "type": "boolean",
+            "description": "Leave out classes outside their booking window."
+          },
+          "last_modified_date": {
+            "type": "string",
+            "description": "Only classes changed on or after this date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/class/classes",
+        "queryParams": {
+          "request.startDateTime": "$start_date_time",
+          "request.endDateTime": "$end_date_time",
+          "request.classIds": "$class_ids",
+          "request.classDescriptionIds": "$class_description_ids",
+          "request.classScheduleIds": "$class_schedule_ids",
+          "request.locationIds": "$location_ids",
+          "request.programIds": "$program_ids",
+          "request.sessionTypeIds": "$session_type_ids",
+          "request.staffIds": "$staff_ids",
+          "request.semesterIds": "$semester_ids",
+          "request.clientId": "$client_id",
+          "request.uniqueClientId": "$unique_client_id",
+          "request.hideCanceledClasses": "$hide_canceled_classes",
+          "request.schedulingWindow": "$scheduling_window",
+          "request.lastModifiedDate": "$last_modified_date",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_class_descriptions",
+      "description": "Class descriptions (the class types such as Vinyasa Yoga or Spin 45) with id, name, description, program, session type, level and category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "class_description_id": {
+            "type": "integer",
+            "description": "Only this class description."
+          },
+          "program_ids": {
+            "type": "array",
+            "description": "Only these programs.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Only descriptions of classes at this location."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Only descriptions of classes taught by this staff member."
+          },
+          "start_class_date_time": {
+            "type": "string",
+            "description": "Only descriptions of classes on or after this time. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_class_date_time": {
+            "type": "string",
+            "description": "Only descriptions of classes before this time. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Include inactive descriptions (default true)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/class/classdescriptions",
+        "queryParams": {
+          "request.classDescriptionId": "$class_description_id",
+          "request.programIds": "$program_ids",
+          "request.locationId": "$location_id",
+          "request.staffId": "$staff_id",
+          "request.startClassDateTime": "$start_class_date_time",
+          "request.endClassDateTime": "$end_class_date_time",
+          "request.includeInactive": "$include_inactive",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_class_schedules",
+      "description": "Class schedules (the recurring pattern behind classes and enrollments): days of the week, start and end time, start and end date, location, staff and class description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "class_schedule_ids": {
+            "type": "array",
+            "description": "Only these schedules.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "location_ids": {
+            "type": "array",
+            "description": "Only these locations.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "program_ids": {
+            "type": "array",
+            "description": "Only these programs.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "session_type_ids": {
+            "type": "array",
+            "description": "Only these session types.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "staff_ids": {
+            "type": "array",
+            "description": "Only these staff members.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Schedules active on or after this day (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Schedules active on or before this day. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/class/classschedules",
+        "queryParams": {
+          "request.classScheduleIds": "$class_schedule_ids",
+          "request.locationIds": "$location_ids",
+          "request.programIds": "$program_ids",
+          "request.sessionTypeIds": "$session_type_ids",
+          "request.staffIds": "$staff_ids",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_class_visits",
+      "description": "The roster of one class: the clients booked into it, with visit id, client id, signed-in state, late cancel and the pricing option used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "class_id": {
+            "type": "integer",
+            "description": "Class id, from mindbody_get_classes."
+          },
+          "last_modified_date": {
+            "type": "string",
+            "description": "Only visits changed on or after this date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "use_site_settings_staff_name": {
+            "type": "boolean",
+            "description": "Use the staff display name from the site settings."
+          }
+        },
+        "required": [
+          "class_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/class/classvisits",
+        "queryParams": {
+          "request.classID": "$class_id",
+          "request.lastModifiedDate": "$last_modified_date",
+          "request.useSiteSettingsStaffName": "$use_site_settings_staff_name"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_waitlist_entries",
+      "description": "Waiting list entries of classes with entry id, class, client and the date the client joined. Give class_ids, class_schedule_ids, client_ids or waitlist_entry_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "class_ids": {
+            "type": "array",
+            "description": "Only these classes.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "class_schedule_ids": {
+            "type": "array",
+            "description": "Only these class schedules.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "client_ids": {
+            "type": "array",
+            "description": "Only these clients.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "waitlist_entry_ids": {
+            "type": "array",
+            "description": "Only these entries.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "hide_past_entries": {
+            "type": "boolean",
+            "description": "Hide entries of past classes."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/class/waitlistentries",
+        "queryParams": {
+          "request.classIds": "$class_ids",
+          "request.classScheduleIds": "$class_schedule_ids",
+          "request.clientIds": "$client_ids",
+          "request.waitlistEntryIds": "$waitlist_entry_ids",
+          "request.hidePastEntries": "$hide_past_entries",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_staff_appointments",
+      "description": "Booked appointments in a period with id, status (Booked, Confirmed, Arrived, Completed, NoShow, LateCanceled), start and end time, client, staff, session type, location and notes. Default is today.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "staff_ids": {
+            "type": "array",
+            "description": "Only these staff members.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "location_ids": {
+            "type": "array",
+            "description": "Only these locations.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Only appointments of this client."
+          },
+          "appointment_ids": {
+            "type": "array",
+            "description": "Only these appointments.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "use_site_settings_staff_name": {
+            "type": "boolean",
+            "description": "Use the staff display name from the site settings."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/appointment/staffappointments",
+        "queryParams": {
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.staffIds": "$staff_ids",
+          "request.locationIds": "$location_ids",
+          "request.clientId": "$client_id",
+          "request.appointmentIds": "$appointment_ids",
+          "request.useSiteSettingsStaffName": "$use_site_settings_staff_name",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_bookable_items",
+      "description": "Free appointment slots: for given session types, the staff, location, start and end times that can be booked in a period. Use it before mindbody_add_appointment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_type_ids": {
+            "type": "array",
+            "description": "Session types to find slots for, from mindbody_get_session_types.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "location_ids": {
+            "type": "array",
+            "description": "Only these locations.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "staff_ids": {
+            "type": "array",
+            "description": "Only these staff members.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "appointment_id": {
+            "type": "integer",
+            "description": "Leave out this appointment (when rescheduling it)."
+          },
+          "ignore_default_session_length": {
+            "type": "boolean",
+            "description": "Also return slots shorter or longer than the default session length."
+          },
+          "include_resource_availability": {
+            "type": "boolean",
+            "description": "Include resource availability."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "session_type_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/appointment/bookableitems",
+        "queryParams": {
+          "request.sessionTypeIds": "$session_type_ids",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.locationIds": "$location_ids",
+          "request.staffIds": "$staff_ids",
+          "request.appointmentId": "$appointment_id",
+          "request.ignoreDefaultSessionLength": "$ignore_default_session_length",
+          "request.includeResourceAvailability": "$include_resource_availability",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_available_dates",
+      "description": "Days on which a session type can be booked as an appointment in a period, optionally for one location and staff member.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_type_id": {
+            "type": "integer",
+            "description": "Session type id."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Only this location."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Only this staff member."
+          }
+        },
+        "required": [
+          "session_type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/appointment/availabledates",
+        "queryParams": {
+          "request.sessionTypeId": "$session_type_id",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.locationId": "$location_id",
+          "request.staffId": "$staff_id"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_schedule_items",
+      "description": "Staff schedule items in a period: appointments, availabilities and unavailabilities per staff member, for a calendar view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "staff_ids": {
+            "type": "array",
+            "description": "Only these staff members.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "location_ids": {
+            "type": "array",
+            "description": "Only these locations.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "ignore_prep_finish_times": {
+            "type": "boolean",
+            "description": "Leave out preparation and finish times."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/appointment/scheduleitems",
+        "queryParams": {
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.staffIds": "$staff_ids",
+          "request.locationIds": "$location_ids",
+          "request.ignorePrepFinishTimes": "$ignore_prep_finish_times",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_enrollments",
+      "description": "Enrollments (workshops, courses and series booked as a whole) with schedule, dates, location, staff, capacity and booking window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "class_schedule_ids": {
+            "type": "array",
+            "description": "Only these schedules.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "location_ids": {
+            "type": "array",
+            "description": "Only these locations.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "program_ids": {
+            "type": "array",
+            "description": "Only these programs.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "session_type_ids": {
+            "type": "array",
+            "description": "Only these session types.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "staff_ids": {
+            "type": "array",
+            "description": "Only these staff members.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Enrollments active on or after this day (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Enrollments active on or before this day. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/enrollment/enrollments",
+        "queryParams": {
+          "request.classScheduleIds": "$class_schedule_ids",
+          "request.locationIds": "$location_ids",
+          "request.programIds": "$program_ids",
+          "request.sessionTypeIds": "$session_type_ids",
+          "request.staffIds": "$staff_ids",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_clients",
+      "description": "Find clients by name, email or id: client id, unique id, name, email, phone, birth date, status (Active, Inactive, ...), membership icon, home location and creation date. Needs the staff login.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Text in first name, last name or email."
+          },
+          "client_ids": {
+            "type": "array",
+            "description": "Only these client ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unique_ids": {
+            "type": "array",
+            "description": "Only these unique ids (not with client_ids or search_text).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "description": "Include inactive clients."
+          },
+          "is_prospect": {
+            "type": "boolean",
+            "description": "true for prospects only."
+          },
+          "last_modified_date": {
+            "type": "string",
+            "description": "Only clients changed on or after this date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/clients",
+        "queryParams": {
+          "request.searchText": "$search_text",
+          "request.clientIDs": "$client_ids",
+          "request.uniqueIds": "$unique_ids",
+          "request.includeInactive": "$include_inactive",
+          "request.isProspect": "$is_prospect",
+          "request.lastModifiedDate": "$last_modified_date",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_client_complete_info",
+      "description": "Everything about one client in one call: profile, active pricing options (client services), contracts, memberships and arrival programs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id, from mindbody_get_clients."
+          },
+          "show_active_only": {
+            "type": "boolean",
+            "description": "Only active pricing options."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Pricing options bought on or after this date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Pricing options bought on or before this date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "required_client_data": {
+            "type": "array",
+            "description": "Limit the sections returned, for example Services, Contracts, Memberships, ArrivalPrograms.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cross_regional_lookup": {
+            "type": "boolean",
+            "description": "Also look at the client's other sites of the organization."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/clientcompleteinfo",
+        "queryParams": {
+          "request.clientId": "$client_id",
+          "request.showActiveOnly": "$show_active_only",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.requiredClientData": "$required_client_data",
+          "request.crossRegionalLookup": "$cross_regional_lookup"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_client_visits",
+      "description": "Visits of a client (classes and appointments attended or booked) in a period, with date, class or appointment, staff, signed-in state, late cancel and the pricing option used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "unique_client_id": {
+            "type": "integer",
+            "description": "Unique client id, instead of client_id."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "unpaids_only": {
+            "type": "boolean",
+            "description": "Only visits not paid for."
+          },
+          "order": {
+            "type": "string",
+            "description": "asc or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "cross_regional_lookup": {
+            "type": "boolean",
+            "description": "Include the client's other sites."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/clientvisits",
+        "queryParams": {
+          "request.clientId": "$client_id",
+          "request.uniqueClientId": "$unique_client_id",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.unpaidsOnly": "$unpaids_only",
+          "request.order": "$order",
+          "request.crossRegionalLookup": "$cross_regional_lookup",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_client_schedule",
+      "description": "Upcoming and past bookings of a client (classes, enrollments, appointments) in a period, optionally with waitlist entries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "unique_client_id": {
+            "type": "integer",
+            "description": "Unique client id, instead of client_id."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "include_waitlist_entries": {
+            "type": "boolean",
+            "description": "Include waitlist entries."
+          },
+          "cross_regional_lookup": {
+            "type": "boolean",
+            "description": "Include the client's other sites."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/clientschedule",
+        "queryParams": {
+          "request.clientId": "$client_id",
+          "request.uniqueClientId": "$unique_client_id",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.includeWaitlistEntries": "$include_waitlist_entries",
+          "request.crossRegionalLookup": "$cross_regional_lookup",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_client_services",
+      "description": "Pricing options a client bought (class packs, passes, intro offers) with remaining visits, activation and expiration dates and the programs they pay for. Filter by class_id or session_type_id to see which pass can pay for a booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "client_ids": {
+            "type": "array",
+            "description": "Several client ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "class_id": {
+            "type": "integer",
+            "description": "Only pricing options that can pay for this class."
+          },
+          "session_type_id": {
+            "type": "integer",
+            "description": "Only pricing options that pay for this session type."
+          },
+          "program_ids": {
+            "type": "array",
+            "description": "Only these programs.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "location_ids": {
+            "type": "array",
+            "description": "Only usable at these locations.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "show_active_only": {
+            "type": "boolean",
+            "description": "Only active pricing options."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Bought on or after this date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Bought on or before this date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "cross_regional_lookup": {
+            "type": "boolean",
+            "description": "Include the client's other sites."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/clientservices",
+        "queryParams": {
+          "request.clientId": "$client_id",
+          "request.clientIds": "$client_ids",
+          "request.classId": "$class_id",
+          "request.sessionTypeId": "$session_type_id",
+          "request.programIds": "$program_ids",
+          "request.locationIds": "$location_ids",
+          "request.showActiveOnly": "$show_active_only",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.crossRegionalLookup": "$cross_regional_lookup",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_active_client_memberships",
+      "description": "Active memberships of a client with name, start and end date, remaining count and the programs they cover.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Only memberships usable at this location."
+          },
+          "cross_regional_lookup": {
+            "type": "boolean",
+            "description": "Include the client's other sites."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/activeclientmemberships",
+        "queryParams": {
+          "request.clientId": "$client_id",
+          "request.locationId": "$location_id",
+          "request.crossRegionalLookup": "$cross_regional_lookup",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_client_contracts",
+      "description": "Contracts (autopay agreements) of a client with name, start and end date, autopay schedule, amounts, status and whether it is suspended or terminated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "cross_regional_lookup": {
+            "type": "boolean",
+            "description": "Include the client's other sites."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/clientcontracts",
+        "queryParams": {
+          "request.clientId": "$client_id",
+          "request.crossRegionalLookup": "$cross_regional_lookup",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_client_purchases",
+      "description": "Purchases of a client (sale items with description, amount, tax, payment and date) in a period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period (default end of today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "sale_id": {
+            "type": "integer",
+            "description": "Only this sale."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/clientpurchases",
+        "queryParams": {
+          "request.clientId": "$client_id",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.saleId": "$sale_id",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_client_account_balances",
+      "description": "Account balances of clients (positive is credit, negative is money owed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_ids": {
+            "type": "array",
+            "description": "Client ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "balance_date": {
+            "type": "string",
+            "description": "Balance on this date (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "class_id": {
+            "type": "integer",
+            "description": "Balance for the event of this class."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "client_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/clientaccountbalances",
+        "queryParams": {
+          "request.clientIds": "$client_ids",
+          "request.balanceDate": "$balance_date",
+          "request.classId": "$class_id",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_contact_logs",
+      "description": "Contact logs of a client (calls, emails, follow-ups) with type, text, assigned staff, follow-up date and whether it is complete.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Created on or after this date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Created before this date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "staff_ids": {
+            "type": "array",
+            "description": "Only logs assigned to these staff members.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "type_ids": {
+            "type": "array",
+            "description": "Only these contact log types.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "subtype_ids": {
+            "type": "array",
+            "description": "Only these subtypes.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "show_system_generated": {
+            "type": "boolean",
+            "description": "Include system-generated logs."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/contactlogs",
+        "queryParams": {
+          "request.clientId": "$client_id",
+          "request.startDate": "$start_date",
+          "request.endDate": "$end_date",
+          "request.staffIds": "$staff_ids",
+          "request.typeIds": "$type_ids",
+          "request.subtypeIds": "$subtype_ids",
+          "request.showSystemGenerated": "$show_system_generated",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_client_duplicates",
+      "description": "Clients that match a first name, last name and email, to check for an existing profile before mindbody_add_client.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/clientduplicates",
+        "queryParams": {
+          "request.firstName": "$first_name",
+          "request.lastName": "$last_name",
+          "request.email": "$email",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_required_client_fields",
+      "description": "Which client fields the site requires when creating a client (for example email, phone, birth date, address).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/client/requiredclientfields"
+      }
+    },
+    {
+      "name": "mindbody_get_sales",
+      "description": "Sales in a period with sale id, date, client, location, purchased items (description, amount, discount, tax) and payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_sale_date_time": {
+            "type": "string",
+            "description": "Sales after this time. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_sale_date_time": {
+            "type": "string",
+            "description": "Sales before this time. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "sale_id": {
+            "type": "integer",
+            "description": "Only this sale."
+          },
+          "payment_method_id": {
+            "type": "integer",
+            "description": "Only sales paid with this payment method."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/sale/sales",
+        "queryParams": {
+          "request.startSaleDateTime": "$start_sale_date_time",
+          "request.endSaleDateTime": "$end_sale_date_time",
+          "request.saleId": "$sale_id",
+          "request.paymentMethodId": "$payment_method_id",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_services",
+      "description": "Pricing options for sale (class packs, drop-ins, intro offers) with id, name, price, online price, tax, count, expiration and the program they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "program_ids": {
+            "type": "array",
+            "description": "Only these programs.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "session_type_ids": {
+            "type": "array",
+            "description": "Only these session types.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "service_ids": {
+            "type": "array",
+            "description": "Only these pricing option ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "class_id": {
+            "type": "integer",
+            "description": "Only options that pay for this class."
+          },
+          "class_schedule_id": {
+            "type": "integer",
+            "description": "Only options for this class schedule."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Compute tax for this location."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Use the pricing of this staff member."
+          },
+          "sell_online": {
+            "type": "boolean",
+            "description": "Only options sold online."
+          },
+          "include_discontinued": {
+            "type": "boolean",
+            "description": "Include discontinued options."
+          },
+          "hide_related_programs": {
+            "type": "boolean",
+            "description": "Leave out options of related programs."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/sale/services",
+        "queryParams": {
+          "request.programIds": "$program_ids",
+          "request.sessionTypeIds": "$session_type_ids",
+          "request.serviceIds": "$service_ids",
+          "request.classId": "$class_id",
+          "request.classScheduleId": "$class_schedule_id",
+          "request.locationId": "$location_id",
+          "request.staffId": "$staff_id",
+          "request.sellOnline": "$sell_online",
+          "request.includeDiscontinued": "$include_discontinued",
+          "request.hideRelatedPrograms": "$hide_related_programs",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_contracts",
+      "description": "Contracts (memberships with autopay) that a location sells, with name, description, first payment, recurring amount and schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location_id": {
+            "type": "integer",
+            "description": "Location id."
+          },
+          "contract_ids": {
+            "type": "array",
+            "description": "Only these contracts.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "sold_online": {
+            "type": "boolean",
+            "description": "Only contracts sold online."
+          },
+          "promo_code": {
+            "type": "string",
+            "description": "Promo code to apply."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/sale/contracts",
+        "queryParams": {
+          "request.locationId": "$location_id",
+          "request.contractIds": "$contract_ids",
+          "request.soldOnline": "$sold_online",
+          "request.promoCode": "$promo_code",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_packages",
+      "description": "Packages (bundles of services and products) for sale, with contents and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_ids": {
+            "type": "array",
+            "description": "Only these packages.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Compute tax for this location."
+          },
+          "sell_online": {
+            "type": "boolean",
+            "description": "Only packages sold online."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/sale/packages",
+        "queryParams": {
+          "request.packageIds": "$package_ids",
+          "request.locationId": "$location_id",
+          "request.sellOnline": "$sell_online",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_products",
+      "description": "Retail products with barcode id, name, price, online price, tax, category and color and size variants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Search term."
+          },
+          "product_ids": {
+            "type": "array",
+            "description": "Only these product barcode ids.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category_ids": {
+            "type": "array",
+            "description": "Only these revenue categories.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "sub_category_ids": {
+            "type": "array",
+            "description": "Only these subcategories.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Compute tax for this location."
+          },
+          "sell_online": {
+            "type": "boolean",
+            "description": "Only products sold online."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/sale/products",
+        "queryParams": {
+          "request.searchText": "$search_text",
+          "request.productIds": "$product_ids",
+          "request.categoryIds": "$category_ids",
+          "request.subCategoryIds": "$sub_category_ids",
+          "request.locationId": "$location_id",
+          "request.sellOnline": "$sell_online",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_transactions",
+      "description": "Card and payment transactions in a period with transaction id, sale, client, location, amount, status and settlement.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_start_date_time": {
+            "type": "string",
+            "description": "After this time (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "transaction_end_date_time": {
+            "type": "string",
+            "description": "Before this time (default today). Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "sale_id": {
+            "type": "integer",
+            "description": "Only this sale."
+          },
+          "transaction_id": {
+            "type": "integer",
+            "description": "Only this transaction."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Only this client."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Only this location."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only this status."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/sale/transactions",
+        "queryParams": {
+          "request.transactionStartDateTime": "$transaction_start_date_time",
+          "request.transactionEndDateTime": "$transaction_end_date_time",
+          "request.saleId": "$sale_id",
+          "request.transactionId": "$transaction_id",
+          "request.clientId": "$client_id",
+          "request.locationId": "$location_id",
+          "request.status": "$status",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_staff",
+      "description": "Staff members with id, name, email, phone, bio, image, whether they teach classes or appointments and their availabilities. Filter by location, session type and time to find who is free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "staff_ids": {
+            "type": "array",
+            "description": "Only these staff members.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "filters": {
+            "type": "array",
+            "description": "Filters: StaffViewable, AppointmentInstructor, ClassInstructor, Male, Female.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Only staff available at this location (with session_type_id)."
+          },
+          "session_type_id": {
+            "type": "integer",
+            "description": "Only staff available for this session type (with start_date_time)."
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Only staff available at this time. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/staff/staff",
+        "queryParams": {
+          "request.staffIds": "$staff_ids",
+          "request.filters": "$filters",
+          "request.locationId": "$location_id",
+          "request.sessionTypeId": "$session_type_id",
+          "request.startDateTime": "$start_date_time",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_get_staff_session_types",
+      "description": "Session types a staff member can perform, with duration and online booking settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "staff_id": {
+            "type": "integer",
+            "description": "Staff id."
+          },
+          "program_ids": {
+            "type": "array",
+            "description": "Only these programs.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "online_only": {
+            "type": "boolean",
+            "description": "Only types bookable online."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, default 100, at most 200.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Results to skip, default 0. Next page: offset + limit.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "staff_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/public/v6/staff/sessiontypes",
+        "queryParams": {
+          "request.staffId": "$staff_id",
+          "request.programIds": "$program_ids",
+          "request.onlineOnly": "$online_only",
+          "request.limit": "$limit",
+          "request.offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mindbody_add_client_to_class",
+      "description": "Book a client into a class. With waitlist true the client joins the waiting list when the class is full. Mindbody uses a fitting pricing option of the client unless client_service_id is given; require_payment false books without one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "class_id": {
+            "type": "integer",
+            "description": "Class id, from mindbody_get_classes."
+          },
+          "waitlist": {
+            "type": "boolean",
+            "description": "Add to the waiting list if the class is full."
+          },
+          "require_payment": {
+            "type": "boolean",
+            "description": "false to book without a pricing option (the visit stays unpaid)."
+          },
+          "client_service_id": {
+            "type": "integer",
+            "description": "Pricing option of the client to pay with, from mindbody_get_client_services."
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "Send the client the confirmation email set up in Mindbody."
+          },
+          "test": {
+            "type": "boolean",
+            "description": "true to validate the request without saving anything (Mindbody test mode)."
+          }
+        },
+        "required": [
+          "client_id",
+          "class_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/class/addclienttoclass",
+        "bodyMapping": {
+          "ClientId": "$client_id",
+          "ClassId": "$class_id",
+          "Waitlist": "$waitlist",
+          "RequirePayment": "$require_payment",
+          "ClientServiceId": "$client_service_id",
+          "SendEmail": "$send_email",
+          "Test": "$test"
+        }
+      }
+    },
+    {
+      "name": "mindbody_remove_client_from_class",
+      "description": "Cancel a client's booking in a class. late_cancel true records it as a late cancel, which can use up a visit or charge a fee under the site's policy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "class_id": {
+            "type": "integer",
+            "description": "Class id."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "late_cancel": {
+            "type": "boolean",
+            "description": "Record a late cancel."
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "Send the client the confirmation email set up in Mindbody."
+          },
+          "test": {
+            "type": "boolean",
+            "description": "true to validate the request without saving anything (Mindbody test mode)."
+          }
+        },
+        "required": [
+          "class_id",
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/class/removeclientfromclass",
+        "bodyMapping": {
+          "ClassId": "$class_id",
+          "ClientId": "$client_id",
+          "LateCancel": "$late_cancel",
+          "SendEmail": "$send_email",
+          "Test": "$test"
+        }
+      }
+    },
+    {
+      "name": "mindbody_remove_from_waitlist",
+      "description": "Remove clients from class waiting lists by waiting list entry id, for example when they no longer want a spot.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "waitlist_entry_ids": {
+            "type": "array",
+            "description": "Waiting list entry ids, from mindbody_get_waitlist_entries.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "waitlist_entry_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/class/removefromwaitlist",
+        "queryParams": {
+          "request.waitlistEntryIds": "$waitlist_entry_ids"
+        }
+      }
+    },
+    {
+      "name": "mindbody_add_appointment",
+      "description": "Book an appointment for a client with a staff member at a location and time. Find a free slot with mindbody_get_bookable_items first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id."
+          },
+          "session_type_id": {
+            "type": "integer",
+            "description": "Session type id."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Staff id."
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Start. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "End; default start plus the session length. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Length in minutes, instead of end_date_time."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Appointment notes."
+          },
+          "staff_requested": {
+            "type": "boolean",
+            "description": "The client asked for this staff member."
+          },
+          "apply_payment": {
+            "type": "boolean",
+            "description": "Pay with a fitting pricing option of the client (default true)."
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "Send the client the confirmation email set up in Mindbody."
+          },
+          "test": {
+            "type": "boolean",
+            "description": "true to validate the request without saving anything (Mindbody test mode)."
+          }
+        },
+        "required": [
+          "client_id",
+          "location_id",
+          "session_type_id",
+          "staff_id",
+          "start_date_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/appointment/addappointment",
+        "bodyMapping": {
+          "ClientId": "$client_id",
+          "LocationId": "$location_id",
+          "SessionTypeId": "$session_type_id",
+          "StaffId": "$staff_id",
+          "StartDateTime": "$start_date_time",
+          "EndDateTime": "$end_date_time",
+          "Duration": "$duration",
+          "Notes": "$notes",
+          "StaffRequested": "$staff_requested",
+          "ApplyPayment": "$apply_payment",
+          "SendEmail": "$send_email",
+          "Test": "$test"
+        }
+      }
+    },
+    {
+      "name": "mindbody_update_appointment",
+      "description": "Change an appointment (time, staff, session type, notes) or its state with execute: confirm, unconfirm, arrive, unarrive, cancel, latecancel or complete.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "integer",
+            "description": "Appointment id, from mindbody_get_staff_appointments."
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "New start. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "New end. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "New staff member."
+          },
+          "session_type_id": {
+            "type": "integer",
+            "description": "New session type."
+          },
+          "notes": {
+            "type": "string",
+            "description": "New notes."
+          },
+          "execute": {
+            "type": "string",
+            "description": "State change.",
+            "enum": [
+              "confirm",
+              "unconfirm",
+              "arrive",
+              "unarrive",
+              "cancel",
+              "latecancel",
+              "complete"
+            ]
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "Send the client the confirmation email set up in Mindbody."
+          },
+          "test": {
+            "type": "boolean",
+            "description": "true to validate the request without saving anything (Mindbody test mode)."
+          }
+        },
+        "required": [
+          "appointment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/appointment/updateappointment",
+        "bodyMapping": {
+          "AppointmentId": "$appointment_id",
+          "StartDateTime": "$start_date_time",
+          "EndDateTime": "$end_date_time",
+          "StaffId": "$staff_id",
+          "SessionTypeId": "$session_type_id",
+          "Notes": "$notes",
+          "Execute": "$execute",
+          "SendEmail": "$send_email",
+          "Test": "$test"
+        }
+      }
+    },
+    {
+      "name": "mindbody_add_client",
+      "description": "Create a client profile. Check mindbody_get_client_duplicates first and mindbody_get_required_client_fields for the fields the site requires.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email."
+          },
+          "mobile_phone": {
+            "type": "string",
+            "description": "Mobile phone."
+          },
+          "birth_date": {
+            "type": "string",
+            "description": "Birth date, YYYY-MM-DD."
+          },
+          "gender": {
+            "type": "string",
+            "description": "Gender as configured in the site (for example Female, Male)."
+          },
+          "address_line1": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region code."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code, for example US or DE."
+          },
+          "home_location": {
+            "type": "object",
+            "description": "Home location: {\"Id\": 1}."
+          },
+          "is_prospect": {
+            "type": "boolean",
+            "description": "Mark as prospect (lead)."
+          },
+          "referred_by": {
+            "type": "string",
+            "description": "Referral source."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes on the client."
+          },
+          "send_account_emails": {
+            "type": "boolean",
+            "description": "Client receives account emails."
+          },
+          "send_promotional_emails": {
+            "type": "boolean",
+            "description": "Client agreed to promotional emails."
+          },
+          "test": {
+            "type": "boolean",
+            "description": "true to validate the request without saving anything (Mindbody test mode)."
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/client/addclient",
+        "bodyMapping": {
+          "FirstName": "$first_name",
+          "LastName": "$last_name",
+          "Email": "$email",
+          "MobilePhone": "$mobile_phone",
+          "BirthDate": "$birth_date",
+          "Gender": "$gender",
+          "AddressLine1": "$address_line1",
+          "City": "$city",
+          "State": "$state",
+          "PostalCode": "$postal_code",
+          "Country": "$country",
+          "HomeLocation": "$home_location",
+          "IsProspect": "$is_prospect",
+          "ReferredBy": "$referred_by",
+          "Notes": "$notes",
+          "SendAccountEmails": "$send_account_emails",
+          "SendPromotionalEmails": "$send_promotional_emails",
+          "Test": "$test"
+        }
+      }
+    },
+    {
+      "name": "mindbody_update_client",
+      "description": "Update a client profile. client holds the client id and only the fields to change, for example {\"Id\": \"100000123\", \"Email\": \"new@example.com\", \"MobilePhone\": \"...\"}.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client": {
+            "type": "object",
+            "description": "Client fields in Mindbody names: Id (required), FirstName, LastName, Email, MobilePhone, BirthDate, AddressLine1, City, PostalCode, Country, Notes, Status, ..."
+          },
+          "cross_regional_update": {
+            "type": "boolean",
+            "description": "Also update the client on the organization's other sites (default true)."
+          },
+          "test": {
+            "type": "boolean",
+            "description": "true to validate the request without saving anything (Mindbody test mode)."
+          }
+        },
+        "required": [
+          "client"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/client/updateclient",
+        "bodyMapping": {
+          "Client": "$client",
+          "CrossRegionalUpdate": "$cross_regional_update",
+          "Test": "$test"
+        }
+      }
+    },
+    {
+      "name": "mindbody_add_arrival",
+      "description": "Check a client in at a location (arrival without a class or appointment), using an arrival pricing option.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "location_id": {
+            "type": "integer",
+            "description": "Location id."
+          },
+          "arrival_type_id": {
+            "type": "integer",
+            "description": "Arrival program id to use."
+          },
+          "test": {
+            "type": "boolean",
+            "description": "true to validate the request without saving anything (Mindbody test mode)."
+          }
+        },
+        "required": [
+          "client_id",
+          "location_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/client/addarrival",
+        "bodyMapping": {
+          "ClientId": "$client_id",
+          "LocationId": "$location_id",
+          "ArrivalTypeId": "$arrival_type_id",
+          "Test": "$test"
+        }
+      }
+    },
+    {
+      "name": "mindbody_add_contact_log",
+      "description": "Add a contact log to a client: a note about a call, email or visit, optionally assigned to staff with a follow-up date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "contact_method": {
+            "type": "string",
+            "description": "How the contact happened or should happen, for example Email, Phone, InPerson, Text."
+          },
+          "text": {
+            "type": "string",
+            "description": "Log text."
+          },
+          "assigned_to_staff_id": {
+            "type": "integer",
+            "description": "Staff member responsible for the follow-up."
+          },
+          "followup_by_date": {
+            "type": "string",
+            "description": "Follow-up date. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "contact_name": {
+            "type": "string",
+            "description": "Name of the person contacted."
+          },
+          "is_complete": {
+            "type": "boolean",
+            "description": "The contact is done."
+          },
+          "types": {
+            "type": "array",
+            "description": "Contact log types: [{\"Id\": 1, \"SubTypes\": [2]}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "test": {
+            "type": "boolean",
+            "description": "true to validate the request without saving anything (Mindbody test mode)."
+          }
+        },
+        "required": [
+          "client_id",
+          "contact_method"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/client/addcontactlog",
+        "bodyMapping": {
+          "ClientId": "$client_id",
+          "ContactMethod": "$contact_method",
+          "Text": "$text",
+          "AssignedToStaffId": "$assigned_to_staff_id",
+          "FollowupByDate": "$followup_by_date",
+          "ContactName": "$contact_name",
+          "IsComplete": "$is_complete",
+          "Types": "$types",
+          "Test": "$test"
+        }
+      }
+    },
+    {
+      "name": "mindbody_add_client_to_enrollment",
+      "description": "Enroll a client in an enrollment (workshop or course series), from a date onward or for the open dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client id."
+          },
+          "class_schedule_id": {
+            "type": "integer",
+            "description": "Enrollment (class schedule) id, from mindbody_get_enrollments."
+          },
+          "enroll_date_forward": {
+            "type": "string",
+            "description": "Enroll in sessions from this date on. Date and time, ISO 8601 (2026-11-20 or 2026-11-20T18:00:00), in the site's time zone."
+          },
+          "enroll_open": {
+            "type": "array",
+            "description": "Enroll on these open dates only.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "waitlist": {
+            "type": "boolean",
+            "description": "Join the waiting list if full."
+          },
+          "send_email": {
+            "type": "boolean",
+            "description": "Send the client the confirmation email set up in Mindbody."
+          },
+          "test": {
+            "type": "boolean",
+            "description": "true to validate the request without saving anything (Mindbody test mode)."
+          }
+        },
+        "required": [
+          "client_id",
+          "class_schedule_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/enrollment/addclienttoenrollment",
+        "bodyMapping": {
+          "ClientId": "$client_id",
+          "ClassScheduleId": "$class_schedule_id",
+          "EnrollDateForward": "$enroll_date_forward",
+          "EnrollOpen": "$enroll_open",
+          "Waitlist": "$waitlist",
+          "SendEmail": "$send_email",
+          "Test": "$test"
+        }
+      }
+    },
+    {
+      "name": "mindbody_cancel_single_class",
+      "description": "Cancel one class occurrence for everyone booked, optionally emailing clients and staff. Bookings are removed and cannot be restored by the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "class_id": {
+            "type": "integer",
+            "description": "Class id."
+          },
+          "hide_cancel": {
+            "type": "boolean",
+            "description": "Hide the canceled class from the schedule."
+          },
+          "send_client_email": {
+            "type": "boolean",
+            "description": "Email the booked clients."
+          },
+          "send_staff_email": {
+            "type": "boolean",
+            "description": "Email the teacher."
+          }
+        },
+        "required": [
+          "class_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/public/v6/class/cancelsingleclass",
+        "bodyMapping": {
+          "ClassID": "$class_id",
+          "HideCancel": "$hide_cancel",
+          "SendClientEmail": "$send_client_email",
+          "SendStaffEmail": "$send_staff_email"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

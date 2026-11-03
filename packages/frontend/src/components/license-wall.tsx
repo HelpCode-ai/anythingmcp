@@ -154,8 +154,10 @@ export function LicenseWall() {
   }, [token, isCloud, isAdmin]);
 
   // Routes where the wall must never appear: unauthenticated/auth flows
-  // (you can't fix a license problem while logged out) and the license
-  // settings page itself (so users can enter a key / start a trial).
+  // (you can't fix a license problem while logged out), the license
+  // settings page itself (so users can enter a key / start a trial), and the
+  // profile page, so someone who doesn't want to buy can still delete their
+  // account. Tool calls stay blocked by the backend's license check.
   const isExemptRoute =
     !pathname ||
     pathname === '/login' ||
@@ -163,6 +165,7 @@ export function LicenseWall() {
     pathname === '/forgot-password' ||
     pathname === '/reset-password' ||
     pathname.startsWith('/accept-invite') ||
+    pathname === '/settings' ||
     pathname === '/settings/license' ||
     pathname.startsWith('/settings/license/');
 
@@ -302,6 +305,12 @@ export function LicenseWall() {
               </Link>
             </p>
           )}
+          <p className="text-xs text-[var(--text-3)]">
+            Not continuing?{' '}
+            <Link href="/settings" className="text-[var(--brand)] hover:underline">
+              Delete your account
+            </Link>
+          </p>
         </div>
       </div>
     </div>

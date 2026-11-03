@@ -1,0 +1,778 @@
+{
+  "slug": "google-chat",
+  "name": "Google Chat",
+  "description": "Let your AI work in Google Chat as you: find spaces, group chats and direct messages, read and search messages and threads, see members, reactions and attachments, follow what changed in a space, post messages and replies, edit your messages and react. Google Workspace accounts.",
+  "instructions": "## Google Chat\nThis connector reads and writes Google Chat as the signed-in user through the **Google Chat API v1** (`https://chat.googleapis.com/v1`): spaces, group chats and direct messages, their members, messages and threads, reactions, attachments and the space event log. It posts and edits messages in the user's name, exactly as if they typed them. Google Chat API user access needs a **Google Workspace** account (Business, Enterprise, Education); personal Gmail accounts cannot use it.\n\n**Setup (one-time, about 15 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Google Chat API**.\n2. **Configure the Chat app** (required by Google for user-authorized Chat API calls): open **APIs & Services → Enabled APIs → Google Chat API → Configuration** (https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat). Fill in **App name** (e.g. AnythingMCP), **Avatar URL** (any HTTPS link to a square PNG or JPEG) and **Description**, leave **Interactive features** turned off, and click **Save**. Without it, posting messages fails with \"Google Chat app not found\".\n3. **APIs & Services → OAuth consent screen**: choose **Internal** (Google Workspace). External apps with the publishing status *Testing* lose their refresh token after 7 days.\n4. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n5. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and install the connector.\n6. On the connector page, click **Authorize with Provider** and sign in with the Google Workspace account the AI should act as. The refresh token is stored encrypted and access tokens are renewed automatically.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Calendar, Drive, Sheets, Docs, Chat...). Enable each API in that project and reuse `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`; each connector asks only for its own scopes.\n\n**Scopes**: `chat.spaces.readonly` (see spaces), `chat.messages` (read, post, edit and delete the user's messages and reactions) and `chat.memberships.readonly` (see members). The connector cannot create spaces or add and remove people. For a read-only setup, change `chat.messages` to `https://www.googleapis.com/auth/chat.messages.readonly` in the connector's OAuth settings, authorize again, and disable `google_chat_create_message`, `google_chat_reply_in_thread`, `google_chat_update_message` and `google_chat_add_reaction`.\n\n**Switched off at install**: `google_chat_delete_message` and `google_chat_delete_reaction`; a deleted message cannot be restored, so an admin switches them on when the team needs them.\n\n**Names and ids**: Chat names resources by path: a space is `spaces/AAAAMpdlehY`, a message `spaces/AAAAMpdlehY/messages/ZJ7sqN6qlYk.ZJ7sqN6qlYk`, a thread `spaces/AAAAMpdlehY/threads/FHT5Rc21TfA`, a person `users/123456789`. Tools take the parts separately: `space_id` is what follows `spaces/` (`AAAAMpdlehY`), `message_id` what follows `/messages/`. `thread_name` and `user` take the full name. People are `users/{id}`; in filters and `google_chat_find_direct_message` an email works as well (`users/ana@example.com`). Senders and members usually come back without a display name: match people by id or email.\n\n**Finding a conversation**\n- `google_chat_list_spaces`: everything the user belongs to, filter by `spaceType` (`SPACE`, `GROUP_CHAT`, `DIRECT_MESSAGE`). Direct messages have no displayName.\n- `google_chat_search_spaces`: named spaces by name, e.g. `display_name:\"Marketing\" AND space_type = \"SPACE\"`.\n- `google_chat_find_direct_message`: the direct message with one person, e.g. `users/ana@example.com` (404 when none exists yet; this connector cannot open a new one).\n- `google_chat_get_space`: details of one space; `google_chat_list_members`: who is in it.\n\n**Reading messages**\n- `google_chat_list_messages`: a space's messages, oldest first (`order_by` `create_time desc` for the latest). Narrow by time with `create_time > \"2026-10-01T00:00:00Z\"` and to one thread with `thread.name = spaces/.../threads/...`. Default page size 25.\n- `google_chat_search_messages`: keywords across all spaces and direct messages, newest first, with conditions such as `sender.name = \"users/ana@example.com\"`, `space.name = \"spaces/AAAAMpdlehY\"`, `createTime >= \"2026-10-01T00:00:00Z\"`, `annotations.user_mentions.user.name:me` (messages mentioning the user), `attachment:*`, `has_link()`, `is_unread()`. It skips messages from Chat apps and muted spaces.\n- `google_chat_get_message`: one message. `google_chat_list_reactions`: who reacted with what.\n- `google_chat_list_space_events`: the change log of a space for the last 28 days, e.g. `event_types:\"google.workspace.chat.message.v1.created\"`. Types: `google.workspace.chat.message.v1.created|updated|deleted`, `google.workspace.chat.reaction.v1.created|deleted`, `google.workspace.chat.membership.v1.created|updated|deleted`, `google.workspace.chat.space.v1.updated` (one per `event_types:` condition, joined with OR).\n- Attachments: a message's `attachment[]` lists files. `google_chat_get_attachment` reads one's metadata; `google_chat_download_attachment` downloads an uploaded file with its `attachmentDataRef.resourceName`. Google Drive files (`source` `DRIVE_FILE`) are read with the Google Drive connector via `driveDataRef.driveFileId`.\nTimes are RFC 3339 in UTC (`2026-10-29T14:05:31.123Z`). Card content is left out of answers.\n\n**Writing**\n- `google_chat_create_message` posts as the user; in threaded spaces it starts a new thread. `google_chat_reply_in_thread` answers in the thread named by a message's `thread.name`. Pass `request_id` when you might retry, so nothing is posted twice.\n- `google_chat_update_message` replaces the text of the user's own message. `google_chat_add_reaction` reacts with a unicode emoji.\n- Text formatting: `*bold*`, `_italic_`, `~strike~`, `` `code` ``, `<https://example.com|label>`; mention with `<users/123456789>` or `<users/all>`. A message is at most 32,000 bytes.\nAlways confirm with the user before posting in their name.\n\n**Pagination**: answers carry `nextPageToken` while more results exist; call the same tool again with the same arguments and `page_token` set to it.\n\n**Limits**: Google Chat allows about 3,000 reads per minute per project and, per space, about 1 message a second; a throttled call answers 429 RESOURCE_EXHAUSTED. Wait and retry.\n\n**Common errors**\n- 401: the authorization expired or was revoked; click **Authorize with Provider** again.\n- 403 PERMISSION_DENIED: the Chat API is not enabled, a scope is missing, the account is not a Google Workspace account, or the user may not do this in that space (e.g. edit someone else's message).\n- 404 NOT_FOUND: wrong space or message id, the user is not a member, or (posting) the Chat app from setup step 2 is not configured.\n- 400 INVALID_ARGUMENT: a filter Google does not accept; check quotes, operators and field names in the tool descriptions.\n\n**Out of scope here**: creating spaces, adding or removing members, uploading files, cards and app-only features (Chat apps posting as a bot), pinned messages and read state.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "google-chat",
+  "docsUrl": "https://developers.google.com/workspace/chat/api/reference/rest",
+  "aliases": [
+    "Hangouts Chat",
+    "gChat"
+  ],
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the access token. Click Authorize with Provider again; if the OAuth consent screen is External and still in Testing, set it to In production first, otherwise the authorization expires after 7 days.",
+    "403": "The Google Chat API is not enabled in the Google Cloud project, the authorized scope does not allow this call, or the account is not a Google Workspace account. Enable the API, configure the Chat app under its Configuration tab and authorize again.",
+    "404": "Google Chat did not find the space or the Chat app. Configure the Chat app (name, avatar, description) on the Google Chat API Configuration page of the Cloud project.",
+    "rate_limited": "Google Chat is throttling this project or space. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "google_chat_list_spaces",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "prerequisites": "A Google Workspace account, a Google Cloud project with the **Google Chat API** enabled and its Chat app configured (name, avatar and description on the API's Configuration page), an OAuth consent screen (**Internal**) and a Web OAuth client with the redirect URI below. The same client can serve all Google connectors. About 15 minutes.",
+  "connector": {
+    "name": "Google Chat",
+    "type": "REST",
+    "baseUrl": "https://chat.googleapis.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages https://www.googleapis.com/auth/chat.memberships.readonly"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/spaces?pageSize=1"
+  },
+  "tools": [
+    {
+      "name": "google_chat_list_spaces",
+      "description": "List the spaces, group chats and direct messages the user is a member of: name (spaces/...), displayName (empty for direct messages), spaceType (SPACE, GROUP_CHAT, DIRECT_MESSAGE), spaceThreadingState, membershipCount, lastActiveTime and spaceUri. Paginate with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Optional filter by type, e.g. spaceType = \"SPACE\" or spaceType = \"GROUP_CHAT\" OR spaceType = \"DIRECT_MESSAGE\"."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 100, maximum 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, to fetch the next page. Keep the other arguments the same."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces",
+        "queryParams": {
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_chat_search_spaces",
+      "description": "Search the named spaces the user has joined by display name, e.g. query display_name:\"Marketing\" AND space_type = \"SPACE\". space_type = \"SPACE\" and a display_name condition are both needed, otherwise the answer is empty. Paginate with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query, e.g. display_name:\"Marketing\" AND space_type = \"SPACE\", or (display_name:\"Sales\" OR display_name:\"Support\") AND space_type = \"SPACE\". Each word is prefix-matched in the space name, case-insensitively."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort order: \"create_time DESC\" (only DESC is supported without admin access).",
+            "enum": [
+              "create_time DESC"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 100, maximum 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, to fetch the next page. Keep the other arguments the same."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces:search",
+        "queryParams": {
+          "query": "$query",
+          "orderBy": "$order_by",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_chat_get_space",
+      "description": "Get one space: displayName, spaceType, description and guidelines (spaceDetails), threading state, history state, membershipCount, whether external users are allowed, createTime, lastActiveTime and spaceUri.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          }
+        },
+        "required": [
+          "space_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces/{space_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_chat_find_direct_message",
+      "description": "Find the existing one-to-one direct message between the signed-in user and another person, to read or post there. Answers 404 when the two have never had a direct message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "The other person as users/{email} or users/{id}, e.g. users/ana@example.com or users/123456789 (the id from a member or sender name)."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces:findDirectMessage",
+        "queryParams": {
+          "name": "$user"
+        }
+      }
+    },
+    {
+      "name": "google_chat_list_members",
+      "description": "List the members of a space: each membership's name, role (ROLE_MEMBER, ROLE_MANAGER), state (JOINED, INVITED), createTime and member (name users/{id}, type HUMAN or BOT; displayName is only filled for some callers). Paginate with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional filter, e.g. role = \"ROLE_MANAGER\", member.type = \"HUMAN\", or both with AND."
+          },
+          "show_invited": {
+            "type": "boolean",
+            "description": "true to include people invited but not yet joined."
+          },
+          "show_groups": {
+            "type": "boolean",
+            "description": "true to include Google Groups that are members."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 100, maximum 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, to fetch the next page. Keep the other arguments the same."
+          }
+        },
+        "required": [
+          "space_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces/{space_id}/members",
+        "encodePathParams": true,
+        "queryParams": {
+          "filter": "$filter",
+          "showInvited": "$show_invited",
+          "showGroups": "$show_groups",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_chat_list_messages",
+      "description": "List the messages of a space, oldest first by default: name, sender (users/{id}, type), createTime, lastUpdateTime, text, thread.name, threadReply, attachment metadata, emojiReactionSummaries and annotations (mentions). Card content is left out. Paginate with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional filter by time and thread, e.g. create_time > \"2026-10-01T00:00:00+02:00\", or thread.name = spaces/AAAAMpdlehY/threads/FHT5Rc21TfA, joined with AND."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "\"create_time desc\" for newest first; default oldest first.",
+            "enum": [
+              "create_time asc",
+              "create_time desc"
+            ]
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted messages (their content is gone, deleteTime and deletionMetadata remain)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 25, maximum 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, to fetch the next page. Keep the other arguments the same."
+          }
+        },
+        "required": [
+          "space_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces/{space_id}/messages",
+        "encodePathParams": true,
+        "queryParams": {
+          "filter": "$filter",
+          "orderBy": "$order_by",
+          "showDeleted": "$show_deleted",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "messages[*].cards",
+            "messages[*].cardsV2",
+            "messages[*].accessoryWidgets",
+            "messages[*].formattedText"
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_chat_get_message",
+      "description": "Get one message: sender, createTime, lastUpdateTime, text, thread.name, attachments (name, contentName, contentType, attachmentDataRef.resourceName), reactions summary, mentions and quoted message. Card content is left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Message id: the part after /messages/ in a message's name, e.g. ZJ7sqN6qlYk.ZJ7sqN6qlYk for spaces/AAAAMpdlehY/messages/ZJ7sqN6qlYk.ZJ7sqN6qlYk, or a client-assigned id such as client-weekly-report."
+          }
+        },
+        "required": [
+          "space_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces/{space_id}/messages/{message_id}",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "cards",
+            "cardsV2",
+            "accessoryWidgets",
+            "formattedText"
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_chat_search_messages",
+      "description": "Search messages across every space and direct message the user belongs to, newest first. filter takes keywords plus conditions, e.g. budget sender.name = \"users/ana@example.com\" createTime >= \"2026-10-01T00:00:00Z\". Returns results[].message, each with its full name (which names the space). Messages from Chat apps, in muted spaces or private to the user are not searched; use google_chat_list_messages for those. Paginate with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Keywords and conditions joined by spaces (AND): createTime with < or >=, sender.name = \"users/{email or id}\", space.name = \"spaces/{id}\", space.display_name:\"Sales\", space.space_type = \"SPACE\", attachment:*, annotations.user_mentions.user.name:me, has_link(), is_unread(). Up to 1,000 characters."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 25, maximum 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, to fetch the next page. Keep the other arguments the same."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/spaces/-/messages:search",
+        "bodyMapping": {
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "google_chat_list_reactions",
+      "description": "List the emoji reactions on a message: each reaction's name, emoji (unicode or customEmoji) and user. Paginate with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Message id: the part after /messages/ in a message's name, e.g. ZJ7sqN6qlYk.ZJ7sqN6qlYk for spaces/AAAAMpdlehY/messages/ZJ7sqN6qlYk.ZJ7sqN6qlYk, or a client-assigned id such as client-weekly-report."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional filter, e.g. emoji.unicode = \"👍\" or user.name = \"users/123456789\"."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 25, maximum 200).",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, to fetch the next page. Keep the other arguments the same."
+          }
+        },
+        "required": [
+          "space_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces/{space_id}/messages/{message_id}/reactions",
+        "encodePathParams": true,
+        "queryParams": {
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_chat_get_attachment",
+      "description": "Get the metadata of a file attached to a message: contentName (file name), contentType, source (UPLOADED_CONTENT or DRIVE_FILE), thumbnailUri, downloadUri, attachmentDataRef.resourceName (for google_chat_download_attachment) or driveDataRef.driveFileId for Google Drive files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Message id: the part after /messages/ in a message's name, e.g. ZJ7sqN6qlYk.ZJ7sqN6qlYk for spaces/AAAAMpdlehY/messages/ZJ7sqN6qlYk.ZJ7sqN6qlYk, or a client-assigned id such as client-weekly-report."
+          },
+          "attachment_id": {
+            "type": "string",
+            "description": "Attachment id: the part after /attachments/ in attachment[].name of a message."
+          }
+        },
+        "required": [
+          "space_id",
+          "message_id",
+          "attachment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces/{space_id}/messages/{message_id}/attachments/{attachment_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_chat_download_attachment",
+      "description": "Download a file uploaded to a message (source UPLOADED_CONTENT), handed over as an attached file or image, up to 10 MB. Files from Google Drive (DRIVE_FILE) cannot be downloaded here: use the Google Drive connector with driveDataRef.driveFileId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_name": {
+            "type": "string",
+            "description": "attachmentDataRef.resourceName of the attachment, exactly as returned by google_chat_get_message or google_chat_get_attachment."
+          }
+        },
+        "required": [
+          "resource_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/media/{resource_name}",
+        "queryParams": {
+          "alt": "media"
+        }
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    },
+    {
+      "name": "google_chat_list_space_events",
+      "description": "List what happened in a space during the last 28 days: new, changed and deleted messages, reactions, memberships and space changes, each with eventType, eventTime and the changed resource. The filter must name at least one event type. Paginate with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Event types joined with OR, optionally with start_time and end_time, e.g. event_types:\"google.workspace.chat.message.v1.created\" OR event_types:\"google.workspace.chat.membership.v1.created\", or start_time=\"2026-10-20T00:00:00Z\" AND (event_types:\"google.workspace.chat.message.v1.created\")."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page (default 100, maximum 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous answer, to fetch the next page. Keep the other arguments the same."
+          }
+        },
+        "required": [
+          "space_id",
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/spaces/{space_id}/spaceEvents",
+        "encodePathParams": true,
+        "queryParams": {
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_chat_create_message",
+      "description": "Post a text message to a space, group chat or direct message as the signed-in user. In a space with threads it starts a new thread; to answer in a thread use google_chat_reply_in_thread. Returns the new message with its name and thread.name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text, up to 32,000 bytes. Formatting: *bold*, _italic_, ~strikethrough~, `code`, ```code block```, <https://example.com|link text>; mention a person with <users/123456789> or everyone with <users/all>.",
+            "minLength": 1
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Optional unique id (e.g. a UUID) that makes the call safe to retry: the same request_id never posts twice."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Optional custom id for the message, starting with client- (lowercase letters, digits and hyphens, up to 63 characters), to address it later without storing its name."
+          }
+        },
+        "required": [
+          "space_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/spaces/{space_id}/messages",
+        "encodePathParams": true,
+        "queryParams": {
+          "requestId": "$request_id",
+          "messageId": "$message_id"
+        },
+        "bodyMapping": {
+          "text": "$text"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "cards",
+            "cardsV2",
+            "accessoryWidgets",
+            "formattedText"
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_chat_reply_in_thread",
+      "description": "Reply in an existing thread of a space as the signed-in user. thread_name comes from thread.name of a message. If the thread is gone, the reply starts a new thread instead of failing. Returns the new message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "thread_name": {
+            "type": "string",
+            "description": "The thread's full name from a message, e.g. spaces/AAAAMpdlehY/threads/FHT5Rc21TfA."
+          },
+          "text": {
+            "type": "string",
+            "description": "Reply text, same formatting as google_chat_create_message.",
+            "minLength": 1
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Optional unique id (e.g. a UUID) that makes the call safe to retry."
+          }
+        },
+        "required": [
+          "space_id",
+          "thread_name",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/spaces/{space_id}/messages",
+        "encodePathParams": true,
+        "queryParams": {
+          "messageReplyOption": "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD",
+          "requestId": "$request_id"
+        },
+        "bodyMapping": {
+          "text": "$text",
+          "thread": {
+            "name": "$thread_name"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "cards",
+            "cardsV2",
+            "accessoryWidgets",
+            "formattedText"
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_chat_update_message",
+      "description": "Replace the text of a message the signed-in user sent. People see it marked as edited. Returns the updated message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Message id: the part after /messages/ in a message's name, e.g. ZJ7sqN6qlYk.ZJ7sqN6qlYk for spaces/AAAAMpdlehY/messages/ZJ7sqN6qlYk.ZJ7sqN6qlYk, or a client-assigned id such as client-weekly-report."
+          },
+          "text": {
+            "type": "string",
+            "description": "The new full text of the message.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "space_id",
+          "message_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/spaces/{space_id}/messages/{message_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "updateMask": "text"
+        },
+        "bodyMapping": {
+          "text": "$text"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "cards",
+            "cardsV2",
+            "accessoryWidgets",
+            "formattedText"
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_chat_add_reaction",
+      "description": "Add an emoji reaction from the signed-in user to a message, e.g. 👍. Returns the reaction with its name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Message id: the part after /messages/ in a message's name, e.g. ZJ7sqN6qlYk.ZJ7sqN6qlYk for spaces/AAAAMpdlehY/messages/ZJ7sqN6qlYk.ZJ7sqN6qlYk, or a client-assigned id such as client-weekly-report."
+          },
+          "emoji": {
+            "type": "string",
+            "description": "A unicode emoji, e.g. 👍, ✅ or 🎉."
+          }
+        },
+        "required": [
+          "space_id",
+          "message_id",
+          "emoji"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/spaces/{space_id}/messages/{message_id}/reactions",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "emoji": {
+            "unicode": "$emoji"
+          }
+        }
+      }
+    },
+    {
+      "name": "google_chat_delete_reaction",
+      "description": "Remove one of the signed-in user's reactions from a message. reaction_id is the part after /reactions/ in the reaction's name from google_chat_list_reactions. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Message id: the part after /messages/ in a message's name, e.g. ZJ7sqN6qlYk.ZJ7sqN6qlYk for spaces/AAAAMpdlehY/messages/ZJ7sqN6qlYk.ZJ7sqN6qlYk, or a client-assigned id such as client-weekly-report."
+          },
+          "reaction_id": {
+            "type": "string",
+            "description": "Reaction id: the part after /reactions/ in a reaction's name."
+          }
+        },
+        "required": [
+          "space_id",
+          "message_id",
+          "reaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/spaces/{space_id}/messages/{message_id}/reactions/{reaction_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "google_chat_delete_message",
+      "description": "Delete a message the signed-in user sent (managers can delete others' messages in some spaces). With force true, its thread replies are deleted too. It cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "description": "Space id without the \"spaces/\" prefix: the part after spaces/ in a space's name, e.g. AAAAMpdlehY for spaces/AAAAMpdlehY."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Message id: the part after /messages/ in a message's name, e.g. ZJ7sqN6qlYk.ZJ7sqN6qlYk for spaces/AAAAMpdlehY/messages/ZJ7sqN6qlYk.ZJ7sqN6qlYk, or a client-assigned id such as client-weekly-report."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "true to also delete the message's threaded replies; otherwise a message with replies is not deleted."
+          }
+        },
+        "required": [
+          "space_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/spaces/{space_id}/messages/{message_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "force": "$force"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

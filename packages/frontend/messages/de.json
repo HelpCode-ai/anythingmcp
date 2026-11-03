@@ -29,6 +29,8 @@
     }
   },
   "signIn": {
+    "continueAs": "Weiter als {email}",
+    "continueAsHint": "Sie haben sich hier gerade angemeldet, um Ihren KI-Assistenten zu verbinden.",
     "title": "Anmelden",
     "subtitle": "Erstellen Sie eigene Connectors für Claude, ChatGPT, Copilot, Meta Muse und jeden KI-Agenten",
     "emailVerified": "E-Mail-Adresse erfolgreich bestätigt! Sie können sich jetzt anmelden.",
@@ -148,11 +150,11 @@
     "question": "Wie möchten Sie Anything<brand>MCP</brand> nutzen?",
     "changeLater": "Sie können das später unter Einstellungen → Lizenz ändern.",
     "personal": {
-      "title": "Privat, Ausbildung oder Evaluierung",
-      "description": "Community Edition, kostenlos, für bis zu 3 Benutzer. Wir senden Ihnen einen Community-Schlüssel per E-Mail, damit Sie Sicherheits- und Release-Hinweise erhalten."
+      "title": "Community Edition, kostenlos",
+      "description": "Kostenlos unter AGPL-3.0 für jede Nutzung, auch kommerziell, für bis zu 3 aktive Benutzer. Wir senden Ihnen einen Community-Schlüssel per E-Mail, damit Sie Sicherheits- und Release-Hinweise erhalten."
     },
     "company": {
-      "title": "Für ein Unternehmen oder Team",
+      "title": "Mehr Benutzer oder Single Sign-On",
       "description": "Testen Sie Enterprise 30 Tage kostenlos: mehr Benutzer, Single Sign-On mit Entra ID, Google oder Okta sowie SCIM. Keine Zahlungsdaten."
     },
     "haveKey": "Ich habe einen Lizenzschlüssel",
@@ -168,7 +170,7 @@
     "activate": {
       "title": "Lizenz aktivieren",
       "subtitle": "Geben Sie Ihren Lizenzschlüssel ein, um Anything<brand>MCP</brand> zu aktivieren",
-      "available": "Lizenzschlüssel für Starter, Team und Enterprise erhalten Sie auf <link>anythingmcp.com</link>."
+      "available": "Enterprise-Lizenzschlüssel erhalten Sie auf Anfrage: <link>Kontakt aufnehmen</link>. Bestehende Starter- und Team-Schlüssel funktionieren weiter."
     },
     "keyLabel": "Lizenzschlüssel",
     "submit": "Lizenz aktivieren",
@@ -648,6 +650,11 @@
       "skillsAuto": "Automatisch: voller Text, solange kurz, sonst eine Liste bei Bedarf",
       "skillsInline": "Immer der volle Text",
       "skillsIndex": "Immer eine Liste (die KI öffnet einen Skill mit skill_get)",
+      "codeMode": "Code-Modus",
+      "codeModeOff": "Aus (keine Code-Ausführung)",
+      "codeModeTools": "Nur gespeicherte Code-Tools",
+      "codeModeInline": "Gespeicherte Code-Tools + Inline-Code",
+      "codeModeHint": "Lässt KI-Clients kurze Programme ausführen, die die Tools dieses Servers in einem Schritt orchestrieren. Standardmäßig aus; benötigt einen konfigurierten Code-Runner. Inline stellt zusätzlich das generische Tool code_execute für berechtigte Rollen bereit.",
       "skillsHint": "Wie die <link>KI-Skills</link> dieses Servers den KI-Client erreichen. Eine Liste hält die Anweisungen kurz; lange Abläufe werden immer bei Bedarf geöffnet.",
       "save": "Speichern"
     }
@@ -665,7 +672,8 @@
     "exportFailed": "Export fehlgeschlagen: {error}",
     "healthCheckFailed": "Statusprüfung fehlgeschlagen: {error}",
     "types": {
-      "database": "Datenbank"
+      "database": "Datenbank",
+      "email": "E-Mail (IMAP/SMTP)"
     },
     "menu": {
       "healthCheck": "Statusprüfung",
@@ -931,7 +939,11 @@
       "providerError": "{name} hat mit einem Fehler geantwortet.",
       "suggest": "Stattdessen {name} einrichten",
       "suggestOther": "Stattdessen den anderen Connector einrichten",
-      "saveAnyway": "Trotzdem speichern"
+      "saveAnyway": "Trotzdem speichern",
+      "appPendingTitle": "{name} akzeptiert diese Schlüssel noch nicht.",
+      "appPendingBody": "Ist Ihre App neu, prüft {name} sie, meist innerhalb weniger Tage: Wir schreiben Ihnen eine E-Mail, sobald sie freigegeben ist, sonst ist nichts zu tun. Ist Ihre App bereits aktiv, kopieren Sie das Shared Secret erneut von der Seite Ihrer App. Ihre Schlüssel sind gespeichert.",
+      "appPendingOpen": "Connector öffnen",
+      "switchTo": "Zu {name} wechseln"
     },
     "field": {
       "required": "Pflichtfeld",
@@ -941,7 +953,16 @@
       "stored": "Gespeichert. Leer lassen, um den Wert zu behalten",
       "hide": "Verbergen",
       "show": "Anzeigen",
-      "open": "Öffnen"
+      "open": "Öffnen",
+      "fix": {
+        "sentence": "{changes}: {value}",
+        "and": "und",
+        "scheme": "vorne https:// ergänzen",
+        "https": "statt http:// https:// verwenden",
+        "slash": "den / am Ende entfernen",
+        "www": "das www. entfernen",
+        "path": "{removed} nach dem Host entfernen"
+      }
     },
     "advanced": "Erweitert",
     "guide": {
@@ -949,7 +970,10 @@
       "back": "Zurück",
       "checking": "Wird geprüft…",
       "continue": "Weiter",
-      "tickHint": "Setzen Sie oben das Häkchen, sobald das erledigt ist."
+      "tickHint": "Setzen Sie oben das Häkchen, sobald das erledigt ist.",
+      "saveAndCheck": "Speichern und bei {name} prüfen",
+      "waitHint": "„Weiter“ wird aktiv, sobald {name} Ihre App freigegeben hat.",
+      "keysFirst": "Geben Sie zuerst im Schritt davor Ihre Schlüssel ein."
     },
     "title": {
       "finish": "Einrichtung von {name} abschließen",
@@ -999,6 +1023,17 @@
       "fillPrevious": "{action}: Füllen Sie zuerst den vorherigen Schritt aus.",
       "screenshot": "Screenshot vom {date}; die Seite kann inzwischen etwas anders aussehen.",
       "problems": "Häufige Probleme"
+    },
+    "wait": {
+      "checking": "Wir fragen {name} nach Ihrer App…",
+      "notYet": "{name} hat Ihre App noch nicht freigegeben",
+      "checkedAt": "Zuletzt geprüft um {time}. Die Seite prüft erneut, sobald Sie zurückkommen.",
+      "checkAgain": "Erneut prüfen",
+      "checkingShort": "Wird geprüft…",
+      "activeAlready": "Schon freigegeben, aber hier geht es nicht weiter? Schlüssel neu eingeben",
+      "saved": "Ihre Schlüssel sind gespeichert. Sie können diese Seite schließen: Wenn Sie zurückkommen, öffnet sie sich bei diesem Schritt.",
+      "ready": "{name} hat Ihre App freigegeben.",
+      "readyNext": "Weiter mit dem nächsten Schritt."
     }
   },
   "setupSuccess": {
@@ -1116,6 +1151,10 @@
       "DATABASE": {
         "name": "Datenbank",
         "description": "Verbindung zu PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB oder SQLite. Unterstützt Nur-Lese- und Lese-/Schreibmodus."
+      },
+      "EMAIL": {
+        "name": "E-Mail (IMAP/SMTP)",
+        "description": "Jedes Postfach verbinden: IONOS, Strato, GMX, web.de, T-Online, Gmail mit App-Passwort, der eigene Mailserver. Mails lesen, suchen, ablegen und senden."
       }
     },
     "configure": "{type} konfigurieren",
@@ -1219,6 +1258,47 @@
     "creating": "Wird angelegt...",
     "create": "Connector anlegen",
     "testConnection": "Verbindung testen"
+  },
+  "emailSettings": {
+    "provider": "Anbieter",
+    "providerPlaceholder": "Auswählen, um die Server einzutragen…",
+    "providerHint": "Trägt Server und Ports ein. Bei anderen Anbietern stehen sie in deren Hilfe (Posteingangs-/Postausgangsserver).",
+    "imapHost": "IMAP-Server (Posteingang)",
+    "smtpHost": "SMTP-Server (Postausgang)",
+    "port": "Port",
+    "securityLabel": "Verschlüsselung",
+    "security": {
+      "tls": "SSL/TLS",
+      "starttls": "STARTTLS",
+      "none": "Keine (Klartext)"
+    },
+    "smtpHint": "Ohne SMTP-Server kann der Connector nur lesen, nicht senden.",
+    "username": "Benutzername",
+    "password": "Passwort oder App-Passwort",
+    "keepUsername": "Unverändert (zum Ersetzen eintippen)",
+    "keepPassword": "Unverändert (zum Ersetzen eintippen)",
+    "passwordHint": "Der Benutzername ist meist die vollständige E-Mail-Adresse. Gmail, Yahoo, iCloud und Fastmail brauchen ein App-Passwort. Microsoft 365 und Outlook.com akzeptieren hier keine Passwörter: dafür den Microsoft-Outlook-Connector verwenden.",
+    "separateSmtpLogin": "Zum Senden ein anderes Login verwenden",
+    "smtpUsername": "SMTP-Benutzername",
+    "smtpPassword": "SMTP-Passwort",
+    "fromAddress": "Absenderadresse",
+    "fromAddressPlaceholder": "Standard: der Benutzername",
+    "fromName": "Absendername",
+    "advanced": "Ordner und Zertifikate",
+    "sentFolder": "Ordner für gesendete Mails",
+    "draftsFolder": "Entwürfe-Ordner",
+    "autoDetected": "Automatisch erkannt",
+    "saveSent": "Kopie gesendeter Mails",
+    "saveSentAuto": "Automatisch (Gmail legt selbst eine Kopie ab)",
+    "saveSentAlways": "Immer eine Kopie in Gesendet ablegen",
+    "saveSentNever": "Nie eine Kopie ablegen",
+    "allowSelfSigned": "Selbstsigniertes Zertifikat akzeptieren",
+    "allowSelfSignedHint": "Nur für einen Mailserver im eigenen Netz, dessen Zertifikat nicht von einer öffentlichen Stelle stammt.",
+    "cloudNote": "AnythingMCP Cloud verbindet sich nur verschlüsselt, mit öffentlichen Mailservern auf den Standardports (IMAP 993/143, SMTP 465/587/2525). Der Hosting-Anbieter sperrt ausgehendes SMTP auf 465 und 587, Senden schlägt dort meist fehl: mit Entwürfen antworten oder einen Anbieter mit SMTP auf Port 2525 nutzen. Senden und Löschen sind anfangs ausgeschaltet.",
+    "selfHostedNote": "Ein Mailserver im eigenen Netz muss auf der Allowlist für ausgehende Verbindungen stehen (Admin > Einstellungen). Senden und Löschen sind anfangs ausgeschaltet: in der Tool-Liste einschalten.",
+    "catalogManaged": "Dieser Connector stammt aus dem Katalog: Server und Login kommen aus seinen Variablen. Ändern unter Umgebungsvariablen.",
+    "summary": "IMAP {imap} · SMTP {smtp}",
+    "noSmtp": "nicht gesetzt (nur lesen)"
   },
   "connectorDetail": {
     "back": "Connectors",
@@ -1412,7 +1492,8 @@
       "nothingToUpdate": "Nichts zu aktualisieren.",
       "envSaved": "Umgebungsvariablen gespeichert",
       "envSavedWarnings": "Umgebungsvariablen gespeichert. {warnings}",
-      "discoveryFailed": "Erkennung fehlgeschlagen: {message}"
+      "discoveryFailed": "Erkennung fehlgeschlagen: {message}",
+      "authorizationFailed": "Autorisierung fehlgeschlagen: {message}"
     }
   },
   "userCredentials": {
@@ -1441,6 +1522,1951 @@
       "cancel": "Abbrechen",
       "saving": "Wird gespeichert…",
       "switch": "Umstellen"
+    }
+  },
+  "connectorTools": {
+    "title": "MCP-Tools ({count})",
+    "cancelImport": "Import abbrechen",
+    "importTools": "Tools importieren",
+    "autoImport": "Aus Spezifikation importieren",
+    "discovering": "Wird erkannt...",
+    "discover": "Vom MCP-Server erkennen",
+    "cancel": "Abbrechen",
+    "addTool": "Tool hinzufügen",
+    "import": {
+      "title": "Tools importieren aus",
+      "sources": {
+        "openapi": "OpenAPI / Swagger",
+        "postman": "Postman-Collection",
+        "curl": "cURL-Befehl",
+        "har": "HAR-Datei (Browser-Mitschnitt)",
+        "graphql": "GraphQL-Introspection",
+        "wsdl": "WSDL",
+        "json": "JSON-Definition",
+        "mcp": "MCP-Erkennung",
+        "odata": "OData-$metadata"
+      },
+      "placeholders": {
+        "openapi": "OpenAPI-JSON/YAML einfügen oder URL eingeben...",
+        "postman": "Postman-Collection-JSON einfügen oder URL eingeben...",
+        "graphql": "URL des GraphQL-Endpunkts eingeben...",
+        "wsdl": "WSDL-URL eingeben...",
+        "mcp": "Optional: leer lassen, um die Basis-URL des Connectors zu verwenden",
+        "odata": "Optional: ein $metadata-Dokument einfügen, statt es abzurufen"
+      },
+      "servicePath": "Service-Pfad",
+      "servicePathPlaceholder": "Leer lassen: Die Basis-URL ist der Service",
+      "servicePathHint": "Sein $metadata wird mit den Zugangsdaten dieses Connectors gelesen. Aus jedem Entity-Set werden ein List-Tool und ein Get-Tool.",
+      "entitySets": "Entity-Sets (optional)",
+      "entitySetsPlaceholder": "A_BusinessPartner, A_Customer — leer für alle",
+      "url": "URL (Spezifikation von URL abrufen)",
+      "harFile": "HAR-Datei",
+      "harHint": "Aus den DevTools Ihres Browsers: Tab „Network“ → Rechtsklick → „Save all as HAR“. HAR-Dateien enthalten Sitzungscookies und Tokens. Antwortinhalte, Cookies und Header mit Zugangsdaten werden in Ihrem Browser entfernt, bevor etwas hochgeladen wird.",
+      "harReady": "{name} — bereit zum Import.",
+      "harReading": "{name} wird gelesen...",
+      "harTooBig": "Dieser Mitschnitt ist nach dem Entfernen von Antwortinhalten und Cookies immer noch {size} groß und damit größer, als der Server annimmt. Zeichnen Sie eine kleinere Sitzung (weniger Anfragen) auf und versuchen Sie es erneut.",
+      "harOtherOrigin": "Keine der {count} Anfragen in diesem Mitschnitt ging an {url}. Zeichnen Sie eine Sitzung mit diesem Host auf und versuchen Sie es erneut.",
+      "harOtherOriginNoUrl": "Keine der {count} Anfragen in diesem Mitschnitt ging an die Basis-URL des Connectors. Zeichnen Sie eine Sitzung mit diesem Host auf und versuchen Sie es erneut.",
+      "harReadError": "Diese Datei konnte nicht gelesen werden: {message}",
+      "contentCurl": "cURL-Befehl(e)",
+      "contentJson": "JSON-Tool-Definitionen",
+      "contentOther": "Oder Inhalt direkt einfügen",
+      "importing": "Wird importiert...",
+      "import": "Importieren"
+    },
+    "empty": "Keine Tools konfiguriert. Importieren Sie sie aus einer Spezifikation, einer Postman-Collection oder einem cURL-Befehl, oder fügen Sie Tools manuell hinzu.",
+    "card": {
+      "enabled": "aktiviert",
+      "disabled": "deaktiviert",
+      "deprecated": "veraltet",
+      "deprecatedTitle": "Am {date} aus der Quellspezifikation entfernt. Rollenzuweisungen und Verlauf bleiben erhalten.",
+      "mapped": "gemappt",
+      "mappedTitle": "Ein Response-Mapping formt die Ausgabe dieses Tools, bevor sie den KI-Client erreicht. Bearbeiten Sie es unter Response-Mapping.",
+      "params": "{count} Parameter",
+      "paramsFromEnv": " ({count} aus Env)",
+      "paramsFromEnvTitle": "{count, plural, one {# Parameter wird} other {# Parameter werden}} aus Umgebungsvariablen befüllt",
+      "query": "{count} Query",
+      "body": "{count} Body",
+      "headers": "{count} Header",
+      "test": "Testen",
+      "close": "Schließen",
+      "edit": "Bearbeiten",
+      "hints": "Hinweise",
+      "closeHints": "Hinweise schließen",
+      "hintsTitle": "MCP-Annotationen: Sie sagen Agenten, ob dieses Tool schreibgeschützt, destruktiv oder idempotent ist.",
+      "disable": "Deaktivieren",
+      "enable": "Aktivieren",
+      "proxy": "Proxy",
+      "proxyTitle": "Die Anfrage dieses Tools über den konfigurierten Proxy / Web-Unblocker leiten. Empfohlen für APIs mit Bot-Schutz, Geo-Sperren oder Ratenlimits.",
+      "delete": "Löschen",
+      "showSql": "Ganzes SQL anzeigen",
+      "showPath": "Ganzen Pfad anzeigen",
+      "hideSql": "SQL ausblenden",
+      "hidePath": "Pfad ausblenden"
+    },
+    "playground": {
+      "autoFilled": "Aus Env befüllt:",
+      "autoFilledNote": " — zur Laufzeit eingesetzt, nicht in die Testparameter aufnehmen",
+      "input": "Eingabeparameter (JSON)",
+      "running": "Läuft...",
+      "runTest": "Test ausführen",
+      "response": "Antwort",
+      "success": "Erfolg ({ms} ms)",
+      "error": "Fehler ({ms} ms)",
+      "viewMapped": "Gemappt (was die KI sieht)",
+      "viewRaw": "Rohe API-Antwort",
+      "mappingFailed": "Response-Mapping fehlgeschlagen ({error}). Die rohe Antwort wird zurückgegeben. Korrigieren Sie es unter Bearbeiten → Response-Mapping.",
+      "kind": {
+        "authFailed": "Zugangsdaten abgelehnt:",
+        "badRequest": "Ungültige Anfrage:",
+        "notFound": "Nicht gefunden:",
+        "rateLimited": "Ratenlimit erreicht:",
+        "upstreamError": "Fehler der API:",
+        "unreachable": "Nicht erreichbar:",
+        "error": "Fehlgeschlagen:"
+      },
+      "empty": "Klicken Sie auf „Test ausführen“, um dieses Tool auszuführen..."
+    },
+    "msg": {
+      "firstRun": "Ihr erster Tool-Aufruf läuft…",
+      "created": "Tool erstellt.",
+      "updated": "Tool aktualisiert."
+    }
+  },
+  "toolEditor": {
+    "titleEdit": "Tool bearbeiten",
+    "titleCreate": "Tool erstellen",
+    "cancel": "Abbrechen",
+    "saving": "Wird gespeichert...",
+    "update": "Tool aktualisieren",
+    "create": "Tool erstellen",
+    "name": "Tool-Name",
+    "nameHint": "snake_case, wird dem KI-Modell angezeigt",
+    "description": "Beschreibung",
+    "descriptionPlaceholder": "Eine Liste von Benutzern abrufen, optional gefiltert",
+    "descriptionHint": "Eine klare Beschreibung hilft der KI zu entscheiden, wann sie dieses Tool nutzt",
+    "toolType": "Tool-Typ",
+    "native": {
+      "REST": "API-Aufruf",
+      "ODATA": "OData-Aufruf",
+      "GRAPHQL": "GraphQL-Operation",
+      "SOAP": "SOAP-Operation",
+      "DATABASE": "SQL-Abfrage",
+      "MCP": "Aufruf eines Remote-Tools",
+      "WEBHOOK": "Webhook",
+      "other": "Nativ"
+    },
+    "staticText": "Statischer Text",
+    "staticResponse": "Statischer Antworttext",
+    "staticPlaceholder": "# Anleitung\n\nBeschreiben Sie, wie dieses Tool verwendet wird, oder geben Sie feste Informationen an.\n\nMarkdown wird unterstützt.",
+    "staticHint": "Dieser Text wird direkt zurückgegeben, ohne API-Aufruf. Verwenden Sie ihn für Anleitungen, Dokumentation oder feste Antworten.",
+    "operationType": "Operationstyp",
+    "graphqlQuery": "GraphQL-Query / -Mutation",
+    "graphqlHint": "Verwenden Sie $variables in der Query und ordnen Sie sie unten Parametern als „GraphQL-Variable“ zu",
+    "sqlTemplate": "SQL-Abfragevorlage",
+    "sqlHint": "Mit $param_name verweisen Sie auf Parameter. Nur SELECT-Abfragen sind erlaubt.",
+    "soapOperation": "SOAP-Operation",
+    "soapHint": "Der Name der SOAP-Operation/-Methode aus der WSDL",
+    "portPath": "Port / Pfad",
+    "method": "Methode",
+    "path": "Pfad",
+    "pathHint": "Verwenden Sie {example} für Pfadparameter. Sie werden unten automatisch als Parameter angelegt",
+    "requestBody": "Request-Body",
+    "bodyFields": "Body-Felder",
+    "bodyTemplate": "Body-Vorlage (JSON)",
+    "bodyMapping": "Body-Mapping (JSON)",
+    "invalidJson": "Kein gültiges JSON. Speichern ist deaktiviert, bis es sich parsen lässt.",
+    "bodyMappingHint": "Wird als Request-Body gesendet, die Struktur bleibt erhalten. Verwenden Sie <code>$param</code> für Tool-Argumente und <code>{connectorVar}</code> / <code>{contextVar}</code> für Werte des Connectors und des Aufrufkontexts. Wird automatisch angezeigt, wenn das gespeicherte Mapping verschachtelt ist; Änderungen hier lassen es intakt.",
+    "encoding": "Kodierung:",
+    "bodyTemplateHint": "Verwenden Sie <code>{example}</code> für dynamische Werte. Alle anderen Felder werden unverändert gesendet. Parameter werden unten automatisch übernommen.",
+    "params": {
+      "title": "Eingabeparameter",
+      "hint": "Legen Sie fest, was das KI-Modell an dieses Tool übergeben kann und wohin jeder Wert in der API-Anfrage geht",
+      "add": "Parameter hinzufügen",
+      "envBanner": "Aus Env befüllt:",
+      "envBannerHint": "Diese Parameter werden zur Laufzeit aus Umgebungsvariablen eingesetzt und vor der KI verborgen.",
+      "empty": "Noch keine Parameter. Fügen Sie einen für jeden Wert hinzu, den das KI-Modell übergeben können soll.",
+      "name": "Name",
+      "type": "Typ",
+      "description": "Beschreibung",
+      "mapsTo": "Ziel",
+      "req": "Pfl.",
+      "envTitle": "Dieser Parameter wird aus einer Umgebungsvariable befüllt und vor der KI verborgen",
+      "descriptionPlaceholder": "Diesen Parameter beschreiben…",
+      "fileType": "file (aus URL)",
+      "required": "Pflichtfeld",
+      "remove": "Entfernen",
+      "removeTitle": "Parameter entfernen",
+      "removeNamed": "Parameter {name} entfernen",
+      "queryOverrides": "Abweichende Query-Schlüssel",
+      "queryKey": "Query-Schlüssel",
+      "headerOverrides": "Abweichende Header-Namen",
+      "headerName": "Header-Name"
+    },
+    "targets": {
+      "path": "Pfadparameter",
+      "query": "Query-Parameter",
+      "body": "Body-Feld",
+      "header": "Header-Wert",
+      "graphqlVar": "GraphQL-Variable",
+      "soap": "SOAP-Parameter",
+      "sql": "SQL-Parameter",
+      "passThrough": "Durchgereichter Parameter"
+    },
+    "cacheTtl": "Cache-TTL der Antwort",
+    "cacheSeconds": "Sekunden (0 = kein Caching)",
+    "cacheHint": "Identische Anfragen werden in Redis zwischengespeichert, um API-Aufrufe zu sparen. Übliche Werte: 60 (1 Min.), 300 (5 Min.), 3600 (1 Stunde).",
+    "preview": "Vorschau des erzeugten Mappings (JSON)",
+    "codeText": "Code-Tool",
+    "codeProgram": "Programm",
+    "codeProgramHint": "Ein async-JavaScript-Rumpf. Andere Tools mit await amcp.run(name, args), amcp.search(query), amcp.describe(name) aufrufen. Die Tool-Eingaben stehen in args. Gib das Ergebnis zurück.",
+    "codeUses": "Nutzt (Konnektoren)",
+    "codeUsesHint": "JSON-Array der Konnektoren, die dieses Code-Tool aufrufen darf. Jeder Eintrag nennt eine connectorId und optional eine Liste von Tool-Namen; ohne Tool-Liste sind alle Tools des Konnektors erlaubt. Nur Konnektoren dieses Workspace.",
+    "codeRunAs": "Ausführen als",
+    "codeRunAsInvoker": "Invoker (Rechte des Aufrufers)",
+    "codeRunAsDefiner": "Definer (admin-kuratiert; nur Admins)",
+    "codeAllowWrites": "Schreib-Tools erlauben",
+    "codeAllowWritesHint": "Aus = das Programm darf nur lesende Tools aufrufen. Schreiben erfordert Enterprise."
+  },
+  "responseMapping": {
+    "title": "Response-Mapping",
+    "intro": "Formt die API-Antwort, bevor sie den KI-Client erreicht. Weniger Tokens, und nur die Felder, die dieses Tool wirklich braucht, verlassen Ihren Workspace. Aus = die rohe Antwort wird unverändert zurückgegeben.",
+    "modes": {
+      "off": "Aus",
+      "select": "Feldauswahl",
+      "jmespath": "JMESPath"
+    },
+    "outputTemplate": "Ausgabevorlage (JSON)",
+    "insertExample": "Beispiel einfügen",
+    "invalidJson": "Kein gültiges JSON. Speichern ist deaktiviert, bis es sich parsen lässt.",
+    "selectHint": "Die Schlüssel sind die Ausgabenamen. Ein Blatt ist ein Pfad (<code>$.a.b</code>, <code>items[*].id</code>, <code>list[-1].x</code>), ein statischer Wert (<code>\"= my-source\"</code>) oder <code>{reshape}</code>, um jedes Element eines Arrays umzuformen. Ein Pfad, der sich nicht auflösen lässt, wird weggelassen.",
+    "exclude": "Pfade ausschließen (einer pro Zeile)",
+    "excludeHint": "Wird vor der Vorlage entfernt. Allein (ohne Vorlage) verwendet, entfernt es ein paar störende Felder und behält alles andere.",
+    "expression": "JMESPath-Ausdruck",
+    "expressionHint": "Vollständiges JMESPath mit Funktionen, z. B. für berechnete Werte wie <code>length(devices)</code> oder Filter wie <code>{filter}</code>.",
+    "fallback": "Bei einem Fehler im Mapping die rohe Antwort zurückgeben",
+    "maxSize": "Maximale Antwortgröße",
+    "bytes": "Bytes (0 = kein Limit)",
+    "previewTitle": "Wendet das Mapping auf die letzte echte Antwort dieses Tools an. Es wird keine API aufgerufen.",
+    "previewTitleDisabled": "Speichern Sie das Tool und führen Sie es einmal aus, um eine echte Antwort für die Vorschau zu erhalten.",
+    "previewing": "Vorschau läuft…",
+    "preview": "Vorschau mit der letzten echten Antwort",
+    "sampleFrom": " · Beispiel vom {date}",
+    "previewFailed": "Vorschau fehlgeschlagen",
+    "mappingFailed": "Mapping fehlgeschlagen ({error}). Die rohe Antwort wird angezeigt.",
+    "raw": "Rohe Antwort",
+    "mapped": "Was der KI-Client erhält"
+  },
+  "toolAnnotations": {
+    "hints": {
+      "readOnlyHint": {
+        "label": "Schreibgeschützt",
+        "help": "Das Tool kann nichts verändern. Agenten probieren schreibgeschützte Tools viel freier aus. Setzen Sie dies für Suchen, die über POST laufen."
+      },
+      "destructiveHint": {
+        "label": "Destruktiv",
+        "help": "Der Schreibvorgang löscht oder überschreibt Daten, statt nur etwas hinzuzufügen. Nur relevant, wenn das Tool nicht schreibgeschützt ist."
+      },
+      "idempotentHint": {
+        "label": "Idempotent",
+        "help": "Ein erneuter Aufruf mit denselben Argumenten ändert nichts weiter. Nur relevant, wenn das Tool nicht schreibgeschützt ist."
+      },
+      "openWorldHint": {
+        "label": "Offene Welt",
+        "help": "Greift auf ein externes System zu, dessen Inhalte wir nicht eingrenzen können. Nein bei einer Datenbank oder statischen Daten."
+      }
+    },
+    "loading": "Hinweise werden geladen…",
+    "intro": "Hinweise, die MCP-Clients lesen, bevor sie dieses Tool aufrufen, vor allem, ob es schreibgeschützt ist. Sie werden aus dem Connector abgeleitet. Überschreiben Sie sie nur, wenn die Ableitung falsch ist (typischerweise bei einer schreibgeschützten Suche über POST).",
+    "title": "Titel",
+    "titlePlaceholder": "Aus dem Tool-Namen abgeleitet",
+    "ignored": "(bei schreibgeschützten Tools ignoriert)",
+    "auto": "Automatisch",
+    "autoYes": "Automatisch (ja)",
+    "autoNo": "Automatisch (nein)",
+    "yes": "Ja",
+    "no": "Nein",
+    "advertised": "An Clients gemeldet",
+    "none": "— keine —",
+    "resetDone": "Auf abgeleitete Werte zurückgesetzt",
+    "saved": "Gespeichert",
+    "error": "Fehler: {message}",
+    "saving": "Wird gespeichert…",
+    "save": "Hinweise speichern",
+    "reset": "Auf abgeleitete Werte zurücksetzen"
+  },
+  "settingsNav": {
+    "sections": {
+      "organization": "Organisation"
+    },
+    "items": {
+      "profile": {
+        "label": "Profil",
+        "description": "Name, E-Mail, Passwort"
+      },
+      "connections": {
+        "label": "Verbindungen",
+        "description": "Worauf jeder KI-Client zugreifen kann"
+      },
+      "organization": {
+        "label": "Allgemein",
+        "description": "Workspace und neue Organisationen"
+      },
+      "users": {
+        "label": "Benutzer",
+        "description": "Mitglieder und Einladungen"
+      },
+      "roles": {
+        "label": "Rollen",
+        "description": "Zugriffskontrolle für MCP-Tools"
+      },
+      "identityProviders": {
+        "label": "Single Sign-On",
+        "description": "Microsoft, Google, Okta"
+      },
+      "license": {
+        "label": "Lizenz",
+        "description": "Tarif, Abrechnung, Abonnement"
+      },
+      "admin": {
+        "label": "Verwaltung",
+        "description": "SMTP, Benachrichtigungen, Footer-Links"
+      },
+      "fileShare": {
+        "label": "Dateifreigabe",
+        "description": "Befristete Download-Links"
+      }
+    }
+  },
+  "settingsProfile": {
+    "authModes": {
+      "none": "Keine (nicht empfohlen)",
+      "legacy": "Legacy (Bearer-Token / API-Schlüssel)",
+      "oauth2": "OAuth 2.0 (Authorization Code + Client Credentials)",
+      "both": "Beides (OAuth 2.0 + Legacy)"
+    },
+    "toast": {
+      "requestsErased": "{count, plural, one {# erfasste Anfrage gelöscht} other {# erfasste Anfragen gelöscht}}",
+      "learningOptedOut": "Ihre Anfragen werden nicht mehr für das Skill-Lernen verwendet",
+      "learningReset": "Ihre Auswahl wurde entfernt; es gilt die Einstellung Ihres Admins",
+      "couldNotSave": "Speichern nicht möglich",
+      "tipsOn": "Tipps und Angebote aktiviert",
+      "tipsOff": "Tipps und Angebote abbestellt",
+      "couldNotConnect": "Verbindung nicht möglich",
+      "accountConnected": "Konto verbunden",
+      "accountDisconnected": "Konto getrennt",
+      "couldNotDisconnect": "Trennen nicht möglich",
+      "profileUpdated": "Profil aktualisiert",
+      "profileUpdateFailed": "Profil konnte nicht aktualisiert werden",
+      "passwordsDoNotMatch": "Die Passwörter stimmen nicht überein",
+      "passwordChangeFailed": "Passwort konnte nicht geändert werden",
+      "passwordChanged": "Passwort geändert"
+    },
+    "confirmUnlink": "„{name}“ trennen? Danach benötigen Sie Ihr Passwort, um sich anzumelden.",
+    "confirmSocialUnlink": "{name} trennen? Sie können sich dann nicht mehr damit anmelden.",
+    "error": "Fehler: {message}",
+    "couldNotUpdateProfile": "Profil konnte nicht aktualisiert werden",
+    "couldNotChangePassword": "Passwort konnte nicht geändert werden",
+    "incorrectPassword": "Falsches Passwort.",
+    "deleteFailed": "Konto konnte nicht gelöscht werden.",
+    "onlyAdmin": "Sie sind der einzige Admin dieser Organisationen.",
+    "couldNotStartSignIn": "Die Anmeldung konnte nicht gestartet werden.",
+    "profile": {
+      "title": "Profil",
+      "email": "E-Mail",
+      "name": "Name",
+      "role": "Rolle",
+      "save": "Profil speichern"
+    },
+    "emailPrefs": {
+      "title": "E-Mail-Einstellungen",
+      "label": "Tipps und Angebote per E-Mail",
+      "body": "Tipps zur Einrichtung, solange Ihr Workspace neu ist, und Angebote nach einer Testphase. E-Mails zu Ihrem Konto, etwa Anmeldecodes und Hinweise zum Tarif, werden immer gesendet."
+    },
+    "learning": {
+      "title": "Skill-Lernen",
+      "effective": "Ihre Anfragen an KI-Clients, die mit diesem Workspace verbunden sind, werden zusammen mit den daraus folgenden Tool-Aufrufen gespeichert, damit Admins wiederkehrende Anforderungen in Workspace-Skills umwandeln können.",
+      "optedOut": "Sie haben widersprochen: Ihre Anfragen werden in diesem Workspace nicht für das Skill-Lernen gespeichert.",
+      "adminOff": "Ihr Admin hat das Skill-Lernen für Sie in diesem Workspace deaktiviert.",
+      "label": "Meine Anfragen für das Skill-Lernen verwenden",
+      "body": "Das Abwählen gilt immer. Wenn Sie es wieder auswählen, wird nur Ihr Widerspruch entfernt: Ob Ihre Anfragen verwendet werden, entscheidet dann Ihr Admin.",
+      "erase": "Meine erfassten Anfragen löschen"
+    },
+    "password": {
+      "title": "Passwort ändern",
+      "current": "Aktuelles Passwort",
+      "new": "Neues Passwort",
+      "newPlaceholder": "Mind. 8 Zeichen",
+      "confirm": "Neues Passwort bestätigen",
+      "confirmPlaceholder": "Neues Passwort wiederholen",
+      "submit": "Passwort ändern"
+    },
+    "linked": {
+      "title": "Verbundene Konten",
+      "body": "Verbinden Sie Ihr Verzeichniskonto, um sich ohne Passwort anzumelden. Ihr Administrator kann das nicht für Sie tun: Die Verbindung ist nur vertrauenswürdig, weil Sie sie im angemeldeten Zustand hergestellt haben.",
+      "connectedLastUsed": "Verbunden · zuletzt verwendet am {date}",
+      "connected": "Verbunden",
+      "notConnected": "Nicht verbunden",
+      "working": "Wird ausgeführt...",
+      "disconnect": "Trennen",
+      "connect": "Verbinden"
+    },
+    "social": {
+      "title": "Anmeldemethoden",
+      "body": "Melden Sie sich bei AnythingMCP mit einem dieser Konten statt mit Ihrem Passwort an.",
+      "noPassword": "Ihr Konto hat noch kein Passwort. <link>Legen Sie ein Passwort fest</link>, um sich auch mit Ihrer E-Mail-Adresse anzumelden.",
+      "lastUsed": "zuletzt verwendet am {date}"
+    },
+    "mcpAuth": {
+      "title": "Authentifizierung des MCP-Servers",
+      "body": "Legen Sie fest, wie sich MCP-Clients (Claude, ChatGPT, Cursor) bei Ihrem Server authentifizieren.",
+      "method": "Authentifizierungsmethode",
+      "loading": "Wird geladen...",
+      "active": "Aktiv",
+      "oauthTitle": "OAuth-2.0-Endpunkte",
+      "oauthNote": "Unterstützt die Grant-Typen Authorization Code (mit PKCE) und Client Credentials. MCP-Clients wie Claude Desktop erkennen diese Endpunkte automatisch.",
+      "legacyTitle": "Legacy-Authentifizierung",
+      "legacyBody": "Setzen Sie <code>MCP_BEARER_TOKEN</code> oder <code>MCP_API_KEY</code> in Ihren Umgebungsvariablen.",
+      "modeNote": "Der Authentifizierungsmodus wird über die Umgebungsvariable <code>MCP_AUTH_MODE</code> festgelegt. Setzen Sie sie auf <code>oauth2</code>, <code>legacy</code>, <code>both</code> oder <code>none</code>."
+    },
+    "apiKeys": {
+      "title": "MCP-API-Schlüssel",
+      "body": "API-Schlüssel werden jetzt pro MCP-Server verwaltet. Unter <link>MCP-Server</link> erstellen und verwalten Sie die Schlüssel für jeden Server."
+    },
+    "danger": {
+      "title": "Gefahrenzone",
+      "body": "Löscht Ihr Konto endgültig. Dabei werden Ihr Profil, Tokens zum Zurücksetzen des Passworts, Tokens zur E-Mail-Bestätigung, MCP-API-Schlüssel, Connectors und MCP-Server-Konfigurationen entfernt. Audit-Logs bleiben ohne Ihre identifizierenden Daten erhalten.",
+      "button": "Mein Konto löschen"
+    },
+    "deleteDialog": {
+      "title": "Konto löschen",
+      "descPassword": "Diese Aktion kann nicht rückgängig gemacht werden. Geben Sie Ihr Passwort ein und tippen Sie zur Bestätigung <strong>DELETE</strong>.",
+      "descNoPassword": "Diese Aktion kann nicht rückgängig gemacht werden. Tippen Sie zur Bestätigung <strong>DELETE</strong>. Wenn Ihre Anmeldung mehr als 10 Minuten zurückliegt, werden Sie zuerst gebeten, sich erneut anzumelden.",
+      "blockingTitle": "Löschen nicht möglich: Sie sind der einzige Admin von:",
+      "blockingHint": "Ernennen Sie zuerst einen weiteren Admin oder löschen Sie diese Organisationen.",
+      "password": "Passwort",
+      "typeConfirm": "Tippen Sie zur Bestätigung <code>DELETE</code>",
+      "reauth": "Erneut mit {provider} anmelden",
+      "cancel": "Abbrechen",
+      "deleting": "Wird gelöscht…",
+      "submit": "Mein Konto löschen"
+    }
+  },
+  "settingsConnections": {
+    "loadFailed": "Verbindungen konnten nicht geladen werden",
+    "emptySelection": "Wählen Sie mindestens einen MCP-Server oder den ganzen Workspace.",
+    "notAvailable": "Diese Auswahl steht Ihnen nicht zur Verfügung.",
+    "updated": "Aktualisiert. Die Änderung gilt ab der nächsten Anfrage dieser Verbindung.",
+    "revokedMsg": "{client} kann auf nichts mehr zugreifen.",
+    "loading": "Wird geladen…",
+    "title": "Verbundene KI-Clients",
+    "intro": "Worauf jeder Client über Ihren gemeinsamen MCP-Endpunkt zugreifen kann. Änderungen gelten ab seiner nächsten Anfrage, ohne erneutes Verbinden.",
+    "empty": "Noch ist nichts verbunden. Fügen Sie Ihren MCP-Endpunkt in Claude, ChatGPT, Meta Muse oder Cursor hinzu. Sobald Sie ihn autorisieren, erscheint er hier.",
+    "revoked": "Widerrufen",
+    "reachesNothing": "Kein Zugriff. Wählen Sie unten aus, um ihn wieder zu erlauben.",
+    "everythingIn": "Alles in {workspace}",
+    "nothingSelected": "Nichts ausgewählt",
+    "change": "Ändern",
+    "revoke": "Widerrufen",
+    "connectorCount": "{count, plural, one {# Connector} other {# Connectors}}",
+    "wholeWorkspace": "Alles in diesem Workspace",
+    "wholeWorkspaceHint": "einschließlich Connectors ohne Server",
+    "save": "Speichern",
+    "cancel": "Abbrechen"
+  },
+  "settingsOrg": {
+    "updated": "Organisation erfolgreich aktualisiert",
+    "updateFailed": "Organisation konnte nicht aktualisiert werden",
+    "deleteFailed": "Organisation konnte nicht gelöscht werden",
+    "membersSignedOut": "{count, plural, one {# Mitglied wurde überall abgemeldet.} other {# Mitglieder wurden überall abgemeldet.}}",
+    "crossOrg": "{count, plural, one {# davon gehört auch zu anderen Workspaces und wurde dort ebenfalls abgemeldet.} other {# davon gehören auch zu anderen Workspaces und wurden dort ebenfalls abgemeldet.}}",
+    "keysDeactivated": "{count, plural, one {# MCP-API-Schlüssel deaktiviert.} other {# MCP-API-Schlüssel deaktiviert.}}",
+    "revokeFailed": "Sitzungen konnten nicht widerrufen werden",
+    "created": "Organisation erstellt! Wird gewechselt...",
+    "createFailed": "Organisation konnte nicht erstellt werden",
+    "title": "Organisation",
+    "introAdmin": "Verwalten Sie die Einstellungen Ihres Workspace. Alle Mitglieder dieser Organisation teilen sich Connectors, MCP-Server und Tools.",
+    "introMember": "Sehen Sie Ihre aktuelle Organisation ein und erstellen Sie neue Workspaces.",
+    "name": "Name der Organisation",
+    "namePlaceholder": "Mein Workspace",
+    "id": "Organisations-ID",
+    "yourRole": "Ihre Rolle",
+    "createdAt": "Erstellt",
+    "saving": "Wird gespeichert...",
+    "save": "Änderungen speichern",
+    "features": {
+      "title": "Funktionen",
+      "onlyAdmins": "Nur Admins können das ändern",
+      "kg": {
+        "label": "Knowledge Graph",
+        "description": "Erkennt automatisch Beziehungen zwischen den Entitäten Ihrer Connectors (aus Tool-Definitionen und echter Nutzung) und stellt sie Agenten zur Verfügung. Wenn Sie ihn deaktivieren, wird der Graph nicht mehr aufgebaut, die Seite ausgeblendet und das MCP-Hilfstool entfernt."
+      },
+      "llm": {
+        "label": "KI-Anreicherung",
+        "description": "Lassen Sie ein LLM zusätzliche Beziehungen vorschlagen, die die Heuristiken übersehen (z. B. dass eine Person im CRM, ein Kunde in der Abrechnung und ein Benutzer im Support dieselbe Person sind). Gesendet werden nur Entitäts- und Feldnamen, nie Ihre Daten. Vorschläge warten auf Ihre Bestätigung. Es können Modellkosten anfallen."
+      },
+      "edgeAutoApply": {
+        "label": "Sichere Verbindungen automatisch übernehmen",
+        "description": "Wenn die KI-Anreicherung eine Verbindung mit hoher Sicherheit (≥ 0,90) vorschlägt, wird sie automatisch in den Graph übernommen, statt auf manuelle Prüfung zu warten. Weniger sichere Verbindungen warten weiterhin auf Ihre Bestätigung. Keine zusätzlichen Modellkosten: Es ändert nur, wie bestehende Vorschläge behandelt werden."
+      },
+      "captureIntent": {
+        "label": "Absicht der Benutzer erfassen",
+        "description": "Fügt jedem MCP-Tool einen optionalen Parameter hinzu, der den Agenten nach der ursprünglichen Anfrage des Benutzers fragt. So wird der Kontext jedes Aufrufs erfasst, damit der Graph optimiert und mit der Zeit Skills vorgeschlagen werden können. Dies ist die Voreinstellung für alle Benutzer: Unter Einstellungen → Benutzer (Skill-Lernen) können Sie sie pro Benutzer überschreiben, und jeder Benutzer kann in den eigenen Einstellungen widersprechen."
+      },
+      "autoExtend": {
+        "label": "Geplante KI-Erweiterung",
+        "description": "Lassen Sie die KI regelmäßig (etwa täglich) den Graph erweitern und aus den erfassten Absichten der Benutzer Skills erstellen, damit sich Ihr Netz und Ihre Skills von selbst verbessern. Kostenbewusst: Sie läuft nur ab und zu, wird übersprungen, wenn sich nichts geändert hat, und bleibt aus, bis Sie sie aktivieren. Erfordert KI-Anreicherung + Absicht der Benutzer erfassen."
+      },
+      "skillAutoApply": {
+        "label": "Sichere Skills automatisch übernehmen",
+        "description": "Wenn die KI einen Skill mit hoher Sicherheit (≥ 0,90) erstellt, wird er automatisch übernommen, statt als Vorschlag zur Prüfung zu warten. Weniger sichere Skills warten weiterhin auf manuelle Freigabe."
+      }
+    },
+    "security": {
+      "title": "Sicherheit",
+      "body": "Meldet jedes Mitglied vom Dashboard und von jedem verbundenen KI-Client ab, auch von Clients mit einem Refresh-Token. Niemand verliert Rolle oder Zugriff; alle müssen sich nur erneut anmelden. Verwenden Sie dies nach einem vermuteten Leck von Zugangsdaten oder einer Änderung bei Ihrem Identity Provider. MCP-API-Schlüssel sind keine Sitzungen und bleiben unverändert, sofern Sie nichts anderes angeben.",
+      "button": "Alle abmelden"
+    },
+    "revokeDialog": {
+      "title": "Alle abmelden",
+      "description": "Alle Mitglieder von <strong>{name}</strong> müssen sich erneut anmelden, im Dashboard und in jedem KI-Client. Mitglieder, die auch zu anderen Workspaces gehören, werden dort ebenfalls abgemeldet. Geben Sie zur Bestätigung unten den Namen der Organisation ein.",
+      "typeConfirm": "Geben Sie zur Bestätigung <code>{name}</code> ein",
+      "alsoMe": "Mich ebenfalls abmelden",
+      "alsoMeHint": "Lassen Sie dies aktiviert, wenn die kompromittierte Sitzung Ihre sein könnte. Sie werden sofort zur Anmeldeseite weitergeleitet.",
+      "alsoKeys": "Außerdem jeden MCP-API-Schlüssel in diesem Workspace deaktivieren",
+      "alsoKeysHint": "API-Schlüssel sind keine Sitzungen: Ohne diese Option funktioniert jeder <code>mcp_…</code>-Schlüssel weiter. Deaktivierte Schlüssel lassen sich nicht wiederherstellen.",
+      "cancel": "Abbrechen",
+      "signingOut": "Wird abgemeldet…",
+      "submit": "Alle abmelden"
+    },
+    "danger": {
+      "title": "Gefahrenzone",
+      "body": "Löscht diese Organisation endgültig, einschließlich aller Mitglieder, Connectors, MCP-Server, API-Schlüssel, benutzerdefinierten Rollen, offenen Einladungen und Einstellungen. Andere Mitglieder werden in ihren nächstältesten Workspace verschoben, falls sie einen haben. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "button": "Diese Organisation löschen"
+    },
+    "deleteDialog": {
+      "title": "Organisation löschen",
+      "description": "Dadurch werden <strong>{name}</strong> und alle Inhalte gelöscht. Geben Sie zur Bestätigung unten den Namen der Organisation ein.",
+      "typeConfirm": "Geben Sie zur Bestätigung <code>{name}</code> ein",
+      "cancel": "Abbrechen",
+      "deleting": "Wird gelöscht…",
+      "submit": "Organisation löschen"
+    },
+    "myOrgs": {
+      "title": "Meine Organisationen",
+      "joined": "{role} · Beigetreten am {date}",
+      "active": "Aktiv",
+      "switch": "Wechseln",
+      "createTitle": "Neue Organisation erstellen",
+      "createPlaceholder": "Name der neuen Organisation",
+      "creating": "Wird erstellt...",
+      "create": "Organisation erstellen"
+    }
+  },
+  "settingsUsers": {
+    "memoryLevels": {
+      "none": "Kein Zugriff",
+      "read": "Firmengedächtnis lesen",
+      "personal": "Persönlich",
+      "contribute": "Beitragen"
+    },
+    "memoryDefault": "Standard ({level, select, none {kein Zugriff} read {lesen} personal {persönlich} other {beitragen}})",
+    "learningDefaultOn": "Standard (an)",
+    "learningDefaultOff": "Standard (aus)",
+    "on": "An",
+    "off": "Aus",
+    "error": "Fehler: {message}",
+    "roleUpdated": "Rolle auf {role} geändert",
+    "learningUpdated": "{count, plural, one {Skill-Lernen für # Benutzer aktualisiert.} other {Skill-Lernen für # Benutzer aktualisiert.}}",
+    "requestsErased": "{count, plural, one {# erfasste Anfrage gelöscht.} other {# erfasste Anfragen gelöscht.}}",
+    "memoryUpdated": "{count, plural, one {Gedächtniszugriff für # Benutzer aktualisiert.} other {Gedächtniszugriff für # Benutzer aktualisiert.}}",
+    "confirmEraseMemory": "{count, plural, one {Das persönliche Gedächtnis von # Benutzer in diesem Workspace löschen?} other {Das persönliche Gedächtnis von # Benutzern in diesem Workspace löschen?}}\n\nEs wird gelöscht, ohne Ihnen angezeigt zu werden. Dies kann nicht rückgängig gemacht werden.",
+    "memoryErased": "{count, plural, one {# persönlicher Gedächtniseintrag gelöscht.} other {# persönliche Gedächtniseinträge gelöscht.}}",
+    "confirmDeactivate": "{email} deaktivieren?\n\nDie Sitzungen enden sofort, die MCP-Schlüssel funktionieren nicht mehr und der Zugriff auf diesen Workspace entfällt. Sie können das Konto später wieder aktivieren.",
+    "deactivated": "Benutzer deaktiviert",
+    "reactivated": "Benutzer wieder aktiviert. Widerrufene MCP-Schlüssel bleiben widerrufen; ein neuer kann erstellt werden.",
+    "signedOut": "{email} wurde überall abgemeldet und muss sich erneut anmelden.",
+    "keysDeactivated": "{count, plural, one {# MCP-API-Schlüssel deaktiviert.} other {# MCP-API-Schlüssel deaktiviert.}}",
+    "otherWorkspaces": "{count, plural, one {Außerdem wurde die Person aus # weiteren Workspace abgemeldet.} other {Außerdem wurde die Person aus # weiteren Workspaces abgemeldet.}}",
+    "revokeFailed": "Sitzungen konnten nicht widerrufen werden",
+    "confirmDelete": "{email} aus diesem Workspace entfernen? Ist dies der einzige Workspace, wird das Konto gelöscht. Dies kann nicht rückgängig gemacht werden.",
+    "deleted": "Benutzer gelöscht",
+    "confirmRevokeInvite": "Einladung für {email} widerrufen?",
+    "inviteRevoked": "Einladung widerrufen",
+    "accessDenied": {
+      "title": "Zugriff verweigert",
+      "body": "Nur Administratoren können diese Seite aufrufen.",
+      "back": "Zurück zu den Einstellungen"
+    },
+    "revokeDialog": {
+      "title": "Überall abmelden",
+      "description": "<strong>{email}</strong> wird vom Dashboard und von jedem verbundenen KI-Client (Claude, ChatGPT, Cursor, …) abgemeldet, auch von Clients mit einem Refresh-Token. Rolle und Zugriff bleiben erhalten; es ist nur eine erneute Anmeldung nötig. Gehört die Person zu weiteren Workspaces, wird sie auch dort abgemeldet.",
+      "alsoKeys": "Außerdem die MCP-API-Schlüssel dieser Person in diesem Workspace deaktivieren",
+      "alsoKeysHint": "API-Schlüssel sind keine Sitzungen: Ohne diese Option funktioniert jeder von der Person erstellte <code>mcp_…</code>-Schlüssel weiter. Deaktivierte Schlüssel lassen sich nicht wiederherstellen.",
+      "cancel": "Abbrechen",
+      "signingOut": "Wird abgemeldet…",
+      "submit": "Überall abmelden"
+    },
+    "title": "Benutzerverwaltung",
+    "intro": "Verwalten Sie Benutzer und versenden Sie Einladungen.",
+    "seats": "{used} von {limit} Benutzern auf dieser Instanz.",
+    "seatsOver": "{used} Benutzer auf dieser Instanz, {limit} inklusive.",
+    "cancel": "Abbrechen",
+    "inviteUser": "Benutzer einladen",
+    "dismiss": "ausblenden",
+    "licenseSeats": "Ihre Lizenz umfasst {limit} Benutzer. Für weitere Benutzer fragen Sie uns nach Enterprise, unter <link>Einstellungen → Lizenz</link>.",
+    "invite": {
+      "title": "Neuen Benutzer einladen",
+      "body": "Versenden Sie eine Einladungs-E-Mail. Die Person erhält einen Link, um ihr Konto mit der angegebenen Rolle zu erstellen.",
+      "email": "E-Mail",
+      "appRole": "App-Rolle",
+      "mcpRole": "MCP-Tool-Rolle",
+      "noRestriction": "Keine Einschränkung (voller Zugriff)",
+      "emailFailed": "E-Mail konnte nicht gesendet werden:",
+      "link": "Einladungslink (manuell weitergeben):",
+      "sending": "Wird gesendet...",
+      "send": "Einladung senden"
+    },
+    "bulk": {
+      "selected": "{count} ausgewählt · Skill-Lernen:",
+      "eraseWhenOff": "Beim Ausschalten auch die bereits erfassten Anfragen dieser Personen löschen",
+      "clear": "Auswahl aufheben",
+      "memory": "Gedächtnis:",
+      "eraseMemory": "Persönliches Gedächtnis löschen"
+    },
+    "loading": "Wird geladen...",
+    "table": {
+      "selectAll": "Alle Benutzer auswählen",
+      "select": "{email} auswählen",
+      "email": "E-Mail",
+      "name": "Name",
+      "status": "Status",
+      "role": "Rolle",
+      "mcpRole": "MCP-Rolle",
+      "learning": "Skill-Lernen",
+      "learningHint": "Ob die Anfragen dieses Benutzers an KI-Clients verwendet werden dürfen, um Workspace-Skills vorzuschlagen. Die Voreinstellung folgt Einstellungen → Organisation → Absicht der Benutzer erfassen.",
+      "memory": "Gedächtnis",
+      "memoryHint": "Was die KI-Clients dieses Benutzers mit dem Workspace-Gedächtnis tun dürfen. Die Voreinstellung folgt den Einstellungen auf der Seite Gedächtnis.",
+      "date": "Datum",
+      "actions": "Aktionen",
+      "you": "Sie",
+      "deactivated": "Deaktiviert",
+      "active": "Aktiv",
+      "fullAccess": "Voller Zugriff",
+      "noRole": "Keine Rolle",
+      "noRoleHint": "Keine MCP-Rolle zugewiesen. Uneingeschränkt nur, solange dieser Workspace keine Tool-Whitelist hat; sobald eine Rolle Tools einschränkt, erhält ein Mitglied ohne Rolle keine.",
+      "optedOut": "widersprochen",
+      "optedOutHint": "Dieser Benutzer hat selbst widersprochen. Seine Anfragen werden nicht verwendet, egal was hier eingestellt ist.",
+      "reactivate": "Wieder aktivieren",
+      "signOutHint": "Dieses Mitglied zwingen, sich auf jedem Client erneut anzumelden",
+      "signOut": "Überall abmelden",
+      "deactivate": "Deaktivieren",
+      "delete": "Löschen",
+      "pending": "Ausstehend",
+      "expired": "Abgelaufen",
+      "default": "Standard",
+      "expires": "Läuft ab: {date}",
+      "revoke": "Widerrufen"
+    },
+    "footer": "Insgesamt {users, plural, one {# Benutzer} other {# Benutzer}}{invites, plural, =0 {} one {, # offene Einladung} other {, # offene Einladungen}}. Der erste registrierte Benutzer wird automatisch ADMIN."
+  },
+  "settingsRoles": {
+    "error": "Fehler: {message}",
+    "created": "Rolle erstellt",
+    "updated": "Rolle aktualisiert",
+    "confirmDelete": "Rolle „{name}“ löschen? Benutzern mit dieser Rolle wird sie entzogen.",
+    "deleted": "Rolle gelöscht",
+    "toolAccessUpdated": "Tool-Zugriff aktualisiert",
+    "assigned": "MCP-Rolle zugewiesen",
+    "accessDenied": {
+      "title": "Zugriff verweigert",
+      "body": "Nur Administratoren können diese Seite aufrufen.",
+      "back": "Zurück zu den Einstellungen"
+    },
+    "dismiss": "ausblenden",
+    "loading": "Wird geladen...",
+    "title": "Eigene Rollen",
+    "intro": "Legen Sie Rollen an, um festzulegen, auf welche MCP-Tools verschiedene Benutzer zugreifen können. Benutzer ohne Rolle haben vollen Zugriff. ADMIN hat immer vollen Zugriff.",
+    "cancel": "Abbrechen",
+    "createRole": "Rolle erstellen",
+    "form": {
+      "name": "Rollenname",
+      "namePlaceholder": "z. B. Nur Lesen, Support-Team",
+      "description": "Beschreibung",
+      "descriptionPlaceholder": "Wofür diese Rolle gedacht ist...",
+      "create": "Erstellen"
+    },
+    "empty": "Noch keine eigenen Rollen. Erstellen Sie eine, um den Tool-Zugriff einzuschränken.",
+    "save": "Speichern",
+    "system": "System",
+    "userCount": "{count, plural, one {# Benutzer} other {# Benutzer}}",
+    "toolCount": "{count, plural, one {# Tool zugewiesen} other {# Tools zugewiesen}}",
+    "manageTools": "Tools verwalten",
+    "edit": "Bearbeiten",
+    "delete": "Löschen",
+    "access": {
+      "title": "Tools auswählen, auf die diese Rolle zugreifen kann",
+      "body": "Nur die markierten Tools stehen Benutzern mit dieser Rolle zur Verfügung. Ist kein Tool ausgewählt, hat die Rolle keinen Zugriff auf MCP-Tools.",
+      "noTools": "Keine Tools verfügbar. Legen Sie zuerst Connectors und Tools an.",
+      "selectAll": "Alle auswählen ({count})",
+      "deselectAll": "Auswahl aufheben",
+      "selected": "{selected}/{total} ausgewählt",
+      "search": "Tools suchen...",
+      "all": "Alle",
+      "none": "Keine",
+      "saving": "Wird gespeichert...",
+      "save": "{count, plural, one {Speichern (# Tool)} other {Speichern (# Tools)}}"
+    },
+    "assign": {
+      "title": "MCP-Rollen der Benutzer",
+      "intro": "Weisen Sie Benutzern MCP-Rollen zu, um festzulegen, auf welche Tools sie über MCP zugreifen können. Benutzer ohne Rolle haben uneingeschränkten Zugriff. ADMIN-Benutzer haben immer vollen Zugriff.",
+      "user": "Benutzer",
+      "appRole": "App-Rolle",
+      "mcpRole": "MCP-Tool-Rolle",
+      "fullAccess": "Voller Zugriff (Admin)",
+      "noRestriction": "Keine Einschränkung (voller Zugriff)"
+    }
+  },
+  "settingsAdmin": {
+    "error": "Fehler: {message}",
+    "accessDenied": {
+      "title": "Zugriff verweigert",
+      "body": "Nur Administratoren können diese Seite aufrufen.",
+      "back": "Zurück zu den Einstellungen"
+    },
+    "remove": "Entfernen",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "smtp": {
+      "saved": "SMTP-Konfiguration gespeichert",
+      "testing": "Verbindung wird getestet...",
+      "confirmRemove": "SMTP-Konfiguration des Workspace entfernen? E-Mails werden dann über den Maildienst der Plattform versendet.",
+      "removed": "SMTP-Konfiguration entfernt. E-Mails laufen jetzt über den Maildienst der Plattform",
+      "title": "E-Mail / SMTP-Konfiguration",
+      "intro": "Konfigurieren Sie SMTP für E-Mails zum Zurücksetzen des Passworts und für Benachrichtigungen.",
+      "host": "SMTP-Host",
+      "port": "Port",
+      "user": "Benutzername",
+      "password": "Passwort",
+      "passwordKeep": "••••••••  (zum Ändern neu eingeben)",
+      "passwordPlaceholder": "SMTP-Passwort",
+      "from": "Absenderadresse (optional)",
+      "secure": "SSL/TLS verwenden (Port 465)",
+      "save": "SMTP-Konfiguration speichern",
+      "test": "Verbindung testen"
+    },
+    "alerts": {
+      "types": {
+        "json": "Allgemeiner JSON-Webhook",
+        "slack": "Slack Incoming Webhook"
+      },
+      "saved": "Alarm-Webhook gespeichert",
+      "sendingTest": "Testalarm wird gesendet...",
+      "testDelivered": "Testalarm zugestellt",
+      "deliveryFailed": "Zustellung fehlgeschlagen",
+      "confirmRemove": "Alarm-Webhook für Connector-Fehler entfernen? Für diese Organisation werden dann keine Alarme mehr ausgelöst.",
+      "removed": "Alarm-Webhook entfernt",
+      "title": "Alarme bei Connector-Fehlern",
+      "intro": "Erhalten Sie eine Webhook- oder Slack-Benachrichtigung, wenn ein Connector immer wieder fehlschlägt, statt es erst in den Logs zu bemerken.",
+      "url": "Webhook-URL",
+      "cloudHttps": "In AnythingMCP Cloud muss die URL https verwenden.",
+      "payloadType": "Payload-Typ",
+      "enabled": "Aktiviert",
+      "threshold": "Fehlerschwelle",
+      "window": "Zeitfenster (Minuten)",
+      "cooldown": "Pause (Minuten)",
+      "summary": "Alarmiert nach {threshold, plural, one {# Fehler} other {# Fehlern}} desselben Connectors innerhalb von {window, plural, one {# Minute} other {# Minuten}} und wartet dann {cooldown, plural, one {# Minute} other {# Minuten}}, bevor erneut alarmiert wird.",
+      "rotate": "Signatur-Secret beim Speichern neu erzeugen",
+      "secretOnce": "Signatur-Secret, wird nur einmal angezeigt. Kopieren Sie es jetzt:",
+      "secretHelp": "Damit prüfen Sie den Header <code>X-AnythingMCP-Signature</code> (<code>sha256=</code>-HMAC aus Zeitstempel und Body; Slack ignoriert ihn). Es wird nicht noch einmal angezeigt.",
+      "savedIt": "Ich habe es gespeichert",
+      "save": "Alarm-Webhook speichern",
+      "saveUrlFirst": "Speichern Sie zuerst die neue URL",
+      "sendTest": "Testalarm senden"
+    },
+    "footer": {
+      "saved": "Footer-Links gespeichert",
+      "title": "Footer-Links",
+      "intro": "Fügen Sie Links zu Impressum, Datenschutzerklärung, Nutzungsbedingungen usw. hinzu. Sie erscheinen im Footer jeder Seite.",
+      "labelPlaceholder": "Bezeichnung (z. B. Datenschutzerklärung)",
+      "add": "+ Link hinzufügen",
+      "save": "Footer-Links speichern"
+    },
+    "about": {
+      "title": "Über diese Instanz",
+      "unavailable": "Versionsinformationen nicht verfügbar.",
+      "version": "Version",
+      "commit": "Commit",
+      "built": "erstellt am {date}",
+      "copied": "In die Zwischenablage kopiert",
+      "copyFailed": "Kopieren fehlgeschlagen",
+      "copy": "Versionsinfo kopieren"
+    }
+  },
+  "settingsLicense": {
+    "errors": {
+      "activate": "Lizenz konnte nicht aktiviert werden",
+      "invalid": "Lizenz ist ungültig",
+      "verify": "Prüfung fehlgeschlagen",
+      "register": "Community-Lizenz konnte nicht registriert werden",
+      "portal": "Abrechnungsportal konnte nicht geöffnet werden",
+      "trial": "Testphase konnte nicht aktiviert werden"
+    },
+    "verified": "Lizenz erfolgreich geprüft",
+    "none": "Keiner",
+    "statuses": {
+      "active": "aktiv",
+      "expired": "abgelaufen",
+      "invalid": "ungültig",
+      "revoked": "widerrufen",
+      "pending": "ausstehend"
+    },
+    "adminOnly": "Nur Administratoren können die Lizenz verwalten.",
+    "title": "Lizenz & Tarif",
+    "intro": "Verwalten Sie Ihre Anything MCP-Lizenz",
+    "currentPlan": "Aktueller Tarif",
+    "licenseKey": "Lizenzschlüssel",
+    "noLicense": "Noch keine Lizenz registriert.",
+    "activating": "Wird aktiviert...",
+    "startTrial": "7 Tage kostenlos testen",
+    "communityHint": "Optional für Community: Mit einem kostenlosen Schlüssel per E-Mail erhalten Sie Sicherheits- und Release-Hinweise.",
+    "registering": "Wird registriert...",
+    "registerCommunity": "Kostenlose Community-Lizenz registrieren",
+    "fields": {
+      "plan": "Tarif",
+      "status": "Status",
+      "expires": "Läuft ab",
+      "lastVerified": "Zuletzt geprüft",
+      "trialDaysLeft": "Verbleibende Testtage",
+      "days": "{count, plural, one {# Tag} other {# Tage}}",
+      "instanceId": "Instanz-ID"
+    },
+    "verifying": "Wird geprüft...",
+    "verify": "Jetzt prüfen",
+    "billing": {
+      "opening": "Wird geöffnet…",
+      "updatePayment": "Zahlungsmethode aktualisieren",
+      "keepPlan": "Meinen Tarif behalten",
+      "manage": "Abonnement & Abrechnung verwalten",
+      "cancel": "Abonnement kündigen"
+    },
+    "features": {
+      "title": "Funktionen",
+      "yes": "Ja",
+      "no": "Nein",
+      "unlimited": "Unbegrenzt"
+    },
+    "key": {
+      "change": "Lizenzschlüssel ändern",
+      "activate": "Lizenzschlüssel aktivieren",
+      "changePlan": "Um zu einem anderen Tarif zu wechseln, <link>ändern Sie ihn im Abrechnungsportal</link>. Ihr bestehendes Abonnement wird umgestellt und anteilig abgerechnet, nicht doppelt angelegt.",
+      "purchase": "Eine Lizenz kaufen Sie auf <link>anythingmcp.com</link>",
+      "selfHosted": "Geben Sie den Lizenzschlüssel ein, den Sie von uns erhalten haben. Bestehende Starter- und Team-Schlüssel funktionieren weiter.",
+      "submit": "Aktivieren"
+    },
+    "upgrade": {
+      "title": "Tarif upgraden",
+      "payBody": "Wählen Sie einen Tarif, damit AnythingMCP Cloud nach Ihrer Testphase weiterläuft. Für diese Adresse gab es bereits ein Abonnement, daher beginnt der Tarif und wird abgerechnet, sobald Sie den Kauf abschließen.",
+      "cardBody": "Hinterlegen Sie eine Zahlungsmethode, damit AnythingMCP Cloud nach Ihrer Testphase weiterläuft. Vor dem {date} wird nichts belastet, und Sie können jederzeit kündigen.",
+      "cardBodyNoDate": "Hinterlegen Sie eine Zahlungsmethode, damit AnythingMCP Cloud nach Ihrer Testphase weiterläuft. Vor dem Ende Ihrer Testphase wird nichts belastet, und Sie können jederzeit kündigen.",
+      "choosePlan": "Tarif wählen",
+      "addPayment": "Zahlungsmethode hinzufügen",
+      "compare": "Tarife vergleichen",
+      "body": "Wechseln Sie zu einem kostenpflichtigen Tarif, um AnythingMCP Cloud nach Ende Ihrer Testphase weiter zu nutzen.",
+      "viewPlans": "Tarife ansehen"
+    },
+    "activate": {
+      "redirecting": "Weiterleitung zu den Einstellungen…",
+      "noKey": "In der URL wurde kein Lizenzschlüssel übergeben.",
+      "malformed": "Der Lizenzschlüssel in der URL hat ein ungültiges Format.",
+      "adminOnly": "Nur Administratoren können einen Lizenzschlüssel aktivieren. Bitten Sie Ihren Admin, sich anzumelden.",
+      "activated": "Lizenz erfolgreich aktiviert.",
+      "backToClient": "Zurück, um die Verbindung Ihres KI-Clients abzuschließen…",
+      "failed": "Lizenz konnte nicht aktiviert werden.",
+      "title": "Lizenzaktivierung",
+      "preparing": "Wird vorbereitet…",
+      "activating": "Ihre Lizenz wird aktiviert…",
+      "key": "Schlüssel:",
+      "goToSettings": "Zu den Lizenzeinstellungen"
+    }
+  },
+  "settingsSso": {
+    "types": {
+      "ENTRA": {
+        "label": "Microsoft Entra ID",
+        "fields": {
+          "tenantId": {
+            "label": "Verzeichnis-ID (Mandant)",
+            "help": "Die Mandanten-GUID aus der Übersicht Ihrer App-Registrierung. Ein Verzeichnisname wie contoso.onmicrosoft.com wird nicht akzeptiert."
+          }
+        }
+      },
+      "GOOGLE": {
+        "label": "Google Workspace",
+        "fields": {
+          "hostedDomain": {
+            "label": "Workspace-Domain",
+            "help": "Dringend empfohlen. Ohne sie ist Google für Adressen außerhalb von gmail.com nicht maßgeblich, sodass sich jedes Google-Konto anmelden könnte."
+          }
+        }
+      },
+      "OKTA": {
+        "label": "Okta",
+        "hint": "Verwenden Sie Ihre Okta-Domain, z. B. https://acme.okta.com. Eigene Domains werden noch nicht unterstützt.",
+        "fields": {
+          "authorizationServerId": {
+            "label": "Authorization-Server-ID (optional)"
+          }
+        }
+      },
+      "AUTH0": {
+        "label": "Auth0",
+        "hint": "Nur für selbst gehostete Installationen.",
+        "fields": {
+          "rolesClaimNamespace": {
+            "label": "Namespace des Rollen-Claims",
+            "help": "Auth0 verwirft eigene Claims ohne Namespace stillschweigend: Die Anmeldung gelingt, aber die Rollen fehlen einfach."
+          }
+        }
+      },
+      "GITHUB": {
+        "label": "GitHub",
+        "hint": "GitHub ist kein OpenID-Connect-Anbieter, daher gibt es kein Discovery-Dokument zum Testen.",
+        "fields": {
+          "organization": {
+            "label": "Auf Organisation beschränken (optional)"
+          }
+        }
+      },
+      "OIDC": {
+        "label": "Allgemeines OpenID Connect",
+        "hint": "Nur für selbst gehostete Installationen.",
+        "fields": {
+          "groupsClaimName": {
+            "label": "Name des Gruppen-Claims (optional)"
+          }
+        }
+      }
+    },
+    "toast": {
+      "loadFailed": "Anbieter konnten nicht geladen werden",
+      "enforced": "Single Sign-On ist jetzt Pflicht",
+      "passwordReenabled": "Anmeldung mit Passwort wieder aktiviert",
+      "enforceFailed": "Pflicht konnte nicht geändert werden",
+      "updated": "Anbieter aktualisiert",
+      "created": "Anbieter erstellt",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "deleted": "Anbieter gelöscht",
+      "deleteFailed": "Löschen fehlgeschlagen",
+      "copyFailed": "Kopieren fehlgeschlagen",
+      "testOk": "Verbindung OK",
+      "testFailed": "Verbindung fehlgeschlagen",
+      "testError": "Test fehlgeschlagen"
+    },
+    "confirmEnforce": "Single Sign-On für diesen Workspace verpflichtend machen?\n\nDie Anmeldung mit Passwort funktioniert dann für kein Mitglied mehr. Ist der Identitätsanbieter nicht erreichbar, kommen Sie nur noch mit Ihren Wiederherstellungscodes hinein.",
+    "confirmDelete": "„{name}“ löschen? Wer sich darüber anmeldet, verliert den Zugriff, und Mitglieder mit deaktivierter Passwort-Anmeldung werden ausgesperrt.",
+    "accessDenied": {
+      "title": "Zugriff verweigert",
+      "body": "Nur Administratoren können diese Seite aufrufen.",
+      "back": "Zurück zu den Einstellungen"
+    },
+    "cloud": {
+      "title": "In AnythingMCP Cloud nicht verfügbar",
+      "body": "Single Sign-On, SCIM-Provisionierung und Rollensynchronisierung gehören zur selbst gehosteten Edition, bei der die Instanz einem einzigen Unternehmen gehört. In der Cloud melden sich Mitglieder mit E-Mail und Passwort an."
+    },
+    "loading": "Wird geladen...",
+    "title": "Single Sign-On",
+    "intro": "Lassen Sie Mitglieder sich über den Identitätsanbieter Ihrer Organisation statt mit einem Passwort anmelden. Geben Sie ihnen den Anmeldelink unten weiter: Er ist der Einstieg in diesen Workspace.",
+    "cancel": "Abbrechen",
+    "add": "Anbieter hinzufügen",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "form": {
+      "provider": "Anbieter",
+      "typeLocked": "Der Anbietertyp lässt sich nach dem Anlegen nicht ändern, da die gespeicherten Einstellungen dafür geprüft wurden. Legen Sie stattdessen einen neuen Anbieter an.",
+      "name": "Anzeigename",
+      "namePlaceholder": "Mit Microsoft anmelden",
+      "nameHelp": "Wird auf der Anmeldeschaltfläche angezeigt.",
+      "issuer": "Issuer-URL",
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret",
+      "keepBlank": "(leer lassen zum Beibehalten)",
+      "secretHidden": "Das Secret wird nie an den Browser zurückgesendet und kann daher hier nicht angezeigt werden.",
+      "secretExpires": "Secret läuft ab am (optional)",
+      "secretExpiresHelp": "Microsoft begrenzt Client Secrets auf 24 Monate. Wenn Sie das Datum hier eintragen, wird aus einem unbemerkten Ablauf eine Warnung.",
+      "jit": "Konten bei der ersten Anmeldung anlegen",
+      "jitHelp": "Standardmäßig aus. Ist es an, tritt jeder, der sich bei Ihrem Identitätsanbieter anmelden kann, diesem Workspace als Viewer bei, auch Gäste, die Sie dort aus anderen Gründen eingeladen haben.",
+      "roleSync": "Rollen bei jeder Anmeldung aus dem Verzeichnis synchronisieren",
+      "roleSyncHelp": "Berechtigungen werden dann dort gepflegt, wo Ein- und Austritte ohnehin verwaltet werden. Rollen, die ein Admin von Hand vergeben hat, entfernt eine Synchronisierung nie.",
+      "source": "Rollen lesen aus",
+      "sources": {
+        "GROUPS": "Sicherheits- / Microsoft 365-Gruppen",
+        "APP_ROLES": "Anwendungsrollen"
+      },
+      "sourceHelp": "Gruppen nutzen, was das Verzeichnis ohnehin pflegt, werden aber über Objekt-IDs statt lesbarer Namen zugeordnet. Anwendungsrollen sind besser lesbar, müssen aber zuerst im App-Manifest angelegt werden.",
+      "fallback": "Wenn nichts passt",
+      "fallbacks": {
+        "DENY_ALL": "Keine Tools gewähren",
+        "KEEP_EXISTING": "Bestehende Rollen unverändert lassen",
+        "DEFAULT_ROLE": "Eine Standardrolle gewähren"
+      },
+      "fallbackHelp": "„Keine Tools gewähren“ ist bewusst die Voreinstellung: Es vergibt eine ausdrückliche Rolle ohne Tools, sodass das Ergebnis nicht davon abhängt, ob dieser Workspace schon Tool-Whitelists eingerichtet hat.",
+      "defaultRoles": "Standard-MCP-Rollen",
+      "defaultRolesPlaceholder": "Mindestens eine Rolle wählen",
+      "noRoles": "Es gibt noch keine MCP-Rollen. Legen Sie unter Rollen eine an",
+      "defaultRolesHelp": "Wird allen gewährt, deren Gruppen zu keiner Zuordnung passen. Bleibt das Feld leer, verhält sich der Fallback genau wie „Keine Tools gewähren“.",
+      "active": "Aktiv",
+      "defaultRoleMissing": "„Eine Standardrolle gewähren“ braucht mindestens eine Standard-MCP-Rolle. Wählen Sie oben eine aus oder wählen Sie einen anderen Fallback.",
+      "saving": "Wird gespeichert...",
+      "saveChanges": "Änderungen speichern",
+      "create": "Anbieter erstellen"
+    },
+    "empty": "Keine Identitätsanbieter eingerichtet. Mitglieder melden sich mit einem Passwort an.",
+    "list": {
+      "inactive": "Inaktiv",
+      "ssoRequired": "SSO verpflichtend",
+      "secretExpiring": "Secret läuft ab",
+      "jit": "Legt Konten bei der ersten Anmeldung an",
+      "testing": "Wird getestet...",
+      "test": "Testen",
+      "edit": "Bearbeiten",
+      "delete": "Löschen",
+      "hideMappings": "Rollenzuordnungen ausblenden",
+      "mappings": "Rollenzuordnungen",
+      "hideScim": "Provisionierung ausblenden",
+      "scim": "Provisionierung (SCIM)",
+      "enforce": "Single Sign-On verpflichtend machen"
+    },
+    "recovery": {
+      "generateFailed": "Codes konnten nicht erzeugt werden",
+      "title": "Wiederherstellungscodes",
+      "intro": "Einmal-Codes, mit denen Sie sich anmelden, wenn der Identitätsanbieter nicht erreichbar ist: ein abgelaufenes Client Secret, eine Mandantenmigration, ein Claim, der nicht mehr ankommt. Single Sign-On lässt sich erst verpflichtend machen, wenn Sie welche besitzen.",
+      "saveNow": "Speichern Sie diese jetzt. Sie können nicht noch einmal angezeigt werden.",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "download": "Herunterladen",
+      "savedThem": "Ich habe sie gespeichert",
+      "generating": "Wird erzeugt...",
+      "generate": "Wiederherstellungscodes erzeugen",
+      "regenerate": "Neu erzeugen",
+      "noneYet": "Noch keine.",
+      "unused": "{unused} von {total} ungenutzt.",
+      "regenerateWarning": "Neu erzeugen macht den aktuellen Satz ungültig."
+    },
+    "mappings": {
+      "orgRoles": {
+        "unchanged": "Unverändert lassen",
+        "VIEWER": "Viewer",
+        "EDITOR": "Editor",
+        "ADMIN": "Admin"
+      },
+      "loadFailed": "Zuordnungen konnten nicht geladen werden",
+      "saved": "Zuordnungen gespeichert",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "loading": "Zuordnungen werden geladen...",
+      "groupsTitle": "Gruppenzuordnungen",
+      "appRolesTitle": "Zuordnungen von App-Rollen",
+      "groupsScimHelp": "Gruppen, die der Anwendung in Entra zugewiesen sind, erscheinen hier automatisch, sobald die Provisionierung gelaufen ist. Weisen Sie jeder Gruppe MCP-Rollen zu; eine Gruppe ohne Rollen gewährt nichts. Eine noch nicht übertragene Gruppe können Sie weiterhin über die Objekt-ID hinzufügen.",
+      "groupsHelp": "Geben Sie die <strong>Objekt-ID</strong> der Gruppe ein, nicht ihren Namen: Microsoft erzwingt keine eindeutigen Gruppennamen, daher könnte sich sonst jeder, der eine Gruppe anlegen darf, selbst eine Rolle geben. Sie finden sie in Entra unter Groups → die Gruppe → Overview → Object Id. Nur Gruppen, die <em>der Anwendung zugewiesen</em> sind, erscheinen im Token.",
+      "appRolesHelp": "Geben Sie den <strong>Wert</strong> der App-Rolle aus dem Anwendungsmanifest ein (zum Beispiel <code>amcp.einkauf</code>), nicht ihren Anzeigenamen.",
+      "scimAppRolesWarning": "Rollen werden bei der Anmeldung aus den Anwendungsrollen gelesen. Über SCIM übertragene Gruppenänderungen ändern zwischen zwei Anmeldungen niemandes Rollen. Stellen Sie dafür „Rollen lesen aus“ auf Gruppen um.",
+      "syncOff": "Die Rollensynchronisierung ist für diesen Anbieter ausgeschaltet. Diese Zuordnungen werden gespeichert, aber nie angewendet. Schalten Sie sie unter Bearbeiten ein.",
+      "groupId": "Objekt-ID der Gruppe",
+      "appRoleValue": "Wert der App-Rolle",
+      "fromScim": "aus SCIM",
+      "members": "{count, plural, one {# Mitglied} other {# Mitglieder}}",
+      "label": "Name (für Menschen)",
+      "workspaceRole": "Workspace-Rolle",
+      "mcpRoles": "MCP-Rollen",
+      "noRolesPlaceholder": "Keine Rollen: gewährt nichts",
+      "noRoles": "Es gibt noch keine MCP-Rollen. Legen Sie unter Rollen eine an",
+      "scimRemoveHint": "Heben Sie in Entra die Zuweisung der Gruppe zur Anwendung auf, um sie zu entfernen.",
+      "remove": "Entfernen",
+      "add": "Zuordnung hinzufügen",
+      "saving": "Wird gespeichert...",
+      "save": "Zuordnungen speichern",
+      "footer": "Ein Benutzer in mehreren zugeordneten Gruppen erhält die <strong>Vereinigung</strong> ihrer MCP-Rollen und die <strong>höchste</strong> Workspace-Rolle. Rollen, die ein Admin von Hand vergeben hat, entfernt eine Synchronisierung nie.",
+      "footerDenyAll": "Wer zu nichts passt, erhält die Rolle „No access (SSO)“, die keine Tools gewährt."
+    },
+    "scim": {
+      "toast": {
+        "loadFailed": "Provisionierungsstatus konnte nicht geladen werden",
+        "copyFailed": "Kopieren fehlgeschlagen",
+        "copyManually": "Markieren Sie den Wert und kopieren Sie ihn von Hand.",
+        "changeFailed": "Provisionierung konnte nicht geändert werden",
+        "enabled": "Provisionierung aktiviert",
+        "rotated": "Token erneuert",
+        "resyncFailed": "Neusynchronisierung fehlgeschlagen",
+        "disabled": "Provisionierung deaktiviert"
+      },
+      "confirmRotate": "SCIM-Token erneuern?\n\nDas aktuelle Token funktioniert sofort nicht mehr. Die Provisionierung in Entra schlägt fehl, bis Sie das neue Token in die Unternehmensanwendung einfügen.",
+      "confirmDisable": "SCIM-Provisionierung ausschalten?\n\nEntra kann hier dann keine Konten mehr anlegen, ändern oder deaktivieren. Bestehende Konten, Mitgliedschaften und Rollen bleiben, wie sie sind.",
+      "resync": {
+        "title": "{count, plural, one {# Mitglied neu synchronisiert} other {# Mitglieder neu synchronisiert}}",
+        "changed": "{count} geändert",
+        "unchanged": "{count} unverändert",
+        "failed": "{count} fehlgeschlagen",
+        "lastAdmin": "{count} als letzter Admin geschützt",
+        "button": "Rollen jetzt neu synchronisieren"
+      },
+      "title": "Provisionierung (SCIM)",
+      "intro": "Lassen Sie Entra Konten anlegen, aktualisieren und, worauf es ankommt, deaktivieren, sobald jemand im Verzeichnis deaktiviert oder entfernt wird, ganz ohne Anmeldung. Ohne das behält jemand, der ausscheidet, seinen MCP-Schlüssel, bis ein Administrator ihn von Hand deaktiviert.",
+      "entraOnly": "Die Provisionierung ist für Anbieter vom Typ Microsoft Entra ID verfügbar.",
+      "saveNow": "Speichern Sie das Token jetzt. Es kann nicht noch einmal angezeigt werden.",
+      "tenantUrl": "Tenant URL",
+      "secretToken": "Secret Token",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "hide": "Ausblenden",
+      "reveal": "Anzeigen",
+      "savedIt": "Ich habe es gespeichert",
+      "enabling": "Wird aktiviert...",
+      "enable": "Provisionierung aktivieren",
+      "unlinked": "{count, plural, one {# bestehendes Mitglied hat noch keine Microsoft-Identität. Entra meldet dafür einen Konflikt, bis es sich einmal mit Microsoft anmeldet.} other {# bestehende Mitglieder haben noch keine Microsoft-Identität. Entra meldet für sie einen Konflikt, bis sie sich einmal mit Microsoft anmelden.}}",
+      "issued": "Token ausgestellt {date}",
+      "lastRequest": "Letzte Anfrage von Entra {date}",
+      "never": "nie",
+      "stale": "veraltet",
+      "users": "Provisionierte Benutzer {count}",
+      "groups": "Synchronisierte Gruppen {count}",
+      "rotate": "Token erneuern",
+      "resyncNeedsSync": "Schalten Sie zuerst unter Bearbeiten die Rollensynchronisierung ein",
+      "resyncNeedsGroups": "Gilt nur, wenn Rollen aus Gruppen gelesen werden",
+      "disable": "Deaktivieren",
+      "steps": {
+        "show": "So richten Sie das in Entra ein",
+        "s1": "Entra Admin Center → <strong>Enterprise applications</strong> → <strong>New application</strong> →<strong> Create your own application</strong> → <em>Integrate any other application you don't find in the gallery</em>. Geben Sie ihr einen Namen wie <em>AnythingMCP provisioning</em>.",
+        "s1b": "Es muss eine <strong>zweite App außerhalb der Galerie</strong> sein: Die App, die Sie für die Anmeldung registriert haben, stammt aus<em> App registrations</em>, und dort lässt Entra <strong>Get started</strong> ausgegraut mit dem Hinweis „automatic provisioning … is not supported“.",
+        "s2": "<strong>Users and groups → Add user/group</strong>: Weisen Sie dieselben Gruppen zu wie der Anmelde-App. Zuweisungen werden nicht zwischen den beiden Apps übernommen, und nur zugewiesene Gruppen werden provisioniert.",
+        "s3": "<strong>Provisioning</strong> → Provisioning Mode: <strong>Automatic</strong>.",
+        "s4": "<strong>Connectivity</strong> (ältere Mandanten zeigen das direkt als <em>Admin Credentials</em>): Authentifizierungsmethode <strong>Bearer authentication</strong>, dann <strong>Tenant URL</strong> und <strong>Secret Token</strong> von oben einfügen → <strong>Test connection</strong>. Entra speichert erst, wenn der Test erfolgreich war.",
+        "s5": "<strong>Attribute mapping</strong>: Lassen Sie <code>userName</code> ← <code>userPrincipalName</code> und<code> active</code> unverändert, aber <strong>ändern Sie <code>externalId</code></strong>: Die Standardquelle ist <code>mailNickname</code>, es muss <code>objectId</code> sein. Sonst erhält dieselbe Person ein Konto über SCIM und ein weiteres über die Anmeldung.",
+        "s6": "Settings → Scope: <em>Sync only assigned users and groups</em>. Nur Gruppen, die unter <strong>Users and groups</strong> zugewiesen sind, werden provisioniert, wie beim Gruppen-Claim.",
+        "s7": "<strong>Save</strong>, dann <strong>Start provisioning</strong>. Der erste Durchlauf legt <em>jeden</em> zugewiesenen Benutzer an; spätere laufen etwa alle 40 Minuten.",
+        "s8": "Um einen Benutzer ohne Wartezeit zu testen: <strong>Provision on demand</strong>. Nutzen Sie es erneut, nachdem Sie den Benutzer in Entra deaktiviert haben."
+      }
+    }
+  },
+  "adminPages": {
+    "backToDashboard": "Zurück zum Dashboard",
+    "users": {
+      "inviteNoSmtp": "SMTP ist nicht konfiguriert. Geben Sie diesen Einladungslink manuell weiter:",
+      "joined": "Beigetreten",
+      "unrestricted": "Uneingeschränkt"
+    },
+    "roles": {
+      "title": "MCP-Rollenverwaltung",
+      "selectAll": "Alle auswählen"
+    },
+    "settings": {
+      "title": "Admin-Einstellungen"
+    },
+    "ssrf": {
+      "saved": "SSRF-Allowlist gespeichert",
+      "title": "SSRF-Allowlist",
+      "intro": "Hostnamen (oder <code>*.suffix</code>-Platzhalter bzw. einfache IP-Adressen), die der SSRF-Schutz durchlässt, wenn sie auf eine private Netzwerkadresse auflösen. Nötig, wenn Connectors Dienste im internen Netzwerk aufrufen, z. B. einen Docker-Compose-Dienst wie <code>koch-filesystem-bridge</code>.",
+      "warning": "⚠ Mit Vorsicht verwenden. Alles, was hier eingetragen ist, ist für jeden Connector in jeder Organisation dieser Installation erreichbar. Tragen Sie keine Hosts ein, denen Sie nicht voll vertrauen.",
+      "envHosts": "Aus der Umgebungsvariable <code>SSRF_ALLOWED_HOSTS</code> (schreibgeschützt):",
+      "list": "Von Admins bearbeitbare Liste (ein Host pro Zeile)",
+      "save": "Allowlist speichern"
+    }
+  },
+  "knowledgeGraph": {
+    "title": "Knowledge Graph",
+    "counts": "{nodes, plural, one {# Entität} other {# Entitäten}} · {edges, plural, one {# Beziehung} other {# Beziehungen}}",
+    "countsBuilt": "{nodes, plural, one {# Entität} other {# Entitäten}} · {edges, plural, one {# Beziehung} other {# Beziehungen}} · erstellt am {date}",
+    "status": {
+      "loadFailed": "Graph konnte nicht geladen werden",
+      "enriching": "Das Modell wird nach Vorschlägen für Beziehungen gefragt…",
+      "noChanges": "Keine Änderungen seit der letzten Anreicherung.",
+      "suggested": "Die KI hat {count, plural, one {# Beziehung} other {# Beziehungen}} vorgeschlagen{hasModel, select, yes { ({model})} other {}}. Prüfen Sie sie bei den vorgeschlagenen Beziehungen.",
+      "enrichFailed": "Anreicherung fehlgeschlagen",
+      "rebuilding": "Graph wird neu aufgebaut…",
+      "rebuilt": "Neu aufgebaut: {nodes, plural, one {# Entität} other {# Entitäten}}, {edges, plural, one {# Beziehung} other {# Beziehungen}} aus {connectors, plural, one {# Connector} other {# Connectors}}.",
+      "rebuildFailed": "Neuaufbau fehlgeschlagen",
+      "saved": "Gespeichert",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "entityDeleted": "Entität gelöscht",
+      "deleteFailed": "Löschen fehlgeschlagen",
+      "connectionAdded": "Verbindung hinzugefügt",
+      "entityAdded": "Entität hinzugefügt",
+      "createFailed": "Erstellen fehlgeschlagen"
+    },
+    "enriching": "Wird angereichert…",
+    "enrich": "Mit KI anreichern",
+    "rebuilding": "Wird neu aufgebaut…",
+    "rebuild": "Graph neu aufbauen",
+    "layer": "Ebene",
+    "sources": {
+      "STATIC": "statisch",
+      "OBSERVED": "beobachtet",
+      "MANUAL": "manuell",
+      "LLM": "KI"
+    },
+    "showSuggested": "Vorschläge anzeigen",
+    "minConfidence": "Mindestkonfidenz",
+    "skillsLink": "Skills →",
+    "loading": "Graph wird geladen…",
+    "disabled": "Der Knowledge Graph ist für diesen Workspace deaktiviert.",
+    "disabledHint": "Ein Admin kann ihn unter Einstellungen → Organisation → Funktionen aktivieren.",
+    "emptyAdmin": "Noch kein Graph. Klicken Sie auf „Graph neu aufbauen“, um ihn aus Ihren Connectors und deren Nutzung zu erstellen.",
+    "emptyMember": "Noch kein Graph. Bitten Sie einen Admin, den Graph aufzubauen.",
+    "explore": "Erkunden",
+    "exploreHint": "Klicken Sie auf eine Entität, um ihre Felder und Verknüpfungen zu sehen, oder auf eine Kante, um eine Beziehung anzusehen (und zu bearbeiten).",
+    "kinds": {
+      "references": "Referenz",
+      "produces_consumes": "Datenfluss",
+      "parent_child": "über- / untergeordnet",
+      "same_identity": "gleiche Identität",
+      "related": "verwandt"
+    },
+    "edgeStatus": {
+      "suggested": "vorgeschlagen",
+      "active": "aktiv",
+      "rejected": "abgelehnt"
+    },
+    "node": {
+      "connector": "Connector",
+      "labelPlaceholder": "Bezeichnung",
+      "descriptionPlaceholder": "Beschreibung (für KI-Clients sichtbar, die den Graph lesen)",
+      "deleteTitle": "Diese Entität und ihre Verknüpfungen löschen",
+      "fields": "Felder ({count})",
+      "connections": "Verbindungen ({count})",
+      "tools": "Tools ({count})"
+    },
+    "edge": {
+      "kind": "Art",
+      "matchKey": "Abgleichsschlüssel",
+      "confidence": "Konfidenz",
+      "observations": "Beobachtungen",
+      "note": "Beschreibung (wird an KI-Clients übergeben)",
+      "notePlaceholder": "Warum diese Entitäten verknüpft sind…",
+      "saveChanges": "Änderungen speichern",
+      "confirm": "Bestätigen",
+      "reject": "Ablehnen"
+    },
+    "addNode": {
+      "open": "+ Entität hinzufügen",
+      "title": "Neue Entität",
+      "labelPlaceholder": "Bezeichnung (z. B. Treuestufe)",
+      "connector": "Gehört zum Connector…",
+      "description": "Beschreibung (optional, wird an KI-Clients übergeben)",
+      "submit": "Entität hinzufügen"
+    },
+    "addEdge": {
+      "open": "+ Verbindung hinzufügen",
+      "title": "Neue Verbindung",
+      "from": "Von Entität…",
+      "to": "Zu Entität…",
+      "submit": "Hinzufügen"
+    },
+    "graph": {
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "fit": "Graph an die Ansicht anpassen",
+      "fitTitle": "An Ansicht anpassen"
+    },
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen"
+  },
+  "aiSkills": {
+    "title": "KI-Skills",
+    "tabs": {
+      "all": "Alle",
+      "pending": "Vorgeschlagen",
+      "applied": "Aktiv",
+      "dismissed": "Verworfen"
+    },
+    "badge": {
+      "pending": "Vorgeschlagen",
+      "applied": "Aktiv",
+      "dismissed": "Verworfen"
+    },
+    "codeProposal": {
+      "badge": "Code-Tool-Vorschlag",
+      "created": "Erstellt",
+      "meta": "{scope} · von einem Agenten vorgeschlagen · nur lesend, läuft mit den Berechtigungen des Aufrufers",
+      "createTool": "Tool erstellen",
+      "dismiss": "Verwerfen",
+      "deleteAria": "Vorschlag löschen",
+      "why": "Warum:",
+      "does": "Funktion:",
+      "program": "Programm ({count, number} Zeichen)",
+      "note": "Beim Erstellen wird ein nur lesendes Code-Tool für {connector} angelegt. Damit es Daten schreiben oder mit den Rechten des Autors laufen kann, bearbeiten Sie es anschließend auf der Tool-Seite des Connectors.",
+      "theConnector": "den Connector",
+      "createFailed": "Das Tool konnte nicht erstellt werden."
+    },
+    "status": {
+      "loadFailed": "Laden fehlgeschlagen",
+      "analyzingServer": "Der Kontext des Servers wird analysiert…",
+      "analyzingIntents": "Erfasste Absichten werden analysiert…",
+      "generated": "{count, plural, one {# Vorschlag} other {# Vorschläge}} erstellt.",
+      "noPatterns": "Noch keine neuen Muster gefunden.",
+      "generationFailed": "Erstellen fehlgeschlagen",
+      "consolidating": "Aktive Skills werden mit KI zusammengeführt…",
+      "proposedMerge": "{proposed, plural, one {# zusammengeführter Skill} other {# zusammengeführte Skills}} als Ersatz für {replaced, plural, one {# aktiven} other {# aktive}} vorgeschlagen. Prüfen Sie sie unter „Vorgeschlagen“: Wenn Sie einen übernehmen, werden die Skills deaktiviert, die er ersetzt.",
+      "nothingToMerge": "Nichts zusammenzuführen ({before, plural, one {# aktiver Skill} other {# aktive Skills}}).",
+      "consolidationFailed": "Zusammenführen fehlgeschlagen",
+      "lookingForErrors": "Es wird nach Aufrufen gesucht, die fehlgeschlagen sind und dann behoben wurden…",
+      "proposedFromErrors": "{count, plural, one {# Skill} other {# Skills}} aus behobenen Fehlern vorgeschlagen. Prüfen Sie sie unter „Vorgeschlagen“.",
+      "noFixedErrors": "Noch keine wiederkehrenden behobenen Fehler. Es werden nur Aufrufe von Benutzern verwendet, die zum Skill-Lernen beitragen.",
+      "errorsFailed": "Die Fehler konnten nicht ausgewertet werden",
+      "created": "Skill erstellt (live für MCP)."
+    },
+    "scopeThisServer": "diesen Server",
+    "scopeConnectors": "Connectors",
+    "scopeTitle": "Bereich für Erstellen / Zusammenführen",
+    "scopeAria": "Bereich für Erstellen und Zusammenführen",
+    "fromConnectors": "Aus Connectors",
+    "forServer": "Für Server: {name}",
+    "consolidateTitle": "Die aktiven Skills in diesem Bereich zu weniger, nicht redundanten Skills zusammenführen",
+    "consolidating": "Wird zusammengeführt…",
+    "consolidate": "Zusammenführen",
+    "generating": "Wird erstellt…",
+    "generate": "Mit KI erstellen",
+    "actionsLabel": "Skill-Aktionen",
+    "generateScope": "Mit KI erstellen · {scope}",
+    "consolidateScope": "Zusammenführen · {scope}",
+    "looking": "Wird gesucht…",
+    "learn": "Aus behobenen Fehlern lernen",
+    "learnHint": "Schlägt eine Regel vor, wenn Aufrufe fehlgeschlagen sind und funktioniert haben, nachdem ein Argument sein Format geändert hat. Kein KI-Modell nötig.",
+    "close": "Schließen",
+    "newSkill": "Neuer Skill",
+    "intro": "Regeln und Abläufe für wiederkehrende Aufgaben, für einen Connector oder einen ganzen MCP-Server. <hl>Aktive</hl> Skills erreichen die KI-Clients dieses Servers beim Verbinden, als vollständiger Text oder als Liste, die sie mit <code>skill_get</code> öffnen (pro Server einstellbar). Lange Abläufe werden immer erst bei Bedarf geöffnet.",
+    "emptyTitle": "Noch keine Skills",
+    "emptyAdmin": "Skills werden aus erfassten Absichten erstellt. Aktivieren Sie <link>Absicht der Benutzer erfassen und KI-Anreicherung</link>, lassen Sie einige Tool-Aufrufe laufen und verwenden Sie dann „Mit KI erstellen“.",
+    "emptyMember": "Sie werden aus den erfassten Absichten von Tool-Aufrufen erstellt. Bitten Sie einen Admin, sie zu erstellen.",
+    "searchPlaceholder": "Skills durchsuchen…",
+    "loading": "Wird geladen…",
+    "noMatch": "Keine Skills entsprechen diesem Filter.",
+    "pager": {
+      "range": "{from}–{to} von {total}",
+      "prev": "← Zurück",
+      "page": "Seite {page} / {total}",
+      "next": "Weiter →"
+    },
+    "card": {
+      "historyFailed": "Der Verlauf konnte nicht geladen werden",
+      "server": "Server: {name}",
+      "connector": "Connector: {name}",
+      "workspace": "Workspace",
+      "confidence": "Konfidenz {value}",
+      "examples": "{count, plural, one {# Beispiel} other {# Beispiele}}",
+      "opened": "{count}× geöffnet",
+      "openedLast": "{count}× geöffnet, zuletzt am {date}",
+      "notOpened": "noch nicht geöffnet",
+      "activate": "Aktivieren",
+      "apply": "Übernehmen",
+      "deactivate": "Deaktivieren",
+      "deleteAria": "Skill löschen",
+      "when": "Wann:",
+      "do": "Tun:",
+      "replaces": "Ersetzt {count, plural, one {# aktiven Skill} other {# aktive Skills}}: Wenn Sie ihn übernehmen, werden diese deaktiviert (sie bleiben mit ihrem Verlauf erhalten).",
+      "procedure": "Ablauf ({count, plural, one {# Zeichen} other {# Zeichen}})",
+      "hideHistory": "Verlauf ausblenden",
+      "history": "Verlauf ({count, plural, one {# frühere Version} other {# frühere Versionen}})",
+      "replaced": "ersetzt am {date}",
+      "historyProcedure": "Ablauf: {count, plural, one {# Zeichen} other {# Zeichen}}"
+    },
+    "sources": {
+      "llm": "von KI erstellt",
+      "mergeProposal": "Vorschlag zum Zusammenführen",
+      "mergedByAi": "von KI zusammengeführt",
+      "errors": "aus behobenen Fehlern gelernt",
+      "finder": "aus dem Skills Finder",
+      "manual": "von Hand geschrieben"
+    },
+    "form": {
+      "titlePlaceholder": "Titel",
+      "whenPlaceholder": "Wann verwenden",
+      "instructionPlaceholder": "Anweisung",
+      "procedurePlaceholder": "Vollständiger Ablauf (optional, Markdown): Schritte, Feldregeln, Ausgabeformat. Wird bei Bedarf mit skill_get geöffnet.",
+      "folder": "Ordner",
+      "folderOption": "Ordner: {name}",
+      "noFolder": "Kein Ordner",
+      "noFolderTop": "Kein Ordner (oberste Ebene)",
+      "createFailed": "Erstellen fehlgeschlagen",
+      "newTitlePlaceholder": "Titel (z. B. Lieferadresse immer bestätigen)",
+      "newWhenPlaceholder": "Wann verwenden (optional)",
+      "newInstructionPlaceholder": "Anweisung für den Agenten (im Imperativ)",
+      "newProcedurePlaceholder": "Vollständiger Ablauf (optional, Markdown): Schritte, Feldregeln, Ausgabeformat. Die KI öffnet ihn mit skill_get, wenn der Skill passt.",
+      "scopePlaceholder": "Bereich… (wo dieser Skill gilt)",
+      "mcpServers": "MCP-Server",
+      "connectors": "Connectors",
+      "serverOption": "Server: {name}",
+      "connectorOption": "Connector: {name}",
+      "creating": "Wird erstellt…",
+      "create": "Skill erstellen",
+      "createdHint": "Wird als aktiv erstellt → sofort für den MCP-Server verfügbar."
+    },
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen"
+  },
+  "memory": {
+    "title": "Gedächtnis",
+    "loadFailed": "Gedächtnis konnte nicht geladen werden",
+    "loading": "Wird geladen…",
+    "access": {
+      "none": "Kein Zugriff",
+      "read": "Firmengedächtnis lesen",
+      "personal": "Persönliches Gedächtnis + Firmengedächtnis lesen",
+      "contribute": "Persönliches Gedächtnis + Vorschläge für das Firmengedächtnis"
+    },
+    "tabs": {
+      "personal": "Mein Gedächtnis",
+      "organization": "Firmengedächtnis",
+      "pending": "Zu prüfen"
+    },
+    "intro": "Fakten, Vorlieben und Notizen, die Ihre KI-Clients speichern und wiederfinden, in jedem Client, der mit einem Server dieses Workspace verbunden ist. <hl>Mein Gedächtnis</hl> sehen nur Sie. <hl>Firmengedächtnis</hl> wird mit allen geteilt; KI-Clients können Ergänzungen vorschlagen, die Admins und Editoren prüfen, sofern der Workspace sie nicht automatisch speichert.",
+    "accessAdmin": "Ihr Zugriff in diesem Workspace: <hl>{level}</hl> · pro Benutzer einstellbar unter <link>Einstellungen → Benutzer</link>",
+    "accessMember": "Ihr Zugriff in diesem Workspace: <hl>{level}</hl> · von Ihrem Admin festgelegt",
+    "searchPlaceholder": "Gedächtnis durchsuchen…",
+    "saved": "Gespeichert.",
+    "empty": {
+      "personal": "Noch nichts gespeichert. Bitten Sie Ihren KI-Client, sich etwas zu merken, oder fügen Sie es oben hinzu.",
+      "pending": "Nichts zu prüfen.",
+      "organization": "Das Firmengedächtnis ist leer."
+    },
+    "pager": {
+      "range": "{from}–{to} von {total}",
+      "prev": "← Zurück",
+      "page": "Seite {page} / {total}",
+      "next": "Weiter →"
+    },
+    "form": {
+      "saveFailed": "Speichern fehlgeschlagen",
+      "placeholderOrganization": "Zum Firmengedächtnis hinzufügen, z. B. „STAMMKUNDE bedeutet ein Kunde mit Rahmenvertrag“",
+      "placeholderPersonal": "Zu Ihrem Gedächtnis hinzufügen, z. B. „Antworte mir auf Englisch, Zahlen als Tabellen“",
+      "kind": "Art",
+      "folder": "Ordner",
+      "noFolder": "Kein Ordner",
+      "tagsPlaceholder": "Tags, durch Komma getrennt (optional)",
+      "aboutPlaceholder": "Betrifft (optional), z. B. customer",
+      "aboutTitle": "Worum es geht, so wie der Knowledge Graph es benennt. KI-Clients erhalten den Eintrag, wenn sie diese Entität nachschlagen.",
+      "saving": "Wird gespeichert…",
+      "addCompany": "Zum Firmengedächtnis hinzufügen",
+      "remember": "Merken",
+      "noSecrets": "Speichern Sie niemals Passwörter, Tokens oder Schlüssel: Sie werden abgelehnt."
+    },
+    "kinds": {
+      "fact": "Fakt",
+      "preference": "Vorliebe",
+      "note": "Notiz"
+    },
+    "kindBadges": {
+      "fact": "Fakt",
+      "preference": "Vorliebe",
+      "note": "Notiz"
+    },
+    "card": {
+      "actionFailed": "Aktion fehlgeschlagen",
+      "viaAi": "von einem KI-Client gespeichert",
+      "viaAiClient": "von einem KI-Client gespeichert ({client})",
+      "viaDashboard": "im Dashboard hinzugefügt",
+      "pending": "wartet auf Prüfung",
+      "rejected": "abgelehnt",
+      "about": "betrifft {about}",
+      "approve": "Freigeben",
+      "reject": "Ablehnen",
+      "deleteAria": "Eintrag löschen"
+    },
+    "settings": {
+      "title": "Workspace-Einstellungen",
+      "writeMode": "Firmengedächtnis aus KI-Clients",
+      "approval": "Muss von einem Admin oder Editor freigegeben werden",
+      "auto": "Wird automatisch gespeichert",
+      "writeModeHint": "Gilt für Benutzer, die Ergänzungen zum Firmengedächtnis vorschlagen dürfen. In beiden Fällen sehen Sie, wer was gespeichert hat, und können es hier bearbeiten oder löschen.",
+      "defaultAccess": "Standardzugriff für Benutzer",
+      "defaultAccessHint": "Für Benutzer, die unter Einstellungen → Benutzer auf „Standard“ stehen, auch für neue.",
+      "saving": "Wird gespeichert…",
+      "save": "Einstellungen speichern"
+    },
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen"
+  },
+  "knowledgeFolders": {
+    "title": "Ordner",
+    "createFailed": "Der Ordner konnte nicht erstellt werden",
+    "newInside": "Neuer Ordner in {path}",
+    "newTop": "Neuer Ordner auf oberster Ebene",
+    "new": "+ Neu",
+    "inside": "In {path}",
+    "name": "Ordnername",
+    "create": "Erstellen",
+    "allSkills": "Alle Skills",
+    "allMemory": "Gesamtes Firmengedächtnis",
+    "notInFolder": "In keinem Ordner",
+    "limited": "Auf Rollen beschränkt:",
+    "lockTitle": "Auf Rollen beschränkt",
+    "editAria": "Ordner {path} bearbeiten",
+    "emptyHint": "Ordner gruppieren Skills und Firmengedächtnis nach Thema, für Menschen und für KI-Clients.",
+    "saveFailed": "Speichern fehlgeschlagen",
+    "confirmDeleteUp": "Den Ordner „{path}“ löschen?\n\nSeine Unterordner, Skills und Gedächtniseinträge werden in den übergeordneten Ordner verschoben. Sonst wird nichts gelöscht.",
+    "confirmDeleteTop": "Den Ordner „{path}“ löschen?\n\nSeine Unterordner, Skills und Gedächtniseinträge werden auf die oberste Ebene verschoben. Sonst wird nichts gelöscht.",
+    "deleteFailed": "Löschen fehlgeschlagen",
+    "descriptionPlaceholder": "Was hierher gehört (für KI-Clients sichtbar)",
+    "parent": "Übergeordneter Ordner",
+    "topLevel": "Oberste Ebene",
+    "visibleTo": "Sichtbar für",
+    "noneChecked": "Nichts ausgewählt: der ganze Workspace. Admins sehen immer alle Ordner.",
+    "noRoles": "Noch keine Rollen: Erstellen Sie sie unter Einstellungen → Rollen.",
+    "visibleToList": "Sichtbar für: {roles}",
+    "aRole": "eine Rolle",
+    "enterprise": "Ordner auf Rollen zu beschränken ist Teil von Enterprise.",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "edit": "Bearbeiten",
+    "delete": "Löschen"
+  },
+  "fileSearch": {
+    "title": "Dateisuche",
+    "subtitle": "Lassen Sie die KI in den Dokumenten eines Ordners suchen: PDF, Excel, Word, PowerPoint, Outlook",
+    "back": "Neuer Connector",
+    "loading": "Wird geladen…",
+    "cancel": "Abbrechen",
+    "backStep": "Zurück",
+    "upgrade": "Upgrade",
+    "adminOnly": "Nur Administratoren des Workspaces können Dateisuche-Connectoren einrichten.",
+    "defaultName": "Dokumente",
+    "worker": {
+      "down": "Die Dateisuche läuft auf diesem Server nicht.",
+      "downHint": "Der Files-Worker oder der Textextraktor ist nicht erreichbar. Ein Administrator startet beide mit dem Compose-Profil \"files\" (siehe Dokumentation zur Dateisuche)."
+    },
+    "steps": {
+      "label": "Einrichtungsschritte",
+      "source": "Quelle",
+      "test": "Test",
+      "scan": "Scan",
+      "describe": "Beschreibung",
+      "activate": "Aktivieren"
+    },
+    "source": {
+      "protocol": "Wo liegen die Dateien?",
+      "cloudNote": "AnythingMCP Cloud erreicht Server im Internet. Für eine Freigabe im Firmennetz nutzen Sie SFTP oder WebDAV auf dem NAS oder betreiben AnythingMCP selbst daneben.",
+      "presets": "Schnellauswahl",
+      "name": "Name",
+      "namePlaceholder": "Preislisten der Lieferanten",
+      "nameHint": "Wird der KI und in den Tool-Namen angezeigt: benennen Sie den Inhalt, nicht den Server.",
+      "ftpMode": "Verschlüsselung",
+      "host": "Server",
+      "port": "Port",
+      "webdavUrl": "WebDAV-Adresse",
+      "s3Endpoint": "S3-Endpunkt",
+      "webdavHint": "Nextcloud: Dateien → Einstellungen → WebDAV zeigt die Adresse. Synology: WebDAV Server installieren und HTTPS nutzen (Port 5006).",
+      "bucket": "Bucket",
+      "region": "Region",
+      "accessKey": "Access Key",
+      "secretKey": "Secret Key",
+      "username": "Benutzername",
+      "authMode": "Anmelden mit",
+      "privateKey": "Privater Schlüssel",
+      "passphrase": "Passphrase des Schlüssels (falls vorhanden)",
+      "password": "Passwort",
+      "passwordKeep": "Leer lassen, um das gespeicherte Passwort zu behalten",
+      "appPasswordHint": "Nextcloud und ownCloud: Legen Sie unter Sicherheit → Geräte & Sitzungen ein App-Passwort an.",
+      "localFolder": "Ordner",
+      "folder": "Zu indexierender Ordner",
+      "localRoots": "Erlaubte Ordner: {roots}",
+      "noLocalRoots": "Noch kein Ordner erlaubt. Ein Administrator setzt FILE_SOURCE_ROOTS auf die eingebundenen Ordner, die AnythingMCP lesen darf.",
+      "folderHint": "Alles unterhalb dieses Ordners wird berücksichtigt. Unterordner wählen Sie nach dem Scan.",
+      "plainFtpWarning": "Unverschlüsseltes FTP überträgt das Passwort im Klartext über das Internet. Ich habe das verstanden und akzeptiere es (besser: FTPS oder SFTP).",
+      "next": "Verbindung testen"
+    },
+    "protocols": {
+      "sftp": {
+        "title": "SFTP",
+        "description": "Dateiübertragung über SSH. Die meisten NAS und Linux-Server, Hetzner Storage Box."
+      },
+      "ftp": {
+        "title": "FTP / FTPS",
+        "description": "FTP mit TLS (explizit oder implizit), z. B. Fritz!Box, Webhosting."
+      },
+      "webdav": {
+        "title": "WebDAV / Nextcloud",
+        "description": "Nextcloud, ownCloud, WebDAV auf Synology und QNAP."
+      },
+      "local": {
+        "title": "Netzwerkordner",
+        "description": "Eine Freigabe oder ein Volume, das in diese selbst gehostete Installation eingebunden ist (SMB, NFS)."
+      },
+      "s3": {
+        "title": "S3-Bucket",
+        "description": "AWS S3, DigitalOcean Spaces, MinIO, Hetzner, Wasabi."
+      }
+    },
+    "presets": {
+      "nextcloud": "Nextcloud",
+      "synology": "Synology NAS",
+      "qnap": "QNAP NAS",
+      "fritzbox": "Fritz!Box",
+      "hetzner": "Hetzner Storage Box",
+      "owncloud": "ownCloud"
+    },
+    "ftpModes": {
+      "ftps": "FTPS (explizit, Port 21)",
+      "ftps-implicit": "FTPS (implizit, Port 990)",
+      "ftp": "FTP (unverschlüsselt)"
+    },
+    "authModes": {
+      "password": "Passwort",
+      "key": "SSH-Schlüssel"
+    },
+    "test": {
+      "checklist": "Verbindungstest",
+      "steps": {
+        "resolve": "Serveradresse",
+        "connect": "Server erreichbar",
+        "handshake": "Verschlüsselte Verbindung",
+        "fingerprint": "Identität des Servers",
+        "login": "Anmeldung",
+        "folder": "Ordner lesbar"
+      },
+      "intro": "AnythingMCP verbindet sich mit dem Server, meldet sich an und listet den Ordner auf. Gespeichert wird erst, wenn der Test erfolgreich ist.",
+      "running": "Verbindung wird getestet…",
+      "ok": "Verbunden. {n} Einträge im Ordner.",
+      "again": "Erneut testen",
+      "next": "Speichern und weiter"
+    },
+    "fingerprint": {
+      "title": "Identität des Servers bestätigen",
+      "ssh": "Dies ist der Fingerabdruck des SSH-Hostschlüssels. Vergleichen Sie ihn mit dem, den Ihr Administrator oder das NAS anzeigt. Nach der Bestätigung verweigert AnythingMCP die Verbindung, falls er sich ändert: Das schützt vor einem Server, der sich als Ihrer ausgibt.",
+      "tls": "Der Server nutzt ein Zertifikat, für das keine öffentliche Stelle bürgt, was bei NAS und Routern üblich ist. Vergleichen Sie den Fingerabdruck mit dem auf dem Gerät; nach der Bestätigung wird nur dieses Zertifikat akzeptiert.",
+      "confirmLabel": "Ich habe den Fingerabdruck geprüft, er gehört zu unserem Server.",
+      "confirm": "Bestätigen und erneut testen"
+    },
+    "scan": {
+      "intro": "Der Scan listet den ganzen Ordner auf, ohne etwas zu indexieren: wie viele Dateien in jedem Unterordner liegen, welche Typen und Jahre. Außerdem liest er einige kleine Beispieldokumente, um den Inhalt zu beschreiben. Danach wählen Sie aus, was aufgenommen wird.",
+      "useAi": "Beschreibung mit KI erstellen",
+      "aiConsent": "Ordnernamen, Dateinamen und die ersten 2.000 Zeichen von bis zu 20 Beispieldateien werden an {provider} gesendet. Personenbezogene Daten in den Beispielen werden maskiert.",
+      "aiPolicyOff": "KI-Entwürfe sind durch die Richtlinie Ihres Workspaces abgeschaltet; die Beschreibung entsteht aus der Ordnerstruktur.",
+      "aiUnavailable": "Auf diesem Server ist kein KI-Modell eingerichtet; die Beschreibung entsteht aus der Ordnerstruktur.",
+      "start": "Ordner scannen",
+      "phase": {
+        "connecting": "Verbindung wird aufgebaut…",
+        "listing": "Ordner wird aufgelistet…",
+        "sampling": "Beispieldokumente werden gelesen…",
+        "describing": "Beschreibung wird erstellt…",
+        "done": "Fertig"
+      },
+      "progress": "Bisher {files} Dateien in {dirs} Ordnern",
+      "cancel": "Scan abbrechen",
+      "retry": "Erneut scannen",
+      "stats": {
+        "files": "Dateien",
+        "folders": "Ordner",
+        "size": "Größe",
+        "years": "Jahre"
+      },
+      "truncated": "Der Ordner ist sehr groß, der Scan hat das Zählen abgebrochen. Wählen Sie in Schritt 1 einen Unterordner für eine genaue Zahl.",
+      "folders": "Aufzunehmende Ordner",
+      "archivesUnticked": "{n} Archivordner abgewählt",
+      "types": "Dateitypen",
+      "typesHint": "Kein Typ gewählt = alle Typen. Andere Dateien werden weiterhin über den Namen gefunden.",
+      "age": "Geändert in",
+      "ageAll": "Beliebig",
+      "ageYears": "Den letzten {n} Jahren",
+      "again": "Erneut scannen",
+      "next": "Weiter"
+    },
+    "typeGroups": {
+      "pdf": "PDF",
+      "excel": "Excel / CSV",
+      "word": "Word",
+      "powerpoint": "PowerPoint",
+      "email": "E-Mail",
+      "text": "Text",
+      "drawing": "Zeichnungen (SVG, DXF)",
+      "code": "Code & Konfiguration"
+    },
+    "describe": {
+      "intro": "Dieser Text sagt der KI, was der Ordner enthält und wie sie darin sucht. Jeder MCP-Server mit diesem Connector gibt ihn weiter. Prüfen Sie ihn und ergänzen Sie, was nur Sie wissen.",
+      "writing": "Beschreibung wird erstellt…",
+      "byAi": "Von KI geschrieben ({model}). Bitte vor dem Speichern prüfen.",
+      "byRules": "Aus der Ordnerstruktur und den Beispieldokumenten erstellt.",
+      "summary": "Zusammenfassung in einer Zeile",
+      "summaryHint": "Erscheint in jeder Tool-Beschreibung. Noch {n} Zeichen.",
+      "instructions": "Anweisungen für die KI",
+      "instructionsHint": "Was die Dokumente sind, wie Ordner benannt sind, worauf zu achten ist.",
+      "terms": "Häufige Begriffe (klicken, um sie zur Zusammenfassung hinzuzufügen)",
+      "preview": "Was die KI sieht",
+      "previewText": "Durchsucht den Text aller Dokumente im Ordner \"{name}\" ({summary})…",
+      "prompts": "Fragen, die sie beantworten kann",
+      "withAi": "Mit KI",
+      "regenerate": "Neu schreiben",
+      "next": "Weiter"
+    },
+    "activate": {
+      "prefix": "Tool-Präfix",
+      "prefixHint": "Die Tools heißen dann z. B. {example}.",
+      "interval": "Synchronisierung",
+      "higherPlan": "höherer Plan",
+      "intervalHint": "Neue und geänderte Dateien werden bei jeder Synchronisierung übernommen. Die Suche funktioniert auch während einer Synchronisierung.",
+      "servers": "Zu MCP-Servern hinzufügen",
+      "noServers": "Es gibt noch keinen MCP-Server. Sie können den Connector später einem hinzufügen.",
+      "serversHint": "Nur Rollen mit diesen Tools können sie nutzen.",
+      "summary": "{files} Dateien ({size}) werden indexiert und dann {interval} synchronisiert.",
+      "activating": "Wird aktiviert…",
+      "cta": "Aktivieren und erste Synchronisierung starten",
+      "ocr": "Gescannte Seiten lesen (OCR)",
+      "ocrHint": "Gescannte PDFs ohne Textebene werden per Texterkennung gelesen. Langsamer; mit Enterprise verfügbar."
+    },
+    "interval": {
+      "weekly": "wöchentlich",
+      "daily": "täglich",
+      "hourly": "stündlich",
+      "hours": "alle {n} Stunden",
+      "minutes": "alle {n} Minuten"
+    },
+    "budget": {
+      "selected": "Ausgewählt: {files} Dateien, {size}",
+      "unlimited": "Keine Begrenzung in Ihrem Plan",
+      "plan": "Plan {plan}: {max} Dateien",
+      "textFiles": "{n} mit lesbarem Text",
+      "nameOnly": "{n} nur über den Namen auffindbar",
+      "tooLarge": "{n} größer als {max} (gelistet, nicht gelesen)",
+      "others": "+ {n} in Ihren anderen Dateisuche-Connectoren",
+      "bytes": "Volumen {used} von {max}",
+      "overWithNext": "Die Auswahl ist größer als Ihr Plan. Wählen Sie Ordner oder Dateitypen ab oder machen Sie ein Upgrade: Der Plan {plan} umfasst {max} Dateien.",
+      "over": "Die Auswahl ist größer als Ihr Plan. Wählen Sie Ordner oder Dateitypen ab."
+    },
+    "tree": {
+      "collapse": "{name} zuklappen",
+      "expand": "{name} aufklappen",
+      "include": "{name} aufnehmen",
+      "archive": "Archiv",
+      "files": "{n} Dateien",
+      "filter": "Ordner filtern",
+      "label": "Ordner",
+      "empty": "Keine passenden Ordner."
+    },
+    "locked": {
+      "title": "Die Dateisuche ist Teil der kostenpflichtigen Editionen",
+      "titleEnterprise": "Die Dateisuche nach der Testphase ist Teil von Enterprise",
+      "point1": "In PDF-, Excel-, Word- und Outlook-Dateien suchen, aus Claude, ChatGPT, Copilot und anderen KI-Clients.",
+      "point2": "SFTP, FTP/FTPS, WebDAV und Netzwerkordner, im Hintergrund synchronisiert.",
+      "point3": "Befristete Download-Links, Berechtigungen pro Rolle, Audit-Log.",
+      "startTrial": "Kostenlose 30-Tage-Testphase starten",
+      "buy": "Lizenz kaufen",
+      "contactEnterprise": "Enterprise anfragen",
+      "activate": "Lizenz aktivieren",
+      "keyToStart": "Registrieren Sie unter Einstellungen → Lizenz einen kostenlosen Community-Schlüssel, um die 30-tägige Testphase der Dateisuche zu starten. Der Schlüssel ist kostenlos und kommt per E-Mail.",
+      "keyDuringTrial": "Registrieren Sie unter Einstellungen → Lizenz einen kostenlosen Community-Schlüssel, um die Dateisuche während der Testphase zu nutzen. Der Schlüssel ist kostenlos und kommt per E-Mail.",
+      "registerKey": "Kostenlosen Community-Schlüssel registrieren"
+    },
+    "card": {
+      "title": "Dateisuche",
+      "description": "In den Dokumenten eines Ordners suchen: SFTP, FTP, WebDAV, NAS oder Netzwerkfreigabe."
+    },
+    "shareConnector": {
+      "title": "Dateifreigabe",
+      "text": "Lässt KI-Clients erstellte Dateien als befristete Download-Links bereitstellen. Links, Limits und die Workspace-Richtlinie verwalten Sie in den Einstellungen.",
+      "manage": "Einstellungen der Dateifreigabe öffnen"
+    },
+    "panel": {
+      "draftTitle": "Einrichtung nicht abgeschlossen",
+      "draftText": "Dieser Connector wurde getestet, aber noch nicht aktiviert: Er hat keine Tools und synchronisiert nicht.",
+      "continueSetup": "Einrichtung fortsetzen",
+      "paused": {
+        "paused_quota": "Synchronisierung angehalten: Der Ordner übersteigt Ihren Plan",
+        "paused_licence": "Synchronisierung angehalten: Die Dateisuche benötigt eine Lizenz",
+        "paused_error": "Synchronisierung angehalten: Der Server war nicht erreichbar",
+        "paused_admin": "Synchronisierung von einem Administrator angehalten",
+        "stillSearching": "Die KI durchsucht weiterhin die bis {date} indexierten Dateien."
+      },
+      "upgradeTo": "Upgrade auf {plan}",
+      "editSelection": "Auswahl bearbeiten",
+      "resume": "Fortsetzen",
+      "resumed": "Fortgesetzt. Die nächste Synchronisierung startet innerhalb einer Minute.",
+      "indexed": "Indexiert",
+      "ofFiles": "von {n} Dateien",
+      "size": "Größe",
+      "chars": "{n} Zeichen Text",
+      "lastSync": "Letzte Synchronisierung",
+      "nextSync": "Nächste Synchronisierung",
+      "now": "läuft gerade",
+      "planUsage": "{used} von {max} Dateien im Plan {plan} (alle Dateisuche-Connectoren)",
+      "nearLimit": "{pct} % genutzt",
+      "syncQueued": "Synchronisierung gestartet.",
+      "syncing": "Synchronisiert…",
+      "syncNow": "Jetzt synchronisieren",
+      "pause": "Anhalten",
+      "pausedMsg": "Synchronisierung angehalten.",
+      "scheduleSaved": "Zeitplan gespeichert.",
+      "manualLeft": "Heute verbleibende manuelle Synchronisierungen: {n}",
+      "description": "Was die KI über diesen Ordner erfährt",
+      "edit": "Bearbeiten",
+      "newDraft": "Der letzte Scan hat eine neue Beschreibung erstellt.",
+      "reviewDraft": "Prüfen",
+      "save": "Speichern",
+      "descriptionSaved": "Beschreibung gespeichert; die Tools wurden aktualisiert.",
+      "noDescription": "Noch keine Beschreibung.",
+      "runs": "Letzte Synchronisierungen",
+      "runCounters": "{listed} Dateien gelistet, {added} neu oder geändert, {extracted} gelesen, {deleted} entfernt",
+      "noRuns": "Es lief noch keine Synchronisierung.",
+      "problems": "{n} Dateien brauchen Aufmerksamkeit",
+      "problemsHint": "Sie werden weiterhin über den Namen gefunden. Dateien, die dreimal scheitern, werden erst nach einer Änderung erneut versucht.",
+      "folders": "Ordner im Index",
+      "hide": "Ausblenden",
+      "show": "Anzeigen"
+    },
+    "states": {
+      "active": "Aktiv",
+      "syncing": "Synchronisiert",
+      "draft": "Entwurf",
+      "paused_quota": "Angehalten: Planlimit",
+      "paused_licence": "Angehalten: Lizenz",
+      "paused_error": "Angehalten: Verbindung",
+      "paused_admin": "Angehalten"
+    },
+    "runStatus": {
+      "running": "Läuft",
+      "succeeded": "Fertig",
+      "partial": "In Arbeit",
+      "paused": "Angehalten",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen"
+    },
+    "entryStatus": {
+      "failed": "Nicht lesbar (wird erneut versucht)",
+      "gave_up": "Nicht lesbar",
+      "skipped_size": "Größer als im Plan erlaubt",
+      "pending": "Wartet auf Lesen",
+      "name_only": "Nur über den Namen auffindbar",
+      "indexed": "Indexiert"
+    },
+    "rules": {
+      "title": "Ordnerberechtigungen",
+      "intro": "Beschränken Sie Rollen auf einzelne Ordner dieses Connectors. Eine Rolle ohne Regeln sieht alles; mit Regeln nur die erlaubten Ordner, Verbote haben Vorrang.",
+      "enterprise": "Ordnerberechtigungen pro Rolle gibt es mit AnythingMCP Enterprise. Bis dahin verbinden Sie jeden Ordner als eigenen Connector und geben ihn den passenden Rollen.",
+      "role": "Rolle",
+      "effect": "Erlauben oder verbieten",
+      "allow": "Erlauben",
+      "deny": "Verbieten",
+      "folder": "Ordner",
+      "remove": "Entfernen",
+      "add": "Regel hinzufügen",
+      "saved": "Ordnerberechtigungen gespeichert."
+    },
+    "limit": {
+      "title": "Alle Dateisuche-Connectoren Ihres Plans sind belegt",
+      "text": "Der Plan {plan} umfasst {max} Dateisuche-Connector(en), alle sind eingerichtet. Machen Sie ein Upgrade oder löschen Sie einen, den Sie nicht mehr brauchen.",
+      "next": "Der Plan {plan} umfasst {max}.",
+      "manage": "Connectoren verwalten"
+    },
+    "pager": {
+      "label": "Seiten",
+      "range": "{from}–{to} von {total}",
+      "prev": "Zurück",
+      "next": "Weiter"
+    },
+    "searchHint": {
+      "title": "Soll Ihre KI in den Dokumenten selbst suchen?",
+      "body": "Die Dateisuche indexiert die PDF-, Word-, Excel- und Outlook-Dateien auf Ihrem NAS, Server oder Speicher und hält den Index aktuell. So findet die KI, was in den Dateien steht, nicht nur ihre Namen.",
+      "cta": "Dateisuche einrichten",
+      "for": "Öffnet den Assistenten für {name}."
+    }
+  },
+  "fileShare": {
+    "title": "Dateifreigabe",
+    "subtitle": "Befristete Download-Links für Dateien aus Ihren Ordnern oder von der KI erstellte Dateien. Links laufen von selbst ab und die Datei wird gelöscht.",
+    "locked": {
+      "title": "Die Dateifreigabe ist in diesem Plan nicht enthalten",
+      "text": "Mit einem Upgrade können KI-Clients Dateien als befristete Links weitergeben.",
+      "cta": "Pläne ansehen"
+    },
+    "usage": {
+      "title": "Ihre Limits ({plan})",
+      "stored": "In aktiven Links gespeichert",
+      "today": "Neue Links heute",
+      "validity": "Längste Gültigkeit",
+      "hours": "{n} Stunden",
+      "noLimit": "Kein Limit",
+      "fileSize": "Größte Datei",
+      "publicOn": "Öffentliche Links sind erlaubt.",
+      "publicOff": "Öffentliche Links sind abgeschaltet; Links öffnen sich nur für angemeldete Mitglieder.",
+      "days": "{n} Tage"
+    },
+    "connector": {
+      "title": "Links aus KI-Chats",
+      "on": "Der Connector \"{name}\" lässt KI-Clients erstellte Dateien (CSV, Berichte) als Links bereitstellen.",
+      "off": "Fügen Sie den Dateifreigabe-Connector hinzu, damit KI-Clients erstellte Dateien (CSV, Berichte) als Links bereitstellen können.",
+      "add": "Dateifreigabe-Connector hinzufügen",
+      "added": "Dateifreigabe-Connector wurde Ihrem Standard-MCP-Server hinzugefügt."
+    },
+    "links": {
+      "title": "Links",
+      "empty": "Keine aktiven Links.",
+      "loading": "Wird geladen…",
+      "public": "öffentlich",
+      "internal": "intern",
+      "until": "bis {date}",
+      "noExpiry": "ohne Ablauf",
+      "downloads": "{n, plural, one {# Download} other {# Downloads}}",
+      "by": "von {name}",
+      "revoke": "Widerrufen",
+      "revoked": "Link widerrufen und Datei gelöscht.",
+      "count": "{n, plural, one {# aktiver Link} other {# aktive Links}}",
+      "search": "Nach Dateiname suchen",
+      "searchLabel": "Links durchsuchen",
+      "allAccess": "Alle Links",
+      "onlyPublic": "Nur öffentliche",
+      "onlyInternal": "Nur interne",
+      "mine": "Nur meine",
+      "noMatch": "Kein Link passt zu diesen Filtern.",
+      "confirm": "Diesen Link widerrufen und die Datei löschen?",
+      "confirmYes": "Widerrufen",
+      "cancel": "Abbrechen",
+      "expiresIn": "läuft in {time} ab"
+    },
+    "policy": {
+      "title": "Richtlinie für File Search und File Share",
+      "intro": "Gilt für alle Dateisuche-Connectoren und Links in diesem Workspace.",
+      "enterprise": "Workspace-Richtlinien gibt es mit AnythingMCP Enterprise.",
+      "saved": "Richtlinie gespeichert.",
+      "maxTtl": "Längste Gültigkeit eines Links (Stunden)",
+      "maxTtlPlaceholder": "Standard des Plans",
+      "publicLinks": {
+        "label": "Öffentliche Links erlauben",
+        "hint": "Aus: Links öffnen sich nur für angemeldete Mitglieder dieses Workspaces."
+      },
+      "aiDrafting": {
+        "label": "KI-Entwürfe von Ordnerbeschreibungen erlauben",
+        "hint": "Aus: Die Einrichtung sendet nie Ordnernamen oder Beispiele an ein KI-Modell."
+      },
+      "allowPlainFtp": {
+        "label": "Unverschlüsseltes FTP erlauben",
+        "hint": "Aus: Nur SFTP und FTPS können verbunden werden."
+      },
+      "locked": "Mit AnythingMCP Enterprise kann ein Administrator öffentliche Links, KI-Entwürfe und unverschlüsseltes FTP abschalten und die Gültigkeit von Links begrenzen.",
+      "on": "an",
+      "off": "aus",
+      "planDefault": "laut Plan"
+    },
+    "link": {
+      "loading": "Wird geladen…",
+      "notFound": "Diesen Link gibt es nicht.",
+      "unavailable": "Dieser Link ist nicht verfügbar",
+      "sharedBy": "Geteilt von",
+      "access": "Zugriff",
+      "internal": "Mitglieder des Workspaces",
+      "public": "Alle mit dem Link",
+      "expires": "Läuft ab",
+      "never": "Nie",
+      "state": {
+        "expired": "Dieser Link ist abgelaufen.",
+        "revoked": "Dieser Link wurde widerrufen.",
+        "exhausted": "Dieser Link hat sein Download-Limit erreicht."
+      },
+      "signIn": "Zum Herunterladen anmelden",
+      "download": "Herunterladen",
+      "preparing": "Wird vorbereitet…",
+      "warning": "Öffnen Sie nur Dateien von Personen, denen Sie vertrauen. AnythingMCP prüft Dateien nicht auf Viren."
     }
   }
 }
