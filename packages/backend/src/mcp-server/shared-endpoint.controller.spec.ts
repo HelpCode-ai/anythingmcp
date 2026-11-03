@@ -3,6 +3,7 @@ import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { McpEndpointController, isListenRequest } from './mcp-endpoint.controller';
 import { CHATGPT_EXTRA_TOOL_NAMES, SHARED_TOOL_NAMES, sharedToolsetInstructions } from './shared-toolset';
 import type { RegisteredTool } from './tool-registry';
+import { withRegistryIndexes } from './registry-test-double';
 
 /**
  * The shared `/mcp` in `fixed` mode, end to end through the controller: the
@@ -85,7 +86,7 @@ function build(
   };
   const controller = new McpEndpointController(
     servers as any,
-    { getAllTools: () => opts.tools ?? ALL, countByName: () => 1 } as any,
+    withRegistryIndexes({ getAllTools: () => opts.tools ?? ALL, countByName: () => 1 }) as any,
     executor as any,
     {
       getAllowedToolIds: jest.fn(async (_sub: string, org: string) =>
@@ -141,7 +142,7 @@ describe('shared /mcp in fixed mode', () => {
   it('answers subscriptions/listen without resolving the caller\'s tools', async () => {
     const getAllTools = jest.fn(() => ALL);
     const { controller } = build();
-    (controller as any).toolRegistry = { getAllTools, countByName: () => 1 };
+    (controller as any).toolRegistry = withRegistryIndexes({ getAllTools, countByName: () => 1 });
     const grants = (controller as any).grants;
     let built: McpServer | undefined;
     (controller as any).serveStateless = jest.fn(
@@ -159,6 +160,32 @@ describe('shared /mcp in fixed mode', () => {
     expect(grants.resolve).not.toHaveBeenCalled();
     expect(grants.clientRedirectUris).not.toHaveBeenCalled();
     expect(built!.server.getCapabilities()).toEqual({ tools: { listChanged: true } });
+  });
+
+  it('answers server/discover without resolving the caller\'s tools, with the client\'s instructions', async () => {
+    const getAllTools = jest.fn(() => ALL);
+    const { controller } = build();
+    const registry = withRegistryIndexes({ getAllTools, countByName: () => 1 });
+    const byOrg = jest.spyOn(registry, 'getToolsForOrganization');
+    (controller as any).toolRegistry = registry;
+    const grants = (controller as any).grants;
+    let built: McpServer | undefined;
+    (controller as any).serveStateless = jest.fn(
+      async (_req: unknown, _res: unknown, _body: unknown, factory: () => McpServer) => {
+        built = factory();
+      },
+    );
+    const req: any = {
+      user: orgB,
+      body: { jsonrpc: '2.0', id: 1, method: 'server/discover', params: {} },
+      headers: { host: 'x' },
+    };
+    await controller.handleGlobalPost(req, {} as any);
+    expect(getAllTools).not.toHaveBeenCalled();
+    expect(byOrg).not.toHaveBeenCalled();
+    expect(grants.resolve).not.toHaveBeenCalled();
+    expect(built!.server.getCapabilities()).toEqual({ tools: { listChanged: true } });
+    expect((built!.server as any)._instructions).toBeTruthy();
   });
 
   it('recognises only a single subscriptions/listen message as a listen', () => {
