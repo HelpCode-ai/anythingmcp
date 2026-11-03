@@ -26,6 +26,13 @@
  *    below every direct match.
  * 4. Partial matches, only for a query of several words that matched nothing
  *    as a whole: the adapters matching the most words ("etsy openplz").
+ * 5. A word of a query of several words that starts the slug or the name of
+ *    an app goes first: "instagram direct message" is Instagram, "etsy
+ *    listings search" is Etsy, even when another adapter matches more of the
+ *    other words in its description. The other words only say what to do
+ *    with the app. A word starting the names of more than MAX_NAMED adapters
+ *    ("google", "microsoft") names no single app and moves nothing, and a
+ *    first result matching the whole query by name ("telegram bot") stays.
  *
  * A one-letter query ("x") matches only an adapter whose slug, name or alias
  * is exactly that letter.
@@ -96,6 +103,8 @@ export const MAX_FUZZY = 5;
 export const MAX_PARTIAL = 10;
 /** At most this many File Search suggestions. */
 export const MAX_FILE_SEARCH = 3;
+/** A word starting more names than this ("google") names no single app (step 5). */
+export const MAX_NAMED = 5;
 
 /**
  * Storage and document queries, and the File Search entries that answer
@@ -304,6 +313,8 @@ interface Prepared<T> {
   words: string[];
   aliasWords: string[];
   haystack: string;
+  /** First word of the slug and of the name: "whatsapp" for WhatsApp Business. */
+  leads: string[];
 }
 
 /** Prepared once per entry object: the store searches on every keystroke. */
@@ -327,6 +338,9 @@ function buildPrepared<T extends CatalogSearchEntry>(entry: T): Prepared<T> {
     words: [...nameWords],
     aliasWords: [...new Set(aliases.flatMap(wordsOf))].filter((w) => !nameWords.has(w)),
     haystack: haystackOf(entry.text ?? []),
+    leads: [
+      ...new Set([compact(entry.slug.split('-')[0] ?? ''), compact(fold(entry.name).trim().split(/\s+/)[0] ?? '')]),
+    ].filter(Boolean),
   };
 }
 
@@ -413,6 +427,42 @@ export function fileSearchIntent(query: string): { slugs: string[]; words: strin
     }
   }
   return { slugs, words: [...used], generic: slugs.length > 0 && generic };
+}
+
+/**
+ * Step 5: the apps a query word names, in the order of the words, ahead of
+ * the other results. An app the other words did not match comes in as a
+ * partial match. File Search entries, and the words that ask for them
+ * ("storage box"), are left to FILE_SEARCH_INTENTS. A first result that
+ * matches the query as a whole or by several names ("telegram bot", "google
+ * calendar events") stays first.
+ */
+function namedFirst<T extends CatalogSearchEntry>(
+  entries: readonly T[],
+  terms: readonly string[],
+  hits: CatalogSearchHit<T>[],
+  scored: readonly Scored<T>[],
+): CatalogSearchHit<T>[] {
+  if (hits[0]?.match === 'direct' && hits[0].score >= SCORE.phrase) return hits;
+  const named: T[] = [];
+  for (const term of terms) {
+    const word = compact(term);
+    const apps = entries.filter((e) => !FILE_SEARCH_SLUGS.has(e.slug) && prepare(e).leads.includes(word));
+    if (!apps.length || apps.length > MAX_NAMED) continue;
+    const rank = (e: T) => scored.find((s) => s.entry === e) ?? { entry: e, score: 0, direct: 0, fuzzy: 0, distance: 0 };
+    for (const app of apps.sort((a, b) => byRank(rank(a), rank(b)))) if (!named.includes(app)) named.push(app);
+  }
+  if (!named.length) return hits;
+  const front = named.map(
+    (entry): CatalogSearchHit<T> =>
+      hits.find((h) => h.entry === entry) ?? {
+        entry,
+        match: 'partial',
+        score: scored.find((s) => s.entry === entry)?.score ?? 0,
+      },
+  );
+  const moved = new Set<T>(named);
+  return [...front, ...hits.filter((h) => !moved.has(h.entry))];
 }
 
 /**
@@ -522,6 +572,8 @@ export function searchCatalog<T extends CatalogSearchEntry>(
     ...weak.map((s) => ({ entry: s.entry, match: 'direct' as const, score: s.score })),
     ...partial.map((s) => ({ entry: s.entry, match: 'partial' as const, score: s.score })),
   ];
+
+  if (terms.length > 1) hits = namedFirst(entries, terms.filter((t) => !intent.words.includes(compact(t))), hits, scored);
 
   const fileSearch = intent.slugs
     .map((slug) => entries.find((e) => e.slug === slug))
