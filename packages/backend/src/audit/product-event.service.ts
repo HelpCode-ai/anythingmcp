@@ -294,6 +294,17 @@ export const ProductEvents = {
    * metadata.reminder = 1, metadata.arm = 'holdout'. Once per user.
    */
   ONBOARDING_REMINDER_HOLDOUT: 'onboarding_reminder_holdout',
+  /**
+   * Cloud: an admin of a workspace whose free trial ended was shown the
+   * licence wall, with its buy-in-place plan picker (license-wall.service.ts).
+   * metadata.variant = 'trust' (the wall with the workspace's own numbers and
+   * the trust line) or 'control' (the earlier wall, about 10% of workspaces,
+   * fixed per workspace), metadata.calls = the successful tool calls shown
+   * (0 when none, then no numbers are shown). At most once per workspace a
+   * UTC day. Server-only. Read with Stripe's completed checkouts of
+   * checkout_source 'trial_ended_wall' by organizationId, per variant.
+   */
+  LICENSE_WALL_VIEWED: 'license_wall_viewed',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -321,6 +332,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.ETSY_APP_APPROVED_NOTIFIED,
   ProductEvents.ONBOARDING_REMINDER_SENT,
   ProductEvents.ONBOARDING_REMINDER_HOLDOUT,
+  ProductEvents.LICENSE_WALL_VIEWED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),

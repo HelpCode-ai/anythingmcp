@@ -3487,5 +3487,22 @@
     "proxy": "Leave the \"Proxy\" option off on the tools of a server with an allowlist: proxied calls leave from changing addresses.",
     "copy": "Copy",
     "copied": "Copied"
+  },
+  "licenseWall": {
+    "title": "Keep your AI connected to your apps",
+    "body": "Your 7-day trial has ended. Subscribe and {client} keeps working with your connectors. Everything you set up is kept.",
+    "yourAi": "your AI",
+    "recapCalls": "{client} made {count, plural, one {# successful call} other {# successful calls}} in this workspace.",
+    "recapCallsWith": "{client} made {count, plural, one {# successful call} other {# successful calls}} in this workspace, with {connectors}.",
+    "recapBlocked": "Since your trial ended, {client} has tried to use them again. Those calls are paused until you subscribe.",
+    "loading": "Loading your plans…",
+    "trust": {
+      "cancel": "Cancel any time",
+      "stripe": "Secure payment by Stripe",
+      "hosted": "Hosted in Frankfurt",
+      "gdpr": "GDPR · DPA"
+    },
+    "workspaces": "{count} workspaces on AnythingMCP Cloud",
+    "directory": "Listed in the Claude Directory"
   }
 }

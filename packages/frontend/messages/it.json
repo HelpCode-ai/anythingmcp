@@ -3487,5 +3487,22 @@
     "proxy": "Lascia disattivata l'opzione \"Proxy\" sui tool di un server con whitelist: le chiamate tramite proxy partono da indirizzi che cambiano.",
     "copy": "Copia",
     "copied": "Copiato"
+  },
+  "licenseWall": {
+    "title": "Tieni la tua AI collegata alle tue app",
+    "body": "La tua prova di 7 giorni è terminata. Con l'abbonamento {client} continua a lavorare con i tuoi connettori. Tutto ciò che hai configurato resta.",
+    "yourAi": "la tua AI",
+    "recapCalls": "{client} ha fatto {count, plural, one {# chiamata riuscita} other {# chiamate riuscite}} in questo workspace.",
+    "recapCallsWith": "{client} ha fatto {count, plural, one {# chiamata riuscita} other {# chiamate riuscite}} in questo workspace, con {connectors}.",
+    "recapBlocked": "Da quando la prova è terminata, {client} ha provato di nuovo a usarli. Quelle chiamate sono in pausa finché non ti abboni.",
+    "loading": "Caricamento dei piani…",
+    "trust": {
+      "cancel": "Disdici quando vuoi",
+      "stripe": "Pagamento sicuro con Stripe",
+      "hosted": "Ospitato a Francoforte",
+      "gdpr": "GDPR · DPA"
+    },
+    "workspaces": "{count} workspace su AnythingMCP Cloud",
+    "directory": "Presente nella Claude Directory"
   }
 }

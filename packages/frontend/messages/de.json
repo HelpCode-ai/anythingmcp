@@ -3487,5 +3487,22 @@
     "proxy": "Lassen Sie die Option „Proxy“ bei den Tools eines Servers mit Allowlist aus: Aufrufe über den Proxy kommen von wechselnden Adressen.",
     "copy": "Kopieren",
     "copied": "Kopiert"
+  },
+  "licenseWall": {
+    "title": "Halten Sie Ihre KI mit Ihren Apps verbunden",
+    "body": "Ihre 7-tägige Testphase ist beendet. Mit einem Abo arbeitet {client} weiter mit Ihren Connectors. Alles, was Sie eingerichtet haben, bleibt erhalten.",
+    "yourAi": "Ihre KI",
+    "recapCalls": "{client} hat in diesem Workspace {count, plural, one {# erfolgreichen Aufruf} other {# erfolgreiche Aufrufe}} gemacht.",
+    "recapCallsWith": "{client} hat in diesem Workspace {count, plural, one {# erfolgreichen Aufruf} other {# erfolgreiche Aufrufe}} gemacht, mit {connectors}.",
+    "recapBlocked": "Seit dem Ende der Testphase hat {client} erneut versucht, sie zu nutzen. Diese Aufrufe sind pausiert, bis Sie ein Abo abschließen.",
+    "loading": "Ihre Tarife werden geladen…",
+    "trust": {
+      "cancel": "Jederzeit kündbar",
+      "stripe": "Sichere Zahlung über Stripe",
+      "hosted": "Gehostet in Frankfurt",
+      "gdpr": "DSGVO · AVV"
+    },
+    "workspaces": "{count} Workspaces auf AnythingMCP Cloud",
+    "directory": "Gelistet im Claude Directory"
   }
 }
