@@ -249,6 +249,8 @@ describe('EditionService', () => {
       const { service, settings } = make({});
       const s = await service.startTrial(now);
       expect(settings.business_trial_ends_at).toBe(new Date(now.getTime() + BUSINESS_TRIAL_DAYS * DAY).toISOString());
+      // File Search opens during this trial only with a registered key.
+      expect(settings.file_search_trial_needs_key).toBe('true');
       expect(s).toMatchObject({ edition: 'business', source: 'trial' });
       await expect(service.startTrial(now)).rejects.toBeInstanceOf(ConflictException);
     });

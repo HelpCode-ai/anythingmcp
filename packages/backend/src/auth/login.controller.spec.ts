@@ -1095,10 +1095,11 @@ describe('LoginController', () => {
           ['woocommerce', 'WooCommerce'],
           ['odoo', 'Odoo'],
           ['printify', 'Printify'],
-          ['gemini', 'Google Gemini'],
         ]) {
           expect(page).toContain(`data-adapter="${slug}" data-name="${name}">${name}</button>`);
         }
+        // Picked often, set up almost never: it is reached through "Another app".
+        expect(page).not.toContain('data-adapter="gemini"');
         expect(page).toContain('<label class="other-label" for="other-app">Another app</label>');
         expect(page).toContain('role="status" aria-live="polite"');
         // Optional: Continue is still the one button, straight to the callback.

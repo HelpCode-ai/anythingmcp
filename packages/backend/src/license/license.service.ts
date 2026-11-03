@@ -10,6 +10,7 @@ import { FIRST_SUCCESS_KEY } from './card-trial-offer';
 import { parseUnclaimedLicences, type UnclaimedLicence, type UnclaimedSkipReason } from './license-unclaimed';
 import { Prisma } from '../generated/prisma/client';
 import { maskEmail } from '../auth/mcp-email-verification';
+import { collectUsageReport, usageReportEnabled, type UsageReport } from './usage-report';
 
 // Production always talks to anythingmcp.com. The licence site decides
 // which plan an installation runs; a URL taken from the environment would let
@@ -680,7 +681,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
 
     for (const { licenseKey, organizationId, status } of batch) {
       out.checked++;
-      const result = await this.verifyLicense(licenseKey);
+      const result = await this.verifyLicense(licenseKey, organizationId ?? undefined);
       if (status !== 'active') {
         // A payment-failed licence: still blocked, or back after a retry.
         if (result.valid) {
@@ -890,13 +891,23 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       return { valid: false, error: 'No license key configured' };
     }
 
+    // Self-hosted adds its usage counts (see usage-report.ts); Cloud never.
+    const usage = await this.usageReport();
+
     try {
       const { data } = await axios.get<RemoteVerifyResponse>(
         `${this.apiBase}/api/license/verify`,
         {
           // Cloud also asks for the subscription's state (trial end, set to
-          // cancel, renewal date) so the app can tell the customer.
-          params: { key: licenseKey, ...(this.deployment.isCloud() && { billing: '1' }) },
+          // cancel, renewal date) so the app can tell the customer, and names
+          // the workspace: the site refuses a self-hosted licence on a Cloud
+          // workspace it is not bound to. Self-hosted never sends it.
+          params: {
+            key: licenseKey,
+            ...(this.deployment.isCloud() && { billing: '1' }),
+            ...(this.deployment.isCloud() && organizationId && { organizationId }),
+            ...usage,
+          },
           timeout: 10000,
           headers: this.serviceHeaders(),
         },
@@ -939,6 +950,21 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     } catch (err: any) {
       this.logger.warn(`License verification failed: ${err.message}`);
       return { valid: false, error: 'Verification service unreachable' };
+    }
+  }
+
+  /**
+   * Usage counts for the verify call: self-hosted only, unless the operator
+   * set LICENSE_USAGE_REPORT=false. A failing count never fails the
+   * verification; the call then goes out without them.
+   */
+  private async usageReport(): Promise<UsageReport | Record<string, never>> {
+    if (this.deployment.isCloud() || !usageReportEnabled()) return {};
+    try {
+      return await collectUsageReport(this.prisma);
+    } catch (err: any) {
+      this.logger.warn(`Usage counts for licence verification unavailable: ${err?.message ?? err}`);
+      return {};
     }
   }
 
@@ -1000,8 +1026,9 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // Verify remotely first
-    const verification = await this.verifyLicense(licenseKey);
+    // Verify remotely first. On Cloud the workspace goes along, so the site
+    // can refuse a self-hosted licence and say why.
+    const verification = await this.verifyLicense(licenseKey, organizationId);
 
     if (!verification.valid) {
       throw new Error(verification.error || 'Invalid license key');
@@ -1328,7 +1355,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         select: { licenseKey: true },
       })) ?? (await this.getPaymentFailedLicense(organizationId));
     if (!license) return false;
-    await this.verifyLicense(license.licenseKey);
+    await this.verifyLicense(license.licenseKey, organizationId);
     return true;
   }
 }

@@ -26,7 +26,7 @@ Search connector, or a file an AI client wrote (a CSV, a report).
 
 | | AnythingMCP Cloud | Self-hosted |
 |---|---|---|
-| Plan | Every plan, the free trial included, within its limits | Enterprise (on request), an existing Starter or Team licence key, or the 30-day trial. Community has no File Search after the trial. |
+| Plan | Every plan, the free trial included, within its limits | Enterprise (on request), an existing Starter or Team licence key, or the 30-day trial. On Community the trial opens File Search only with a registered licence key: the free Community key from **Settings → License** counts. Community has no File Search after the trial. |
 | Sources | SFTP, FTP/FTPS, WebDAV, S3 on the internet | The same, plus folders mounted into the install |
 | Services | Run by us | `COMPOSE_PROFILES=files` starts `files-worker` and `file-extractor` (see [Self-hosted setup](#self-hosted-setup)) |
 

@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import type { FileSearchAccess, FileSearchBudget, FileSourceTestResult, FileTreeNode } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { buildEnterpriseContactUrl } from '@/lib/marketing';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
@@ -239,8 +239,14 @@ export function LockedCard({ access, onStartTrial, busy }: { access: Extract<Fil
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-[15px] font-semibold text-[var(--text)]">{selfHosted ? t('locked.titleEnterprise') : t('locked.title')}</h2>
-          <p className="mt-1 text-[13px] leading-[1.55] text-[var(--text-2)]">{access.message}</p>
+          <h2 className="text-[15px] font-semibold text-[var(--text)]">{selfHosted && !access.keyRequired ? t('locked.titleEnterprise') : t('locked.title')}</h2>
+          <p className="mt-1 text-[13px] leading-[1.55] text-[var(--text-2)]">
+            {access.keyRequired === 'to_start'
+              ? t('locked.keyToStart')
+              : access.keyRequired === 'during_trial'
+                ? t('locked.keyDuringTrial')
+                : access.message}
+          </p>
           <ul className="mt-3 space-y-1 text-[13px] text-[var(--text-2)]">
             <li>• {t('locked.point1')}</li>
             <li>• {t('locked.point2')}</li>
@@ -250,7 +256,11 @@ export function LockedCard({ access, onStartTrial, busy }: { access: Extract<Fil
             {access.trialAvailable && onStartTrial && (
               <Button onClick={onStartTrial} disabled={busy}>{t('locked.startTrial')}</Button>
             )}
-            {selfHosted ? (
+            {access.keyRequired ? (
+              <Link href="/settings/license" className={cn(buttonVariants({ variant: 'primary' }))}>
+                {t('locked.registerKey')}
+              </Link>
+            ) : selfHosted ? (
               <>
                 <a href={buildEnterpriseContactUrl()} target="_blank" rel="noopener noreferrer" className={secondary}>
                   {t('locked.contactEnterprise')}

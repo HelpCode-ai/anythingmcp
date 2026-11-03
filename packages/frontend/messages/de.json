@@ -3254,7 +3254,10 @@
       "startTrial": "Kostenlose 30-Tage-Testphase starten",
       "buy": "Lizenz kaufen",
       "contactEnterprise": "Enterprise anfragen",
-      "activate": "Lizenz aktivieren"
+      "activate": "Lizenz aktivieren",
+      "keyToStart": "Registrieren Sie unter Einstellungen → Lizenz einen kostenlosen Community-Schlüssel, um die 30-tägige Testphase der Dateisuche zu starten. Der Schlüssel ist kostenlos und kommt per E-Mail.",
+      "keyDuringTrial": "Registrieren Sie unter Einstellungen → Lizenz einen kostenlosen Community-Schlüssel, um die Dateisuche während der Testphase zu nutzen. Der Schlüssel ist kostenlos und kommt per E-Mail.",
+      "registerKey": "Kostenlosen Community-Schlüssel registrieren"
     },
     "card": {
       "title": "Dateisuche",

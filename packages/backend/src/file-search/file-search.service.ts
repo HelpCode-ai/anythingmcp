@@ -102,7 +102,7 @@ export class FileSearchService {
       worker: health,
       access: access.allowed
         ? { allowed: true, plan: access.plan, quota: access.quota, trialEndsAt: access.trialEndsAt, next: nextPlan(access.plan, this.cloud) }
-        : { allowed: false, reason: access.reason, message: access.message, trialAvailable: access.trialAvailable },
+        : { allowed: false, reason: access.reason, message: access.message, trialAvailable: access.trialAvailable, keyRequired: access.keyRequired },
       protocols: FILE_SEARCH_PROTOCOLS.filter((p) => !this.cloud || CLOUD_PROTOCOLS.has(p)),
       localRoots: this.cloud ? [] : localRootsFromEnv(),
       ai: { available: !!(process.env.KG_LLM_ENABLED === 'true' && resolveLlmConfig()), allowedByPolicy: policy.aiDrafting, provider: resolveLlmConfig()?.provider ?? null, model: resolveLlmConfig()?.model ?? null },
@@ -466,7 +466,7 @@ export class FileSearchService {
       lastScan: lastScan ? { id: lastScan.id, status: lastScan.status, createdAt: lastScan.createdAt.toISOString() } : null,
       access: access.allowed
         ? { allowed: true, plan: access.plan, quota: access.quota, next: nextPlan(access.plan, this.cloud) }
-        : { allowed: false, reason: access.reason, message: access.message, trialAvailable: access.trialAvailable },
+        : { allowed: false, reason: access.reason, message: access.message, trialAvailable: access.trialAvailable, keyRequired: access.keyRequired },
       usage,
     };
   }
