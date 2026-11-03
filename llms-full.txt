@@ -6851,6 +6851,15 @@ A run is bounded by a wall-clock deadline, a memory ceiling, a cap on how many
 tool calls it may make, and limits on output size. A program that exceeds a
 limit fails with a clear error; it never affects other runs or the backend.
 
+On Cloud, where the runner is shared between tenants, two per-workspace quotas
+apply on top of the per-run limits: a **monthly run cap** (trial 100, Starter
+500, Team 5,000, Enterprise unlimited; an Enterprise contract can override it
+with the licence feature `maxCodeRunsPerMonth`) and a **concurrency cap** on
+simultaneous runs (trial/Starter 1, Team 3, Enterprise 10). Over a quota, a run
+is refused with a clear message and nothing is executed. A card-backed trial
+gets the Team quotas. Self-hosted is single-tenant and not metered by runs, so
+neither quota applies there.
+
 ---
 
 ## docs/license-faq.md

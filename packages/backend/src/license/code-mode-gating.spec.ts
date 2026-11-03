@@ -1,5 +1,10 @@
 import { LicenseGuardService } from './license-guard.service';
 import { codeToolCapForPlan, inlineCodeAllowedForPlan, effectiveCodeModePlan } from './code-mode-quotas';
+import {
+  monthlyCodeRunCapForPlan,
+  concurrentCodeRunCapForPlan,
+  startOfUtcMonth,
+} from './code-run-quotas';
 
 function guard({ cloud, license, codeToolCount }: { cloud: boolean; license: any; codeToolCount: number }) {
   const prisma = { $queryRaw: jest.fn().mockResolvedValue([{ count: codeToolCount }]) };
@@ -59,6 +64,48 @@ describe('code-mode-quotas', () => {
     expect(effectiveCodeModePlan('starter', true)).toBe('starter');
     expect(effectiveCodeModePlan('community', true)).toBe('community');
     expect(effectiveCodeModePlan(null, true)).toBe('community');
+  });
+});
+
+describe('code-run-quotas', () => {
+  it('caps monthly code runs per plan (null = unlimited)', () => {
+    expect(monthlyCodeRunCapForPlan('trial')).toBe(100);
+    expect(monthlyCodeRunCapForPlan('starter')).toBe(500);
+    expect(monthlyCodeRunCapForPlan('team')).toBe(5000);
+    expect(monthlyCodeRunCapForPlan('business')).toBe(5000);
+    expect(monthlyCodeRunCapForPlan('enterprise')).toBeNull();
+    expect(monthlyCodeRunCapForPlan('mystery')).toBeNull(); // unknown -> community (unlimited)
+  });
+
+  it('lets features.maxCodeRunsPerMonth override the monthly cap', () => {
+    expect(monthlyCodeRunCapForPlan('starter', 2000)).toBe(2000);
+    expect(monthlyCodeRunCapForPlan('team', null)).toBeNull();
+    expect(monthlyCodeRunCapForPlan('starter', 'nope')).toBe(500); // bad override ignored
+    expect(monthlyCodeRunCapForPlan('starter', -1)).toBe(500);
+  });
+
+  it('caps concurrency per plan', () => {
+    expect(concurrentCodeRunCapForPlan('trial')).toBe(1);
+    expect(concurrentCodeRunCapForPlan('starter')).toBe(1);
+    expect(concurrentCodeRunCapForPlan('team')).toBe(3);
+    expect(concurrentCodeRunCapForPlan('business')).toBe(3);
+    expect(concurrentCodeRunCapForPlan('enterprise')).toBe(10);
+    expect(concurrentCodeRunCapForPlan('mystery')).toBeNull();
+  });
+
+  it('startOfUtcMonth is the first of the month at UTC midnight', () => {
+    const d = startOfUtcMonth(new Date('2026-11-17T09:30:00Z'));
+    expect(d.toISOString()).toBe('2026-11-01T00:00:00.000Z');
+  });
+});
+
+describe('LicenseGuardService.codeModePlanForOrg', () => {
+  it('resolves a card-backed trial to team, a free trial to trial', async () => {
+    const cardTrial = { plan: 'trial', status: 'active', billing: { status: 'trialing' } };
+    await expect(guard({ cloud: true, license: cardTrial, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('team');
+    await expect(guard({ cloud: true, license: { plan: 'trial', status: 'active' }, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('trial');
+    await expect(guard({ cloud: true, license: { plan: 'team' }, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('team');
+    await expect(guard({ cloud: false, license: null, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('community');
   });
 });
 
