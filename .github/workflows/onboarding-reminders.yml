@@ -25,7 +25,9 @@ jobs:
   trigger:
     name: Trigger onboarding drip
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # A run takes 3 to 7 minutes on Cloud (Nov 2026) and holds a 30-minute
+    # lease; 5 minutes cut runs and failed the job.
+    timeout-minutes: 30
     steps:
       - name: Call cron endpoint
         env:
@@ -39,6 +41,7 @@ jobs:
           fi
           response_file="$(mktemp)"
           http_code=$(curl -sS -o "${response_file}" -w "%{http_code}" \
+            --max-time 1500 \
             -X POST \
             -H "Authorization: Bearer ${CRON_SECRET}" \
             -H "Content-Type: application/json" \
