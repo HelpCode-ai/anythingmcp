@@ -7,7 +7,7 @@
   "category": "erp",
   "icon": "sap-business-one",
   "docsUrl": "https://help.sap.com/doc/056f69366b5345a386bb8149f1700c19/10.0/en-US/Service%20Layer%20API%20Reference.html",
-  "instructions": "**Setup**:\n1. Identify your Service Layer host (on HANA it usually runs on the database server; SQL Server installs and hosting partners run it on a separate host). Default HTTPS port is `50000`.\n2. Create or pick a B1 user that has API access for the company database you want to expose. A user without write authorizations is a safe start: every tool except `b1_create_order` only reads.\n3. Find the `CompanyDB` name in **Choose Company** dialog of the B1 client (looks like `SBODEMOGB`).\n4. Set the five env vars below. The adapter logs in once per session (~25 min TTL) and re-uses the `B1SESSION` cookie.\n\n**OData**: this adapter targets the **v2 / OData v4** Service Layer endpoint at `/b1s/v2/`. Older `/b1s/v1/` (OData v3) deployments are not covered — upgrade to FP 2405+ first.\n\n**Filtering**: use standard OData `$filter` syntax, e.g. `CardCode eq 'C20000'` or `DocDate ge '2026-01-01'`.\n\n**Paging**: the Service Layer returns 20 rows per call unless the client asks for more, whatever `$top` says. Every list tool asks for pages of up to 100 rows (`Prefer: odata.maxpagesize=100`); when a response carries `@odata.nextLink`, call the same tool again with `skip` raised by the rows already read. Use `select` to keep wide documents (journal entries with their lines, invoices) small.\n\n**Keys and enums**: documents are read by `DocEntry` (internal key), not by `DocNum` (the number printed on the document). Booleans are `tYES` / `tNO`, document status is `bost_Open` / `bost_Close`, and `OriginalJournal` tells what created a journal entry (`ttJournalEntry` for manual entries, `ttAPInvoice`, `ttARInvoice`, `ttVendorPayment`, `ttReceipt`…).\n\n**Finance**: A/P invoices, A/P and A/R credit memos, outgoing and incoming payments, journal entries, the chart of accounts and bank statements each have a list tool. Bank reconciliations are not a list in the Service Layer: `b1_list_external_reconciliations` calls its reconciliation service (a POST that only reads) and returns account and number pairs for `b1_get_external_reconciliation`; open items are the documents whose `PaidToDate` is below `DocTotal`.\n\n**Permissions**: a `403` with SAP error `-6006` (\"Modifying this object is not permitted for current user\") means the login works but the B1 user lacks the authorization for that object. Grant it in **Administration → System Initialization → Authorizations**, or keep the user read-only on purpose.\n\n**Self-host caveat**: Business One is on-premise. The Service Layer is reachable from inside the customer network. To use the AnythingMCP Cloud, expose Service Layer via a reverse proxy + TLS cert; otherwise self-host the adapter on the same network.",
+  "instructions": "**Setup**:\n1. Identify your Service Layer host (on HANA it usually runs on the database server; SQL Server installs and hosting partners run it on a separate host). Default HTTPS port is `50000`.\n2. Create or pick a B1 user that has API access for the company database you want to expose. A user without write authorizations is a safe start: every tool except `b1_create_order` only reads.\n3. Find the `CompanyDB` name in **Choose Company** dialog of the B1 client (looks like `SBODEMOGB`).\n4. Set the five env vars below. The adapter logs in once per session (~25 min TTL) and re-uses the `B1SESSION` cookie.\n\n**OData**: this adapter targets the **v2 / OData v4** Service Layer endpoint at `/b1s/v2/`. Older `/b1s/v1/` (OData v3) deployments are not covered — upgrade to FP 2405+ first.\n\n**Filtering**: use standard OData `$filter` syntax, e.g. `CardCode eq 'C20000'` or `DocDate ge '2026-01-01'`.\n\n**Paging**: the Service Layer returns 20 rows per call unless the client asks for more, whatever `$top` says. Every list tool asks for pages of up to 100 rows (`Prefer: odata.maxpagesize=100`); when a response carries `@odata.nextLink`, call the same tool again with `skip` raised by the rows already read. Use `select` to keep wide documents (journal entries with their lines, invoices) small.\n\n**Field names**: a field the Service Layer does not know returns `400` with \"Property 'X' is invalid\"; drop it and retry. Payments (`VendorPayments`, `IncomingPayments`) have no `DocTotal` and no header `CheckSum`: the amount paid is `CashSum` + `TransferSum` + the `CheckSum` of each line in `PaymentChecks` + the lines in `PaymentCreditCards`. Journal entries have no `UserSign`, `StornoToTransId`, `CreationDate` or `UpdateDate` (the reversal flag is `UseAutoStorno`). The chart of accounts has no `Postable`, `PostingMode` or `ControlAccount`: postable accounts have `ActiveAccount eq 'tYES'`, title accounts `tNO`.\n\n**Line collections**: `select` and `filter` cannot reach inside `JournalEntryLines` or `DocumentLines`. Select the collection as a whole (`JournalEntryLines`, not `JournalEntryLines/AccountCode`); lambda filters such as `JournalEntryLines/any(l: l/AccountCode eq '10801')` fail with \"Invalid symbol in the filter condition\". Filter on header fields (dates, `OriginalJournal`, `TransactionCode`, `JdtNum` ranges) and read the account from the lines.\n\n**Matching many amounts** (bank reconciliation, open items): read all payments or entries of the date window once, paging with `skip`, and match the amounts locally. One call per amount is slow and mostly returns nothing.\n\n**Keys and enums**: documents are read by `DocEntry` (internal key), not by `DocNum` (the number printed on the document). Booleans are `tYES` / `tNO`, document status is `bost_Open` / `bost_Close`, and `OriginalJournal` tells what created a journal entry (`ttJournalEntry` for manual entries, `ttAPInvoice`, `ttARInvoice`, `ttVendorPayment`, `ttReceipt`…).\n\n**Finance**: A/P invoices, A/P and A/R credit memos, outgoing and incoming payments, journal entries, the chart of accounts and bank statements each have a list tool. Bank reconciliations are not a list in the Service Layer: `b1_list_external_reconciliations` calls its reconciliation service (a POST that only reads) and returns account and number pairs for `b1_get_external_reconciliation`; open items are the documents whose `PaidToDate` is below `DocTotal`.\n\n**Permissions**: a `403` with SAP error `-6006` (\"Modifying this object is not permitted for current user\") means the login works but the B1 user lacks the authorization for that object. Grant it in **Administration → System Initialization → Authorizations**, or keep the user read-only on purpose.\n\n**Self-host caveat**: Business One is on-premise. The Service Layer is reachable from inside the customer network. To use the AnythingMCP Cloud, expose Service Layer via a reverse proxy + TLS cert; otherwise self-host the adapter on the same network.",
   "requiredEnvVars": [
     "SAP_B1_HOST",
     "SAP_B1_PORT",
@@ -567,7 +567,7 @@
     },
     {
       "name": "b1_list_vendor_payments",
-      "description": "List outgoing payments to suppliers, with the invoices each one settles (PaymentInvoices).",
+      "description": "List outgoing payments to suppliers, with the invoices each one settles (PaymentInvoices). Amount paid = CashSum + TransferSum + PaymentChecks + PaymentCreditCards. To match many amounts, read the whole date window once and compare locally.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -585,7 +585,7 @@
           },
           "select": {
             "type": "string",
-            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocDate,TransferSum,CashSum,CheckSum,DocCurrency"
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,CardName,DocDate,CashSum,TransferSum,TransferReference,PaymentChecks,DocCurrency,PaymentInvoices. There is no DocTotal or header CheckSum: cheque amounts are in PaymentChecks."
           },
           "orderby": {
             "type": "string",
@@ -610,7 +610,7 @@
     },
     {
       "name": "b1_list_incoming_payments",
-      "description": "List incoming payments from customers, with the invoices each one settles (PaymentInvoices).",
+      "description": "List incoming payments from customers, with the invoices each one settles (PaymentInvoices). Amount received = CashSum + TransferSum + PaymentChecks + PaymentCreditCards. To match many amounts, read the whole date window once and compare locally.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -628,7 +628,7 @@
           },
           "select": {
             "type": "string",
-            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,DocDate,TransferSum,CashSum,CheckSum,DocCurrency"
+            "description": "OData $select, e.g. DocEntry,DocNum,CardCode,CardName,DocDate,CashSum,TransferSum,TransferReference,PaymentChecks,DocCurrency,PaymentInvoices. There is no DocTotal or header CheckSum: cheque amounts are in PaymentChecks."
           },
           "orderby": {
             "type": "string",
@@ -653,7 +653,7 @@
     },
     {
       "name": "b1_list_journal_entries",
-      "description": "List journal entries with their lines (JournalEntryLines: account, debit, credit).",
+      "description": "List journal entries with their lines (JournalEntryLines: account, debit, credit). Filter on header fields only: lambda filters on JournalEntryLines are not supported, and JournalEntryLines is selected as a whole.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -671,7 +671,7 @@
           },
           "select": {
             "type": "string",
-            "description": "OData $select, e.g. JdtNum,ReferenceDate,Memo,OriginalJournal,JournalEntryLines"
+            "description": "OData $select, e.g. JdtNum,ReferenceDate,Memo,Reference,OriginalJournal,TransactionCode,JournalEntryLines (the whole collection; JournalEntryLines/AccountCode is rejected)"
           },
           "orderby": {
             "type": "string",
@@ -730,7 +730,7 @@
           },
           "filter": {
             "type": "string",
-            "description": "OData $filter, e.g. ActiveAccount eq 'tYES' and AccountType eq 'at_Revenues'"
+            "description": "OData $filter, e.g. ActiveAccount eq 'tYES' and AccountType eq 'at_Revenues' (ActiveAccount tYES = postable account, tNO = title account; there is no Postable field)"
           },
           "select": {
             "type": "string",
