@@ -112,6 +112,33 @@ function isPlaceholderReferenced(envVar, adapter) {
   return !!renewal && [renewal.appIdVar, renewal.appSecretVar, renewal.pageIdVar].includes(envVar);
 }
 
+/**
+ * LOGIN_TOKEN logins that take HTTP Basic credentials (Wazuh) set
+ * loginBasicAuth: true. LoginTokenService builds the header itself and refuses
+ * the same combinations, so a bad adapter fails here instead of at sign-in.
+ */
+export function loginBasicAuthProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object' || cfg.loginBasicAuth === undefined) return [];
+  if (connector.authType !== 'LOGIN_TOKEN') return ['loginBasicAuth only applies to LOGIN_TOKEN authentication'];
+  if (typeof cfg.loginBasicAuth !== 'boolean') return ['loginBasicAuth must be true or false'];
+  if (!cfg.loginBasicAuth) return [];
+  const problems = [];
+  for (const field of ['username', 'password']) {
+    if (typeof cfg[field] !== 'string' || !cfg[field].trim()) problems.push(`loginBasicAuth needs authConfig.${field}`);
+  }
+  if (cfg.signedJwt !== undefined) problems.push('loginBasicAuth cannot be combined with signedJwt');
+  if (cfg.passwordHashing && cfg.passwordHashing.scheme !== 'none') problems.push('loginBasicAuth sends the password as is and cannot be combined with passwordHashing');
+  const headers = cfg.loginHeaders && typeof cfg.loginHeaders === 'object' ? Object.keys(cfg.loginHeaders) : [];
+  if (headers.some((h) => h.toLowerCase() === 'authorization')) problems.push('loginBasicAuth sets the login Authorization header itself; remove Authorization from loginHeaders');
+  const outputParam = cfg.passwordHashing?.outputParam || 'passwordHashed';
+  const body = JSON.stringify([cfg.loginBody ?? null, cfg.loginBodyTemplate ?? null, cfg.loginHeaders ?? null]);
+  for (const name of new Set(['password', 'passwordHashed', outputParam])) {
+    if (body.includes(`${'$'}{${name}}`)) problems.push(`loginBasicAuth sends the password in the header only; remove ${'$'}{${name}} from the login body and headers`);
+  }
+  return problems;
+}
+
 // Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:
 // real adapters mention "to-do" lists, and only the uppercase word is ours.
 const TODO_MARKER = /\bTODO\b/;
@@ -510,6 +537,10 @@ export function validateAdapter(adapter, file, region) {
         }
       });
     }
+  }
+
+  for (const problem of loginBasicAuthProblems(adapter.connector)) {
+    errors.push(error('login-basic-auth', 'connector.authConfig.loginBasicAuth', problem, 'With loginBasicAuth: true the engine sends Authorization: Basic base64(username:password) on the login request; give username and password, and keep the password out of loginBody and loginHeaders.', 'authentication'));
   }
 
   if (adapter.checkBeforeAuthorization !== undefined) {

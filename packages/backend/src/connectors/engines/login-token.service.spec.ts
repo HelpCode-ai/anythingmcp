@@ -1,4 +1,6 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { inspect } from 'util';
 import axios from 'axios';
 import * as bcrypt from 'bcrypt';
 import { HttpsProxyAgent } from 'https-proxy-agent';
@@ -12,6 +14,7 @@ import {
   LoginTokenAuthConfig,
   proactiveRefreshWindowMs,
   signLoginJwt,
+  loginBasicAuthHeader,
 } from './login-token.service';
 import { generateKeyPairSync, verify } from 'crypto';
 import { injectLoginTokenHeaders } from './rest.engine';
@@ -831,6 +834,164 @@ describe('LoginTokenService — signedJwt login (noon Partner API pattern)', () 
   it('still asks for username and password when there is no signedJwt', async () => {
     const { signedJwt: _omit, ...withoutJwt } = noonAuth as LoginTokenAuthConfig & { signedJwt?: unknown };
     await expect(service.getToken(withoutJwt as LoginTokenAuthConfig, 'conn-noon-3')).rejects.toThrow(/username/);
+  });
+});
+
+/**
+ * loginBasicAuth (#982, Wazuh): the login request carries
+ * `Authorization: Basic base64(username:password)`, built by the engine and
+ * never through a template. An Authorization in loginHeaders is a
+ * configuration error, refused before any request, so there is no doubt about
+ * which credentials the vendor sees.
+ */
+describe('LoginTokenService - loginBasicAuth (Wazuh pattern)', () => {
+  let service: LoginTokenService;
+  const encryptionKey = 'test-encryption-key-32-chars-ok!';
+  // Built at runtime so no literal looks like a real credential.
+  const PASSWORD = ['pw', 'x'.repeat(8), ':*'].join('');
+  const ENCODED = Buffer.from(`api-reader:${PASSWORD}`).toString('base64');
+
+  const wazuhAuth: LoginTokenAuthConfig = {
+    loginUrl: 'https://wazuh.example.com:55000/security/user/authenticate',
+    loginMethod: 'POST',
+    loginHeaders: { Accept: 'application/json' },
+    loginBody: {},
+    loginBasicAuth: true,
+    username: 'api-reader',
+    password: PASSWORD,
+    tokenJsonPath: 'data.token',
+    tokenTTLSeconds: 900,
+  };
+  const axiosMock = () => mockedAxios as unknown as jest.Mock;
+  const logSpies = () =>
+    (['log', 'debug', 'warn', 'error', 'verbose'] as const).map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+  const logged = (spies: jest.SpyInstance[]) =>
+    spies.flatMap((s) => s.mock.calls.map((c) => c.map((x: unknown) => String(x)).join(' '))).join('\n');
+
+  beforeEach(() => {
+    const mockPrisma = {
+      connectorAuthCache: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+    } as any;
+    service = new LoginTokenService(mockPrisma, { get: jest.fn().mockReturnValue(encryptionKey) } as any);
+    jest.clearAllMocks();
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+    axiosMock().mockReset();
+  });
+
+  it('sends Authorization: Basic base64(username:password) on the login, and the token as Bearer afterwards', async () => {
+    axiosMock().mockResolvedValue({ data: { data: { token: 'jwt-1' } }, headers: {} });
+    const bundle = await service.getToken(wazuhAuth, 'conn-wazuh');
+    const call = axiosMock().mock.calls[0][0];
+    expect(call.method).toBe('POST');
+    expect(call.headers.Authorization).toBe(`Basic ${ENCODED}`);
+    expect(call.headers.Accept).toBe('application/json');
+    expect(call.data).toEqual({});
+    expect(call.params).toBeUndefined();
+    expect(bundle.token).toBe('jwt-1');
+    const request: any = { headers: {} };
+    injectLoginTokenHeaders(request, wazuhAuth, bundle.token, bundle.aud);
+    expect(request.headers.Authorization).toBe('Bearer jwt-1');
+  });
+
+  it('never offers the password to templates, and sends no body without a loginBody', async () => {
+    axiosMock().mockResolvedValue({ data: { data: { token: 'jwt-2' } }, headers: {} });
+    await service.getToken({ ...wazuhAuth, loginBody: { user: '${username}', pass: '${password}', h: '${passwordHashed}' } }, 'conn-wazuh-tpl');
+    expect(axiosMock().mock.calls[0][0].data).toEqual({ user: 'api-reader', pass: '', h: '' });
+
+    const { loginBody: _omit, ...noBody } = wazuhAuth;
+    await service.getToken(noBody as LoginTokenAuthConfig, 'conn-wazuh-nobody');
+    const call = axiosMock().mock.calls[1][0];
+    expect(call.data).toBeUndefined();
+    expect(call.params).toBeUndefined();
+    expect(call.headers.Authorization).toBe(`Basic ${ENCODED}`);
+  });
+
+  it('refuses an explicit Authorization in loginHeaders (any case) before any request', async () => {
+    for (const name of ['Authorization', 'authorization', 'AUTHORIZATION']) {
+      const cfg = { ...wazuhAuth, loginHeaders: { [name]: 'Basic something-else' } };
+      const err = await service.forceRelogin(cfg, `conn-${name}`).catch((e: Error) => e);
+      expect((err as Error).message).toBe(
+        'LOGIN_TOKEN: loginBasicAuth sets the login Authorization header itself; remove Authorization from loginHeaders',
+      );
+      expect(inspect(err)).not.toContain(PASSWORD);
+    }
+    expect(axiosMock()).not.toHaveBeenCalled();
+    // Without the flag an explicit Authorization header is sent as before.
+    axiosMock().mockResolvedValue({ data: { data: { token: 'jwt-3' } }, headers: {} });
+    const { loginBasicAuth: _f, ...plain } = wazuhAuth;
+    await service.getToken({ ...plain, loginHeaders: { Authorization: 'Token abc' } }, 'conn-plain');
+    expect(axiosMock().mock.calls[0][0].headers.Authorization).toBe('Token abc');
+  });
+
+  it('keeps the credentials out of a failed login error and out of the logs', async () => {
+    const spies = logSpies();
+    const header = `Basic ${ENCODED}`;
+    axiosMock().mockImplementation(async (cfg: any) => {
+      const err: any = new Error(`Request failed with status code 401 (${header})`);
+      err.isAxiosError = true;
+      err.config = { ...cfg, headers: { ...cfg.headers } };
+      err.request = { _header: `POST /security/user/authenticate HTTP/1.1\r\nAuthorization: ${header}\r\nHost: x\r\n\r\n` };
+      err.response = { status: 401, data: { title: 'Unauthorized' }, headers: {}, config: { headers: { authorization: header } } };
+      throw err;
+    });
+    const err: any = await service.getToken(wazuhAuth, 'conn-wazuh-401').catch((e) => e);
+    expect(err.response.status).toBe(401);
+    for (const text of [err.message, inspect(err, { depth: 6 }), JSON.stringify({ c: err.config, r: err.response, q: err.request }), logged(spies)]) {
+      expect(text).not.toContain(PASSWORD);
+      expect(text).not.toContain(ENCODED);
+    }
+    expect(err.config.headers.Accept).toBe('application/json');
+  });
+
+  it('keeps the credentials out of the proactive re-login warning', async () => {
+    const spies = logSpies();
+    axiosMock().mockResolvedValueOnce({ data: { data: { token: 'jwt-old' } }, headers: {} });
+    // 900 s token: 800 s later it is inside the refresh window but still valid.
+    const cfg = { ...wazuhAuth, proactiveRefreshSeconds: 120, tokenTTLSeconds: 900 };
+    await service.getToken(cfg, 'conn-wazuh-warn');
+    const later = Date.now() + 800_000;
+    jest.spyOn(Date, 'now').mockReturnValue(later);
+    axiosMock().mockRejectedValueOnce(Object.assign(new Error(`boom ${PASSWORD} ${ENCODED}`), { config: { headers: { Authorization: 'x' } } }));
+    const bundle = await service.getToken(cfg, 'conn-wazuh-warn');
+    expect(bundle.token).toBe('jwt-old');
+    const text = logged(spies);
+    expect(text).toContain('proactive re-login failed');
+    expect(text).not.toContain(PASSWORD);
+    expect(text).not.toContain(ENCODED);
+  });
+
+  it('refuses combinations it cannot honour, without quoting credentials', () => {
+    const cases: Array<[Partial<LoginTokenAuthConfig> & Record<string, unknown>, RegExp]> = [
+      [{ loginBasicAuth: 'true' as unknown as boolean }, /loginBasicAuth must be true or false/],
+      [{ signedJwt: { privateKey: 'k' } }, /cannot be combined with signedJwt/],
+      [{ passwordHashing: { scheme: 'bcrypt', saltSource: { type: 'static', value: 's' } } }, /cannot be combined with passwordHashing/],
+      [{ username: 'a:b' }, /username must not contain ":"/],
+      [{ password: '' }, /authConfig\.password is required/],
+    ];
+    for (const [patch, re] of cases) {
+      let message = '';
+      try {
+        loginBasicAuthHeader({ ...wazuhAuth, ...patch } as LoginTokenAuthConfig);
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message).toMatch(re);
+      expect(message).not.toContain(PASSWORD);
+    }
+    expect(loginBasicAuthHeader({ ...wazuhAuth, passwordHashing: { scheme: 'none' } })?.header).toBe(`Basic ${ENCODED}`);
+    expect(loginBasicAuthHeader({ ...wazuhAuth, loginBasicAuth: false })).toBeUndefined();
+  });
+
+  it('encodes non-ASCII credentials as UTF-8', () => {
+    const h = loginBasicAuthHeader({ ...wazuhAuth, username: 'jos\u00e9', password: 'p\u00e4ss' })!.header;
+    expect(Buffer.from(h.replace(/^Basic /, ''), 'base64').toString('utf8')).toBe('jos\u00e9:p\u00e4ss');
   });
 });
 

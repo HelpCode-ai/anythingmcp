@@ -1171,6 +1171,8 @@ The engine handles salt fetch → bcrypt → login → token cache → proactive
 }
 ```
 
+A login that takes HTTP Basic credentials (Wazuh's `POST /security/user/authenticate`) sets `"loginBasicAuth": true`: the engine sends `Authorization: Basic base64(username:password)` on the login request only (the API calls keep using `headerTemplate`), the password is never offered to the body templates (`${password}` renders empty), and no body is sent without a `loginBody`. An `Authorization` in `loginHeaders` is refused rather than overridden, as are `signedJwt`, bcrypt `passwordHashing` and a username containing `:`; `scripts/validate-adapters.mjs` reports the same mistakes (rule `login-basic-auth`).
+
 See [`docs/connectors/login-token-auth.md`](connectors/login-token-auth.md) for the full field-by-field reference, salt-source types (`fetch` vs `static`), expiry formats (`iso8601` / `unix` / `ttl_seconds`), and re-login policies.
 
 ---
