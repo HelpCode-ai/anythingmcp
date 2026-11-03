@@ -1,6 +1,7 @@
 import { McpEndpointController } from './mcp-endpoint.controller';
 import { toolVisibilityRole } from './mcp-server.service';
 import type { RegisteredTool } from './tool-registry';
+import { withRegistryIndexes } from './registry-test-double';
 
 /**
  * What a connection grant narrows the shared `/mcp` down to.
@@ -44,7 +45,7 @@ function build(
     {
       getConnectorIds: jest.fn(async (id: string) => opts.connectorsByServer?.[id] ?? []),
     } as any,
-    { getAllTools: () => ALL } as any,
+    withRegistryIndexes({ getAllTools: () => ALL }) as any,
     {} as any,
     {
       getAllowedToolIds: jest.fn(async (_sub: string, org: string) =>
@@ -221,7 +222,7 @@ describe('grant-scoped visibility on the shared /mcp', () => {
     const controllerFor = () =>
       new McpEndpointController(
         { getConnectorIds: jest.fn(async () => []) } as any,
-        { getAllTools: () => shared, countByName: () => 1 } as any,
+        withRegistryIndexes({ getAllTools: () => shared, countByName: () => 1 }) as any,
         {} as any,
         { getAllowedToolIds: jest.fn(async () => null) } as any,
         {} as any,

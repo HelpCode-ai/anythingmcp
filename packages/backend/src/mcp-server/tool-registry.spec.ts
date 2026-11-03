@@ -159,4 +159,37 @@ describe('ToolRegistry', () => {
       expect(registry.countByName('shared')).toBe(1);
     });
   });
+
+  describe('organization and connector indexes', () => {
+    const t = (id: string, connectorId: string, organizationId: string) =>
+      makeTool({ id, connectorId, organizationId, name: id });
+
+    it('lists the same tools, in the same order, as filtering the whole registry', () => {
+      const tools = [t('a', 'c1', 'o1'), t('b', 'c2', 'o2'), t('c', 'c3', 'o1'), t('d', 'c1', 'o1')];
+      tools.forEach((x) => registry.registerTool(x));
+      expect(registry.getToolsForOrganization('o1')).toEqual(
+        registry.getAllTools().filter((x) => x.organizationId === 'o1'),
+      );
+      expect(registry.getToolsForConnectors(['c3', 'c1']).map((x) => x.id)).toEqual(['a', 'c', 'd']);
+      expect(registry.getToolsForOrganization('none')).toEqual([]);
+      expect(registry.getToolsForConnectors([])).toEqual([]);
+    });
+
+    it('follows a tool re-registered under another connector or organization', () => {
+      registry.registerTool(t('a', 'c1', 'o1'));
+      registry.registerTool(t('a', 'c2', 'o2'));
+      expect(registry.getToolsForOrganization('o1')).toEqual([]);
+      expect(registry.getToolsForConnectors(['c1'])).toEqual([]);
+      expect(registry.getToolsForOrganization('o2').map((x) => x.connectorId)).toEqual(['c2']);
+    });
+
+    it('drops a connector\'s tools from both indexes on unregister', () => {
+      registry.registerTool(t('a', 'c1', 'o1'));
+      registry.registerTool(t('b', 'c2', 'o1'));
+      registry.unregisterConnectorTools('c1');
+      expect(registry.getToolsForOrganization('o1').map((x) => x.id)).toEqual(['b']);
+      expect(registry.getToolsForConnectors(['c1', 'c2']).map((x) => x.id)).toEqual(['b']);
+    });
+  });
 });
+
