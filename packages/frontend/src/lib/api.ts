@@ -706,6 +706,20 @@ export const setupLinks = {
     }),
 };
 
+/**
+ * The File Search plugin's folder setup, opened from its authorization page
+ * (login.controller.ts): the backend checks the sign-in just made there and
+ * returns a dashboard session on the granted workspace plus the wizard path.
+ */
+export const fileSearchSetup = {
+  openFromAuthorize: (csrf: string, option: string) =>
+    request<{ ok: true; redirect: string; session: SetupLinkSession }>('/auth/file-search/session', {
+      method: 'POST',
+      headers: DASHBOARD_HEADER,
+      body: { csrf, option },
+    }),
+};
+
 // Adapters (built-in connector recipes)
 export type SetupKind = 'none' | 'credentials' | 'oauth_browser';
 

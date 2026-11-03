@@ -3370,6 +3370,15 @@
       "body": "File Search indexes the PDF, Word, Excel and Outlook files on your NAS, server or storage and keeps the index in sync, so the AI finds what is written in them, not only the file names.",
       "cta": "Set up File Search",
       "for": "Opens the wizard for {name}."
+    },
+    "authorize": {
+      "banner": "You are connecting a folder for your AI assistant. When the folder is active, you go back to the chat.",
+      "skip": "Skip and go back to the chat",
+      "opening": "Opening the folder setup…",
+      "openFailedTitle": "The folder setup could not be opened",
+      "openFailed": "This page has expired.",
+      "openFailedHint": "Go back to the chat and connect again, or sign in to the dashboard and set up the folder there.",
+      "openWizard": "Set up the folder in the dashboard"
     }
   },
   "fileShare": {
