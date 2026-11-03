@@ -386,8 +386,7 @@ export default function SettingsUsersPage() {
         <EnterpriseNotice
           edition={edition!}
           title={`Community includes ${edition!.seatLimit} users`}
-          body="Everyone here keeps working. To invite more people, choose a paid plan. Single sign-on and SCIM come with Enterprise."
-          upgrade="plans"
+          body="Community is free for any use, including commercial use. Everyone here keeps working. More users, single sign-on and SCIM come with Enterprise."
         />
       )}
 
