@@ -20,6 +20,8 @@ describe('FileSearchAccessService', () => {
     expect((await make({ cloud: true }).resolve('o1')).allowed).toBe(false);
     const expired = await make({ cloud: true, licences: [{ organizationId: 'o1', plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - day) }] }).resolve('o1');
     expect(expired).toMatchObject({ allowed: false, reason: 'expired' });
+    // Cloud keeps its own plans and text.
+    expect(!expired.allowed && expired.message).toBe('The free trial has ended. File Search continues with a paid plan.');
   });
 
   it('Cloud: a trial and a paid plan get their quotas', async () => {
@@ -94,6 +96,10 @@ describe('FileSearchAccessService', () => {
     expect(running.allowed && running.plan).toBe('trial');
     const ended = await make({ cloud: false, settings: { business_trial_ends_at: new Date(Date.now() - day).toISOString() } }).resolve('o1');
     expect(ended).toMatchObject({ allowed: false, trialAvailable: false });
+    // Self-hosted is sold as Community and Enterprise: no paid-plan upsell.
+    expect(!ended.allowed && ended.message).toBe(
+      'The 30-day trial has ended. File Search continues with AnythingMCP Enterprise (https://anythingmcp.com/contact?plan=enterprise); your index is kept for 30 days.',
+    );
   });
 
   it('Self-hosted: any paid key (not only Business) unlocks it, via the instance key too', async () => {

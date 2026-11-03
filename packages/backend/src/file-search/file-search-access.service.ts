@@ -30,6 +30,8 @@ export const FILE_SEARCH_LOCKED = 'file_search_locked';
 export const FILE_SEARCH_TRIAL_NEEDS_KEY = 'file_search_trial_needs_key';
 /** Why a self-hosted Community instance waits for a licence key, if it does. */
 export type KeyRequired = 'to_start' | 'during_trial' | null;
+/** Self-hosted is sold as Community and Enterprise (on request). */
+const ENTERPRISE_CONTACT_URL = 'https://anythingmcp.com/contact?plan=enterprise';
 const PAID = new Set(['starter', 'team', 'business', 'enterprise']);
 const TRIAL_KEY = 'business_trial_ends_at';
 const CACHE_MS = 30_000;
@@ -158,7 +160,7 @@ export class FileSearchAccessService {
       keyRequired: null,
       message: unused
         ? 'Start the free 30-day trial or activate a licence to use File Search.'
-        : 'The 30-day trial has ended. Activate a licence to continue using File Search; your index is kept for 30 days.',
+        : `The 30-day trial has ended. File Search continues with AnythingMCP Enterprise (${ENTERPRISE_CONTACT_URL}); your index is kept for 30 days.`,
     };
   }
 
