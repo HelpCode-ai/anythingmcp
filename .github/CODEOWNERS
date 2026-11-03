@@ -9,7 +9,7 @@
 /packages/backend/src/catalog.ts  @helpcodeai @D3nisty
 
 # Frontend
-/packages/frontend/     @helpcodeai @mirkopoloni
+/packages/frontend/     @helpcodeai
 
 # Infra & deployment
 /Dockerfile             @helpcodeai
