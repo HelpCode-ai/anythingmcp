@@ -201,6 +201,17 @@ export interface RemoteVerifyResponse {
 }
 
 @Injectable()
+/**
+ * The licence site grants one trial per address. Asked again for an address
+ * whose trial has already ended, it hands that old trial back, expired.
+ */
+export class TrialAlreadyEndedError extends Error {
+  constructor() {
+    super('The free trial for this email has already ended. Choose a plan to continue.');
+    this.name = 'TrialAlreadyEndedError';
+  }
+}
+
 export class LicenseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LicenseService.name);
   private readonly apiBase = LICENSE_API_URL;
@@ -495,14 +506,21 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         throw new Error('Trial licence API did not return a key');
       }
 
+      // An address that already had a trial gets that trial back, and it may
+      // have ended. Store it as expired, not active: the workspace then shows
+      // "trial ended" with the plans, and the repair cron does not ask again.
+      const expiresAt = new Date(data.expiresAt);
+      const ended = expiresAt.getTime() <= Date.now();
+      const status = ended ? 'expired' : 'active';
+
       // Auto-activate the trial key locally
       await this.prisma.license.upsert({
         where: { licenseKey: data.licenseKey },
         update: {
           plan: 'trial',
-          status: 'active',
+          status,
           features: data.features || undefined,
-          expiresAt: new Date(data.expiresAt),
+          expiresAt,
           lastVerifiedAt: new Date(),
           instanceId,
           organizationId: organizationId || undefined,
@@ -510,14 +528,19 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         create: {
           licenseKey: data.licenseKey,
           plan: 'trial',
-          status: 'active',
+          status,
           features: data.features || undefined,
-          expiresAt: new Date(data.expiresAt),
+          expiresAt,
           lastVerifiedAt: new Date(),
           instanceId,
           organizationId: organizationId || undefined,
         },
       });
+
+      if (ended) {
+        this.logger.log(`Trial for ${maskEmail(email)} had already ended; stored as expired.`);
+        throw new TrialAlreadyEndedError();
+      }
 
       // Self-hosted = single tenant, the instance-wide pointer is meaningful.
       // Cloud = multi tenant, a global pointer would let one org's verify
@@ -533,6 +556,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         trialDaysLeft: data.trialDaysLeft,
       };
     } catch (err: any) {
+      if (err instanceof TrialAlreadyEndedError) throw err;
       if (err.response?.status === 409) {
         throw new Error('A trial license already exists for this email.');
       }
