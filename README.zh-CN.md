@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 Claude、ChatGPT、Copilot 和 Gemini 连接到 ERP、电子商务、REST、SOAP 和 SQL 系统以及你的文件服务器：691 个连接器，还有企业记忆、技能和文件搜索。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.zh-CN.png" alt="AnythingMCP 将 Claude、ChatGPT、Copilot 和 Gemini 连接到 ERP、电子商务、REST、SOAP 和 SQL 系统以及你的文件服务器：695 个连接器，还有企业记忆、技能和文件搜索。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：成为你企业大脑的开源 MCP 网关</h1>
@@ -20,7 +20,7 @@
 <p align="center">
   <strong>AnythingMCP 是一个开源、可自行托管的 MCP 网关，无需编写 MCP 服务器，即可将 Claude、ChatGPT、Copilot 和 Gemini 连接到你公司运行的软件以及文件服务器上的文档。</strong><br/>
   在网关之上，它还为你维护企业大脑：一张描述各系统如何关联的知识图谱、AI 技能和企业记忆，由所有 AI 客户端共享，并按每个用户的角色限制访问。<br/>
-  691 个现成连接器，提供 12,000 多个工具，涵盖 SAP、Odoo、weclapp 和 Amazon Seller 等；其中 34 个无需 API 密钥。
+  695 个现成连接器，提供 12,000 多个工具，涵盖 SAP、Odoo、weclapp 和 Amazon Seller 等；其中 35 个无需 API 密钥。
 </p>
 
 <p align="center">
@@ -53,16 +53,16 @@ https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
 | | 作用 | 版本 |
 |---|---|---|
-| **所有系统，一个端点** | 691 个目录连接器，或你自己的 REST/OpenAPI、SOAP、GraphQL、OData、SQL、IMAP/SMTP 或 MCP 数据源。工具在运行时注册。[连接器](#connect-any-api-soap-service-or-database) | 全部 |
-| **File Search（文件搜索）** | 为 SFTP、FTP/FTPS、WebDAV（Nextcloud、NAS）、S3 或网络共享建立索引：PDF 的每一页、带列名的 Excel 行、Word、PowerPoint，以及带附件的 Outlook 邮件。AI 回答时会注明文件、页码和日期。[File Search](docs/connectors/file-search.md) | Cloud、付费许可证 |
-| **File Share（文件分享）** | 为你文件夹中的文件或 AI 生成的文件（CSV 导出、报告）创建临时下载链接，可选内部或公开，支持过期时间和撤销。[File Share](docs/connectors/file-search.md) | Cloud、付费许可证 |
+| **所有系统，一个端点** | 692 个目录连接器，或你自己的 REST/OpenAPI、SOAP、GraphQL、OData、SQL、IMAP/SMTP 或 MCP 数据源。工具在运行时注册。[连接器](#connect-any-api-soap-service-or-database) | 全部 |
+| **File Search（文件搜索）** | 为 SFTP、FTP/FTPS、WebDAV（Nextcloud、NAS）、S3 或网络共享建立索引：PDF 的每一页、带列名的 Excel 行、Word、PowerPoint，以及带附件的 Outlook 邮件。AI 回答时会注明文件、页码和日期。[File Search](docs/connectors/file-search.md) | Cloud；自行托管需 Enterprise |
+| **File Share（文件分享）** | 为你文件夹中的文件或 AI 生成的文件（CSV 导出、报告）创建临时下载链接，可选内部或公开，支持过期时间和撤销。[File Share](docs/connectors/file-search.md) | Cloud；自行托管需 Enterprise |
 | **企业记忆** | 在一个 AI 客户端中保存的事实和偏好，可以在任何其他客户端中再次找到：在 Claude 里说过一次，Copilot 也能用上。分为个人和公司两种范围，支持文件夹和角色限制。[记忆](docs/memory.md) | Enterprise |
 | **AI 技能** | 智能体遵循的操作流程，可以手动编写，也可以从真实请求和已修复的错误中学习，并由管理员批准。[AI 技能](docs/knowledge-graph.md#ai-skills) | 全部 |
 | **知识图谱** | 描述各系统如何关联，让智能体无需提示就能把一个系统中的客户与另一个系统中的订单对应起来。[知识图谱](docs/knowledge-graph.md) | 全部 |
 | **Code Mode** | 一段在隔离沙箱中调用多个工具的简短程序，沙箱中没有任何密钥，也无法访问网络，五步查询因此变成一次调用。[Code Mode](docs/code-mode.md) | 全部；写入权限需 Enterprise |
 | **治理** | 角色和按工具设置的权限、在字段到达模型之前将其删除的响应映射，以及记录每次调用的审计日志。从你的目录服务接入 SSO 和 SCIM。[安全](#security-and-governance) | 全部；SSO/SCIM 需 Enterprise |
 
-自行托管的 Community 版最多可供 3 名活跃用户免费使用。付费许可证和 30 天试用位于 **Settings → License**；如需 Enterprise，请发邮件至 [info@helpcode.ai](mailto:info@helpcode.ai) 或访问 [anythingmcp.com/enterprise](https://anythingmcp.com/enterprise)。
+自行托管的 Community 版基于 AGPL-3.0，可免费用于任何用途，包括商业用途，最多 3 名活跃用户，连接器和 MCP 服务器数量不限。更多用户、单点登录、SCIM、30 天试用之后的 File Search 以及技术支持由 Enterprise 提供，需联系我们获取报价：[联系我们](https://anythingmcp.com/contact?plan=enterprise)。管理员可以在 **Settings → License** 中试用单点登录和 SCIM 30 天。现有的 Starter 和 Team 许可证密钥仍可继续使用。
 
 ---
 
@@ -138,7 +138,7 @@ docker compose up -d
 
 ## 连接器目录
 
-共 691 个适配器，提供 12,000 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
+共 695 个适配器，提供 12,000 多个工具。每个适配器都在 [anythingmcp.com/zh/guides](https://anythingmcp.com/zh/guides) 上提供七种语言的配置指南。
 
 | 类别 | 示例 |
 |---|---|

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は Claude、ChatGPT、Copilot、Gemini を ERP、E コマース、REST、SOAP、SQL の各システムと社内のファイルサーバーにつなぎます。691 のコネクターに加え、社内メモリ、AI スキル、ファイル検索も備えています。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は Claude、ChatGPT、Copilot、Gemini を ERP、E コマース、REST、SOAP、SQL の各システムと社内のファイルサーバーにつなぎます。695 のコネクターに加え、社内メモリ、AI スキル、ファイル検索も備えています。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：企業の頭脳になるオープンソースの MCP ゲートウェイ</h1>
@@ -20,7 +20,7 @@
 <p align="center">
   <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、Claude、ChatGPT、Copilot、Gemini を、自社で使っているソフトウェアやファイルサーバー上の文書につなぎます。</strong><br/>
   ゲートウェイの上には企業の頭脳を保持します。システム同士のつながりを表すナレッジグラフ、AI スキル、社内メモリです。すべての AI クライアントで共有され、ユーザーごとのロールで範囲が制限されます。<br/>
-  SAP、Odoo、weclapp、Amazon Seller などを含む 691 種類の既製アダプターで 12,000 以上のツールを提供しており、うち 34 は API キー不要です。
+  SAP、Odoo、weclapp、Amazon Seller などを含む 695 種類の既製アダプターで 12,000 以上のツールを提供しており、うち 35 は API キー不要です。
 </p>
 
 <p align="center">
@@ -53,16 +53,16 @@ https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
 | | 内容 | エディション |
 |---|---|---|
-| **すべてのシステムを 1 つのエンドポイントで** | 691 のカタログコネクター、または独自の REST/OpenAPI、SOAP、GraphQL、OData、SQL、IMAP/SMTP、MCP のソース。ツールは実行時に登録されます。[コネクター](#connect-any-api-soap-service-or-database) | すべて |
-| **File Search（ファイル検索）** | SFTP、FTP/FTPS、WebDAV（Nextcloud、NAS）、S3、ネットワーク共有をインデックス化します。PDF の全ページ、列名付きの Excel の行、Word、PowerPoint、添付ファイル付きの Outlook メールが対象です。AI はファイル、ページ、日付を示して回答します。[File Search](docs/connectors/file-search.md) | Cloud、有料ライセンス |
-| **File Share（ファイル共有）** | フォルダー内のファイルや AI が書き出したファイル（CSV エクスポート、レポート）の一時的なダウンロードリンク。社内向けにも公開にもでき、有効期限と取り消しに対応します。[File Share](docs/connectors/file-search.md) | Cloud、有料ライセンス |
+| **すべてのシステムを 1 つのエンドポイントで** | 692 のカタログコネクター、または独自の REST/OpenAPI、SOAP、GraphQL、OData、SQL、IMAP/SMTP、MCP のソース。ツールは実行時に登録されます。[コネクター](#connect-any-api-soap-service-or-database) | すべて |
+| **File Search（ファイル検索）** | SFTP、FTP/FTPS、WebDAV（Nextcloud、NAS）、S3、ネットワーク共有をインデックス化します。PDF の全ページ、列名付きの Excel の行、Word、PowerPoint、添付ファイル付きの Outlook メールが対象です。AI はファイル、ページ、日付を示して回答します。[File Search](docs/connectors/file-search.md) | Cloud、セルフホストは Enterprise |
+| **File Share（ファイル共有）** | フォルダー内のファイルや AI が書き出したファイル（CSV エクスポート、レポート）の一時的なダウンロードリンク。社内向けにも公開にもでき、有効期限と取り消しに対応します。[File Share](docs/connectors/file-search.md) | Cloud、セルフホストは Enterprise |
 | **社内メモリ** | ある AI クライアントで保存した事実や好みを、別のクライアントでも見つけられます。Claude で一度伝えたことを Copilot が使います。個人用と会社用の範囲があり、フォルダーとロールで制限できます。[メモリ](docs/memory.md) | Enterprise |
 | **AI スキル** | エージェントが従う手順です。手で書くか、実際のリクエストや修正したエラーから学習し、管理者が承認します。[AI スキル](docs/knowledge-graph.md#ai-skills) | すべて |
 | **ナレッジグラフ** | システム同士のつながりです。エージェントは指示されなくても、あるシステムの顧客を別のシステムの注文と結び付けられます。[ナレッジグラフ](docs/knowledge-graph.md) | すべて |
 | **Code Mode** | 機密情報もネットワークもない隔離されたサンドボックスで、複数のツールを呼び出す短いプログラムを 1 つ実行します。5 段階の照会が 1 回の呼び出しで済みます。[Code Mode](docs/code-mode.md) | すべて（書き込みは Enterprise） |
 | **ガバナンス** | ロールとツールごとの権限、モデルに届く前にフィールドを削除するレスポンスマッピング、すべての呼び出しの監査ログ。ディレクトリと連携する SSO と SCIM。[セキュリティ](#security-and-governance) | すべて（SSO/SCIM は Enterprise） |
 
-セルフホストの Community エディションは、アクティブユーザー 3 人まで無料です。有料ライセンスと 30 日間のトライアルは **Settings → License** から利用できます。Enterprise については [info@helpcode.ai](mailto:info@helpcode.ai) までご連絡いただくか、[anythingmcp.com/enterprise](https://anythingmcp.com/enterprise) をご覧ください。
+セルフホストの Community エディションは AGPL-3.0 のもとで、商用利用を含むあらゆる用途に無料で使えます。アクティブユーザーは 3 人まで、コネクターと MCP サーバーは無制限です。ユーザーの追加、シングルサインオン、SCIM、30 日間のトライアル後の File Search、サポートは Enterprise で提供します。Enterprise はお問い合わせベースです：[お問い合わせ](https://anythingmcp.com/contact?plan=enterprise)。管理者は **Settings → License** でシングルサインオンと SCIM を 30 日間試せます。既存の Starter と Team のライセンスキーは引き続き使えます。
 
 ---
 
@@ -138,7 +138,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 ## コネクターカタログ
 
-691 個のアダプターで 12,000 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
+695 個のアダプターで 12,000 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
 
 | カテゴリー | 例 |
 |---|---|

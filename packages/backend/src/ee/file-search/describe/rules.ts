@@ -1,5 +1,7 @@
 // Licensed under the AnythingMCP Commercial License, see packages/backend/src/ee/LICENSE.
-import { TYPE_GROUPS } from '../../../file-search/file-search.types';
+import { TYPE_GROUPS, VIEWABLE_EXTENSIONS } from '../../../file-search/file-search.types';
+
+const VIEWABLE = [...VIEWABLE_EXTENSIONS];
 
 /**
  * The description of a folder without AI (#1385): built from the scan only.
@@ -182,6 +184,9 @@ export function describeByRules(f: ScanFacts): Description {
   if (terms.length) lines.push(`Frequent terms: ${terms.join(', ')}.`);
   lines.push('');
   lines.push(`How to search: ${f.toolPrefix}_find for a file or folder name${pattern?.shape.includes('<number>') ? ' (folder names include a number: search by name or by number)' : ''}, ${f.toolPrefix}_grep for exact codes and numbers, ${f.toolPrefix}_search for topics. Read the matching pages with ${f.toolPrefix}_read before answering, and name the file and its date.`);
+  if (VIEWABLE.some((ext) => f.types[ext]?.files)) {
+    lines.push(`Drawings, stamps, signatures and title blocks are often not in the text: ${f.toolPrefix}_view_page shows a PDF page or an image as a picture.`);
+  }
   const caveats: string[] = [];
   if (f.totals.nameOnly > 0) caveats.push(`${f.totals.nameOnly} files have no readable text (scans, images, other types) and are found by name only.`);
   if (f.excludedArchives.length) caveats.push(`Archive folders are not indexed (${groupFolders(f.excludedArchives)}): older versions are not available here.`);

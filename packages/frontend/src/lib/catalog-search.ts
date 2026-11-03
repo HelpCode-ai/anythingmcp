@@ -26,9 +26,36 @@
  *    below every direct match.
  * 4. Partial matches, only for a query of several words that matched nothing
  *    as a whole: the adapters matching the most words ("etsy openplz").
+ * 5. A word of a query of several words that starts the slug or the name of
+ *    an app goes first: "instagram direct message" is Instagram, "etsy
+ *    listings search" is Etsy, even when another adapter matches more of the
+ *    other words in its description. The other words only say what to do
+ *    with the app. A word starting the names of more than MAX_NAMED adapters
+ *    ("google", "microsoft") names no single app and moves nothing, and a
+ *    first result matching the whole query by name ("telegram bot") stays.
  *
  * A one-letter query ("x") matches only an adapter whose slug, name or alias
  * is exactly that letter.
+ *
+ * File Search suggestions (FILE_SEARCH_INTENTS): a query about a storage
+ * system or about documents ("synology", "nas", "Dateiserver", "pdf") also
+ * brings the File Search entries that read it, so people learn the AI can
+ * search inside the files and not only call the system's API. They go first,
+ * or right after a result named exactly like the query ("synology": the DSM
+ * API connector, then Synology File Search). Only entries the caller passed
+ * in are suggested: on the Cloud the self-hosted "network-folder" is not
+ * among them. Cloud drives (SharePoint, OneDrive, Google Drive, Dropbox) are
+ * not File Search sources and get no suggestion.
+ *
+ * A word about documents in general ("pdf", "Dokumente") suggests nothing
+ * when another word names an app ("lexware dokumente", "telegram send
+ * document"): those documents are in that app. And a query about something
+ * else ("amazon", "excel") ranks a File Search entry it only meets through
+ * an alias ("Amazon S3") below the apps it names, and leaves out one it only
+ * meets in the description ("PDF, Excel, Word and Outlook files"). Such a
+ * query ranks the entry as an app only when every word names it, and the
+ * "File Search" in its name counts as an alias: "web search" is Brave Search,
+ * not "WebDAV / Nextcloud (File Search)".
  */
 
 export interface CatalogSearchEntry {
@@ -42,13 +69,18 @@ export interface CatalogSearchEntry {
   priority?: number;
 }
 
-/** How a result matched: see the steps above. */
-export type CatalogMatchKind = 'direct' | 'fuzzy' | 'partial';
+/**
+ * How a result matched: see the steps above. 'suggested' is a File Search
+ * entry the query did not match by itself, added for a storage query.
+ */
+export type CatalogMatchKind = 'direct' | 'fuzzy' | 'partial' | 'suggested';
 
 export interface CatalogSearchHit<T> {
   entry: T;
   match: CatalogMatchKind;
   score: number;
+  /** Placed by a File Search suggestion (see FILE_SEARCH_INTENTS). */
+  suggested?: boolean;
 }
 
 export interface CatalogSearchResult<T> {
@@ -59,6 +91,11 @@ export interface CatalogSearchResult<T> {
   missing: string[];
   /** How the first result matched, or 'none' when nothing did. */
   match: CatalogMatchKind | 'none';
+  /**
+   * File Search entries suggested for a storage or document query, best
+   * first; they are among `hits` too. Empty when the query is about neither.
+   */
+  fileSearch: T[];
 }
 
 /** Fewer direct results than this, and fuzzy matches fill up to it. */
@@ -67,6 +104,76 @@ export const MIN_RESULTS = 3;
 export const MAX_FUZZY = 5;
 /** At most this many partial results. */
 export const MAX_PARTIAL = 10;
+/** At most this many File Search suggestions. */
+export const MAX_FILE_SEARCH = 3;
+/** A word starting more names than this ("google") names no single app (step 5). */
+export const MAX_NAMED = 5;
+
+/**
+ * Storage and document queries, and the File Search entries that answer
+ * them, best first. A trigger is one word or several written together
+ * ("file server" and "fileserver" are both "fileserver"), compared without
+ * accents, case or punctuation, and matched against consecutive query words
+ * (stopwords included: "server" is one). Only the systems File Search reads:
+ * SFTP, FTP/FTPS, WebDAV (Nextcloud, ownCloud), S3, the NAS presets,
+ * Fritz!Box, Hetzner Storage Box and, self-hosted, a network folder.
+ */
+export const FILE_SEARCH_INTENTS: ReadonlyArray<{
+  triggers: readonly string[];
+  slugs: readonly string[];
+  /** Documents in general, not a storage system: yields to a word naming an app. */
+  generic?: boolean;
+}> = [
+  { triggers: ['synology', 'diskstation', 'dsm'], slugs: ['synology-file-search'] },
+  { triggers: ['qnap', 'qts', 'quts', 'qutshero'], slugs: ['qnap-file-search'] },
+  { triggers: ['nextcloud', 'storageshare'], slugs: ['nextcloud-file-search', 'webdav'] },
+  { triggers: ['owncloud'], slugs: ['owncloud-file-search', 'webdav'] },
+  { triggers: ['fritzbox', 'fritz', 'fritznas', 'myfritz'], slugs: ['fritzbox-file-search'] },
+  { triggers: ['storagebox', 'hetznerstoragebox'], slugs: ['hetzner-storage-box'] },
+  {
+    triggers: [
+      's3', 'amazons3', 'awss3', 'minio', 'wasabi', 'bucket', 'buckets', 'objectstorage',
+      'cloudflarer2', 'backblaze', 'backblazeb2', 'digitaloceanspaces',
+    ],
+    slugs: ['s3-file-search'],
+  },
+  { triggers: ['sftp', 'ssh', 'scp'], slugs: ['sftp'] },
+  { triggers: ['ftp', 'ftps'], slugs: ['ftp'] },
+  { triggers: ['webdav', 'hidrive'], slugs: ['webdav'] },
+  {
+    triggers: ['nas', 'nasshare', 'nasserver', 'nassystem'],
+    slugs: ['synology-file-search', 'qnap-file-search', 'network-folder', 'sftp'],
+  },
+  {
+    triggers: [
+      'fileserver', 'dateiserver', 'netzlaufwerk', 'netzlaufwerke', 'laufwerk', 'networkdrive',
+      'networkshare', 'networkfolder', 'netzwerkordner', 'netzwerkfreigabe', 'netzwerkspeicher',
+      'smb', 'cifs', 'nfs', 'samba', 'windowsshare', 'cartelladirete', 'serverdeifile',
+    ],
+    slugs: ['network-folder', 'sftp', 'webdav'],
+  },
+  {
+    triggers: [
+      'document', 'documents', 'dokument', 'dokumente', 'documento', 'documenti', 'documentos',
+      'pdf', 'pdfs', 'files', 'dateien', 'dateiablage', 'filesearch', 'dateisuche',
+      'volltextsuche', 'fulltextsearch',
+    ],
+    slugs: ['network-folder', 'sftp', 'webdav'],
+    generic: true,
+  },
+];
+
+/** Every File Search entry: the ones FILE_SEARCH_INTENTS suggests. */
+const FILE_SEARCH_SLUGS = new Set(FILE_SEARCH_INTENTS.flatMap((x) => x.slugs));
+
+/** The "File Search" in each such entry's slug and name: an alias, not a name word. */
+const FILE_SEARCH_MARKERS = new Set(['file', 'search']);
+
+/**
+ * Cloud drives: File Search does not read them, they have connectors of
+ * their own. A query naming one gets no File Search suggestion.
+ */
+const NOT_FILE_SEARCH = ['sharepoint', 'onedrive', 'googledrive', 'gdrive', 'dropbox', 'icloud'];
 
 /**
  * Words that do not name an app, in the languages people search in (en, de,
@@ -103,6 +210,9 @@ const SCORE = {
   aliasPrefix: 35,
   text: 10,
 } as const;
+
+/** Scores of a match on the slug or name, as opposed to an alias or other text. */
+const NAME_SCORES = new Set<number>([SCORE.phrase, SCORE.word, SCORE.prefix]);
 
 function fold(value: string): string {
   return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -209,6 +319,8 @@ interface Prepared<T> {
   words: string[];
   aliasWords: string[];
   haystack: string;
+  /** First word of the slug and of the name: "whatsapp" for WhatsApp Business. */
+  leads: string[];
 }
 
 /** Prepared once per entry object: the store searches on every keystroke. */
@@ -224,14 +336,20 @@ function prepare<T extends CatalogSearchEntry>(entry: T): Prepared<T> {
 
 function buildPrepared<T extends CatalogSearchEntry>(entry: T): Prepared<T> {
   const aliases = (entry.aliases ?? []).filter((a) => typeof a === 'string' && a.trim());
-  const nameWords = new Set([...wordsOf(entry.slug), ...wordsOf(entry.name)]);
+  const allNameWords = [...wordsOf(entry.slug), ...wordsOf(entry.name)];
+  // "Nextcloud (File Search)": "search" alone does not name it ("web search").
+  const markers = FILE_SEARCH_SLUGS.has(entry.slug) ? allNameWords.filter((w) => FILE_SEARCH_MARKERS.has(w)) : [];
+  const nameWords = new Set(allNameWords.filter((w) => !markers.includes(w)));
   return {
     entry,
     phrases: [compact(entry.slug), compact(entry.name)].filter(Boolean),
     aliasPhrases: aliases.map(compact).filter(Boolean),
     words: [...nameWords],
-    aliasWords: [...new Set(aliases.flatMap(wordsOf))].filter((w) => !nameWords.has(w)),
+    aliasWords: [...new Set([...markers, ...aliases.flatMap(wordsOf)])].filter((w) => !nameWords.has(w)),
     haystack: haystackOf(entry.text ?? []),
+    leads: [
+      ...new Set([compact(entry.slug.split('-')[0] ?? ''), compact(fold(entry.name).trim().split(/\s+/)[0] ?? '')]),
+    ].filter(Boolean),
   };
 }
 
@@ -281,6 +399,8 @@ interface Scored<T> {
   /** Query words matched only fuzzily, and their summed distance. */
   fuzzy: number;
   distance: number;
+  /** A File Search entry a query about something else met only through an alias. */
+  weak?: boolean;
 }
 
 function byRank<T extends CatalogSearchEntry>(a: Scored<T>, b: Scored<T>): number {
@@ -292,6 +412,69 @@ function byRank<T extends CatalogSearchEntry>(a: Scored<T>, b: Scored<T>): numbe
 }
 
 /**
+ * The File Search slugs a query asks for (FILE_SEARCH_INTENTS), best first,
+ * and the query words that triggered them. Nothing for a cloud drive query.
+ * `generic` when only words about documents in general triggered them.
+ */
+export function fileSearchIntent(query: string): { slugs: string[]; words: string[]; generic: boolean } {
+  const words = queryWords(query).map(compact).filter(Boolean);
+  const joined = words.join('');
+  if (!words.length || NOT_FILE_SEARCH.some((w) => joined.includes(w))) return { slugs: [], words: [], generic: false };
+  const slugs: string[] = [];
+  const used = new Set<string>();
+  let generic = true;
+  // In query order: "synology nas" suggests Synology first.
+  for (let i = 0; i < words.length; i++) {
+    for (let j = Math.min(words.length, i + 3); j > i; j--) {
+      const run = words.slice(i, j).join('');
+      const intent = FILE_SEARCH_INTENTS.find((x) => x.triggers.includes(run));
+      if (!intent) continue;
+      for (const slug of intent.slugs) if (!slugs.includes(slug)) slugs.push(slug);
+      for (const w of words.slice(i, j)) used.add(w);
+      if (!intent.generic) generic = false;
+      break;
+    }
+  }
+  return { slugs, words: [...used], generic: slugs.length > 0 && generic };
+}
+
+/**
+ * Step 5: the apps a query word names, in the order of the words, ahead of
+ * the other results. An app the other words did not match comes in as a
+ * partial match. File Search entries, and the words that ask for them
+ * ("storage box"), are left to FILE_SEARCH_INTENTS. A first result that
+ * matches the query as a whole or by several names ("telegram bot", "google
+ * calendar events") stays first.
+ */
+function namedFirst<T extends CatalogSearchEntry>(
+  entries: readonly T[],
+  terms: readonly string[],
+  hits: CatalogSearchHit<T>[],
+  scored: readonly Scored<T>[],
+): CatalogSearchHit<T>[] {
+  if (hits[0]?.match === 'direct' && hits[0].score >= SCORE.phrase) return hits;
+  const named: T[] = [];
+  for (const term of terms) {
+    const word = compact(term);
+    const apps = entries.filter((e) => !FILE_SEARCH_SLUGS.has(e.slug) && prepare(e).leads.includes(word));
+    if (!apps.length || apps.length > MAX_NAMED) continue;
+    const rank = (e: T) => scored.find((s) => s.entry === e) ?? { entry: e, score: 0, direct: 0, fuzzy: 0, distance: 0 };
+    for (const app of apps.sort((a, b) => byRank(rank(a), rank(b)))) if (!named.includes(app)) named.push(app);
+  }
+  if (!named.length) return hits;
+  const front = named.map(
+    (entry): CatalogSearchHit<T> =>
+      hits.find((h) => h.entry === entry) ?? {
+        entry,
+        match: 'partial',
+        score: scored.find((s) => s.entry === entry)?.score ?? 0,
+      },
+  );
+  const moved = new Set<T>(named);
+  return [...front, ...hits.filter((h) => !moved.has(h.entry))];
+}
+
+/**
  * Searches the entries. Entries must already be the ones this deployment
  * offers: unlisted and hidden adapters are filtered out by the caller.
  */
@@ -299,13 +482,27 @@ export function searchCatalog<T extends CatalogSearchEntry>(
   entries: readonly T[],
   query: string,
 ): CatalogSearchResult<T> {
-  const terms = searchTerms(query);
-  if (!terms.length) return { hits: [], terms, missing: [], match: 'none' };
+  let terms = searchTerms(query);
+  if (!terms.length) return { hits: [], terms, missing: [], match: 'none', fileSearch: [] };
 
   // The whole query as one name: "mercado livre", "amo crm", "telegram bot".
   const wholeQuery = [compact(query), compact(terms.join(''))].filter((q) => q.length > 1);
   const matchedTerms = new Set<string>();
   const scored: Scored<T>[] = [];
+
+  let intent = fileSearchIntent(query);
+  if (intent.generic) {
+    // "lexware dokumente": the documents are in Lexware, not on a file server.
+    const others = terms.filter((t) => !intent.words.includes(compact(t)));
+    const namesApp = others.some((t) =>
+      entries.some((e) => !FILE_SEARCH_SLUGS.has(e.slug) && directScore(prepare(e), t) >= SCORE.aliasPrefix),
+    );
+    if (namesApp) {
+      // An app and a word about its documents, "excel files", is that app.
+      if (others.length === 1) terms = others;
+      intent = { slugs: [], words: [], generic: false };
+    }
+  }
 
   for (const entry of entries) {
     const p = prepare(entry);
@@ -313,12 +510,19 @@ export function searchCatalog<T extends CatalogSearchEntry>(
     let direct = 0;
     let fuzzy = 0;
     let distance = 0;
+    let byAlias = false;
+    // Query words matched on the name: a File Search entry is the subject only
+    // when every word names it ("web search" names WebDAV by "web" alone).
+    const fs = FILE_SEARCH_SLUGS.has(entry.slug);
+    let named = 0;
     for (const term of terms) {
       const s = directScore(p, term);
       if (s > 0) {
         score += s;
         direct++;
         matchedTerms.add(term);
+        if (NAME_SCORES.has(s)) named++;
+        else if (s !== SCORE.text) byAlias = true;
         continue;
       }
       const d = fuzzyDistance(p, term);
@@ -327,15 +531,34 @@ export function searchCatalog<T extends CatalogSearchEntry>(
         fuzzy++;
         distance += d;
         matchedTerms.add(term);
+        named++;
       }
     }
-    if (wholeQuery.some((q) => p.phrases.includes(q))) score += SCORE.phrase;
-    else if (wholeQuery.some((q) => p.aliasPhrases.includes(q))) score += SCORE.aliasPhrase;
-    if (direct + fuzzy > 0) scored.push({ entry, score, direct, fuzzy, distance });
+    if (wholeQuery.some((q) => p.phrases.includes(q))) {
+      score += SCORE.phrase;
+      named = terms.length;
+    } else if (wholeQuery.some((q) => p.aliasPhrases.includes(q))) {
+      score += SCORE.aliasPhrase;
+      byAlias = true;
+    }
+    if (direct + fuzzy === 0) continue;
+    if (fs && !intent.slugs.length && named < terms.length) {
+      // "amazon", "excel", "web search": a query about something else.
+      // Through an alias ("Amazon S3") or one word of several the entry goes
+      // below the apps the query names; through the description alone
+      // ("PDF, Excel, Word files") it is left out.
+      if (named) byAlias = true;
+      if (!byAlias) continue;
+      scored.push({ entry, score: Math.min(score, SCORE.text - 1), direct, fuzzy, distance, weak: true });
+      continue;
+    }
+    scored.push({ entry, score, direct, fuzzy, distance });
   }
 
   const all = terms.length;
-  const direct = scored.filter((s) => s.direct === all).sort(byRank);
+  const direct = scored.filter((s) => s.direct === all && !s.weak).sort(byRank);
+  // After the fuzzy matches too: "hero" is more likely a typo than QuTS hero.
+  const weak = scored.filter((s) => s.direct === all && s.weak).sort(byRank);
   let fuzzy: Scored<T>[] = [];
   if (direct.length < MIN_RESULTS) {
     const room = direct.length ? MIN_RESULTS - direct.length : MAX_FUZZY;
@@ -345,21 +568,52 @@ export function searchCatalog<T extends CatalogSearchEntry>(
       .slice(0, room);
   }
   let partial: Scored<T>[] = [];
-  if (!direct.length && !fuzzy.length && all > 1) {
+  if (!direct.length && !fuzzy.length && !weak.length && all > 1) {
     partial = scored
-      .sort((a, b) => b.direct + b.fuzzy - (a.direct + a.fuzzy) || b.direct - a.direct || byRank(a, b))
+      .sort(
+        (a, b) =>
+          b.direct + b.fuzzy - (a.direct + a.fuzzy) ||
+          Number(!!a.weak) - Number(!!b.weak) ||
+          b.direct - a.direct ||
+          byRank(a, b),
+      )
       .slice(0, MAX_PARTIAL);
   }
 
-  const hits: CatalogSearchHit<T>[] = [
+  let hits: CatalogSearchHit<T>[] = [
     ...direct.map((s) => ({ entry: s.entry, match: 'direct' as const, score: s.score })),
     ...fuzzy.map((s) => ({ entry: s.entry, match: 'fuzzy' as const, score: s.score })),
+    ...weak.map((s) => ({ entry: s.entry, match: 'direct' as const, score: s.score })),
     ...partial.map((s) => ({ entry: s.entry, match: 'partial' as const, score: s.score })),
   ];
+
+  if (terms.length > 1) hits = namedFirst(entries, terms.filter((t) => !intent.words.includes(compact(t))), hits, scored);
+
+  const fileSearch = intent.slugs
+    .map((slug) => entries.find((e) => e.slug === slug))
+    .filter((e): e is T => !!e)
+    .slice(0, MAX_FILE_SEARCH);
+  if (fileSearch.length) {
+    const picked = new Set<T>(fileSearch);
+    const suggestedHits = fileSearch.map(
+      (entry): CatalogSearchHit<T> => ({
+        ...(hits.find((h) => h.entry === entry) ?? { entry, match: 'suggested' as const, score: 0 }),
+        suggested: true,
+      }),
+    );
+    const rest = hits.filter((h) => !picked.has(h.entry));
+    // A result named after the query, or matching it as a whole word ("synology",
+    // the DSM API; "documents", a DMS), keeps the first place.
+    const lead = rest[0] && rest[0] === hits[0] && rest[0].match === 'direct' && rest[0].score >= SCORE.word ? [rest[0]] : [];
+    hits = [...lead, ...suggestedHits, ...rest.slice(lead.length)];
+    for (const t of terms) if (intent.words.includes(compact(t))) matchedTerms.add(t);
+  }
+
   return {
     hits,
     terms,
     missing: terms.filter((t) => !matchedTerms.has(t)),
     match: hits.length ? hits[0].match : 'none',
+    fileSearch,
   };
 }

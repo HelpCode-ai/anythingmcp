@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Docker image tag to deploy (default: latest)"
+        description: "Docker image tag to deploy, e.g. a short sha (default: latest). This exact image goes live."
         required: false
         default: "latest"
         type: string
@@ -24,6 +24,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check the image tag
+        env:
+          DEPLOY_TAG: ${{ inputs.tag }}
+        run: |
+          # The tag is passed to a root shell on the droplet: allow only the
+          # characters a Docker tag can have.
+          if ! printf '%s' "$DEPLOY_TAG" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+            echo "::error::invalid image tag: $DEPLOY_TAG"
+            exit 1
+          fi
+
       - uses: actions/checkout@v6
 
       - name: Copy config files to server
@@ -41,11 +52,12 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.ONBOARDING_CRON_SECRET }}
           LICENSE_SERVICE_TOKEN: ${{ secrets.LICENSE_SERVICE_TOKEN }}
+          DEPLOY_TAG: ${{ inputs.tag }}
         with:
           host: ${{ secrets.CLOUD_HOST }}
           username: root
           key: ${{ secrets.CLOUD_SSH_KEY }}
-          envs: CRON_SECRET,LICENSE_SERVICE_TOKEN
+          envs: CRON_SECRET,LICENSE_SERVICE_TOKEN,DEPLOY_TAG
           # The action's default is 10m. A release can take longer (up to
           # 5 min waiting for the new containers, the site checks, up to
           # 2 min draining the old ones), and a timeout mid-release would
@@ -56,11 +68,19 @@ jobs:
             set -e
             cd /opt/anythingmcp-cloud
 
-            # Pull the requested tag AND refresh :latest, since
-            # docker-compose.cloud.yml references :latest. Without this
-            # the local :latest tag can point to an older image.
-            docker pull helpcodeai/anythingmcp:${{ inputs.tag }}
-            docker pull helpcodeai/anythingmcp:latest
+            # docker-compose.cloud.yml runs the local :latest, so point it at
+            # the requested image. Until 2026-11-03 this step pulled the tag
+            # AND :latest from Docker Hub, so the tag was ignored: a rollback
+            # to a short sha deployed whatever :latest was on Docker Hub
+            # (main, after a release). The local :latest now means "the image
+            # this deploy chose"; release.sh puts back the previous one if the
+            # release fails.
+            DEPLOY_TAG="${DEPLOY_TAG:-latest}"
+            docker pull "helpcodeai/anythingmcp:${DEPLOY_TAG}"
+            if [ "$DEPLOY_TAG" != "latest" ]; then
+              docker tag "helpcodeai/anythingmcp:${DEPLOY_TAG}" helpcodeai/anythingmcp:latest
+            fi
+            echo "deploying helpcodeai/anythingmcp:${DEPLOY_TAG} ($(docker inspect -f '{{.Id}}' helpcodeai/anythingmcp:latest))"
 
             # docker-compose.cloud.yml and the Caddyfile are NOT copied here:
             # release.sh installs them, after saving the ones in use, so a

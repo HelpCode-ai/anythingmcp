@@ -6,12 +6,13 @@ import { FileSearchAccessService } from './file-search-access.service';
 import { FilesWorkerClient } from './files-worker.client';
 import { FileShareService, mimeFor } from './file-share.service';
 import { isFileSearchMethod, type FileSearchMethod } from './file-search-builtins';
+import { VIEWABLE_EXTENSIONS, extOf } from './file-search.types';
 
 /**
  * Executes the `file_*` tools of a FILE_SEARCH connector (#1384). Reads the
- * index through FileSearchQueryService; the two tools that need the file
- * itself (get_file, share_file) ask files-worker to read it, so this process
- * never connects to the customer's server.
+ * index through FileSearchQueryService; the tools that need the file itself
+ * (get_file, share_file, view_page) ask files-worker to read it, so this
+ * process never connects to the customer's server.
  */
 
 export interface FileToolContext {
@@ -144,6 +145,8 @@ export class FileSearchEngine {
         return this.query.status(scope);
       case 'file_get':
         return this.getFile(str(p.path), ctx, scope);
+      case 'file_view':
+        return this.viewPage(str(p.path), p.page, ctx, scope);
       case 'file_share':
         return this.shareFile(str(p.path), p.access === 'public' ? 'public' : 'internal', int(p.ttl_hours), ctx, scope);
       case 'share_upload':
@@ -235,6 +238,58 @@ export class FileSearchEngine {
       size: r.entry.size,
       note: 'The file is too large to attach, and this plan has no File Share links. Tell the user where the file is (the path) so they can open it on the file server.',
     };
+  }
+
+  /**
+   * One page of a PDF, or an image, as a JPEG picture: clients such as
+   * Claude.ai show image content but not an embedded PDF, and the title block
+   * of a drawing is vector graphics with no text to read.
+   */
+  private async viewPage(path: string | undefined, rawPage: unknown, ctx: FileToolContext, scope: FileScope): Promise<unknown> {
+    const page = rawPage === undefined || rawPage === null || rawPage === '' ? 1 : int(rawPage);
+    if (page === undefined || page < 1) return { error: 'Pass page as a number from 1.' };
+    const r = await this.entryInScope(path, scope);
+    if ('error' in r) return r;
+    const ext = extOf(r.entry.path);
+    if (!VIEWABLE_EXTENSIONS.has(ext)) {
+      return {
+        error: 'unsupported',
+        message: `Only PDF and image files (${[...VIEWABLE_EXTENSIONS].join(', ')}) can be shown as a picture. Use the read tool for the text of this file.`,
+      };
+    }
+    const a = await this.access.resolve(ctx.organizationId);
+    const maxBytes = a.allowed ? a.quota.maxFileBytes : DEFAULT_MAX_BINARY_BYTES;
+    if (r.entry.size > maxBytes) {
+      return { error: 'too_large', message: `The file is ${(r.entry.size / 1048576).toFixed(1)} MB; this plan reads files up to ${(maxBytes / 1048576).toFixed(0)} MB.` };
+    }
+    const shown = await this.worker.render(ctx.organizationId, ctx.connectorId, r.entry.path, { page, maxBytes });
+    if (!shown.ok || !shown.base64) {
+      const kind = shown.error?.kind ?? 'damaged';
+      return {
+        error: kind,
+        message: shown.error?.message ?? 'The page could not be shown.',
+        path: r.entry.path,
+        ...(kind === 'page_out_of_range' ? { hint: 'Ask for a page within the page count named in the message.' } : {}),
+      };
+    }
+    const pageCount = shown.pageCount ?? 1;
+    const shownPage = shown.page ?? page;
+    const base = r.entry.path.split('/').pop()!.replace(/\.[^.]+$/, '');
+    return {
+      [BINARY_MARKER]: 1,
+      contentType: 'image/jpeg',
+      bytes: Buffer.byteLength(shown.base64, 'base64'),
+      filename: `${base}-page-${shownPage}.jpg`,
+      base64: shown.base64,
+      extra: {
+        path: r.entry.path,
+        page: shownPage,
+        pageCount,
+        width: shown.width,
+        height: shown.height,
+        note: shownPage < pageCount ? `Use page ${shownPage + 1} for the next page.` : 'This is the last page.',
+      },
+    } satisfies BinaryBody;
   }
 
   private binary(file: { contentType: string; size: number; filename: string; bytes: Buffer }, extra: Record<string, unknown>): BinaryBody {

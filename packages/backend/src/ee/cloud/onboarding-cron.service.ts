@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
+import type { Prisma } from '../../generated/prisma/client';
 import { getAdapter } from '../../adapters/catalog';
 import { ProductEvents } from '../../audit/product-event.service';
 import { EmailService } from '../../settings/email.service';
@@ -21,6 +22,14 @@ import {
   offerValue,
   winbackSegment,
 } from './winback-segment';
+import {
+  INTENT_EVENTS,
+  QUICK_SETUPS,
+  type ReminderArm,
+  attributedIntent,
+  claudeChatUrl,
+  reminderArm,
+} from './onboarding-reminder';
 
 const HOURS = (n: number) => n * 60 * 60 * 1000;
 
@@ -126,16 +135,23 @@ const WINBACK_EMAIL_FLAGS = [...WINBACK_STAGES.map((s) => s.flagKey), BLOCKED_CA
  * but never created a connector, and nudges them via email at two
  * milestones:
  *
- *   day 1 (~24-48h after signup): first reminder
- *   day 2 (~72-96h after signup, ≥48h after the first): second reminder
+ *   reminder 1 (FIRST_NUDGE_AFTER, an hour after signup): an A/B test with a
+ *     10% control group that gets nothing (onboarding-reminder.ts);
+ *   reminder 2 (≥72h after signup, ≥48h after the first): only to users who
+ *     showed intent (a catalog search, a guided setup opened, or a sign-up
+ *     through a channel other than 'direct'). Until Nov 2026 every user got
+ *     it; 1.6% of them ever had a connector.
  *
  * Cap is 2 emails. After that we leave them alone — we'd rather lose
  * an inactive trial than annoy someone enough to mark us as spam.
  *
  * State columns on users (migration 20260528100000):
  *   onboarding_completed_at      — null = wizard not yet finished
- *   onboarding_last_reminder_at  — last drip touch
- *   onboarding_reminder_count    — terminal at 2
+ *   onboarding_last_reminder_at  — last drip email sent (null for a holdout
+ *                                  user who got none)
+ *   onboarding_reminder_count    — the drip step reached, terminal at 2: a
+ *                                  holdout user is at 1 without an email
+ *                                  (product events tell sent from withheld)
  *   email_marketing_opt_out      — hard unsubscribe
  *
  * Idempotency: the cron is fine to re-run within a window — counters
@@ -206,7 +222,9 @@ export class OnboardingCronService {
   async run(): Promise<{
     examined: number;
     firstReminders: number;
+    firstReminderHoldout: number;
     secondReminders: number;
+    secondRemindersWithheld: number;
     activationReminders: number;
     trialWarn3: number;
     trialWarn1: number;
@@ -217,6 +235,7 @@ export class OnboardingCronService {
     licensesReverified: number;
     licensesDeactivated: number;
     licensesReleased: number;
+    licensesBound: number;
     winbackOffers: number;
     winbackHelp: number;
     winbackHoldout: number;
@@ -230,7 +249,9 @@ export class OnboardingCronService {
     const out = {
       examined: 0,
       firstReminders: 0,
+      firstReminderHoldout: 0,
       secondReminders: 0,
+      secondRemindersWithheld: 0,
       activationReminders: 0,
       trialWarn3: 0,
       trialWarn1: 0,
@@ -241,6 +262,7 @@ export class OnboardingCronService {
       licensesReverified: 0,
       licensesDeactivated: 0,
       licensesReleased: 0,
+      licensesBound: 0,
       winbackOffers: 0,
       winbackHelp: 0,
       winbackHoldout: 0,
@@ -308,6 +330,13 @@ export class OnboardingCronService {
       now,
     );
 
+    // Who of those due for reminder 2 showed intent (onboarding-reminder.ts).
+    const secondDue = (u: (typeof candidates)[number]) =>
+      u.onboardingReminderCount === 1 &&
+      now - u.createdAt.getTime() >= HOURS(72) &&
+      (!u.onboardingLastReminderAt || now - u.onboardingLastReminderAt.getTime() >= HOURS(48));
+    const withIntent = await this.usersWithIntent(candidates.filter(secondDue), now);
+
     for (const u of candidates) {
       out.examined++;
 
@@ -337,23 +366,33 @@ export class OnboardingCronService {
 
       // First nudge: an hour after signup (every candidate is at least that
       // old). Someone who already connected an AI client is told to ask it
-      // for the app in the same chat, naming the client.
+      // for the app in the same chat, naming the client, in both arms; arm B
+      // replaces the generic how-to with one-click Claude chats; the holdout
+      // gets nothing, and moves on to the reminder-2 step all the same.
       const aiClient = aiClients.get(u.id);
+      const arm = reminderArm(u.id);
       if (u.onboardingReminderCount === 0) {
+        if (arm === 'holdout') {
+          if (!(await this.updateUser(u.id, { onboardingReminderCount: 1 }))) {
+            out.skipped++;
+            continue;
+          }
+          await this.reminderEvent(ProductEvents.ONBOARDING_REMINDER_HOLDOUT, u, 1, arm);
+          out.firstReminderHoldout++;
+          continue;
+        }
         const ok = await this.email.sendOnboardingReminderEmail(
           u.email,
           u.name || 'there',
           1,
-          aiClient ? { aiClient } : undefined,
+          aiClient
+            ? { aiClient }
+            : arm === 'B'
+              ? { quickSetups: QUICK_SETUPS.map((q) => ({ label: q.label, url: claudeChatUrl(q.request) })) }
+              : undefined,
         );
-        if (ok) {
-          await this.prisma.user.update({
-            where: { id: u.id },
-            data: {
-              onboardingReminderCount: 1,
-              onboardingLastReminderAt: new Date(),
-            },
-          });
+        if (ok && (await this.updateUser(u.id, { onboardingReminderCount: 1, onboardingLastReminderAt: new Date() }))) {
+          await this.reminderEvent(ProductEvents.ONBOARDING_REMINDER_SENT, u, 1, arm, aiClient ? 'ai_client' : 'generic');
           out.firstReminders++;
         } else {
           out.skipped++;
@@ -361,25 +400,26 @@ export class OnboardingCronService {
         continue;
       }
 
-      // Second nudge: count == 1, ≥72h after signup AND ≥48h since first.
+      // Second nudge: count == 1, ≥72h after signup AND ≥48h since first,
+      // and only with intent. Without it the user stays at step 1 and is
+      // asked about again on the next runs, until 14 days after sign-up.
       if (
         u.onboardingReminderCount === 1 &&
         age >= HOURS(72) &&
         sinceLast >= HOURS(48)
       ) {
+        if (!withIntent.has(u.id)) {
+          out.secondRemindersWithheld++;
+          out.skipped++;
+          continue;
+        }
         const ok = await this.email.sendOnboardingReminderEmail(
           u.email,
           u.name || 'there',
           2,
         );
-        if (ok) {
-          await this.prisma.user.update({
-            where: { id: u.id },
-            data: {
-              onboardingReminderCount: 2,
-              onboardingLastReminderAt: new Date(),
-            },
-          });
+        if (ok && (await this.updateUser(u.id, { onboardingReminderCount: 2, onboardingLastReminderAt: new Date() }))) {
+          await this.reminderEvent(ProductEvents.ONBOARDING_REMINDER_SENT, u, 2, arm, 'generic');
           out.secondReminders++;
         } else {
           out.skipped++;
@@ -389,6 +429,12 @@ export class OnboardingCronService {
 
       out.skipped++;
     }
+
+    // First: a paid licence that never reached its workspace (the buyer's
+    // browser did not come back to the activation page) leaves a paying
+    // customer on an ended trial. Bound before any email pass looks at the
+    // workspace's plan.
+    out.licensesBound = (await this.license.bindUnclaimedPaidLicences(new Date(now)).catch(() => null))?.bound ?? 0;
 
     await this.runActivationPass(now, out);
     await this.runTrialLifecyclePass(now, out);
@@ -419,12 +465,13 @@ export class OnboardingCronService {
 
     this.logger.log(
       `Onboarding drip: examined=${out.examined} first=${out.firstReminders} ` +
-        `second=${out.secondReminders} activation=${out.activationReminders} ` +
+        `firstHoldout=${out.firstReminderHoldout} second=${out.secondReminders} ` +
+        `secondWithheld=${out.secondRemindersWithheld} activation=${out.activationReminders} ` +
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
         `trialEmailsWithheld=${out.trialEmailsWithheld} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
-        `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} ` +
+        `licensesReleased=${out.licensesReleased} licensesBound=${out.licensesBound} winbackOffers=${out.winbackOffers} ` +
         `winbackHelp=${out.winbackHelp} trialExpiredBusiness=${out.trialExpiredBusiness} ` +
         `winbackHoldout=${out.winbackHoldout} blockedCallEmails=${out.blockedCallEmails} ` +
         `blockedCallHoldout=${out.blockedCallHoldout} ` +
@@ -432,6 +479,74 @@ export class OnboardingCronService {
         `skipped=${out.skipped}`,
     );
     return out;
+  }
+
+  /**
+   * Users among `users` who showed intent to connect an app: their workspace
+   * or they themselves have an INTENT_EVENTS event, or their sign-up came
+   * through a channel other than 'direct' (attributedIntent). Only events of
+   * the last 15 days are read: every candidate signed up within 14.
+   */
+  private async usersWithIntent(
+    users: Array<{ id: string; organizationId: string | null }>,
+    now: number,
+  ): Promise<Set<string>> {
+    const out = new Set<string>();
+    if (users.length === 0) return out;
+    const userIds = users.map((u) => u.id);
+    const orgIds = [...new Set(users.map((u) => u.organizationId).filter((id): id is string => !!id))];
+    const who = [
+      { userId: { in: userIds } },
+      ...(orgIds.length > 0 ? [{ organizationId: { in: orgIds } }] : []),
+    ];
+    const createdAt = { gte: new Date(now - DAYS(15)) };
+    const [actions, signups] = await Promise.all([
+      this.prisma.productEvent.findMany({
+        where: { event: { in: INTENT_EVENTS }, createdAt, OR: who },
+        distinct: ['userId', 'organizationId'],
+        select: { userId: true, organizationId: true },
+      }),
+      this.prisma.productEvent.findMany({
+        where: { event: ProductEvents.SIGNUP_ATTRIBUTED, createdAt, OR: who },
+        select: { userId: true, organizationId: true, metadata: true },
+      }),
+    ]);
+    const intentUsers = new Set<string>();
+    const intentOrgs = new Set<string>();
+    for (const row of [...actions, ...signups.filter((r) => attributedIntent(r.metadata))]) {
+      if (row.userId) intentUsers.add(row.userId);
+      if (row.organizationId) intentOrgs.add(row.organizationId);
+    }
+    for (const u of users) {
+      if (intentUsers.has(u.id) || (u.organizationId && intentOrgs.has(u.organizationId))) out.add(u.id);
+    }
+    return out;
+  }
+
+  /**
+   * Records a reminder sent or withheld, with the user's reminder-1 arm, for
+   * the per-arm report. Best-effort: a lost event never stops the drip (the
+   * arm can be recomputed from the user id, see onboarding-reminder.ts).
+   */
+  private async reminderEvent(
+    event: typeof ProductEvents.ONBOARDING_REMINDER_SENT | typeof ProductEvents.ONBOARDING_REMINDER_HOLDOUT,
+    user: { id: string; organizationId: string | null },
+    reminder: 1 | 2,
+    arm: ReminderArm,
+    kind?: 'generic' | 'ai_client',
+  ): Promise<void> {
+    try {
+      await this.prisma.productEvent.create({
+        data: {
+          event,
+          userId: user.id,
+          organizationId: user.organizationId,
+          metadata: { reminder, arm, ...(kind ? { kind } : {}) },
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Onboarding reminder event not recorded: ${err?.message ?? err}`);
+    }
   }
 
   /**
@@ -1168,15 +1283,29 @@ export class OnboardingCronService {
         path,
         serverId ? 'connect-client' : 'test-connector',
       );
-      if (ok) {
-        await this.prisma.user.update({
-          where: { id: u.id },
-          data: { activationReminderAt: new Date() },
-        });
+      if (ok && (await this.updateUser(u.id, { activationReminderAt: new Date() }))) {
         out.activationReminders++;
       } else {
         out.skipped++;
       }
+    }
+  }
+
+  /**
+   * Stamps a reminder step on a user. False when the user was deleted after
+   * the candidate pull (Prisma P2025): that user is skipped, and the rest of
+   * the run goes on instead of failing with a 500.
+   */
+  private async updateUser(id: string, data: Prisma.UserUpdateInput): Promise<boolean> {
+    try {
+      await this.prisma.user.update({ where: { id }, data });
+      return true;
+    } catch (e) {
+      if ((e as { code?: unknown })?.code === 'P2025') {
+        this.logger.warn(`Onboarding cron: user ${id} was deleted during the run, skipped`);
+        return false;
+      }
+      throw e;
     }
   }
 }

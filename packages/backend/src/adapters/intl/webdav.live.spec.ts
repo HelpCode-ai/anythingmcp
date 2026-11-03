@@ -20,7 +20,7 @@ describe('webdav adapter: static spec conformance', () => {
   it('shows the fixed File Search tools in the catalog, share_file off', () => {
     const tools = getAdapter('webdav')!.tools as Array<{ name: string; enabled?: boolean }>;
     expect(tools.map((t) => t.name)).toEqual(
-      ['guide', 'search', 'find', 'list', 'read', 'grep', 'status', 'get_file', 'share_file'].map((n) => `webdav_${n}`),
+      ['guide', 'search', 'find', 'list', 'read', 'grep', 'status', 'view_page', 'get_file', 'share_file'].map((n) => `webdav_${n}`),
     );
     expect(tools.find((t) => t.name === 'webdav_share_file')!.enabled).toBe(false);
   });

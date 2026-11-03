@@ -308,6 +308,21 @@ export class AdaptersController {
             : {}),
         },
       });
+      // The app is waiting for the provider's approval (Etsy: Pending). The
+      // page keeps the keys on a connector, and AppApprovalWatcherService
+      // finds it through this event (app-approval-watch.ts).
+      if (result.appPending) {
+        void this.productEvents.log({
+          event: ProductEvents.ETSY_APP_PENDING_SEEN,
+          userId: req.user.sub,
+          organizationId: req.user.organizationId,
+          metadata: {
+            adapterSlug: slug,
+            via: 'setup',
+            ...(typeof body?.connectorId === 'string' ? { connectorId: body.connectorId } : {}),
+          },
+        });
+      }
     }
     return result;
   }

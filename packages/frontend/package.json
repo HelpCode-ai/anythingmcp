@@ -1,6 +1,6 @@
 {
   "name": "@anythingmcp/frontend",
-  "version": "0.52.0",
+  "version": "0.52.1",
   "description": "AnythingMCP — Next.js Admin UI",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -26,7 +26,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.577.0",
-    "next": "^16.4.2",
+    "next": "^16.4.3",
     "next-intl": "^4.14.9",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -44,7 +44,7 @@
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.6.1",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.4.0",
+    "eslint-config-next": "^16.4.3",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.9.3"

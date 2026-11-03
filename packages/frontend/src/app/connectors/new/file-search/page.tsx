@@ -13,6 +13,7 @@ import {
   fileSearch,
   license,
   mcpServers,
+  productEvents,
   type FileSearchBudget,
   type FileSearchCapabilities,
   type FileSearchProtocol,
@@ -21,10 +22,12 @@ import {
   type McpServer,
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { FILE_SEARCH_ENTRY_POINTS, fileCountBucket, isFileSearchSlug } from '@/lib/file-search-catalog';
 import {
   BudgetBar,
   FolderTree,
   LockedCard,
+  suggestedNext,
   TestChecklist,
   formatBytes,
   formatNumber,
@@ -216,6 +219,42 @@ function Wizard() {
   const [serverIds, setServerIds] = useState<Set<string>>(new Set());
   const headingRef = useRef<HTMLHeadingElement>(null);
 
+  // ── Product events (file_search_* in product-event.service.ts) ──────────
+  // Where the wizard was opened from, read once: the URL is rewritten to
+  // ?step=…&protocol=… right after the first render.
+  const origin = useRef({
+    preset: PRESETS.some((p) => p.id === params.get('preset')) ? params.get('preset')! : undefined,
+    adapterSlug: isFileSearchSlug(params.get('adapter') ?? '') ? params.get('adapter')! : undefined,
+    via: (FILE_SEARCH_ENTRY_POINTS as readonly string[]).includes(params.get('from') ?? '') ? params.get('from')! : undefined,
+    resumed: !!params.get('id'),
+  });
+  const reported = useRef(new Set<string>());
+  /** Scans started on this page: a resumed draft's old scan is not reported again. */
+  const startedScans = useRef(new Set<string>());
+  // Protocol, preset and catalog entry only: never a host, path or file name.
+  const track = useCallback(
+    (event: string, extra: Record<string, string> = {}) => {
+      if (!token) return;
+      const { preset, adapterSlug } = origin.current;
+      productEvents.track(event, token, {
+        protocol: form.protocol,
+        ...(preset ? { preset } : {}),
+        ...(adapterSlug ? { adapterSlug } : {}),
+        ...extra,
+      });
+    },
+    [token, form.protocol],
+  );
+  /** The same event once per page load (`key` tells kinds apart). */
+  const trackOnce = useCallback(
+    (key: string, event: string, extra?: Record<string, string>) => {
+      if (reported.current.has(key)) return;
+      reported.current.add(key);
+      track(event, extra);
+    },
+    [track],
+  );
+
   const loadCaps = useCallback(async () => {
     if (!token) return;
     try {
@@ -341,8 +380,14 @@ function Wizard() {
       const r = await fileSearch.test({ config: configOf(f), secrets: secretsOf(f), ...(draftId ? { connectorId: draftId } : {}) }, token);
       setTestResult(r);
       setFpChecked(false);
+      // A first test that only asks to confirm the fingerprint is neither.
+      if (r.errorKind !== 'fingerprint_unconfirmed') {
+        if (r.ok) trackOnce('test_passed', 'file_search_test_passed');
+        else track('file_search_test_failed', { kind: r.errorKind ?? 'unknown' });
+      }
     } catch (e) {
       setError(errMessage(e));
+      track('file_search_test_failed', { kind: 'request_failed' });
     } finally {
       setBusy(false);
     }
@@ -390,6 +435,7 @@ function Wizard() {
     setInstructions('');
     try {
       const s = await fileSearch.startScan(draftId, useAi, token);
+      startedScans.current.add(s.id);
       setScanId(s.id);
     } catch (e) {
       setError(errMessage(e));
@@ -464,6 +510,7 @@ function Wizard() {
         { instructions, summary, toolPrefix: toolPrefix || undefined, syncIntervalMinutes: interval, mcpServerIds: [...serverIds] },
         token,
       );
+      trackOnce('activated', 'file_search_activated', { files: fileCountBucket(budget?.files ?? scan?.totals?.files ?? 0) });
       router.push(`/connectors/${draftId}?tab=files`);
     } catch (e) {
       setError(errMessage(e));
@@ -507,6 +554,34 @@ function Wizard() {
   const atConnectorLimit =
     !draftId && !!caps && caps.access.allowed && caps.access.quota.maxConnectors != null && caps.usage.connectors >= caps.access.quota.maxConnectors;
 
+  useEffect(() => {
+    // A resumed draft (?id=…) is not a new setup.
+    if (!token || origin.current.resumed) return;
+    const { via } = origin.current;
+    trackOnce('opened', 'file_search_wizard_opened', via ? { via } : {});
+  }, [token, trackOnce]);
+
+  useEffect(() => {
+    if (!caps) return;
+    if (!caps.access.allowed) {
+      trackOnce(`locked:${caps.access.reason}`, 'file_search_locked_shown', { kind: caps.access.reason });
+    } else if (isAdmin && atConnectorLimit) {
+      trackOnce('locked:connector_limit', 'file_search_locked_shown', { kind: 'connector_limit' });
+    }
+  }, [caps, isAdmin, atConnectorLimit, trackOnce]);
+
+  useEffect(() => {
+    if (!scan || !startedScans.current.has(scan.id)) return;
+    if (scan.status === 'done') {
+      trackOnce(`scan:${scan.id}`, 'file_search_scan_finished', {
+        kind: scan.budget ? (scan.budget.fits ? 'fits' : 'over_plan') : 'done',
+        files: fileCountBucket(scan.totals?.files ?? 0),
+      });
+    } else if (scan.status === 'failed') {
+      trackOnce(`scan:${scan.id}`, 'file_search_scan_finished', { kind: 'failed' });
+    }
+  }, [scan, trackOnce]);
+
   const scanning = scan && ['queued', 'running', 'describing', 'describing_running'].includes(scan.status);
   const describing = scan && ['describing', 'describing_running'].includes(scan.status);
 
@@ -532,7 +607,11 @@ function Wizard() {
             <h2 className="text-[15px] font-semibold text-[var(--text)]">{t('limit.title')}</h2>
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
               {t('limit.text', { max: caps.access.quota.maxConnectors ?? 0, plan: caps.access.plan })}
-              {caps.access.next ? ` ${t('limit.next', { plan: caps.access.next.plan, max: caps.access.next.quota.maxConnectors ?? '∞' })}` : ''}
+              {(() => {
+                // Self-hosted is only pointed at Enterprise (Starter and Team are no longer sold there).
+                const next = suggestedNext(caps.access.next, !caps.cloud);
+                return next ? ` ${t('limit.next', { plan: next.plan, max: next.quota.maxConnectors ?? '∞' })}` : '';
+              })()}
             </p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Link href={upgradeHref('file_quota_setup')} className="inline-flex h-9 items-center justify-center rounded-[9px] bg-[var(--brand)] px-3.5 text-[13px] font-semibold text-[var(--primary-foreground)]">{t('upgrade')}</Link>

@@ -32,7 +32,10 @@ import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
 import { slugifyForPrefix } from '../connectors/graphql-builtins';
-import { SharedSetupRegistry } from './shared-setup';
+import { SharedSetupRegistry, type SetupCallOptions } from './shared-setup';
+import { SharedToolCallRecorder } from './shared-tool-calls';
+import { ProductEventService } from '../audit/product-event.service';
+import { PrismaService } from '../common/prisma.service';
 import {
   McpConnectionGrantService,
   ResolvedGrant,
@@ -134,6 +137,30 @@ export function listenOnlyServer(
   capabilities: { tools?: { listChanged: boolean }; resources?: { listChanged: boolean } },
 ): McpServer {
   return new McpServer({ name, version }, { capabilities });
+}
+
+/** A single request whose method is one of `methods`. */
+export function isHandshakeRequest(body: unknown, methods: readonly string[]): boolean {
+  return (
+    !!body &&
+    typeof body === 'object' &&
+    !Array.isArray(body) &&
+    methods.includes((body as { method?: unknown }).method as string)
+  );
+}
+
+/**
+ * The server a `server/discover` is answered from: name, version,
+ * capabilities and instructions, no tools. The answer carries only those, so
+ * registering every tool for it was work nobody read, repeated on every probe.
+ */
+export function handshakeServer(
+  name: string,
+  version: string,
+  capabilities: { tools?: { listChanged: boolean }; resources?: { listChanged: boolean } },
+  instructions?: string,
+): McpServer {
+  return new McpServer({ name, version }, { capabilities, ...(instructions ? { instructions } : {}) });
 }
 
 /** Trailer appended to every live demo tool result. */
@@ -267,7 +294,14 @@ export class McpEndpointController {
     @Optional() private readonly sharedSetup?: SharedSetupRegistry,
     @Optional() private readonly memory?: MemoryService,
     @Optional() private readonly folders?: KnowledgeFoldersService,
-  ) {}
+    @Optional() productEvents?: ProductEventService,
+    @Optional() prisma?: PrismaService,
+  ) {
+    this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
+  }
+
+  /** Records which shared /mcp tools a workspace calls (once a day per tool). */
+  private readonly sharedCalls: SharedToolCallRecorder | null;
 
   /** The caller's knowledge-folder access in a workspace (null without the module). */
   private async folderAccessFor(organizationId: string, userId?: string | null) {
@@ -292,6 +326,11 @@ export class McpEndpointController {
     if (!visibleConnectorIds || visibleConnectorIds.length === 0) return undefined;
     const caps = await this.rolesService.getCapabilities(userId, mcpServerConfig.organizationId);
     if (!caps.inlineCode) return undefined;
+    // Plan gate: inline code (code_execute / code_propose_tool) is Team and
+    // above. Saved code tools are gated separately at creation time.
+    if (!(await this.toolExecutor.inlineCodeAllowedForOrg(mcpServerConfig.organizationId))) {
+      return undefined;
+    }
     return { connectorIds: visibleConnectorIds };
   }
 
@@ -332,6 +371,29 @@ export class McpEndpointController {
         (req as any).body,
         () => listenOnlyServer('AnythingMCP', APP_VERSION, { tools: { listChanged: true } }),
         'shared /mcp listen',
+      );
+      return;
+    }
+    // server/discover reads the name, capabilities and instructions only, and
+    // the fixed tool set's instructions depend on the OAuth client alone.
+    // Building the caller's tool set for it (registry, grants, roles, setup
+    // permission) is part of what a burst of directory handshakes made
+    // expensive on 3 Nov 2026.
+    if (this.servesSharedToolset(req) && isHandshakeRequest((req as any).body, ['server/discover'])) {
+      const redirectUris = await this.grants.clientRedirectUris(oauthClientId((req as any).user));
+      const profile = profileForRedirectUris(redirectUris);
+      await this.serveStateless(
+        req,
+        res,
+        (req as any).body,
+        () =>
+          handshakeServer(
+            'AnythingMCP',
+            APP_VERSION,
+            { tools: { listChanged: true } },
+            sharedToolsetInstructions(profile),
+          ),
+        'shared /mcp handshake',
       );
       return;
     }
@@ -494,15 +556,29 @@ export class McpEndpointController {
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
       connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
+      ...(this.sharedCalls && (setupOrg || organizationId) && variant === 'shared'
+        ? {
+            called: ({ tool, setupTool }) => {
+              void this.sharedCalls!.record({
+                organizationId: (setupOrg || organizationId) as string,
+                userId: user.sub,
+                tool,
+                ...(setupTool ? { setupTool } : {}),
+                profile,
+                oauthClientId: oauthClientId(user),
+              });
+            },
+          }
+        : {}),
       ...(canSetUp && setupProvider && setupCtx
         ? {
             setup: {
               organizationId: setupCtx.organizationId,
-              run: (name: string, args: Record<string, unknown>) =>
+              run: (name: string, args: Record<string, unknown>, opts?: SetupCallOptions) =>
                 name === 'setup_find_connectors'
-                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number })
+                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number }, opts)
                   : name === 'setup_install_connector'
-                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> })
+                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> }, opts)
                     : setupProvider.status(setupCtx),
             },
           }
@@ -659,13 +735,9 @@ export class McpEndpointController {
 
     let reachable: RegisteredTool[];
     if (!grant) {
-      reachable = this.toolRegistry
-        .getAllTools()
-        .filter((t) => t.organizationId === user.organizationId);
+      reachable = this.toolRegistry.getToolsForOrganization(user.organizationId);
     } else if (grant.mode === 'organization') {
-      reachable = this.toolRegistry
-        .getAllTools()
-        .filter((t) => t.organizationId === grant.organizationId);
+      reachable = this.toolRegistry.getToolsForOrganization(grant.organizationId);
     } else if (grant.mode === 'servers') {
       const connectorIds = new Set(
         (
@@ -676,9 +748,7 @@ export class McpEndpointController {
           )
         ).flat(),
       );
-      reachable = this.toolRegistry
-        .getAllTools()
-        .filter((t) => connectorIds.has(t.connectorId));
+      reachable = this.toolRegistry.getToolsForConnectors(connectorIds);
     } else {
       reachable = [];
     }
@@ -696,19 +766,17 @@ export class McpEndpointController {
 
     // Roles are per organization, and a grant may span more than one, so the
     // allow-list is fetched once per organization actually in reach.
-    const allowedByOrg = new Map<string, string[] | null>();
+    const allowedByOrg = new Map<string, Set<string> | null>();
     for (const orgId of new Set(reachable.map((t) => t.organizationId))) {
-      allowedByOrg.set(
-        orgId,
-        await this.rolesService.getAllowedToolIds(user.sub, orgId),
-      );
+      const ids = await this.rolesService.getAllowedToolIds(user.sub, orgId);
+      allowedByOrg.set(orgId, ids === null ? null : new Set(ids));
     }
 
     // `null` from getAllowedToolIds means unrestricted — an ADMIN, or a user
     // holding no MCP role at all. The reach scope still applies.
     const visible = reachable.filter((t) => {
       const allowed = allowedByOrg.get(t.organizationId);
-      return allowed === null || (allowed?.includes(t.id) ?? false);
+      return allowed === null || (allowed?.has(t.id) ?? false);
     });
 
     // Handed to the call path so it resolves in exactly the scope that was
@@ -1002,12 +1070,8 @@ export class McpEndpointController {
       }
       const connectorIds = await this.mcpServersService.getConnectorIds(demoServerId);
       const readOnlyTools = this.toolRegistry
-        .getAllTools()
-        .filter(
-          (t) =>
-            connectorIds.includes(t.connectorId) &&
-            deriveToolAnnotations(t).readOnlyHint === true,
-        );
+        .getToolsForConnectors(connectorIds)
+        .filter((t) => deriveToolAnnotations(t).readOnlyHint === true);
       const invocationContext: InvocationContext = {
         organizationId: cfg.organizationId,
         authMethod: 'demo',
@@ -1189,8 +1253,7 @@ export class McpEndpointController {
 
     // 3. Filter tools to only those from assigned connectors (planToolSet
     // then applies the role filter).
-    const allTools = this.toolRegistry.getAllTools();
-    const serverTools = allTools.filter((t) => connectorIds.includes(t.connectorId));
+    const serverTools = this.toolRegistry.getToolsForConnectors(connectorIds);
 
     // 4. The connectors this caller can use: the owners of the tools that
     // survive both filters. Instructions and resources are scoped to exactly
@@ -1215,6 +1278,27 @@ export class McpEndpointController {
     const instructions = captureIntent
       ? [content.instructions, INTENT_INSTRUCTION].filter(Boolean).join('\n\n')
       : content.instructions;
+
+    // A server/discover probe, once the caller may reach this server, reads
+    // the name, capabilities and instructions only: answered without
+    // registering the tool surface (see handshakeServer). Same capabilities
+    // as a listen; the stateful mode keeps its own path.
+    if (isHandshakeRequest(body, ['server/discover']) && !McpSessionManager.isEnabled()) {
+      await this.serveStateless(
+        req,
+        res,
+        body,
+        () =>
+          handshakeServer(
+            mcpServerConfig.name,
+            mcpServerConfig.version || '1.0.0',
+            { tools: { listChanged: true }, resources: { listChanged: true } },
+            instructions,
+          ),
+        `server ${serverId} discover`,
+      );
+      return;
+    }
 
     // 5. Create a per-request MCP server with only the assigned tools
     const mcpServer = new McpServer(
@@ -1694,9 +1778,7 @@ export class McpEndpointController {
 
       // Re-fetch connector ids so newly (un)assigned connectors are reflected.
       const connectorIds = await this.mcpServersService.getConnectorIds(serverId);
-      const serverTools = this.toolRegistry
-        .getAllTools()
-        .filter((t) => connectorIds.includes(t.connectorId));
+      const serverTools = this.toolRegistry.getToolsForConnectors(connectorIds);
       let allowedToolIds: string[] | null = null;
       if (user?.sub) {
         // Scope to the SERVER's org, not `invocationContext.organizationId`

@@ -4,6 +4,17 @@ import { McpOAuthService } from './mcp-oauth.service';
 import { encrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
 
+// The Atlassian site lookup (tenant_info) answers from here; no test may reach Atlassian.
+const mockSiteLookup = jest.fn();
+jest.mock('../adapters/derived-settings', () => {
+  const actual = jest.requireActual('../adapters/derived-settings');
+  return {
+    ...actual,
+    resolveDerivedEnvVars: (adapter: unknown, values: unknown, opts: Record<string, unknown> = {}) =>
+      actual.resolveDerivedEnvVars(adapter, values, { ...opts, fetch: mockSiteLookup }),
+  };
+});
+
 const VALID_ENCRYPTION_KEY = 'a'.repeat(48);
 
 function buildController(overrides: {
@@ -819,6 +830,138 @@ describe('PUT :id/env-vars — a base URL variable without https://', () => {
     expect(connectorsService.update).toHaveBeenCalledWith('c1', {
       envVars: { SHOP_URL: 'https://shop.example.com', TOKEN: 'abc' },
     });
+  });
+});
+
+describe('PUT :id/env-vars and PUT :id — the checks of the install form', () => {
+  const odoo = (envVars: Record<string, string>) => ({
+    id: 'c1',
+    type: 'REST',
+    authType: 'BEARER_TOKEN',
+    userId: 'u1',
+    organizationId: 'org1',
+    baseUrl: 'https://erp.acme.de/json/2',
+    headers: null,
+    authConfig: null,
+    envVars,
+    config: { adapterSlug: 'odoo' },
+  });
+  const stored = { ODOO_URL: 'https://erp.acme.de', ODOO_DB: 'acme', ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e' };
+  const build = (connector: any) =>
+    buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(connector),
+        update: jest.fn().mockImplementation(async (_id: string, data: any) => ({ ...connector, ...data })),
+      },
+    });
+
+  it('refuses an Odoo address with /web after the host, naming the field and saving nothing', async () => {
+    const { controller, connectorsService } = build(odoo(stored));
+    await expect(
+      controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ODOO_URL: 'https://erp.acme.de/web' } }),
+    ).rejects.toMatchObject({
+      response: { code: 'invalid_values', fields: { ODOO_URL: expect.stringMatching(/Remove \/web after the host: https:\/\/erp\.acme\.de\./) } },
+    });
+    expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('stores an address typed without https:// with it, also one outside the base URL (Zoho accounts server)', async () => {
+    const zoho = {
+      ...odoo({}),
+      authType: 'OAUTH2',
+      baseUrl: 'https://mail.zoho.eu/api',
+      envVars: { ZOHO_MAIL_CLIENT_ID: '1000.ABCDEFGHIJKLMNOP', ZOHO_MAIL_API_URL: 'https://mail.zoho.eu', ZOHO_MAIL_ACCOUNTS_URL: '' },
+      config: { adapterSlug: 'zoho-mail' },
+    };
+    const { controller, connectorsService } = build(zoho);
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { ...zoho.envVars, ZOHO_MAIL_ACCOUNTS_URL: 'accounts.zoho.eu' },
+    });
+    expect(connectorsService.update).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({ envVars: expect.objectContaining({ ZOHO_MAIL_ACCOUNTS_URL: 'https://accounts.zoho.eu' }) }),
+    );
+  });
+
+  it('refuses a key pasted twice through the connector form (PUT :id) too', async () => {
+    const { controller, connectorsService } = build(odoo(stored));
+    await expect(
+      controller.update(req('ADMIN'), 'c1', { envVars: { ...stored, ODOO_API_KEY: stored.ODOO_API_KEY.repeat(2) } } as any),
+    ).rejects.toMatchObject({ response: { fields: { ODOO_API_KEY: expect.stringMatching(/Paste it once/) } } });
+    expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves stored Etsy app keys the pattern would refuse alone when they are sent back unchanged', async () => {
+    const etsy = {
+      ...odoo({}),
+      authType: 'OAUTH2',
+      baseUrl: 'https://openapi.etsy.com/v3',
+      envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkl', ETSY_CLIENT_SECRET: 'abcd-efgh-i' },
+      config: { adapterSlug: 'etsy' },
+    };
+    const { controller, connectorsService } = build(etsy);
+    // The editor sends the visible value back as it was and a secret empty (kept).
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkl', ETSY_CLIENT_SECRET: '', ETSY_SHOP_ID: '12345678' },
+    });
+    expect(connectorsService.update).toHaveBeenCalled();
+    // Changing one of them is checked.
+    await expect(
+      controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkm' } }),
+    ).rejects.toMatchObject({ response: { fields: { ETSY_CLIENT_ID: expect.any(String) } } });
+  });
+
+  describe('the Atlassian site and its looked-up cloudId', () => {
+    const CLOUD_ID = '1324a887-45db-1bf4-1e99-ef0ff456d421';
+    const keys = { ATLASSIAN_EMAIL: 'jane.doe@acme.test', ATLASSIAN_API_TOKEN: 'ATATT' + 'Zq9'.repeat(40) };
+    const atlassian = (envVars: Record<string, string>) => ({
+      ...odoo(envVars),
+      type: 'MCP',
+      authType: 'BASIC_AUTH',
+      baseUrl: 'https://mcp.atlassian.com/v2/mcp',
+      config: { adapterSlug: 'atlassian' },
+    });
+    beforeEach(() => mockSiteLookup.mockReset());
+
+    it('stores the cloudId when the site is set on an installed connector', async () => {
+      mockSiteLookup.mockResolvedValue({ status: 200, data: { cloudId: CLOUD_ID } });
+      const { controller, connectorsService } = build(atlassian(keys));
+      await controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...keys, ATLASSIAN_SITE: 'https://acme.atlassian.net/' } });
+      expect(mockSiteLookup).toHaveBeenCalledWith('https://acme.atlassian.net/_edge/tenant_info');
+      expect(connectorsService.update.mock.calls[0][1].envVars).toMatchObject({
+        ATLASSIAN_SITE: 'acme.atlassian.net',
+        ATLASSIAN_CLOUD_ID: CLOUD_ID,
+      });
+    });
+
+    it('refuses a site without a cloudId on its field, saving nothing', async () => {
+      mockSiteLookup.mockResolvedValue({ status: 404, data: 'not found' });
+      const { controller, connectorsService } = build(atlassian(keys));
+      await expect(
+        controller.update(req('ADMIN'), 'c1', { envVars: { ...keys, ATLASSIAN_SITE: 'acme-typo.atlassian.net' } } as any),
+      ).rejects.toMatchObject({ response: { fields: { ATLASSIAN_SITE: expect.stringMatching(/No Atlassian site answers/) } } });
+      expect(connectorsService.update).not.toHaveBeenCalled();
+    });
+
+    it('does not ask again when the site is unchanged, and drops the cloudId with the site', async () => {
+      const stored = { ...keys, ATLASSIAN_SITE: 'acme.atlassian.net', ATLASSIAN_CLOUD_ID: CLOUD_ID };
+      const first = build(atlassian(stored));
+      await first.controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ATLASSIAN_EMAIL: 'john@acme.test' } });
+      expect(mockSiteLookup).not.toHaveBeenCalled();
+      expect(first.connectorsService.update.mock.calls[0][1].envVars.ATLASSIAN_CLOUD_ID).toBe(CLOUD_ID);
+
+      const second = build(atlassian(stored));
+      await second.controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ATLASSIAN_SITE: '' } });
+      expect(second.connectorsService.update.mock.calls[0][1].envVars.ATLASSIAN_CLOUD_ID).toBeUndefined();
+    });
+  });
+
+  it('does not let a stored bad value block an edit of another variable', async () => {
+    const { controller, connectorsService } = build(odoo({ ...stored, ODOO_URL: 'https://erp.acme.de/web' }));
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { ...stored, ODOO_URL: 'https://erp.acme.de/web', ODOO_DB: 'acme2' },
+    });
+    expect(connectorsService.update).toHaveBeenCalled();
   });
 });
 

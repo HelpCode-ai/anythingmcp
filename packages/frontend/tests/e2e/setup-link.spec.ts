@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * One-time links an AI client hands out ("open this to finish connecting
+ * Setup links an AI client hands out ("open this to finish connecting
  * Etsy"): /s/<token> resolves the token for the signed-in user and moves on to
  * the guided setup; a used, expired or foreign link says so.
  */
@@ -16,7 +16,13 @@ async function signIn(page: Page) {
   }, USER);
 }
 
-async function mockApi(page: Page, resolve: { status: number; body: unknown }) {
+async function mockApi(
+  page: Page,
+  resolve: { status: number; body: unknown },
+  // Without a dashboard session the page first tries the sign-in the browser
+  // made to connect the AI client: refused unless a test says otherwise.
+  open: { status: number; body: unknown } = { status: 401, body: { statusCode: 401, message: 'Sign in to open this link.' } },
+) {
   const resolved: any[] = [];
   await page.route(/\/(api|health)\//, (route) => {
     const req = route.request();
@@ -24,6 +30,11 @@ async function mockApi(page: Page, resolve: { status: number; body: unknown }) {
     if (path === '/api/setup-links/resolve') {
       resolved.push(req.postDataJSON());
       return route.fulfill({ status: resolve.status, contentType: 'application/json', body: JSON.stringify(resolve.body) });
+    }
+    if (path === '/api/setup-links/open') {
+      expect(req.headers()['x-amcp-dashboard']).toBe('1');
+      resolved.push({ open: req.postDataJSON() });
+      return route.fulfill({ status: open.status, contentType: 'application/json', body: JSON.stringify(open.body) });
     }
     if (path === '/api/auth/me') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(USER) });
@@ -62,6 +73,22 @@ test('passes on the assistant the link names, and nothing else', async ({ page }
   expect(resolved).toEqual([{ token: 'tok_abc123', from: 'chatgpt' }, { token: 'tok_def456' }]);
 });
 
+test('switches to the workspace of the connector when the link answers with a session', async ({ page }) => {
+  await signIn(page);
+  await mockApi(page, {
+    status: 200,
+    body: {
+      redirect: '/connectors/setup/etsy?connector=c1&from=claude',
+      session: { accessToken: 'token-for-o2', user: { ...USER, organizationId: 'o2' } },
+    },
+  });
+
+  await page.goto('/s/tok_abc123?from=claude');
+
+  await page.waitForURL(/\/connectors\/setup\/etsy\?connector=c1&from=claude$/, { timeout: 15_000 });
+  expect(await page.evaluate(() => localStorage.getItem('amcp_token'))).toBe('token-for-o2');
+});
+
 test('a used or expired link says so instead of opening anything', async ({ page }) => {
   await signIn(page);
   await mockApi(page, {
@@ -74,6 +101,22 @@ test('a used or expired link says so instead of opening anything', async ({ page
   await expect(page.getByRole('heading', { name: 'This link does not work any more' })).toBeVisible();
   await expect(page.getByText('This link was already used.')).toBeVisible();
   expect(new URL(page.url()).pathname).toBe('/s/tok_used');
+});
+
+test('signed out, right after connecting an AI client, it opens with that sign-in', async ({ page }) => {
+  const calls = await mockApi(page, { status: 200, body: { redirect: '/connectors' } }, {
+    status: 200,
+    body: {
+      redirect: '/connectors/setup/etsy?connector=c1&from=claude',
+      session: { accessToken: 'token-from-sign-in', user: USER },
+    },
+  });
+
+  await page.goto('/s/tok_abc123?from=claude');
+
+  await page.waitForURL(/\/connectors\/setup\/etsy\?connector=c1&from=claude$/, { timeout: 15_000 });
+  expect(calls[0]).toEqual({ open: { token: 'tok_abc123', from: 'claude' } });
+  expect(await page.evaluate(() => localStorage.getItem('amcp_token'))).toBe('token-from-sign-in');
 });
 
 test('signed out, it asks to sign in and comes back to the link', async ({ page }) => {

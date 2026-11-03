@@ -29,6 +29,8 @@
     }
   },
   "signIn": {
+    "continueAs": "Weiter als {email}",
+    "continueAsHint": "Sie haben sich hier gerade angemeldet, um Ihren KI-Assistenten zu verbinden.",
     "title": "Anmelden",
     "subtitle": "Erstellen Sie eigene Connectors für Claude, ChatGPT, Copilot, Meta Muse und jeden KI-Agenten",
     "emailVerified": "E-Mail-Adresse erfolgreich bestätigt! Sie können sich jetzt anmelden.",
@@ -148,11 +150,11 @@
     "question": "Wie möchten Sie Anything<brand>MCP</brand> nutzen?",
     "changeLater": "Sie können das später unter Einstellungen → Lizenz ändern.",
     "personal": {
-      "title": "Privat, Ausbildung oder Evaluierung",
-      "description": "Community Edition, kostenlos, für bis zu 3 Benutzer. Wir senden Ihnen einen Community-Schlüssel per E-Mail, damit Sie Sicherheits- und Release-Hinweise erhalten."
+      "title": "Community Edition, kostenlos",
+      "description": "Kostenlos unter AGPL-3.0 für jede Nutzung, auch kommerziell, für bis zu 3 aktive Benutzer. Wir senden Ihnen einen Community-Schlüssel per E-Mail, damit Sie Sicherheits- und Release-Hinweise erhalten."
     },
     "company": {
-      "title": "Für ein Unternehmen oder Team",
+      "title": "Mehr Benutzer oder Single Sign-On",
       "description": "Testen Sie Enterprise 30 Tage kostenlos: mehr Benutzer, Single Sign-On mit Entra ID, Google oder Okta sowie SCIM. Keine Zahlungsdaten."
     },
     "haveKey": "Ich habe einen Lizenzschlüssel",
@@ -168,7 +170,7 @@
     "activate": {
       "title": "Lizenz aktivieren",
       "subtitle": "Geben Sie Ihren Lizenzschlüssel ein, um Anything<brand>MCP</brand> zu aktivieren",
-      "available": "Lizenzschlüssel für Starter, Team und Enterprise erhalten Sie auf <link>anythingmcp.com</link>."
+      "available": "Enterprise-Lizenzschlüssel erhalten Sie auf Anfrage: <link>Kontakt aufnehmen</link>. Bestehende Starter- und Team-Schlüssel funktionieren weiter."
     },
     "keyLabel": "Lizenzschlüssel",
     "submit": "Lizenz aktivieren",
@@ -648,6 +650,11 @@
       "skillsAuto": "Automatisch: voller Text, solange kurz, sonst eine Liste bei Bedarf",
       "skillsInline": "Immer der volle Text",
       "skillsIndex": "Immer eine Liste (die KI öffnet einen Skill mit skill_get)",
+      "codeMode": "Code-Modus",
+      "codeModeOff": "Aus (keine Code-Ausführung)",
+      "codeModeTools": "Nur gespeicherte Code-Tools",
+      "codeModeInline": "Gespeicherte Code-Tools + Inline-Code",
+      "codeModeHint": "Lässt KI-Clients kurze Programme ausführen, die die Tools dieses Servers in einem Schritt orchestrieren. Standardmäßig aus; benötigt einen konfigurierten Code-Runner. Inline stellt zusätzlich das generische Tool code_execute für berechtigte Rollen bereit.",
       "skillsHint": "Wie die <link>KI-Skills</link> dieses Servers den KI-Client erreichen. Eine Liste hält die Anweisungen kurz; lange Abläufe werden immer bei Bedarf geöffnet.",
       "save": "Speichern"
     }
@@ -932,7 +939,11 @@
       "providerError": "{name} hat mit einem Fehler geantwortet.",
       "suggest": "Stattdessen {name} einrichten",
       "suggestOther": "Stattdessen den anderen Connector einrichten",
-      "saveAnyway": "Trotzdem speichern"
+      "saveAnyway": "Trotzdem speichern",
+      "appPendingTitle": "{name} akzeptiert diese Schlüssel noch nicht.",
+      "appPendingBody": "Ist Ihre App neu, prüft {name} sie, meist innerhalb weniger Tage: Wir schreiben Ihnen eine E-Mail, sobald sie freigegeben ist, sonst ist nichts zu tun. Ist Ihre App bereits aktiv, kopieren Sie das Shared Secret erneut von der Seite Ihrer App. Ihre Schlüssel sind gespeichert.",
+      "appPendingOpen": "Connector öffnen",
+      "switchTo": "Zu {name} wechseln"
     },
     "field": {
       "required": "Pflichtfeld",
@@ -942,7 +953,16 @@
       "stored": "Gespeichert. Leer lassen, um den Wert zu behalten",
       "hide": "Verbergen",
       "show": "Anzeigen",
-      "open": "Öffnen"
+      "open": "Öffnen",
+      "fix": {
+        "sentence": "{changes}: {value}",
+        "and": "und",
+        "scheme": "vorne https:// ergänzen",
+        "https": "statt http:// https:// verwenden",
+        "slash": "den / am Ende entfernen",
+        "www": "das www. entfernen",
+        "path": "{removed} nach dem Host entfernen"
+      }
     },
     "advanced": "Erweitert",
     "guide": {
@@ -950,7 +970,10 @@
       "back": "Zurück",
       "checking": "Wird geprüft…",
       "continue": "Weiter",
-      "tickHint": "Setzen Sie oben das Häkchen, sobald das erledigt ist."
+      "tickHint": "Setzen Sie oben das Häkchen, sobald das erledigt ist.",
+      "saveAndCheck": "Speichern und bei {name} prüfen",
+      "waitHint": "„Weiter“ wird aktiv, sobald {name} Ihre App freigegeben hat.",
+      "keysFirst": "Geben Sie zuerst im Schritt davor Ihre Schlüssel ein."
     },
     "title": {
       "finish": "Einrichtung von {name} abschließen",
@@ -1000,6 +1023,17 @@
       "fillPrevious": "{action}: Füllen Sie zuerst den vorherigen Schritt aus.",
       "screenshot": "Screenshot vom {date}; die Seite kann inzwischen etwas anders aussehen.",
       "problems": "Häufige Probleme"
+    },
+    "wait": {
+      "checking": "Wir fragen {name} nach Ihrer App…",
+      "notYet": "{name} akzeptiert diese Schlüssel noch nicht",
+      "checkedAt": "Zuletzt geprüft um {time}. Die Seite prüft erneut, sobald Sie zurückkommen.",
+      "checkAgain": "Erneut prüfen",
+      "checkingShort": "Wird geprüft…",
+      "activeAlready": "Schon freigegeben, aber hier geht es nicht weiter? Schlüssel neu eingeben",
+      "saved": "Ihre Schlüssel sind gespeichert. Sie können diese Seite schließen: Wenn Sie zurückkommen, öffnet sie sich bei diesem Schritt.",
+      "ready": "{name} hat Ihre App freigegeben.",
+      "readyNext": "Weiter mit dem nächsten Schritt."
     }
   },
   "setupSuccess": {
@@ -1687,7 +1721,7 @@
     "codeProgram": "Programm",
     "codeProgramHint": "Ein async-JavaScript-Rumpf. Andere Tools mit await amcp.run(name, args), amcp.search(query), amcp.describe(name) aufrufen. Die Tool-Eingaben stehen in args. Gib das Ergebnis zurück.",
     "codeUses": "Nutzt (Konnektoren)",
-    "codeUsesHint": "JSON: die Konnektoren, die dieses Code-Tool aufrufen darf, z. B. [{\"connectorId\":\"<id>\",\"tools\":[\"tool_name\"]}]. \"tools\" weglassen, um alle Tools eines Konnektors zu erlauben. Nur Konnektoren dieses Workspace.",
+    "codeUsesHint": "JSON-Array der Konnektoren, die dieses Code-Tool aufrufen darf. Jeder Eintrag nennt eine connectorId und optional eine Liste von Tool-Namen; ohne Tool-Liste sind alle Tools des Konnektors erlaubt. Nur Konnektoren dieses Workspace.",
     "codeRunAs": "Ausführen als",
     "codeRunAsInvoker": "Invoker (Rechte des Aufrufers)",
     "codeRunAsDefiner": "Definer (admin-kuratiert; nur Admins)",
@@ -2080,7 +2114,7 @@
     "cancel": "Abbrechen",
     "inviteUser": "Benutzer einladen",
     "dismiss": "ausblenden",
-    "licenseSeats": "Ihre Lizenz umfasst {limit} Benutzer. Um weitere Personen einzuladen, ändern Sie Ihren Tarif unter <link>Einstellungen → Lizenz</link>.",
+    "licenseSeats": "Ihre Lizenz umfasst {limit} Benutzer. Für weitere Benutzer fragen Sie uns nach Enterprise, unter <link>Einstellungen → Lizenz</link>.",
     "invite": {
       "title": "Neuen Benutzer einladen",
       "body": "Versenden Sie eine Einladungs-E-Mail. Die Person erhält einen Link, um ihr Konto mit der angegebenen Rolle zu erstellen.",
@@ -2327,6 +2361,7 @@
       "activate": "Lizenzschlüssel aktivieren",
       "changePlan": "Um zu einem anderen Tarif zu wechseln, <link>ändern Sie ihn im Abrechnungsportal</link>. Ihr bestehendes Abonnement wird umgestellt und anteilig abgerechnet, nicht doppelt angelegt.",
       "purchase": "Eine Lizenz kaufen Sie auf <link>anythingmcp.com</link>",
+      "selfHosted": "Geben Sie den Lizenzschlüssel ein, den Sie von uns erhalten haben. Bestehende Starter- und Team-Schlüssel funktionieren weiter.",
       "submit": "Aktivieren"
     },
     "upgrade": {
@@ -3212,12 +3247,17 @@
     },
     "locked": {
       "title": "Die Dateisuche ist Teil der kostenpflichtigen Editionen",
+      "titleEnterprise": "Die Dateisuche nach der Testphase ist Teil von Enterprise",
       "point1": "In PDF-, Excel-, Word- und Outlook-Dateien suchen, aus Claude, ChatGPT, Copilot und anderen KI-Clients.",
       "point2": "SFTP, FTP/FTPS, WebDAV und Netzwerkordner, im Hintergrund synchronisiert.",
       "point3": "Befristete Download-Links, Berechtigungen pro Rolle, Audit-Log.",
       "startTrial": "Kostenlose 30-Tage-Testphase starten",
       "buy": "Lizenz kaufen",
-      "activate": "Lizenz aktivieren"
+      "contactEnterprise": "Enterprise anfragen",
+      "activate": "Lizenz aktivieren",
+      "keyToStart": "Registrieren Sie unter Einstellungen → Lizenz einen kostenlosen Community-Schlüssel, um die 30-tägige Testphase der Dateisuche zu starten. Der Schlüssel ist kostenlos und kommt per E-Mail.",
+      "keyDuringTrial": "Registrieren Sie unter Einstellungen → Lizenz einen kostenlosen Community-Schlüssel, um die Dateisuche während der Testphase zu nutzen. Der Schlüssel ist kostenlos und kommt per E-Mail.",
+      "registerKey": "Kostenlosen Community-Schlüssel registrieren"
     },
     "card": {
       "title": "Dateisuche",
@@ -3324,6 +3364,12 @@
       "range": "{from}–{to} von {total}",
       "prev": "Zurück",
       "next": "Weiter"
+    },
+    "searchHint": {
+      "title": "Soll Ihre KI in den Dokumenten selbst suchen?",
+      "body": "Die Dateisuche indexiert die PDF-, Word-, Excel- und Outlook-Dateien auf Ihrem NAS, Server oder Speicher und hält den Index aktuell. So findet die KI, was in den Dateien steht, nicht nur ihre Namen.",
+      "cta": "Dateisuche einrichten",
+      "for": "Öffnet den Assistenten für {name}."
     }
   },
   "fileShare": {

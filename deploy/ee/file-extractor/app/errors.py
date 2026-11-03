@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
-ERROR_KINDS = ("unsupported", "encrypted", "corrupt", "timeout", "too_large", "empty")
+ERROR_KINDS = ("unsupported", "encrypted", "corrupt", "timeout", "too_large", "empty",
+               # POST /render only
+               "page_out_of_range", "damaged")
 
 
 class ExtractError(Exception):

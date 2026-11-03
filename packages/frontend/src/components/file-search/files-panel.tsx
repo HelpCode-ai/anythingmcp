@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError, fileSearch, type FileSearchOverview, type FileTreeNode } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { FolderTree, Pager, formatBytes, formatDate, formatNumber, hintClass, inputClass, intervalLabel, labelClass } from './shared';
+import { FolderTree, Pager, suggestedNext, useSelfHosted, formatBytes, formatDate, formatNumber, hintClass, inputClass, intervalLabel, labelClass } from './shared';
 
 /**
  * The Files tab of a File Search connector (#1385): sync state and progress,
@@ -37,6 +37,7 @@ export function FilesPanel({ connectorId }: { connectorId: string }) {
   const t = useTranslations('fileSearch');
   const locale = useLocale();
   const { token, user } = useAuth();
+  const selfHosted = useSelfHosted();
   const isAdmin = user?.role === 'ADMIN';
   const [o, setO] = useState<FileSearchOverview | null>(null);
   const [problems, setProblems] = useState<Array<{ path: string; status: string; lastError: string | null; size: number; attempts: number }>>([]);
@@ -117,7 +118,7 @@ export function FilesPanel({ connectorId }: { connectorId: string }) {
 
   const s = o.status;
   const quota = o.access.allowed ? o.access.quota : null;
-  const next = o.access.allowed ? o.access.next : null;
+  const next = suggestedNext(o.access.allowed ? o.access.next : null, selfHosted);
   const filesPct = quota?.maxFiles ? Math.min(100, Math.round((o.usage.files / quota.maxFiles) * 100)) : null;
   const manualLeft = quota?.manualSyncsPerDay != null ? Math.max(0, quota.manualSyncsPerDay - o.manualSyncsToday) : null;
   const paused = s.state.startsWith('paused_');

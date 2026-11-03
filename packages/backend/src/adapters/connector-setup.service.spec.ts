@@ -4,7 +4,7 @@ import { encrypt } from '../common/crypto/encryption.util';
 
 const KEY = 'k'.repeat(32);
 
-function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any } = {}) {
+function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any; cloud?: boolean } = {}) {
   process.env.ENCRYPTION_KEY = KEY;
   const links: any[] = [];
   const serverConnectors: any[] = [];
@@ -28,7 +28,9 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
   const realAdapters = new AdaptersService(
     { connector: {}, mcpTool: {} } as any,
     { reloadConnectorTools: jest.fn() } as any,
-    { get: (k: string) => (k === 'ENCRYPTION_KEY' ? KEY : undefined) } as any,
+    {
+      get: (k: string) => (k === 'ENCRYPTION_KEY' ? KEY : k === 'DEPLOYMENT_MODE' && opts.cloud ? 'cloud' : undefined),
+    } as any,
     {} as any,
   );
   const adapters: any = {
@@ -53,7 +55,7 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
   };
   const licenseGuard: any = {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
-    getUsage: jest.fn().mockResolvedValue({ connectors: { current: 1, max: 5 } }),
+    getUsage: jest.fn().mockResolvedValue({ plan: 'trial', connectors: { current: 1, max: 5 } }),
     getTrialState: jest.fn().mockResolvedValue(opts.trial ?? null),
   };
   const securityEvents: any = { log: jest.fn() };
@@ -77,7 +79,7 @@ describe('ConnectorSetupService — find', () => {
     const etsy = out.results.find((r: any) => r.adapter === 'etsy');
     expect(etsy.setup).toMatch(/sign-in at the provider/);
     expect(etsy.settingsYouMayPass.map((s: any) => s.name)).toEqual(['ETSY_CLIENT_ID']);
-    expect(etsy.enteredByTheUserOnTheLinkedPage).toContain('Shared secret');
+    expect(etsy.enteredByTheUserOnTheLinkedPage).toContain('Shared Secret');
     expect(out.connectorsLeftOnThisPlan).toBe(4);
   });
 
@@ -181,6 +183,55 @@ describe('ConnectorSetupService — find', () => {
   });
 });
 
+describe('ConnectorSetupService — File Search from the chat', () => {
+  it('suggests Synology File Search next to the DSM API connector, with the wizard link', async () => {
+    const { service, ctx } = build();
+    const out: any = (await service.find(ctx, { query: 'synology' })).body;
+    expect(out.results.slice(0, 2).map((r: any) => r.adapter)).toEqual(['synology', 'synology-file-search']);
+    const fs = out.results[1];
+    expect(fs.fileSearch).toBe(true);
+    expect(fs.setupUrl).toBe(
+      'https://cloud.example.com/connectors/new/file-search?protocol=sftp&preset=synology&adapter=synology-file-search&from=chat',
+    );
+    expect(fs.settingsYouMayPass).toBeUndefined();
+    expect(out.fileSearch.adapters).toContain('synology-file-search');
+    expect(out.fileSearch.whatItAdds).toMatch(/inside the documents/);
+    expect(out.next).toMatch(/setupUrl/);
+    // The DSM API connector keeps its normal answer.
+    expect(out.results[0].fileSearch).toBeUndefined();
+  });
+
+  it('offers the network folder on self-hosted only', async () => {
+    const selfHosted: any = (await build().service.find(build().ctx, { query: 'Netzlaufwerk' })).body;
+    expect(selfHosted.fileSearch.adapters).toContain('network-folder');
+
+    const { service, ctx } = build({ cloud: true });
+    const cloud: any = (await service.find(ctx, { query: 'Netzlaufwerk' })).body;
+    expect(cloud.results.map((r: any) => r.adapter)).not.toContain('network-folder');
+    expect(cloud.fileSearch.adapters).toEqual(['sftp', 'webdav']);
+  });
+
+  it('suggests nothing for SharePoint, OneDrive, Google Drive or Dropbox', async () => {
+    const { service, ctx } = build();
+    for (const query of ['sharepoint', 'onedrive', 'google drive', 'dropbox']) {
+      const out: any = (await service.find(ctx, { query })).body;
+      expect({ query, fileSearch: out.fileSearch }).toEqual({ query, fileSearch: undefined });
+      expect(out.results.some((r: any) => r.fileSearch)).toBe(false);
+    }
+  });
+
+  it('answers an install of a File Search entry with the wizard link, and installs nothing', async () => {
+    const { service, ctx, adapters, licenseGuard } = build({ role: 'ADMIN' });
+    const out: any = await service.install(ctx, { adapter: 'qnap-file-search' });
+    expect(out.isError).toBe(true);
+    expect(out.body.setupUrl).toBe(
+      'https://cloud.example.com/connectors/new/file-search?protocol=sftp&preset=qnap&adapter=qnap-file-search&from=chat',
+    );
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
+    expect(licenseGuard.checkCanCreateConnector).not.toHaveBeenCalled();
+  });
+});
+
 describe('ConnectorSetupService — install', () => {
   it('refuses a secret from the chat, before installing anything', async () => {
     const { service, adapters, ctx } = build();
@@ -217,6 +268,24 @@ describe('ConnectorSetupService — install', () => {
     expect(JSON.stringify(links)).not.toContain(token);
   });
 
+  it('installs Telegram and Shopify without the values in their API address, and asks for them', async () => {
+    // The bot token is part of Telegram's address and is never taken from the
+    // chat; the post-approve picker sends no values at all. Both installs
+    // used to be refused outright.
+    const { service, ctx, adapters } = build();
+    const telegram: any = await service.install(ctx, { adapter: 'telegram-bot' }, { via: 'post_approve' });
+    expect(adapters.importAdapter).toHaveBeenLastCalledWith('telegram-bot', 'u1', 'org-1', {}, { addressMayWait: true });
+    expect(telegram.isError).toBeUndefined();
+    expect(telegram.body.status).toBe('needs_input');
+    expect(telegram.body.whatTheUserDoes).toMatch(/bot token/i);
+    expect(telegram.body.finishSetupUrl).toMatch(/\/s\//);
+
+    const shopify: any = await service.install(ctx, { adapter: 'shopify' });
+    expect(shopify.isError).toBeUndefined();
+    expect(shopify.body.status).toBe('needs_input');
+    expect(shopify.body.finishSetupUrl).toMatch(/\/s\//);
+  });
+
   it('asks for the key of an Odoo JSON-RPC connector, which only its tools use', async () => {
     // The key lives in the request body. Before, the install answered "ready"
     // without a link and every call came back "Access Denied".
@@ -234,7 +303,7 @@ describe('ConnectorSetupService — install', () => {
     const { service, ctx } = build();
     const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2' } });
     expect(out.body.status).toBe('needs_input'); // the shared secret still has to be entered on the page
-    expect(out.body.whatTheUserDoes).toMatch(/enter Shared secret, then sign in to .+ and approve\./);
+    expect(out.body.whatTheUserDoes).toMatch(/enter Shared Secret, then sign in to .+ and approve\./);
     expect(out.body.finishSetupUrl).toBeDefined();
   });
 
@@ -251,6 +320,24 @@ describe('ConnectorSetupService — install', () => {
     const out: any = await service.install(ctx, { adapter: 'etsy', settings: { ETSY_CLIENT_ID: 'abc123:secret' } });
     expect(out.isError).toBe(true);
     expect(out.body.error).toMatch(/Keystring.*does not look right.*24 lowercase/);
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
+  });
+
+  it('adds the https:// an address from the chat lacks, and names the fix for one still wrong', async () => {
+    const { service, ctx, adapters } = build();
+    await service.install(ctx, { adapter: 'odoo', settings: { ODOO_URL: 'acme.odoo.com', ODOO_DB: 'acme' } });
+    expect(adapters.importAdapter).toHaveBeenLastCalledWith(
+      'odoo',
+      'u1',
+      'org-1',
+      { ODOO_URL: 'https://acme.odoo.com', ODOO_DB: 'acme' },
+      { addressMayWait: true },
+    );
+
+    adapters.importAdapter.mockClear();
+    const out: any = await service.install(ctx, { adapter: 'woocommerce', settings: { WOOCOMMERCE_URL: 'http://shop.example.com/' } });
+    expect(out.isError).toBe(true);
+    expect(out.body.error).toMatch(/Use https:\/\/ instead of http:\/\/ and remove the \/ at the end: https:\/\/shop\.example\.com\./);
     expect(adapters.importAdapter).not.toHaveBeenCalled();
   });
 
@@ -280,6 +367,25 @@ describe('ConnectorSetupService — install', () => {
     licenseGuard.getUsage.mockResolvedValueOnce({ plan: 'cloud_starter', connectors: { current: 5, max: 5 } });
     const out: any = await service.install(ctx, { adapter: 'openplz' });
     expect(out.body.upgradeUrl).toBe('https://cloud.example.com/settings/license?source=chat_setup');
+  });
+
+  it('without any licence, sends an admin to the licence page and does not suggest removing a connector', async () => {
+    const { service, ctx, licenseGuard } = build({ role: 'ADMIN' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('No active license.'));
+    licenseGuard.getUsage.mockResolvedValueOnce({ plan: null, connectors: { current: 0, max: null } });
+    const out: any = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.body.upgradeUrl).toBe('https://cloud.example.com/settings/license?source=chat_setup');
+    expect(out.body.whatTheUserCanDo).toMatch(/no active licence/);
+    expect(out.body.whatTheUserCanDo).not.toMatch(/remove a connector/);
+  });
+
+  it('without any licence, tells an editor to ask an admin to activate one', async () => {
+    const { service, ctx, licenseGuard } = build({ role: 'EDITOR' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('No active license.'));
+    licenseGuard.getUsage.mockResolvedValueOnce({ plan: null, connectors: { current: 0, max: null } });
+    const out: any = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.body.upgradeUrl).toBeUndefined();
+    expect(out.body.whatTheUserCanDo).toMatch(/activate a licence/);
   });
 
   it('at the limit, tells an editor who can lift it, without a billing link', async () => {
@@ -363,14 +469,28 @@ describe('ConnectorSetupService — links', () => {
     expect(before - cutoff.getTime()).toBeGreaterThanOrEqual(SETUP_LINK_RETENTION_MS - 1000);
   });
 
-  it('opens once, for the user it was made for, on the guided setup of that connector', async () => {
+  it('opens for the user it was made for, on the guided setup of that connector, in its workspace', async () => {
     const b = build();
     const token = await linkFor(b);
     await expect(b.service.resolveLink(token, 'someone-else')).resolves.toEqual({ error: expect.stringContaining('another account') });
     await expect(b.service.resolveLink(token, 'u1', 'claude')).resolves.toEqual({
       redirect: '/connectors/setup/weclapp?connector=c-weclapp&from=claude',
+      organizationId: 'org-1',
     });
-    await expect(b.service.resolveLink(token, 'u1')).resolves.toEqual({ error: expect.stringContaining('already used') });
+  });
+
+  it('opens again for the same user until it expires, and records only the first opening', async () => {
+    // A second click on the link in the chat said "already used".
+    const b = build();
+    const token = await linkFor(b);
+    await b.service.resolveLink(token, 'u1');
+    const first = b.links[0].usedAt;
+    expect(first).toBeInstanceOf(Date);
+    await expect(b.service.resolveLink(token, 'u1')).resolves.toMatchObject({
+      redirect: '/connectors/setup/weclapp?connector=c-weclapp&from=assistant',
+    });
+    expect(b.links[0].usedAt).toBe(first);
+    await expect(b.service.resolveLink(token, 'someone-else')).resolves.toEqual({ error: expect.stringContaining('another account') });
   });
 
   it('names the assistant of the chat on the link, and nothing when it is not known', async () => {
@@ -407,6 +527,7 @@ describe('ConnectorSetupService — links', () => {
       const token = await linkFor(b);
       await expect(b.service.resolveLink(token, 'u1', from)).resolves.toEqual({
         redirect: `/connectors/setup/weclapp?connector=c-weclapp&from=${back}`,
+        organizationId: 'org-1',
       });
     }
   });
@@ -417,5 +538,32 @@ describe('ConnectorSetupService — links', () => {
     b.links[0].expiresAt = new Date(Date.now() - 1000);
     await expect(b.service.resolveLink(token, 'u1')).resolves.toEqual({ error: expect.stringContaining('expired') });
     await expect(b.service.resolveLink('made-up', 'u1')).resolves.toEqual({ error: expect.stringContaining('expired') });
+  });
+});
+
+describe('ConnectorSetupService — where a setup call comes from', () => {
+  const logged = (productEvents: { log: jest.Mock }, event: string) =>
+    productEvents.log.mock.calls.map(([e]) => e).filter((e) => e.event === event);
+
+  it('records the chat\'s own calls as via mcp, as before', async () => {
+    const { service, ctx, productEvents } = build({ role: 'ADMIN' });
+    await service.find(ctx, { query: 'telegram' });
+    await service.install(ctx, { adapter: 'telegram-bot' });
+    expect(logged(productEvents, 'catalog_search')[0].metadata.via).toBe('mcp');
+    expect(logged(productEvents, 'setup_completed')[0].metadata).toEqual(
+      expect.objectContaining({ adapterSlug: 'telegram-bot', via: 'mcp' }),
+    );
+  });
+
+  it('records the search fallback and a post-approve pick apart', async () => {
+    const { service, ctx, productEvents } = build({ role: 'ADMIN' });
+    await service.find(ctx, { query: 'telegram' }, { via: 'mcp_search_fallback' });
+    await service.install(ctx, { adapter: 'telegram-bot' }, { via: 'post_approve' });
+    expect(logged(productEvents, 'catalog_search')[0].metadata.via).toBe('mcp_search_fallback');
+    expect(logged(productEvents, 'setup_completed')[0].metadata).toEqual({
+      adapterSlug: 'telegram-bot',
+      via: 'post_approve',
+      verified: false,
+    });
   });
 });

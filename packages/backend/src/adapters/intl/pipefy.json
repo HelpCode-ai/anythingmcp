@@ -1,0 +1,170 @@
+{
+  "category": "project-management",
+  "connector": {
+    "authConfig": {
+      "token": "{{PIPEFY_API_TOKEN}}"
+    },
+    "authType": "BEARER_TOKEN",
+    "baseUrl": "https://api.pipefy.com/graphql",
+    "headers": {
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "name": "Pipefy GraphQL API",
+    "type": "GRAPHQL"
+  },
+  "description": "Pipefy work management platform: organizations, pipes (workflows), cards and phases through the GraphQL API. List the pipes an AI assistant can see, track cards as they move through phases, and read card field values.",
+  "docsUrl": "https://developers.pipefy.com/",
+  "icon": "pipefy",
+  "instructions": "**Getting credentials**\n1. Pipefy authenticates API calls with a bearer token. You can use a **Personal Access Token** (go to https://app.pipefy.com/tokens, \"Generate new token\", give it a description and save — use the longer token shown there) or a **Service Account** token (recommended for production, see the Authentication page in the Pipefy developer docs). Either way, set `PIPEFY_API_TOKEN`.\n2. The adapter sends it as `Authorization: Bearer <token>` on every call.\n\n**Identifiers**\nAll Pipefy ids are numeric: a pipe id is the number in the pipe URL (e.g. `301234567` in `https://app.pipefy.com/pipes/301234567`), likewise card, phase and organization ids. Pass them as strings, e.g. `\"301234567\"`.\n\n**Pagination and limits**\n`pipefy_list_cards` pages with `first`/`after`: `first` caps the page (default 25, max 50 — the most Pipefy returns per request), and when `pageInfo.hasNextPage` is true, pass `pageInfo.endCursor` as `after` for the next page. Pipefy also enforces a monthly API-call quota that depends on the plan; one tool call is one API call.\n\n**Common workflows**\n- Explore: `pipefy_list_organizations` → `pipefy_list_pipes` (with an organization id) → `pipefy_get_pipe` (phases of one pipe).\n- Track work: `pipefy_list_cards` (cards in a pipe, optionally paged) → `pipefy_get_card` (full field values of one card).\n- Phase detail: `pipefy_get_phase` for a phase's card count and its fields.\n\n**Limitations**\nThis adapter is read-only: it lists and inspects pipes, cards, phases and organizations. It does not create, move or update cards — Pipefy mutations are out of scope for this version. The `search` argument of the cards query is not exposed; page through `pipefy_list_cards` instead.",
+  "name": "Pipefy",
+  "probe": {
+    "tool": "pipefy_list_organizations"
+  },
+  "region": "intl",
+  "requiredEnvVars": [
+    "PIPEFY_API_TOKEN"
+  ],
+  "slug": "pipefy",
+  "tools": [
+    {
+      "description": "List the organizations the token can see, with their id and name. The lightest call — it doubles as the auth check. Organization ids narrow pipefy_list_pipes.",
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Organizations { organizations { id name } }"
+      },
+      "name": "pipefy_list_organizations",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "description": "List the pipes (workflows) of one organization, with their id and name. Pipe ids narrow pipefy_get_pipe and pipefy_list_cards.",
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Pipes($orgId: ID!) { organization(id: $orgId) { id name pipes { id name } } }",
+        "queryParams": {
+          "orgId": "$org_id"
+        }
+      },
+      "name": "pipefy_list_pipes",
+      "parameters": {
+        "properties": {
+          "org_id": {
+            "description": "Organization id, e.g. \"123456\" (the number in the organization URL). pipefy_list_organizations lists them.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "org_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Show one pipe in full: id, name, card counts, its phases (id and name), the start-form fields and the labels. Use it to learn the phase ids before listing cards.",
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Pipe($pipeId: ID!) { pipe(id: $pipeId) { id name cards_count opened_cards_count phases { id name } start_form_fields { id label } labels { id name color } } }",
+        "queryParams": {
+          "pipeId": "$pipe_id"
+        }
+      },
+      "name": "pipefy_get_pipe",
+      "parameters": {
+        "properties": {
+          "pipe_id": {
+            "description": "Pipe id, e.g. \"301234567\" (the number in the pipe URL).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pipe_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "List cards of one pipe, a page at a time: id, title, done flag, update time, current phase and assignees. Page with first/after — when pageInfo.hasNextPage is true, pass pageInfo.endCursor as after.",
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Cards($pipeId: ID!, $first: Int = 25, $after: String) { allCards(pipeId: $pipeId, first: $first, after: $after) { pageInfo { hasNextPage endCursor } edges { node { id title done updated_at current_phase { id name } assignees { name email } } } } }",
+        "queryParams": {
+          "after": "$after",
+          "first": "$first",
+          "pipeId": "$pipe_id"
+        }
+      },
+      "name": "pipefy_list_cards",
+      "parameters": {
+        "properties": {
+          "after": {
+            "description": "Cursor for the next page: the pageInfo.endCursor of the previous call. Omit for the first page.",
+            "type": "string"
+          },
+          "first": {
+            "description": "Cards per page (default 25, max 50 — the most Pipefy returns per request).",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pipe_id": {
+            "description": "Pipe id, e.g. \"301234567\". pipefy_list_pipes lists them.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pipe_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Show one card in full: id, title, done flag, its pipe and current phase, every field with its name and value, and the assignees.",
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Card($cardId: ID!) { card(id: $cardId) { id title done updated_at pipe { id name } current_phase { id name } fields { name value filled_at } assignees { name email } } }",
+        "queryParams": {
+          "cardId": "$card_id"
+        }
+      },
+      "name": "pipefy_get_card",
+      "parameters": {
+        "properties": {
+          "card_id": {
+            "description": "Card id, e.g. \"123456789\" (the number in the card URL).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "card_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Show one phase: id, name, how many cards it holds, and the fields defined on it.",
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Phase($phaseId: ID!) { phase(id: $phaseId) { id name cards_count fields { id label } } }",
+        "queryParams": {
+          "phaseId": "$phase_id"
+        }
+      },
+      "name": "pipefy_get_phase",
+      "parameters": {
+        "properties": {
+          "phase_id": {
+            "description": "Phase id, e.g. \"12345678\". pipefy_get_pipe lists a pipe's phases.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase_id"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

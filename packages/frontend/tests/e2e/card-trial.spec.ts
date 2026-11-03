@@ -5,11 +5,15 @@ import {
   cardTrialDisplayEnd,
   cardTrialEligible,
   decodePlanIntent,
+  describeUsage,
   encodePlanIntent,
   formatPlanPrice,
   formatTrialEnd,
+  limitsExceeded,
   parsePlanIntent,
   purchaseDestination,
+  selectionForUsage,
+  smallestFittingPlan,
   trialRunning,
   yearlyPerMonth,
   yearlySaving,
@@ -63,6 +67,34 @@ test.describe('card-trial helpers', () => {
     expect(
       cardTrialEligible({ isCloud: true, role: 'ADMIN', license: { ...trial, expiresAt: new Date(now + 86_400_000).toISOString() }, now }),
     ).toBe(false);
+  });
+
+  test('preselects the smallest plan the workspace fits in', () => {
+    const [starter, team] = CLOUD_PLANS;
+    const small = { connectors: 5, mcpServers: 3, users: 1 };
+    const sixConnectors = { connectors: 6, mcpServers: 1, users: 1 };
+    const fourServers = { connectors: 2, mcpServers: 4, users: 1 };
+    const twoUsers = { connectors: 1, mcpServers: 1, users: 2 };
+    const huge = { connectors: 16, mcpServers: 2, users: 4 };
+    expect(limitsExceeded(starter, small)).toEqual([]);
+    expect(limitsExceeded(starter, sixConnectors)).toEqual(['connectors']);
+    expect(limitsExceeded(starter, huge)).toEqual(['connectors', 'users']);
+    expect(limitsExceeded(team, huge)).toEqual(['connectors', 'users']);
+    expect(smallestFittingPlan(small)).toBe('starter');
+    for (const u of [sixConnectors, fourServers, twoUsers]) expect(smallestFittingPlan(u)).toBe('team');
+    expect(smallestFittingPlan(huge)).toBeNull();
+
+    const starterYearly = { plan: 'starter' as const, period: 'yearly' as const };
+    expect(selectionForUsage(starterYearly, small)).toEqual(starterYearly);
+    expect(selectionForUsage(starterYearly, null)).toEqual(starterYearly);
+    // Outgrown: Team, keeping the period; past Team too, still Team (Enterprise is quoted).
+    expect(selectionForUsage(starterYearly, twoUsers)).toEqual({ plan: 'team', period: 'yearly' });
+    expect(selectionForUsage(starterYearly, huge)).toEqual({ plan: 'team', period: 'yearly' });
+    // A plan picked on the pricing page that fits is kept.
+    expect(selectionForUsage({ plan: 'team', period: 'monthly' }, small)).toEqual({ plan: 'team', period: 'monthly' });
+
+    expect(describeUsage(huge, ['connectors', 'users'])).toBe('16 connectors, 4 users');
+    expect(describeUsage({ connectors: 1, mcpServers: 1, users: 1 }, ['mcpServers'])).toBe('1 MCP server');
   });
 
   test('a plan button clicked with a workspace leads to the purchase, not a sign-up', () => {
@@ -142,10 +174,15 @@ async function cloudSession(
     priceEstimate?: Record<string, unknown>;
     /** No session in the browser; signing in with the form starts one. */
     signedOut?: boolean;
+    /** GET /license/usage: current counts of the workspace. */
+    usage?: { connectors: number; mcpServers: number; users: number };
+    /** GET /organizations/mine: the workspaces the user belongs to. */
+    orgs?: { id: string; name: string; role: string; joinedAt: string }[];
   } = {},
 ) {
   const user = opts.user ?? ADMIN;
   const posted: unknown[] = [];
+  const switched: unknown[] = [];
   const origin = test.info().project.use.baseURL ?? 'http://localhost:3100';
   if (!opts.signedOut) await page.context().addCookies([{ name: 'amcp_token', value: 't', url: origin }]);
   await page.addInitScript(
@@ -188,7 +225,17 @@ async function cloudSession(
       );
     }
     if (p.endsWith('/license/usage')) {
-      return json({ plan: 'trial', connectors: { current: 0, max: 2, isOver: false }, mcpServers: { current: 0, max: 2, isOver: false }, users: { current: 1, max: 1, isOver: false }, isOverAny: false });
+      const u = opts.usage ?? { connectors: 0, mcpServers: 0, users: 1 };
+      return json({ plan: 'trial', connectors: { current: u.connectors, max: 2, isOver: false }, mcpServers: { current: u.mcpServers, max: 2, isOver: false }, users: { current: u.users, max: 1, isOver: false }, isOverAny: false });
+    }
+    if (p.endsWith('/organizations/mine')) return json(opts.orgs ?? [{ id: 'o1', name: 'Main', role: 'ADMIN', joinedAt: '2026-10-01' }]);
+    if (p.endsWith('/organizations/current')) {
+      const current = (opts.orgs ?? []).find((o) => o.id === user.organizationId);
+      return json({ id: user.organizationId, name: current?.name ?? 'Main', createdAt: '2026-10-01' });
+    }
+    if (p.endsWith('/organizations/switch') && req.method() === 'POST') {
+      switched.push(req.postDataJSON());
+      return json({ error: 'stubbed' }, 500);
     }
     if (p.endsWith('/adapters/starter-pack')) return json([]);
     if (p.endsWith('/connectors') || p.endsWith('/adapters')) return json([]);
@@ -197,7 +244,7 @@ async function cloudSession(
   await page.route('https://checkout.example.test/**', (route) =>
     route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Stripe Checkout stub</h1>' }),
   );
-  return { posted };
+  return { posted, switched };
 }
 
 test.describe('local currency helpers', () => {
@@ -498,6 +545,48 @@ test.describe('a plan button clicked by someone already signed in (cloud)', () =
     await page.getByRole('button', { name: 'Continue to checkout' }).click();
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'pricing_signed_in' }]);
+  });
+
+  test('the licence wall preselects Team for a workspace that outgrew Starter, and says why', async ({ page }) => {
+    const { posted } = await cloudSession(page, {
+      seed: SHOWN,
+      license: { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 86_400_000).toISOString(), trialDaysLeft: 0 },
+      usage: { connectors: 7, mcpServers: 2, users: 2 },
+    });
+    await page.goto('/connectors');
+    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('radio', { name: /Team/ })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('radio', { name: /Starter/ })).toContainText('This workspace has 7 connectors, 2 users');
+    await expect(page.getByRole('radio', { name: /Team/ })).not.toContainText('This workspace has');
+    await page.getByRole('button', { name: 'Subscribe to Team' }).click();
+    await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
+    expect(posted).toEqual([{ plan: 'team', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
+  });
+
+  test('the licence wall lets someone in several workspaces switch to another one', async ({ page }) => {
+    const { switched } = await cloudSession(page, {
+      seed: SHOWN,
+      license: { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 86_400_000).toISOString(), trialDaysLeft: 0 },
+      orgs: [
+        { id: 'o1', name: 'test', role: 'ADMIN', joinedAt: '2026-10-20' },
+        { id: 'o2', name: 'Acme', role: 'ADMIN', joinedAt: '2026-09-01' },
+      ],
+    });
+    await page.goto('/connectors');
+    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Switch to another workspace')).toBeVisible();
+    await page.getByRole('button', { name: /Acme/ }).click();
+    await expect.poll(() => switched).toEqual([{ organizationId: 'o2' }]);
+  });
+
+  test('the licence wall shows no switch to someone in a single workspace', async ({ page }) => {
+    await cloudSession(page, {
+      seed: SHOWN,
+      license: { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 86_400_000).toISOString(), trialDaysLeft: 0 },
+    });
+    await page.goto('/connectors');
+    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Switch to another workspace')).toHaveCount(0);
   });
 
   test('an ended trial lands on the licence wall with the clicked plan preselected', async ({ page }) => {
