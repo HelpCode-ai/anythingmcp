@@ -293,7 +293,7 @@ export function GuideWaitPanel({
         <span aria-hidden className={cn('mt-1 size-2.5 flex-none rounded-full bg-[var(--warn)]', status === 'checking' && 'animate-pulse')} />
         <div className="min-w-0 space-y-0.5">
           <p className="text-sm font-medium text-[var(--text)]">
-            {status === 'checking' && !checkedAt ? `Asking ${name} about your app…` : `${name} has not approved your app yet`}
+            {status === 'checking' && !checkedAt ? `Asking ${name} about your app…` : `${name} does not accept these keys yet`}
           </p>
           {time && (
             <p className="text-xs text-[var(--text-3)]">
