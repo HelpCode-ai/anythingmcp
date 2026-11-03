@@ -256,7 +256,10 @@
       "point3": "Temporary download links, permissions per role, audit log.",
       "startTrial": "Start the free 30-day trial",
       "buy": "Buy a licence",
-      "activate": "Activate a licence"
+      "activate": "Activate a licence",
+      "keyToStart": "Register a free Community key under Settings → License to start the 30-day File Search trial. The key is free and arrives by email.",
+      "keyDuringTrial": "Register a free Community key under Settings → License to use File Search during the trial. The key is free and arrives by email.",
+      "registerKey": "Register a free Community key"
     },
     "card": {
       "title": "File Search",

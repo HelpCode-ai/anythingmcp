@@ -2099,7 +2099,14 @@ export interface FileSearchQuota {
 
 export type FileSearchAccess =
   | { allowed: true; plan: string; quota: FileSearchQuota; trialEndsAt?: string | null; next?: { plan: string; quota: FileSearchQuota } | null }
-  | { allowed: false; reason: 'no_licence' | 'expired' | 'community' | 'plan_without_feature'; message: string; trialAvailable: boolean };
+  | {
+      allowed: false;
+      reason: 'no_licence' | 'expired' | 'community' | 'plan_without_feature';
+      message: string;
+      trialAvailable: boolean;
+      /** Self-hosted: File Search waits for a registered licence key (the free Community key counts). */
+      keyRequired?: 'to_start' | 'during_trial' | null;
+    };
 
 export interface FileSearchPolicy {
   publicLinks: boolean;

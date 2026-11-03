@@ -10,6 +10,8 @@ import { PrismaService } from '../../common/prisma.service';
 import { DeploymentService } from '../../common/deployment.service';
 import { SiteSettingsService } from '../../settings/site-settings.service';
 import { LicenseService, LicenseInfo } from '../../license/license.service';
+import { countActiveSeats } from '../../license/usage-report';
+import { FILE_SEARCH_TRIAL_NEEDS_KEY } from '../../file-search/file-search-access.service';
 
 /** Active users a Community instance includes. */
 export const COMMUNITY_SEAT_LIMIT = 3;
@@ -265,6 +267,9 @@ export class EditionService implements OnModuleInit {
       throw new ConflictException('The Enterprise trial has already been used on this instance.');
     }
     const ends = new Date(now.getTime() + BUSINESS_TRIAL_DAYS * DAY_MS);
+    // Trials started from this release open File Search only with a
+    // registered licence key; earlier trials keep it (FileSearchAccessService).
+    await this.siteSettings.set(FILE_SEARCH_TRIAL_NEEDS_KEY, 'true');
     await this.siteSettings.set(TRIAL_KEY, ends.toISOString());
     this.logger.log(`Enterprise trial started, ends ${ends.toISOString()}.`);
     return this.getState(now);
@@ -278,9 +283,7 @@ export class EditionService implements OnModuleInit {
 
   /** Users with at least one active membership, across the instance. */
   private countSeats(): Promise<number> {
-    return this.prisma.user.count({
-      where: { memberships: { some: { deactivatedAt: null } } },
-    });
+    return countActiveSeats(this.prisma);
   }
 
   private async isActiveSomewhere(userId: string): Promise<boolean> {
