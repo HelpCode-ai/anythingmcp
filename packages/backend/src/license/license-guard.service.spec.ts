@@ -128,3 +128,32 @@ describe('LicenseGuardService.getTrialState', () => {
     await expect(make({ plan: 'trial', status: 'active', expiresAt: ends }, null, false).getTrialState('o1', now)).resolves.toBeNull();
   });
 });
+
+describe('LicenseGuardService.getUsage', () => {
+  function make(features: Record<string, number>) {
+    const prisma = {
+      connector: { count: jest.fn().mockResolvedValue(7) },
+      mcpServerConfig: { count: jest.fn().mockResolvedValue(2) },
+      organizationMember: { count: jest.fn().mockResolvedValue(2) },
+      user: { count: jest.fn().mockResolvedValue(1) },
+    };
+    const licenseService = {
+      getCurrentLicense: jest.fn().mockResolvedValue({ plan: 'starter', status: 'active', features }),
+    };
+    const guard = new LicenseGuardService(prisma as any, licenseService as any, { isCloud: () => true } as any);
+    return { guard, prisma };
+  }
+
+  it('counts the workspace users by active membership, so members invited from another workspace count', async () => {
+    const { guard, prisma } = make({ maxConnectors: 5, maxMcpServers: 3, maxUsers: 1 });
+    const usage = await guard.getUsage('u1', 'org_2');
+    expect(prisma.organizationMember.count).toHaveBeenCalledWith({
+      where: { organizationId: 'org_2', deactivatedAt: null },
+    });
+    expect(prisma.user.count).not.toHaveBeenCalled();
+    expect(usage.users).toEqual({ current: 2, max: 1, isOver: true });
+    expect(usage.connectors).toEqual({ current: 7, max: 5, isOver: true });
+    expect(usage.mcpServers).toEqual({ current: 2, max: 3, isOver: false });
+    expect(usage.isOverAny).toBe(true);
+  });
+});
