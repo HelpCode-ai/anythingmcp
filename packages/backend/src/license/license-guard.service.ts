@@ -194,6 +194,18 @@ export class LicenseGuardService {
     return effectiveCodeModePlan(license?.plan, cardTrial);
   }
 
+  /**
+   * The effective code-mode plan for a workspace (a card-backed trial resolves
+   * to `team`), so the run-quota enforcement in the MCP code path can look up
+   * this workspace's monthly and concurrency caps. Plan resolution stays here,
+   * next to the other code-mode gating. Returns `community` when there is no
+   * resolvable licence.
+   */
+  async codeModePlanForOrg(organizationId?: string): Promise<string> {
+    const license = await this.licenseService.getCurrentLicense(organizationId);
+    return this.codeModePlan(license);
+  }
+
   /** How many saved code tools an organization has (endpoint method 'code'). */
   private async countCodeTools(organizationId: string): Promise<number> {
     const rows = await this.prisma.$queryRaw<{ count: number }[]>`
