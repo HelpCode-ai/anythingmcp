@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "file-server-search",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Search, read and cite the documents in your company folders on SFTP, FTPS, FTP, WebDAV (Nextcloud, ownCloud), S3-compatible storage or a NAS (Synology, QNAP, FRITZ!Box, Hetzner Storage Box).",
   "author": {
     "name": "KOCH Freiburg GmbH",
@@ -87,10 +87,10 @@
               "expected_behavior": "Lists the 2025 and 2026 price lists of Brandt Türen (Excel and PDF) and names the 2026 list as the current one, with the file dates."
             },
             {
-              "description": "Show a page as a picture",
-              "prompt": "Show me the first page of the Brandt Türen 2026 price list PDF.",
-              "tools_triggered": "find_files, view_document_page",
-              "expected_behavior": "Finds 'Preisliste Brandt Türen 2026.pdf' and shows page 1 as an image."
+              "description": "Original file as a download link",
+              "prompt": "Give me the original Konditionen 2024 document of Brandt Türen as a download link.",
+              "tools_triggered": "find_files, get_file_link",
+              "expected_behavior": "Finds Lieferanten/Brandt Türen - 70121/Konditionen/Konditionen 2024.docx and returns a download link that opens for signed-in members of the workspace and expires after 24 hours."
             },
             {
               "description": "Which folders are connected",
