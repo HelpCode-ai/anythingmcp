@@ -692,6 +692,27 @@ describe('OnboardingCronService — onboarding pass', () => {
       expect(prisma.productEvent.create).not.toHaveBeenCalled();
     });
 
+    it('skips a user deleted during the run and goes on with the others', async () => {
+      const { service, email, prisma, update } = makeService({
+        candidates: [user({ id: 'u1' }), user({ id: 'u3', email: 'u3@example.com' })],
+      });
+      update.mockImplementation(async (args: any) => {
+        if (args.where.id === 'u1') throw Object.assign(new Error('No record was found for an update.'), { code: 'P2025' });
+        return {};
+      });
+      const out = await service.run();
+      expect(out.firstReminderHoldout).toBe(0);
+      expect(out.firstReminders).toBe(1);
+      expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u3@example.com', 'Ada', 1, undefined);
+      expect(events(prisma).map((e: any) => e.userId)).toEqual(['u3']);
+    });
+
+    it('still fails on other database errors', async () => {
+      const { service, update } = makeService({ candidates: [user({ id: 'u1' })] });
+      update.mockRejectedValue(Object.assign(new Error('db down'), { code: 'P1001' }));
+      await expect(service.run()).rejects.toThrow('db down');
+    });
+
     it('still sends when the event cannot be written', async () => {
       const { service, prisma } = makeService({ candidates: [user({ id: 'u3' })] });
       prisma.productEvent.create.mockRejectedValue(new Error('db down'));

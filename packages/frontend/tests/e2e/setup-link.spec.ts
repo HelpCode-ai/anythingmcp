@@ -32,6 +32,7 @@ async function mockApi(
       return route.fulfill({ status: resolve.status, contentType: 'application/json', body: JSON.stringify(resolve.body) });
     }
     if (path === '/api/setup-links/open') {
+      expect(req.headers()['x-amcp-dashboard']).toBe('1');
       resolved.push({ open: req.postDataJSON() });
       return route.fulfill({ status: open.status, contentType: 'application/json', body: JSON.stringify(open.body) });
     }

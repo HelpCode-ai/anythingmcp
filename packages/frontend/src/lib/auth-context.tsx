@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { users, server, organizations, AUTH_EXPIRED_EVENT, ApiError } from './api';
+import { users, server, organizations, recentSignIn, AUTH_EXPIRED_EVENT, ApiError } from './api';
 import { storage } from './storage';
 import { clearCommandPaletteCache } from './command-palette-cache';
 
@@ -78,6 +78,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearCommandPaletteCache();
+    // Signing out also forgets the authorization page's recent sign-in, or
+    // the sign-in page would offer "Continue as …" right after.
+    void recentSignIn.forget();
     setToken(null);
     setUser(null);
     setOrgName(null);
