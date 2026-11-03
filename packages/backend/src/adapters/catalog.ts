@@ -245,6 +245,7 @@ import * as firma from './intl/firma.json';
 import * as fishAudio from './intl/fish-audio.json';
 import * as flutterwave from './intl/flutterwave.json';
 import * as folk from './intl/folk.json';
+import * as footballCharts from './intl/football-charts.json';
 import * as footballData from './intl/football-data.json';
 import * as fred from './intl/fred.json';
 import * as freepik from './intl/freepik.json';
@@ -1249,6 +1250,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fishAudio as unknown as AdapterDefinition,
   flutterwave as unknown as AdapterDefinition,
   folk as unknown as AdapterDefinition,
+  footballCharts as unknown as AdapterDefinition,
   footballData as unknown as AdapterDefinition,
   fred as unknown as AdapterDefinition,
   freepik as unknown as AdapterDefinition,

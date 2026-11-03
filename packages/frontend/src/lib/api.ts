@@ -10,6 +10,7 @@ interface RequestOptions {
   body?: unknown;
   token?: string;
   skipAutoLogout?: boolean;
+  headers?: Record<string, string>;
 }
 
 // Emitted when any authenticated request gets a 401 — auth-context listens for this.
@@ -49,6 +50,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(options.headers ?? {}),
   };
 
   if (token) {
@@ -650,11 +652,56 @@ export const connectors = {
 };
 
 /** One-time links an AI client hands out to finish a connector's setup. */
+/** A dashboard session handed back with a setup link, for the link's workspace. */
+export interface SetupLinkSession {
+  accessToken: string;
+  user: { id: string; email: string; name: string | null; role: string; organizationId: string | null };
+}
+
+/**
+ * Sent on the requests that turn the recent sign-in cookie into a session:
+ * another origin cannot add it without a CORS preflight it does not pass.
+ */
+const DASHBOARD_HEADER = { 'X-AMCP-Dashboard': '1' };
+
+/**
+ * The account this browser signed in with on the authorization page a short
+ * while ago (connecting Claude, ChatGPT, …): the sign-in page offers
+ * "Continue as …" instead of asking for the password again.
+ */
+export const recentSignIn = {
+  who: async (): Promise<{ email: string; name: string | null } | null> => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/recent-sign-in`);
+      if (response.status !== 200) return null;
+      const body = await response.json();
+      return typeof body?.email === 'string' ? body : null;
+    } catch {
+      return null;
+    }
+  },
+  continue: () =>
+    request<SetupLinkSession>('/api/auth/recent-sign-in', { method: 'POST', headers: DASHBOARD_HEADER }),
+  /** On sign-out: the next sign-in page offers nothing. */
+  forget: () => fetch(`${API_BASE}/api/auth/recent-sign-in`, { method: 'DELETE' }).then(() => undefined, () => undefined),
+};
+
 export const setupLinks = {
+  /** Signed in: `session` is set when the link's connector is in another workspace. */
   resolve: (token: string, authToken: string, from?: string) =>
-    request<{ redirect: string }>('/api/setup-links/resolve', {
+    request<{ redirect: string; session?: SetupLinkSession }>('/api/setup-links/resolve', {
       method: 'POST',
       token: authToken,
+      body: { token, ...(from ? { from } : {}) },
+    }),
+  /**
+   * Not signed in to the dashboard, right after signing in to connect an AI
+   * client: the backend checks the sign-in cookie that browser received.
+   */
+  open: (token: string, from?: string) =>
+    request<{ redirect: string; session: SetupLinkSession }>('/api/setup-links/open', {
+      method: 'POST',
+      headers: DASHBOARD_HEADER,
       body: { token, ...(from ? { from } : {}) },
     }),
 };
@@ -736,6 +783,12 @@ export type VerifyResult =
       status?: number | null;
       suggest?: string;
       suggestName?: string;
+      /**
+       * The same suggestion, ready to act on: the setup of `slug`, started
+       * with `prefill` (addresses and settings entered here, never a secret).
+       * An Odoo below 19 offers the JSON-RPC connector this way.
+       */
+      switchTo?: { slug: string; name: string; prefill: Record<string, string> };
       /**
        * The provider refused the app keys in a way that may be an app awaiting
        * its approval (Etsy: Pending) or a wrong secret of an active app (Etsy

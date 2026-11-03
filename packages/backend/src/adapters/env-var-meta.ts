@@ -121,3 +121,31 @@ export function describeAdapterEnvVars(
     return { ...derived, ...own, name, required } as EnvVarDescriptor;
   });
 }
+
+type DescribedAdapter = Parameters<typeof describeAdapterEnvVars>[0];
+
+/**
+ * The values already entered for `from` that setting up `to` instead can
+ * start with: those `to` declares under the same name (`ODOO_URL`,
+ * `ODOO_DB`), when neither adapter treats them as a secret or a credential.
+ * They go into a link (`prefill.<NAME>`), so a key or password never does.
+ */
+export function carriedSetupValues(
+  from: DescribedAdapter,
+  to: DescribedAdapter,
+  values: Record<string, unknown> | null | undefined,
+): Record<string, string> {
+  if (!values) return {};
+  const plain = (d: EnvVarDescriptor) => !d.secret && d.kind !== 'credential';
+  const source = new Map(describeAdapterEnvVars(from).map((d) => [d.name, d]));
+  const out: Record<string, string> = {};
+  for (const d of describeAdapterEnvVars(to)) {
+    const own = source.get(d.name);
+    const value = values[d.name];
+    if (!own || !plain(own) || !plain(d) || typeof value !== 'string') continue;
+    const text = value.trim();
+    // A value still a {{VARIABLE}} was never entered.
+    if (text && !/\{\{/.test(text)) out[d.name] = text;
+  }
+  return out;
+}

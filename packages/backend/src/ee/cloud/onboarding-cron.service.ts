@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
+import type { Prisma } from '../../generated/prisma/client';
 import { getAdapter } from '../../adapters/catalog';
 import { ProductEvents } from '../../audit/product-event.service';
 import { EmailService } from '../../settings/email.service';
@@ -234,6 +235,7 @@ export class OnboardingCronService {
     licensesReverified: number;
     licensesDeactivated: number;
     licensesReleased: number;
+    licensesBound: number;
     winbackOffers: number;
     winbackHelp: number;
     winbackHoldout: number;
@@ -260,6 +262,7 @@ export class OnboardingCronService {
       licensesReverified: 0,
       licensesDeactivated: 0,
       licensesReleased: 0,
+      licensesBound: 0,
       winbackOffers: 0,
       winbackHelp: 0,
       winbackHoldout: 0,
@@ -370,10 +373,10 @@ export class OnboardingCronService {
       const arm = reminderArm(u.id);
       if (u.onboardingReminderCount === 0) {
         if (arm === 'holdout') {
-          await this.prisma.user.update({
-            where: { id: u.id },
-            data: { onboardingReminderCount: 1 },
-          });
+          if (!(await this.updateUser(u.id, { onboardingReminderCount: 1 }))) {
+            out.skipped++;
+            continue;
+          }
           await this.reminderEvent(ProductEvents.ONBOARDING_REMINDER_HOLDOUT, u, 1, arm);
           out.firstReminderHoldout++;
           continue;
@@ -388,14 +391,7 @@ export class OnboardingCronService {
               ? { quickSetups: QUICK_SETUPS.map((q) => ({ label: q.label, url: claudeChatUrl(q.request) })) }
               : undefined,
         );
-        if (ok) {
-          await this.prisma.user.update({
-            where: { id: u.id },
-            data: {
-              onboardingReminderCount: 1,
-              onboardingLastReminderAt: new Date(),
-            },
-          });
+        if (ok && (await this.updateUser(u.id, { onboardingReminderCount: 1, onboardingLastReminderAt: new Date() }))) {
           await this.reminderEvent(ProductEvents.ONBOARDING_REMINDER_SENT, u, 1, arm, aiClient ? 'ai_client' : 'generic');
           out.firstReminders++;
         } else {
@@ -422,14 +418,7 @@ export class OnboardingCronService {
           u.name || 'there',
           2,
         );
-        if (ok) {
-          await this.prisma.user.update({
-            where: { id: u.id },
-            data: {
-              onboardingReminderCount: 2,
-              onboardingLastReminderAt: new Date(),
-            },
-          });
+        if (ok && (await this.updateUser(u.id, { onboardingReminderCount: 2, onboardingLastReminderAt: new Date() }))) {
           await this.reminderEvent(ProductEvents.ONBOARDING_REMINDER_SENT, u, 2, arm, 'generic');
           out.secondReminders++;
         } else {
@@ -440,6 +429,12 @@ export class OnboardingCronService {
 
       out.skipped++;
     }
+
+    // First: a paid licence that never reached its workspace (the buyer's
+    // browser did not come back to the activation page) leaves a paying
+    // customer on an ended trial. Bound before any email pass looks at the
+    // workspace's plan.
+    out.licensesBound = (await this.license.bindUnclaimedPaidLicences(new Date(now)).catch(() => null))?.bound ?? 0;
 
     await this.runActivationPass(now, out);
     await this.runTrialLifecyclePass(now, out);
@@ -476,7 +471,7 @@ export class OnboardingCronService {
         `trialEmailsWithheld=${out.trialEmailsWithheld} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
-        `licensesReleased=${out.licensesReleased} winbackOffers=${out.winbackOffers} ` +
+        `licensesReleased=${out.licensesReleased} licensesBound=${out.licensesBound} winbackOffers=${out.winbackOffers} ` +
         `winbackHelp=${out.winbackHelp} trialExpiredBusiness=${out.trialExpiredBusiness} ` +
         `winbackHoldout=${out.winbackHoldout} blockedCallEmails=${out.blockedCallEmails} ` +
         `blockedCallHoldout=${out.blockedCallHoldout} ` +
@@ -1288,15 +1283,29 @@ export class OnboardingCronService {
         path,
         serverId ? 'connect-client' : 'test-connector',
       );
-      if (ok) {
-        await this.prisma.user.update({
-          where: { id: u.id },
-          data: { activationReminderAt: new Date() },
-        });
+      if (ok && (await this.updateUser(u.id, { activationReminderAt: new Date() }))) {
         out.activationReminders++;
       } else {
         out.skipped++;
       }
+    }
+  }
+
+  /**
+   * Stamps a reminder step on a user. False when the user was deleted after
+   * the candidate pull (Prisma P2025): that user is skipped, and the rest of
+   * the run goes on instead of failing with a 500.
+   */
+  private async updateUser(id: string, data: Prisma.UserUpdateInput): Promise<boolean> {
+    try {
+      await this.prisma.user.update({ where: { id }, data });
+      return true;
+    } catch (e) {
+      if ((e as { code?: unknown })?.code === 'P2025') {
+        this.logger.warn(`Onboarding cron: user ${id} was deleted during the run, skipped`);
+        return false;
+      }
+      throw e;
     }
   }
 }

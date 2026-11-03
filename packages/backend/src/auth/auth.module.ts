@@ -30,6 +30,8 @@ import { SocialAuthService } from './social/social-auth.service';
 import { SocialAuthController } from './social/social-auth.controller';
 import { CloudOnlyGuard } from '../common/cloud-only.guard';
 
+import { RecentSignInService } from './recent-sign-in.service';
+import { RecentSignInController } from './recent-sign-in.controller';
 @Global()
 @Module({
   imports: [
@@ -54,7 +56,7 @@ import { CloudOnlyGuard } from '../common/cloud-only.guard';
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController, LoginController, UserInfoController, SocialAuthController],
+  controllers: [AuthController, LoginController, UserInfoController, SocialAuthController, RecentSignInController],
   providers: [
     // Cloud social sign-in (Google, Microsoft, GitHub).
     { provide: OIDC_LIB, useValue: openidClient },
@@ -65,6 +67,7 @@ import { CloudOnlyGuard } from '../common/cloud-only.guard';
     AuthService,
     RecoveryCodesService,
     SsoEnforcementService,
+    RecentSignInService,
     JwtStrategy,
     McpAuthGuard,
     McpAuthMiddleware,
@@ -76,6 +79,7 @@ import { CloudOnlyGuard } from '../common/cloud-only.guard';
   ],
   exports: [
     AuthService,
+    RecentSignInService,
     RecoveryCodesService,
     SsoEnforcementService,
     McpAuthGuard,

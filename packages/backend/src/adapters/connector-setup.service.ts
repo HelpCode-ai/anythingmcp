@@ -3,6 +3,8 @@ import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AdaptersService } from './adapters.service';
 import { describeAdapterEnvVars, needsBrowserAuthorization } from './env-var-meta';
+import { normalizeAdapterEnvValue } from './env-var-checks';
+import { addressFix, describeAddressFix } from './address-fix';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { SecurityEvents, SecurityEventService } from '../audit/security-event.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
@@ -296,7 +298,10 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           },
         };
       }
-      const text = value !== undefined && value !== null ? String(value).trim() : '';
+      // An address typed without https:// (`acme.odoo.com`) gets it when the
+      // field's pattern wants it, as on the setup page (address-fix.ts).
+      const typed = value !== undefined && value !== null ? String(value).trim() : '';
+      const text = typed ? normalizeAdapterEnvValue(d, typed) : '';
       // A shop URL with `?access_token=…`, a tenant field holding a key: the
       // chat is the wrong place for it, whatever the setting is called.
       if (text && findSecretLiterals(text).length > 0) {
@@ -309,10 +314,12 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         };
       }
       if (text && d.pattern && !matchesPattern(d.pattern, text)) {
+        // Secrets never get here, so the fixed address can be named.
+        const fix = d.kind !== 'credential' ? addressFix(d.pattern, text) : undefined;
         return {
           isError: true,
           body: {
-            error: `'${d.label}' does not look right. ${d.patternMessage ?? d.help ?? ''}`.trim(),
+            error: `'${d.label}' does not look right. ${fix ? describeAddressFix(fix) : (d.patternMessage ?? d.help ?? '')}`.trim(),
             hint: 'Ask the user to check the value, or install without it: they can enter it on the page linked in the answer.',
           },
         };
@@ -562,7 +569,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     token: string,
     userId: string,
     from?: unknown,
-  ): Promise<{ redirect: string } | { error: string }> {
+  ): Promise<{ redirect: string; organizationId: string } | { error: string }> {
     const row = await this.prisma.connectorSetupLink.findUnique({ where: { tokenHash: this.hash(String(token || '')) } });
     if (!row || row.expiresAt.getTime() < Date.now()) {
       return { error: 'This link has expired. Ask your AI client for a new one, or open the connector in the dashboard.' };
@@ -570,10 +577,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     if (row.userId !== userId) {
       return { error: 'This link was made for another account. Sign in as that account.' };
     }
-    if (row.usedAt) {
-      return { error: 'This link was already used. Ask your AI client for a new one, or open the connector in the dashboard.' };
+    // Opened again by the same user (a second click, a reload, a link
+    // preview) it still works until it expires: it is bound to that user and
+    // needs their session, so a second opening gives nobody else anything.
+    // usedAt records the first opening.
+    if (!row.usedAt) {
+      await this.prisma.connectorSetupLink.update({ where: { id: row.id }, data: { usedAt: new Date() } });
     }
-    await this.prisma.connectorSetupLink.update({ where: { id: row.id }, data: { usedAt: new Date() } });
     const connector = await this.prisma.connector.findFirst({
       where: { id: row.connectorId, organizationId: row.organizationId },
       select: { id: true, config: true },
@@ -588,6 +598,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       redirect: slug
         ? `/connectors/setup/${encodeURIComponent(slug)}?connector=${encodeURIComponent(connector.id)}&from=${back}`
         : `/connectors/${encodeURIComponent(connector.id)}`,
+      // The workspace the connector is in: the dashboard switches to it when
+      // its session is on another one, or every save would be refused.
+      organizationId: row.organizationId,
     };
   }
 

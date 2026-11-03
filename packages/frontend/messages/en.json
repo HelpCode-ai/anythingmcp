@@ -29,6 +29,8 @@
     }
   },
   "signIn": {
+    "continueAs": "Continue as {email}",
+    "continueAsHint": "You signed in here a moment ago to connect your AI assistant.",
     "title": "Sign in",
     "subtitle": "Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent",
     "emailVerified": "Email verified successfully! You can now sign in.",
@@ -940,7 +942,8 @@
       "saveAnyway": "Save anyway",
       "appPendingTitle": "{name} does not accept these keys yet.",
       "appPendingBody": "If your app is new, {name} reviews it, usually within a few days: we'll e-mail you when it's approved, nothing else to do. If your app is already active, copy the shared secret again from your app page. Your keys are saved.",
-      "appPendingOpen": "Open the connector"
+      "appPendingOpen": "Open the connector",
+      "switchTo": "Switch to {name}"
     },
     "field": {
       "required": "Required",
@@ -950,7 +953,16 @@
       "stored": "Stored. Leave empty to keep it",
       "hide": "Hide",
       "show": "Show",
-      "open": "Open"
+      "open": "Open",
+      "fix": {
+        "sentence": "{changes}: {value}",
+        "and": "and",
+        "scheme": "add https:// in front",
+        "https": "use https:// instead of http://",
+        "slash": "remove the / at the end",
+        "www": "remove the www.",
+        "path": "remove {removed} after the host"
+      }
     },
     "advanced": "Advanced",
     "guide": {

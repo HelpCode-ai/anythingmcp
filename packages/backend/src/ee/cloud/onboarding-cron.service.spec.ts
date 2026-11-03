@@ -35,6 +35,9 @@ function makeLicense(repaired = 0) {
     reverifyPaidLicenses: jest
       .fn()
       .mockResolvedValue({ checked: 3, deactivated: 1, inGrace: 1, unreachable: 0 }),
+    bindUnclaimedPaidLicences: jest
+      .fn()
+      .mockResolvedValue({ listed: 2, bound: 1, skipped: 1, failed: 0 }),
   } as any;
 }
 
@@ -503,6 +506,9 @@ describe('OnboardingCronService — trial repair', () => {
     expect(out.licensesReleased).toBe(2);
     expect(out.licensesReverified).toBe(3);
     expect(out.licensesDeactivated).toBe(1);
+    // And paid licences that never reached their workspace get bound to it.
+    expect(license.bindUnclaimedPaidLicences).toHaveBeenCalledTimes(1);
+    expect(out.licensesBound).toBe(1);
   });
 });
 
@@ -684,6 +690,27 @@ describe('OnboardingCronService — onboarding pass', () => {
       await service.run();
       expect(update).not.toHaveBeenCalled();
       expect(prisma.productEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('skips a user deleted during the run and goes on with the others', async () => {
+      const { service, email, prisma, update } = makeService({
+        candidates: [user({ id: 'u1' }), user({ id: 'u3', email: 'u3@example.com' })],
+      });
+      update.mockImplementation(async (args: any) => {
+        if (args.where.id === 'u1') throw Object.assign(new Error('No record was found for an update.'), { code: 'P2025' });
+        return {};
+      });
+      const out = await service.run();
+      expect(out.firstReminderHoldout).toBe(0);
+      expect(out.firstReminders).toBe(1);
+      expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u3@example.com', 'Ada', 1, undefined);
+      expect(events(prisma).map((e: any) => e.userId)).toEqual(['u3']);
+    });
+
+    it('still fails on other database errors', async () => {
+      const { service, update } = makeService({ candidates: [user({ id: 'u1' })] });
+      update.mockRejectedValue(Object.assign(new Error('db down'), { code: 'P1001' }));
+      await expect(service.run()).rejects.toThrow('db down');
     });
 
     it('still sends when the event cannot be written', async () => {

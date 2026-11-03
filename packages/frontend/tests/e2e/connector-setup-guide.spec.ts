@@ -302,7 +302,8 @@ test('WooCommerce: the link into the shop is built from the address of the step 
   await page.getByRole('button', { name: 'Start' }).click();
   await page.getByLabel('Shop address').fill('https://shop.example.com/');
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByText('The https:// address of the site root.')).toBeVisible();
+  // The refusal says what to change, not only what the address should look like.
+  await expect(page.getByText('Remove the / at the end: https://shop.example.com')).toBeVisible();
   await page.getByLabel('Shop address').fill('https://shop.example.com');
   await page.getByRole('button', { name: 'Continue' }).click();
 

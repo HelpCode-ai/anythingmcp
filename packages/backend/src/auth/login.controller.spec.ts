@@ -309,6 +309,13 @@ describe('LoginController', () => {
 
       expect(res._cookies['login_user']).toBeDefined();
       expect(res._cookies['login_user'].options.signed).toBe(true);
+      // Remembered for the setup links the AI client hands out next.
+      expect(res._cookies['amcp_signin'].options).toEqual(
+        expect.objectContaining({ httpOnly: true, signed: true, sameSite: 'lax' }),
+      );
+      expect(JSON.parse(Buffer.from(res._cookies['amcp_signin'].value, 'base64url').toString())).toEqual(
+        expect.objectContaining({ uid: expect.any(String), iat: expect.any(Number) }),
+      );
       expect(res._cleared).toContain('login_csrf');
       expect(res._redirect).toBe('http://mcp.test/callback');
     });
@@ -359,6 +366,7 @@ describe('LoginController', () => {
       );
 
       expect(res._cookies['login_user']).toBeUndefined();
+      expect(res._cookies['amcp_signin']).toBeUndefined();
       expect(res._redirect).toContain('/auth/login?error=');
     });
 
@@ -1081,15 +1089,17 @@ describe('LoginController', () => {
         expect(token.options.maxAge).toBe(res._cookies['login_user'].options.maxAge);
         expect(page).toContain(`<section class="quick" id="quick-apps" hidden data-csrf="${token.value}"`);
         for (const [slug, name] of [
+          ['etsy', 'Etsy'],
           ['telegram-bot', 'Telegram'],
           ['shopify', 'Shopify'],
           ['woocommerce', 'WooCommerce'],
           ['odoo', 'Odoo'],
           ['printify', 'Printify'],
-          ['gemini', 'Google Gemini'],
         ]) {
           expect(page).toContain(`data-adapter="${slug}" data-name="${name}">${name}</button>`);
         }
+        // Picked often, set up almost never: it is reached through "Another app".
+        expect(page).not.toContain('data-adapter="gemini"');
         expect(page).toContain('<label class="other-label" for="other-app">Another app</label>');
         expect(page).toContain('role="status" aria-live="polite"');
         // Optional: Continue is still the one button, straight to the callback.
@@ -1173,7 +1183,7 @@ describe('LoginController', () => {
             request: 'Finish setting up my Telegram connector.',
           }));
           expect(nodes['quick-apps'].hidden).toBe(false);
-          chips[0].listeners.click({ currentTarget: chips[0] });
+          chips[1].listeners.click({ currentTarget: chips[1] });
           await flush();
           await flush();
 
@@ -1184,14 +1194,14 @@ describe('LoginController', () => {
           });
           expect(nodes['example-request'].textContent).toBe('Finish setting up my Telegram connector.');
           expect(nodes['quick-status'].textContent).toBe('Telegram added — you’ll finish it in Claude.');
-          expect(chips[0].attrs['aria-pressed']).toBe('true');
+          expect(chips[1].attrs['aria-pressed']).toBe('true');
           // The other apps stay unavailable after a pick, without losing focus.
           expect(chips.every((c) => c.attrs['aria-disabled'] === 'true' && !c.disabled)).toBe(true);
         });
 
         it('keeps everything usable when the pick fails', async () => {
           const { nodes, chips } = await run(async () => ({ ok: false, error: 'Shopify could not be added right now.' }));
-          chips[1].listeners.click({ currentTarget: chips[1] });
+          chips[2].listeners.click({ currentTarget: chips[2] });
           await flush();
           await flush();
           expect(nodes['quick-status'].textContent).toBe('Shopify could not be added right now.');
@@ -1348,7 +1358,7 @@ describe('LoginController', () => {
 
       it('installs only the page\'s own apps', async () => {
         arrange();
-        const res = await pick({ adapter: 'etsy', csrf: 'pick-tok' });
+        const res = await pick({ adapter: 'hubspot', csrf: 'pick-tok' });
         expect(res._status).toBe(400);
         expect(provider.install).not.toHaveBeenCalled();
       });

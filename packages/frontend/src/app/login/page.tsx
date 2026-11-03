@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ApiError, auth, license, server, social, sso, type SocialProviderButton, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
+import { ApiError, auth, license, recentSignIn, server, social, sso, type SocialProviderButton, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/toast';
 import { buildPricingUrl } from '@/lib/marketing';
@@ -279,6 +279,37 @@ function LoginForm() {
   const afterSignIn = async (accessToken: string, u: { role?: string } | null | undefined) => {
     if (isCloudMode && hasPlanIntent && redirectTo === '/' && (await goToPurchase(accessToken, u))) return;
     goTo(redirectTo);
+  };
+
+  // Signed in on the authorization page a short while ago (connecting
+  // Claude, ChatGPT, …): offer to continue as that account instead of asking
+  // for the password again. Offered, never automatic; signing out forgets it.
+  const [recent, setRecent] = useState<{ email: string; name: string | null } | null>(null);
+  const [recentContinuing, setRecentContinuing] = useState(false);
+  useEffect(() => {
+    // Not on sign-up: isRegister is only set from ?mode after the first render.
+    if (sessionLoading || sessionToken || ssoCode || socialCode || isRegister || modeParam === 'register') return;
+    let cancelled = false;
+    void recentSignIn.who().then((who) => {
+      if (!cancelled) setRecent(who);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionLoading, sessionToken]);
+  const continueAsRecent = async () => {
+    setRecentContinuing(true);
+    setError('');
+    try {
+      const result = await recentSignIn.continue();
+      login(result.accessToken, result.user);
+      await afterSignIn(result.accessToken, result.user);
+    } catch {
+      // Expired, revoked or signed out elsewhere: the form is still there.
+      setRecent(null);
+      setRecentContinuing(false);
+    }
   };
 
   // Surface a failure the SSO callback redirected back with.
@@ -1073,6 +1104,15 @@ function LoginForm() {
         <p className="text-center text-sm text-[var(--text-2)] py-6">
           {t('signingIn')}
         </p>
+      )}
+
+      {!ssoExchanging && !recoveryMode && recent && (
+        <div className="mb-4 space-y-2" data-testid="recent-sign-in">
+          <Button type="button" className="w-full" onClick={continueAsRecent} disabled={recentContinuing}>
+            {recentContinuing ? t('signingIn') : t('continueAs', { email: recent.email })}
+          </Button>
+          <p className="text-center text-[11.5px] leading-relaxed text-[var(--text-3)]">{t('continueAsHint')}</p>
+        </div>
       )}
 
       {!ssoExchanging && !recoveryMode && socialProviders.length > 0 && (

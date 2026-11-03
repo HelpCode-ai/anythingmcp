@@ -29,6 +29,8 @@
     }
   },
   "signIn": {
+    "continueAs": "Weiter als {email}",
+    "continueAsHint": "Sie haben sich hier gerade angemeldet, um Ihren KI-Assistenten zu verbinden.",
     "title": "Anmelden",
     "subtitle": "Erstellen Sie eigene Connectors für Claude, ChatGPT, Copilot, Meta Muse und jeden KI-Agenten",
     "emailVerified": "E-Mail-Adresse erfolgreich bestätigt! Sie können sich jetzt anmelden.",
@@ -940,7 +942,8 @@
       "saveAnyway": "Trotzdem speichern",
       "appPendingTitle": "{name} akzeptiert diese Schlüssel noch nicht.",
       "appPendingBody": "Ist Ihre App neu, prüft {name} sie, meist innerhalb weniger Tage: Wir schreiben Ihnen eine E-Mail, sobald sie freigegeben ist, sonst ist nichts zu tun. Ist Ihre App bereits aktiv, kopieren Sie das Shared Secret erneut von der Seite Ihrer App. Ihre Schlüssel sind gespeichert.",
-      "appPendingOpen": "Connector öffnen"
+      "appPendingOpen": "Connector öffnen",
+      "switchTo": "Zu {name} wechseln"
     },
     "field": {
       "required": "Pflichtfeld",
@@ -950,7 +953,16 @@
       "stored": "Gespeichert. Leer lassen, um den Wert zu behalten",
       "hide": "Verbergen",
       "show": "Anzeigen",
-      "open": "Öffnen"
+      "open": "Öffnen",
+      "fix": {
+        "sentence": "{changes}: {value}",
+        "and": "und",
+        "scheme": "vorne https:// ergänzen",
+        "https": "statt http:// https:// verwenden",
+        "slash": "den / am Ende entfernen",
+        "www": "das www. entfernen",
+        "path": "{removed} nach dem Host entfernen"
+      }
     },
     "advanced": "Erweitert",
     "guide": {

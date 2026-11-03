@@ -43,6 +43,7 @@ import {
   type TrustRowOptions,
 } from './auth-page';
 import { maskEmail } from './mcp-email-verification';
+import { setRecentSignInCookie } from './recent-sign-in.util';
 import { SharedSetupRegistry, type SetupContext, type SharedSetupProvider } from '../mcp-server/shared-setup';
 import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
 
@@ -96,12 +97,15 @@ const FIRST_APP_CSRF_COOKIE = 'first_app_csrf';
  * it in the chat, through the link the setup tools hand out.
  */
 export const QUICK_SETUP_APPS: ReadonlyArray<{ slug: string; name: string }> = [
+  // The app most people who arrive from the Claude directory ask for. It
+  // takes the user's own Etsy app and Etsy's approval: the picker only adds
+  // it, and the guided setup the chat links to walks through the rest.
+  { slug: 'etsy', name: 'Etsy' },
   { slug: 'telegram-bot', name: 'Telegram' },
   { slug: 'shopify', name: 'Shopify' },
   { slug: 'woocommerce', name: 'WooCommerce' },
   { slug: 'odoo', name: 'Odoo' },
   { slug: 'printify', name: 'Printify' },
-  { slug: 'gemini', name: 'Google Gemini' },
 ];
 
 /** The request the first-connector page suggests typing into the chat. */
@@ -475,6 +479,9 @@ export class LoginController {
     /** Set when the user signed in on this page with Google, Microsoft or GitHub. */
     socialProvider?: string,
   ): Promise<void> {
+    // Remembered for the setup links the AI client will hand out, so they open
+    // the dashboard without asking for this sign-in again (recent-sign-in.util).
+    setRecentSignInCookie(res, user.id, this.isSecureRequest(req));
     // Set a short-lived cookie with the user profile for the callback to read
     const profile = {
       id: user.id,

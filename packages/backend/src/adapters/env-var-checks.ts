@@ -1,4 +1,5 @@
 import { describeAdapterEnvVars, EnvVarDescriptor } from './env-var-meta';
+import { addressFix, describeAddressFix, withMissingScheme } from './address-fix';
 
 /**
  * Values that cannot be what the user meant, refused field by field before a
@@ -148,23 +149,55 @@ const NORMALISERS: Record<string, Record<string, (value: string) => string>> = {
   },
 };
 
-/**
- * These values with the adapter's clean-ups applied (NORMALISERS). Values of
- * other variables, and of adapters without clean-ups, come back unchanged.
- */
-export function normalizeAdapterEnvValues<T extends Record<string, unknown>>(slug: string | undefined, values: T): T {
-  const rules = slug ? NORMALISERS[slug] : undefined;
-  if (!rules) return values;
-  return Object.fromEntries(
-    Object.entries(values).map(([name, value]) => {
-      const ruled = Object.prototype.hasOwnProperty.call(rules, name);
-      return [name, ruled && typeof value === 'string' && value ? rules[name](value) : value];
-    }),
-  ) as T;
-}
-
 /** The adapter fields a checker needs. */
 export type CheckedAdapter = Parameters<typeof describeAdapterEnvVars>[0];
+
+/** A field that holds an address and is shown back as typed (never a secret). */
+function isPlainAddress(d: Pick<EnvVarDescriptor, 'name' | 'kind' | 'secret'>): boolean {
+  return !d.secret && d.kind !== 'credential' && (d.kind === 'address' || ADDRESS_NAME.test(d.name));
+}
+
+/**
+ * These values with the adapter's clean-ups applied (NORMALISERS) and, when
+ * given the adapter rather than its slug, `https://` put in front of an
+ * address typed without it where the field's pattern wants one
+ * (`acme.odoo.com`, address-fix.ts). Values of other variables, and of
+ * adapters without clean-ups, come back unchanged.
+ */
+export function normalizeAdapterEnvValues<T extends Record<string, unknown>>(
+  adapter: string | CheckedAdapter | undefined,
+  values: T,
+): T {
+  const slug = typeof adapter === 'string' ? adapter : adapter?.slug;
+  const rules = slug ? NORMALISERS[slug] : undefined;
+  let out = values;
+  if (rules) {
+    out = Object.fromEntries(
+      Object.entries(out).map(([name, value]) => {
+        const ruled = Object.prototype.hasOwnProperty.call(rules, name);
+        return [name, ruled && typeof value === 'string' && value ? rules[name](value) : value];
+      }),
+    ) as T;
+  }
+  if (adapter && typeof adapter !== 'string') {
+    for (const d of describeAdapterEnvVars(adapter)) {
+      const value = out[d.name];
+      if (typeof value !== 'string' || !value || !isPlainAddress(d)) continue;
+      const fixed = withMissingScheme(d.pattern, value);
+      if (fixed !== value) out = { ...out, [d.name]: fixed };
+    }
+  }
+  return out;
+}
+
+/**
+ * One value as the setup stores it: the scheme clean-up of
+ * {@link normalizeAdapterEnvValues} for this field alone (a chat install
+ * checks each setting as it arrives).
+ */
+export function normalizeAdapterEnvValue(d: EnvVarDescriptor, value: string): string {
+  return isPlainAddress(d) ? withMissingScheme(d.pattern, value) : value;
+}
 
 /**
  * Field-level problems with these values of a catalog connector's variables,
@@ -206,6 +239,10 @@ function checkOne(d: EnvVarDescriptor, value: string): string | undefined {
     return `${d.label}: this looks like the key pasted more than once. Paste it once.`;
   }
   if (d.pattern && !matchesPattern(d.pattern, value)) {
+    // An address one small change away from what the pattern accepts: say
+    // which change, with the value to enter (an address, never a secret).
+    const fix = isPlainAddress(d) ? addressFix(d.pattern, value) : undefined;
+    if (fix) return `${d.label} does not look right. ${describeAddressFix(fix)}`;
     return `${d.label} does not look right. ${d.patternMessage ?? (d.example ? `Example: ${d.example}` : d.help ?? '')}`.trim();
   }
   return undefined;

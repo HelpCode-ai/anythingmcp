@@ -323,6 +323,24 @@ describe('ConnectorSetupService — install', () => {
     expect(adapters.importAdapter).not.toHaveBeenCalled();
   });
 
+  it('adds the https:// an address from the chat lacks, and names the fix for one still wrong', async () => {
+    const { service, ctx, adapters } = build();
+    await service.install(ctx, { adapter: 'odoo', settings: { ODOO_URL: 'acme.odoo.com', ODOO_DB: 'acme' } });
+    expect(adapters.importAdapter).toHaveBeenLastCalledWith(
+      'odoo',
+      'u1',
+      'org-1',
+      { ODOO_URL: 'https://acme.odoo.com', ODOO_DB: 'acme' },
+      { addressMayWait: true },
+    );
+
+    adapters.importAdapter.mockClear();
+    const out: any = await service.install(ctx, { adapter: 'woocommerce', settings: { WOOCOMMERCE_URL: 'http://shop.example.com/' } });
+    expect(out.isError).toBe(true);
+    expect(out.body.error).toMatch(/Use https:\/\/ instead of http:\/\/ and remove the \/ at the end: https:\/\/shop\.example\.com\./);
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
+  });
+
   it('respects the trial limit', async () => {
     const { service, ctx, licenseGuard, adapters } = build();
     licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('Trial limit reached (2 connectors).'));
@@ -451,14 +469,28 @@ describe('ConnectorSetupService — links', () => {
     expect(before - cutoff.getTime()).toBeGreaterThanOrEqual(SETUP_LINK_RETENTION_MS - 1000);
   });
 
-  it('opens once, for the user it was made for, on the guided setup of that connector', async () => {
+  it('opens for the user it was made for, on the guided setup of that connector, in its workspace', async () => {
     const b = build();
     const token = await linkFor(b);
     await expect(b.service.resolveLink(token, 'someone-else')).resolves.toEqual({ error: expect.stringContaining('another account') });
     await expect(b.service.resolveLink(token, 'u1', 'claude')).resolves.toEqual({
       redirect: '/connectors/setup/weclapp?connector=c-weclapp&from=claude',
+      organizationId: 'org-1',
     });
-    await expect(b.service.resolveLink(token, 'u1')).resolves.toEqual({ error: expect.stringContaining('already used') });
+  });
+
+  it('opens again for the same user until it expires, and records only the first opening', async () => {
+    // A second click on the link in the chat said "already used".
+    const b = build();
+    const token = await linkFor(b);
+    await b.service.resolveLink(token, 'u1');
+    const first = b.links[0].usedAt;
+    expect(first).toBeInstanceOf(Date);
+    await expect(b.service.resolveLink(token, 'u1')).resolves.toMatchObject({
+      redirect: '/connectors/setup/weclapp?connector=c-weclapp&from=assistant',
+    });
+    expect(b.links[0].usedAt).toBe(first);
+    await expect(b.service.resolveLink(token, 'someone-else')).resolves.toEqual({ error: expect.stringContaining('another account') });
   });
 
   it('names the assistant of the chat on the link, and nothing when it is not known', async () => {
@@ -495,6 +527,7 @@ describe('ConnectorSetupService — links', () => {
       const token = await linkFor(b);
       await expect(b.service.resolveLink(token, 'u1', from)).resolves.toEqual({
         redirect: `/connectors/setup/weclapp?connector=c-weclapp&from=${back}`,
+        organizationId: 'org-1',
       });
     }
   });
