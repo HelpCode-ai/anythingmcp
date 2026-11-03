@@ -53,6 +53,7 @@ import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
 import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 import { matchCatalogUrl, UrlMatch, UrlMatchCandidate } from './catalog-url-match';
 import { APP_APPROVAL_ADAPTERS } from './app-approval-watch';
+import { describeHtmlAnswer, looksLikeHtml } from './html-excerpt';
 
 @Injectable()
 export class AdaptersService {
@@ -675,7 +676,8 @@ export class AdaptersService {
     if (status !== 401 && status !== 403) return undefined;
     const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.auth_failed;
     const hint = typeof own === 'string' ? own : own?.hint;
-    const upstream = `${status}${body ? `: ${body.replace(/\s+/g, ' ').trim()}` : ''}`;
+    const words = body && looksLikeHtml(body) ? describeHtmlAnswer(body) : body?.replace(/\s+/g, ' ').trim();
+    const upstream = `${status}${words ? `: ${words}` : ''}`;
     return {
       ok: false,
       kind: 'auth_failed',
@@ -1367,6 +1369,8 @@ function withResponseExcerpt(message: string, err: any, max = 200): string {
   } catch {
     return message;
   }
+  // A web page instead of API data: its readable words, never its markup.
+  if (looksLikeHtml(body)) return `${message.replace(/[.\s]+$/, '')}: ${describeHtmlAnswer(body, max)}`;
   body = body.replace(/\s+/g, ' ').trim();
   if (!body || body === '{}' || body === '""' || message.includes(body)) return message;
   return `${message.replace(/[.\s]+$/, '')}: ${body.length > max ? `${body.slice(0, max)}…` : body}`;
