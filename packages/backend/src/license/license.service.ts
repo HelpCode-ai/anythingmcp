@@ -200,7 +200,6 @@ export interface RemoteVerifyResponse {
   billing?: unknown;
 }
 
-@Injectable()
 /**
  * The licence site grants one trial per address. Asked again for an address
  * whose trial has already ended, it hands that old trial back, expired.
@@ -212,6 +211,7 @@ export class TrialAlreadyEndedError extends Error {
   }
 }
 
+@Injectable()
 export class LicenseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LicenseService.name);
   private readonly apiBase = LICENSE_API_URL;
