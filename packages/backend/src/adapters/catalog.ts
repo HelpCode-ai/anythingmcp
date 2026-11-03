@@ -822,6 +822,10 @@ export interface AdapterMeta {
    *  through the user's own app. A chat setup links it next to the callback
    *  URL to register. */
   appRegistrationUrl?: string;
+  /** The API refuses every call from an address not registered with the
+   *  provider (eMAG, Shopee, Korea Law). The setup page then shows the
+   *  instance's outbound IP addresses (EGRESS_IPS) as a required step. */
+  requiresIpAllowlist?: boolean;
   /** OAuth scope sets this adapter asked for in earlier versions. A connector
    *  still holding one of them asks for the current `authConfig.scopes` the
    *  next time it is authorized (oauth-authorize-settings.ts), so tools added

@@ -1223,3 +1223,49 @@ describe('AdaptersService.verifyCredentials: Odoo JSON-2 answering 404', () => {
     expect(out.message).toMatch(/older than 19, or the database name is wrong/);
   });
 });
+
+describe('AdaptersService check — a server that only accepts approved IPs', () => {
+  const saved = process.env.EGRESS_IPS;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.EGRESS_IPS;
+    else process.env.EGRESS_IPS = saved;
+  });
+
+  function build(execute: jest.Mock) {
+    return new AdaptersService(
+      { connector: { findUnique: jest.fn().mockResolvedValue(null) } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      {
+        get: (k: string) =>
+          k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : k === 'DEPLOYMENT_MODE' ? 'cloud' : undefined,
+      } as any,
+      { executeConnectorCall: execute } as any,
+    );
+  }
+
+  it('names the address to allow when the firewall answers with a page', async () => {
+    // 3 Nov 2026: a self-hosted Bitrix24 behind an IP allowlist answered 403
+    // "Access Restricted"; the check said nothing the user could act on.
+    process.env.EGRESS_IPS = '104.248.242.235';
+    const execute = jest.fn().mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 403'), {
+        response: {
+          status: 403,
+          data: '<!DOCTYPE html><html lang="en"><head><title>Access Restricted</title></head><body>Access Restricted</body></html>',
+        },
+      }),
+    );
+    const out: any = await build(execute).verifyCredentials('bitrix24', 'org1', {
+      BITRIX24_WEBHOOK_URL: 'https://crm.example.com/rest/1/abcdef123456/',
+    });
+    expect(out).toMatchObject({ ok: false, status: 403 });
+    expect(out.message).toMatch(/AnythingMCP Cloud calls every API from the fixed IP address 104\.248\.242\.235/);
+  });
+
+  it('keeps describing the adapter with the addresses to show', () => {
+    process.env.EGRESS_IPS = '104.248.242.235';
+    const info = build(jest.fn()).describe('emag-marketplace');
+    expect(info.egressIps).toEqual(['104.248.242.235']);
+    expect(info.requiresIpAllowlist).toBe(true);
+  });
+});

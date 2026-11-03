@@ -1597,7 +1597,7 @@
       "disable": "Disattiva",
       "enable": "Attiva",
       "proxy": "Proxy",
-      "proxyTitle": "Instrada la richiesta di questo strumento attraverso il proxy / web-unblocker configurato. Consigliato per API con protezione anti-bot, blocchi geografici o limiti di frequenza.",
+      "proxyTitle": "Instrada la richiesta di questo strumento attraverso il proxy / web-unblocker configurato. Consigliato per API con protezione anti-bot, blocchi geografici o limiti di frequenza. Le chiamate tramite proxy partono da indirizzi IP che cambiano: lascialo spento per un server che accetta solo IP autorizzati.",
       "delete": "Elimina",
       "showSql": "Mostra tutto l'SQL",
       "showPath": "Mostra tutto il percorso",
@@ -3468,5 +3468,15 @@
       "preparing": "Preparazione…",
       "warning": "Apri solo file di persone di cui ti fidi. AnythingMCP non controlla i file per i virus."
     }
+  },
+  "networkNote": {
+    "title": "Il server accetta solo indirizzi IP autorizzati?",
+    "body": "AnythingMCP chiama l'API da {count, plural, one {questo indirizzo} other {questi indirizzi}}. Se il server o l'account accetta solo IP autorizzati (firewall, whitelist IP), {count, plural, one {aggiungilo} other {aggiungili}} lì; altrimenti non serve fare nulla.",
+    "requiredTitle": "Registra l'indirizzo IP",
+    "requiredBody": "{name} accetta solo chiamate da indirizzi IP registrati. Registra {count, plural, one {questo indirizzo} other {questi indirizzi}} nel tuo account {name} prima di iniziare, altrimenti ogni chiamata viene rifiutata.",
+    "requiredNoIps": "{name} accetta solo chiamate da indirizzi IP registrati. Prima di iniziare registra l'indirizzo IP pubblico del server su cui gira AnythingMCP (lo conosce chi gestisce la tua rete), altrimenti ogni chiamata viene rifiutata.",
+    "proxy": "Lascia disattivata l'opzione \"Proxy\" sui tool di un server con whitelist: le chiamate tramite proxy partono da indirizzi che cambiano.",
+    "copy": "Copia",
+    "copied": "Copiato"
   }
 }
