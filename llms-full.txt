@@ -1743,6 +1743,11 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   "loginUrl": "https://api.example.com/graphql",
   "loginMethod": "POST",                     // GET | POST (default POST)
   "loginHeaders": { "X-App": "anythingmcp" }, // static headers for the login call
+  "loginBasicAuth": true,                    // optional: send Authorization: Basic base64(username:password)
+                                             // on the login call only (Wazuh). The password is then not
+                                             // offered to templates, no body is sent without loginBody, and
+                                             // an Authorization in loginHeaders is refused, as are signedJwt
+                                             // and bcrypt passwordHashing.
 
   // ─── Body: prefer structured `loginBody` (recursive ${name} substitution) ─
   "loginBody": {
@@ -4591,6 +4596,8 @@ The engine handles salt fetch → bcrypt → login → token cache → proactive
   }
 }
 ```
+
+A login that takes HTTP Basic credentials (Wazuh's `POST /security/user/authenticate`) sets `"loginBasicAuth": true`: the engine sends `Authorization: Basic base64(username:password)` on the login request only (the API calls keep using `headerTemplate`), the password is never offered to the body templates (`${password}` renders empty), and no body is sent without a `loginBody`. An `Authorization` in `loginHeaders` is refused rather than overridden, as are `signedJwt`, bcrypt `passwordHashing` and a username containing `:`; `scripts/validate-adapters.mjs` reports the same mistakes (rule `login-basic-auth`).
 
 See [`docs/connectors/login-token-auth.md`](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md>) for the full field-by-field reference, salt-source types (`fetch` vs `static`), expiry formats (`iso8601` / `unix` / `ttl_seconds`), and re-login policies.
 
