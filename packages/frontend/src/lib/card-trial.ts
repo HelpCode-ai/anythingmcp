@@ -28,7 +28,15 @@ export interface CloudPlan {
   /** EUR incl. VAT per year, on yearly billing. */
   yearly: number;
   summary: string;
+  /** What the plan includes (the licence's maxConnectors / maxMcpServers / maxUsers). */
+  limits: PlanLimits;
   popular?: boolean;
+}
+
+export interface PlanLimits {
+  connectors: number;
+  mcpServers: number;
+  users: number;
 }
 
 /**
@@ -44,6 +52,7 @@ export const CLOUD_PLANS: readonly CloudPlan[] = [
     monthly: 19,
     yearly: 190,
     summary: '5 connectors · 3 MCP servers · 1 user',
+    limits: { connectors: 5, mcpServers: 3, users: 1 },
     popular: true,
   },
   {
@@ -52,6 +61,7 @@ export const CLOUD_PLANS: readonly CloudPlan[] = [
     monthly: 49,
     yearly: 490,
     summary: '15 connectors · 10 MCP servers · up to 3 users',
+    limits: { connectors: 15, mcpServers: 10, users: 3 },
   },
 ];
 
@@ -62,6 +72,38 @@ export const CLOUD_PLANS: readonly CloudPlan[] = [
  * on the pricing page, so it carries the "Most popular" badge.
  */
 export const DEFAULT_SELECTION: PlanSelection = { plan: 'starter', period: 'monthly' };
+
+/** What a workspace already uses (GET /api/license/usage, current counts). */
+export type WorkspaceUsage = PlanLimits;
+
+/** The limits of `plan` that `usage` goes past, in the order connectors, MCP servers, users. */
+export function limitsExceeded(plan: CloudPlan, usage: WorkspaceUsage): (keyof PlanLimits)[] {
+  return (['connectors', 'mcpServers', 'users'] as const).filter((k) => usage[k] > plan.limits[k]);
+}
+
+/**
+ * The smallest plan the workspace fits in as set up today, or null when it
+ * goes past Team too (Enterprise is quoted, not checked out).
+ */
+export function smallestFittingPlan(usage: WorkspaceUsage): CloudPlanId | null {
+  return CLOUD_PLANS.find((p) => limitsExceeded(p, usage).length === 0)?.id ?? null;
+}
+
+/**
+ * The plan to preselect for a workspace: the one picked on the pricing page,
+ * unless the workspace has outgrown it (then the smallest that fits, Team when
+ * nothing does), keeping the picked billing period.
+ */
+export function selectionForUsage(picked: PlanSelection, usage: WorkspaceUsage | null): PlanSelection {
+  if (!usage || limitsExceeded(planById(picked.plan), usage).length === 0) return picked;
+  return { ...picked, plan: smallestFittingPlan(usage) ?? 'team' };
+}
+
+/** "7 connectors", "1 MCP server", "2 users": the counts a plan does not cover. */
+export function describeUsage(usage: WorkspaceUsage, keys: (keyof PlanLimits)[]): string {
+  const label = { connectors: 'connector', mcpServers: 'MCP server', users: 'user' } as const;
+  return keys.map((k) => `${usage[k]} ${label[k]}${usage[k] === 1 ? '' : 's'}`).join(', ');
+}
 
 export function planById(id: CloudPlanId): CloudPlan {
   return CLOUD_PLANS.find((p) => p.id === id) ?? CLOUD_PLANS[1];
