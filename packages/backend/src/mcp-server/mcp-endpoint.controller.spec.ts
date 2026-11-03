@@ -7,6 +7,7 @@ import {
   connectorInstructionsUri,
   serverInstructionsUri,
 } from './mcp-resources';
+import { withRegistryIndexes } from './registry-test-double';
 
 /**
  * Regression tests for cross-tenant isolation on the per-server MCP endpoint.
@@ -46,7 +47,7 @@ describe('McpEndpointController — tenant isolation', () => {
         .mockResolvedValue({ instructions: undefined, connectors: [], resources: [] }),
       isUserInOrganization: jest.fn().mockResolvedValue(false),
     };
-    toolRegistry = { getAllTools: jest.fn().mockReturnValue([]) };
+    toolRegistry = withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) });
     toolExecutor = { executeTool: jest.fn() };
     rolesService = { getAllowedToolIds: jest.fn().mockResolvedValue(null) };
     const kgService = {
@@ -356,7 +357,7 @@ describe('McpEndpointController — keys created for a server', () => {
     };
     controller = new McpEndpointController(
       mcpServersService,
-      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
       { executeTool: jest.fn() } as any,
       { getAllowedToolIds: jest.fn().mockResolvedValue(null) } as any,
       {
@@ -483,7 +484,7 @@ describe('McpEndpointController — same tool name in several connectors', () =>
     };
     const controller = new McpEndpointController(
       { findById: jest.fn() } as any,
-      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
       toolExecutor as any,
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
@@ -584,7 +585,7 @@ describe('McpEndpointController — structuredContent', () => {
     const toolExecutor = { executeTool: jest.fn().mockResolvedValue(executeResult) };
     const controller = new McpEndpointController(
       { findById: jest.fn() } as any,
-      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
       toolExecutor as any,
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
@@ -657,7 +658,7 @@ describe('McpEndpointController — structuredContent', () => {
     };
     const controller = new McpEndpointController(
       { findById: jest.fn() } as any,
-      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
       toolExecutor as any,
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
@@ -828,7 +829,7 @@ describe('McpEndpointController — skills_save_to_workspace', () => {
   function plan(serverTools: any[], create = jest.fn().mockResolvedValue({ id: 'sk-1', status: 'pending' })) {
     const controller = new McpEndpointController(
       { findById: jest.fn() } as any,
-      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
       { executeTool: jest.fn() } as any,
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
@@ -1124,7 +1125,7 @@ describe('McpEndpointController — resources and instructions follow the tool p
     };
     controller = new McpEndpointController(
       service,
-      { getAllTools: () => TOOLS } as any,
+      withRegistryIndexes({ getAllTools: () => TOOLS }) as any,
       { executeTool: jest.fn() } as any,
       rolesService,
       kgService,

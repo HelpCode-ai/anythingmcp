@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { license, type EditionState } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { usePricingUrl } from '@/lib/use-pricing-url';
 import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { notifyEditionChanged, daysUntil, formatDay } from '@/lib/use-edition';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -18,6 +17,18 @@ export const ENTERPRISE_CAPABILITIES = [
 ];
 
 /**
+ * Listed only as what Enterprise adds, never as what a running trial includes.
+ * Starter and Team keys already include File Search, so only Community sees it.
+ */
+function enterpriseExtras(edition: EditionState): string[] {
+  if (edition.business) return [];
+  return [
+    ...(edition.edition === 'community' ? ['File Search after the 30-day trial'] : []),
+    'Support with a service level agreement',
+  ];
+}
+
+/**
  * The name shown for an edition. The licensing layer still calls the trial and
  * the transition period `business` (as it does a Business key someone already
  * holds); the trial is offered as an Enterprise trial, and a transition keeps
@@ -29,10 +40,13 @@ function editionLabel(edition: EditionState): string {
   return edition.edition.charAt(0).toUpperCase() + edition.edition.slice(1);
 }
 
-/** Self-hosted: which edition runs, its users, and the ways to more. */
+/**
+ * Self-hosted: which edition runs, its users, and the ways to more. Self-hosted
+ * is sold as Community (free) and Enterprise (on request); Starter and Team are
+ * no longer sold, but an instance with such a key still shows it here.
+ */
 export function EditionCard({ edition, onChange }: { edition: EditionState; onChange?: () => void }) {
   const { token } = useAuth();
-  const pricingUrl = usePricingUrl();
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
 
@@ -75,7 +89,8 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
       </div>
       <p className="text-sm text-[var(--text-2)]">
         {users}
-        {edition.edition === 'community' && ` · Community includes up to ${edition.communitySeatLimit} users.`}
+        {edition.edition === 'community' &&
+          ` · Community is free for any use, including commercial use, for up to ${edition.communitySeatLimit} active users.`}
       </p>
 
       <div className="mt-4">
@@ -94,6 +109,12 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
               <span aria-hidden className={edition.business ? 'text-[var(--ok)]' : 'text-[var(--text-3)]'}>
                 {edition.business ? '✓' : '+'}
               </span>
+              {c}
+            </li>
+          ))}
+          {enterpriseExtras(edition).map((c) => (
+            <li key={c} className="flex gap-2">
+              <span aria-hidden className="text-[var(--text-3)]">+</span>
               {c}
             </li>
           ))}
@@ -124,18 +145,10 @@ export function EditionCard({ edition, onChange }: { edition: EditionState; onCh
             </Button>
           )}
           <a
-            href={pricingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(buttonVariants({ variant: edition.trialAvailable ? 'secondary' : 'primary' }))}
-          >
-            View plans
-          </a>
-          <a
             href={buildEnterpriseContactUrl()}
             target="_blank"
             rel="noopener noreferrer"
-            className={cn(buttonVariants({ variant: 'ghost' }))}
+            className={cn(buttonVariants({ variant: edition.trialAvailable ? 'secondary' : 'primary' }))}
           >
             Contact us about Enterprise
           </a>

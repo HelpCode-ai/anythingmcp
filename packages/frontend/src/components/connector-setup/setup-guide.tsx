@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useTranslations } from 'next-intl';
+import { Flag } from 'lucide-react';
 import type { AdapterSetupInfo, SetupGuide, SetupGuideStep } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -192,7 +193,9 @@ export function GuideStepper({ steps, current }: { steps: SetupGuideStep[]; curr
                 !done && !active && 'border border-[var(--border-strong)] text-[var(--text-3)]',
               )}
             >
-              {done ? '✓' : i + 1}
+              {/* "Use it" is where the steps lead, not one more step: the
+                  numbers match "Step n of {steps}" and the intro's count. */}
+              {done ? '✓' : i === items.length - 1 ? <Flag aria-hidden className="size-3" /> : i + 1}
             </span>
             <span
               className={cn(

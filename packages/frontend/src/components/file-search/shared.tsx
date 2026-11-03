@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import type { FileSearchAccess, FileSearchBudget, FileSourceTestResult, FileTreeNode } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -12,6 +14,22 @@ export const inputClass =
   'h-9 w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)]';
 export const labelClass = 'mb-1.5 block text-[12.5px] font-medium text-[var(--text)]';
 export const hintClass = 'mt-1 text-[12px] leading-[1.5] text-[var(--text-3)]';
+
+/** True once the server said this instance is self-hosted. */
+export function useSelfHosted(): boolean {
+  const { deploymentMode, deploymentModeLoaded } = useAuth();
+  return deploymentModeLoaded && deploymentMode !== 'cloud';
+}
+
+/**
+ * The plan to suggest when a limit is reached. Self-hosted Starter and Team are
+ * no longer sold, so a self-hosted instance is only pointed at Enterprise.
+ * Existing Starter and Team keys keep their limits; only the suggestion changes.
+ */
+export function suggestedNext<T extends { plan: string }>(next: T | null | undefined, selfHosted: boolean): T | null {
+  if (!next) return null;
+  return !selfHosted || next.plan === 'enterprise' ? next : null;
+}
 
 export function formatBytes(n: number | null | undefined): string {
   if (n == null) return '—';
@@ -78,6 +96,7 @@ export function TestChecklist({ result }: { result: FileSourceTestResult }) {
 /** Live budget: selected files and bytes against the plan. */
 export function BudgetBar({ budget, onUpgrade }: { budget: FileSearchBudget; onUpgrade?: () => void }) {
   const t = useTranslations('fileSearch');
+  const next = suggestedNext(budget.next, useSelfHosted());
   const used = budget.files + budget.usedByOtherConnectors.files;
   const max = budget.maxFiles;
   const pct = max ? Math.min(100, Math.round((used / max) * 100)) : 0;
@@ -109,8 +128,8 @@ export function BudgetBar({ budget, onUpgrade }: { budget: FileSearchBudget; onU
       {!budget.fits && (
         <div className="mt-3 flex flex-col gap-2 border-t border-[var(--danger)]/30 pt-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[12.5px] text-[var(--text)]">
-            {budget.next
-              ? t('budget.overWithNext', { plan: budget.next.plan, max: formatNumber(budget.next.quota.maxFiles) })
+            {next
+              ? t('budget.overWithNext', { plan: next.plan, max: formatNumber(next.quota.maxFiles) })
               : t('budget.over')}
           </p>
           {onUpgrade && (
@@ -209,6 +228,10 @@ export function FolderTree({
 /** Self-hosted Community after the trial, a Cloud workspace without a plan: why it is locked and how to open it. */
 export function LockedCard({ access, onStartTrial, busy }: { access: Extract<FileSearchAccess, { allowed: false }>; onStartTrial?: () => void; busy?: boolean }) {
   const t = useTranslations('fileSearch');
+  // Self-hosted sells File Search beyond the trial only with Enterprise, on request.
+  const selfHosted = useSelfHosted();
+  const secondary =
+    'inline-flex h-9 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[13px] font-semibold text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]';
   return (
     <Card className="p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
@@ -216,7 +239,7 @@ export function LockedCard({ access, onStartTrial, busy }: { access: Extract<Fil
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-[15px] font-semibold text-[var(--text)]">{t('locked.title')}</h2>
+          <h2 className="text-[15px] font-semibold text-[var(--text)]">{selfHosted && !access.keyRequired ? t('locked.titleEnterprise') : t('locked.title')}</h2>
           <p className="mt-1 text-[13px] leading-[1.55] text-[var(--text-2)]">
             {access.keyRequired === 'to_start'
               ? t('locked.keyToStart')
@@ -237,8 +260,17 @@ export function LockedCard({ access, onStartTrial, busy }: { access: Extract<Fil
               <Link href="/settings/license" className={cn(buttonVariants({ variant: 'primary' }))}>
                 {t('locked.registerKey')}
               </Link>
+            ) : selfHosted ? (
+              <>
+                <a href={buildEnterpriseContactUrl()} target="_blank" rel="noopener noreferrer" className={secondary}>
+                  {t('locked.contactEnterprise')}
+                </a>
+                <Link href="/settings/license" className={secondary}>
+                  {t('locked.activate')}
+                </Link>
+              </>
             ) : (
-              <Link href="/settings/license" className="inline-flex h-9 items-center justify-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[13px] font-semibold text-[var(--text-2)] hover:border-[var(--border-strong)] hover:text-[var(--text)]">
+              <Link href="/settings/license" className={secondary}>
                 {access.trialAvailable ? t('locked.buy') : t('locked.activate')}
               </Link>
             )}
