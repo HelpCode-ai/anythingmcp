@@ -190,7 +190,8 @@ test('OAuth: keys Etsy refuses (app Pending, or a wrong secret) are kept, and th
   await expect(page.getByText('Etsy Open API v3 does not accept these keys yet.')).toBeVisible();
   await expect(page.getByText("we'll e-mail you when it's approved, nothing else to do.")).toBeVisible();
   await expect(page.getByText('If your app is already active, copy the shared secret again from your app page.')).toBeVisible();
-  await expect(page.getByText('has not approved your app')).toHaveCount(0);
+  // The form's panel, not the guided wait step.
+  await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Open the connector' })).toHaveAttribute('href', '/connectors/c9');
   expect(calls.imports).toHaveLength(1);
   expect(calls.imports[0].credentials).toMatchObject({

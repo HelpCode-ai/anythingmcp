@@ -679,6 +679,28 @@ describe('AdaptersService.verifyCredentials', () => {
     expect(out.message).toContain('An internal error occurred.');
   });
 
+  it('shows the words of a web page answer, never its markup', async () => {
+    // 2 Nov 2026: an Odoo check showed "<html><body><script>window.location…".
+    const err: any = new Error('Request failed with status code 404');
+    err.response = {
+      status: 404,
+      data: '<!DOCTYPE html><html><head><title>Error</title><style>p{color:red}</style></head><body><h1>404 Not Found</h1><p>No route &amp; no page.</p></body></html>',
+    };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: 'k' });
+    expect(out.message).toContain('the server answered with a web page: "Error 404 Not Found No route & no page."');
+    expect(out.message).not.toMatch(/<|color:red/);
+  });
+
+  it('says a page with nothing to read is a web page, not API data', async () => {
+    const err: any = new Error('Request failed with status code 404');
+    err.response = { status: 404, data: '<html><body><script>window.location = "https://example.com/";</script></body></html>' };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: 'k' });
+    expect(out.message).toContain('the server answered with a web page, not API data');
+    expect(out.message).not.toContain('window.location');
+  });
+
   it('does not repeat a body the error message already carries', async () => {
     const err: any = new Error('401 Unauthorized: invalid token');
     err.status = 401;
