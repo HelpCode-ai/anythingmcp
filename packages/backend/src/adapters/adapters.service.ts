@@ -35,6 +35,7 @@ import {
 import { INSTALL_RANKING_CACHE_MS, INSTALL_RANKING_MIN_WORKSPACES } from './install-ranking';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { classifyToolExecutionError } from '../connectors/connector-error.util';
+import { egressIps, ipRefusalHint, looksLikeIpRefusal } from '../connectors/egress';
 import { applyResponseTransform } from '../connectors/response-transform.util';
 import {
   carriedSetupValues,
@@ -136,12 +137,15 @@ export class AdaptersService {
   describe(slug: string): AdapterDefinition & {
     envVars: EnvVarDescriptor[];
     setupKind: SetupKind;
+    egressIps: string[];
   } {
     const adapter = this.getBySlug(slug);
     return {
       ...adapter,
       envVars: describeAdapterEnvVars(adapter),
       setupKind: setupKind(adapter),
+      // Shown on the setup page, for servers that only accept approved addresses.
+      egressIps: egressIps(),
     };
   }
 
@@ -602,7 +606,17 @@ export class AdaptersService {
       // The adapter knows its own failures better than the shared classifier:
       // an Odoo 404 means "older than 19", not "check the tool path".
       const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.[classified.kind];
-      const hint = typeof own === 'string' ? own : own?.hint ?? classified.hint;
+      // A server that only accepts approved addresses answers with a page or
+      // a refusal that says nothing about the keys: name the address to allow.
+      const ipRefusal =
+        !own && looksLikeIpRefusal({ status: status ?? undefined, text: `${upstream}\n${rawResponseText(err)}` })
+          ? ipRefusalHint({
+              ips: egressIps(),
+              cloud: this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud',
+              usedProxy: tool!.useProxy === true,
+            })
+          : undefined;
+      const hint = typeof own === 'string' ? own : own?.hint ?? ipRefusal ?? classified.hint;
       const message = hint ? `${hint} (${upstream.replace(/[.\s]+$/, '')})` : upstream;
       // Odoo: a JSON-2 404 is told apart by asking Odoo its version (older
       // than 19, a wrong database name, no database at this address), and a
@@ -1360,6 +1374,17 @@ function describeShape(value: unknown): string {
  * status code 500" told one ShipStation user on 10 Oct 2026 nothing; the body
  * holds the provider's own reason and the request id its support asks for.
  */
+/** The raw response body of a failed call, as text (empty when there is none). */
+function rawResponseText(err: any): string {
+  const data = err?.response?.data;
+  if (data === undefined || data === null) return '';
+  try {
+    return (typeof data === 'string' ? data : JSON.stringify(data)).slice(0, 4000);
+  } catch {
+    return '';
+  }
+}
+
 function withResponseExcerpt(message: string, err: any, max = 200): string {
   const data = err?.response?.data;
   if (data === undefined || data === null || message.includes('body=')) return message;

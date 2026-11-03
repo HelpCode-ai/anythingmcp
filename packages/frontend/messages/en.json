@@ -1597,7 +1597,7 @@
       "disable": "Disable",
       "enable": "Enable",
       "proxy": "Proxy",
-      "proxyTitle": "Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs.",
+      "proxyTitle": "Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs. Calls through it leave from changing IP addresses: keep it off for a server that only accepts approved IPs.",
       "delete": "Delete",
       "showSql": "Show full SQL",
       "showPath": "Show full path",
@@ -3468,5 +3468,15 @@
       "preparing": "Preparing…",
       "warning": "Only open files from people you trust. AnythingMCP does not check files for viruses."
     }
+  },
+  "networkNote": {
+    "title": "Server only accepts approved IP addresses?",
+    "body": "AnythingMCP calls the API from {count, plural, one {this address} other {these addresses}}. If the server or account only accepts approved IPs (a firewall, an IP allowlist), add {count, plural, one {it} other {them}} there; otherwise there is nothing to do.",
+    "requiredTitle": "Register the IP address",
+    "requiredBody": "{name} only accepts calls from IP addresses registered with it. Register {count, plural, one {this address} other {these addresses}} in your {name} account before you start, or every call is refused.",
+    "requiredNoIps": "{name} only accepts calls from IP addresses registered with it. Register the public IP address of the server AnythingMCP runs on (your network admin knows it) before you start, or every call is refused.",
+    "proxy": "Leave the \"Proxy\" option off on the tools of a server with an allowlist: proxied calls leave from changing addresses.",
+    "copy": "Copy",
+    "copied": "Copied"
   }
 }

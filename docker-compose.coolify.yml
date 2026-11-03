@@ -101,6 +101,8 @@ services:
       - SSRF_ALLOWED_HOSTS=${SSRF_ALLOWED_HOSTS:-}
       # Largest upstream response one tool call reads, in bytes. Empty = 10 MB.
       - TOOL_MAX_RESPONSE_BYTES=${TOOL_MAX_RESPONSE_BYTES:-}
+      # Public IPs this server calls APIs from (see .env.example). Empty = not shown.
+      - EGRESS_IPS=${EGRESS_IPS:-}
       # V8 heap cap for the backend, in MB. 2048 suits a ~4 GB server.
       - NODE_MAX_OLD_SPACE_MB=${NODE_MAX_OLD_SPACE_MB:-2048}
       # Knowledge Graph LLM (optional), see docs/knowledge-graph.md.

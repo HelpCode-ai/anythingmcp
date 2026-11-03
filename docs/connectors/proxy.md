@@ -23,6 +23,11 @@ Three things must line up for a request to be proxied:
 If all three hold, the request goes through the proxy. Otherwise it goes out
 directly.
 
+A proxied request leaves from the proxy's addresses, which change. Do not turn
+the proxy on for a server that only accepts approved IP addresses: allow the
+instance's own outbound address (`EGRESS_IPS`, shown on the connector page)
+there instead.
+
 ## Configuring the proxy
 
 ```bash
