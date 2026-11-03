@@ -207,6 +207,35 @@ test('diagnostic docs use ordinary GitHub heading slugs', () => {
   assert.doesNotMatch(docs, /\{#[^}]+\}/);
 });
 
+test('loginBasicAuth needs credentials and keeps the password out of the login body and headers', () => {
+  const login = (authConfig, authType = 'LOGIN_TOKEN') => validateAdapter(adapter({
+    connector: { type: 'REST', authType, authConfig: {
+      loginUrl: 'https://good.test/login', loginMethod: 'POST', tokenJsonPath: 'data.token',
+      username: '{{GOOD_USER}}', password: '{{GOOD_KEY}}', loginBasicAuth: true, loginBody: {}, ...authConfig,
+    } },
+    requiredEnvVars: ['GOOD_USER', 'GOOD_KEY'],
+  }), 'good.json', 'de').errors.filter((e) => e.rule === 'login-basic-auth');
+
+  assert.deepEqual(login({}), []);
+  assert.deepEqual(login({ loginBasicAuth: false, loginBody: { p: '${password}' } }), []);
+  for (const [config, expected] of [
+    [{ username: undefined }, /needs authConfig\.username/],
+    [{ password: '' }, /needs authConfig\.password/],
+    [{ loginBody: { pass: '${password}' } }, /remove \$\{password\}/],
+    [{ loginBodyTemplate: '{"p":"${passwordHashed}"}' }, /remove \$\{passwordHashed\}/],
+    [{ loginHeaders: { authorization: 'Basic x' } }, /remove Authorization from loginHeaders/],
+    [{ signedJwt: { privateKey: '{{GOOD_KEY}}' } }, /signedJwt/],
+    [{ passwordHashing: { scheme: 'bcrypt' } }, /passwordHashing/],
+    [{ loginBasicAuth: 'yes' }, /true or false/],
+  ]) {
+    const errors = login(config);
+    assert.equal(errors.length, 1, JSON.stringify(config));
+    assert.match(errors[0].message, expected);
+    assert.equal(errors[0].docs, 'authentication');
+  }
+  assert.match(login({}, 'BASIC_AUTH')[0].message, /only applies to LOGIN_TOKEN/);
+});
+
 test('DATABASE adapters may authenticate with a connection string', () => {
   const result = validateAdapter(adapter({
     slug: 'postgres', icon: 'postgres', region: 'intl',

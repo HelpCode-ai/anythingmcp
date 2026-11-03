@@ -366,6 +366,24 @@ describe('catalog search — File Search suggestions', () => {
     },
   );
 
+  it.each([
+    ['web search', 'brave-search'],
+    ['web search internet wikipedia', 'brave-search'],
+    ['etsy listing create digital file', 'etsy'],
+  ])('"%s" is about %s, not File Search: "File Search" and the start of "WebDAV" do not name an entry', (query, app) => {
+    const all = slugs(query);
+    expect(all[0]).toBe(app);
+    // Below every other result, if listed at all.
+    const firstFs = all.findIndex((s) => fileSearchSlugs.has(s));
+    if (firstFs >= 0) expect(all.slice(firstFs).every((s) => fileSearchSlugs.has(s))).toBe(true);
+  });
+
+  it('"file search" still lists the File Search entries', () => {
+    const result = searchCatalog(cloud, 'file search');
+    expect(result.fileSearch.length).toBeGreaterThan(0);
+    expect(result.hits.slice(0, 8).every((h) => fileSearchSlugs.has(h.entry.slug))).toBe(true);
+  });
+
   it('caps the suggestions and lists none twice', () => {
     const result = searchCatalog(catalog, 'synology nas file server documents');
     expect(result.fileSearch.length).toBeLessThanOrEqual(MAX_FILE_SEARCH);

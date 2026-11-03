@@ -5,30 +5,26 @@ import Link from 'next/link';
 import { license, type EditionState } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { buildEnterpriseContactUrl } from '@/lib/marketing';
-import { usePricingUrl } from '@/lib/use-pricing-url';
 import { notifyEditionChanged } from '@/lib/use-edition';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 /**
- * Inline notice on a page whose setup needs more than Community, with the ways
- * to get it: the one-time trial, then the plans (`upgrade="plans"`, e.g. more
- * users) or an Enterprise enquiry (`upgrade="enterprise"`, single sign-on and
- * SCIM, which no self-service plan includes).
+ * Inline notice on a self-hosted page whose setup needs more than Community
+ * (more users, single sign-on, SCIM), with the ways to get it: the one-time
+ * trial, then an Enterprise enquiry. Self-hosted Starter and Team are no longer
+ * sold, so there is no plan to buy here.
  */
 export function EnterpriseNotice({
   edition,
   title,
   body,
-  upgrade,
 }: {
   edition: EditionState;
   title: string;
   body: string;
-  upgrade: 'plans' | 'enterprise';
 }) {
   const { token } = useAuth();
-  const pricingUrl = usePricingUrl();
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
 
@@ -46,11 +42,6 @@ export function EnterpriseNotice({
     }
   };
 
-  const upgradeLink =
-    upgrade === 'enterprise'
-      ? { href: buildEnterpriseContactUrl(), label: 'Contact us about Enterprise' }
-      : { href: pricingUrl, label: 'View plans' };
-
   return (
     <div className="rounded-[12px] border border-[var(--brand)] bg-[var(--brand-tint)] p-4">
       <h3 className="text-sm font-semibold text-[var(--text)]">{title}</h3>
@@ -63,12 +54,12 @@ export function EnterpriseNotice({
           </Button>
         )}
         <a
-          href={upgradeLink.href}
+          href={buildEnterpriseContactUrl()}
           target="_blank"
           rel="noopener noreferrer"
           className={cn(buttonVariants({ size: 'sm', variant: edition.trialAvailable ? 'secondary' : 'primary' }))}
         >
-          {upgradeLink.label}
+          Contact us about Enterprise
         </a>
         <Link href="/settings/license" className="text-[13px] text-[var(--brand)] hover:underline">
           Enter a license key

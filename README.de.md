@@ -54,15 +54,15 @@ Ein Gateway reicht Aufrufe weiter. Ein Firmengehirn weiß außerdem, wo deine Do
 | | Was es macht | Edition |
 |---|---|---|
 | **Jedes System, ein Endpunkt** | 695 Connectors aus dem Katalog oder deine eigene REST-/OpenAPI-, SOAP-, GraphQL-, OData-, SQL-, IMAP/SMTP- oder MCP-Quelle. Tools werden zur Laufzeit registriert. [Connectors](#connect-any-api-soap-service-or-database) | Alle |
-| **File Search** | Indexiert SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 oder eine Netzwerkfreigabe: jede PDF-Seite, Excel-Zeilen mit ihren Spaltennamen, Word, PowerPoint, Outlook-Mails mit Anhängen. Die KI antwortet mit Datei, Seite und Datum. [File Search](docs/connectors/file-search.md) | Cloud, kostenpflichtige Lizenz |
-| **File Share** | Befristete Download-Links für Dateien aus deinen Ordnern oder für Dateien, die die KI erstellt (einen CSV-Export, einen Bericht), intern oder öffentlich, mit Ablaufdatum und Widerruf. [File Share](docs/connectors/file-search.md) | Cloud, kostenpflichtige Lizenz |
+| **File Search** | Indexiert SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 oder eine Netzwerkfreigabe: jede PDF-Seite, Excel-Zeilen mit ihren Spaltennamen, Word, PowerPoint, Outlook-Mails mit Anhängen. Die KI antwortet mit Datei, Seite und Datum. [File Search](docs/connectors/file-search.md) | Cloud; selbst gehostet Enterprise |
+| **File Share** | Befristete Download-Links für Dateien aus deinen Ordnern oder für Dateien, die die KI erstellt (einen CSV-Export, einen Bericht), intern oder öffentlich, mit Ablaufdatum und Widerruf. [File Share](docs/connectors/file-search.md) | Cloud; selbst gehostet Enterprise |
 | **Firmengedächtnis** | Fakten und Vorlieben, in einem KI-Client gespeichert und in jedem anderen wiedergefunden: einmal in Claude gesagt, von Copilot genutzt. Persönlicher und firmenweiter Bereich, mit Ordnern und Rollengrenzen. [Gedächtnis](docs/memory.md) | Enterprise |
 | **KI-Skills** | Die Abläufe, denen deine Agenten folgen, von Hand geschrieben oder aus echten Anfragen und behobenen Fehlern gelernt und von einem Admin freigegeben. [KI-Skills](docs/knowledge-graph.md#ai-skills) | Alle |
 | **Knowledge Graph** | Wie deine Systeme zusammenhängen, damit der Agent einen Kunden im einen System mit seinen Aufträgen im anderen verknüpft, ohne dass man es ihm sagen muss. [Knowledge Graph](docs/knowledge-graph.md) | Alle |
 | **Code Mode** | Ein kurzes Programm ruft mehrere Tools in einer isolierten Sandbox auf, ohne Secrets und ohne Netzwerk; aus einer Abfrage in fünf Schritten wird so ein einziger Aufruf. [Code Mode](docs/code-mode.md) | Alle; Schreibzugriff Enterprise |
 | **Governance** | Rollen und Berechtigungen pro Tool, Response-Mapping, das Felder entfernt, bevor sie das Modell erreichen, und ein Audit-Log jedes Aufrufs. SSO und SCIM aus deinem Verzeichnis. [Sicherheit](#security-and-governance) | Alle; SSO/SCIM Enterprise |
 
-Die selbst gehostete Community-Edition ist für bis zu 3 aktive Nutzer kostenlos. Kostenpflichtige Lizenzen und den 30-tägigen Test findest du unter **Settings → License**; für Enterprise schreib an [info@helpcode.ai](mailto:info@helpcode.ai) oder schau auf [anythingmcp.com/enterprise](https://anythingmcp.com/enterprise).
+Die selbst gehostete Community-Edition ist unter AGPL-3.0 für jede Nutzung kostenlos, auch kommerziell, für bis zu 3 aktive Nutzer und mit unbegrenzt vielen Connectors und MCP-Servern. Mehr Nutzer, Single Sign-On, SCIM, File Search nach dem 30-tägigen Test und Support gibt es mit Enterprise, auf Anfrage: [Kontakt](https://anythingmcp.com/contact?plan=enterprise). Administratoren können Single Sign-On und SCIM unter **Settings → License** 30 Tage lang testen. Bestehende Starter- und Team-Lizenzschlüssel funktionieren weiter.
 
 ---
 

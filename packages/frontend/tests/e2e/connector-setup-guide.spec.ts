@@ -241,7 +241,7 @@ test('Etsy: an app awaiting approval waits with its keys saved, and goes on once
 
   // The wait: what it is, that the keys are kept, and no way past it yet.
   await expect(page.getByRole('heading', { name: "Wait for Etsy's approval" })).toBeVisible();
-  await expect(page.getByText('Etsy has not approved your app yet')).toBeVisible();
+  await expect(page.getByText('Etsy does not accept these keys yet')).toBeVisible();
   await expect(page.getByText(/Your keys are saved/)).toBeVisible();
   await expect(page.getByText(/Last checked at/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
@@ -270,13 +270,13 @@ test('Etsy: "Check again" asks right away, and a wrong secret leads back to the 
   await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
   await page.getByLabel('Shared secret').fill('s3cr3t0abc');
   await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
-  await expect(page.getByText('Etsy has not approved your app yet')).toBeVisible();
+  await expect(page.getByText('Etsy does not accept these keys yet')).toBeVisible();
 
   // Already approved at Etsy, still refused: the keys again, from the same row.
   await page.getByRole('button', { name: /Already approved, but this still waits/ }).click();
   await expect(page.getByRole('heading', { name: 'Copy your two keys' })).toBeVisible();
   await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
-  await expect(page.getByText('Etsy has not approved your app yet')).toBeVisible();
+  await expect(page.getByText('Etsy does not accept these keys yet')).toBeVisible();
 
   const before = calls.verify.length;
   approved = true;
@@ -376,7 +376,7 @@ test('finishing an existing connector can skip to the sign-in; an app still pend
   await page.getByRole('button', { name: 'Check and sign in to Etsy' }).click();
   // Refused: not an error at the last step, but the wait, with the keys kept.
   await expect(page.getByRole('heading', { name: "Wait for Etsy's approval" })).toBeVisible();
-  await expect(page.getByText('Etsy has not approved your app yet')).toBeVisible();
+  await expect(page.getByText('Etsy does not accept these keys yet')).toBeVisible();
   expect(calls.imports).toHaveLength(0);
   expect(calls.authorize).toHaveLength(0);
   await page.getByRole('button', { name: 'Back' }).click();
