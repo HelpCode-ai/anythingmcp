@@ -1,0 +1,136 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "file-server-search",
+  "version": "1.0.4",
+  "description": "Search, read and cite the documents in your company folders on SFTP, FTPS, FTP, WebDAV (Nextcloud, ownCloud), S3-compatible storage or a NAS (Synology, QNAP, FRITZ!Box, Hetzner Storage Box).",
+  "author": {
+    "name": "KOCH Freiburg GmbH",
+    "email": "support@anythingmcp.com",
+    "url": "https://anythingmcp.com"
+  },
+  "homepage": "https://anythingmcp.com/guides/connect-ftp-sftp-to-chatgpt",
+  "repository": "https://github.com/HelpCode-ai/anythingmcp",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "file search",
+    "sftp",
+    "ftp",
+    "ftps",
+    "webdav",
+    "nextcloud",
+    "owncloud",
+    "nas",
+    "synology",
+    "qnap",
+    "fritzbox",
+    "hetzner storage box",
+    "s3",
+    "file server",
+    "network share",
+    "documents",
+    "pdf",
+    "excel",
+    "price lists",
+    "contracts"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "SFTP & NAS Search by Helpcode",
+        "shortDescription": "Search files on your server",
+        "longDescription": "Ask questions about the documents on your company's file server and get answers with the file, the page and the file date.\n\nYour administrator connects a folder once, in a guided setup that opens right after you approve the connection: SFTP, FTPS, FTP, WebDAV (Nextcloud, ownCloud), S3-compatible storage (AWS S3, DigitalOcean Spaces, MinIO), or a NAS such as Synology, QNAP, FRITZ!Box or a Hetzner Storage Box. The setup tests the connection with a read-only account, lets you pick the folders and file types, and shows how many files will be searchable before anything is indexed.\n\nWhat you can do in ChatGPT:\n- Search the text of PDF, Word, Excel, PowerPoint, Outlook messages and text files, with the best matching page and a snippet.\n- Find an exact article number, order number or norm, with the matching lines and, in spreadsheets, the whole row.\n- Find files by name, browse a folder, and read a document page by page.\n- See a page of a PDF or an image as a picture, for drawings, stamps and tables.\n- Get the original file as a download link that only members of your workspace can open.\n\nBuilt for company documents:\n- Read-only: the plugin never changes, uploads or deletes files on your server.\n- The files stay on your server. AnythingMCP keeps a text index so they can be searched, synced on a schedule.\n- Permissions: each user reaches only the folders their workspace role allows.\n- Passwords and keys are entered only in the setup page, never in the chat.\n- Every search is recorded in the workspace's audit log.",
+        "developerName": "KOCH Freiburg GmbH",
+        "category": "Productivity",
+        "capabilities": [
+          "Search the text of documents on SFTP, FTPS, FTP, WebDAV, S3 or NAS folders",
+          "Find exact article numbers, order numbers and codes in documents and spreadsheets",
+          "Find files by name and browse folders",
+          "Read documents page by page and cite file, page and date",
+          "Show a PDF page or an image as a picture",
+          "Give the original file as a members-only download link",
+          "Guided folder setup for Nextcloud, ownCloud, Synology, QNAP, FRITZ!Box and Hetzner Storage Box"
+        ],
+        "websiteURL": "https://anythingmcp.com/guides/connect-ftp-sftp-to-chatgpt",
+        "supportURL": "https://anythingmcp.com/contact",
+        "privacyPolicyURL": "https://anythingmcp.com/privacy-policy",
+        "termsOfServiceURL": "https://anythingmcp.com/terms",
+        "defaultPrompt": [
+          "What does the Brandt Türen 2026 PDF price list say for article BR-12103? Give the page.",
+          "Find the latest price increase letter from Brandt Türen and summarize it.",
+          "Which folders are connected, and what do they contain?"
+        ],
+        "brandColor": "#2563EB",
+        "brandColorDark": "#7AA7FF",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      },
+      "onboardingSkill": "./skills/get-started/SKILL.md",
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Price of an article from a named price list",
+              "prompt": "What does the Brandt Türen 2026 PDF price list say for article BR-12103? Give the page.",
+              "tools_triggered": "find_exact_text or search_documents, read_document",
+              "expected_behavior": "Reads 'Preisliste Brandt Türen 2026.pdf' (Lieferanten/Brandt Türen - 70121/Preisliste) and answers: BR-12103, Rahmen Aluminium 875 x 2125, 943.71 EUR net, valid from 01.04.2026, page 1."
+            },
+            {
+              "description": "Summarize a letter from a supplier",
+              "prompt": "Why did Brandt Türen raise its prices, by how much and from when?",
+              "tools_triggered": "search_documents, read_document",
+              "expected_behavior": "Reads Korrespondenz/Preiserhoehung.eml of Brandt Türen and answers: list prices rise by 6 % from 1 January 2026; cites the file."
+            },
+            {
+              "description": "Current versus old versions of a document",
+              "prompt": "List the price lists of Brandt Türen and tell me which one is current.",
+              "tools_triggered": "find_files, list_folder",
+              "expected_behavior": "Lists the 2025 and 2026 price lists of Brandt Türen (Excel and PDF) and names the 2026 list as the current one, with the file dates."
+            },
+            {
+              "description": "Original file as a download link",
+              "prompt": "Give me the original Konditionen 2024 document of Brandt Türen as a download link.",
+              "tools_triggered": "find_files, get_file_link",
+              "expected_behavior": "Finds Lieferanten/Brandt Türen - 70121/Konditionen/Konditionen 2024.docx and returns a download link that opens for signed-in members of the workspace and expires after 24 hours."
+            },
+            {
+              "description": "Which folders are connected",
+              "prompt": "Which folders are connected, and how many files do they contain?",
+              "tools_triggered": "list_file_sources",
+              "expected_behavior": "Names the connected demo folder, its protocol (S3), the number of indexed files and the time of the last sync."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Deleting files is not supported",
+              "prompt": "Delete the old price lists of Brandt Türen."
+            },
+            {
+              "description": "Uploading or changing files is not supported",
+              "prompt": "Change the price of BR-12103 to 600 EUR in the price list."
+            },
+            {
+              "description": "Credentials are never taken in the chat",
+              "prompt": "Connect my FTP server ftp.example.com, the password is Secret123."
+            }
+          ]
+        },
+        "demo_recording_url": "https://anythingmcp.com/media/file-search-chatgpt-demo.mp4",
+        "commerce": false,
+        "commerce_description": "This plugin does not sell products or process payments."
+      },
+      "publication": {
+        "release_notes": "First release: search, read and cite documents in folders on SFTP, FTPS, FTP, WebDAV, S3 and NAS, with a guided folder setup after approving the connection.",
+        "translations": {
+          "de-DE": {
+            "subtitle": "Dateien auf dem Server finden",
+            "description": "Fragen Sie ChatGPT nach den Dokumenten auf dem Dateiserver Ihres Unternehmens und erhalten Sie Antworten mit Datei, Seite und Dateidatum. Ihr Administrator verbindet einen Ordner einmal in einer geführten Einrichtung direkt nach der Freigabe: SFTP, FTPS, FTP, WebDAV (Nextcloud, ownCloud), S3-kompatibler Speicher oder ein NAS wie Synology, QNAP, FRITZ!Box oder eine Hetzner Storage Box. Nur lesend: Das Plugin ändert, lädt oder löscht keine Dateien. Passwörter werden nur auf der Einrichtungsseite eingegeben, nie im Chat."
+          },
+          "it-IT": {
+            "subtitle": "Cerca i file sul tuo server",
+            "description": "Fai domande a ChatGPT sui documenti del file server della tua azienda e ricevi risposte con file, pagina e data del file. L'amministratore collega una cartella una sola volta, con una configurazione guidata subito dopo l'autorizzazione: SFTP, FTPS, FTP, WebDAV (Nextcloud, ownCloud), storage compatibile S3 o un NAS come Synology, QNAP, FRITZ!Box o una Hetzner Storage Box. Solo lettura: il plugin non modifica, carica o cancella file. Le password si inseriscono solo nella pagina di configurazione, mai nella chat."
+          }
+        }
+      }
+    }
+  }
+}

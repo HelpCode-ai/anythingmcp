@@ -23,7 +23,7 @@ import { findUserByEmail } from '../common/email.util';
 import type { User } from '../generated/prisma/client';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { SsoService } from '../identity-providers/sso.service';
-import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
+import { MCP_APP_COOKIE, MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
 import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
@@ -43,7 +43,8 @@ import {
   type TrustRowOptions,
 } from './auth-page';
 import { maskEmail } from './mcp-email-verification';
-import { setRecentSignInCookie } from './recent-sign-in.util';
+import { hasDashboardHeader, setRecentSignInCookie } from './recent-sign-in.util';
+import { RecentSignInService } from './recent-sign-in.service';
 import { SharedSetupRegistry, type SetupContext, type SharedSetupProvider } from '../mcp-server/shared-setup';
 import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
 
@@ -116,6 +117,59 @@ export function finishSetupRequest(appName: string): string {
   return `Finish setting up my ${appName} connector.`;
 }
 
+/**
+ * CSRF token of the File Search setup page's links (see
+ * maybeOfferFileSearchSetup): a signed cookie, and the same value in each
+ * link to the dashboard hand-off.
+ */
+const FILE_SEARCH_SETUP_CSRF_COOKIE = 'file_search_setup_csrf';
+
+/**
+ * How a folder can be connected, as the File Search plugin's setup page
+ * offers it after "Approve": the wizard's protocols, and the products it has
+ * presets for. `local` (a folder mounted into the server) only exists on a
+ * self-hosted instance.
+ */
+export const FILE_SEARCH_SETUP_OPTIONS: ReadonlyArray<{
+  id: string;
+  label: string;
+  hint: string;
+  protocol: 'sftp' | 'ftps' | 'ftp' | 'webdav' | 's3' | 'local';
+  preset?: string;
+  selfHostedOnly?: boolean;
+}> = [
+  { id: 'sftp', label: 'SFTP', hint: 'Linux or Windows server, most NAS', protocol: 'sftp' },
+  { id: 'ftps', label: 'FTPS', hint: 'FTP with TLS encryption', protocol: 'ftps' },
+  { id: 'ftp', label: 'FTP', hint: 'Unencrypted, only when nothing else works', protocol: 'ftp' },
+  { id: 'webdav', label: 'WebDAV', hint: 'Any WebDAV share', protocol: 'webdav' },
+  { id: 'nextcloud', label: 'Nextcloud', hint: 'WebDAV', protocol: 'webdav', preset: 'nextcloud' },
+  { id: 'owncloud', label: 'ownCloud', hint: 'WebDAV', protocol: 'webdav', preset: 'owncloud' },
+  { id: 'synology', label: 'Synology NAS', hint: 'SFTP', protocol: 'sftp', preset: 'synology' },
+  { id: 'qnap', label: 'QNAP NAS', hint: 'SFTP', protocol: 'sftp', preset: 'qnap' },
+  { id: 'fritzbox', label: 'FRITZ!Box', hint: 'FTPS', protocol: 'ftps', preset: 'fritzbox' },
+  { id: 'hetzner', label: 'Hetzner Storage Box', hint: 'SFTP', protocol: 'sftp', preset: 'hetzner' },
+  { id: 's3', label: 'S3-compatible storage', hint: 'AWS S3, DigitalOcean Spaces, MinIO, Wasabi', protocol: 's3' },
+  { id: 'local', label: 'Network folder', hint: 'A folder mounted into this server', protocol: 'local', selfHostedOnly: true },
+];
+
+/**
+ * The File Search wizard for one setup option, in "back to the authorization"
+ * mode: preselects the protocol and preset, and the servers this connection
+ * was granted, so the new folder is reachable from the plugin at once. Built
+ * here from a fixed list, never from the request.
+ */
+export function fileSearchWizardPathFor(optionId: string, serverIds: readonly string[]): string | null {
+  const option = FILE_SEARCH_SETUP_OPTIONS.find((o) => o.id === optionId);
+  if (!option) return null;
+  const q = new URLSearchParams({ protocol: option.protocol });
+  if (option.preset) q.set('preset', option.preset);
+  q.set('from', 'authorize');
+  q.set('return', 'authorize');
+  const servers = serverIds.filter((id) => /^[a-z0-9]{20,40}$/i.test(id));
+  if (servers.length) q.set('servers', servers.join(','));
+  return `/connectors/new/file-search?${q.toString()}`;
+}
+
 @Controller('auth')
 export class LoginController {
   private readonly logger = new Logger(LoginController.name);
@@ -133,6 +187,7 @@ export class LoginController {
     @Optional() private readonly cardTrialEligibility?: CardTrialEligibilityService,
     @Optional() private readonly social?: SocialAuthService,
     @Optional() private readonly moduleRef?: ModuleRef,
+    @Optional() private readonly recentSignIn?: RecentSignInService,
   ) {}
 
   /**
@@ -511,8 +566,255 @@ export class LoginController {
 
     // Derive callback URL from the request origin (works behind proxy/tunnel)
     const baseUrl = this.getBaseUrl(req);
-    if (await this.maybeOfferFirstConnector(req, res, user.id, encoded, `${baseUrl}/callback`, socialProvider)) return;
+    if (await this.offerAfterApprove(req, res, user.id, encoded, `${baseUrl}/callback`, socialProvider)) return;
     res.redirect(`${baseUrl}/callback`);
+  }
+
+  /**
+   * The optional page between "Approve" and the AI client: the File Search
+   * plugin's folder setup for a client that asked for `/mcp/file-search`,
+   * otherwise the first-connector page (Cloud only, empty workspaces). The
+   * File Search plugin serves no catalog apps, so it never gets the latter.
+   */
+  private async offerAfterApprove(
+    req: Request,
+    res: Response,
+    userId: string,
+    encodedProfile: string,
+    callbackUrl: string,
+    socialProvider?: string,
+  ): Promise<boolean> {
+    if (this.requestedApp(req) === 'file-search') {
+      return this.maybeOfferFileSearchSetup(req, res, userId, encodedProfile, callbackUrl);
+    }
+    return this.maybeOfferFirstConnector(req, res, userId, encodedProfile, callbackUrl, socialProvider);
+  }
+
+  /** The fixed plugin endpoint this authorization asked for (MCP_APP_COOKIE), or null. */
+  private requestedApp(req: Request): 'file-search' | null {
+    const app = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[MCP_APP_COOKIE];
+    return app === 'file-search' ? app : null;
+  }
+
+  /**
+   * File Search plugin: a workspace admin whose workspace has no folder
+   * connected yet is offered to connect one before going back to the AI
+   * client, because the plugin has nothing else to work with. The page lists
+   * how a folder can be reached (SFTP, FTPS, FTP, WebDAV, Nextcloud, NAS
+   * presets, S3); each choice opens the File Search wizard in the dashboard,
+   * signed in as this user on the granted workspace, and the wizard comes back
+   * to /auth/file-search/continue when the folder is active. Passwords and
+   * keys are entered there, never in the chat.
+   *
+   * Same in Cloud and self-hosted. Non-admins, and workspaces that already
+   * have a folder, go straight on. The OAuth flow is only paused, as on the
+   * first-connector page: "Skip" and the wizard's return both reach the same
+   * callback. Returns true when it has rendered the page.
+   */
+  private async maybeOfferFileSearchSetup(
+    req: Request,
+    res: Response,
+    userId: string,
+    encodedProfile: string,
+    callbackUrl: string,
+  ): Promise<boolean> {
+    if (!this.recentSignIn) return false;
+    const consent = await this.loadConsentContext(req);
+    if (!consent) return false;
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizationId: true },
+    });
+    const workspace = await this.grantedWorkspace(consent.clientId, userId, account?.organizationId);
+    if (!workspace) return false;
+    const { organizationId } = workspace;
+    const [member, sources] = await Promise.all([
+      this.prisma.organizationMember.findFirst({
+        where: { userId, organizationId, deactivatedAt: null },
+        select: { role: true },
+      }),
+      this.prisma.connector.findMany({
+        where: { organizationId, type: 'FILE_SEARCH' as any, isActive: true },
+        select: { config: true },
+      }),
+    ]);
+    // Only admins set up File Search (FileSearchService.assertAdmin).
+    if (member?.role !== 'ADMIN') return false;
+    // The File Share connector is a FILE_SEARCH connector with no folder.
+    if (sources.some((c) => !(c.config as { fileShare?: unknown } | null)?.fileShare)) return false;
+
+    // The login cookie lives as long as the authorization it finishes, so the
+    // wizard's return still completes it (see maybeOfferFirstConnector).
+    const isSecure = this.isSecureRequest(req);
+    const pauseMs = consent.expiresAt
+      ? Math.min(FIRST_CONNECTOR_PAUSE_MAX_MS, Math.max(60 * 1000, consent.expiresAt - Date.now()))
+      : 15 * 60 * 1000;
+    res.cookie('login_user', encodedProfile, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: pauseMs,
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+    const csrf = randomBytes(32).toString('base64url');
+    res.cookie(FILE_SEARCH_SETUP_CSRF_COOKIE, csrf, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: pauseMs,
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+
+    await this.productEvents
+      ?.log({
+        event: ProductEvents.FILE_SEARCH_AUTHORIZE_OFFERED,
+        userId,
+        organizationId,
+        metadata: { client: consent.clientName },
+      })
+      .catch(() => undefined);
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(
+      this.renderFileSearchSetupOffer({
+        clientName: consent.clientName,
+        redirectHost: consent.redirectHost,
+        callbackUrl,
+        csrf,
+        cloud: this.deployment.isCloud(),
+      }),
+    );
+    return true;
+  }
+
+  /**
+   * The File Search setup page's hand-off to the dashboard: a dashboard
+   * session for the user of the paused authorization, on the workspace that
+   * authorization was granted, and the wizard path for the chosen option.
+   *
+   * It needs everything at once: the page's CSRF token and its signed cookie,
+   * the dashboard's own header (a cross-site page cannot send it without a
+   * CORS preflight), the signed login cookie of a still-pending authorization
+   * that asked for the File Search plugin, and this browser's recent sign-in
+   * cookie for the same user. Admins only, as for the page itself.
+   */
+  @Post('file-search/session')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async fileSearchSetupSession(
+    @Req() req: Request,
+    @Body() body: { csrf?: unknown; option?: unknown },
+    @Res() res: Response,
+  ) {
+    const expired = 'This page has expired. Go back to the chat and connect again, or set up the folder in the dashboard.';
+    if (!hasDashboardHeader(req) || !this.verifySignedToken(req, FILE_SEARCH_SETUP_CSRF_COOKIE, body?.csrf)) {
+      this.logger.warn('Rejected a File Search setup hand-off with a missing header or CSRF token');
+      return res.status(403).json({ ok: false, error: expired });
+    }
+    const userId = this.pendingLoginUserId(req);
+    const consent = await this.loadConsentContext(req);
+    if (!userId || !consent || this.requestedApp(req) !== 'file-search' || !this.recentSignIn) {
+      return res.status(403).json({ ok: false, error: expired });
+    }
+    const recent = await this.recentSignIn.user(req).catch(() => null);
+    if (!recent || recent.id !== userId) return res.status(403).json({ ok: false, error: expired });
+
+    const account = await this.prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } });
+    const workspace = await this.grantedWorkspace(consent.clientId, userId, account?.organizationId);
+    if (!workspace) return res.status(403).json({ ok: false, error: expired });
+    const member = await this.prisma.organizationMember.findFirst({
+      where: { userId, organizationId: workspace.organizationId, deactivatedAt: null },
+      select: { role: true },
+    });
+    if (member?.role !== 'ADMIN') {
+      return res.status(403).json({ ok: false, error: 'Only workspace admins can connect a folder.' });
+    }
+    const option = typeof body?.option === 'string' ? body.option : '';
+    const allowed = FILE_SEARCH_SETUP_OPTIONS.find((o) => o.id === option && (!o.selfHostedOnly || !this.deployment.isCloud()));
+    const redirect = allowed ? fileSearchWizardPathFor(allowed.id, workspace.serverIds) : null;
+    if (!redirect) return res.status(400).json({ ok: false, error: 'Unknown option.' });
+
+    const session = await this.recentSignIn.session(userId, workspace.organizationId).catch(() => null);
+    if (!session) return res.status(403).json({ ok: false, error: expired });
+    this.logger.log(`File Search setup opened from the authorization page by user ${userId}`);
+    return res.json({ ok: true, redirect, session });
+  }
+
+  /**
+   * Where the File Search wizard returns to when it was opened from the
+   * authorization page: finishes the paused authorization (the AI client
+   * gets its code), or, when it has expired meanwhile, says how to go on.
+   * The folder is saved either way.
+   */
+  @Get('file-search/continue')
+  async fileSearchSetupContinue(@Req() req: Request, @Res() res: Response) {
+    const userId = this.pendingLoginUserId(req);
+    const consent = userId ? await this.loadConsentContext(req) : null;
+    if (userId && consent) {
+      res.clearCookie(FILE_SEARCH_SETUP_CSRF_COOKIE);
+      return res.redirect(`${this.getBaseUrl(req)}/callback`);
+    }
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(
+      renderAuthPage({
+        title: 'Your folder is connected',
+        card: `
+    <h1>Your folder is connected</h1>
+    <p class="sub">The connection request from the chat timed out while you set up the folder. The folder is saved and its first sync is running.</p>
+    <p class="sub">Go back to the chat and connect the plugin again. It takes a few seconds now.</p>`,
+        trust: this.trust(),
+      }),
+    );
+  }
+
+  private renderFileSearchSetupOffer(params: {
+    clientName: string;
+    redirectHost?: string;
+    callbackUrl: string;
+    csrf: string;
+    cloud: boolean;
+  }): string {
+    const client = this.escapeHtml(params.clientName);
+    const options = FILE_SEARCH_SETUP_OPTIONS.filter((o) => !o.selfHostedOnly || !params.cloud);
+    const tiles = options
+      .map((o) => {
+        // The dashboard's hand-off page, on the dashboard's own origin: the
+        // session it opens is the dashboard's (same site as this page).
+        const href = `${this.frontendUrl()}/setup/file-search?${new URLSearchParams({ option: o.id, t: params.csrf }).toString()}`;
+        return `
+        <a class="fs-option" href="${this.escapeHtml(href)}"><span class="fs-option-label">${this.escapeHtml(o.label)}</span><span class="fs-option-hint">${this.escapeHtml(o.hint)}</span></a>`;
+      })
+      .join('');
+    const card = `
+    ${clientTilePair(params.clientName, params.redirectHost ?? '')}
+    <h1>Connect a folder for ${client}</h1>
+    <p class="sub">${client} can search the documents on your file server once a folder is connected. Choose how AnythingMCP reaches it:</p>
+    <nav class="fs-options" aria-label="How to reach the folder">${tiles}
+    </nav>
+    <ol class="steps">
+      <li>Enter the server address and a read-only account, and test the connection.</li>
+      <li>Pick the folders and file types to search, and see how many files that is.</li>
+      <li>Check the description ${client} reads, then activate: the first sync starts.</li>
+    </ol>
+    <p class="body">It takes about five minutes. Passwords and keys are entered on the next page, never in the chat. When the folder is active you come back here and on to ${client}.</p>
+    <p class="links"><a id="skip" href="${this.escapeHtml(params.callbackUrl)}">Skip for now and continue to ${client}</a></p>`;
+    return renderAuthPage({
+      title: `Connect a folder for ${params.clientName}`,
+      card,
+      trust: this.trust(),
+      extraStyles: `
+  /* Not .tile: that class is the client icons at the top. */
+  .fs-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 18px; }
+  a.fs-option { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border-strong); border-radius: 10px;
+           padding: 10px 12px; text-decoration: none; color: var(--text); background: #fff; min-height: 44px; }
+  a.fs-option:hover { border-color: var(--brand); background: var(--surface-2); }
+  a.fs-option:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .fs-option-label { font-size: 14px; font-weight: 600; }
+  .fs-option-hint { font-size: 12.5px; color: var(--text-2); line-height: 1.35; }
+  @media (max-width: 360px) { .fs-options { grid-template-columns: 1fr; } }
+  .steps { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 14px; padding-left: 20px; }
+  .steps li { margin: 0 0 4px; }
+  .body { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }`,
+    });
   }
 
   /**
@@ -1031,7 +1333,7 @@ export class LoginController {
     // Picking an empty workspace gets the same first-connector page as
     // signing in to one, for the workspace just granted (Cloud only).
     const callbackUrl = `${this.getBaseUrl(req)}/callback`;
-    if (await this.maybeOfferFirstConnector(req, res, user.id, encoded, callbackUrl, socialProvider)) return;
+    if (await this.offerAfterApprove(req, res, user.id, encoded, callbackUrl, socialProvider)) return;
     res.redirect(callbackUrl);
   }
 

@@ -56,6 +56,9 @@ export function proxy(request: NextRequest) {
     // Setup links from an AI client: the page opens a session from the
     // sign-in just made to connect that client, or sends to /login itself.
     pathname.startsWith('/s/') ||
+    // The File Search plugin's hand-off from its authorization page: it opens
+    // a session from the sign-in just made there, or shows how to go on.
+    pathname === '/setup/file-search' ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/.well-known') ||
     pathname === '/authorize' ||
