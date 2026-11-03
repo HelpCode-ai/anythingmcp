@@ -152,8 +152,11 @@ export class LicenseGuardService {
     const [connectorCount, mcpCount, userCount] = await Promise.all([
       where ? this.prisma.connector.count({ where }) : Promise.resolve(0),
       where ? this.prisma.mcpServerConfig.count({ where }) : Promise.resolve(0),
+      // Active members of the workspace, not users whose primary workspace it
+      // is: someone invited into a second workspace keeps their first one as
+      // User.organizationId, and a deactivated member holds no seat.
       organizationId
-        ? this.prisma.user.count({ where: { organizationId } })
+        ? this.prisma.organizationMember.count({ where: { organizationId, deactivatedAt: null } })
         : Promise.resolve(userId ? 1 : 0),
     ]);
 
