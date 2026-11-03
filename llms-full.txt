@@ -2411,6 +2411,11 @@ Three things must line up for a request to be proxied:
 If all three hold, the request goes through the proxy. Otherwise it goes out
 directly.
 
+A proxied request leaves from the proxy's addresses, which change. Do not turn
+the proxy on for a server that only accepts approved IP addresses: allow the
+instance's own outbound address (`EGRESS_IPS`, shown on the connector page)
+there instead.
+
 ## Configuring the proxy
 
 ```bash
@@ -3785,6 +3790,10 @@ a client of the user's own from `{{VAR}}`s, scope, RFC 8707 resource). Both
 are described in [MCP Bridge](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md#connector-settings-connectorconfig>).
 `prerequisites` (an array of short sentences) lists what the user needs at
 the vendor first; the setup page shows it above the form.
+`requiresIpAllowlist: true` marks an API that refuses every call from an
+address not registered with the provider (eMAG, Shopee, the Korean law API):
+the setup page then shows the server's outbound IP addresses (`EGRESS_IPS`)
+as a step to complete, not as a side note.
 
 ### DATABASE adapters
 

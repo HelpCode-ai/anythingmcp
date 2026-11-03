@@ -13,6 +13,7 @@ import { AppShell } from '@/components/app-shell';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { NetworkNote } from '@/components/connector-setup/network-note';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
 import { SetupStatusBanner, SetupStatusPill } from '@/components/setup-status';
@@ -192,6 +193,9 @@ export default function ConnectorDetailPage() {
   // Whether CONNECTOR_PROXY_URL is configured on this instance — drives
   // visibility of the per-tool "Use proxy" checkbox.
   const [proxyAvailable, setProxyAvailable] = useState(false);
+  // The addresses this instance calls APIs from (EGRESS_IPS), for servers
+  // that only accept approved IPs. Empty when the operator did not set them.
+  const [egressIps, setEgressIps] = useState<string[]>([]);
   // Tool whose MCP hints (annotations) panel is expanded, if any.
   const [hintsToolId, setHintsToolId] = useState<string | null>(null);
 
@@ -329,7 +333,10 @@ export default function ConnectorDetailPage() {
       // Cheap, instance-wide flag — drives the per-tool proxy checkbox.
       connectors
         .proxyAvailability(token)
-        .then((r) => setProxyAvailable(!!r.available))
+        .then((r) => {
+          setProxyAvailable(!!r.available);
+          setEgressIps(Array.isArray(r.egressIps) ? r.egressIps : []);
+        })
         .catch(() => setProxyAvailable(false));
       const c = await connectors.get(id, token);
       setConnector(c);
@@ -1962,6 +1969,13 @@ export default function ConnectorDetailPage() {
           )}
         </Card>
         )}
+
+        <NetworkNote
+          ips={egressIps}
+          name={connector.name}
+          mentionProxy={proxyAvailable && connector.type !== 'FILE_SEARCH'}
+          className="bg-[var(--surface)]"
+        />
 
         {/* Tools Section */}
         <Card className="p-[22px]">

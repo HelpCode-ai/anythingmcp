@@ -475,7 +475,7 @@ export const connectors = {
   list: (token: string) =>
     request<Connector[]>('/api/connectors', { token }),
   proxyAvailability: (token: string) =>
-    request<{ available: boolean }>('/api/connectors/proxy-availability', { token }),
+    request<{ available: boolean; egressIps?: string[] }>('/api/connectors/proxy-availability', { token }),
   /**
    * `attachedToServer` is the MCP server the backend put the connector on, or
    * null when the workspace has none yet. Attaching used to be a separate step
@@ -752,6 +752,10 @@ export interface AdapterSetupInfo {
   prerequisites?: string;
   /** A step-by-step setup, shown instead of the form (see backend setup-guide.ts). */
   setupGuide?: SetupGuide;
+  /** The provider refuses calls from addresses not registered with it. */
+  requiresIpAllowlist?: boolean;
+  /** The addresses this instance calls APIs from (EGRESS_IPS); empty when not configured. */
+  egressIps?: string[];
 }
 
 export type SetupEffortKind = 'none' | 'one_click' | 'api_key' | 'own_app' | 'admin_needed';

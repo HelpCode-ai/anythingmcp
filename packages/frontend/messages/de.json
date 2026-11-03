@@ -1597,7 +1597,7 @@
       "disable": "Deaktivieren",
       "enable": "Aktivieren",
       "proxy": "Proxy",
-      "proxyTitle": "Die Anfrage dieses Tools über den konfigurierten Proxy / Web-Unblocker leiten. Empfohlen für APIs mit Bot-Schutz, Geo-Sperren oder Ratenlimits.",
+      "proxyTitle": "Die Anfrage dieses Tools über den konfigurierten Proxy / Web-Unblocker leiten. Empfohlen für APIs mit Bot-Schutz, Geo-Sperren oder Ratenlimits. Aufrufe darüber kommen von wechselnden IP-Adressen: bei einem Server, der nur freigegebene IPs akzeptiert, ausgeschaltet lassen.",
       "delete": "Löschen",
       "showSql": "Ganzes SQL anzeigen",
       "showPath": "Ganzen Pfad anzeigen",
@@ -3477,5 +3477,15 @@
       "preparing": "Wird vorbereitet…",
       "warning": "Öffnen Sie nur Dateien von Personen, denen Sie vertrauen. AnythingMCP prüft Dateien nicht auf Viren."
     }
+  },
+  "networkNote": {
+    "title": "Akzeptiert der Server nur freigegebene IP-Adressen?",
+    "body": "AnythingMCP ruft die API von {count, plural, one {dieser Adresse} other {diesen Adressen}} aus auf. Wenn der Server oder das Konto nur freigegebene IPs akzeptiert (Firewall, IP-Allowlist), tragen Sie sie dort ein; sonst ist nichts zu tun.",
+    "requiredTitle": "IP-Adresse registrieren",
+    "requiredBody": "{name} akzeptiert nur Aufrufe von dort registrierten IP-Adressen. Registrieren Sie {count, plural, one {diese Adresse} other {diese Adressen}} vor dem Start in Ihrem {name}-Konto, sonst wird jeder Aufruf abgelehnt.",
+    "requiredNoIps": "{name} akzeptiert nur Aufrufe von dort registrierten IP-Adressen. Registrieren Sie vor dem Start die öffentliche IP-Adresse des Servers, auf dem AnythingMCP läuft (Ihre Netzwerk-Administration kennt sie), sonst wird jeder Aufruf abgelehnt.",
+    "proxy": "Lassen Sie die Option „Proxy“ bei den Tools eines Servers mit Allowlist aus: Aufrufe über den Proxy kommen von wechselnden Adressen.",
+    "copy": "Kopieren",
+    "copied": "Kopiert"
   }
 }
