@@ -26,7 +26,7 @@ Search connector, or a file an AI client wrote (a CSV, a report).
 
 | | AnythingMCP Cloud | Self-hosted |
 |---|---|---|
-| Plan | Every plan, the free trial included, within its limits | A paid licence (Starter, Team, Enterprise) or the 30-day trial. Community has no File Search after the trial. |
+| Plan | Every plan, the free trial included, within its limits | Enterprise (on request), an existing Starter or Team licence key, or the 30-day trial. Community has no File Search after the trial. |
 | Sources | SFTP, FTP/FTPS, WebDAV, S3 on the internet | The same, plus folders mounted into the install |
 | Services | Run by us | `COMPOSE_PROFILES=files` starts `files-worker` and `file-extractor` (see [Self-hosted setup](#self-hosted-setup)) |
 
@@ -175,7 +175,9 @@ AI clients, and search keeps working on the last index during a sync.
 | OCR, folder permissions, workspace policy | – | – | – | ✓ |
 
 Self-hosted: the self-hosted 30-day trial has the Team limits; file size is
-set by `FILES_MAX_FILE_BYTES` (default 100 MB).
+set by `FILES_MAX_FILE_BYTES` (default 100 MB). Self-hosted Starter and Team
+are no longer sold; existing Starter and Team keys keep the limits above, and
+more comes with [Enterprise](https://anythingmcp.com/contact?plan=enterprise).
 
 When a sync finds more files than the plan includes, it **pauses before
 downloading anything**. The index stays as it was and the AI keeps searching
