@@ -1,13 +1,14 @@
 # OpenAI plugin package: File Search
 
 The package uploaded to the OpenAI plugin portal for the File Search plugin
-("SFTP & NAS File Search"). Its MCP server is the fixed tool set at
+("Helpcode File Search"). Its MCP server is the fixed tool set at
 `https://<host>/mcp/file-search` (see `packages/backend/src/mcp-server/file-search-app-toolset.ts`
 and `docs/integrations/chatgpt.md`).
 
 It is a separate plugin from the database plugin on `/mcp/chatgpt-app`.
 The display name and package name contain no "MCP": the portal's metadata
-check refuses it in a plugin name.
+check refuses it in a plugin name. A descriptive name alone ("SFTP & NAS File
+Search") was refused as too generic, so the name carries the helpcode brand.
 
 ## Contents
 
