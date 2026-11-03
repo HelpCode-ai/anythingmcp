@@ -106,7 +106,6 @@ export const QUICK_SETUP_APPS: ReadonlyArray<{ slug: string; name: string }> = [
   { slug: 'woocommerce', name: 'WooCommerce' },
   { slug: 'odoo', name: 'Odoo' },
   { slug: 'printify', name: 'Printify' },
-  { slug: 'gemini', name: 'Google Gemini' },
 ];
 
 /** The request the first-connector page suggests typing into the chat. */

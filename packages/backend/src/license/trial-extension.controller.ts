@@ -106,7 +106,7 @@ export class TrialExtensionController {
     // The site set the trial active again with its new end. Read it back now
     // (refreshLicense only re-checks paid licences), so the licence guard lets
     // the workspace's calls through at once.
-    await this.licenseService.verifyLicense(trial.licenseKey).catch((err) =>
+    await this.licenseService.verifyLicense(trial.licenseKey, organizationId).catch((err) =>
       this.logger.warn(`Extended trial of workspace ${organizationId} not re-verified yet: ${err?.message ?? err}`),
     );
     const until = answer.expiresAt.toISOString();
