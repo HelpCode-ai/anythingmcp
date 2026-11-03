@@ -25,15 +25,15 @@ A gateway forwards calls. A company brain also knows where your documents are, h
 | | What it does | Edition |
 |---|---|---|
 | **Every system, one endpoint** | 692 catalog connectors, or your own REST/OpenAPI, SOAP, GraphQL, OData, SQL, IMAP/SMTP or MCP source. Tools register at runtime. [Connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md#connect-any-api-soap-service-or-database>) | All |
-| **File Search** | Indexes SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 or a network share: every PDF page, Excel rows with their column names, Word, PowerPoint, Outlook mails with attachments. The AI answers with file, page and date. [File Search](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud, paid licence |
-| **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud, paid licence |
+| **File Search** | Indexes SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 or a network share: every PDF page, Excel rows with their column names, Word, PowerPoint, Outlook mails with attachments. The AI answers with file, page and date. [File Search](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud; self-hosted Enterprise |
+| **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud; self-hosted Enterprise |
 | **Company memory** | Facts and preferences saved from one AI client and found again in any other: said once in Claude, used by Copilot. Personal and company scopes, with folders and role limits. [Memory](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>) | Enterprise |
 | **AI skills** | The procedures your agents follow, written by hand or learned from real requests and fixed errors, approved by an admin. [AI skills](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#ai-skills>) | All |
 | **Knowledge graph** | How your systems connect, so the agent links a customer in one system to their orders in another without being told. [Knowledge Graph](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md>) | All |
 | **Code Mode** | One short program that calls several tools in an isolated sandbox with no secrets and no network, so a five-step lookup becomes one call. [Code Mode](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md>) | All; write access Enterprise |
 | **Governance** | Roles and per-tool permissions, response mapping that drops fields before they reach the model, an audit log of every call. SSO and SCIM from your directory. [Security](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md#security-and-governance>) | All; SSO/SCIM Enterprise |
 
-The self-hosted Community edition is free for up to 3 active users. Paid licences and the 30-day trial are under **Settings → License**; for Enterprise, write to [info@helpcode.ai](<mailto:info@helpcode.ai>) or see [anythingmcp.com/enterprise](<https://anythingmcp.com/enterprise>).
+The self-hosted Community edition is free under AGPL-3.0 for any use, including commercial use, for up to 3 active users, with unlimited connectors and MCP servers. More users, single sign-on, SCIM, File Search beyond the 30-day trial and support come with Enterprise, on request: [contact us](<https://anythingmcp.com/contact?plan=enterprise>). Administrators can try single sign-on and SCIM for 30 days under **Settings → License**. Existing Starter and Team licence keys keep working.
 
 ---
 
@@ -669,6 +669,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `SOCIAL_MICROSOFT_CLIENT_ID` / `SOCIAL_MICROSOFT_CLIENT_SECRET` | No | Cloud only: enables "Continue with Microsoft" (personal and work accounts). Redirect URI `<FRONTEND_URL>/auth/social/microsoft/callback`; add the `email` and `xms_edov` optional ID-token claims |
 | `SOCIAL_GITHUB_CLIENT_ID` / `SOCIAL_GITHUB_CLIENT_SECRET` | No | Cloud only: enables "Continue with GitHub". Callback URL `<FRONTEND_URL>/auth/social/github/callback` |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
+| `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#license-verification>); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
 ---
 
@@ -687,10 +688,22 @@ AnythingMCP is fully self-hosted, but makes **optional** network calls to `anyth
 
 **Data sent:**
 - License key
-- Instance ID (a random UUID generated on first startup, used to identify the installation)
+- Instance ID (a random UUID generated on first startup, used to identify the installation; sent on activation and registration)
 - Email and name (only during community license registration)
+- Usage counts, with each verification (`/api/license/verify`), as query parameters:
 
-**Data NOT sent:** No API credentials, connector configurations, tool definitions, user data, audit logs, or any operational data.
+  | Parameter | Value |
+  |-----------|-------|
+  | `activeUsers` | Users with at least one active workspace membership, across the instance: the same count as the Community user limit |
+  | `connectors` | Number of connectors on the instance |
+  | `mcpServers` | Number of MCP servers on the instance |
+  | `version` | The AnythingMCP version, e.g. `0.52.0` |
+
+  Only numbers and the version: no names, emails, connector names or URLs. They tell us which Community instances are growing past the Community edition. Set `LICENSE_USAGE_REPORT=false` to send only the license key. If counting fails, the key is verified without the counts. AnythingMCP Cloud never sends them.
+
+**Data NOT sent:** No API credentials, connector configurations, tool definitions, user data, audit logs, or any other operational data.
+
+**File Search trial:** on Community, the 30-day File Search trial starts only with a registered license key. The free Community key counts: register it under **Settings → License**, and it arrives by email. A trial that was already running before this rule keeps File Search until it ends.
 
 **If the service is unreachable:** The application continues to work normally. License verification failures are logged as warnings and do not block functionality.
 
@@ -833,7 +846,7 @@ Yes. AnythingMCP is licensed under the [GNU AGPL v3](<https://github.com/HelpCod
 
 ### Is AnythingMCP free?
 
-Yes. AnythingMCP is free software under the AGPL v3 — free for internal company use, personal use, development, testing, evaluation and academic use. If you modify it and run it as a network service for others, the AGPL requires you to make your modified source available to those users. For commercial licensing without copyleft obligations: [info@helpcode.ai](<mailto:info@helpcode.ai>).
+Yes. AnythingMCP is free software under the AGPL v3. The self-hosted Community edition is free for any use, including commercial use, for up to 3 active users, with unlimited connectors and MCP servers. If you modify it and run it as a network service for others, the AGPL requires you to make your modified source available to those users. More users, single sign-on, SCIM, File Search beyond the 30-day trial and support come with Enterprise, on request: [contact us](<https://anythingmcp.com/contact?plan=enterprise>). Existing Starter and Team licence keys keep working. For commercial licensing without copyleft obligations: [info@helpcode.ai](<mailto:info@helpcode.ai>).
 
 ### Can I self-host?
 
@@ -1224,7 +1237,7 @@ Search connector, or a file an AI client wrote (a CSV, a report).
 
 | | AnythingMCP Cloud | Self-hosted |
 |---|---|---|
-| Plan | Every plan, the free trial included, within its limits | A paid licence (Starter, Team, Enterprise) or the 30-day trial. Community has no File Search after the trial. |
+| Plan | Every plan, the free trial included, within its limits | Enterprise (on request), an existing Starter or Team licence key, or the 30-day trial. On Community the trial opens File Search only with a registered licence key: the free Community key from **Settings → License** counts. Community has no File Search after the trial. |
 | Sources | SFTP, FTP/FTPS, WebDAV, S3 on the internet | The same, plus folders mounted into the install |
 | Services | Run by us | `COMPOSE_PROFILES=files` starts `files-worker` and `file-extractor` (see [Self-hosted setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#self-hosted-setup>)) |
 
@@ -1373,7 +1386,9 @@ AI clients, and search keeps working on the last index during a sync.
 | OCR, folder permissions, workspace policy | – | – | – | ✓ |
 
 Self-hosted: the self-hosted 30-day trial has the Team limits; file size is
-set by `FILES_MAX_FILE_BYTES` (default 100 MB).
+set by `FILES_MAX_FILE_BYTES` (default 100 MB). Self-hosted Starter and Team
+are no longer sold; existing Starter and Team keys keep the limits above, and
+more comes with [Enterprise](<https://anythingmcp.com/contact?plan=enterprise>).
 
 When a sync finds more files than the plan includes, it **pauses before
 downloading anything**. The index stays as it was and the AI keeps searching
@@ -6825,7 +6840,7 @@ The only exception is code under `ee/` directories (e.g. `packages/backend/src/e
 
 | Use Case | Allowed? |
 |----------|----------|
-| Use AnythingMCP internally at my company | **Yes** |
+| Use AnythingMCP internally at my company, including for commercial work | **Yes** |
 | Use it for personal projects | **Yes** |
 | Use it for development and testing | **Yes** |
 | Use it for academic research or teaching | **Yes** |
@@ -6866,9 +6881,13 @@ This split (AGPL core + commercial `ee/`) is the same model used by Cal.com and 
 
 ---
 
-## Community, Starter, Team and Enterprise
+## Community and Enterprise
 
-A self-hosted instance runs **Community** unless a licence key is activated. Community is meant for personal use, education and evaluation, and includes up to 3 active users. **Starter** and **Team** license an instance for small teams at work. **Enterprise** adds more users, single sign-on (Entra ID, Google, Okta, OIDC), SCIM provisioning and [per-user sign-in for OAuth2 connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/per-user-sign-in.md>); it is quoted rather than bought online ([contact us](<https://anythingmcp.com/contact?plan=enterprise>)), and administrators can try it for 30 days under **Settings → License**. See [anythingmcp.com/pricing](<https://anythingmcp.com/pricing>).
+A self-hosted instance runs **Community** unless a licence key is activated. Community is free under the AGPL-3.0 for any use, including commercial use. It includes up to 3 active users and unlimited connectors and MCP servers.
+
+**Enterprise** adds more users, single sign-on (Entra ID, Google, Okta, OIDC), SCIM provisioning, [per-user sign-in for OAuth2 connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/per-user-sign-in.md>), [File Search](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) after the 30-day trial, and support with a service level agreement. It is quoted on request, not bought online: [contact us](<https://anythingmcp.com/contact?plan=enterprise>). Administrators can try single sign-on and SCIM for 30 days under **Settings → License**.
+
+Self-hosted Starter and Team are no longer sold to new customers. Existing Starter and Team licence keys keep activating and working as before.
 
 ---
 
@@ -6897,7 +6916,7 @@ The [Contributor License Agreement](<https://github.com/HelpCode-ai/anythingmcp/
 
 ## How do I get a commercial license?
 
-Contact [info@helpcode.ai](<mailto:info@helpcode.ai>) or visit [anythingmcp.com/pricing](<https://anythingmcp.com/pricing>) for commercial licensing options.
+You do not need one to use AnythingMCP at work: Community is free for commercial use. For Enterprise or a licence without copyleft obligations, [contact us](<https://anythingmcp.com/contact?plan=enterprise>) or write to [info@helpcode.ai](<mailto:info@helpcode.ai>).
 
 ---
 

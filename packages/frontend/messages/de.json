@@ -150,11 +150,11 @@
     "question": "Wie möchten Sie Anything<brand>MCP</brand> nutzen?",
     "changeLater": "Sie können das später unter Einstellungen → Lizenz ändern.",
     "personal": {
-      "title": "Privat, Ausbildung oder Evaluierung",
-      "description": "Community Edition, kostenlos, für bis zu 3 Benutzer. Wir senden Ihnen einen Community-Schlüssel per E-Mail, damit Sie Sicherheits- und Release-Hinweise erhalten."
+      "title": "Community Edition, kostenlos",
+      "description": "Kostenlos unter AGPL-3.0 für jede Nutzung, auch kommerziell, für bis zu 3 aktive Benutzer. Wir senden Ihnen einen Community-Schlüssel per E-Mail, damit Sie Sicherheits- und Release-Hinweise erhalten."
     },
     "company": {
-      "title": "Für ein Unternehmen oder Team",
+      "title": "Mehr Benutzer oder Single Sign-On",
       "description": "Testen Sie Enterprise 30 Tage kostenlos: mehr Benutzer, Single Sign-On mit Entra ID, Google oder Okta sowie SCIM. Keine Zahlungsdaten."
     },
     "haveKey": "Ich habe einen Lizenzschlüssel",
@@ -170,7 +170,7 @@
     "activate": {
       "title": "Lizenz aktivieren",
       "subtitle": "Geben Sie Ihren Lizenzschlüssel ein, um Anything<brand>MCP</brand> zu aktivieren",
-      "available": "Lizenzschlüssel für Starter, Team und Enterprise erhalten Sie auf <link>anythingmcp.com</link>."
+      "available": "Enterprise-Lizenzschlüssel erhalten Sie auf Anfrage: <link>Kontakt aufnehmen</link>. Bestehende Starter- und Team-Schlüssel funktionieren weiter."
     },
     "keyLabel": "Lizenzschlüssel",
     "submit": "Lizenz aktivieren",
@@ -2114,7 +2114,7 @@
     "cancel": "Abbrechen",
     "inviteUser": "Benutzer einladen",
     "dismiss": "ausblenden",
-    "licenseSeats": "Ihre Lizenz umfasst {limit} Benutzer. Um weitere Personen einzuladen, ändern Sie Ihren Tarif unter <link>Einstellungen → Lizenz</link>.",
+    "licenseSeats": "Ihre Lizenz umfasst {limit} Benutzer. Für weitere Benutzer fragen Sie uns nach Enterprise, unter <link>Einstellungen → Lizenz</link>.",
     "invite": {
       "title": "Neuen Benutzer einladen",
       "body": "Versenden Sie eine Einladungs-E-Mail. Die Person erhält einen Link, um ihr Konto mit der angegebenen Rolle zu erstellen.",
@@ -2361,6 +2361,7 @@
       "activate": "Lizenzschlüssel aktivieren",
       "changePlan": "Um zu einem anderen Tarif zu wechseln, <link>ändern Sie ihn im Abrechnungsportal</link>. Ihr bestehendes Abonnement wird umgestellt und anteilig abgerechnet, nicht doppelt angelegt.",
       "purchase": "Eine Lizenz kaufen Sie auf <link>anythingmcp.com</link>",
+      "selfHosted": "Geben Sie den Lizenzschlüssel ein, den Sie von uns erhalten haben. Bestehende Starter- und Team-Schlüssel funktionieren weiter.",
       "submit": "Aktivieren"
     },
     "upgrade": {
@@ -3246,12 +3247,17 @@
     },
     "locked": {
       "title": "Die Dateisuche ist Teil der kostenpflichtigen Editionen",
+      "titleEnterprise": "Die Dateisuche nach der Testphase ist Teil von Enterprise",
       "point1": "In PDF-, Excel-, Word- und Outlook-Dateien suchen, aus Claude, ChatGPT, Copilot und anderen KI-Clients.",
       "point2": "SFTP, FTP/FTPS, WebDAV und Netzwerkordner, im Hintergrund synchronisiert.",
       "point3": "Befristete Download-Links, Berechtigungen pro Rolle, Audit-Log.",
       "startTrial": "Kostenlose 30-Tage-Testphase starten",
       "buy": "Lizenz kaufen",
-      "activate": "Lizenz aktivieren"
+      "contactEnterprise": "Enterprise anfragen",
+      "activate": "Lizenz aktivieren",
+      "keyToStart": "Registrieren Sie unter Einstellungen → Lizenz einen kostenlosen Community-Schlüssel, um die 30-tägige Testphase der Dateisuche zu starten. Der Schlüssel ist kostenlos und kommt per E-Mail.",
+      "keyDuringTrial": "Registrieren Sie unter Einstellungen → Lizenz einen kostenlosen Community-Schlüssel, um die Dateisuche während der Testphase zu nutzen. Der Schlüssel ist kostenlos und kommt per E-Mail.",
+      "registerKey": "Kostenlosen Community-Schlüssel registrieren"
     },
     "card": {
       "title": "Dateisuche",
