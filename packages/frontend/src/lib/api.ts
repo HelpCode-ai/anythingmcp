@@ -2060,6 +2060,14 @@ export const license = {
       '/api/license/card-trial-offer',
       { token },
     ),
+  /**
+   * Cloud: the ended-trial wall of an admin: its variant ('trust', or the
+   * earlier 'control' wall for about 10% of workspaces) and the workspace's
+   * own numbers, null when it never made a successful call. `wall` is null
+   * for everyone else.
+   */
+  wall: (token: string) =>
+    request<{ wall: LicenseWallView | null }>('/api/license/wall', { token }),
   getInstanceId: () =>
     request<{ instanceId: string }>('/api/license/instance-id'),
   getUsage: (token?: string) =>
@@ -2379,3 +2387,14 @@ export const fileShare = {
       { method: 'POST', token: authToken ?? undefined, skipAutoLogout: true },
     ),
 };
+
+/** GET /api/license/wall (see the backend's license-wall.service.ts). */
+export interface LicenseWallView {
+  variant: 'trust' | 'control';
+  recap: {
+    successfulCalls: number;
+    connectors: string[];
+    client: string | null;
+    blockedSinceEnd: boolean;
+  } | null;
+}
