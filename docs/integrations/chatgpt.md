@@ -91,7 +91,7 @@ Only database connectors set to **read-only** are queried; a connector with writ
 
 ## The File Search plugin endpoint: `/mcp/file-search`
 
-`https://<your-host>/mcp/file-search` serves the File Search plugin ("Helpcode File Search" in OpenAI's plugin directory). Like `/mcp/chatgpt-app`, it has one fixed set of tools, the same for every user, and each tool is one operation. It only reaches the workspace's File Search folders; catalog connectors, databases and the File Share connector are not served here.
+`https://<your-host>/mcp/file-search` serves the File Search plugin ("SFTP & NAS Search by Helpcode" in OpenAI's plugin directory). Like `/mcp/chatgpt-app`, it has one fixed set of tools, the same for every user, and each tool is one operation. It only reaches the workspace's File Search folders; catalog connectors, databases and the File Share connector are not served here.
 
 | Tool | What it does |
 |------|--------------|

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "file-server-search",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Search, read and cite the documents in your company folders on SFTP, FTPS, FTP, WebDAV (Nextcloud, ownCloud), S3-compatible storage or a NAS (Synology, QNAP, FRITZ!Box, Hetzner Storage Box).",
   "author": {
     "name": "KOCH Freiburg GmbH",
@@ -36,7 +36,7 @@
   "extensions": {
     "com.openai": {
       "interface": {
-        "displayName": "Helpcode File Search",
+        "displayName": "SFTP & NAS Search by Helpcode",
         "shortDescription": "Search files on your server",
         "longDescription": "Ask questions about the documents on your company's file server and get answers with the file, the page and the file date.\n\nYour administrator connects a folder once, in a guided setup that opens right after you approve the connection: SFTP, FTPS, FTP, WebDAV (Nextcloud, ownCloud), S3-compatible storage (AWS S3, DigitalOcean Spaces, MinIO), or a NAS such as Synology, QNAP, FRITZ!Box or a Hetzner Storage Box. The setup tests the connection with a read-only account, lets you pick the folders and file types, and shows how many files will be searchable before anything is indexed.\n\nWhat you can do in ChatGPT:\n- Search the text of PDF, Word, Excel, PowerPoint, Outlook messages and text files, with the best matching page and a snippet.\n- Find an exact article number, order number or norm, with the matching lines and, in spreadsheets, the whole row.\n- Find files by name, browse a folder, and read a document page by page.\n- See a page of a PDF or an image as a picture, for drawings, stamps and tables.\n- Get the original file as a download link that only members of your workspace can open.\n\nBuilt for company documents:\n- Read-only: the plugin never changes, uploads or deletes files on your server.\n- The files stay on your server. AnythingMCP keeps a text index so they can be searched, synced on a schedule.\n- Permissions: each user reaches only the folders their workspace role allows.\n- Passwords and keys are entered only in the setup page, never in the chat.\n- Every search is recorded in the workspace's audit log.",
         "developerName": "KOCH Freiburg GmbH",
