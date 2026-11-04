@@ -178,6 +178,8 @@ async function cloudSession(
     usage?: { connectors: number; mcpServers: number; users: number };
     /** GET /organizations/mine: the workspaces the user belongs to. */
     orgs?: { id: string; name: string; role: string; joinedAt: string }[];
+    /** GET /license/wall: the ended-trial wall's variant and the workspace's numbers. */
+    wall?: Record<string, unknown> | null;
   } = {},
 ) {
   const user = opts.user ?? ADMIN;
@@ -228,6 +230,7 @@ async function cloudSession(
       const u = opts.usage ?? { connectors: 0, mcpServers: 0, users: 1 };
       return json({ plan: 'trial', connectors: { current: u.connectors, max: 2, isOver: false }, mcpServers: { current: u.mcpServers, max: 2, isOver: false }, users: { current: u.users, max: 1, isOver: false }, isOverAny: false });
     }
+    if (p.endsWith('/license/wall')) return json({ wall: opts.wall ?? null });
     if (p.endsWith('/organizations/mine')) return json(opts.orgs ?? [{ id: 'o1', name: 'Main', role: 'ADMIN', joinedAt: '2026-10-01' }]);
     if (p.endsWith('/organizations/current')) {
       const current = (opts.orgs ?? []).find((o) => o.id === user.organizationId);
@@ -415,10 +418,13 @@ test.describe('card-trial entry points (cloud)', () => {
     expect(posted).toEqual([{ plan: 'team', billingPeriod: 'monthly', trial: true, source: 'trial_banner' }]);
   });
 
+  const ENDED = { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 86_400_000).toISOString(), trialDaysLeft: 0 };
+
   test('after the trial, an admin buys the chosen plan from the licence wall, without a trial', async ({ page }) => {
     const { posted } = await cloudSession(page, {
       seed: SHOWN,
-      license: { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 86_400_000).toISOString(), trialDaysLeft: 0 },
+      license: ENDED,
+      wall: { variant: 'control', recap: null },
     });
     await page.goto('/connectors');
     await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
@@ -427,6 +433,48 @@ test.describe('card-trial entry points (cloud)', () => {
     await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
+  });
+
+  test('the ended-trial wall shows what the workspace really did, the trust line, and sells in place', async ({ page }) => {
+    const { posted } = await cloudSession(page, {
+      seed: SHOWN,
+      license: ENDED,
+      wall: {
+        variant: 'trust',
+        recap: { successfulCalls: 214, connectors: ['Etsy', 'Telegram'], client: 'Claude', blockedSinceEnd: true },
+      },
+    });
+    await page.goto('/connectors');
+    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
+    const recap = page.getByTestId('wall-recap');
+    await expect(recap).toContainText('Claude made 214 successful calls in this workspace, with Etsy and Telegram.');
+    await expect(recap).toContainText('Since your trial ended, Claude has tried to use them again.');
+    const trust = page.getByTestId('wall-trust');
+    await expect(trust).toContainText('Cancel any time');
+    await expect(trust).toContainText('Secure payment by Stripe');
+    await expect(trust).toContainText('Hosted in Frankfurt');
+    await expect(trust).toContainText('Listed in the Claude Directory');
+    if (process.env.WALL_SHOT) {
+      await page.waitForTimeout(800);
+      await page.screenshot({ path: `${process.env.WALL_SHOT}/wall-trust-desktop.png` });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${process.env.WALL_SHOT}/wall-trust-mobile.png`, fullPage: true });
+      await page.setViewportSize({ width: 1280, height: 800 });
+    }
+    await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
+    await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
+    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
+  });
+
+  test('a workspace that never made a successful call sees no numbers on the wall', async ({ page }) => {
+    await cloudSession(page, { seed: SHOWN, license: ENDED, wall: { variant: 'trust', recap: null } });
+    await page.goto('/connectors');
+    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Subscribe and your AI keeps working with your connectors.', { exact: false })).toBeVisible();
+    await expect(page.getByTestId('wall-recap')).toHaveCount(0);
+    await expect(page.getByTestId('wall-trust')).toBeVisible();
+    if (process.env.WALL_SHOT) await page.screenshot({ path: `${process.env.WALL_SHOT}/wall-trust-norecap.png` });
   });
 
   test('a non-admin keeps the plain pricing link in the banner', async ({ page }) => {
@@ -554,7 +602,7 @@ test.describe('a plan button clicked by someone already signed in (cloud)', () =
       usage: { connectors: 7, mcpServers: 2, users: 2 },
     });
     await page.goto('/connectors');
-    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('radio', { name: /Team/ })).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByRole('radio', { name: /Starter/ })).toContainText('This workspace has 7 connectors, 2 users');
     await expect(page.getByRole('radio', { name: /Team/ })).not.toContainText('This workspace has');
@@ -573,7 +621,7 @@ test.describe('a plan button clicked by someone already signed in (cloud)', () =
       ],
     });
     await page.goto('/connectors');
-    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Switch to another workspace')).toBeVisible();
     await page.getByRole('button', { name: /Acme/ }).click();
     await expect.poll(() => switched).toEqual([{ organizationId: 'o2' }]);
@@ -585,7 +633,7 @@ test.describe('a plan button clicked by someone already signed in (cloud)', () =
       license: { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 86_400_000).toISOString(), trialDaysLeft: 0 },
     });
     await page.goto('/connectors');
-    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Switch to another workspace')).toHaveCount(0);
   });
 
@@ -595,7 +643,7 @@ test.describe('a plan button clicked by someone already signed in (cloud)', () =
       license: { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 86_400_000).toISOString(), trialDaysLeft: 0 },
     });
     await page.goto('/login?mode=register&plan=cloud_team&period=monthly');
-    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('radio', { name: /Team/ })).toHaveAttribute('aria-checked', 'true');
   });
 

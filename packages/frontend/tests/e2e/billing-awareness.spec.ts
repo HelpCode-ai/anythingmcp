@@ -233,10 +233,10 @@ test.describe('trial-ended wall (cloud)', () => {
       }),
     );
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
     await page.getByRole('link', { name: 'Delete your account' }).click();
     await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.getByRole('heading', { name: 'Your Trial Has Expired' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Delete my account' })).toBeVisible();
   });
 });

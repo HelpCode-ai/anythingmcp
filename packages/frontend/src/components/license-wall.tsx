@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { license } from '@/lib/api';
+import { useLocale, useTranslations } from 'next-intl';
+import { license, type LicenseWallView } from '@/lib/api';
+import { useTrustStats } from '@/lib/trust-stats';
 import { useAuth } from '@/lib/auth-context';
 import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useManagePlan } from '@/lib/use-manage-plan';
@@ -45,9 +47,16 @@ export function LicenseWall() {
   // What the workspace already has, so a plan it has outgrown is not the one
   // preselected (and says so).
   const [usage, setUsage] = useState<WorkspaceUsage | null>(null);
+  const tw = useTranslations('licenseWall');
+  const locale = useLocale();
+  const trustStats = useTrustStats(isCloud && reason === 'trial-ended' && user?.role === 'ADMIN');
   // Once the admin picks a plan, the usage answer no longer moves it.
   const picked = useRef(false);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+  // The ended-trial wall's variant and the workspace's own numbers
+  // (GET /api/license/wall). undefined while loading; null when it cannot be
+  // read, which shows the new wall without numbers.
+  const [wall, setWall] = useState<LicenseWallView | null | undefined>(undefined);
   // Cloud admins whose trial ended pick a plan and pay right here (Stripe
   // Checkout, no trial left). Other roles cannot subscribe the workspace and
   // keep the pricing link.
@@ -57,6 +66,31 @@ export function LicenseWall() {
   const [cardErr, setCardErr] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkNote, setCheckNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!buyInPlace || !token) return;
+    let done = false;
+    // Never hold the plans for long: without an answer in 3 s, the new wall
+    // shows without numbers.
+    const fallback = setTimeout(() => {
+      if (!done) setWall(null);
+    }, 3000);
+    license
+      .wall(token)
+      .then((r) => {
+        done = true;
+        setWall(r.wall ?? null);
+      })
+      .catch(() => {
+        done = true;
+        setWall(null);
+      })
+      .finally(() => clearTimeout(fallback));
+    return () => {
+      done = true;
+      clearTimeout(fallback);
+    };
+  }, [buyInPlace, token]);
 
   useEffect(() => {
     if (!buyInPlace || !token) return;
@@ -222,8 +256,19 @@ export function LicenseWall() {
   // exempt route.
   if (!token || !reason || isExemptRoute) return null;
 
-  const title =
-    reason === 'payment-failed'
+  // The ended trial of an admin: the new wall (the workspace's own numbers,
+  // trust line) unless the workspace is in the control group, which keeps
+  // the earlier one. Nothing is shown until the variant is known.
+  const wallLoading = buyInPlace && wall === undefined;
+  const trustWall = buyInPlace && wall !== undefined && wall?.variant !== 'control';
+  const recap = trustWall ? wall?.recap ?? null : null;
+  const clientName = recap?.client ?? tw('yourAi');
+  const connectorList =
+    recap && recap.connectors.length > 0 ? listFormat(locale, recap.connectors) : null;
+
+  const title = trustWall
+    ? tw('title')
+    : reason === 'payment-failed'
       ? 'Your payment didn’t go through'
       : reason === 'no-license'
       ? 'License Required'
@@ -233,8 +278,9 @@ export function LicenseWall() {
           ? 'Your Subscription Is Not Active'
           : 'Your License Has Expired';
 
-  const body =
-    reason === 'payment-failed'
+  const body = trustWall
+    ? tw('body', { client: recap?.client ?? tw('yourAi') })
+    : reason === 'payment-failed'
       ? isAdmin
         ? 'Your last payment didn’t go through, so your subscription is on hold. Update your payment method and it resumes right away: the open payment is taken as soon as the new one is saved. Your connectors and configurations are preserved.'
         : 'The last payment for this workspace’s subscription didn’t go through, so the subscription is on hold. Ask a workspace admin to update the payment method. Your connectors and configurations are preserved.'
@@ -248,12 +294,17 @@ export function LicenseWall() {
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[14px] p-8 max-w-md w-full mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto text-center shadow-[var(--shadow)]">
-        <div className="flex justify-center mb-4">
-          <LogoIcon size={48} />
+      <div
+        className={cn(
+          'bg-[var(--surface)] border border-[var(--border)] rounded-[14px] max-w-md w-full mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto text-center shadow-[var(--shadow)]',
+          trustWall ? 'px-8 py-6' : 'p-8',
+        )}
+      >
+        <div className={cn('flex justify-center', trustWall ? 'mb-3' : 'mb-4')}>
+          <LogoIcon size={trustWall ? 40 : 48} />
         </div>
 
-        <h1 className="text-2xl font-bold mb-2 text-[var(--text)]">{title}</h1>
+        <h1 className={cn('font-bold mb-2 text-[var(--text)]', trustWall ? 'text-[22px] leading-tight' : 'text-2xl')}>{title}</h1>
 
         {otherOrgs.length > 0 && orgName && (
           <p className="text-xs text-[var(--text-3)] mb-2">
@@ -261,7 +312,27 @@ export function LicenseWall() {
           </p>
         )}
 
-        <p className="text-[var(--text-2)] text-sm mb-6">{body}</p>
+        {wallLoading ? (
+          <p className="text-[var(--text-3)] text-sm mb-6">{tw('loading')}</p>
+        ) : (
+          <p className={cn('text-[var(--text-2)] text-sm', trustWall ? 'mb-4' : 'mb-6')}>{body}</p>
+        )}
+
+        {recap && (
+          <div
+            data-testid="wall-recap"
+            className="mb-4 rounded-[12px] border border-[var(--border)] bg-[var(--brand-tint)] px-4 py-2.5 text-left text-sm text-[var(--text)]"
+          >
+            <p>
+              {connectorList
+                ? tw('recapCallsWith', { client: clientName, count: recap.successfulCalls, connectors: connectorList })
+                : tw('recapCalls', { client: clientName, count: recap.successfulCalls })}
+            </p>
+            {recap.blockedSinceEnd && (
+              <p className="mt-1.5 text-xs text-[var(--text-2)]">{tw('recapBlocked', { client: clientName })}</p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-3">
           {reason === 'no-license' && isCloud ? (
@@ -285,7 +356,7 @@ export function LicenseWall() {
                 View Plans &amp; Purchase License
               </a>
             </>
-          ) : buyInPlace ? (
+          ) : wallLoading ? null : buyInPlace ? (
             <>
               <div className="text-left">
                 <PlanPicker
@@ -304,6 +375,26 @@ export function LicenseWall() {
                 {checkout.loading ? 'Opening checkout…' : `Subscribe to ${planById(selection.plan).name}`}
               </button>
               {checkout.error && <p role="alert" className="text-xs text-[var(--danger)]">{checkout.error}</p>}
+              {trustWall && (
+                <div data-testid="wall-trust" className="space-y-2 pt-1">
+                  <ul className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-[var(--text-2)]">
+                    {[tw('trust.cancel'), tw('trust.stripe'), tw('trust.hosted'), tw('trust.gdpr')].map((item) => (
+                      <li key={item} className="inline-flex items-center gap-1">
+                        <span aria-hidden className="font-bold text-[var(--success)]">&#10003;</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-[var(--text-3)]">
+                    {[
+                      trustStats?.workspaces ? tw('workspaces', { count: trustStats.workspaces }) : null,
+                      recap?.client === 'ChatGPT' ? null : tw('directory'),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                </div>
+              )}
               <a
                 href={pricingUrl}
                 target="_blank"
@@ -391,9 +482,12 @@ export function LicenseWall() {
               </Link>
             </p>
           )}
-          <p className="text-xs text-[var(--text-3)]">
+          <p className={cn('text-[var(--text-3)]', trustWall ? 'pt-2 text-[11px]' : 'text-xs')}>
             Not continuing?{' '}
-            <Link href="/settings" className="text-[var(--brand)] hover:underline">
+            <Link
+              href="/settings"
+              className={trustWall ? 'underline hover:text-[var(--text-2)]' : 'text-[var(--brand)] hover:underline'}
+            >
               Delete your account
             </Link>
           </p>
@@ -401,4 +495,13 @@ export function LicenseWall() {
       </div>
     </div>
   );
+}
+
+/** "Etsy", "Etsy and Telegram", "Etsy, Telegram and Odoo", in the page's language. */
+function listFormat(locale: string, items: string[]): string {
+  try {
+    return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(items);
+  } catch {
+    return items.join(', ');
+  }
 }

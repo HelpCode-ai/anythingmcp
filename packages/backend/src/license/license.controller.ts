@@ -13,6 +13,7 @@ import {
   NotFoundException,
   HttpCode,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -27,6 +28,7 @@ import { DeploymentService } from '../common/deployment.service';
 import { ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 import { CardTrialOfferService } from './card-trial-offer.service';
+import { LicenseWallService, type LicenseWallView } from './license-wall.service';
 import { createEmailLinkToken } from '../common/email-link-token';
 import {
   CHECKOUT_BILLING_PERIODS,
@@ -104,6 +106,7 @@ export class LicenseController {
     private readonly productEvents: ProductEventService,
     private readonly cardTrialEligibility: CardTrialEligibilityService,
     private readonly cardTrialOffer: CardTrialOfferService,
+    @Optional() private readonly licenseWall?: LicenseWallService,
   ) {}
 
   @Get('status')
@@ -423,6 +426,26 @@ export class LicenseController {
       .currentOffer(req.user?.organizationId, req.user?.role, req.user?.email)
       .catch(() => null);
     return { offer };
+  }
+
+  @Get('wall')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Cloud: the ended-trial licence wall for an admin: its variant and the workspace\'s own numbers (null otherwise)',
+  })
+  async wallForUser(@Req() req: any): Promise<{ wall: LicenseWallView | null }> {
+    // Only an admin of a Cloud workspace whose free trial ended sees the wall
+    // with the plan picker; everyone else gets null and nothing is recorded.
+    const organizationId: string | undefined = req.user?.organizationId;
+    if (!this.licenseWall || !this.deployment.isCloud() || !organizationId || req.user?.role !== 'ADMIN') {
+      return { wall: null };
+    }
+    const trial = await this.licenseGuard.getTrialState(organizationId).catch(() => null);
+    if (!trial || trial.active) return { wall: null };
+    const wall = await this.licenseWall.view(organizationId, req.user?.sub ?? null).catch(() => null);
+    return { wall };
   }
 
   @Post('verify')
