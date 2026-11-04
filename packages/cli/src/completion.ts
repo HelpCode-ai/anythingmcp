@@ -21,6 +21,7 @@ export const FLAGS: readonly FlagSpec[] = [
   { name: 'timeout', value: 'seconds', description: 'Tool call timeout in seconds' },
   { name: 'data', value: 'JSON, @file.json or -', description: 'Request body for amcp api' },
   { name: 'management', description: 'Log in with a management-scoped key for amcp api' },
+  { name: 'list', description: 'List the management API operations amcp api can call' },
   { name: 'json', description: 'Machine-readable output' },
   { name: 'help', short: 'h', description: 'Show usage' },
 ];
@@ -38,7 +39,7 @@ export const COMMANDS: readonly CommandSpec[] = [
       { name: 'call', description: 'Call a tool', flags: ['args', 'yes', 'timeout', 'profile', 'url', 'server'] },
     ],
   },
-  { name: 'api', description: 'Call the management API (/api/*) with a management key', flags: ['url', 'data', 'key-stdin', 'yes', 'profile'] },
+  { name: 'api', description: 'Call the management API (/api/*) with a management key', flags: ['url', 'data', 'key-stdin', 'yes', 'list', 'profile'] },
   {
     name: 'completion', description: 'Print a shell completion script',
     values: SHELLS.map((shell) => ({ name: shell, description: `${shell} completion script` })),

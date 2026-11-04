@@ -600,3 +600,33 @@ test('management login stores a management key and api uses it from the profile'
     server.close();
   }
 });
+
+test('api --list prints the generated management operation catalogue', async () => {
+  const { OPERATIONS } = await import('./generated/operations.js');
+  const cli = join(__dirname, 'index.js');
+
+  // JSON listing matches the generated catalogue and covers the core surface.
+  const listed = JSON.parse((await execFileAsync(process.execPath, [cli, 'api', '--list', '--json'])).stdout);
+  assert.equal(listed.operations.length, OPERATIONS.length);
+  const paths = new Set(listed.operations.map((o: { path: string }) => o.path));
+  for (const p of ['/api/users/me', '/api/mcp-servers', '/api/connectors', '/api/mcp-keys']) {
+    assert.ok(paths.has(p), `catalogue is missing ${p}`);
+  }
+  // Every operation is well-formed and reachable by `amcp api <METHOD> <path>`.
+  for (const op of listed.operations) {
+    assert.ok(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(op.method), `bad method ${op.method}`);
+    assert.ok(op.path.startsWith('/api/'), `bad path ${op.path}`);
+    assert.equal(typeof op.admin, 'boolean');
+    assert.ok(Array.isArray(op.pathParams));
+  }
+  // The core management resources are all represented (coverage guard).
+  const resources = new Set(listed.operations.map((o: { resource: string }) => o.resource));
+  for (const r of ['mcp-servers', 'connectors', 'users', 'roles', 'mcp-keys', 'file-search']) {
+    assert.ok(resources.has(r), `catalogue is missing resource ${r}`);
+  }
+
+  // Text listing filtered to one resource shows only that resource's routes.
+  const text = (await execFileAsync(process.execPath, [cli, 'api', '--list', 'mcp-servers'])).stdout;
+  assert.match(text, /\/api\/mcp-servers/);
+  assert.doesNotMatch(text, /\/api\/connectors/);
+});

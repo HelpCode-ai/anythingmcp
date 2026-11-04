@@ -6,6 +6,7 @@ import { readConfig, writeConfig, profileName, type Profile } from './config.js'
 import { listClientTools, listTools, serverUrl, withClient } from './mcp.js';
 import { apiRequest, API_METHODS, type ApiMethod } from './rest.js';
 import { completionScript, isShell } from './completion.js';
+import { OPERATIONS } from './generated/operations.js';
 
 class CliError extends Error {
   constructor(message: string, readonly exitCode: number) { super(message); }
@@ -159,7 +160,25 @@ export const OPTIONS = {
   'key-stdin': { type: 'boolean' }, filter: { type: 'string' }, help: { type: 'boolean', short: 'h' },
   args: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' },
   timeout: { type: 'string' }, data: { type: 'string' }, management: { type: 'boolean' },
+  list: { type: 'boolean' },
 } as const;
+
+// Render the generated catalogue of management API operations, optionally
+// filtered to one resource, for `amcp api --list`.
+function listOperations(filter: string | undefined, json: boolean): void {
+  const ops = filter
+    ? OPERATIONS.filter((o) => o.resource === filter || o.resource.startsWith(`${filter}/`))
+    : OPERATIONS;
+  if (json) { process.stdout.write(`${JSON.stringify({ operations: ops })}\n`); return; }
+  if (ops.length === 0) { process.stdout.write(`No operations match "${singleLine(filter ?? '')}"\n`); return; }
+  let current = '';
+  for (const o of ops) {
+    if (o.resource !== current) { current = o.resource; process.stdout.write(`\n${current}\n`); }
+    const flags = [o.admin ? 'admin' : '', o.hasBody ? 'body' : ''].filter(Boolean).join(',');
+    const tail = o.summary ? `  — ${terminalText(o.summary)}` : '';
+    process.stdout.write(`  ${o.method.padEnd(6)} ${o.path}${flags ? ` [${flags}]` : ''}${tail}\n`);
+  }
+}
 
 function usage(): string {
   return `Usage:
@@ -171,6 +190,7 @@ function usage(): string {
   amcp tools describe <name> [--profile <name>]
   amcp tools call <name> [--args '<json>' | --args @file.json | --args -] [--yes] [--timeout <seconds>]
   amcp api <GET|POST|PUT|PATCH|DELETE> <path> [--data '<json>' | --data @file.json | --data -] [--yes] [--url <instance-url>]
+  amcp api --list [<resource>]
   amcp completion <bash|zsh|fish>
 
 Use --json for machine-readable output. For CI, set AMCP_URL, AMCP_SERVER and AMCP_API_KEY.
@@ -282,6 +302,12 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
       return 0;
     }
     if (command === 'api') {
+      // `amcp api --list [resource]`: print the generated catalogue of
+      // management operations (no key, no network). Discovery and examples.
+      if (values.list) {
+        listOperations(positionals[1], json);
+        return 0;
+      }
       const method = (subcommand || '').toUpperCase();
       const path = positionals[2];
       if (positionals.length !== 3 || !method || !path) {

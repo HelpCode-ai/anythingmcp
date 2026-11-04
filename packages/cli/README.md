@@ -125,6 +125,21 @@ For CI, skip the profile and pass the key in the environment:
 AMCP_URL=https://cloud.anythingmcp.com AMCP_API_KEY=mcp_… amcp api GET /api/users --json
 ```
 
+To discover what the management API offers, list its operations (no key and no
+network — the catalogue ships with the CLI):
+
+```bash
+amcp api --list                 # every management operation, grouped by resource
+amcp api --list mcp-servers     # only one resource
+amcp api --list --json          # { "operations": [ { method, path, summary, admin, … } ] }
+```
+
+Each line shows the method, path, an `[admin]` tag when the route needs an admin
+owner, a `[body]` tag when it takes a request body, and the summary. The
+catalogue is generated from the backend controllers, and CI fails if a new
+management route is added without regenerating it, so `amcp api --list` always
+matches the instance's API.
+
 The key comes from `AMCP_API_KEY`, `--key-stdin`, or a saved management profile —
 never from a command argument. A non-safe method asks for confirmation on a
 terminal; pass `--yes` in scripts. `--data` accepts inline JSON, `@file.json` or
