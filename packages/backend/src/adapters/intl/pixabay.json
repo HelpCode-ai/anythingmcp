@@ -1,0 +1,332 @@
+{
+  "slug": "pixabay",
+  "name": "Pixabay",
+  "description": "Search over 4 million royalty-free stock photos, illustrations, vector graphics, and videos via the Pixabay API.",
+  "instructions": "## Pixabay\nThis connector integrates with the Pixabay API (`https://pixabay.com/api/`), providing access to over 4 million royalty-free stock photos, illustrations, vector graphics, and high-definition video clips. It is read-only.\n\n## Setup\n1. Create a free account at https://pixabay.com if you do not already have one.\n2. Visit the Pixabay API documentation page at https://pixabay.com/api/docs/ while signed in.\n3. Locate your personal API key in the green box under the \"Search Images\" section.\n4. Set the API key in `PIXABAY_API_KEY`. The connector automatically passes this key via the `key` query parameter on every API request.\n\n## Authentication\nPixabay requires a free API key supplied as the `key` query parameter (`QUERY_AUTH`). Pixabay API keys consist of your numeric Pixabay user ID followed by a hyphen and a hex token (e.g. `12345678-abcdef0123456789abcdef012`).\n\n## Tools & Workflows\n- **`pixabay_search_images`**: Search royalty-free stock photos, vector graphics, and digital illustrations. Supports keyword queries (`q`), language selection (`lang`), media type (`image_type`), orientation (`orientation`), category (`category`), minimum dimensions (`min_width`, `min_height`), color filtering (`colors`), Editor's Choice curation (`editors_choice`), and SafeSearch moderation (`safesearch`). Individual image records can also be fetched by specifying `id`.\n- **`pixabay_search_videos`**: Search royalty-free video footage, film recordings, and animated clips. Supports keyword search (`q`), video format filtering (`video_type`), categories, dimensions, Editor's Choice, and SafeSearch. Multiple resolution renditions (large, medium, small, tiny) with direct MP4 video URLs are returned in the `videos` object. Individual video records can be fetched by ID using `id`.\n\n## Response Structure\nSearch responses return `total` (all matching results), `totalHits` (results accessible via API, capped at 500 per query), and a `hits` array. Each image hit contains URLs for different resolutions (`previewURL` 150px, `webformatURL` 640px, `largeImageURL` up to 1280px), dimensions (`imageWidth`, `imageHeight`), metrics (`views`, `downloads`, `likes`, `comments`), tags, and artist info (`user`, `userImageURL`). Video hits include duration, thumbnail preview, and stream URLs.\n\n## Pagination & Limits\n- `page`: Result page number, starting at 1.\n- `per_page`: Number of items per page, between 3 and 200 (default 20).\n- Up to 500 total hits are accessible per query.\n- The standard rate limit is 100 requests per minute and 5,000 requests per hour per API key. If exceeded, Pixabay returns HTTP 429 Too Many Requests. Higher limits can be requested from Pixabay support.\n\n## Licensing\nAll content on Pixabay is released under the Pixabay Content License, making it free to use for commercial and non-commercial purposes across print and digital media without requiring attribution (although attribution is appreciated).",
+  "region": "intl",
+  "category": "publishing",
+  "icon": "pixabay",
+  "docsUrl": "https://pixabay.com/api/docs/",
+  "requiredEnvVars": [
+    "PIXABAY_API_KEY"
+  ],
+  "envVarMeta": {
+    "PIXABAY_API_KEY": {
+      "label": "API Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Your Pixabay API key from https://pixabay.com/api/docs/ (shown in the green code examples once logged in).",
+      "link": "https://pixabay.com/api/docs/"
+    }
+  },
+  "verifyHints": {
+    "401": "Pixabay rejected the API key. Verify that you have copied the key from https://pixabay.com/api/docs/ while logged in.",
+    "429": "Pixabay rate limit reached (100 requests per minute or 5,000 requests per hour). Please wait before retrying."
+  },
+  "probe": {
+    "tool": "pixabay_search_images",
+    "params": {
+      "q": "nature",
+      "per_page": 3
+    }
+  },
+  "connector": {
+    "name": "Pixabay API",
+    "type": "REST",
+    "baseUrl": "https://pixabay.com/api",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{PIXABAY_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "pixabay_search_images",
+      "description": "Search free stock photos, vectors, and illustrations on Pixabay by keywords, category, colors, orientation, and dimensions with SafeSearch.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "A search term (up to 100 characters). For example 'yellow flowers' or 'mountain sunset'."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language code of the search term: cs, da, de, en, es, fr, id, it, hu, nl, no, pl, pt, ro, sk, fi, sv, tr, vi, th, bg, ru, el, ja, ko, zh. Default is 'en'."
+          },
+          "id": {
+            "type": "string",
+            "description": "Retrieve individual images by ID or a comma-separated list of IDs."
+          },
+          "image_type": {
+            "type": "string",
+            "enum": [
+              "all",
+              "photo",
+              "illustration",
+              "vector"
+            ],
+            "description": "Filter results by image type: 'all', 'photo', 'illustration', or 'vector'. Default is 'all'."
+          },
+          "orientation": {
+            "type": "string",
+            "enum": [
+              "all",
+              "horizontal",
+              "vertical"
+            ],
+            "description": "Whether an image is wider than it is tall or vice versa: 'all', 'horizontal', or 'vertical'. Default is 'all'."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "backgrounds",
+              "fashion",
+              "nature",
+              "science",
+              "education",
+              "feelings",
+              "health",
+              "people",
+              "religion",
+              "places",
+              "animals",
+              "industry",
+              "computer",
+              "food",
+              "sports",
+              "transportation",
+              "travel",
+              "buildings",
+              "business",
+              "music"
+            ],
+            "description": "Filter results by category."
+          },
+          "min_width": {
+            "type": "integer",
+            "description": "Minimum image width in pixels. Default is 0."
+          },
+          "min_height": {
+            "type": "integer",
+            "description": "Minimum image height in pixels. Default is 0."
+          },
+          "colors": {
+            "type": "string",
+            "description": "Filter images by color: 'grayscale', 'transparent', 'red', 'orange', 'yellow', 'green', 'turquoise', 'blue', 'lilac', 'pink', 'white', 'gray', 'black', 'brown'."
+          },
+          "editors_choice": {
+            "type": "boolean",
+            "description": "Select images that have received an Editor's Choice award. Default is false."
+          },
+          "safesearch": {
+            "type": "boolean",
+            "description": "A flag indicating that only images suitable for all ages should be returned. Default is false."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "popular",
+              "latest"
+            ],
+            "description": "How the results should be ordered: 'popular' or 'latest'. Default is 'popular'."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number to retrieve, starting at 1. Default is 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Number of results per page. Acceptable values: 3 to 200. Default is 20."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "q": "$q",
+          "lang": "$lang",
+          "id": "$id",
+          "image_type": "$image_type",
+          "orientation": "$orientation",
+          "category": "$category",
+          "min_width": "$min_width",
+          "min_height": "$min_height",
+          "colors": "$colors",
+          "editors_choice": "$editors_choice",
+          "safesearch": "$safesearch",
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total": "$.total",
+            "totalHits": "$.totalHits",
+            "hits": {
+              "$from": "$.hits[*]",
+              "$select": {
+                "id": "id",
+                "pageURL": "pageURL",
+                "type": "type",
+                "tags": "tags",
+                "previewURL": "previewURL",
+                "webformatURL": "webformatURL",
+                "largeImageURL": "largeImageURL",
+                "imageWidth": "imageWidth",
+                "imageHeight": "imageHeight",
+                "imageSize": "imageSize",
+                "views": "views",
+                "downloads": "downloads",
+                "likes": "likes",
+                "comments": "comments",
+                "user_id": "user_id",
+                "user": "user",
+                "userImageURL": "userImageURL"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pixabay_search_videos",
+      "description": "Search free stock video footage, films, and animations on Pixabay with filters for duration, category, dimensions, and SafeSearch.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "A search term (up to 100 characters). For example 'ocean waves' or 'city traffic'."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language code of the search term: cs, da, de, en, es, fr, id, it, hu, nl, no, pl, pt, ro, sk, fi, sv, tr, vi, th, bg, ru, el, ja, ko, zh. Default is 'en'."
+          },
+          "id": {
+            "type": "string",
+            "description": "Retrieve individual videos by ID or a comma-separated list of IDs."
+          },
+          "video_type": {
+            "type": "string",
+            "enum": [
+              "all",
+              "film",
+              "animation"
+            ],
+            "description": "Filter results by video type: 'all', 'film', or 'animation'. Default is 'all'."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "backgrounds",
+              "fashion",
+              "nature",
+              "science",
+              "education",
+              "feelings",
+              "health",
+              "people",
+              "religion",
+              "places",
+              "animals",
+              "industry",
+              "computer",
+              "food",
+              "sports",
+              "transportation",
+              "travel",
+              "buildings",
+              "business",
+              "music"
+            ],
+            "description": "Filter results by category."
+          },
+          "min_width": {
+            "type": "integer",
+            "description": "Minimum video width in pixels. Default is 0."
+          },
+          "min_height": {
+            "type": "integer",
+            "description": "Minimum video height in pixels. Default is 0."
+          },
+          "editors_choice": {
+            "type": "boolean",
+            "description": "Select videos that have received an Editor's Choice award. Default is false."
+          },
+          "safesearch": {
+            "type": "boolean",
+            "description": "A flag indicating that only videos suitable for all ages should be returned. Default is false."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "popular",
+              "latest"
+            ],
+            "description": "How the results should be ordered: 'popular' or 'latest'. Default is 'popular'."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number to retrieve, starting at 1. Default is 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Number of results per page. Acceptable values: 3 to 200. Default is 20."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos/",
+        "queryParams": {
+          "q": "$q",
+          "lang": "$lang",
+          "id": "$id",
+          "video_type": "$video_type",
+          "category": "$category",
+          "min_width": "$min_width",
+          "min_height": "$min_height",
+          "editors_choice": "$editors_choice",
+          "safesearch": "$safesearch",
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "total": "$.total",
+            "totalHits": "$.totalHits",
+            "hits": {
+              "$from": "$.hits[*]",
+              "$select": {
+                "id": "id",
+                "pageURL": "pageURL",
+                "type": "type",
+                "tags": "tags",
+                "duration": "duration",
+                "picture_id": "picture_id",
+                "videos": "videos",
+                "views": "views",
+                "downloads": "downloads",
+                "likes": "likes",
+                "comments": "comments",
+                "user_id": "user_id",
+                "user": "user",
+                "userImageURL": "userImageURL"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

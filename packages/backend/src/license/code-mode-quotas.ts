@@ -50,3 +50,18 @@ export function codeToolCapForPlan(
 export function inlineCodeAllowedForPlan(plan: string | null | undefined): boolean {
   return !!plan && INLINE_PLANS.has(plan);
 }
+
+/**
+ * The plan a workspace is treated as for code-mode gating. A Cloud trial that
+ * has added a card (`cardTrial`) is high-intent and low-abuse — a payment method
+ * is on file — so it gets the full Team experience during the trial (inline code
+ * and the Team cap) to drive conversion. A free (card-less) trial, and every
+ * other plan, is unchanged. Self-hosted trials have no card and so never match.
+ */
+export function effectiveCodeModePlan(
+  plan: string | null | undefined,
+  cardTrial: boolean,
+): string {
+  if (cardTrial && plan === 'trial') return 'team';
+  return plan ?? 'community';
+}

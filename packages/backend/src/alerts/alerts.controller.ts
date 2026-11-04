@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
@@ -54,7 +54,7 @@ class SaveAlertWebhookDto {
 
 @ApiTags('Alerts')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(JwtOrManagementKeyGuard, RolesGuard)
 @Roles('ADMIN')
 @Controller('api/admin/settings')
 export class AlertsAdminController {

@@ -8,6 +8,8 @@ import {
   fileSearchIntent,
   MAX_FILE_SEARCH,
   MAX_FUZZY,
+  MAX_QUERY_LENGTH,
+  queryWords,
   searchCatalog,
   searchTerms,
 } from './catalog-search';
@@ -25,6 +27,27 @@ describe('catalog search — the frontend copy', () => {
     const backend = readFileSync(join(__dirname, 'catalog-search.ts'), 'utf8');
     const frontend = readFileSync(join(__dirname, '../../../frontend/src/lib/catalog-search.ts'), 'utf8');
     expect(frontend).toBe(backend);
+  });
+});
+
+describe('catalog search — query words', () => {
+  it('trims outer punctuation and keeps inner punctuation', () => {
+    expect(queryWords('  @BotFather, "Société"!  s/4hana ')).toEqual(['botfather', 'societe', 's/4hana']);
+    expect(queryWords('!!! ...')).toEqual([]);
+  });
+
+  it('reads at most MAX_QUERY_LENGTH characters', () => {
+    expect(queryWords(`${'a'.repeat(MAX_QUERY_LENGTH - 3)} b c`)).toEqual(['a'.repeat(MAX_QUERY_LENGTH - 3), 'b']);
+  });
+
+  it('handles a long run of punctuation in linear time (code scanning alert 655)', () => {
+    // The old trim regex took ~300 ms on 30k characters of this shape.
+    const word = `a${'!'.repeat(400_000)}a`;
+    const started = Date.now();
+    expect(queryWords(word)).toEqual(['a']);
+    expect(queryWords(`x${'!'.repeat(MAX_QUERY_LENGTH)}`)).toEqual(['x']);
+    expect(searchCatalog(catalog, word).hits).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 });
 
@@ -365,6 +388,24 @@ describe('catalog search — File Search suggestions', () => {
       expect(slugs(query).filter((s) => fileSearchSlugs.has(s))).toEqual([]);
     },
   );
+
+  it.each([
+    ['web search', 'brave-search'],
+    ['web search internet wikipedia', 'brave-search'],
+    ['etsy listing create digital file', 'etsy'],
+  ])('"%s" is about %s, not File Search: "File Search" and the start of "WebDAV" do not name an entry', (query, app) => {
+    const all = slugs(query);
+    expect(all[0]).toBe(app);
+    // Below every other result, if listed at all.
+    const firstFs = all.findIndex((s) => fileSearchSlugs.has(s));
+    if (firstFs >= 0) expect(all.slice(firstFs).every((s) => fileSearchSlugs.has(s))).toBe(true);
+  });
+
+  it('"file search" still lists the File Search entries', () => {
+    const result = searchCatalog(cloud, 'file search');
+    expect(result.fileSearch.length).toBeGreaterThan(0);
+    expect(result.hits.slice(0, 8).every((h) => fileSearchSlugs.has(h.entry.slug))).toBe(true);
+  });
 
   it('caps the suggestions and lists none twice', () => {
     const result = searchCatalog(catalog, 'synology nas file server documents');

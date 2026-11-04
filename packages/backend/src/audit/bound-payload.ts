@@ -49,7 +49,9 @@ function shrink(value: unknown, shape: Shape, depth: number): unknown {
     if (value.length > shape.arrayItems) kept.push(`… ${value.length - shape.arrayItems} more items`);
     return kept;
   }
-  const out: Record<string, unknown> = {};
+  // No prototype: a vendor key named "__proto__" (JSON.parse makes it an own
+  // property) stays a plain field instead of replacing this object's prototype.
+  const out: Record<string, unknown> = Object.create(null);
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     out[k] = shrink(v, shape, depth + 1);
   }

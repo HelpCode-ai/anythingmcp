@@ -1,4 +1,20 @@
 {
+  "cliAuth": {
+    "title": "Authorize the amcp CLI",
+    "intro": "{label} on this computer is requesting a management API key.",
+    "scope": "Scope",
+    "scopeRead": "Management — read-only",
+    "scopeAdmin": "Management — admin",
+    "code": "Verification code",
+    "verifyHint": "Only continue if you just started this from your terminal and this code matches the one shown there.",
+    "authorize": "Authorize",
+    "working": "Authorizing…",
+    "cancel": "Cancel",
+    "signInFirst": "Sign in to continue; this page will return automatically.",
+    "invalid": "This authorization link is invalid or did not come from the amcp CLI.",
+    "needAdmin": "This request asks for an admin key, but your role cannot grant one. Ask an admin, or request a read-only key.",
+    "error": "Could not complete the authorization."
+  },
   "nav": {
     "groups": {
       "overview": "Overview",
@@ -150,11 +166,11 @@
     "question": "How will you use Anything<brand>MCP</brand>?",
     "changeLater": "You can change this later under Settings → License.",
     "personal": {
-      "title": "Personal, education or evaluation",
-      "description": "Community edition, free, for up to 3 users. We email you a community key so you get security and release notices."
+      "title": "Community edition, free",
+      "description": "Free under AGPL-3.0 for any use, including commercial use, for up to 3 active users. We email you a community key so you get security and release notices."
     },
     "company": {
-      "title": "For a company or team",
+      "title": "More users or single sign-on",
       "description": "Try Enterprise free for 30 days: more users, single sign-on with Entra ID, Google or Okta, and SCIM. No payment details."
     },
     "haveKey": "I have a license key",
@@ -170,7 +186,7 @@
     "activate": {
       "title": "Activate License",
       "subtitle": "Enter your license key to activate Anything<brand>MCP</brand>",
-      "available": "Starter, Team and Enterprise license keys are available at <link>anythingmcp.com</link>."
+      "available": "Enterprise license keys are available on request: <link>contact us</link>. Existing Starter and Team keys keep working."
     },
     "keyLabel": "License Key",
     "submit": "Activate License",
@@ -1026,7 +1042,7 @@
     },
     "wait": {
       "checking": "Asking {name} about your app…",
-      "notYet": "{name} has not approved your app yet",
+      "notYet": "{name} does not accept these keys yet",
       "checkedAt": "Last checked at {time}. This page checks again whenever you come back to it.",
       "checkAgain": "Check again",
       "checkingShort": "Checking…",
@@ -1597,7 +1613,7 @@
       "disable": "Disable",
       "enable": "Enable",
       "proxy": "Proxy",
-      "proxyTitle": "Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs.",
+      "proxyTitle": "Route this tool's request through the configured proxy / web-unblocker. Recommended for anti-bot, geo-restricted, or rate-limited APIs. Calls through it leave from changing IP addresses: keep it off for a server that only accepts approved IPs.",
       "delete": "Delete",
       "showSql": "Show full SQL",
       "showPath": "Show full path",
@@ -1931,7 +1947,32 @@
     },
     "apiKeys": {
       "title": "MCP API Keys",
-      "body": "API keys are now managed per MCP server. Go to <link>MCP Servers</link> to generate and manage keys for each server."
+      "body": "API keys are now managed per MCP server. Go to <link>MCP Servers</link> to generate and manage keys for each server.",
+      "management": {
+        "title": "Management API keys",
+        "intro": "Management keys drive your whole instance from the amcp CLI and the management API (/api/*) — connectors, MCP servers, users, roles and settings. Read-only keys can only read; admin keys can change things, still limited by your own role.",
+        "name": "Name",
+        "namePlaceholder": "e.g. ops laptop",
+        "scope": "Scope",
+        "scopeRead": "Management — read-only",
+        "scopeAdmin": "Management — admin",
+        "scopeAdminOnly": "Only workspace admins can mint admin keys.",
+        "generate": "Generate key",
+        "generating": "Generating…",
+        "created": "Copy your key now — it is shown only once.",
+        "copy": "Copy",
+        "copied": "Copied",
+        "revoke": "Revoke",
+        "delete": "Delete",
+        "confirmDelete": "Delete this key permanently? Any client using it stops working.",
+        "empty": "No management keys yet.",
+        "active": "Active",
+        "revoked": "Revoked",
+        "created_toast": "Management key created",
+        "revoked_toast": "Key revoked",
+        "deleted_toast": "Key deleted",
+        "error": "Could not complete that"
+      }
     },
     "danger": {
       "title": "Danger Zone",
@@ -2114,7 +2155,7 @@
     "cancel": "Cancel",
     "inviteUser": "Invite User",
     "dismiss": "dismiss",
-    "licenseSeats": "Your license includes {limit} users. To invite more people, change your plan under <link>Settings → License</link>.",
+    "licenseSeats": "Your license includes {limit} users. For more users, contact us about Enterprise under <link>Settings → License</link>.",
     "invite": {
       "title": "Invite a New User",
       "body": "Send an invitation email. The user will receive a link to create their account with the specified role.",
@@ -2361,6 +2402,7 @@
       "activate": "Activate License Key",
       "changePlan": "To move to another plan, <link>change it in the billing portal</link> — your current subscription is switched and prorated, not duplicated.",
       "purchase": "Purchase a license at <link>anythingmcp.com</link>",
+      "selfHosted": "Enter the license key you received from us. Existing Starter and Team keys keep working.",
       "submit": "Activate"
     },
     "upgrade": {
@@ -2387,6 +2429,13 @@
       "activating": "Activating your license…",
       "key": "Key:",
       "goToSettings": "Go to License Settings"
+    },
+    "dpa": {
+      "title": "Data Processing Agreement",
+      "body": "Your plan includes our Data Processing Agreement under Art. 28 GDPR. Accept it online on anythingmcp.com, in English or German: you get the PDF with the acceptance record by email, with no signature or scan needed.",
+      "open": "Open the DPA",
+      "opening": "Opening…",
+      "error": "Could not open the DPA page. Please try again."
     }
   },
   "settingsSso": {
@@ -3246,11 +3295,13 @@
     },
     "locked": {
       "title": "File Search is part of the paid editions",
+      "titleEnterprise": "File Search after the trial is part of Enterprise",
       "point1": "Search inside PDF, Excel, Word and Outlook files from Claude, ChatGPT, Copilot and other AI clients.",
       "point2": "SFTP, FTP/FTPS, WebDAV and network folders, synced in the background.",
       "point3": "Temporary download links, permissions per role, audit log.",
       "startTrial": "Start the free 30-day trial",
       "buy": "Buy a licence",
+      "contactEnterprise": "Contact us about Enterprise",
       "activate": "Activate a licence",
       "keyToStart": "Register a free Community key under Settings → License to start the 30-day File Search trial. The key is free and arrives by email.",
       "keyDuringTrial": "Register a free Community key under Settings → License to use File Search during the trial. The key is free and arrives by email.",
@@ -3367,6 +3418,15 @@
       "body": "File Search indexes the PDF, Word, Excel and Outlook files on your NAS, server or storage and keeps the index in sync, so the AI finds what is written in them, not only the file names.",
       "cta": "Set up File Search",
       "for": "Opens the wizard for {name}."
+    },
+    "authorize": {
+      "banner": "You are connecting a folder for your AI assistant. When the folder is active, you go back to the chat.",
+      "skip": "Skip and go back to the chat",
+      "opening": "Opening the folder setup…",
+      "openFailedTitle": "The folder setup could not be opened",
+      "openFailed": "This page has expired.",
+      "openFailedHint": "Go back to the chat and connect again, or sign in to the dashboard and set up the folder there.",
+      "openWizard": "Set up the folder in the dashboard"
     }
   },
   "fileShare": {
@@ -3465,5 +3525,32 @@
       "preparing": "Preparing…",
       "warning": "Only open files from people you trust. AnythingMCP does not check files for viruses."
     }
+  },
+  "networkNote": {
+    "title": "Server only accepts approved IP addresses?",
+    "body": "AnythingMCP calls the API from {count, plural, one {this address} other {these addresses}}. If the server or account only accepts approved IPs (a firewall, an IP allowlist), add {count, plural, one {it} other {them}} there; otherwise there is nothing to do.",
+    "requiredTitle": "Register the IP address",
+    "requiredBody": "{name} only accepts calls from IP addresses registered with it. Register {count, plural, one {this address} other {these addresses}} in your {name} account before you start, or every call is refused.",
+    "requiredNoIps": "{name} only accepts calls from IP addresses registered with it. Register the public IP address of the server AnythingMCP runs on (your network admin knows it) before you start, or every call is refused.",
+    "proxy": "Leave the \"Proxy\" option off on the tools of a server with an allowlist: proxied calls leave from changing addresses.",
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "licenseWall": {
+    "title": "Keep your AI connected to your apps",
+    "body": "Your 7-day trial has ended. Subscribe and {client} keeps working with your connectors. Everything you set up is kept.",
+    "yourAi": "your AI",
+    "recapCalls": "{client} made {count, plural, one {# successful call} other {# successful calls}} in this workspace.",
+    "recapCallsWith": "{client} made {count, plural, one {# successful call} other {# successful calls}} in this workspace, with {connectors}.",
+    "recapBlocked": "Since your trial ended, {client} has tried to use them again. Those calls are paused until you subscribe.",
+    "loading": "Loading your plans…",
+    "trust": {
+      "cancel": "Cancel any time",
+      "stripe": "Secure payment by Stripe",
+      "hosted": "Hosted in Frankfurt",
+      "gdpr": "GDPR · DPA"
+    },
+    "workspaces": "{count} workspaces on AnythingMCP Cloud",
+    "directory": "Listed in the Claude Directory"
   }
 }

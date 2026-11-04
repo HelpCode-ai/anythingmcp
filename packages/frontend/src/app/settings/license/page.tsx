@@ -41,6 +41,7 @@ export default function LicenseSettingsPage() {
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [openingPortal, setOpeningPortal] = useState(false);
+  const [openingDpa, setOpeningDpa] = useState(false);
   const managePlan = useManagePlan();
   // Where the visitor came from (`?source=`, e.g. the offer email), passed on
   // to the card trial and the pricing link for Stripe metadata.
@@ -63,6 +64,11 @@ export default function LicenseSettingsPage() {
   const cardTrialOffer = cardTrialEligible({ isCloud, role: user?.role, license: status });
   const cardTrialKind = useCardTrialKind(token, cardTrialOffer);
   const billingSummary = isCloud ? describeBilling(status?.billing) : null;
+  // Self-hosted without a paid key (none yet, or Community): nothing to buy
+  // online. An instance with a Starter, Team or Enterprise key keeps the
+  // plan-change link it always had.
+  const selfHostedWithoutPaidKey =
+    !isCloud && (!status?.plan || status.plan === 'trial' || status.plan === 'community');
   const cardTrialDate = cardTrialOffer
     ? formatTrialEnd(cardTrialDisplayEnd(status?.expiresAt), 'long', undefined, dateLocale)
     : null;
@@ -160,6 +166,31 @@ export default function LicenseSettingsPage() {
     } catch (err: any) {
       setError(err.message || t('errors.portal'));
       setOpeningPortal(false);
+    }
+  };
+
+  // The DPA lives on the licence site: ask it for a one-hour link and open it
+  // in a new tab. The tab is opened before the request so popup blockers let
+  // it through; it is closed again if the request fails.
+  const handleOpenDpa = async () => {
+    if (!token) return;
+    setError('');
+    setMessage('');
+    setOpeningDpa(true);
+    const tab = window.open('', '_blank');
+    try {
+      const { url } = await license.dpaLink(token, ['en', 'de', 'it'].includes(locale) ? locale : 'en');
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch (err: any) {
+      tab?.close();
+      setError(err.message || t('dpa.error'));
+    } finally {
+      setOpeningDpa(false);
     }
   };
 
@@ -365,6 +396,17 @@ export default function LicenseSettingsPage() {
         )}
       </Card>
 
+      {/* Data Processing Agreement: paid Cloud plans accept it on the licence site */}
+      {isCloud && status?.plan && status.plan !== 'trial' && status.plan !== 'community' && (
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold text-[var(--text)] mb-2">{t('dpa.title')}</h2>
+          <p className="text-sm text-[var(--text-2)] mb-4">{t('dpa.body')}</p>
+          <Button variant="secondary" onClick={handleOpenDpa} disabled={openingDpa}>
+            {openingDpa ? t('dpa.opening') : t('dpa.open')}
+          </Button>
+        </Card>
+      )}
+
       {/* Features */}
       {isCloud && status?.features && Object.keys(status.features).length > 0 && (
         <Card className="p-5">
@@ -389,7 +431,11 @@ export default function LicenseSettingsPage() {
           <h2 className="text-sm font-semibold text-[var(--text)] mb-4">
             {status?.plan && status.plan !== 'trial' ? t('key.change') : t('key.activate')}
           </h2>
-          {status?.plan && status.plan !== 'trial' ? (
+          {selfHostedWithoutPaidKey ? (
+            // Self-hosted Starter and Team are no longer sold: no pricing link.
+            // Enterprise (enquiry and trial) is offered in the edition card above.
+            <p className="text-sm text-[var(--text-2)] mb-4">{t('key.selfHosted')}</p>
+          ) : status?.plan && status.plan !== 'trial' ? (
             // A paying customer who buys again gets a second subscription beside
             // the first, not a new plan. Send them to the plan switch instead.
             <p className="text-sm text-[var(--text-2)] mb-4">

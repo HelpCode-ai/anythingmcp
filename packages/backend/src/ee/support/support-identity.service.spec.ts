@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { SupportIdentityService, splitName } from './support-identity.service';
+import { SupportIdentityService, connectorLinks, splitName } from './support-identity.service';
 import { instanceHost, supportChatConfig, supportModuleEnabled, supportTriageConfig } from './support-config';
 
 const SAVED = { ...process.env };
@@ -19,7 +19,14 @@ function fakePrisma() {
     organization: { findUnique: jest.fn().mockResolvedValue({ name: 'Acme' }) },
     connector: {
       findMany: jest.fn().mockResolvedValue([
-        { id: 'c1', name: 'Etsy', isActive: true, authStatus: 'needs_reauth', authStatusMessage: 'refresh token revoked' },
+        {
+          id: 'c1',
+          name: 'Etsy',
+          isActive: true,
+          authStatus: 'needs_reauth',
+          authStatusMessage: 'refresh token revoked',
+          config: { adapterSlug: 'etsy' },
+        },
         { id: 'c2', name: 'Shopify', isActive: true, authStatus: null, authStatusMessage: null },
         { id: 'c3', name: 'Old', isActive: false, authStatus: null, authStatusMessage: null },
       ]),
@@ -135,6 +142,25 @@ describe('SupportIdentityService', () => {
     expect(attrs.last_tool_call).toBe('2026-10-20');
     const q = prisma.toolInvocation.findFirst.mock.calls.find((c: any[]) => c[0].where.status === 'SUCCESS')[0];
     expect(q.where.organizationId).toBe('org1');
+  });
+
+  it('links each connector to its own page, so the desk never sends the generic setup link', async () => {
+    const { svc } = build();
+    const attrs = await svc.contactAttributes('u1', 'org1');
+    expect(attrs.connector_links).toBe(
+      'Etsy: https://cloud.anythingmcp.com/connectors/setup/etsy?connector=c1 | ' +
+        'Shopify: https://cloud.anythingmcp.com/connectors/c2 | Old: https://cloud.anythingmcp.com/connectors/c3',
+    );
+  });
+
+  it('builds no links without a dashboard URL, and keeps them bounded', () => {
+    expect(connectorLinks([{ id: 'c1', name: 'Etsy' }], undefined)).toBe('');
+    expect(connectorLinks([{ id: 'c1', name: 'Etsy' }], 'not a url')).toBe('');
+    const many = Array.from({ length: 40 }, (_, i) => ({ id: `id${i}`, name: 'X'.repeat(80) }));
+    const out = connectorLinks(many, 'https://cloud.anythingmcp.com/');
+    expect(out.length).toBeLessThanOrEqual(1500);
+    expect(out.split(' | ').length).toBeLessThanOrEqual(15);
+    expect(out).not.toContain('com//connectors');
   });
 
   it('says "never" when no AI client has called a tool yet', async () => {

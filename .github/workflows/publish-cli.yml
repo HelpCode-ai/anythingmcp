@@ -1,0 +1,39 @@
+# Publish @anythingmcp/cli to npm as a public package.
+#
+# Trigger: a GitHub Release whose tag starts with "cli-v" (e.g. cli-v0.1.0).
+# The release tag's version is only a label here — the version actually
+# published is the one in packages/cli/package.json, so bump that in a PR first.
+#
+# One-time setup (owner):
+#   1. Create the npm org/scope "anythingmcp" (npmjs.com → Add Organization),
+#      so the scoped name @anythingmcp/cli can be published.
+#   2. Create an npm "Automation" access token with publish rights.
+#   3. Add it as the repository secret NPM_TOKEN
+#      (GitHub → Settings → Secrets and variables → Actions → New secret).
+# After that, publishing is just: create a Release tagged cli-v<version>.
+name: Publish CLI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    # Only CLI releases; other releases (if any) are ignored.
+    if: startsWith(github.event.release.tag_name, 'cli-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance (public repo)
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run build -w packages/cli
+      # publishConfig.access=public is set in packages/cli/package.json.
+      - run: npm publish --provenance -w packages/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

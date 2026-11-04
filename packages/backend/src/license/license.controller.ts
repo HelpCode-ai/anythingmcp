@@ -13,9 +13,10 @@ import {
   NotFoundException,
   HttpCode,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsIn, IsString, IsOptional, Matches } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
@@ -27,6 +28,7 @@ import { DeploymentService } from '../common/deployment.service';
 import { ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 import { CardTrialOfferService } from './card-trial-offer.service';
+import { LicenseWallService, type LicenseWallView } from './license-wall.service';
 import { createEmailLinkToken } from '../common/email-link-token';
 import {
   CHECKOUT_BILLING_PERIODS,
@@ -90,6 +92,13 @@ class BillingPortalDto {
   flow?: BillingPortalFlow;
 }
 
+class DpaLinkDto {
+  /** The page language on the licence site (its locales); defaults to English. */
+  @IsOptional()
+  @IsIn(['en', 'de', 'it', 'es', 'zh', 'ja', 'ru'])
+  locale?: string;
+}
+
 @ApiTags('License')
 @Controller('api/license')
 export class LicenseController {
@@ -104,6 +113,7 @@ export class LicenseController {
     private readonly productEvents: ProductEventService,
     private readonly cardTrialEligibility: CardTrialEligibilityService,
     private readonly cardTrialOffer: CardTrialOfferService,
+    @Optional() private readonly licenseWall?: LicenseWallService,
   ) {}
 
   @Get('status')
@@ -191,7 +201,7 @@ export class LicenseController {
 
   @Post('refresh')
   @HttpCode(200)
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiBearerAuth()
@@ -247,7 +257,7 @@ export class LicenseController {
   }
 
   @Put('key')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Set and activate a license key (ADMIN)' })
@@ -261,7 +271,7 @@ export class LicenseController {
   }
 
   @Post('billing-portal')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({
@@ -279,9 +289,30 @@ export class LicenseController {
     }
   }
 
+  @Post('dpa-link')
+  @HttpCode(200)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
+  @Roles('ADMIN')
+  // Each call creates a session on the licence site.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'One-hour link to accept the Data Processing Agreement on the licence site (cloud, ADMIN, paid plans)',
+  })
+  async dpaLink(@Req() req: any, @Body() dto: DpaLinkDto) {
+    if (!this.deployment.isCloud()) {
+      throw new NotFoundException('The Data Processing Agreement applies to AnythingMCP Cloud only.');
+    }
+    try {
+      return await this.licenseService.createDpaLink(req.user.organizationId, req.user.sub, dto?.locale);
+    } catch (err: any) {
+      throw new BadRequestException(err.message || 'Failed to open the DPA page.');
+    }
+  }
+
   @Post('checkout-link')
   @HttpCode(200)
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   // Each call mints a checkout intent on the licence site: a person clicks
   // this a few times at most, a loop should not be able to do more.
@@ -371,7 +402,7 @@ export class LicenseController {
   }
 
   @Get('pricing-link-token')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary:
@@ -388,7 +419,7 @@ export class LicenseController {
   }
 
   @Get('card-trial-eligibility')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({
@@ -409,7 +440,7 @@ export class LicenseController {
   }
 
   @Get('card-trial-offer')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary:
@@ -425,8 +456,28 @@ export class LicenseController {
     return { offer };
   }
 
+  @Get('wall')
+  @UseGuards(JwtOrManagementKeyGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Cloud: the ended-trial licence wall for an admin: its variant and the workspace\'s own numbers (null otherwise)',
+  })
+  async wallForUser(@Req() req: any): Promise<{ wall: LicenseWallView | null }> {
+    // Only an admin of a Cloud workspace whose free trial ended sees the wall
+    // with the plan picker; everyone else gets null and nothing is recorded.
+    const organizationId: string | undefined = req.user?.organizationId;
+    if (!this.licenseWall || !this.deployment.isCloud() || !organizationId || req.user?.role !== 'ADMIN') {
+      return { wall: null };
+    }
+    const trial = await this.licenseGuard.getTrialState(organizationId).catch(() => null);
+    if (!trial || trial.active) return { wall: null };
+    const wall = await this.licenseWall.view(organizationId, req.user?.sub ?? null).catch(() => null);
+    return { wall };
+  }
+
   @Post('verify')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Force re-verify license against remote API (ADMIN)' })
@@ -436,7 +487,7 @@ export class LicenseController {
   }
 
   @Post('activate-trial')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Start a 7-day cloud trial (cloud mode only)' })
   async activateTrial(@Req() req: any) {
@@ -488,7 +539,7 @@ export class LicenseController {
   }
 
   @Post('register-community')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Request a free community license (sent via email)' })

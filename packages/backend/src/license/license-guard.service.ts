@@ -3,7 +3,8 @@ import { PrismaService } from '../common/prisma.service';
 import { LicenseService } from './license.service';
 import { DeploymentService } from '../common/deployment.service';
 import { cardTrialEnd } from './license-checkout';
-import { codeToolCapForPlan, inlineCodeAllowedForPlan } from './code-mode-quotas';
+import { codeToolCapForPlan, inlineCodeAllowedForPlan, effectiveCodeModePlan } from './code-mode-quotas';
+import type { LicenseInfo } from './license.service';
 
 export interface UsageCap {
   current: number;
@@ -155,7 +156,7 @@ export class LicenseGuardService {
     await this.checkLicenseActive(organizationId);
 
     const license = await this.licenseService.getCurrentLicense(organizationId);
-    const plan = license?.plan ?? 'community';
+    const plan = this.codeModePlan(license);
     const cap = codeToolCapForPlan(plan, (license?.features as any)?.maxCodeTools);
     // Unlimited (Enterprise), or no org to count against: nothing to enforce.
     if (cap == null || !organizationId) return;
@@ -176,7 +177,33 @@ export class LicenseGuardService {
    */
   async canUseInlineCode(organizationId?: string): Promise<boolean> {
     const license = await this.licenseService.getCurrentLicense(organizationId);
-    return inlineCodeAllowedForPlan(license?.plan ?? 'community');
+    return inlineCodeAllowedForPlan(this.codeModePlan(license));
+  }
+
+  /**
+   * The plan this workspace is treated as for code mode. A card-backed Cloud
+   * trial (licence `plan='trial'` with a live `billing.status='trialing'`, i.e.
+   * a card on file) is promoted to the Team experience for the length of the
+   * trial — inline code and the Team code-tool cap — to let a high-intent user
+   * try everything. A free trial (no billing) and every other plan are their
+   * own plan. Self-hosted trials carry no Stripe billing, so they never match.
+   */
+  private codeModePlan(license: LicenseInfo | null): string {
+    const cardTrial =
+      license?.plan === 'trial' && license?.billing?.status === 'trialing';
+    return effectiveCodeModePlan(license?.plan, cardTrial);
+  }
+
+  /**
+   * The effective code-mode plan for a workspace (a card-backed trial resolves
+   * to `team`), so the run-quota enforcement in the MCP code path can look up
+   * this workspace's monthly and concurrency caps. Plan resolution stays here,
+   * next to the other code-mode gating. Returns `community` when there is no
+   * resolvable licence.
+   */
+  async codeModePlanForOrg(organizationId?: string): Promise<string> {
+    const license = await this.licenseService.getCurrentLicense(organizationId);
+    return this.codeModePlan(license);
   }
 
   /** How many saved code tools an organization has (endpoint method 'code'). */
@@ -202,8 +229,11 @@ export class LicenseGuardService {
     const [connectorCount, mcpCount, userCount] = await Promise.all([
       where ? this.prisma.connector.count({ where }) : Promise.resolve(0),
       where ? this.prisma.mcpServerConfig.count({ where }) : Promise.resolve(0),
+      // Active members of the workspace, not users whose primary workspace it
+      // is: someone invited into a second workspace keeps their first one as
+      // User.organizationId, and a deactivated member holds no seat.
       organizationId
-        ? this.prisma.user.count({ where: { organizationId } })
+        ? this.prisma.organizationMember.count({ where: { organizationId, deactivatedAt: null } })
         : Promise.resolve(userId ? 1 : 0),
     ]);
 

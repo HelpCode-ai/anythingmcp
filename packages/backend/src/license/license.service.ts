@@ -7,7 +7,12 @@ import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
 import { FIRST_SUCCESS_KEY } from './card-trial-offer';
-import { parseUnclaimedLicences, type UnclaimedLicence, type UnclaimedSkipReason } from './license-unclaimed';
+import {
+  formatSkipReasons,
+  parseUnclaimedLicences,
+  type UnclaimedLicence,
+  type UnclaimedSkipReason,
+} from './license-unclaimed';
 import { Prisma } from '../generated/prisma/client';
 import { maskEmail } from '../auth/mcp-email-verification';
 import { collectUsageReport, usageReportEnabled, type UsageReport } from './usage-report';
@@ -200,6 +205,17 @@ export interface RemoteVerifyResponse {
   billing?: unknown;
 }
 
+/**
+ * The licence site grants one trial per address. Asked again for an address
+ * whose trial has already ended, it hands that old trial back, expired.
+ */
+export class TrialAlreadyEndedError extends Error {
+  constructor() {
+    super('The free trial for this email has already ended. Choose a plan to continue.');
+    this.name = 'TrialAlreadyEndedError';
+  }
+}
+
 @Injectable()
 export class LicenseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LicenseService.name);
@@ -295,6 +311,48 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         err?.message ||
         'Failed to open the billing portal.';
       this.logger.warn(`Billing portal request failed: ${msg}`);
+      throw new Error(msg);
+    }
+  }
+
+  // ── Data Processing Agreement (Cloud) ──────────────────────────────────────
+
+  /**
+   * A one-hour link to the self-service DPA on the licence site (Cloud only;
+   * the controller checks the deployment mode). Everything about the
+   * agreement — the text, the acceptance record, the PDF, the email — lives
+   * on the licence site; this server only vouches, with its service token,
+   * that the signed-in admin belongs to the workspace the key is bound to.
+   * Paid plans only: a trial gets no DPA.
+   */
+  async createDpaLink(organizationId: string, userId: string, locale?: string): Promise<{ url: string }> {
+    const license = await this.getCurrentLicense(organizationId);
+    if (!license?.licenseKey || license.plan === 'trial' || license.plan === 'community') {
+      throw new Error('The Data Processing Agreement comes with paid plans.');
+    }
+    const [org, admin] = await Promise.all([
+      this.prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } }),
+    ]);
+    if (!admin?.email) throw new Error('No user for this session.');
+    try {
+      const { data } = await axios.post(
+        `${this.apiBase}/api/dpa/session`,
+        {
+          licenseKey: license.licenseKey,
+          organizationId,
+          workspaceName: org?.name ?? undefined,
+          email: admin.email,
+          name: admin.name ?? undefined,
+          ...(locale && { locale }),
+        },
+        { timeout: 15000, headers: this.serviceHeaders() },
+      );
+      if (!data?.url) throw new Error('No DPA link returned.');
+      return { url: data.url as string };
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to open the DPA page.';
+      this.logger.warn(`DPA link request failed: ${msg}`);
       throw new Error(msg);
     }
   }
@@ -495,14 +553,21 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         throw new Error('Trial licence API did not return a key');
       }
 
+      // An address that already had a trial gets that trial back, and it may
+      // have ended. Store it as expired, not active: the workspace then shows
+      // "trial ended" with the plans, and the repair cron does not ask again.
+      const expiresAt = new Date(data.expiresAt);
+      const ended = expiresAt.getTime() <= Date.now();
+      const status = ended ? 'expired' : 'active';
+
       // Auto-activate the trial key locally
       await this.prisma.license.upsert({
         where: { licenseKey: data.licenseKey },
         update: {
           plan: 'trial',
-          status: 'active',
+          status,
           features: data.features || undefined,
-          expiresAt: new Date(data.expiresAt),
+          expiresAt,
           lastVerifiedAt: new Date(),
           instanceId,
           organizationId: organizationId || undefined,
@@ -510,14 +575,19 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         create: {
           licenseKey: data.licenseKey,
           plan: 'trial',
-          status: 'active',
+          status,
           features: data.features || undefined,
-          expiresAt: new Date(data.expiresAt),
+          expiresAt,
           lastVerifiedAt: new Date(),
           instanceId,
           organizationId: organizationId || undefined,
         },
       });
+
+      if (ended) {
+        this.logger.log(`Trial for ${maskEmail(email)} had already ended; stored as expired.`);
+        throw new TrialAlreadyEndedError();
+      }
 
       // Self-hosted = single tenant, the instance-wide pointer is meaningful.
       // Cloud = multi tenant, a global pointer would let one org's verify
@@ -533,6 +603,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         trialDaysLeft: data.trialDaysLeft,
       };
     } catch (err: any) {
+      if (err instanceof TrialAlreadyEndedError) throw err;
       if (err.response?.status === 409) {
         throw new Error('A trial license already exists for this email.');
       }
@@ -753,6 +824,10 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       return out;
     }
 
+    // Skips per reason, for the summary line: the per-licence lines are debug
+    // for the reasons that only wait for the customer, so without this the
+    // hourly line says how many were skipped but not why.
+    const skipReasons = new Map<UnclaimedSkipReason, number>();
     for (const licence of licences) {
       out.listed++;
       const tail = licence.key.slice(-4);
@@ -760,6 +835,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         const target = await this.unclaimedLicenceTarget(licence, now);
         if ('skip' in target) {
           out.skipped++;
+          skipReasons.set(target.skip, (skipReasons.get(target.skip) ?? 0) + 1);
           const log = `Unclaimed licence …${tail} (${maskEmail(licence.email)}) left unbound: ${target.skip}.`;
           if (target.skip === 'already_paid' || target.skip === 'bound_elsewhere') this.logger.warn(log);
           else this.logger.debug(log);
@@ -786,7 +862,9 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
 
     if (out.listed > 0) {
       this.logger.log(
-        `Unclaimed licences: listed=${out.listed} bound=${out.bound} skipped=${out.skipped} failed=${out.failed}`,
+        `Unclaimed licences: listed=${out.listed} bound=${out.bound} skipped=${out.skipped}` +
+          formatSkipReasons(skipReasons) +
+          ` failed=${out.failed}`,
       );
     }
     return out;

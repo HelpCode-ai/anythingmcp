@@ -10,7 +10,7 @@
  * the service token, the retry, and the repair pass.
  */
 import axios from 'axios';
-import { LicenseService } from './license.service';
+import { LicenseService, TrialAlreadyEndedError } from './license.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -211,5 +211,38 @@ describe('LicenseService — repairMissingTrials', () => {
       failed: 0,
     });
     expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it('stores a trial that has already ended as expired and says so, instead of activating it', async () => {
+    const ended = {
+      ...TRIAL_RESPONSE,
+      expiresAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+      trialDaysLeft: 0,
+      alreadyExisted: true,
+    };
+    mockedAxios.post.mockResolvedValue({ data: ended } as any);
+    const { svc, prisma, siteSettings } = makeService({ isCloud: false });
+
+    await expect(svc.requestTrialLicense('user@example.com', 'User', 'org-1')).rejects.toBeInstanceOf(
+      TrialAlreadyEndedError,
+    );
+
+    const [args] = prisma.license.upsert.mock.calls[0] as any[];
+    expect(args.create.status).toBe('expired');
+    expect(args.update.status).toBe('expired');
+    expect(args.update.organizationId).toBe('org-1');
+    // Not made the instance's licence on self-hosted.
+    expect(siteSettings.set).not.toHaveBeenCalled();
+  });
+
+  it('still activates a trial that is running', async () => {
+    mockedAxios.post.mockResolvedValue({ data: TRIAL_RESPONSE } as any);
+    const { svc, prisma } = makeService();
+
+    await svc.requestTrialLicense('user@example.com', 'User', 'org-1');
+
+    const [args] = prisma.license.upsert.mock.calls[0] as any[];
+    expect(args.create.status).toBe('active');
+    expect(args.update.status).toBe('active');
   });
 });

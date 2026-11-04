@@ -99,6 +99,12 @@ x-backend: &backend
     - NEXT_PUBLIC_API_URL=https://${DOMAIN}
     - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
     - REDIS_URL=redis://redis:6379
+    # Code mode: the out-of-process code-runner the backend connects to over
+    # the private network (a separate, secretless droplet). Unset = code mode
+    # unavailable (fail-closed): every run is refused, nothing runs in the
+    # backend. Code mode also stays off until a workspace turns it on per MCP
+    # server (codeMode), so setting this alone exposes nothing.
+    - CODE_RUNNER_URL=${CODE_RUNNER_URL:-}
     - JWT_SECRET=${JWT_SECRET}
     - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     # `plaintext` only to roll back past encrypted connector variables (docs/operations/backup-restore.md)
@@ -156,6 +162,9 @@ x-backend: &backend
     # Largest upstream response one tool call reads, in bytes. Empty = the
     # default, 10 MB, the same as self-hosted (see .env.example).
     - TOOL_MAX_RESPONSE_BYTES=${TOOL_MAX_RESPONSE_BYTES:-}
+    # Public IPs the backend calls APIs from, shown on the setup and connector
+    # pages and named when an IP allowlist refuses a call (see .env.example).
+    - EGRESS_IPS=${EGRESS_IPS:-}
     # Internal MOTIS instance for the Deutsche Bahn connector. When set, the
     # adapter's MOTIS_URL is filled in automatically at import (and hidden
     # from the install form), so cloud users never see or choose it.
@@ -198,6 +207,7 @@ x-backend: &backend
     - SUPPORT_CHAT_URL=${SUPPORT_CHAT_URL:-}
     - SUPPORT_CHAT_INBOX_ID=${SUPPORT_CHAT_INBOX_ID:-}
     - SUPPORT_CHAT_SECRET=${SUPPORT_CHAT_SECRET:-}
+    - SUPPORT_CHAT_DISABLED_ORGS=${SUPPORT_CHAT_DISABLED_ORGS:-}
     - LIBREDESK_API_KEY=${LIBREDESK_API_KEY:-}
     - LIBREDESK_API_SECRET=${LIBREDESK_API_SECRET:-}
     - LIBREDESK_WEBHOOK_SECRET=${LIBREDESK_WEBHOOK_SECRET:-}

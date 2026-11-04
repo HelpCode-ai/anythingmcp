@@ -679,6 +679,28 @@ describe('AdaptersService.verifyCredentials', () => {
     expect(out.message).toContain('An internal error occurred.');
   });
 
+  it('shows the words of a web page answer, never its markup', async () => {
+    // 2 Nov 2026: an Odoo check showed "<html><body><script>window.location…".
+    const err: any = new Error('Request failed with status code 404');
+    err.response = {
+      status: 404,
+      data: '<!DOCTYPE html><html><head><title>Error</title><style>p{color:red}</style></head><body><h1>404 Not Found</h1><p>No route &amp; no page.</p></body></html>',
+    };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: 'k' });
+    expect(out.message).toContain('the server answered with a web page: "Error 404 Not Found No route & no page."');
+    expect(out.message).not.toMatch(/<|color:red/);
+  });
+
+  it('says a page with nothing to read is a web page, not API data', async () => {
+    const err: any = new Error('Request failed with status code 404');
+    err.response = { status: 404, data: '<html><body><script>window.location = "https://example.com/";</script></body></html>' };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: 'k' });
+    expect(out.message).toContain('the server answered with a web page, not API data');
+    expect(out.message).not.toContain('window.location');
+  });
+
   it('does not repeat a body the error message already carries', async () => {
     const err: any = new Error('401 Unauthorized: invalid token');
     err.status = 401;
@@ -1199,5 +1221,51 @@ describe('AdaptersService.verifyCredentials: Odoo JSON-2 answering 404', () => {
     const out: any = await build().verifyCredentials('odoo', 'org1', creds);
     expect(out).toMatchObject({ ok: false, suggest: 'odoo-jsonrpc' });
     expect(out.message).toMatch(/older than 19, or the database name is wrong/);
+  });
+});
+
+describe('AdaptersService check — a server that only accepts approved IPs', () => {
+  const saved = process.env.EGRESS_IPS;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.EGRESS_IPS;
+    else process.env.EGRESS_IPS = saved;
+  });
+
+  function build(execute: jest.Mock) {
+    return new AdaptersService(
+      { connector: { findUnique: jest.fn().mockResolvedValue(null) } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      {
+        get: (k: string) =>
+          k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : k === 'DEPLOYMENT_MODE' ? 'cloud' : undefined,
+      } as any,
+      { executeConnectorCall: execute } as any,
+    );
+  }
+
+  it('names the address to allow when the firewall answers with a page', async () => {
+    // 3 Nov 2026: a self-hosted Bitrix24 behind an IP allowlist answered 403
+    // "Access Restricted"; the check said nothing the user could act on.
+    process.env.EGRESS_IPS = '104.248.242.235';
+    const execute = jest.fn().mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 403'), {
+        response: {
+          status: 403,
+          data: '<!DOCTYPE html><html lang="en"><head><title>Access Restricted</title></head><body>Access Restricted</body></html>',
+        },
+      }),
+    );
+    const out: any = await build(execute).verifyCredentials('bitrix24', 'org1', {
+      BITRIX24_WEBHOOK_URL: 'https://crm.example.com/rest/1/abcdef123456/',
+    });
+    expect(out).toMatchObject({ ok: false, status: 403 });
+    expect(out.message).toMatch(/AnythingMCP Cloud calls every API from the fixed IP address 104\.248\.242\.235/);
+  });
+
+  it('keeps describing the adapter with the addresses to show', () => {
+    process.env.EGRESS_IPS = '104.248.242.235';
+    const info = build(jest.fn()).describe('emag-marketplace');
+    expect(info.egressIps).toEqual(['104.248.242.235']);
+    expect(info.requiresIpAllowlist).toBe(true);
   });
 });

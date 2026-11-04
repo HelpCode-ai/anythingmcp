@@ -384,12 +384,23 @@ model McpApiKey {
   mcpServer      McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
   key            String           @unique
   name           String // label: "Claude Desktop", "Cursor", etc.
+  // What the key may reach. MCP: tool calls on /mcp only (the historical
+  // behaviour, and the default so existing keys keep it). MANAGEMENT_READ /
+  // MANAGEMENT_ADMIN: the /api/* management surface (CLI), read-only or full,
+  // always still capped by the owner's role.
+  scope          McpApiKeyScope   @default(MCP)
   isActive       Boolean          @default(true) @map("is_active")
   lastUsedAt     DateTime?        @map("last_used_at")
   createdAt      DateTime         @default(now()) @map("created_at")
 
   @@index([organizationId])
   @@map("mcp_api_keys")
+}
+
+enum McpApiKeyScope {
+  MCP
+  MANAGEMENT_READ
+  MANAGEMENT_ADMIN
 }
 
 // ── Connector Engine ────────────────────────────────────────────────────────

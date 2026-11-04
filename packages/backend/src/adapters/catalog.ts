@@ -473,11 +473,13 @@ import * as pinkConnect from './intl/pink-connect.json';
 import * as pinterest from './intl/pinterest.json';
 import * as pipedrive from './intl/pipedrive.json';
 import * as pipefy from './intl/pipefy.json';
+import * as pixabay from './intl/pixabay.json';
 import * as plaid from './intl/plaid.json';
 import * as planeSo from './intl/plane-so.json';
 import * as playtomic from './intl/playtomic.json';
 import * as playtomicPublic from './intl/playtomic-public.json';
 import * as plivo from './intl/plivo.json';
+import * as podio from './intl/podio.json';
 import * as podium from './intl/podium.json';
 import * as postgres from './intl/postgres.json';
 import * as posthog from './intl/posthog.json';
@@ -821,6 +823,10 @@ export interface AdapterMeta {
    *  through the user's own app. A chat setup links it next to the callback
    *  URL to register. */
   appRegistrationUrl?: string;
+  /** The API refuses every call from an address not registered with the
+   *  provider (eMAG, Shopee, Korea Law). The setup page then shows the
+   *  instance's outbound IP addresses (EGRESS_IPS) as a required step. */
+  requiresIpAllowlist?: boolean;
   /** OAuth scope sets this adapter asked for in earlier versions. A connector
    *  still holding one of them asks for the current `authConfig.scopes` the
    *  next time it is authorized (oauth-authorize-settings.ts), so tools added
@@ -1477,11 +1483,13 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   pinterest as unknown as AdapterDefinition,
   pipedrive as unknown as AdapterDefinition,
   pipefy as unknown as AdapterDefinition,
+  pixabay as unknown as AdapterDefinition,
   plaid as unknown as AdapterDefinition,
   planeSo as unknown as AdapterDefinition,
   playtomic as unknown as AdapterDefinition,
   playtomicPublic as unknown as AdapterDefinition,
   plivo as unknown as AdapterDefinition,
+  podio as unknown as AdapterDefinition,
   podium as unknown as AdapterDefinition,
   postgres as unknown as AdapterDefinition,
   posthog as unknown as AdapterDefinition,

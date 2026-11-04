@@ -1,4 +1,20 @@
 {
+  "cliAuth": {
+    "title": "Autorizza la CLI amcp",
+    "intro": "{label} su questo computer sta richiedendo una chiave API di gestione.",
+    "scope": "Ambito",
+    "scopeRead": "Gestione — sola lettura",
+    "scopeAdmin": "Gestione — admin",
+    "code": "Codice di verifica",
+    "verifyHint": "Continua solo se hai appena avviato questo dal terminale e questo codice corrisponde a quello mostrato lì.",
+    "authorize": "Autorizza",
+    "working": "Autorizzazione…",
+    "cancel": "Annulla",
+    "signInFirst": "Accedi per continuare; questa pagina tornerà automaticamente.",
+    "invalid": "Questo link di autorizzazione non è valido o non proviene dalla CLI amcp.",
+    "needAdmin": "Questa richiesta richiede una chiave admin, ma il tuo ruolo non può concederla. Chiedi a un admin o richiedi una chiave in sola lettura.",
+    "error": "Impossibile completare l'autorizzazione."
+  },
   "nav": {
     "groups": {
       "overview": "Panoramica",
@@ -150,11 +166,11 @@
     "question": "Come userai Anything<brand>MCP</brand>?",
     "changeLater": "Puoi cambiarlo in seguito in Impostazioni → Licenza.",
     "personal": {
-      "title": "Uso personale, didattico o di valutazione",
-      "description": "Community edition, gratuita, fino a 3 utenti. Ti inviamo via email una chiave community, così ricevi gli avvisi di sicurezza e di rilascio."
+      "title": "Community edition, gratuita",
+      "description": "Gratuita con licenza AGPL-3.0 per qualsiasi uso, anche commerciale, fino a 3 utenti attivi. Ti inviamo via email una chiave community, così ricevi gli avvisi di sicurezza e di rilascio."
     },
     "company": {
-      "title": "Per un'azienda o un team",
+      "title": "Più utenti o single sign-on",
       "description": "Prova Enterprise gratis per 30 giorni: più utenti, single sign-on con Entra ID, Google o Okta, e SCIM. Nessun dato di pagamento."
     },
     "haveKey": "Ho una chiave di licenza",
@@ -170,7 +186,7 @@
     "activate": {
       "title": "Attiva licenza",
       "subtitle": "Inserisci la tua chiave di licenza per attivare Anything<brand>MCP</brand>",
-      "available": "Le chiavi di licenza Starter, Team ed Enterprise sono disponibili su <link>anythingmcp.com</link>."
+      "available": "Le chiavi di licenza Enterprise sono disponibili su richiesta: <link>contattaci</link>. Le chiavi Starter e Team esistenti continuano a funzionare."
     },
     "keyLabel": "Chiave di licenza",
     "submit": "Attiva licenza",
@@ -1026,7 +1042,7 @@
     },
     "wait": {
       "checking": "Chiediamo a {name} della tua app…",
-      "notYet": "{name} non ha ancora approvato la tua app",
+      "notYet": "{name} non accetta ancora queste chiavi",
       "checkedAt": "Ultimo controllo alle {time}. La pagina ricontrolla ogni volta che ci torni.",
       "checkAgain": "Controlla di nuovo",
       "checkingShort": "Controllo in corso…",
@@ -1597,7 +1613,7 @@
       "disable": "Disattiva",
       "enable": "Attiva",
       "proxy": "Proxy",
-      "proxyTitle": "Instrada la richiesta di questo strumento attraverso il proxy / web-unblocker configurato. Consigliato per API con protezione anti-bot, blocchi geografici o limiti di frequenza.",
+      "proxyTitle": "Instrada la richiesta di questo strumento attraverso il proxy / web-unblocker configurato. Consigliato per API con protezione anti-bot, blocchi geografici o limiti di frequenza. Le chiamate tramite proxy partono da indirizzi IP che cambiano: lascialo spento per un server che accetta solo IP autorizzati.",
       "delete": "Elimina",
       "showSql": "Mostra tutto l'SQL",
       "showPath": "Mostra tutto il percorso",
@@ -1931,7 +1947,32 @@
     },
     "apiKeys": {
       "title": "Chiavi API MCP",
-      "body": "Le chiavi API ora si gestiscono per ogni server MCP. Vai su <link>Server MCP</link> per generare e gestire le chiavi di ogni server."
+      "body": "Le chiavi API ora si gestiscono per ogni server MCP. Vai su <link>Server MCP</link> per generare e gestire le chiavi di ogni server.",
+      "management": {
+        "title": "Chiavi API di gestione",
+        "intro": "Le chiavi di gestione controllano l'intera istanza dalla CLI amcp e dall'API di gestione (/api/*) — connettori, server MCP, utenti, ruoli e impostazioni. Le chiavi in sola lettura possono solo leggere; quelle admin possono modificare, sempre nei limiti del tuo ruolo.",
+        "name": "Nome",
+        "namePlaceholder": "es. laptop ops",
+        "scope": "Ambito",
+        "scopeRead": "Gestione — sola lettura",
+        "scopeAdmin": "Gestione — admin",
+        "scopeAdminOnly": "Solo gli admin del workspace possono creare chiavi admin.",
+        "generate": "Genera chiave",
+        "generating": "Generazione…",
+        "created": "Copia subito la chiave — viene mostrata una sola volta.",
+        "copy": "Copia",
+        "copied": "Copiata",
+        "revoke": "Revoca",
+        "delete": "Elimina",
+        "confirmDelete": "Eliminare definitivamente questa chiave? I client che la usano smetteranno di funzionare.",
+        "empty": "Ancora nessuna chiave di gestione.",
+        "active": "Attiva",
+        "revoked": "Revocata",
+        "created_toast": "Chiave di gestione creata",
+        "revoked_toast": "Chiave revocata",
+        "deleted_toast": "Chiave eliminata",
+        "error": "Operazione non riuscita"
+      }
     },
     "danger": {
       "title": "Zona pericolosa",
@@ -2114,7 +2155,7 @@
     "cancel": "Annulla",
     "inviteUser": "Invita utente",
     "dismiss": "chiudi",
-    "licenseSeats": "La tua licenza include {limit} utenti. Per invitare altre persone, cambia piano in <link>Impostazioni → Licenza</link>.",
+    "licenseSeats": "La tua licenza include {limit} utenti. Per più utenti, chiedici di Enterprise in <link>Impostazioni → Licenza</link>.",
     "invite": {
       "title": "Invita un nuovo utente",
       "body": "Invia un'email di invito. La persona riceverà un link per creare il proprio account con il ruolo indicato.",
@@ -2361,6 +2402,7 @@
       "activate": "Attiva chiave di licenza",
       "changePlan": "Per passare a un altro piano, <link>cambialo nel portale di fatturazione</link>: il tuo abbonamento attuale viene modificato e ricalcolato pro rata, non duplicato.",
       "purchase": "Acquista una licenza su <link>anythingmcp.com</link>",
+      "selfHosted": "Inserisci la chiave di licenza che hai ricevuto da noi. Le chiavi Starter e Team esistenti continuano a funzionare.",
       "submit": "Attiva"
     },
     "upgrade": {
@@ -2387,6 +2429,13 @@
       "activating": "Attivazione della licenza…",
       "key": "Chiave:",
       "goToSettings": "Vai alle impostazioni della licenza"
+    },
+    "dpa": {
+      "title": "Accordo sul trattamento dei dati",
+      "body": "Il tuo piano include il nostro accordo sul trattamento dei dati ai sensi dell'art. 28 GDPR. Accettalo online su anythingmcp.com, in inglese o in tedesco: ricevi via email il PDF con il registro di accettazione, senza firma né scansione.",
+      "open": "Apri il DPA",
+      "opening": "Apertura…",
+      "error": "Non è stato possibile aprire la pagina del DPA. Riprova."
     }
   },
   "settingsSso": {
@@ -3246,11 +3295,13 @@
     },
     "locked": {
       "title": "La Ricerca file fa parte delle edizioni a pagamento",
+      "titleEnterprise": "La Ricerca file dopo la prova fa parte di Enterprise",
       "point1": "Cerca dentro file PDF, Excel, Word e Outlook da Claude, ChatGPT, Copilot e altri client AI.",
       "point2": "SFTP, FTP/FTPS, WebDAV e cartelle di rete, sincronizzati in background.",
       "point3": "Link di download temporanei, permessi per ruolo, registro di audit.",
       "startTrial": "Avvia la prova gratuita di 30 giorni",
       "buy": "Acquista una licenza",
+      "contactEnterprise": "Contattaci per Enterprise",
       "activate": "Attiva una licenza",
       "keyToStart": "Registra una chiave Community gratuita in Impostazioni → Licenza per avviare la prova di 30 giorni della Ricerca file. La chiave è gratuita e arriva via email.",
       "keyDuringTrial": "Registra una chiave Community gratuita in Impostazioni → Licenza per usare la Ricerca file durante la prova. La chiave è gratuita e arriva via email.",
@@ -3367,6 +3418,15 @@
       "body": "La ricerca file indicizza i file PDF, Word, Excel e Outlook sul tuo NAS, server o storage e tiene l'indice aggiornato: così l'AI trova cosa c'è scritto nei file, non solo i loro nomi.",
       "cta": "Configura la ricerca file",
       "for": "Apre la procedura guidata per {name}."
+    },
+    "authorize": {
+      "banner": "Stai collegando una cartella per il tuo assistente AI. Quando la cartella è attiva, torni alla chat.",
+      "skip": "Salta e torna alla chat",
+      "opening": "Apertura della configurazione della cartella…",
+      "openFailedTitle": "Non è stato possibile aprire la configurazione della cartella",
+      "openFailed": "Questa pagina è scaduta.",
+      "openFailedHint": "Torna alla chat e collega di nuovo, oppure accedi alla dashboard e configura lì la cartella.",
+      "openWizard": "Configura la cartella nella dashboard"
     }
   },
   "fileShare": {
@@ -3465,5 +3525,32 @@
       "preparing": "Preparazione…",
       "warning": "Apri solo file di persone di cui ti fidi. AnythingMCP non controlla i file per i virus."
     }
+  },
+  "networkNote": {
+    "title": "Il server accetta solo indirizzi IP autorizzati?",
+    "body": "AnythingMCP chiama l'API da {count, plural, one {questo indirizzo} other {questi indirizzi}}. Se il server o l'account accetta solo IP autorizzati (firewall, whitelist IP), {count, plural, one {aggiungilo} other {aggiungili}} lì; altrimenti non serve fare nulla.",
+    "requiredTitle": "Registra l'indirizzo IP",
+    "requiredBody": "{name} accetta solo chiamate da indirizzi IP registrati. Registra {count, plural, one {questo indirizzo} other {questi indirizzi}} nel tuo account {name} prima di iniziare, altrimenti ogni chiamata viene rifiutata.",
+    "requiredNoIps": "{name} accetta solo chiamate da indirizzi IP registrati. Prima di iniziare registra l'indirizzo IP pubblico del server su cui gira AnythingMCP (lo conosce chi gestisce la tua rete), altrimenti ogni chiamata viene rifiutata.",
+    "proxy": "Lascia disattivata l'opzione \"Proxy\" sui tool di un server con whitelist: le chiamate tramite proxy partono da indirizzi che cambiano.",
+    "copy": "Copia",
+    "copied": "Copiato"
+  },
+  "licenseWall": {
+    "title": "Tieni la tua AI collegata alle tue app",
+    "body": "La tua prova di 7 giorni è terminata. Con l'abbonamento {client} continua a lavorare con i tuoi connettori. Tutto ciò che hai configurato resta.",
+    "yourAi": "la tua AI",
+    "recapCalls": "{client} ha fatto {count, plural, one {# chiamata riuscita} other {# chiamate riuscite}} in questo workspace.",
+    "recapCallsWith": "{client} ha fatto {count, plural, one {# chiamata riuscita} other {# chiamate riuscite}} in questo workspace, con {connectors}.",
+    "recapBlocked": "Da quando la prova è terminata, {client} ha provato di nuovo a usarli. Quelle chiamate sono in pausa finché non ti abboni.",
+    "loading": "Caricamento dei piani…",
+    "trust": {
+      "cancel": "Disdici quando vuoi",
+      "stripe": "Pagamento sicuro con Stripe",
+      "hosted": "Ospitato a Francoforte",
+      "gdpr": "GDPR · DPA"
+    },
+    "workspaces": "{count} workspace su AnythingMCP Cloud",
+    "directory": "Presente nella Claude Directory"
   }
 }

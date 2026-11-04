@@ -17,7 +17,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { AdaptersService } from './adapters.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
@@ -118,7 +118,7 @@ export class AdaptersPublicController {
 // Authenticated endpoints
 @ApiTags('Adapters')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/adapters')
 export class AdaptersController {
   constructor(

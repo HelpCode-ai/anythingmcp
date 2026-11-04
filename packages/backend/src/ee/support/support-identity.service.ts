@@ -22,6 +22,7 @@ const ERROR_WINDOW_MS = 24 * 60 * 60_000;
 const MAX_ISSUES = 5;
 const MAX_NAMES = 15;
 const ISSUES_MAX_CHARS = 900;
+const LINKS_MAX_CHARS = 1500;
 
 /**
  * Builds the signed identity the Libredesk widget exchanges for a verified
@@ -102,7 +103,7 @@ export class SupportIdentityService {
       this.license.getCurrentLicense(organizationId).catch(() => null),
       this.prisma.connector.findMany({
         where: { organizationId },
-        select: { id: true, name: true, isActive: true, authStatus: true, authStatusMessage: true },
+        select: { id: true, name: true, isActive: true, authStatus: true, authStatusMessage: true, config: true },
         orderBy: { createdAt: 'asc' },
       }),
     ]);
@@ -118,6 +119,11 @@ export class SupportIdentityService {
     const inactive = connectors.filter((c) => !c.isActive).length;
     attrs.connectors = inactive ? `${connectors.length} (${inactive} inactive)` : String(connectors.length);
     if (connectors.length) attrs.connector_names = connectorNames(connectors);
+    // The desk's assistant reads these: a customer asking where to put a
+    // token gets the page of the connector they already have, not the
+    // generic setup page, which would add a second one.
+    const links = connectorLinks(connectors, process.env.FRONTEND_URL);
+    if (links) attrs.connector_links = links;
     attrs.connector_issues = await this.connectorIssues(organizationId, connectors);
     // "never" with connectors installed is the most common blocker: no AI
     // client is connected to the workspace's MCP server yet.
@@ -182,6 +188,34 @@ export function connectorNames(connectors: Array<{ name: string }>): string {
   const names = connectors.slice(0, MAX_NAMES).map((c) => c.name.slice(0, 60));
   const more = connectors.length - names.length;
   return names.join(', ') + (more > 0 ? ` and ${more} more` : '');
+}
+
+/**
+ * "Name: URL" per installed connector, bounded. A catalog connector links to
+ * its guided setup for that connector (credentials, provider sign-in); one
+ * made by hand to its connector page. Empty without a dashboard URL.
+ */
+export function connectorLinks(
+  connectors: Array<{ id: string; name: string; config?: unknown }>,
+  frontendUrl: string | undefined,
+): string {
+  const base = (frontendUrl || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(base)) return '';
+  const lines: string[] = [];
+  let length = 0;
+  for (const c of connectors.slice(0, MAX_NAMES)) {
+    const slug = (c.config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
+    const id = encodeURIComponent(c.id);
+    const url =
+      typeof slug === 'string' && slug
+        ? `${base}/connectors/setup/${encodeURIComponent(slug)}?connector=${id}`
+        : `${base}/connectors/${id}`;
+    const line = `${c.name.slice(0, 60)}: ${url}`;
+    if (length + line.length + 3 > LINKS_MAX_CHARS) break;
+    lines.push(line);
+    length += line.length + 3;
+  }
+  return lines.join(' | ');
 }
 
 export function splitName(name: string | null | undefined, email: string): { first: string; last: string } {

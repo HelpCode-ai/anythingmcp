@@ -83,6 +83,13 @@ export const ProductEvents = {
    */
   EMPTY_WORKSPACE_PROMPT: 'empty_workspace_prompt',
   /**
+   * File Search plugin (/mcp/file-search): after approving the AI client, an
+   * admin of a workspace with no folder was offered to connect one
+   * (login.controller.ts). metadata.client. Server-only. Read against
+   * file_search_wizard_opened with via 'authorize' and file_search_activated.
+   */
+  FILE_SEARCH_AUTHORIZE_OFFERED: 'file_search_authorize_offered',
+  /**
    * Cloud: on that page the user picked one of the quick-setup apps, and it
    * was added to the workspace as a connector waiting for its credentials
    * (login.controller.ts). metadata.adapterSlug, metadata.client (the OAuth
@@ -131,7 +138,8 @@ export const ProductEvents = {
    *
    * Opened: once per page load; metadata.via = where from ('store',
    * 'welcome', 'store_hint' / 'welcome_hint' for the File Search hint under
-   * the search box, 'connectors_new', 'chat').
+   * the search box, 'connectors_new', 'chat', 'authorize' for the File Search
+   * plugin's setup page after "Approve").
    */
   FILE_SEARCH_WIZARD_OPENED: 'file_search_wizard_opened',
   /**
@@ -286,6 +294,17 @@ export const ProductEvents = {
    * metadata.reminder = 1, metadata.arm = 'holdout'. Once per user.
    */
   ONBOARDING_REMINDER_HOLDOUT: 'onboarding_reminder_holdout',
+  /**
+   * Cloud: an admin of a workspace whose free trial ended was shown the
+   * licence wall, with its buy-in-place plan picker (license-wall.service.ts).
+   * metadata.variant = 'trust' (the wall with the workspace's own numbers and
+   * the trust line) or 'control' (the earlier wall, about 10% of workspaces,
+   * fixed per workspace), metadata.calls = the successful tool calls shown
+   * (0 when none, then no numbers are shown). At most once per workspace a
+   * UTC day. Server-only. Read with Stripe's completed checkouts of
+   * checkout_source 'trial_ended_wall' by organizationId, per variant.
+   */
+  LICENSE_WALL_VIEWED: 'license_wall_viewed',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -299,6 +318,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
+  ProductEvents.FILE_SEARCH_AUTHORIZE_OFFERED,
   ProductEvents.POST_APPROVE_APP_PICKED,
   ProductEvents.SHARED_TOOL_CALLED,
   ProductEvents.ADS_ACTIVATION_REPORTED,
@@ -312,6 +332,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.ETSY_APP_APPROVED_NOTIFIED,
   ProductEvents.ONBOARDING_REMINDER_SENT,
   ProductEvents.ONBOARDING_REMINDER_HOLDOUT,
+  ProductEvents.LICENSE_WALL_VIEWED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
@@ -425,7 +446,7 @@ export class ProductEventService {
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
-  'tool', 'profile', 'setupTool',
+  'tool', 'profile', 'setupTool', 'variant', 'calls',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
@@ -447,6 +468,8 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   protocol: KNOWN_PROTOCOLS,
   preset: KNOWN_PRESETS,
   files: KNOWN_FILE_BUCKETS,
+  // license_wall_viewed (license-wall.service.ts).
+  variant: new Set(['trust', 'control']),
 };
 const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;

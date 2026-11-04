@@ -1,6 +1,6 @@
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { AuditService } from './audit.service';
 import {
   ANALYTICS_DEFAULT_DAYS,
@@ -10,7 +10,7 @@ import {
 
 @ApiTags('Audit')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/audit')
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}

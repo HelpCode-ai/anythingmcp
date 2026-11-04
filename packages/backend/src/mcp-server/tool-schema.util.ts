@@ -130,13 +130,13 @@ export function jsonSchemaToZodShape(
         break;
       case 'number':
       case 'integer':
-        zodType = z.number();
+        zodType = withNumberBounds(z.number(), prop);
         break;
       case 'boolean':
         zodType = z.boolean();
         break;
       case 'array':
-        zodType = z.array(z.any());
+        zodType = z.array(arrayItemType(prop.items));
         break;
       case 'object':
         zodType = z.record(z.string(), z.any());
@@ -161,6 +161,38 @@ export function jsonSchemaToZodShape(
   }
 
   return shape;
+}
+
+/**
+ * The numeric limits a schema declares, so clients see them in the tool
+ * list and a call outside them is refused with the limit in the message,
+ * instead of reaching the vendor (a Telegram `timeout` of 30 against a
+ * maximum of 25 was cut by our 30 s limit). Non-numeric limits are ignored.
+ */
+function withNumberBounds(n: z.ZodNumber, prop: any): z.ZodNumber {
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  if (num(prop.minimum)) n = n.min(prop.minimum);
+  if (num(prop.maximum)) n = n.max(prop.maximum);
+  if (num(prop.exclusiveMinimum)) n = n.gt(prop.exclusiveMinimum);
+  if (num(prop.exclusiveMaximum)) n = n.lt(prop.exclusiveMaximum);
+  return n;
+}
+
+/**
+ * An array's items: a list of allowed strings is kept (Etsy `includes`
+ * offers Shipping, Images, Shop, User, Translations, Inventory, Videos);
+ * anything else stays open, as before.
+ */
+function arrayItemType(items: any): z.ZodType {
+  const values = items?.enum;
+  if (
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.every((v: unknown) => typeof v === 'string')
+  ) {
+    return z.enum(values as [string, ...string[]]);
+  }
+  return z.any();
 }
 
 /**

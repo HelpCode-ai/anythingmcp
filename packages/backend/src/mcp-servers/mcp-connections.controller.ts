@@ -8,7 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { McpConnectionGrantService } from './mcp-connection-grant.service';
 import { PrismaService } from '../common/prisma.service';
@@ -39,7 +39,7 @@ interface UpdateConnectionDto {
  */
 @ApiTags('mcp-connections')
 @Controller('api/mcp-connections')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtOrManagementKeyGuard)
 @ApiBearerAuth()
 export class McpConnectionsController {
   constructor(

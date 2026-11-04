@@ -229,6 +229,7 @@ const KNOWN_ATTRS = [
   'role',
   'connectors',
   'connector_names',
+  'connector_links',
   'connector_issues',
   'last_tool_call',
   'signed_up_at',
@@ -317,6 +318,7 @@ export function triageNote(r: TriageResult, attrs: Record<string, string>): stri
     ['Trial ends', attrs.trial_ends_at],
     ['Connectors', [attrs.connectors, attrs.connector_names].filter(Boolean).join(': ')],
     ['Connector issues', attrs.connector_issues],
+    ['Connector links', attrs.connector_links],
     ['Last AI tool call', attrs.last_tool_call],
     ['Email verified', attrs.email_verified],
   ].filter(([, v]) => v);

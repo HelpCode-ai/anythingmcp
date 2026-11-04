@@ -81,7 +81,11 @@ where Enterprise and admin gating apply again.
 - **Per plan:** saved code tools are capped per plan — Community 3, Starter 5,
   Team 20, Enterprise unlimited (same on Cloud and self-hosted; an Enterprise
   contract can override the cap with the licence feature `maxCodeTools`). Inline
-  code (`code_execute` / `code_propose_tool`) is Team and above.
+  code (`code_execute` / `code_propose_tool`) is Team and above. A Cloud trial
+  with a card on file is treated as Team for code mode for the length of the
+  trial (inline code and the Team cap of 20), so a high-intent user can try
+  everything; a free, card-less trial stays tools-only with the cap of 3. A
+  self-hosted trial carries no billing and so is never promoted.
 - **Writes** happen only in an admin-approved code tool with *Allow write
   tools* on; inline code and read-only tools can never write.
 - **Audit:** every run is recorded (a `code_runs` row), and each tool call the
@@ -113,3 +117,12 @@ so you can check it before a client does.
 A run is bounded by a wall-clock deadline, a memory ceiling, a cap on how many
 tool calls it may make, and limits on output size. A program that exceeds a
 limit fails with a clear error; it never affects other runs or the backend.
+
+On Cloud, where the runner is shared between tenants, two per-workspace quotas
+apply on top of the per-run limits: a **monthly run cap** (trial 100, Starter
+500, Team 5,000, Enterprise unlimited; an Enterprise contract can override it
+with the licence feature `maxCodeRunsPerMonth`) and a **concurrency cap** on
+simultaneous runs (trial/Starter 1, Team 3, Enterprise 10). Over a quota, a run
+is refused with a clear message and nothing is executed. A card-backed trial
+gets the Team quotas. Self-hosted is single-tenant and not metered by runs, so
+neither quota applies there.

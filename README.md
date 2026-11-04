@@ -51,16 +51,16 @@ A gateway forwards calls. A company brain also knows where your documents are, h
 
 | | What it does | Edition |
 |---|---|---|
-| **Every system, one endpoint** | 692 catalog connectors, or your own REST/OpenAPI, SOAP, GraphQL, OData, SQL, IMAP/SMTP or MCP source. Tools register at runtime. [Connectors](#connect-any-api-soap-service-or-database) | All |
-| **File Search** | Indexes SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 or a network share: every PDF page, Excel rows with their column names, Word, PowerPoint, Outlook mails with attachments. The AI answers with file, page and date. [File Search](docs/connectors/file-search.md) | Cloud, paid licence |
-| **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](docs/connectors/file-search.md) | Cloud, paid licence |
+| **Every system, one endpoint** | 694 catalog connectors, or your own REST/OpenAPI, SOAP, GraphQL, OData, SQL, IMAP/SMTP or MCP source. Tools register at runtime. [Connectors](#connect-any-api-soap-service-or-database) | All |
+| **File Search** | Indexes SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 or a network share: every PDF page, Excel rows with their column names, Word, PowerPoint, Outlook mails with attachments. The AI answers with file, page and date. [File Search](docs/connectors/file-search.md) | Cloud; self-hosted Enterprise |
+| **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](docs/connectors/file-search.md) | Cloud; self-hosted Enterprise |
 | **Company memory** | Facts and preferences saved from one AI client and found again in any other: said once in Claude, used by Copilot. Personal and company scopes, with folders and role limits. [Memory](docs/memory.md) | Enterprise |
 | **AI skills** | The procedures your agents follow, written by hand or learned from real requests and fixed errors, approved by an admin. [AI skills](docs/knowledge-graph.md#ai-skills) | All |
 | **Knowledge graph** | How your systems connect, so the agent links a customer in one system to their orders in another without being told. [Knowledge Graph](docs/knowledge-graph.md) | All |
 | **Code Mode** | One short program that calls several tools in an isolated sandbox with no secrets and no network, so a five-step lookup becomes one call. [Code Mode](docs/code-mode.md) | All; write access Enterprise |
 | **Governance** | Roles and per-tool permissions, response mapping that drops fields before they reach the model, an audit log of every call. SSO and SCIM from your directory. [Security](#security-and-governance) | All; SSO/SCIM Enterprise |
 
-The self-hosted Community edition is free for up to 3 active users. Paid licences and the 30-day trial are under **Settings → License**; for Enterprise, write to [info@helpcode.ai](mailto:info@helpcode.ai) or see [anythingmcp.com/enterprise](https://anythingmcp.com/enterprise).
+The self-hosted Community edition is free under AGPL-3.0 for any use, including commercial use, for up to 3 active users, with unlimited connectors and MCP servers. More users, single sign-on, SCIM, File Search beyond the 30-day trial and support come with Enterprise, on request: [contact us](https://anythingmcp.com/contact?plan=enterprise). Administrators can try single sign-on and SCIM for 30 days under **Settings → License**. Existing Starter and Team licence keys keep working.
 
 ---
 

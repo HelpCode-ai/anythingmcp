@@ -20,7 +20,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { PaginationQueryDto } from '../common/pagination.dto';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -105,6 +105,7 @@ import {
   UserCredentialsService,
 } from './user-credentials.service';
 import { supportsUserCredentials } from './user-credential.util';
+import { egressIps } from './egress';
 import {
   SECRET_GUARDED_TYPES,
   SecretExtractor,
@@ -698,7 +699,7 @@ class UpdateEnvVarsDto {
 
 @ApiTags('Connectors')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/connectors')
 export class ConnectorsController {
   private readonly logger = new Logger(ConnectorsController.name);
@@ -1162,10 +1163,12 @@ export class ConnectorsController {
     summary: 'Whether the proxy / web-unblocker is configured on this instance',
     description:
       'Returns { available: true } only when CONNECTOR_PROXY_URL is set. ' +
-      'The UI uses this to show or hide the per-tool "Use proxy" checkbox.',
+      'The UI uses this to show or hide the per-tool "Use proxy" checkbox. ' +
+      '`egressIps` lists the addresses direct calls leave from (EGRESS_IPS), ' +
+      'shown on the connector page for servers that only accept approved IPs.',
   })
   async proxyAvailability() {
-    return { available: !!process.env.CONNECTOR_PROXY_URL };
+    return { available: !!process.env.CONNECTOR_PROXY_URL, egressIps: egressIps() };
   }
 
   @Get('health-check')

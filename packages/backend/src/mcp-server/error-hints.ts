@@ -16,6 +16,8 @@
  * is appended, never substituted for the vendor's own message.
  */
 
+import { ipRefusalHint, looksLikeIpRefusal } from '../connectors/egress';
+
 export interface ErrorHintInput {
   /** Upstream host the request went to, if known (e.g. `purora.weclapp.com`). */
   host?: string | null;
@@ -42,6 +44,10 @@ export interface ErrorHintInput {
   connectorPage?: string;
   /** AnythingMCP Cloud (DEPLOYMENT_MODE=cloud) rather than self-hosted. */
   cloud?: boolean;
+  /** The addresses this instance calls out from (EGRESS_IPS), named when a server refuses them. */
+  egressIps?: string[];
+  /** The call went through the proxy / web-unblocker, whose addresses change. */
+  usedProxy?: boolean;
 }
 
 const MISSING_SCOPE_HINT =
@@ -797,6 +803,13 @@ function ruleHint(input: ErrorHintInput, text: string): string | undefined {
   if (hostMatches(input.host, 'serpapi.com')) {
     const hint = serpapiHint(input.status);
     if (hint) return hint;
+  }
+
+  // Last, so a vendor's own rule wins: a server that only accepts approved
+  // addresses (a self-hosted Bitrix24 behind a firewall answering 403
+  // "Access Restricted", Shopee's source_ip_undeclared). Name the address.
+  if (looksLikeIpRefusal({ status: input.status, text })) {
+    return ipRefusalHint({ ips: input.egressIps ?? [], cloud: input.cloud, usedProxy: input.usedProxy });
   }
 
   return undefined;

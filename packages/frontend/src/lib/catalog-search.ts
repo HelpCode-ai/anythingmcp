@@ -52,7 +52,10 @@
  * document"): those documents are in that app. And a query about something
  * else ("amazon", "excel") ranks a File Search entry it only meets through
  * an alias ("Amazon S3") below the apps it names, and leaves out one it only
- * meets in the description ("PDF, Excel, Word and Outlook files").
+ * meets in the description ("PDF, Excel, Word and Outlook files"). Such a
+ * query ranks the entry as an app only when every word names it, and the
+ * "File Search" in its name counts as an alias: "web search" is Brave Search,
+ * not "WebDAV / Nextcloud (File Search)".
  */
 
 export interface CatalogSearchEntry {
@@ -163,6 +166,9 @@ export const FILE_SEARCH_INTENTS: ReadonlyArray<{
 /** Every File Search entry: the ones FILE_SEARCH_INTENTS suggests. */
 const FILE_SEARCH_SLUGS = new Set(FILE_SEARCH_INTENTS.flatMap((x) => x.slugs));
 
+/** The "File Search" in each such entry's slug and name: an alias, not a name word. */
+const FILE_SEARCH_MARKERS = new Set(['file', 'search']);
+
 /**
  * Cloud drives: File Search does not read them, they have connectors of
  * their own. A query naming one gets no File Search suggestion.
@@ -252,11 +258,32 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Longest query that is matched; the rest is ignored. Queries come from MCP
+ * tools and the support chat without a length limit, and every word is
+ * compared with the whole catalog.
+ */
+export const MAX_QUERY_LENGTH = 500;
+
+/** Letters, digits and everything from À up, as UTF-16 code units. */
+function isWordChar(code: number): boolean {
+  return (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || code >= 0xc0;
+}
+
+/** Outer punctuation trimmed by index: a regex here was quadratic on long runs. */
+function trimPunctuation(word: string): string {
+  let start = 0;
+  let end = word.length;
+  while (start < end && !isWordChar(word.charCodeAt(start))) start++;
+  while (end > start && !isWordChar(word.charCodeAt(end - 1))) end--;
+  return word.slice(start, end);
+}
+
 /** Words of a query, accents dropped, outer punctuation trimmed ("@botfather" → botfather). */
 export function queryWords(query: string): string[] {
-  return fold(query)
+  return fold(query.slice(0, MAX_QUERY_LENGTH))
     .split(/\s+/)
-    .map((w) => w.replace(/^[^a-z0-9À-￿]+|[^a-z0-9À-￿]+$/g, ''))
+    .map(trimPunctuation)
     .filter(Boolean);
 }
 
@@ -330,13 +357,16 @@ function prepare<T extends CatalogSearchEntry>(entry: T): Prepared<T> {
 
 function buildPrepared<T extends CatalogSearchEntry>(entry: T): Prepared<T> {
   const aliases = (entry.aliases ?? []).filter((a) => typeof a === 'string' && a.trim());
-  const nameWords = new Set([...wordsOf(entry.slug), ...wordsOf(entry.name)]);
+  const allNameWords = [...wordsOf(entry.slug), ...wordsOf(entry.name)];
+  // "Nextcloud (File Search)": "search" alone does not name it ("web search").
+  const markers = FILE_SEARCH_SLUGS.has(entry.slug) ? allNameWords.filter((w) => FILE_SEARCH_MARKERS.has(w)) : [];
+  const nameWords = new Set(allNameWords.filter((w) => !markers.includes(w)));
   return {
     entry,
     phrases: [compact(entry.slug), compact(entry.name)].filter(Boolean),
     aliasPhrases: aliases.map(compact).filter(Boolean),
     words: [...nameWords],
-    aliasWords: [...new Set(aliases.flatMap(wordsOf))].filter((w) => !nameWords.has(w)),
+    aliasWords: [...new Set([...markers, ...aliases.flatMap(wordsOf)])].filter((w) => !nameWords.has(w)),
     haystack: haystackOf(entry.text ?? []),
     leads: [
       ...new Set([compact(entry.slug.split('-')[0] ?? ''), compact(fold(entry.name).trim().split(/\s+/)[0] ?? '')]),
@@ -501,15 +531,18 @@ export function searchCatalog<T extends CatalogSearchEntry>(
     let direct = 0;
     let fuzzy = 0;
     let distance = 0;
-    let byName = false;
     let byAlias = false;
+    // Query words matched on the name: a File Search entry is the subject only
+    // when every word names it ("web search" names WebDAV by "web" alone).
+    const fs = FILE_SEARCH_SLUGS.has(entry.slug);
+    let named = 0;
     for (const term of terms) {
       const s = directScore(p, term);
       if (s > 0) {
         score += s;
         direct++;
         matchedTerms.add(term);
-        if (NAME_SCORES.has(s)) byName = true;
+        if (NAME_SCORES.has(s)) named++;
         else if (s !== SCORE.text) byAlias = true;
         continue;
       }
@@ -519,21 +552,23 @@ export function searchCatalog<T extends CatalogSearchEntry>(
         fuzzy++;
         distance += d;
         matchedTerms.add(term);
-        byName = true;
+        named++;
       }
     }
     if (wholeQuery.some((q) => p.phrases.includes(q))) {
       score += SCORE.phrase;
-      byName = true;
+      named = terms.length;
     } else if (wholeQuery.some((q) => p.aliasPhrases.includes(q))) {
       score += SCORE.aliasPhrase;
       byAlias = true;
     }
     if (direct + fuzzy === 0) continue;
-    if (!intent.slugs.length && !byName && FILE_SEARCH_SLUGS.has(entry.slug)) {
-      // "amazon", "excel": a query about something else. Through an alias
-      // ("Amazon S3") the entry goes below the apps the query names; through
-      // the description alone ("PDF, Excel, Word files") it is left out.
+    if (fs && !intent.slugs.length && named < terms.length) {
+      // "amazon", "excel", "web search": a query about something else.
+      // Through an alias ("Amazon S3") or one word of several the entry goes
+      // below the apps the query names; through the description alone
+      // ("PDF, Excel, Word files") it is left out.
+      if (named) byAlias = true;
       if (!byAlias) continue;
       scored.push({ entry, score: Math.min(score, SCORE.text - 1), direct, fuzzy, distance, weak: true });
       continue;
