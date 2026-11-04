@@ -620,7 +620,7 @@
     },
     {
       "name": "etsy_get_shop_reviews",
-      "description": "List the shop's reviews (transactions with feedback): rating, review text, listing id and date, optionally since min_created. Pages with limit and offset.",
+      "description": "List the shop's reviews (transactions with feedback): rating, review text, listing id and date, optionally since min_created. Pages with limit and offset. Etsy treats this endpoint as public and refuses large offsets: to reach older reviews, narrow with min_created instead of paging far.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -630,11 +630,14 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Per page."
+            "description": "Per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100
           },
           "offset": {
             "type": "integer",
-            "description": "Offset."
+            "description": "Pagination offset (0 = first page). Keep it small: Etsy refuses large offsets on this public endpoint.",
+            "minimum": 0
           },
           "min_created": {
             "type": "integer",
