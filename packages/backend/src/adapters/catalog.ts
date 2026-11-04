@@ -309,6 +309,7 @@ import * as height from './intl/height.json';
 import * as helium10 from './intl/helium10.json';
 import * as helius from './intl/helius.json';
 import * as helpScout from './intl/help-scout.json';
+import * as hepsiburada from './intl/hepsiburada.json';
 import * as hetznerCloud from './intl/hetzner-cloud.json';
 import * as hetznerStorageBox from './intl/hetzner-storage-box.json';
 import * as heygen from './intl/heygen.json';
@@ -1318,6 +1319,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   helium10 as unknown as AdapterDefinition,
   helius as unknown as AdapterDefinition,
   helpScout as unknown as AdapterDefinition,
+  hepsiburada as unknown as AdapterDefinition,
   hetznerCloud as unknown as AdapterDefinition,
   hetznerStorageBox as unknown as AdapterDefinition,
   heygen as unknown as AdapterDefinition,
