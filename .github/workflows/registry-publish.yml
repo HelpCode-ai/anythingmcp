@@ -27,6 +27,9 @@ on:
 jobs:
   publish:
     name: Publish server.json
+    # Releases tagged `cli-*` publish the npm CLI, not the MCP server, and their
+    # version never matches server.json — skip them so they don't fail here.
+    if: ${{ github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'cli-') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

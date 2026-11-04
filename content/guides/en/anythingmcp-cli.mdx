@@ -1,0 +1,83 @@
+---
+title: "The AnythingMCP CLI — Run and Manage Your MCP Instance From the Terminal"
+description: "amcp is the official AnythingMCP command-line client. Call MCP tools from your shell and fully manage your instance — connectors, MCP servers, users, roles, SSO and settings — with a management-scoped API key. Install with npm, log in through the browser, script everything. Works for people and for connected AI agents."
+category: "announcements"
+keyword: "AnythingMCP CLI, amcp CLI, MCP CLI, Model Context Protocol CLI, MCP command line, manage MCP server terminal, MCP gateway CLI, npm @anythingmcp/cli, MCP tools from terminal, AI agent CLI"
+publishedAt: "2026-11-04"
+lang: "en"
+featured: true
+---
+
+## Your whole MCP instance, from the terminal
+
+Meet **`amcp`**, the official AnythingMCP command-line client. It does two things:
+
+1. **Call MCP tools** from your shell — discover them, read their schema, run them.
+2. **Drive the management API** (`/api/*`) with a **management-scoped API key** — so a person, or a connected AI agent, can configure the entire instance (connectors, MCP servers, users, roles, SSO, memory, skills, the knowledge graph and settings) without leaving the terminal.
+
+It is open source (AGPL-3.0), works against **AnythingMCP Cloud** and **self-hosted** instances, and installs from npm:
+
+```bash
+npm i -g @anythingmcp/cli
+amcp --help
+```
+
+## Log in
+
+Mint a **management API key** in the dashboard (Settings → Management API keys, read-only or admin), or let the CLI do it through your browser:
+
+```bash
+amcp login --browser --url https://cloud.anythingmcp.com            # read-only
+amcp login --browser --scope admin --url https://cloud.anythingmcp.com
+```
+
+`--browser` opens the instance's authorization page, you approve it under your existing dashboard session (SSO included), and the key comes back to the CLI over a one-shot `127.0.0.1` loopback — it never appears in a URL, log or shell history. To connect to one MCP server for tool calls instead, use `amcp login --url … --server …` with an MCP key.
+
+## Call MCP tools
+
+```bash
+amcp tools ls                       # list tools, with read-only/destructive hints
+amcp tools describe YOUR_TOOL       # full description + input JSON schema
+amcp tools call YOUR_TOOL --args '{"id":"123"}'
+```
+
+## Manage the instance
+
+Everything the dashboard can do, `amcp api` can do with a management key — it is `gh api` for AnythingMCP:
+
+```bash
+amcp api GET  /api/connectors
+amcp api GET  /api/mcp-servers
+amcp api POST /api/mcp-servers --data '{"name":"ops","description":"Ops server"}'
+amcp api PUT  /api/mcp-servers/SERVER_ID --data '{"codeMode":"tools"}'
+```
+
+Not sure what's available? The CLI ships a catalogue of every management operation — no key, no network:
+
+```bash
+amcp api --list                 # every operation, grouped by resource
+amcp api --list mcp-servers     # just one resource
+```
+
+A management key carries the owner's identity and role: it never grants privilege, so admin-only routes still need an admin owner, and read-only keys can only read. The API applies a per-key rate limit, so a runaway agent is refused rather than hammering your instance.
+
+## Built for agents, too
+
+The same management API is exactly what a connected AI agent needs to **onboard and run a workspace end to end** — add a connector, create an MCP server, assign roles, wire SSO, toggle memory and skills — safely, within the scope you grant it. Agents default to read-only.
+
+## Scripting and CI
+
+```bash
+AMCP_URL=https://cloud.anythingmcp.com AMCP_API_KEY=mcp_… amcp api GET /api/users --json
+amcp completion zsh > "${fpath[1]}/_amcp"     # shell completion for bash, zsh, fish
+```
+
+Keys are stored with mode `0600`, HTTPS is required (except loopback for local dev), redirects are refused so a key can't follow a request to another origin, and the key is never accepted as a command argument.
+
+## Get it
+
+- **Install:** `npm i -g @anythingmcp/cli`
+- **Docs:** the full command reference lives in the [CLI README on GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme).
+- **Source:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp).
+
+No AnythingMCP yet? Start free on [cloud.anythingmcp.com](https://cloud.anythingmcp.com), or self-host it.
