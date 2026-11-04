@@ -73,6 +73,15 @@ const MAYBE_SENT_CODES = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'];
 const TIMEOUT_CODES = ['ETIMEDOUT', 'ECONNABORTED'];
 
 /**
+ * The request deadline ran out: axios and outbound-http both raise
+ * ECONNABORTED with "timeout of <n>ms exceeded". Other ECONNABORTED errors
+ * (a socket aborted early) are not this.
+ */
+function isDeadlineError(error: AxiosError): boolean {
+  return error.code === 'ECONNABORTED' && /^timeout of \d+ms exceeded/.test(error.message);
+}
+
+/**
  * Retry-After as milliseconds: delay-seconds or an HTTP date (RFC 9110
  * 10.2.3). Null when absent or unreadable.
  */
@@ -778,11 +787,14 @@ export class RestEngine {
         // A tool that raised its timeout (endpointMapping.timeoutMs) is slow
         // on purpose. Running it again after a timeout would wait that long
         // up to four times, so even an idempotent one is not retried then.
+        // The same holds for any call that used up its whole deadline: a GET
+        // cut at the default 30 s took 124 s over four attempts in prod.
         const slowTimeout =
-          (axiosConfig.timeout ?? 0) > DEFAULT_TOOL_TIMEOUT_MS &&
           error instanceof AxiosError &&
           !error.response &&
-          TIMEOUT_CODES.includes(error.code ?? '');
+          (((axiosConfig.timeout ?? 0) > DEFAULT_TOOL_TIMEOUT_MS &&
+            TIMEOUT_CODES.includes(error.code ?? '')) ||
+            isDeadlineError(error));
         const transient = !slowTimeout && this.isTransientError(error, method);
         const delay = transient ? this.retryDelayMs(error, attempt, delaysMs) : null;
         if (delay === null) {
