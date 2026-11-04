@@ -8,10 +8,12 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
-import { IsString, IsOptional } from 'class-validator';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
+import { IsString, IsOptional, IsIn } from 'class-validator';
 import { McpApiKeysService } from './mcp-api-keys.service';
+import type { McpApiKeyScope } from '../generated/prisma/client';
 
 class CreateKeyDto {
   @ApiProperty({
@@ -28,11 +30,22 @@ class CreateKeyDto {
   @IsOptional()
   @IsString()
   mcpServerId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'What the key may reach. MCP (default): tool calls on /mcp only. ' +
+      'MANAGEMENT_READ / MANAGEMENT_ADMIN: the management API (CLI), read-only ' +
+      'or full. The key is always still capped by the owner\'s role.',
+    enum: ['MCP', 'MANAGEMENT_READ', 'MANAGEMENT_ADMIN'],
+  })
+  @IsOptional()
+  @IsIn(['MCP', 'MANAGEMENT_READ', 'MANAGEMENT_ADMIN'])
+  scope?: McpApiKeyScope;
 }
 
 @ApiTags('MCP API Keys')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/mcp-keys')
 export class McpApiKeysController {
   constructor(private readonly keysService: McpApiKeysService) {}
@@ -51,8 +64,21 @@ export class McpApiKeysController {
   @Post()
   @ApiOperation({ summary: 'Generate a new MCP API key' })
   async generateKey(@Req() req: any, @Body() dto: CreateKeyDto) {
+    const scope: McpApiKeyScope = dto.scope ?? 'MCP';
+    // A full-access management key is only meaningful for an admin; cap the
+    // scope to the owner's role so a non-admin cannot mint one that implies
+    // more than they have (the runtime RolesGuard would deny it anyway).
+    if (scope === 'MANAGEMENT_ADMIN' && req.user.role !== 'ADMIN') {
+      throw new ForbiddenException('MANAGEMENT_ADMIN scope requires an admin role');
+    }
     // Returns the full key — user must save it, it won't be shown again
-    return this.keysService.generate(req.user.sub, req.user.organizationId, dto.name, dto.mcpServerId);
+    return this.keysService.generate(
+      req.user.sub,
+      req.user.organizationId,
+      dto.name,
+      dto.mcpServerId,
+      scope,
+    );
   }
 
   @Post(':id/revoke')

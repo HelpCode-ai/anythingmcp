@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
+import type { McpApiKeyScope } from '../generated/prisma/client';
 
 @Injectable()
 export class McpApiKeysService {
@@ -12,7 +13,13 @@ export class McpApiKeysService {
    * Generate a new MCP API key for a user.
    * Key format: mcp_<32 random hex chars>
    */
-  async generate(userId: string, organizationId: string, name: string, mcpServerId?: string) {
+  async generate(
+    userId: string,
+    organizationId: string,
+    name: string,
+    mcpServerId?: string,
+    scope: McpApiKeyScope = 'MCP',
+  ) {
     // A key for a server is limited to that server, so the server must be one
     // the user can reach: an existing server of an organization they are an
     // active member of. Same answer whether it does not exist or is not
@@ -36,8 +43,8 @@ export class McpApiKeysService {
     const key = `mcp_${randomBytes(32).toString('hex')}`;
 
     return this.prisma.mcpApiKey.create({
-      data: { userId, organizationId, key, name, mcpServerId: mcpServerId || null },
-      select: { id: true, key: true, name: true, isActive: true, mcpServerId: true, createdAt: true },
+      data: { userId, organizationId, key, name, mcpServerId: mcpServerId || null, scope },
+      select: { id: true, key: true, name: true, isActive: true, mcpServerId: true, scope: true, createdAt: true },
     });
   }
 
@@ -51,6 +58,7 @@ export class McpApiKeysService {
         lastUsedAt: true,
         createdAt: true,
         key: true,
+        scope: true,
         mcpServerId: true,
         mcpServer: { select: { id: true, name: true } },
       },

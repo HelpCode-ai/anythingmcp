@@ -1,5 +1,5 @@
 import { Controller, Delete, ForbiddenException, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { FileShareService } from './file-share.service';
@@ -19,7 +19,7 @@ export class FileShareController {
     private readonly connector: FileShareConnectorService,
   ) {}
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Get()
   async list(@Req() req: any, @Query() query: FileShareListQueryDto) {
     const user = req.user;
@@ -40,13 +40,13 @@ export class FileShareController {
     return { ...page, limits, usage, connector };
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Delete(':id')
   revoke(@Req() req: any, @Param('id') id: string) {
     return this.shares.revoke(req.user.organizationId, id, req.user);
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Post('connector')
   createConnector(@Req() req: any) {
     if (req.user.role !== 'ADMIN') throw new ForbiddenException('Only workspace administrators can add the File Share connector.');
@@ -63,7 +63,7 @@ export class FileShareController {
     return this.shares.issueDownload(token, null);
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Post('s/:token/download-internal')
   downloadInternal(@Req() req: any, @Param('token') token: string) {
     return this.shares.issueDownload(token, req.user);
@@ -86,7 +86,7 @@ export class FileShareController {
     file.stream.pipe(res);
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Get('limits')
   async limits(@Req() req: any) {
     return { limits: await this.shares.limits(req.user.organizationId), usage: await this.shares.usage(req.user.organizationId) };

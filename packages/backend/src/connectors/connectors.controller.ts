@@ -20,7 +20,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { PaginationQueryDto } from '../common/pagination.dto';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -699,7 +699,7 @@ class UpdateEnvVarsDto {
 
 @ApiTags('Connectors')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/connectors')
 export class ConnectorsController {
   private readonly logger = new Logger(ConnectorsController.name);

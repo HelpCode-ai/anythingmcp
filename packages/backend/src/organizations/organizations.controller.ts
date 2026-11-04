@@ -14,7 +14,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { IsString, IsOptional, IsBoolean } from 'class-validator';
 import { OrganizationsService } from './organizations.service';
 import { AuthService } from '../auth/auth.service';
@@ -77,7 +77,7 @@ class DeleteOrgDto {
 
 @ApiTags('Organizations')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/organizations')
 export class OrganizationsController {
   constructor(

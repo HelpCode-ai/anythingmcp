@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 import { readConfig, writeConfig, profileName, type Profile } from './config.js';
 import { listClientTools, listTools, serverUrl, withClient } from './mcp.js';
+import { apiRequest, API_METHODS, type ApiMethod } from './rest.js';
 import { completionScript, isShell } from './completion.js';
 
 class CliError extends Error {
@@ -50,6 +51,32 @@ async function readToolArgs(value?: string): Promise<Record<string, unknown>> {
     throw new CliError('--args must be a JSON object', 2);
   }
   return parsed as Record<string, unknown>;
+}
+
+// Like readToolArgs but for a REST body: any JSON value is allowed, and an
+// omitted value means no body. Supports inline JSON, @file and - (stdin).
+async function readData(value: string): Promise<unknown> {
+  let source = value;
+  if (value === '-') {
+    source = '';
+    try { for await (const chunk of process.stdin) source += chunk.toString(); }
+    catch { throw new CliError('Could not read --data from stdin', 2); }
+  } else if (value.startsWith('@')) {
+    if (value.length === 1) throw new CliError('Specify a file after @ in --data', 2);
+    try { source = await readFile(value.slice(1), 'utf8'); }
+    catch { throw new CliError('Could not read --data file', 2); }
+  }
+  try { return JSON.parse(source); }
+  catch { throw new CliError('--data must be valid JSON', 2); }
+}
+
+async function confirmApi(method: string, path: string): Promise<boolean> {
+  const prompt = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = await prompt.question(`${method} ${singleLine(path)} may change data. Run it? [y/N] `);
+    return /^(y|yes)$/i.test(answer.trim());
+  } catch { return false; }
+  finally { prompt.close(); }
 }
 
 async function confirmDestructive(toolName: string): Promise<boolean> {
@@ -131,21 +158,24 @@ export const OPTIONS = {
   url: { type: 'string' }, server: { type: 'string' }, profile: { type: 'string' },
   'key-stdin': { type: 'boolean' }, filter: { type: 'string' }, help: { type: 'boolean', short: 'h' },
   args: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' },
-  timeout: { type: 'string' },
+  timeout: { type: 'string' }, data: { type: 'string' }, management: { type: 'boolean' },
 } as const;
 
 function usage(): string {
   return `Usage:
   amcp login --url <instance-url> --server <server-id> [--key-stdin] [--profile <name>]
+  amcp login --management --url <instance-url> [--key-stdin] [--profile <name>]
   amcp logout [--profile <name>]
   amcp whoami [--profile <name>]
   amcp tools ls [--filter <text>] [--profile <name>]
   amcp tools describe <name> [--profile <name>]
   amcp tools call <name> [--args '<json>' | --args @file.json | --args -] [--yes] [--timeout <seconds>]
+  amcp api <GET|POST|PUT|PATCH|DELETE> <path> [--data '<json>' | --data @file.json | --data -] [--yes] [--url <instance-url>]
   amcp completion <bash|zsh|fish>
 
 Use --json for machine-readable output. For CI, set AMCP_URL, AMCP_SERVER and AMCP_API_KEY.
-The key is never accepted as a command argument.`;
+The key is never accepted as a command argument. 'amcp api' calls the management
+API (/api/*) with a management-scoped key from AMCP_API_KEY or --key-stdin.`;
 }
 
 export async function run(args = process.argv.slice(2)): Promise<number> {
@@ -187,6 +217,27 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
       (values.server || process.env.AMCP_SERVER) && process.env.AMCP_API_KEY;
     const config = toolCommand && hasConnection
       ? { profiles: {} as Record<string, Profile> } : await readConfig();
+    if (command === 'login' && values.management && positionals.length === 1) {
+      const url = values.url || process.env.AMCP_URL;
+      if (!url) throw new CliError('management login requires --url', 2);
+      const key = values['key-stdin']
+        ? await readKey(process.stdin, process.stderr, true)
+        : process.env.AMCP_API_KEY || await readKey(process.stdin, process.stderr, false);
+      // Verify the key reaches the management API before saving it.
+      let result;
+      try { result = await apiRequest({ url, key, method: 'GET', path: '/api/users/me' }); }
+      catch (error) { throw classifyConnectionError(error); }
+      if (result.status === 401 || result.status === 403) {
+        throw new CliError('Authentication failed (401/403)', 3);
+      }
+      if (!result.ok) throw new CliError(`Management API returned HTTP ${result.status}`, 4);
+      const profile: Profile = { url, server: '', key: '', managementKey: key };
+      config.profiles[name] = profile;
+      await writeConfig(config);
+      print({ loggedIn: true, profile: name, url: instanceUrl(profile), management: true }, json,
+        () => process.stdout.write(`Logged in to ${new URL(url).origin} (management, profile: ${name}).\n`));
+      return 0;
+    }
     if (command === 'login' && positionals.length === 1) {
       const url = values.url || process.env.AMCP_URL;
       const server = values.server || process.env.AMCP_SERVER;
@@ -216,11 +267,58 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
     const stored = Object.hasOwn(config.profiles, name) ? config.profiles[name] : undefined;
     if (command === 'whoami' && positionals.length === 1) {
       if (!stored) throw new CliError('Profile not found; run amcp login', 2);
-      const keyHint = stored.key.startsWith('mcp_') && stored.key.length > 8
-        ? `${stored.key.slice(0, 8)}…` : '[hidden]';
-      print({ profile: name, url: instanceUrl(stored), endpoint: serverUrl(stored).toString(), server: stored.server, key: keyHint }, json,
-        () => process.stdout.write(`Profile: ${name}\nURL: ${serverUrl(stored).toString()}\nKey: ${keyHint}\n`));
+      const hint = (k?: string) => k ? (k.startsWith('mcp_') && k.length > 8 ? `${k.slice(0, 8)}…` : '[hidden]') : undefined;
+      const hasMcp = !!(stored.server && stored.key);
+      const endpoint = hasMcp ? serverUrl(stored).toString() : undefined;
+      print(
+        { profile: name, url: instanceUrl(stored), endpoint, server: stored.server || undefined,
+          key: hint(stored.key), managementKey: hint(stored.managementKey) },
+        json,
+        () => {
+          process.stdout.write(`Profile: ${name}\nURL: ${instanceUrl(stored)}\n`);
+          if (hasMcp) process.stdout.write(`MCP endpoint: ${endpoint}\nMCP key: ${hint(stored.key)}\n`);
+          if (stored.managementKey) process.stdout.write(`Management key: ${hint(stored.managementKey)}\n`);
+        });
       return 0;
+    }
+    if (command === 'api') {
+      const method = (subcommand || '').toUpperCase();
+      const path = positionals[2];
+      if (positionals.length !== 3 || !method || !path) {
+        throw new CliError('Usage: amcp api <GET|POST|PUT|PATCH|DELETE> <path>', 2);
+      }
+      if (!(API_METHODS as readonly string[]).includes(method)) {
+        throw new CliError(`Unsupported method: ${singleLine(method)}`, 2);
+      }
+      if (!path.startsWith('/')) throw new CliError('Path must start with /', 2);
+      const url = values.url || process.env.AMCP_URL || stored?.url;
+      if (!url) throw new CliError('Set --url or AMCP_URL, or log in first', 2);
+      // The management key never comes from argv: env or stdin only. A stored
+      // profile key is an MCP key and is not used for the management API.
+      const key = process.env.AMCP_API_KEY ||
+        (values['key-stdin'] ? await readKey(process.stdin, process.stderr, true) : '') ||
+        (stored?.managementKey && stored.url && sameOrigin(url, stored.url) ? stored.managementKey : '');
+      if (!key) throw new CliError('Set AMCP_API_KEY, pass --key-stdin, or log in with: amcp login --management', 2);
+      const safe = method === 'GET' || method === 'HEAD';
+      const body = values.data !== undefined ? await readData(values.data) : undefined;
+      if (!safe && !values.yes) {
+        if (!process.stdin.isTTY) {
+          throw new CliError(`${method} may change data; pass --yes in non-interactive mode`, 2);
+        }
+        if (!await confirmApi(method, path)) throw new CliError('Cancelled', 2);
+      }
+      let result;
+      try {
+        result = await apiRequest({ url, key, method: method as ApiMethod, path, body });
+      } catch (error) {
+        throw classifyConnectionError(error);
+      }
+      if (result.status === 401 || result.status === 403) {
+        throw new CliError(`Authentication failed (${result.status})`, 3);
+      }
+      print({ status: result.status, data: result.data }, json,
+        () => process.stdout.write(`${JSON.stringify(result.data, null, 2)}\n`));
+      return result.ok ? 0 : result.status >= 500 ? 4 : 1;
     }
     if (toolCommand && (subcommand === 'ls' ? positionals.length === 2 : positionals.length === 3)) {
       const urlOverridden = !!(values.url || process.env.AMCP_URL);

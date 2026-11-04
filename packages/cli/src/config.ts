@@ -8,6 +8,10 @@ export interface Profile {
   url: string;
   server: string;
   key: string;
+  // A management-scoped key for the /api/* management surface (amcp api).
+  // Stored alongside the MCP key; a management-only login leaves server/key
+  // empty and sets this.
+  managementKey?: string;
 }
 
 type Config = { profiles: Record<string, Profile> };
@@ -21,7 +25,8 @@ export function configPath(env: NodeJS.ProcessEnv = process.env): string {
 function validProfile(value: unknown): value is Profile {
   if (!value || typeof value !== 'object') return false;
   const p = value as Record<string, unknown>;
-  return typeof p.url === 'string' && typeof p.server === 'string' && typeof p.key === 'string';
+  return typeof p.url === 'string' && typeof p.server === 'string' && typeof p.key === 'string' &&
+    (p.managementKey === undefined || typeof p.managementKey === 'string');
 }
 
 export async function readConfig(path = configPath()): Promise<Config> {

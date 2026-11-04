@@ -14,7 +14,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import {
   IsString,
   IsOptional,
@@ -304,7 +304,7 @@ class PreviewMappingDto {
 
 @ApiTags('Tools')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/connectors/:connectorId/tools')
 export class ToolsController {
   constructor(

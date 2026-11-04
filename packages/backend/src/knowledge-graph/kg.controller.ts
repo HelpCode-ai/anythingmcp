@@ -11,7 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
@@ -159,7 +159,7 @@ class SetMyLearningDto {
 
 @ApiTags('Knowledge Graph')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(JwtOrManagementKeyGuard, RolesGuard)
 @Controller('api/knowledge-graph')
 export class KgController {
   constructor(

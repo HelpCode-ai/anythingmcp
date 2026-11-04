@@ -96,3 +96,40 @@ afterwards. The scripts are static and do not read the config file or contact a
 server, so profile and tool names are not completed. `completion` always prints
 the script as plain text, even with `--json`. Any shell other than `bash`, `zsh`
 or `fish` exits with code `2`.
+
+## Management API (`amcp api`)
+
+Beyond calling MCP tools, `amcp` can drive the instance's **management API**
+(`/api/*`) — connectors, MCP servers, roles, users, SSO, settings, memory,
+skills, the knowledge graph and more — with a **management-scoped** API key.
+
+A management key is an ordinary MCP API key minted with a management scope
+(`MANAGEMENT_READ` or `MANAGEMENT_ADMIN`) from the dashboard or `POST
+/api/mcp-keys`. It carries the owner's identity and role: it never grants
+privilege, so admin-only routes still require an admin owner. `MANAGEMENT_READ`
+keys may call only safe methods (GET/HEAD).
+
+Log in with a management key (no server needed), then call any endpoint:
+
+```bash
+printf '%s\n' "$AMCP_API_KEY" | amcp login --management --url https://cloud.anythingmcp.com --key-stdin
+amcp api GET /api/connectors
+amcp api GET /api/mcp-servers
+amcp api POST /api/mcp-servers --data '{"name":"ops","description":"Ops server"}'
+amcp api PUT  /api/mcp-servers/SERVER_ID --data '{"codeMode":"tools"}'
+```
+
+For CI, skip the profile and pass the key in the environment:
+
+```bash
+AMCP_URL=https://cloud.anythingmcp.com AMCP_API_KEY=mcp_… amcp api GET /api/users --json
+```
+
+The key comes from `AMCP_API_KEY`, `--key-stdin`, or a saved management profile —
+never from a command argument. A non-safe method asks for confirmation on a
+terminal; pass `--yes` in scripts. `--data` accepts inline JSON, `@file.json` or
+`-` (stdin). Output is the parsed JSON body; `--json` wraps it with the status.
+Exit codes match the rest of the CLI: `1` for a 4xx result, `3` for 401/403,
+`4` for 5xx or a connection failure. The management API applies a per-key
+rate limit, so a runaway client is refused with HTTP 429 rather than hammering
+the instance.

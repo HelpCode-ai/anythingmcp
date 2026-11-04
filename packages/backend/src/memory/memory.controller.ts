@@ -12,7 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
@@ -139,7 +139,7 @@ class SetMemoryAccessDto {
 
 @ApiTags('Memory')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(JwtOrManagementKeyGuard, RolesGuard)
 @Controller('api/memory')
 export class MemoryController {
   constructor(
