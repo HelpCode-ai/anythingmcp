@@ -1,4 +1,20 @@
 {
+  "cliAuth": {
+    "title": "Authorize the amcp CLI",
+    "intro": "{label} on this computer is requesting a management API key.",
+    "scope": "Scope",
+    "scopeRead": "Management — read-only",
+    "scopeAdmin": "Management — admin",
+    "code": "Verification code",
+    "verifyHint": "Only continue if you just started this from your terminal and this code matches the one shown there.",
+    "authorize": "Authorize",
+    "working": "Authorizing…",
+    "cancel": "Cancel",
+    "signInFirst": "Sign in to continue; this page will return automatically.",
+    "invalid": "This authorization link is invalid or did not come from the amcp CLI.",
+    "needAdmin": "This request asks for an admin key, but your role cannot grant one. Ask an admin, or request a read-only key.",
+    "error": "Could not complete the authorization."
+  },
   "nav": {
     "groups": {
       "overview": "Overview",
@@ -1931,7 +1947,32 @@
     },
     "apiKeys": {
       "title": "MCP API Keys",
-      "body": "API keys are now managed per MCP server. Go to <link>MCP Servers</link> to generate and manage keys for each server."
+      "body": "API keys are now managed per MCP server. Go to <link>MCP Servers</link> to generate and manage keys for each server.",
+      "management": {
+        "title": "Management API keys",
+        "intro": "Management keys drive your whole instance from the amcp CLI and the management API (/api/*) — connectors, MCP servers, users, roles and settings. Read-only keys can only read; admin keys can change things, still limited by your own role.",
+        "name": "Name",
+        "namePlaceholder": "e.g. ops laptop",
+        "scope": "Scope",
+        "scopeRead": "Management — read-only",
+        "scopeAdmin": "Management — admin",
+        "scopeAdminOnly": "Only workspace admins can mint admin keys.",
+        "generate": "Generate key",
+        "generating": "Generating…",
+        "created": "Copy your key now — it is shown only once.",
+        "copy": "Copy",
+        "copied": "Copied",
+        "revoke": "Revoke",
+        "delete": "Delete",
+        "confirmDelete": "Delete this key permanently? Any client using it stops working.",
+        "empty": "No management keys yet.",
+        "active": "Active",
+        "revoked": "Revoked",
+        "created_toast": "Management key created",
+        "revoked_toast": "Key revoked",
+        "deleted_toast": "Key deleted",
+        "error": "Could not complete that"
+      }
     },
     "danger": {
       "title": "Danger Zone",

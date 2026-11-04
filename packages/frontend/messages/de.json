@@ -1,4 +1,20 @@
 {
+  "cliAuth": {
+    "title": "amcp-CLI autorisieren",
+    "intro": "{label} auf diesem Computer fordert einen Management-API-Schlüssel an.",
+    "scope": "Berechtigung",
+    "scopeRead": "Management — nur Lesen",
+    "scopeAdmin": "Management — Admin",
+    "code": "Bestätigungscode",
+    "verifyHint": "Fahren Sie nur fort, wenn Sie dies gerade im Terminal gestartet haben und dieser Code mit dem dort angezeigten übereinstimmt.",
+    "authorize": "Autorisieren",
+    "working": "Wird autorisiert…",
+    "cancel": "Abbrechen",
+    "signInFirst": "Melden Sie sich an, um fortzufahren; diese Seite kehrt automatisch zurück.",
+    "invalid": "Dieser Autorisierungslink ist ungültig oder stammt nicht von der amcp-CLI.",
+    "needAdmin": "Diese Anfrage verlangt einen Admin-Schlüssel, aber Ihre Rolle kann keinen vergeben. Fragen Sie einen Admin oder fordern Sie einen Nur-Lese-Schlüssel an.",
+    "error": "Autorisierung konnte nicht abgeschlossen werden."
+  },
   "nav": {
     "groups": {
       "overview": "Übersicht",
@@ -1931,7 +1947,32 @@
     },
     "apiKeys": {
       "title": "MCP-API-Schlüssel",
-      "body": "API-Schlüssel werden jetzt pro MCP-Server verwaltet. Unter <link>MCP-Server</link> erstellen und verwalten Sie die Schlüssel für jeden Server."
+      "body": "API-Schlüssel werden jetzt pro MCP-Server verwaltet. Unter <link>MCP-Server</link> erstellen und verwalten Sie die Schlüssel für jeden Server.",
+      "management": {
+        "title": "Management-API-Schlüssel",
+        "intro": "Management-Schlüssel steuern Ihre gesamte Instanz über die amcp-CLI und die Management-API (/api/*) — Connectors, MCP-Server, Benutzer, Rollen und Einstellungen. Nur-Lese-Schlüssel können nur lesen; Admin-Schlüssel können ändern, weiterhin begrenzt durch Ihre eigene Rolle.",
+        "name": "Name",
+        "namePlaceholder": "z. B. Ops-Laptop",
+        "scope": "Berechtigung",
+        "scopeRead": "Management — nur Lesen",
+        "scopeAdmin": "Management — Admin",
+        "scopeAdminOnly": "Nur Workspace-Admins können Admin-Schlüssel erstellen.",
+        "generate": "Schlüssel erstellen",
+        "generating": "Wird erstellt…",
+        "created": "Kopieren Sie den Schlüssel jetzt — er wird nur einmal angezeigt.",
+        "copy": "Kopieren",
+        "copied": "Kopiert",
+        "revoke": "Widerrufen",
+        "delete": "Löschen",
+        "confirmDelete": "Diesen Schlüssel endgültig löschen? Clients, die ihn verwenden, funktionieren nicht mehr.",
+        "empty": "Noch keine Management-Schlüssel.",
+        "active": "Aktiv",
+        "revoked": "Widerrufen",
+        "created_toast": "Management-Schlüssel erstellt",
+        "revoked_toast": "Schlüssel widerrufen",
+        "deleted_toast": "Schlüssel gelöscht",
+        "error": "Konnte nicht abgeschlossen werden"
+      }
     },
     "danger": {
       "title": "Gefahrenzone",

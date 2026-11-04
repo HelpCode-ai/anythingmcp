@@ -1,6 +1,6 @@
 import { Controller, Delete, ForbiddenException, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-import { ApiTags } from '@nestjs/swagger';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { FileShareService } from './file-share.service';
 import { FileShareConnectorService } from './file-share-connector.service';
@@ -19,8 +19,9 @@ export class FileShareController {
     private readonly connector: FileShareConnectorService,
   ) {}
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Get()
+  @ApiOperation({ summary: 'List File Share links' })
   async list(@Req() req: any, @Query() query: FileShareListQueryDto) {
     const user = req.user;
     // Members see their own links; administrators every link, or only theirs.
@@ -40,36 +41,42 @@ export class FileShareController {
     return { ...page, limits, usage, connector };
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Delete(':id')
+  @ApiOperation({ summary: 'Revoke a File Share link' })
   revoke(@Req() req: any, @Param('id') id: string) {
     return this.shares.revoke(req.user.organizationId, id, req.user);
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Post('connector')
+  @ApiOperation({ summary: 'Create the File Share connector (admin only)' })
   createConnector(@Req() req: any) {
     if (req.user.role !== 'ADMIN') throw new ForbiddenException('Only workspace administrators can add the File Share connector.');
     return this.connector.ensure(req.user);
   }
 
   @Get('s/:token')
+  @ApiOperation({ summary: 'Describe a public share by its token (public)' })
   describe(@Param('token') token: string) {
     return this.shares.describe(token);
   }
 
   @Post('s/:token/download')
+  @ApiOperation({ summary: 'Issue a download for a public share (public)' })
   download(@Param('token') token: string) {
     return this.shares.issueDownload(token, null);
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Post('s/:token/download-internal')
+  @ApiOperation({ summary: 'Issue a download for an internal share (signed-in member)' })
   downloadInternal(@Req() req: any, @Param('token') token: string) {
     return this.shares.issueDownload(token, req.user);
   }
 
   @Get('d/:signed')
+  @ApiOperation({ summary: 'Stream a signed file download (public)' })
   async stream(@Param('signed') signed: string, @Res() res: Response) {
     const file = await this.shares.openSigned(signed);
     const ascii = file.filename.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
@@ -86,8 +93,9 @@ export class FileShareController {
     file.stream.pipe(res);
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @Get('limits')
+  @ApiOperation({ summary: 'Get File Share limits and usage' })
   async limits(@Req() req: any) {
     return { limits: await this.shares.limits(req.user.organizationId), usage: await this.shares.usage(req.user.organizationId) };
   }

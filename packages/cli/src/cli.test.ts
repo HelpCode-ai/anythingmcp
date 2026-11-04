@@ -499,7 +499,7 @@ test('bash completion suggests commands, subcommands, flags and shells', async (
       'bash', file, 'amcp', ...words]);
     return stdout.split('\n').filter(Boolean).sort();
   };
-  assert.deepEqual(await complete(''), ['completion', 'login', 'logout', 'tools', 'whoami']);
+  assert.deepEqual(await complete(''), ['api', 'completion', 'login', 'logout', 'tools', 'whoami']);
   assert.deepEqual(await complete('tools', 'c'), ['call']);
   assert.deepEqual(await complete('--profile', 'work', 'tools', ''), ['call', 'describe', 'ls']);
   assert.deepEqual(await complete('tools', 'call', 'my_tool', '--t'), ['--timeout']);
@@ -516,9 +516,172 @@ test('fish completion suggests commands, subcommands, flags and shells', async (
     const { stdout } = await execFileAsync('fish', ['--no-config', '-c', 'source $argv[1]; complete -C $argv[2]', file, line]);
     return stdout.split('\n').filter(Boolean).map((entry) => entry.split('\t')[0]).sort();
   };
-  assert.deepEqual(await complete('amcp '), ['completion', 'login', 'logout', 'tools', 'whoami']);
+  assert.deepEqual(await complete('amcp '), ['api', 'completion', 'login', 'logout', 'tools', 'whoami']);
   assert.deepEqual(await complete('amcp tools c'), ['call']);
   assert.deepEqual(await complete('amcp --profile work tools '), ['call', 'describe', 'ls']);
   assert.deepEqual(await complete('amcp tools call my_tool --t'), ['--timeout']);
   assert.deepEqual(await complete('amcp completion '), ['bash', 'fish', 'zsh']);
+});
+
+test('api calls the management API with a bearer key and maps status codes', async () => {
+  const seen: { method?: string; path: string; auth?: string; body: string }[] = [];
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk.toString();
+    seen.push({ method: req.method, path: req.url || '', auth: req.headers['authorization'] as string | undefined, body });
+    if (req.headers['authorization'] !== 'Bearer mcp_mgmtsecret') { res.writeHead(401); res.end('{}'); return; }
+    if (req.url === '/api/users/me') {
+      res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ email: 'me@test.local' })); return;
+    }
+    if (req.url === '/api/connectors' && req.method === 'POST') {
+      res.writeHead(201, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ created: JSON.parse(body || '{}') })); return;
+    }
+    if (req.url === '/api/forbidden') { res.writeHead(403); res.end('{}'); return; }
+    res.writeHead(404); res.end('{}');
+  });
+  server.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const cli = join(__dirname, 'index.js');
+    const env = { ...process.env, AMCP_URL: base, AMCP_API_KEY: 'mcp_mgmtsecret' };
+    const me = await execFileAsync(process.execPath, [cli, 'api', 'GET', '/api/users/me'], { env });
+    assert.match(me.stdout, /me@test\.local/);
+    const created = await execFileAsync(process.execPath, [cli, 'api', 'POST', '/api/connectors', '--data', '{"name":"x"}', '--yes'], { env });
+    assert.match(created.stdout, /"name": "x"/);
+    const forbidden = await execFileAsync(process.execPath, [cli, 'api', 'GET', '/api/forbidden'], { env })
+      .then(() => { throw new Error('should have failed'); }, (error: { code?: number; stdout?: string; stderr?: string }) => error);
+    assert.equal(forbidden.code, 3);
+    assert.doesNotMatch((forbidden.stdout || '') + (forbidden.stderr || ''), /mcp_mgmtsecret/);
+    assert.ok(seen.length > 0 && seen.every((r) => r.auth === 'Bearer mcp_mgmtsecret'), 'bearer key sent on every request');
+  } finally {
+    server.close();
+  }
+});
+
+test('management login stores a management key and api uses it from the profile', async () => {
+  const server = createServer(async (req, res) => {
+    if (req.headers['authorization'] !== 'Bearer mcp_mgmtlogin') { res.writeHead(401); res.end('{}'); return; }
+    if (req.url === '/api/users/me') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ email: 'owner@test.local', role: 'ADMIN' }));
+      return;
+    }
+    res.writeHead(404); res.end('{}');
+  });
+  server.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const cli = join(__dirname, 'index.js');
+    const directory = await mkdtemp(join(tmpdir(), 'amcp-mgmt-'));
+    const env = { ...process.env, XDG_CONFIG_HOME: directory, AMCP_API_KEY: 'mcp_mgmtlogin' };
+    const login = await execFileAsync(process.execPath, [cli, 'login', '--management', '--url', base], { env });
+    assert.match(login.stdout, /management/);
+    assert.doesNotMatch(login.stdout + login.stderr, /mcp_mgmtlogin/);
+    const stored = JSON.parse(await readFile(join(directory, 'amcp', 'config.json'), 'utf8'));
+    assert.equal(stored.profiles.default.managementKey, 'mcp_mgmtlogin');
+    assert.equal(stored.profiles.default.key, '');
+    assert.equal(stored.profiles.default.server, '');
+    // No AMCP_API_KEY in env now: the api command must use the stored key.
+    const noKeyEnv: NodeJS.ProcessEnv = { ...env };
+    delete noKeyEnv.AMCP_API_KEY;
+    delete noKeyEnv.AMCP_URL;
+    const me = await execFileAsync(process.execPath, [cli, 'api', 'GET', '/api/users/me'], { env: noKeyEnv });
+    assert.match(me.stdout, /owner@test\.local/);
+    assert.doesNotMatch(me.stdout + me.stderr, /mcp_mgmtlogin/);
+    const identity = await execFileAsync(process.execPath, [cli, 'whoami'], { env: noKeyEnv });
+    assert.match(identity.stdout, /Management key: mcp_mgmt/);
+  } finally {
+    server.close();
+  }
+});
+
+test('api --list prints the generated management operation catalogue', async () => {
+  const { OPERATIONS } = await import('./generated/operations.js');
+  const cli = join(__dirname, 'index.js');
+
+  // JSON listing matches the generated catalogue and covers the core surface.
+  const listed = JSON.parse((await execFileAsync(process.execPath, [cli, 'api', '--list', '--json'])).stdout);
+  assert.equal(listed.operations.length, OPERATIONS.length);
+  const paths = new Set(listed.operations.map((o: { path: string }) => o.path));
+  for (const p of ['/api/users/me', '/api/mcp-servers', '/api/connectors', '/api/mcp-keys']) {
+    assert.ok(paths.has(p), `catalogue is missing ${p}`);
+  }
+  // Every operation is well-formed and reachable by `amcp api <METHOD> <path>`.
+  for (const op of listed.operations) {
+    assert.ok(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(op.method), `bad method ${op.method}`);
+    assert.ok(op.path.startsWith('/api/'), `bad path ${op.path}`);
+    assert.equal(typeof op.admin, 'boolean');
+    assert.ok(Array.isArray(op.pathParams));
+  }
+  // The core management resources are all represented (coverage guard).
+  const resources = new Set(listed.operations.map((o: { resource: string }) => o.resource));
+  for (const r of ['mcp-servers', 'connectors', 'users', 'roles', 'mcp-keys', 'file-search']) {
+    assert.ok(resources.has(r), `catalogue is missing resource ${r}`);
+  }
+
+  // Text listing filtered to one resource shows only that resource's routes.
+  const text = (await execFileAsync(process.execPath, [cli, 'api', '--list', 'mcp-servers'])).stdout;
+  assert.match(text, /\/api\/mcp-servers/);
+  assert.doesNotMatch(text, /\/api\/connectors/);
+});
+
+test('browser login delivers a key over the loopback callback and binds state', async () => {
+  const { browserAuthorize } = await import('./browser-auth.js');
+  process.env.AMCP_NO_BROWSER = '1';
+
+  // Simulate the dashboard page: read the authorize URL, POST the key to the
+  // loopback callback as an x-www-form-urlencoded form, exactly as /cli-auth does.
+  const postForm = (callback: string, fields: Record<string, string>, origin?: string) => {
+    const body = new URLSearchParams(fields).toString();
+    return fetch(callback, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', ...(origin ? { origin } : {}) },
+      body,
+    });
+  };
+
+  // Happy path: the key arrives and the scope/label reach the authorize URL.
+  const ok = await browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'admin', label: 'amcp CLI (test)',
+    onUrl: (url) => {
+      const u = new URL(url);
+      assert.equal(u.pathname, '/cli-auth');
+      assert.equal(u.searchParams.get('scope'), 'MANAGEMENT_ADMIN');
+      assert.equal(u.searchParams.get('label'), 'amcp CLI (test)');
+      const callback = u.searchParams.get('callback')!;
+      const state = u.searchParams.get('state')!;
+      assert.match(callback, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+      void postForm(callback, { state, key: 'mcp_browserflow' }, 'https://example.test');
+    },
+  });
+  assert.equal(ok.key, 'mcp_browserflow');
+
+  // A mismatched state is rejected (a stray or forged callback cannot win).
+  await assert.rejects(browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const callback = new URL(url).searchParams.get('callback')!;
+      void postForm(callback, { state: 'wrong', key: 'mcp_nope' });
+    },
+  }), /State mismatch/);
+
+  // An explicit denial is surfaced as an error, not a saved key.
+  await assert.rejects(browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const u = new URL(url);
+      void postForm(u.searchParams.get('callback')!, { state: u.searchParams.get('state')!, error: 'access_denied' });
+    },
+  }), /declined/);
+
+  delete process.env.AMCP_NO_BROWSER;
 });

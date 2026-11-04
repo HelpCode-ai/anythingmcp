@@ -16,7 +16,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsIn, IsString, IsOptional, Matches } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
@@ -201,7 +201,7 @@ export class LicenseController {
 
   @Post('refresh')
   @HttpCode(200)
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiBearerAuth()
@@ -257,7 +257,7 @@ export class LicenseController {
   }
 
   @Put('key')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Set and activate a license key (ADMIN)' })
@@ -271,7 +271,7 @@ export class LicenseController {
   }
 
   @Post('billing-portal')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({
@@ -291,7 +291,7 @@ export class LicenseController {
 
   @Post('dpa-link')
   @HttpCode(200)
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   // Each call creates a session on the licence site.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
@@ -312,7 +312,7 @@ export class LicenseController {
 
   @Post('checkout-link')
   @HttpCode(200)
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   // Each call mints a checkout intent on the licence site: a person clicks
   // this a few times at most, a loop should not be able to do more.
@@ -402,7 +402,7 @@ export class LicenseController {
   }
 
   @Get('pricing-link-token')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary:
@@ -419,7 +419,7 @@ export class LicenseController {
   }
 
   @Get('card-trial-eligibility')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({
@@ -440,7 +440,7 @@ export class LicenseController {
   }
 
   @Get('card-trial-offer')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary:
@@ -457,7 +457,7 @@ export class LicenseController {
   }
 
   @Get('wall')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary:
@@ -477,7 +477,7 @@ export class LicenseController {
   }
 
   @Post('verify')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Force re-verify license against remote API (ADMIN)' })
@@ -487,7 +487,7 @@ export class LicenseController {
   }
 
   @Post('activate-trial')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Start a 7-day cloud trial (cloud mode only)' })
   async activateTrial(@Req() req: any) {
@@ -539,7 +539,7 @@ export class LicenseController {
   }
 
   @Post('register-community')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Request a free community license (sent via email)' })

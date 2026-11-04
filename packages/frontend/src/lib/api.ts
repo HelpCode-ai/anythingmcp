@@ -1911,13 +1911,32 @@ export const roles = {
 };
 
 // MCP API Keys
+/**
+ * Key scope. `MCP` keys call MCP tools on `/mcp` only (the default, and what
+ * the per-server key UI mints). `MANAGEMENT_READ` / `MANAGEMENT_ADMIN` keys
+ * drive the management API (`/api/*`) for the `amcp` CLI, read-only or full,
+ * always still capped by the owner's role (see jwt-or-management-key.guard).
+ */
+export type McpApiKeyScope = 'MCP' | 'MANAGEMENT_READ' | 'MANAGEMENT_ADMIN';
+
+export interface McpApiKeyInfo {
+  id: string;
+  name: string;
+  scope: McpApiKeyScope;
+  isActive: boolean;
+  mcpServerId?: string | null;
+  mcpServer?: { id: string; name: string } | null;
+  lastUsedAt?: string | null;
+  createdAt?: string;
+}
+
 export const mcpKeys = {
   list: (token: string) =>
-    request<any[]>('/api/mcp-keys', { token }),
-  generate: (name: string, token: string, mcpServerId?: string) =>
-    request<{ id: string; key: string; name: string; mcpServerId?: string }>('/api/mcp-keys', {
+    request<McpApiKeyInfo[]>('/api/mcp-keys', { token }),
+  generate: (name: string, token: string, mcpServerId?: string, scope?: McpApiKeyScope) =>
+    request<{ id: string; key: string; name: string; mcpServerId?: string; scope: McpApiKeyScope }>('/api/mcp-keys', {
       method: 'POST',
-      body: { name, ...(mcpServerId ? { mcpServerId } : {}) },
+      body: { name, ...(mcpServerId ? { mcpServerId } : {}), ...(scope && scope !== 'MCP' ? { scope } : {}) },
       token,
     }),
   revoke: (id: string, token: string) =>

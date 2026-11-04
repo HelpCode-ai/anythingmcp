@@ -74,6 +74,12 @@ jobs:
       - name: Verify generated AI documentation is up to date
         run: node scripts/generate-llms-txt.mjs --check
 
+      # The amcp CLI's catalogue of management operations is generated from the
+      # controllers guarded by JwtOrManagementKeyGuard. A new management route
+      # must not ship without the CLI (and `amcp api --list`) knowing about it.
+      - name: Verify the CLI management operation catalogue is up to date
+        run: node scripts/generate-cli-operations.mjs --check
+
       # The Docker image ships only hoisted dependencies; a nested one passes
       # every test here and then crashes the container (see the script).
       - name: Verify no backend dependency is nested out of the image

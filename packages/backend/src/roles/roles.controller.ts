@@ -12,7 +12,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { IsString, IsOptional, IsArray, ArrayMaxSize } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { RolesService } from './roles.service';
@@ -77,7 +77,7 @@ class SetUserRolesDto {
 
 @ApiTags('Roles')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(JwtOrManagementKeyGuard, RolesGuard)
 @Roles('ADMIN')
 @Controller('api/roles')
 export class RolesController {

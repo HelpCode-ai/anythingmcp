@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../common/pagination.dto';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { IsString, IsOptional, IsBoolean, IsArray, IsIn } from 'class-validator';
 import { SKILLS_DELIVERY_MODES, type SkillsDelivery } from '../knowledge-graph/kg-skill.service';
 import { CODE_MODE_MODES, type CodeMode } from '../mcp-server/code-tool.util';
@@ -109,7 +109,7 @@ class AssignConnectorsDto {
 
 @ApiTags('MCP Servers')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/mcp-servers')
 export class McpServersController {
   constructor(

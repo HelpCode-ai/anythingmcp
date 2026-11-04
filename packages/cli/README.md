@@ -96,3 +96,77 @@ afterwards. The scripts are static and do not read the config file or contact a
 server, so profile and tool names are not completed. `completion` always prints
 the script as plain text, even with `--json`. Any shell other than `bash`, `zsh`
 or `fish` exits with code `2`.
+
+## Management API (`amcp api`)
+
+Beyond calling MCP tools, `amcp` can drive the instance's **management API**
+(`/api/*`) — connectors, MCP servers, roles, users, SSO, settings, memory,
+skills, the knowledge graph and more — with a **management-scoped** API key.
+
+A management key is an ordinary MCP API key minted with a management scope
+(`MANAGEMENT_READ` or `MANAGEMENT_ADMIN`) from the dashboard or `POST
+/api/mcp-keys`. It carries the owner's identity and role: it never grants
+privilege, so admin-only routes still require an admin owner. `MANAGEMENT_READ`
+keys may call only safe methods (GET/HEAD).
+
+### Getting a management key
+
+Mint one from the dashboard (Settings → Management API keys), choosing
+read-only or admin, or let the CLI do it through the browser:
+
+```bash
+amcp login --browser --url https://cloud.anythingmcp.com            # read-only
+amcp login --browser --scope admin --url https://cloud.anythingmcp.com
+```
+
+`--browser` opens the instance's authorization page, where you approve the
+request under your existing dashboard session (SSO included). The CLI prints a
+short verification code that must match the page before you approve. The key is
+minted by the dashboard and returned to the CLI over a one-shot `127.0.0.1`
+loopback, so it never appears in a URL, log or shell history; it is an ordinary
+management key you can see and revoke in Settings. On a headless machine, set
+`AMCP_NO_BROWSER=1` and open the printed URL yourself. The admin scope is
+available only to workspace admins. This is additive: the key-based `login
+--management` below is unchanged.
+
+### Using a management key
+
+Log in with a management key (no server needed), then call any endpoint:
+
+```bash
+printf '%s\n' "$AMCP_API_KEY" | amcp login --management --url https://cloud.anythingmcp.com --key-stdin
+amcp api GET /api/connectors
+amcp api GET /api/mcp-servers
+amcp api POST /api/mcp-servers --data '{"name":"ops","description":"Ops server"}'
+amcp api PUT  /api/mcp-servers/SERVER_ID --data '{"codeMode":"tools"}'
+```
+
+For CI, skip the profile and pass the key in the environment:
+
+```bash
+AMCP_URL=https://cloud.anythingmcp.com AMCP_API_KEY=mcp_… amcp api GET /api/users --json
+```
+
+To discover what the management API offers, list its operations (no key and no
+network — the catalogue ships with the CLI):
+
+```bash
+amcp api --list                 # every management operation, grouped by resource
+amcp api --list mcp-servers     # only one resource
+amcp api --list --json          # { "operations": [ { method, path, summary, admin, … } ] }
+```
+
+Each line shows the method, path, an `[admin]` tag when the route needs an admin
+owner, a `[body]` tag when it takes a request body, and the summary. The
+catalogue is generated from the backend controllers, and CI fails if a new
+management route is added without regenerating it, so `amcp api --list` always
+matches the instance's API.
+
+The key comes from `AMCP_API_KEY`, `--key-stdin`, or a saved management profile —
+never from a command argument. A non-safe method asks for confirmation on a
+terminal; pass `--yes` in scripts. `--data` accepts inline JSON, `@file.json` or
+`-` (stdin). Output is the parsed JSON body; `--json` wraps it with the status.
+Exit codes match the rest of the CLI: `1` for a 4xx result, `3` for 401/403,
+`4` for 5xx or a connection failure. The management API applies a per-key
+rate limit, so a runaway client is refused with HTTP 429 rather than hammering
+the instance.
