@@ -2388,6 +2388,13 @@
       "activating": "Ihre Lizenz wird aktiviert…",
       "key": "Schlüssel:",
       "goToSettings": "Zu den Lizenzeinstellungen"
+    },
+    "dpa": {
+      "title": "Auftragsverarbeitungsvertrag",
+      "body": "Zu Ihrem Tarif gehört unser Auftragsverarbeitungsvertrag nach Art. 28 DSGVO. Nehmen Sie ihn online auf anythingmcp.com an, auf Deutsch oder Englisch: Sie erhalten das PDF mit dem Annahmeprotokoll per E-Mail, ohne Unterschrift oder Scan.",
+      "open": "AVV öffnen",
+      "opening": "Wird geöffnet…",
+      "error": "Die AVV-Seite ließ sich nicht öffnen. Bitte versuchen Sie es noch einmal."
     }
   },
   "settingsSso": {

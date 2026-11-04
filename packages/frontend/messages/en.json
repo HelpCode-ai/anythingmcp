@@ -2388,6 +2388,13 @@
       "activating": "Activating your license…",
       "key": "Key:",
       "goToSettings": "Go to License Settings"
+    },
+    "dpa": {
+      "title": "Data Processing Agreement",
+      "body": "Your plan includes our Data Processing Agreement under Art. 28 GDPR. Accept it online on anythingmcp.com, in English or German: you get the PDF with the acceptance record by email, with no signature or scan needed.",
+      "open": "Open the DPA",
+      "opening": "Opening…",
+      "error": "Could not open the DPA page. Please try again."
     }
   },
   "settingsSso": {
