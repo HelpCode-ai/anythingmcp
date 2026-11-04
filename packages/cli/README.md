@@ -109,6 +109,28 @@ A management key is an ordinary MCP API key minted with a management scope
 privilege, so admin-only routes still require an admin owner. `MANAGEMENT_READ`
 keys may call only safe methods (GET/HEAD).
 
+### Getting a management key
+
+Mint one from the dashboard (Settings → Management API keys), choosing
+read-only or admin, or let the CLI do it through the browser:
+
+```bash
+amcp login --browser --url https://cloud.anythingmcp.com            # read-only
+amcp login --browser --scope admin --url https://cloud.anythingmcp.com
+```
+
+`--browser` opens the instance's authorization page, where you approve the
+request under your existing dashboard session (SSO included). The CLI prints a
+short verification code that must match the page before you approve. The key is
+minted by the dashboard and returned to the CLI over a one-shot `127.0.0.1`
+loopback, so it never appears in a URL, log or shell history; it is an ordinary
+management key you can see and revoke in Settings. On a headless machine, set
+`AMCP_NO_BROWSER=1` and open the printed URL yourself. The admin scope is
+available only to workspace admins. This is additive: the key-based `login
+--management` below is unchanged.
+
+### Using a management key
+
 Log in with a management key (no server needed), then call any endpoint:
 
 ```bash

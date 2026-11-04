@@ -630,3 +630,58 @@ test('api --list prints the generated management operation catalogue', async () 
   assert.match(text, /\/api\/mcp-servers/);
   assert.doesNotMatch(text, /\/api\/connectors/);
 });
+
+test('browser login delivers a key over the loopback callback and binds state', async () => {
+  const { browserAuthorize } = await import('./browser-auth.js');
+  process.env.AMCP_NO_BROWSER = '1';
+
+  // Simulate the dashboard page: read the authorize URL, POST the key to the
+  // loopback callback as an x-www-form-urlencoded form, exactly as /cli-auth does.
+  const postForm = (callback: string, fields: Record<string, string>, origin?: string) => {
+    const body = new URLSearchParams(fields).toString();
+    return fetch(callback, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', ...(origin ? { origin } : {}) },
+      body,
+    });
+  };
+
+  // Happy path: the key arrives and the scope/label reach the authorize URL.
+  const ok = await browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'admin', label: 'amcp CLI (test)',
+    onUrl: (url) => {
+      const u = new URL(url);
+      assert.equal(u.pathname, '/cli-auth');
+      assert.equal(u.searchParams.get('scope'), 'MANAGEMENT_ADMIN');
+      assert.equal(u.searchParams.get('label'), 'amcp CLI (test)');
+      const callback = u.searchParams.get('callback')!;
+      const state = u.searchParams.get('state')!;
+      assert.match(callback, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+      void postForm(callback, { state, key: 'mcp_browserflow' }, 'https://example.test');
+    },
+  });
+  assert.equal(ok.key, 'mcp_browserflow');
+
+  // A mismatched state is rejected (a stray or forged callback cannot win).
+  await assert.rejects(browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const callback = new URL(url).searchParams.get('callback')!;
+      void postForm(callback, { state: 'wrong', key: 'mcp_nope' });
+    },
+  }), /State mismatch/);
+
+  // An explicit denial is surfaced as an error, not a saved key.
+  await assert.rejects(browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const u = new URL(url);
+      void postForm(u.searchParams.get('callback')!, { state: u.searchParams.get('state')!, error: 'access_denied' });
+    },
+  }), /declined/);
+
+  delete process.env.AMCP_NO_BROWSER;
+});

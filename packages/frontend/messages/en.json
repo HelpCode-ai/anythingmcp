@@ -1,4 +1,20 @@
 {
+  "cliAuth": {
+    "title": "Authorize the amcp CLI",
+    "intro": "{label} on this computer is requesting a management API key.",
+    "scope": "Scope",
+    "scopeRead": "Management — read-only",
+    "scopeAdmin": "Management — admin",
+    "code": "Verification code",
+    "verifyHint": "Only continue if you just started this from your terminal and this code matches the one shown there.",
+    "authorize": "Authorize",
+    "working": "Authorizing…",
+    "cancel": "Cancel",
+    "signInFirst": "Sign in to continue; this page will return automatically.",
+    "invalid": "This authorization link is invalid or did not come from the amcp CLI.",
+    "needAdmin": "This request asks for an admin key, but your role cannot grant one. Ask an admin, or request a read-only key.",
+    "error": "Could not complete the authorization."
+  },
   "nav": {
     "groups": {
       "overview": "Overview",

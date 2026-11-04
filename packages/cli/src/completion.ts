@@ -22,6 +22,8 @@ export const FLAGS: readonly FlagSpec[] = [
   { name: 'data', value: 'JSON, @file.json or -', description: 'Request body for amcp api' },
   { name: 'management', description: 'Log in with a management-scoped key for amcp api' },
   { name: 'list', description: 'List the management API operations amcp api can call' },
+  { name: 'browser', description: 'Log in through the browser and mint a management key' },
+  { name: 'scope', value: 'read|admin', description: 'Scope for a browser-minted management key' },
   { name: 'json', description: 'Machine-readable output' },
   { name: 'help', short: 'h', description: 'Show usage' },
 ];
@@ -29,7 +31,7 @@ export const FLAGS: readonly FlagSpec[] = [
 const GLOBAL_FLAGS = ['json', 'help'];
 
 export const COMMANDS: readonly CommandSpec[] = [
-  { name: 'login', description: 'Verify an API key and save a profile', flags: ['url', 'server', 'management', 'key-stdin', 'profile'] },
+  { name: 'login', description: 'Verify an API key and save a profile', flags: ['url', 'server', 'management', 'browser', 'scope', 'key-stdin', 'profile'] },
   { name: 'logout', description: 'Remove a saved profile', flags: ['profile'] },
   { name: 'whoami', description: 'Show the saved profile', flags: ['profile'] },
   {

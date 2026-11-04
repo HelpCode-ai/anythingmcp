@@ -1,4 +1,20 @@
 {
+  "cliAuth": {
+    "title": "amcp-CLI autorisieren",
+    "intro": "{label} auf diesem Computer fordert einen Management-API-Schlüssel an.",
+    "scope": "Berechtigung",
+    "scopeRead": "Management — nur Lesen",
+    "scopeAdmin": "Management — Admin",
+    "code": "Bestätigungscode",
+    "verifyHint": "Fahren Sie nur fort, wenn Sie dies gerade im Terminal gestartet haben und dieser Code mit dem dort angezeigten übereinstimmt.",
+    "authorize": "Autorisieren",
+    "working": "Wird autorisiert…",
+    "cancel": "Abbrechen",
+    "signInFirst": "Melden Sie sich an, um fortzufahren; diese Seite kehrt automatisch zurück.",
+    "invalid": "Dieser Autorisierungslink ist ungültig oder stammt nicht von der amcp-CLI.",
+    "needAdmin": "Diese Anfrage verlangt einen Admin-Schlüssel, aber Ihre Rolle kann keinen vergeben. Fragen Sie einen Admin oder fordern Sie einen Nur-Lese-Schlüssel an.",
+    "error": "Autorisierung konnte nicht abgeschlossen werden."
+  },
   "nav": {
     "groups": {
       "overview": "Übersicht",

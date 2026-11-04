@@ -7,6 +7,8 @@ import { listClientTools, listTools, serverUrl, withClient } from './mcp.js';
 import { apiRequest, API_METHODS, type ApiMethod } from './rest.js';
 import { completionScript, isShell } from './completion.js';
 import { OPERATIONS } from './generated/operations.js';
+import { browserAuthorize, type ManagementScopeArg } from './browser-auth.js';
+import { hostname } from 'node:os';
 
 class CliError extends Error {
   constructor(message: string, readonly exitCode: number) { super(message); }
@@ -160,7 +162,7 @@ export const OPTIONS = {
   'key-stdin': { type: 'boolean' }, filter: { type: 'string' }, help: { type: 'boolean', short: 'h' },
   args: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' },
   timeout: { type: 'string' }, data: { type: 'string' }, management: { type: 'boolean' },
-  list: { type: 'boolean' },
+  list: { type: 'boolean' }, browser: { type: 'boolean' }, scope: { type: 'string' },
 } as const;
 
 // Render the generated catalogue of management API operations, optionally
@@ -184,6 +186,7 @@ function usage(): string {
   return `Usage:
   amcp login --url <instance-url> --server <server-id> [--key-stdin] [--profile <name>]
   amcp login --management --url <instance-url> [--key-stdin] [--profile <name>]
+  amcp login --browser --url <instance-url> [--scope read|admin] [--profile <name>]
   amcp logout [--profile <name>]
   amcp whoami [--profile <name>]
   amcp tools ls [--filter <text>] [--profile <name>]
@@ -237,6 +240,47 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
       (values.server || process.env.AMCP_SERVER) && process.env.AMCP_API_KEY;
     const config = toolCommand && hasConnection
       ? { profiles: {} as Record<string, Profile> } : await readConfig();
+    if (command === 'login' && values.browser && positionals.length === 1) {
+      // Browser login mints a management key through the dashboard session and
+      // delivers it over a 127.0.0.1 loopback (see browser-auth.ts). It adds to
+      // the key-based logins below; it does not change how they work.
+      const url = values.url || process.env.AMCP_URL || config.profiles[name]?.url;
+      if (!url) throw new CliError('browser login requires --url', 2);
+      let origin: string;
+      try { origin = new URL(url).origin; } catch { throw new CliError('Invalid --url', 2); }
+      const scopeArg: ManagementScopeArg = (values.scope ?? 'read') as ManagementScopeArg;
+      if (scopeArg !== 'read' && scopeArg !== 'admin') {
+        throw new CliError("--scope must be 'read' or 'admin'", 2);
+      }
+      let auth;
+      try {
+        auth = await browserAuthorize({
+          instanceUrl: url, instanceOrigin: origin, scope: scopeArg, label: `amcp CLI (${hostname()})`,
+          onUrl: (u, code) => {
+            if (json) return;
+            process.stderr.write('Opening your browser to authorize the amcp CLI…\n');
+            process.stderr.write(`If it does not open, visit:\n  ${u}\n`);
+            process.stderr.write(`Verification code: ${code} — it must match the page before you approve.\n`);
+          },
+        });
+      } catch (error) {
+        throw new CliError(error instanceof Error ? error.message : 'Browser authorization failed', 3);
+      }
+      // Verify the minted key reaches the management API before saving it.
+      let result;
+      try { result = await apiRequest({ url, key: auth.key, method: 'GET', path: '/api/users/me' }); }
+      catch (error) { throw classifyConnectionError(error); }
+      if (result.status === 401 || result.status === 403) {
+        throw new CliError('Authentication failed (401/403)', 3);
+      }
+      if (!result.ok) throw new CliError(`Management API returned HTTP ${result.status}`, 4);
+      const profile: Profile = { url, server: '', key: '', managementKey: auth.key };
+      config.profiles[name] = profile;
+      await writeConfig(config);
+      print({ loggedIn: true, profile: name, url: instanceUrl(profile), management: true, browser: true }, json,
+        () => process.stdout.write(`Logged in to ${origin} (management, profile: ${name}).\n`));
+      return 0;
+    }
     if (command === 'login' && values.management && positionals.length === 1) {
       const url = values.url || process.env.AMCP_URL;
       if (!url) throw new CliError('management login requires --url', 2);
