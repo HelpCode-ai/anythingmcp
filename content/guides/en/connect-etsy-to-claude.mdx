@@ -1,0 +1,44 @@
+---
+title: "How to Connect Etsy to Claude — Run Your Etsy Shop From AI via MCP"
+description: "Connect your Etsy shop to Claude with AnythingMCP. Create and publish draft listings, edit titles, prices and photos, manage inventory and orders — in natural language. 24 Etsy tools, no custom integration to build."
+category: "connectors"
+keyword: "Etsy Claude, Etsy MCP, Etsy AI, connect Etsy to Claude, Etsy shop AI agent, Etsy listings AI, Etsy API Claude, sell on Etsy with AI"
+publishedAt: "2026-11-04"
+adapterSlug: "etsy"
+lang: "en"
+---
+
+## Connect Etsy to Claude
+
+Run your [Etsy](https://www.etsy.com) shop from Claude. With **AnythingMCP**, Claude gets 24 Etsy tools — create draft listings, edit and publish them, add photos, manage inventory, read orders — so you can describe what you want and let the AI do the clicking.
+
+### What you can do
+
+- "Create a draft listing for my new ceramic mug: title, description, 5 tags, €24, 12 in stock."
+- "Publish the three drafts I made yesterday."
+- "Raise the price of every 'linen' listing by 8%."
+- "Which of my active listings have fewer than 3 in stock?"
+- "Summarise this week's orders and what still needs shipping."
+
+### Set it up (no install)
+
+The fastest path is **AnythingMCP Cloud**:
+
+1. Sign in at **[cloud.anythingmcp.com](https://cloud.anythingmcp.com)**.
+2. **Connectors → Etsy**.
+3. Authorise your Etsy shop (OAuth) so the connector can act on your listings and orders.
+4. Mint an **MCP API key** and add the endpoint to Claude.
+
+Prefer self-hosting? Run AnythingMCP from the [repo](https://github.com/HelpCode-ai/anythingmcp) and add the Etsy connector the same way.
+
+### Wire it into Claude
+
+Add your AnythingMCP MCP endpoint and key to **Claude Desktop** or **Claude Code**. Claude then lists the Etsy tools and calls the right ones — creating drafts, editing, publishing — within the permissions you granted.
+
+> 🔒 Writing to a live shop is powerful: AnythingMCP flags destructive tools, and you can keep the connector read-only (reporting only) or review changes before they go out. Roles and tool access are controlled per workspace.
+
+### Also works with
+
+The same connector drives **ChatGPT, GitHub Copilot, Cursor** and any MCP client, and it's fully scriptable from the terminal with the [`amcp` CLI](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme).
+
+Start free on [cloud.anythingmcp.com](https://cloud.anythingmcp.com), or self-host AnythingMCP under AGPL-3.0.
