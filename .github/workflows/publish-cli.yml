@@ -1,16 +1,19 @@
-# Publish @anythingmcp/cli to npm as a public package.
+# Publish @anythingmcp/cli to npm as a public package via OIDC Trusted
+# Publishing — no long-lived npm token.
 #
 # Trigger: a GitHub Release whose tag starts with "cli-v" (e.g. cli-v0.1.0).
 # The release tag's version is only a label here — the version actually
 # published is the one in packages/cli/package.json, so bump that in a PR first.
 #
-# One-time setup (owner):
-#   1. Create the npm org/scope "anythingmcp" (npmjs.com → Add Organization),
-#      so the scoped name @anythingmcp/cli can be published.
-#   2. Create an npm "Automation" access token with publish rights.
-#   3. Add it as the repository secret NPM_TOKEN
-#      (GitHub → Settings → Secrets and variables → Actions → New secret).
-# After that, publishing is just: create a Release tagged cli-v<version>.
+# One-time setup (owner), done once the package already exists on npm:
+#   npmjs.com → the @anythingmcp/cli package → Settings → Trusted Publisher →
+#   add a GitHub Actions publisher:
+#     Organization/owner: HelpCode-ai
+#     Repository:         anythingmcp
+#     Workflow filename:  publish-cli.yml
+#   No NPM_TOKEN secret is needed; GitHub's OIDC id-token authenticates the
+#   publish and signs provenance automatically. After setup, publishing is just:
+#   create a Release tagged cli-v<version>.
 name: Publish CLI
 
 on:
@@ -24,16 +27,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance (public repo)
+      id-token: write # OIDC token for trusted publishing + provenance
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # Trusted publishing (OIDC) needs npm >= 11.5.1; Node 22 ships npm 10.
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run build -w packages/cli
       # publishConfig.access=public is set in packages/cli/package.json.
-      - run: npm publish --provenance -w packages/cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Trusted publishing authenticates via the OIDC id-token (no token) and
+      # attaches provenance automatically.
+      - run: npm publish -w packages/cli
