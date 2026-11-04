@@ -791,9 +791,11 @@ export class RestEngine {
           // there was no way to tell a flaky upstream from a broken connector.
           if (transient) {
             this.logger.warn(
+              // The status first: axios also sets a code on HTTP errors
+              // (ERR_BAD_REQUEST for a 429), which hid the status here.
               `Gave up after ${attempt + 1} attempts on a transient upstream failure: ${
-                (error as AxiosError).code ??
-                (error as AxiosError).response?.status
+                (error as AxiosError).response?.status ??
+                (error as AxiosError).code
               } ${method} ${logUrl}`,
             );
           }
