@@ -1931,7 +1931,32 @@
     },
     "apiKeys": {
       "title": "Chiavi API MCP",
-      "body": "Le chiavi API ora si gestiscono per ogni server MCP. Vai su <link>Server MCP</link> per generare e gestire le chiavi di ogni server."
+      "body": "Le chiavi API ora si gestiscono per ogni server MCP. Vai su <link>Server MCP</link> per generare e gestire le chiavi di ogni server.",
+      "management": {
+        "title": "Chiavi API di gestione",
+        "intro": "Le chiavi di gestione controllano l'intera istanza dalla CLI amcp e dall'API di gestione (/api/*) — connettori, server MCP, utenti, ruoli e impostazioni. Le chiavi in sola lettura possono solo leggere; quelle admin possono modificare, sempre nei limiti del tuo ruolo.",
+        "name": "Nome",
+        "namePlaceholder": "es. laptop ops",
+        "scope": "Ambito",
+        "scopeRead": "Gestione — sola lettura",
+        "scopeAdmin": "Gestione — admin",
+        "scopeAdminOnly": "Solo gli admin del workspace possono creare chiavi admin.",
+        "generate": "Genera chiave",
+        "generating": "Generazione…",
+        "created": "Copia subito la chiave — viene mostrata una sola volta.",
+        "copy": "Copia",
+        "copied": "Copiata",
+        "revoke": "Revoca",
+        "delete": "Elimina",
+        "confirmDelete": "Eliminare definitivamente questa chiave? I client che la usano smetteranno di funzionare.",
+        "empty": "Ancora nessuna chiave di gestione.",
+        "active": "Attiva",
+        "revoked": "Revocata",
+        "created_toast": "Chiave di gestione creata",
+        "revoked_toast": "Chiave revocata",
+        "deleted_toast": "Chiave eliminata",
+        "error": "Operazione non riuscita"
+      }
     },
     "danger": {
       "title": "Zona pericolosa",
