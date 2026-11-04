@@ -65,3 +65,13 @@ export type UnclaimedSkipReason =
   | 'already_paid'
   /** The key is already bound here to another workspace. */
   | 'bound_elsewhere';
+
+/**
+ * The skip counts for the summary log line, e.g. " (no_account=2, not_admin=1)",
+ * in a fixed order; empty when nothing was skipped.
+ */
+export function formatSkipReasons(counts: ReadonlyMap<UnclaimedSkipReason, number>): string {
+  const order: UnclaimedSkipReason[] = ['no_account', 'not_admin', 'no_workspace', 'already_paid', 'bound_elsewhere'];
+  const parts = order.filter((r) => (counts.get(r) ?? 0) > 0).map((r) => `${r}=${counts.get(r)}`);
+  return parts.length ? ` (${parts.join(', ')})` : '';
+}

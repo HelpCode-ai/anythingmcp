@@ -7,7 +7,12 @@ import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
 import { FIRST_SUCCESS_KEY } from './card-trial-offer';
-import { parseUnclaimedLicences, type UnclaimedLicence, type UnclaimedSkipReason } from './license-unclaimed';
+import {
+  formatSkipReasons,
+  parseUnclaimedLicences,
+  type UnclaimedLicence,
+  type UnclaimedSkipReason,
+} from './license-unclaimed';
 import { Prisma } from '../generated/prisma/client';
 import { maskEmail } from '../auth/mcp-email-verification';
 import { collectUsageReport, usageReportEnabled, type UsageReport } from './usage-report';
@@ -777,6 +782,10 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       return out;
     }
 
+    // Skips per reason, for the summary line: the per-licence lines are debug
+    // for the reasons that only wait for the customer, so without this the
+    // hourly line says how many were skipped but not why.
+    const skipReasons = new Map<UnclaimedSkipReason, number>();
     for (const licence of licences) {
       out.listed++;
       const tail = licence.key.slice(-4);
@@ -784,6 +793,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         const target = await this.unclaimedLicenceTarget(licence, now);
         if ('skip' in target) {
           out.skipped++;
+          skipReasons.set(target.skip, (skipReasons.get(target.skip) ?? 0) + 1);
           const log = `Unclaimed licence …${tail} (${maskEmail(licence.email)}) left unbound: ${target.skip}.`;
           if (target.skip === 'already_paid' || target.skip === 'bound_elsewhere') this.logger.warn(log);
           else this.logger.debug(log);
@@ -810,7 +820,9 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
 
     if (out.listed > 0) {
       this.logger.log(
-        `Unclaimed licences: listed=${out.listed} bound=${out.bound} skipped=${out.skipped} failed=${out.failed}`,
+        `Unclaimed licences: listed=${out.listed} bound=${out.bound} skipped=${out.skipped}` +
+          formatSkipReasons(skipReasons) +
+          ` failed=${out.failed}`,
       );
     }
     return out;

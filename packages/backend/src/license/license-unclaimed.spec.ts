@@ -1,8 +1,22 @@
 import { LicenseService } from './license.service';
-import { parseUnclaimedLicences } from './license-unclaimed';
+import { formatSkipReasons, parseUnclaimedLicences } from './license-unclaimed';
 
 const KEY_A = 'AMCP-AAAA-BBBB-CCCC-0001';
 const KEY_B = 'AMCP-AAAA-BBBB-CCCC-0002';
+
+describe('formatSkipReasons', () => {
+  it('lists the reasons in a fixed order and is empty without skips', () => {
+    expect(formatSkipReasons(new Map())).toBe('');
+    expect(
+      formatSkipReasons(
+        new Map([
+          ['already_paid', 1],
+          ['no_account', 3],
+        ]),
+      ),
+    ).toBe(' (no_account=3, already_paid=1)');
+  });
+});
 
 describe('parseUnclaimedLicences', () => {
   it('keeps well-formed entries, normalises the address and drops duplicates', () => {
@@ -125,8 +139,14 @@ describe('LicenseService — paid licences that never reached their workspace', 
       { key: 'AMCP-AAAA-BBBB-CCCC-0003', email: 'gone@example.com', plan: 'starter', organizationId: 'org-gone' },
     ]);
 
+    const log = jest.spyOn((svc as any).logger, 'log').mockImplementation(() => undefined);
+
     await expect(svc.bindUnclaimedPaidLicences(NOW)).resolves.toEqual({ listed: 3, bound: 0, skipped: 3, failed: 0 });
     expect(setKey).not.toHaveBeenCalled();
+    // The per-licence lines for these reasons are debug: the summary says why.
+    expect(log).toHaveBeenCalledWith(
+      'Unclaimed licences: listed=3 bound=0 skipped=3 (no_account=1, not_admin=1, no_workspace=1) failed=0',
+    );
   });
 
   it('does not bind a second subscription to a workspace that already pays', async () => {
