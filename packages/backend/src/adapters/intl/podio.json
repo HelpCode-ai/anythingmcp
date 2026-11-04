@@ -1,0 +1,207 @@
+{
+  "slug": "podio",
+  "name": "Podio",
+  "aliases": ["Citrix Podio"],
+  "description": "Read one Podio app: its field definitions, a filtered page of items, and a single item. Signs in with Podio app authentication. Read-only.",
+  "instructions": "## Podio\nThis connector reads one Podio app through the Podio REST API (`https://api.podio.com`). App authentication covers that app only. It never creates, updates or deletes items.\n\n**Setup**\n1. Open https://podio.com/settings/api and generate an API key. `PODIO_CLIENT_ID` is the client id and `PODIO_CLIENT_SECRET` is the client secret.\n2. Open the Podio app the agent should read, then the wrench menu, then **Developer**. Copy the **App ID** into `PODIO_APP_ID` and the **App token** into `PODIO_APP_TOKEN`.\n3. The four values are sent as a form-encoded `POST https://podio.com/oauth/token` with `grant_type=app`. Podio returns an access token valid for 8 hours (`expires_in` seconds). The connector caches it, sends `Authorization: OAuth2 <token>` and signs in again when it expires or the API answers 401.\n\n**Where to start**: `podio_get_app` checks the sign-in and returns the app name plus every field (`field_id`, `external_id`, `type`, `label`, `required`, and `settings`, including category option ids). Then `podio_filter_items` pages through items. `podio_get_item` opens one item by the numeric `item_id` from that list (not `app_item_id`).\n\n**Filters**: `filters` is an object. Keys are a field's `external_id` from `podio_get_app`, or a special key: `title`, `created_on`, `created_by`, `last_edit_on`, `tags`, `item_id`, `app_item_id`, `external_id`. A numeric `field_id` (as a string key) also works. Category and question values are a list of option ids from `settings.options[].id`. Number, money, calculation, progress, duration and date values are `{\"from\": ..., \"to\": ...}`. Dates are `YYYY-MM-DD` or a relative form such as `-7d` or `+1w`. Text fields cannot be filtered; use `title` for the item title. Example: `{\"filters\": {\"status\": [1, 2], \"created_on\": {\"from\": \"-30d\"}}, \"limit\": 20}`.\n\n**Sorting and pages**: `sort_by` is `created_on`, `last_edit_on`, `title`, `item_id`, `app_item_id`, `activity` or a numeric `field_id`. `sort_desc` true puts the newest first when sorting by a date. `limit` defaults to 20 (maximum 100 here; Podio allows 500). `offset` starts at 0. Read the next page while `items` is as long as `limit` and `offset` is still below `filtered`.\n\n**Field values**: each field has `values`, a list whose shape depends on `type`. Text and number use `value`. Dates use `start` and `end`. Category options use `value.id` and `value.text`. Contacts use `value.profile_id` and `value.name`. Match `external_id` back to `podio_get_app` for the label when a list row omits it.\n\n**Reading does not mark items viewed**: `podio_get_item` sends `mark_as_viewed=false`, so a read does not clear Podio notifications.\n\n**Rate limits**: Podio uses two hourly windows per API key. Standard calls such as get app and get item allow 1,000 an hour (Limit B). `podio_filter_items` is resource-intensive and allows 250 an hour (Limit A). Over the limit Podio answers HTTP 420, not 429. The headers `X-Rate-Limit-Limit` and `X-Rate-Limit-Remaining` show what is left. Wait before retrying.\n\n**Errors**: 400 at sign-in means a client id, client secret, app id or app token does not match. 401 means the token was refused. 403 means the call left the one app this token can see. 404 means that app or item id does not exist.\n\n**Reachability**: `api.podio.com` and `podio.com` are public HTTPS endpoints, reachable from AnythingMCP Cloud and from self-hosted instances alike.\n\n**Out of scope**: creating or editing items, comments, files, other apps in the workspace, and signing in as a Podio user.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "podio",
+  "docsUrl": "https://developers.podio.com/doc",
+  "appRegistrationUrl": "https://podio.com/settings/api",
+  "prerequisites": "A Podio API key (client id and secret) from podio.com/settings/api, plus the App ID and App token from the target app's Developer menu. About 5 minutes. The token can read only that one app.",
+  "requiredEnvVars": [
+    "PODIO_APP_ID",
+    "PODIO_APP_TOKEN",
+    "PODIO_CLIENT_ID",
+    "PODIO_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "PODIO_APP_ID": {
+      "label": "App ID",
+      "kind": "setting",
+      "help": "Numeric App ID from the Podio app's wrench menu, Developer.",
+      "example": "12345678",
+      "pattern": "^[1-9][0-9]{0,18}$",
+      "patternMessage": "The App ID is the number shown under Developer, with no spaces.",
+      "link": "https://developers.podio.com/authentication/app_auth"
+    },
+    "PODIO_APP_TOKEN": {
+      "label": "App token",
+      "kind": "credential",
+      "secret": true,
+      "help": "App token from the same Developer screen. It signs this connector in as that app.",
+      "pattern": "^[A-Za-z0-9_-]{8,200}$",
+      "patternMessage": "Paste the app token only, without spaces or a header name.",
+      "link": "https://developers.podio.com/authentication/app_auth"
+    },
+    "PODIO_CLIENT_ID": {
+      "label": "API client id",
+      "kind": "credential",
+      "help": "Client id of an API key generated at Podio settings, API keys.",
+      "example": "my-podio-key",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{1,80}$",
+      "patternMessage": "Paste the client id from the API key page, not the client secret.",
+      "link": "https://podio.com/settings/api"
+    },
+    "PODIO_CLIENT_SECRET": {
+      "label": "API client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Client secret shown once when the API key is generated. Podio will not show it again.",
+      "pattern": "^[A-Za-z0-9_-]{8,200}$",
+      "patternMessage": "Paste the client secret only, without spaces or a header name.",
+      "link": "https://podio.com/settings/api"
+    }
+  },
+  "verifyHints": {
+    "400": "Podio refused the sign-in. Check the client id and secret from podio.com/settings/api, and the App ID and App token from that app's Developer menu. All four must belong together.",
+    "401": "Podio rejected the access token. Save the connector again so it signs in afresh, and recheck the four credentials.",
+    "403": "This app token can only read the one app it was issued for.",
+    "404": "No Podio app or item with that id. Use the item_id from podio_filter_items, not the per-app app_item_id.",
+    "420": "Podio is rate limiting this API key (HTTP 420). Filter calls allow 250 an hour; other reads allow 1,000. Wait and verify again."
+  },
+  "probe": {
+    "tool": "podio_get_app"
+  },
+  "connector": {
+    "name": "Podio REST API",
+    "type": "REST",
+    "baseUrl": "https://api.podio.com",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://podio.com/oauth/token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "grant_type": "app",
+        "app_id": "{{PODIO_APP_ID}}",
+        "app_token": "{{PODIO_APP_TOKEN}}",
+        "client_id": "{{PODIO_CLIENT_ID}}",
+        "client_secret": "{{PODIO_CLIENT_SECRET}}"
+      },
+      "username": "{{PODIO_CLIENT_ID}}",
+      "password": "{{PODIO_CLIENT_SECRET}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 28800,
+      "proactiveRefreshSeconds": 600,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "OAuth2 ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "podio_get_app",
+      "description": "Get the Podio app this connector is signed in as, including every field (field_id, external_id, type, label, required and settings such as category options). No parameters. Use it to check the sign-in and to learn filter keys.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/app/{{PODIO_APP_ID}}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{app_id: app_id, status: status, space_id: space_id, url: url, link: link, name: config.name, item_name: config.item_name, description: config.description, fields: fields[].{field_id: field_id, external_id: external_id, type: type, label: config.label, required: config.required, settings: config.settings}}",
+          "maxBytes": 400000
+        }
+      }
+    },
+    {
+      "name": "podio_filter_items",
+      "description": "Filter and list items in this Podio app. Returns total, filtered and one page of items with field values. Pass filters keyed by a field external_id or by title, created_on, tags, item_id. Read-only; this call counts against Podio's tighter 250-per-hour limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "description": "Filter object. Keys are a field external_id (or field_id as a string) or title, created_on, created_by, last_edit_on, tags, item_id, app_item_id. Category values are lists of option ids. Number and date values are {from, to}. Example: {\"status\": [1], \"created_on\": {\"from\": \"-7d\"}}.",
+            "additionalProperties": true
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort key: created_on, last_edit_on, created_by, title, item_id, app_item_id, activity, or a numeric field_id."
+          },
+          "sort_desc": {
+            "type": "boolean",
+            "description": "true to sort descending. Use true with created_on to see the newest items first."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Items per page, 1 to 100. Default 20. Podio's own ceiling is 500; stay at or below 100 so the answer stays small."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "How many matching items to skip. Default 0. Add limit to move to the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/item/app/{{PODIO_APP_ID}}/filter/",
+        "bodyMapping": {
+          "filters": "$filters",
+          "sort_by": "$sort_by",
+          "sort_desc": "$sort_desc",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{total: total, filtered: filtered, items: items[].{item_id: item_id, app_item_id: app_item_id, title: title, link: link, external_id: external_id, created_on: initial_revision.created_on, last_edit_on: current_revision.created_on, fields: fields[].{field_id: field_id, external_id: external_id, type: type, label: label, values: values}}}",
+          "maxBytes": 400000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "podio_get_item",
+      "description": "Get one Podio item by its numeric item_id (from podio_filter_items), with each field's external_id, type, label and values. Does not mark the item as viewed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Numeric item_id from podio_filter_items. Not the per-app app_item_id."
+          }
+        },
+        "required": ["item_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/item/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "mark_as_viewed": false
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{item_id: item_id, app_item_id: app_item_id, title: title, link: link, external_id: external_id, created_on: created_on, created_by: created_by.name, last_event_on: last_event_on, tags: tags, fields: fields[].{field_id: field_id, external_id: external_id, type: type, label: config.label, values: values}}",
+          "maxBytes": 400000
+        }
+      }
+    }
+  ]
+}

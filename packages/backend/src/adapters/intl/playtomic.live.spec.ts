@@ -18,10 +18,11 @@ const a = adapter as unknown as {
 };
 
 describe('playtomic adapter — static spec conformance', () => {
+  // Unlisted since Nov 2026: the login now requires app attestation (#1498).
   // Playtomic refuses datacenter IPs (403 HTML on login from the cloud), so
   // every tool goes through the connector proxy; the login follows the tool.
-  it('is listed, and every tool is routed through the connector proxy', () => {
-    expect(a.unlisted).toBeUndefined();
+  it('is unlisted, and every tool is routed through the connector proxy', () => {
+    expect(a.unlisted).toBe(true);
     expect(a.tools.every((t) => t.useProxy === true)).toBe(true);
   });
 
