@@ -55,7 +55,7 @@ export function toolPrefixFrom(name: string): string {
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/^_|_$/g, ''); // runs are already one underscore long
   // At most 24 characters, cut after a whole word ("drawing_archive_ftps",
   // not "drawing_archive_ftps_tes"); a single long word is cut as is.
   let cut = base.slice(0, 24);

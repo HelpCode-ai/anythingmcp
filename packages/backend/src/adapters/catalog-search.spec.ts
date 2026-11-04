@@ -8,6 +8,8 @@ import {
   fileSearchIntent,
   MAX_FILE_SEARCH,
   MAX_FUZZY,
+  MAX_QUERY_LENGTH,
+  queryWords,
   searchCatalog,
   searchTerms,
 } from './catalog-search';
@@ -25,6 +27,27 @@ describe('catalog search — the frontend copy', () => {
     const backend = readFileSync(join(__dirname, 'catalog-search.ts'), 'utf8');
     const frontend = readFileSync(join(__dirname, '../../../frontend/src/lib/catalog-search.ts'), 'utf8');
     expect(frontend).toBe(backend);
+  });
+});
+
+describe('catalog search — query words', () => {
+  it('trims outer punctuation and keeps inner punctuation', () => {
+    expect(queryWords('  @BotFather, "Société"!  s/4hana ')).toEqual(['botfather', 'societe', 's/4hana']);
+    expect(queryWords('!!! ...')).toEqual([]);
+  });
+
+  it('reads at most MAX_QUERY_LENGTH characters', () => {
+    expect(queryWords(`${'a'.repeat(MAX_QUERY_LENGTH - 3)} b c`)).toEqual(['a'.repeat(MAX_QUERY_LENGTH - 3), 'b']);
+  });
+
+  it('handles a long run of punctuation in linear time (code scanning alert 655)', () => {
+    // The old trim regex took ~300 ms on 30k characters of this shape.
+    const word = `a${'!'.repeat(400_000)}a`;
+    const started = Date.now();
+    expect(queryWords(word)).toEqual(['a']);
+    expect(queryWords(`x${'!'.repeat(MAX_QUERY_LENGTH)}`)).toEqual(['x']);
+    expect(searchCatalog(catalog, word).hits).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 });
 
