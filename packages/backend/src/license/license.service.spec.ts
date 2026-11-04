@@ -977,3 +977,68 @@ describe('LicenseService — workspaces that already pay (trial emails)', () => 
     expect(prisma.license.findMany).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('LicenseService — DPA link', () => {
+  const OLD = process.env.LICENSE_SERVICE_TOKEN;
+  afterEach(() => {
+    process.env.LICENSE_SERVICE_TOKEN = OLD;
+    jest.restoreAllMocks();
+  });
+
+  function withPeople(made: ReturnType<typeof makeService>) {
+    (made.prisma as any).organization = {
+      findUnique: jest.fn(async () => ({ name: 'Default (JVD)' })),
+    };
+    (made.prisma as any).user = {
+      findUnique: jest.fn(async ({ where }: any) =>
+        where.id === 'user-1' ? { email: 'admin@example.be', name: 'Ada Admin' } : null,
+      ),
+    };
+    return made;
+  }
+
+  it('asks the licence site with the service token, for the workspace key and the signed-in admin', async () => {
+    process.env.LICENSE_SERVICE_TOKEN = 'svc-token-0123456789abcdef';
+    const licenses = [mkLicense({ licenseKey: 'AMCP-TEAM-0000-0000-0001', organizationId: 'org-1', plan: 'team' })];
+    const { svc } = withPeople(makeService({ isCloud: true, licenses }));
+    const axios = require('axios');
+    const post = jest
+      .spyOn(axios, 'post')
+      .mockResolvedValue({ data: { url: 'https://anythingmcp.com/dpa#session=x' } });
+
+    await expect(svc.createDpaLink('org-1', 'user-1', 'de')).resolves.toEqual({
+      url: 'https://anythingmcp.com/dpa#session=x',
+    });
+    expect(post).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/dpa\/session$/),
+      {
+        licenseKey: 'AMCP-TEAM-0000-0000-0001',
+        organizationId: 'org-1',
+        workspaceName: 'Default (JVD)',
+        email: 'admin@example.be',
+        name: 'Ada Admin',
+        locale: 'de',
+      },
+      expect.objectContaining({ headers: { 'x-amcp-service-token': 'svc-token-0123456789abcdef' } }),
+    );
+  });
+
+  it('refuses a trial without calling the licence site', async () => {
+    const licenses = [mkLicense({ organizationId: 'org-1', plan: 'trial' })];
+    const { svc } = withPeople(makeService({ isCloud: true, licenses }));
+    const axios = require('axios');
+    const post = jest.spyOn(axios, 'post');
+
+    await expect(svc.createDpaLink('org-1', 'user-1')).rejects.toThrow(/paid plans/);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("passes on the licence site's reason when it says no", async () => {
+    const licenses = [mkLicense({ organizationId: 'org-1', plan: 'starter' })];
+    const { svc } = withPeople(makeService({ isCloud: true, licenses }));
+    const axios = require('axios');
+    jest.spyOn(axios, 'post').mockRejectedValue({ response: { status: 404, data: { error: 'no paid plan' } } });
+
+    await expect(svc.createDpaLink('org-1', 'user-1')).rejects.toThrow('no paid plan');
+  });
+});

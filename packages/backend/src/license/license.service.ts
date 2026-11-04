@@ -315,6 +315,48 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // ── Data Processing Agreement (Cloud) ──────────────────────────────────────
+
+  /**
+   * A one-hour link to the self-service DPA on the licence site (Cloud only;
+   * the controller checks the deployment mode). Everything about the
+   * agreement — the text, the acceptance record, the PDF, the email — lives
+   * on the licence site; this server only vouches, with its service token,
+   * that the signed-in admin belongs to the workspace the key is bound to.
+   * Paid plans only: a trial gets no DPA.
+   */
+  async createDpaLink(organizationId: string, userId: string, locale?: string): Promise<{ url: string }> {
+    const license = await this.getCurrentLicense(organizationId);
+    if (!license?.licenseKey || license.plan === 'trial' || license.plan === 'community') {
+      throw new Error('The Data Processing Agreement comes with paid plans.');
+    }
+    const [org, admin] = await Promise.all([
+      this.prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } }),
+    ]);
+    if (!admin?.email) throw new Error('No user for this session.');
+    try {
+      const { data } = await axios.post(
+        `${this.apiBase}/api/dpa/session`,
+        {
+          licenseKey: license.licenseKey,
+          organizationId,
+          workspaceName: org?.name ?? undefined,
+          email: admin.email,
+          name: admin.name ?? undefined,
+          ...(locale && { locale }),
+        },
+        { timeout: 15000, headers: this.serviceHeaders() },
+      );
+      if (!data?.url) throw new Error('No DPA link returned.');
+      return { url: data.url as string };
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to open the DPA page.';
+      this.logger.warn(`DPA link request failed: ${msg}`);
+      throw new Error(msg);
+    }
+  }
+
   // ── Stripe Checkout (Cloud) ────────────────────────────────────────────────
 
   /**

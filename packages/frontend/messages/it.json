@@ -2429,6 +2429,13 @@
       "activating": "Attivazione della licenza…",
       "key": "Chiave:",
       "goToSettings": "Vai alle impostazioni della licenza"
+    },
+    "dpa": {
+      "title": "Accordo sul trattamento dei dati",
+      "body": "Il tuo piano include il nostro accordo sul trattamento dei dati ai sensi dell'art. 28 GDPR. Accettalo online su anythingmcp.com, in inglese o in tedesco: ricevi via email il PDF con il registro di accettazione, senza firma né scansione.",
+      "open": "Apri il DPA",
+      "opening": "Apertura…",
+      "error": "Non è stato possibile aprire la pagina del DPA. Riprova."
     }
   },
   "settingsSso": {

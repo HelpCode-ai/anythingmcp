@@ -2025,6 +2025,13 @@ export const license = {
       method: 'POST',
       token,
     }),
+  /** Cloud only (ADMIN, paid plans): a one-hour link to accept the DPA on the licence site. */
+  dpaLink: (token: string, locale?: string) =>
+    request<{ url: string }>('/api/license/dpa-link', {
+      method: 'POST',
+      body: { ...(locale && { locale }) },
+      token,
+    }),
   /** 'cancel' opens Stripe's cancellation page, 'payment_method_update' the page to add a card. */
   billingPortal: (token: string, returnUrl?: string, flow?: 'cancel' | 'payment_method_update') =>
     request<{ url: string }>('/api/license/billing-portal', {

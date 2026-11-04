@@ -41,6 +41,7 @@ export default function LicenseSettingsPage() {
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [openingPortal, setOpeningPortal] = useState(false);
+  const [openingDpa, setOpeningDpa] = useState(false);
   const managePlan = useManagePlan();
   // Where the visitor came from (`?source=`, e.g. the offer email), passed on
   // to the card trial and the pricing link for Stripe metadata.
@@ -165,6 +166,31 @@ export default function LicenseSettingsPage() {
     } catch (err: any) {
       setError(err.message || t('errors.portal'));
       setOpeningPortal(false);
+    }
+  };
+
+  // The DPA lives on the licence site: ask it for a one-hour link and open it
+  // in a new tab. The tab is opened before the request so popup blockers let
+  // it through; it is closed again if the request fails.
+  const handleOpenDpa = async () => {
+    if (!token) return;
+    setError('');
+    setMessage('');
+    setOpeningDpa(true);
+    const tab = window.open('', '_blank');
+    try {
+      const { url } = await license.dpaLink(token, ['en', 'de', 'it'].includes(locale) ? locale : 'en');
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch (err: any) {
+      tab?.close();
+      setError(err.message || t('dpa.error'));
+    } finally {
+      setOpeningDpa(false);
     }
   };
 
@@ -369,6 +395,17 @@ export default function LicenseSettingsPage() {
           </div>
         )}
       </Card>
+
+      {/* Data Processing Agreement: paid Cloud plans accept it on the licence site */}
+      {isCloud && status?.plan && status.plan !== 'trial' && status.plan !== 'community' && (
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold text-[var(--text)] mb-2">{t('dpa.title')}</h2>
+          <p className="text-sm text-[var(--text-2)] mb-4">{t('dpa.body')}</p>
+          <Button variant="secondary" onClick={handleOpenDpa} disabled={openingDpa}>
+            {openingDpa ? t('dpa.opening') : t('dpa.open')}
+          </Button>
+        </Card>
+      )}
 
       {/* Features */}
       {isCloud && status?.features && Object.keys(status.features).length > 0 && (

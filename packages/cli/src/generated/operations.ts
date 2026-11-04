@@ -1580,6 +1580,16 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "license",
+    "action": "dpaLink",
+    "method": "POST",
+    "path": "/api/license/dpa-link",
+    "summary": "One-hour link to accept the Data Processing Agreement on the licence site (cloud, ADMIN, paid plans)",
+    "admin": true,
+    "pathParams": [],
+    "hasBody": true
+  },
+  {
+    "resource": "license",
     "action": "setLicenseKey",
     "method": "PUT",
     "path": "/api/license/key",
