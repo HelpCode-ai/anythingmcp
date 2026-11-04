@@ -58,7 +58,7 @@ type Tool = {
   name: string;
   description: string;
   parameters: { properties?: Record<string, { description?: string; pattern?: string; default?: unknown; maximum?: number; enum?: string[] }>; required?: string[] };
-  endpointMapping: { method: string; path: string; queryParams?: Record<string, unknown> };
+  endpointMapping: { method: string; path: string; encodePathParams?: boolean; queryParams?: Record<string, unknown> };
   responseMapping?: Record<string, any>;
   annotations?: Record<string, unknown>;
 };
@@ -199,6 +199,14 @@ describe('wazuh adapter: static spec conformance', () => {
         .toMatchObject({ readOnlyHint: true, destructiveHint: false });
       expect(t.endpointMapping.path).not.toMatch(/security|cluster|active-response|restart|upgrade|vulnerability|logs/);
     }
+  });
+
+  it('percent-encodes path parameters on every tool with a {param} in its path', () => {
+    const withParams = a.tools.filter((t) => /\{[^}]+\}/.test(t.endpointMapping.path));
+    expect(withParams.map((t) => t.name).sort()).toEqual([
+      'wazuh_get_syscheck_last_scan', 'wazuh_list_sca_checks', 'wazuh_list_sca_policies', 'wazuh_list_syscheck_files',
+    ]);
+    for (const t of withParams) expect({ name: t.name, encodePathParams: t.endpointMapping.encodePathParams }).toEqual({ name: t.name, encodePathParams: true });
   });
 
   it('prefixes every tool and shares no tool name with another adapter', () => {

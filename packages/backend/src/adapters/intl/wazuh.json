@@ -682,6 +682,7 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/sca/{agent_id}",
+        "encodePathParams": true,
         "queryParams": {
           "name": "$name",
           "search": "$search",
@@ -761,6 +762,7 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/sca/{agent_id}/checks/{policy_id}",
+        "encodePathParams": true,
         "queryParams": {
           "select": "id,title,result,rationale,remediation",
           "result": "$result",
@@ -849,6 +851,7 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/syscheck/{agent_id}",
+        "encodePathParams": true,
         "queryParams": {
           "file": "$file",
           "type": "$type",
@@ -893,7 +896,8 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/syscheck/{agent_id}/last_scan"
+        "path": "/syscheck/{agent_id}/last_scan",
+        "encodePathParams": true
       },
       "annotations": {
         "readOnlyHint": true,
