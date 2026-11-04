@@ -61,8 +61,9 @@ function page(title: string, body: string): string {
 /**
  * Run the loopback browser-authorization flow. Resolves with the minted key,
  * or rejects on denial, timeout, or a state mismatch. `instanceOrigin` is the
- * instance's origin (e.g. https://cloud.anythingmcp.com); the browser POST is
- * accepted only from it when it sends an Origin header.
+ * instance's origin (e.g. https://cloud.anythingmcp.com); a browser POST that
+ * names any other origin is refused. The opaque origin "null" is accepted:
+ * that is what browsers send when an HTTPS page posts to the loopback.
  */
 export function browserAuthorize(options: {
   instanceUrl: string;
@@ -93,9 +94,12 @@ export function browserAuthorize(options: {
         res.end(page('amcp', 'This endpoint expects the authorization to be posted from the dashboard.'));
         return;
       }
-      // Only accept the POST from the instance's own origin when it says one.
+      // Reject a POST that names a different origin. Browsers send the opaque
+      // origin "null" when an HTTPS page posts a form to this http:// loopback
+      // (a secure-to-insecure navigation), so "null" must be accepted; the
+      // unguessable `state` checked below is what binds the request.
       const origin = req.headers.origin;
-      if (typeof origin === 'string' && origin !== instanceOrigin) {
+      if (typeof origin === 'string' && origin !== 'null' && origin !== instanceOrigin) {
         res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' });
         res.end(page('amcp', 'Unexpected origin. Nothing was saved.'));
         return;
