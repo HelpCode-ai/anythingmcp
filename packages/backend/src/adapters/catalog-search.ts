@@ -258,11 +258,32 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Longest query that is matched; the rest is ignored. Queries come from MCP
+ * tools and the support chat without a length limit, and every word is
+ * compared with the whole catalog.
+ */
+export const MAX_QUERY_LENGTH = 500;
+
+/** Letters, digits and everything from À up, as UTF-16 code units. */
+function isWordChar(code: number): boolean {
+  return (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || code >= 0xc0;
+}
+
+/** Outer punctuation trimmed by index: a regex here was quadratic on long runs. */
+function trimPunctuation(word: string): string {
+  let start = 0;
+  let end = word.length;
+  while (start < end && !isWordChar(word.charCodeAt(start))) start++;
+  while (end > start && !isWordChar(word.charCodeAt(end - 1))) end--;
+  return word.slice(start, end);
+}
+
 /** Words of a query, accents dropped, outer punctuation trimmed ("@botfather" → botfather). */
 export function queryWords(query: string): string[] {
-  return fold(query)
+  return fold(query.slice(0, MAX_QUERY_LENGTH))
     .split(/\s+/)
-    .map((w) => w.replace(/^[^a-z0-9À-￿]+|[^a-z0-9À-￿]+$/g, ''))
+    .map(trimPunctuation)
     .filter(Boolean);
 }
 
