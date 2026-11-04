@@ -1,0 +1,83 @@
+---
+title: "La CLI di AnythingMCP — Gestisci tutta la tua istanza MCP dal terminale"
+description: "amcp è il client a riga di comando ufficiale di AnythingMCP. Chiama i tool MCP dalla shell e gestisci l'intera istanza — connettori, server MCP, utenti, ruoli, SSO e impostazioni — con una chiave API di gestione. Installa con npm, accedi dal browser, scrivi script per tutto. Per le persone e per gli agenti AI connessi."
+category: "announcements"
+keyword: "AnythingMCP CLI, amcp CLI, MCP CLI, Model Context Protocol CLI, MCP riga di comando, gestire server MCP da terminale, MCP gateway CLI, npm @anythingmcp/cli, tool MCP da terminale, CLI agente AI"
+publishedAt: "2026-11-04"
+lang: "it"
+featured: true
+---
+
+## Tutta la tua istanza MCP, dal terminale
+
+Ecco **`amcp`**, il client a riga di comando ufficiale di AnythingMCP. Fa due cose:
+
+1. **Chiama i tool MCP** dalla shell — scoprirli, leggerne lo schema, eseguirli.
+2. **Guida l'API di gestione** (`/api/*`) con una **chiave API di gestione** — così una persona, o un agente AI connesso, può configurare l'intera istanza (connettori, server MCP, utenti, ruoli, SSO, memory, skill, knowledge graph e impostazioni) senza lasciare il terminale.
+
+È open source (AGPL-3.0), funziona con **AnythingMCP Cloud** e con le istanze **self-hosted**, e si installa da npm:
+
+```bash
+npm i -g @anythingmcp/cli
+amcp --help
+```
+
+## Accedi
+
+Crea una **chiave API di gestione** nella dashboard (Impostazioni → Chiavi API di gestione, sola lettura o admin), oppure lascia che lo faccia la CLI tramite il browser:
+
+```bash
+amcp login --browser --url https://cloud.anythingmcp.com            # sola lettura
+amcp login --browser --scope admin --url https://cloud.anythingmcp.com
+```
+
+`--browser` apre la pagina di autorizzazione dell'istanza, tu la approvi con la tua sessione della dashboard (SSO incluso), e la chiave torna alla CLI tramite un loopback `127.0.0.1` una tantum — non compare mai in un URL, in un log o nella cronologia della shell. Per collegarti invece a un singolo server MCP per le chiamate ai tool, usa `amcp login --url … --server …` con una chiave MCP.
+
+## Chiama i tool MCP
+
+```bash
+amcp tools ls                       # elenca i tool, con indicazioni lettura/scrittura
+amcp tools describe YOUR_TOOL       # descrizione completa + schema JSON di input
+amcp tools call YOUR_TOOL --args '{"id":"123"}'
+```
+
+## Gestisci l'istanza
+
+Tutto ciò che fa la dashboard lo fa `amcp api` con una chiave di gestione — è il `gh api` di AnythingMCP:
+
+```bash
+amcp api GET  /api/connectors
+amcp api GET  /api/mcp-servers
+amcp api POST /api/mcp-servers --data '{"name":"ops","description":"Server ops"}'
+amcp api PUT  /api/mcp-servers/SERVER_ID --data '{"codeMode":"tools"}'
+```
+
+Non sai cosa è disponibile? La CLI include un catalogo di tutte le operazioni di gestione — senza chiave, senza rete:
+
+```bash
+amcp api --list                 # tutte le operazioni, raggruppate per risorsa
+amcp api --list mcp-servers     # solo una risorsa
+```
+
+Una chiave di gestione porta con sé identità e ruolo del proprietario: non concede mai privilegi, quindi le rotte solo-admin richiedono comunque un proprietario admin, e le chiavi in sola lettura possono solo leggere. L'API applica un rate limit per chiave, così un agente impazzito viene respinto invece di martellare la tua istanza.
+
+## Pensato anche per gli agenti
+
+La stessa API di gestione è esattamente ciò che serve a un agente AI connesso per **configurare e far funzionare un workspace end-to-end** — aggiungere un connettore, creare un server MCP, assegnare ruoli, impostare l'SSO, attivare memory e skill — in sicurezza, nei limiti dell'ambito che gli concedi. Gli agenti sono in sola lettura per impostazione predefinita.
+
+## Script e CI
+
+```bash
+AMCP_URL=https://cloud.anythingmcp.com AMCP_API_KEY=mcp_… amcp api GET /api/users --json
+amcp completion zsh > "${fpath[1]}/_amcp"     # completamento shell per bash, zsh, fish
+```
+
+Le chiavi sono salvate con modalità `0600`, l'HTTPS è obbligatorio (tranne il loopback per lo sviluppo locale), i redirect vengono rifiutati così una chiave non può seguire una richiesta verso un'altra origine, e la chiave non è mai accettata come argomento del comando.
+
+## Dove prenderla
+
+- **Installa:** `npm i -g @anythingmcp/cli`
+- **Doc:** il riferimento completo dei comandi è nel [README della CLI su GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme).
+- **Sorgente:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp).
+
+Non hai ancora AnythingMCP? Inizia gratis su [cloud.anythingmcp.com](https://cloud.anythingmcp.com), o fai self-hosting.
