@@ -1,22 +1,58 @@
 {
   "name": "@anythingmcp/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Command-line client for AnythingMCP, the enterprise agent harness and MCP gateway: call MCP tools and fully manage your instance — connectors, MCP servers, users, roles and settings — from the terminal.",
   "license": "AGPL-3.0-only",
-  "keywords": ["anythingmcp", "amcp", "mcp", "model-context-protocol", "mcp-gateway", "mcp-server", "mcp-client", "cli", "ai-agent", "ai-agents", "connectors", "claude", "anthropic", "chatgpt", "cursor"],
+  "keywords": [
+    "anythingmcp",
+    "amcp",
+    "mcp",
+    "model-context-protocol",
+    "mcp-gateway",
+    "mcp-server",
+    "mcp-client",
+    "cli",
+    "ai-agent",
+    "ai-agents",
+    "connectors",
+    "claude",
+    "anthropic",
+    "chatgpt",
+    "cursor"
+  ],
   "homepage": "https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme",
-  "repository": { "type": "git", "url": "git+https://github.com/HelpCode-ai/anythingmcp.git", "directory": "packages/cli" },
-  "bugs": { "url": "https://github.com/HelpCode-ai/anythingmcp/issues" },
-  "bin": { "amcp": "dist/index.js" },
-  "files": ["dist", "README.md"],
-  "publishConfig": { "access": "public" },
-  "engines": { "node": ">=22.12" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HelpCode-ai/anythingmcp.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/HelpCode-ai/anythingmcp/issues"
+  },
+  "bin": {
+    "amcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/index.js', 0o755)\"",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json && node --test dist/cli.test.js",
     "prepublishOnly": "npm run build"
   },
-  "dependencies": { "@modelcontextprotocol/client": "^2.3.1" },
-  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.0" }
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
 }
