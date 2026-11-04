@@ -1115,7 +1115,45 @@ export const audit = {
     }>(`/api/audit/analytics?days=${days}`, { token }),
   breakdowns: (token: string, days = 30) =>
     request<AuditBreakdowns>(`/api/audit/breakdowns?days=${days}`, { token }),
+  toolPerformance: (token: string, params: ToolPerformanceQuery = {}) => {
+    const query = new URLSearchParams({
+      hours: String(params.hours ?? 24),
+      limit: String(params.limit ?? 25),
+      offset: String(params.offset ?? 0),
+    });
+    if (params.connectorId) query.set('connectorId', params.connectorId);
+    if (params.mcpServerId) query.set('mcpServerId', params.mcpServerId);
+    return request<{ items: ToolPerformance[]; hasMore: boolean }>(
+      `/api/audit/tool-performance?${query}`, { token },
+    );
+  },
 };
+
+export interface ToolPerformanceQuery {
+  hours?: number;
+  limit?: number;
+  offset?: number;
+  connectorId?: string;
+  mcpServerId?: string;
+}
+
+export interface ToolPerformance {
+  toolId: string;
+  toolName: string;
+  connectorId: string;
+  connectorName: string;
+  mcpServerId: string | null;
+  mcpServerName: string | null;
+  calls: number;
+  errors: number;
+  errorRate: number;
+  latencySampleCount: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+}
 
 export interface BreakdownRow {
   id: string | null;
