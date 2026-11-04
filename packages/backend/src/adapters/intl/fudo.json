@@ -1,13 +1,13 @@
 {
   "slug": "fudo",
   "name": "Fudo",
-  "description": "Fudo restaurant point of sale: sales and tickets with items and payments, payments and payment methods, customers, products and menu categories, expenses and suppliers, tables, rooms, kitchens, ingredients and staff. Fudo API v1alpha1 with an API key and secret; writes are included but installed switched off.",
+  "description": "Fudo restaurant point of sale: sales and tickets with items and payments, payments and payment methods, customers, products and menu categories, expenses with their purchased lines, expense payments and categories, suppliers, ingredients and stock, tables, rooms, kitchens, staff and roles. Fudo API v1alpha1 with an API key and secret; writes are included but installed switched off.",
   "region": "intl",
   "category": "food",
   "icon": "fudo",
   "docsUrl": "https://dev.fu.do/api",
   "prerequisites": "API credentials (an apiKey and apiSecret) issued by Fudo support: write to soporte@fu.do with your account name and the user that should get API access.",
-  "instructions": "## Fudo\nFudo is a point-of-sale and management system for restaurants, bars and cafes, used mainly in Argentina and the rest of Latin America and in Spain. This connector reads the Fudo API v1alpha1 (`https://api.fu.do/v1alpha1`), a JSON:API: every answer has `data` with `id`, `type` and `attributes`, plus `included` when relations are embedded.\n\n## Setup\n1. Fudo issues API credentials on request: write to soporte@fu.do with the name of your Fudo account and the user that should get API access. Fudo recommends a dedicated user such as api@mirestaurante; the API can do what that user's role allows.\n2. Put the `apiKey` into `FUDO_API_KEY` and the `apiSecret` into `FUDO_API_SECRET`.\n3. The connector exchanges them at `POST https://auth.fu.do/api` for a token valid 24 hours and sends it as `Authorization: Bearer`. It renews the token before it expires. The key and secret are never sent to api.fu.do directly; sending them as headers there returns 401.\n\n## Start here\n- `fudo_list_payment_methods` checks the credentials and gives the method ids.\n- Sales of a day: `fudo_list_sales` with `created_at` = `and(gte.2026-10-06T00:00:00Z,lte.2026-10-06T23:59:59Z)`, `sale_state` = `in.(CLOSED)` and `include` = `payments.paymentMethod` or `items.product`.\n- Occupied tables: `fudo_list_tables` with `include=activeSales`.\n- Menu: `fudo_list_product_categories` with `include=products`, or `fudo_list_products`.\n\n## Filters\nFilter parameters take Fudo's operator expressions as documented: `eq.`, `neq.`, `gte.`, `lte.`, `in.(a,b)`, `ilike.%text%`, `is.null`, `isdistinct.null`, and `and(gte.x,lte.y)` for ranges. Times are ISO 8601 with Z (UTC), dates are YYYY-MM-DD. Some parameters (active, ids, table_id, user_id, provider_id, search, name) take the plain value and the connector adds the operator. Fudo validates each expression against a per-column pattern and answers 400 or 422 when the form is not accepted; the parameter descriptions give the accepted forms.\n\n## Pagination\n`page_size` (default 250, max 500) and `page_number` (from 1). There is no total count: keep requesting pages until a page has fewer items than `page_size`.\n\n## Include\nMost tools take `include`, a comma-separated list of relations to embed (for example `items.product,payments.paymentMethod` on a sale). Embedded records arrive in `included`, linked from `relationships`.\n\n## Writes\nCreating and updating customers, expenses and products is included but installed switched off; turn them on deliberately. Write bodies use JSON:API (`data.type`, `data.attributes`, `data.relationships`). Rate limiting answers 429.",
+  "instructions": "## Fudo\nFudo is a point-of-sale and management system for restaurants, bars and cafes, used mainly in Argentina and the rest of Latin America and in Spain. This connector reads the Fudo API v1alpha1 (`https://api.fu.do/v1alpha1`), a JSON:API: every answer has `data` with `id`, `type` and `attributes`, plus `included` when relations are embedded.\n\n## Setup\n1. Fudo issues API credentials on request: write to soporte@fu.do with the name of your Fudo account and the user that should get API access. Fudo recommends a dedicated user such as api@mirestaurante; the API can do what that user's role allows.\n2. Put the `apiKey` into `FUDO_API_KEY` and the `apiSecret` into `FUDO_API_SECRET`.\n3. The connector exchanges them at `POST https://auth.fu.do/api` for a token valid 24 hours and sends it as `Authorization: Bearer`. It renews the token before it expires. The key and secret are never sent to api.fu.do directly; sending them as headers there returns 401.\n\n## Start here\n- `fudo_list_payment_methods` checks the credentials and gives the method ids.\n- Sales of a day: `fudo_list_sales` with `created_at` = `and(gte.2026-10-06T00:00:00Z,lte.2026-10-06T23:59:59Z)`, `sale_state` = `in.(CLOSED)` and `include` = `payments.paymentMethod` or `items.product`.\n- Occupied tables: `fudo_list_tables` with `include=activeSales`.\n- Menu: `fudo_list_product_categories` with `include=products`, or `fudo_list_products`.\n\n## Filters\nFilter parameters take Fudo's operator expressions as documented: `eq.`, `neq.`, `gte.`, `lte.`, `in.(a,b)`, `ilike.%text%`, `is.null`, `isdistinct.null`, and `and(gte.x,lte.y)` for ranges. Times are ISO 8601 with Z (UTC), dates are YYYY-MM-DD. Some parameters (active, ids, table_id, user_id, provider_id, search, name) take the plain value and the connector adds the operator. Fudo validates each expression against a per-column pattern and answers 400 or 422 when the form is not accepted; the parameter descriptions give the accepted forms.\n\n## Pagination\n`page_size` (default 250, max 500) and `page_number` (from 1). There is no total count: keep requesting pages until a page has fewer items than `page_size`.\n\n## Include\nMost tools take `include`, a comma-separated list of relations to embed (for example `items.product,payments.paymentMethod` on a sale). Embedded records arrive in `included`, linked from `relationships`.\n\n## Fields\nFudo only returns the attributes a request asks for on some resources. Expenses, expense categories and providers would come back with ids only, so the connector asks for their fields itself.\n\n## Expenses, stock and units\n- An expense's purchased lines are `expenseItems`: `detail`, `quantity`, `price` and the linked `ingredient` or `product`. Read them with `include=expenseItems.ingredient.unit`.\n- The Fudo API cannot create or change expense items: `fudo_create_expense` records the header only, so stock does not move. To book a purchase into stock, update each ingredient with `fudo_update_ingredient` (stock is absolute: current stock from `fudo_get_ingredient` plus the purchased quantity).\n- Units have no endpoint of their own. They come with `include=unit` on ingredients and products (for example `unit`, `kg`, `litre`); convert purchased quantities to the ingredient's unit before updating stock.\n- To avoid duplicates, list expenses of the provider and date and compare `receiptNumber` and `amount` before creating one.\n- `fudo_create_expense_payment` pays an expense; `status` turns PAID when it is fully paid.\n\n## Writes\nCreating and updating customers, expenses, expense payments and categories, providers, products and ingredients is included but installed switched off; turn them on deliberately. Write bodies use JSON:API (`data.type`, `data.attributes`, `data.relationships`). Rate limiting answers 429.",
   "requiredEnvVars": [
     "FUDO_API_KEY",
     "FUDO_API_SECRET"
@@ -29,7 +29,7 @@
   "verifyHints": {
     "400": "Fudo refused the login. Check that the apiKey and apiSecret are the pair Fudo support issued and were pasted without spaces.",
     "401": "Fudo did not accept the credentials. Check the apiKey and apiSecret; if they are right, ask soporte@fu.do whether API access is still enabled for that user.",
-    "403": "The API user's role does not allow this. Give the user a role with access to sales, customers and products in Fudo.",
+    "403": "The API user's role does not allow this. In Fudo, give the API user a role with the permissions for the data you need (sales, products, expenses...); fudo_list_roles shows each role's permissions.",
     "rate_limited": "Fudo is rate limiting the requests. Wait a minute and try again."
   },
   "probe": {
@@ -394,7 +394,7 @@
     },
     {
       "name": "fudo_list_payments",
-      "description": "List payments received with amount, payment method, paid and created times and canceled flag. Filter by time, amount or canceled; embed the payment method with include. Use it for cash-up and revenue by method.",
+      "description": "List payments received with amount, payment method, paid and created times and canceled flag. Filter by time, amount or canceled; embed the payment method with include. Use it for cash-up and revenue by method. Sale payments and expense payments come back together; separate them with expense_id.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -413,6 +413,10 @@
           "canceled": {
             "type": "string",
             "description": "eq.true for canceled payments only, neq.true to leave them out."
+          },
+          "expense_id": {
+            "type": "string",
+            "description": "is.null for sale payments only, isdistinct.null for expense (supplier) payments only."
           },
           "include": {
             "type": "string",
@@ -440,6 +444,7 @@
           "filter[paidAt]": "$paid_at",
           "filter[amount]": "$amount",
           "filter[canceled]": "$canceled",
+          "filter[expenseId]": "$expense_id",
           "include": "$include",
           "sort": "$sort",
           "page[size]": "$page_size",
@@ -506,7 +511,7 @@
     },
     {
       "name": "fudo_list_expenses",
-      "description": "List expenses (purchases and costs) with amount, date, due date, description, status and receipt number. Filter by date, category, provider or payment method; embed category and provider with include.",
+      "description": "List expenses (purchases and costs) with amount, date, due date, payment date, description, status (PAID or UNPAID) and receipt number. Filter by date, status, category, provider or payment method. Embed the purchased lines with include=expenseItems.ingredient.unit.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -517,6 +522,10 @@
           "due_date": {
             "type": "string",
             "description": "Due date: gte.<date> or and(gte.<date>,lte.<date>)."
+          },
+          "status": {
+            "type": "string",
+            "description": "eq.PAID or eq.UNPAID."
           },
           "created_at": {
             "type": "string",
@@ -540,7 +549,7 @@
           },
           "include": {
             "type": "string",
-            "description": "Comma-separated relations to embed, e.g. expenseCategory, provider, paymentMethod, payments, expenseItems.product, user."
+            "description": "Comma-separated relations to embed: expenseItems.ingredient.unit and expenseItems.product.unit (the purchased lines with ingredient or product and unit), provider, expenseCategory, paymentMethod, payments.paymentMethod, user, cashRegister, receiptType."
           },
           "sort": {
             "type": "string",
@@ -562,6 +571,7 @@
         "queryParams": {
           "filter[date]": "$date",
           "filter[dueDate]": "$due_date",
+          "filter[status]": "$status",
           "filter[createdAt]": "$created_at",
           "filter[expenseCategoryId]": "$expense_category_id",
           "filter[providerId]": "eq.${provider_id}",
@@ -570,13 +580,24 @@
           "include": "$include",
           "sort": "$sort",
           "page[size]": "$page_size",
-          "page[number]": "$page_number"
+          "page[number]": "$page_number",
+          "fields[expense]": "amount,canceled,createdAt,date,description,dueDate,paymentDate,receiptNumber,status,useInCashCount,cashRegister,commercialDocument,expenseCategory,expenseItems,paymentMethod,payments,provider,receiptType,recurringExpense,user",
+          "fields[expenseCategory]": "name",
+          "fields[provider]": "name",
+          "fields[paymentMethod]": "name",
+          "fields[expenseItem]": "canceled,detail,price,quantity,product,ingredient",
+          "fields[ingredient]": "name,unit,cost",
+          "fields[product]": "name,unit,cost",
+          "fields[payment]": "amount,paid_at,canceled,paymentMethod",
+          "fields[user]": "name",
+          "fields[cashRegister]": "name",
+          "fields[receiptType]": "name"
         }
       }
     },
     {
       "name": "fudo_get_expense",
-      "description": "Get one expense by id with amount, dates, description, status and receipt; embed category, provider, items and payments with include.",
+      "description": "Get one expense by id with amount, dates, description, status and receipt number. Embed the purchased lines with include=expenseItems.ingredient.unit, and provider, category or payments.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -586,7 +607,7 @@
           },
           "include": {
             "type": "string",
-            "description": "Comma-separated relations to embed, e.g. expenseCategory, provider, paymentMethod, payments, expenseItems.product, user."
+            "description": "Comma-separated relations to embed: expenseItems.ingredient.unit and expenseItems.product.unit (the purchased lines with ingredient or product and unit), provider, expenseCategory, paymentMethod, payments.paymentMethod, user, cashRegister, receiptType."
           }
         },
         "required": [
@@ -597,13 +618,24 @@
         "method": "GET",
         "path": "/expenses/{expense_id}",
         "queryParams": {
-          "include": "$include"
+          "include": "$include",
+          "fields[expense]": "amount,canceled,createdAt,date,description,dueDate,paymentDate,receiptNumber,status,useInCashCount,cashRegister,commercialDocument,expenseCategory,expenseItems,paymentMethod,payments,provider,receiptType,recurringExpense,user",
+          "fields[expenseCategory]": "name",
+          "fields[provider]": "name",
+          "fields[paymentMethod]": "name",
+          "fields[expenseItem]": "canceled,detail,price,quantity,product,ingredient",
+          "fields[ingredient]": "name,unit,cost",
+          "fields[product]": "name,unit,cost",
+          "fields[payment]": "amount,paid_at,canceled,paymentMethod",
+          "fields[user]": "name",
+          "fields[cashRegister]": "name",
+          "fields[receiptType]": "name"
         }
       }
     },
     {
       "name": "fudo_list_expense_categories",
-      "description": "List expense categories (rent, supplies, salaries...) with id and name. Use the ids to filter or create expenses.",
+      "description": "List expense categories with id, name, active flag, financial category (ADMINISTRATIVE-EXPENSES, OPERATIONAL-EXPENSES, GOODS-PURCHASES) and parent category. Use the ids to filter or create expenses.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -627,7 +659,8 @@
         "queryParams": {
           "sort": "$sort",
           "page[size]": "$page_size",
-          "page[number]": "$page_number"
+          "page[number]": "$page_number",
+          "fields[expenseCategory]": "name,active,financialCategory,parentCategory"
         }
       }
     },
@@ -794,13 +827,37 @@
           "filter[@all]": "fts.${search}",
           "sort": "$sort",
           "page[size]": "$page_size",
-          "page[number]": "$page_number"
+          "page[number]": "$page_number",
+          "fields[provider]": "name,email,address,phone,comment,active,internal,providerHouseAccountBalance,fiscalNumber"
+        }
+      }
+    },
+    {
+      "name": "fudo_get_provider",
+      "description": "Get one provider (supplier) by id with name, e-mail, phone, address, fiscal number, comment, active flag and house account balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "description": "Numeric provider id."
+          }
+        },
+        "required": [
+          "provider_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/providers/{provider_id}",
+        "queryParams": {
+          "fields[provider]": "name,email,address,phone,comment,active,internal,providerHouseAccountBalance,fiscalNumber"
         }
       }
     },
     {
       "name": "fudo_list_ingredients",
-      "description": "List ingredients with cost, unit, stock, minimum stock and stock control. Filter by name or category; use it for stock checks and recipe costing.",
+      "description": "List ingredients with cost, stock, minimum stock and stock control. Filter by name, category or ids. Add include=unit to get the unit name (unit, kg, litre) in included. Use it for stock checks and before fudo_update_ingredient.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -811,6 +868,10 @@
           "ingredient_category_id": {
             "type": "string",
             "description": "Only ingredients of this category id."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ingredient ids, e.g. 7,9,11."
           },
           "include": {
             "type": "string",
@@ -836,10 +897,38 @@
         "queryParams": {
           "filter[name]": "ilike.${name}",
           "filter[ingredientCategoryId]": "eq.${ingredient_category_id}",
+          "filter[id]": "in.(${ids})",
           "include": "$include",
           "sort": "$sort",
           "page[size]": "$page_size",
           "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_get_ingredient",
+      "description": "Get one ingredient by id with cost, stock, minimum stock and stock control. Add include=unit for the unit name. Read it right before fudo_update_ingredient to get the current stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ingredient_id": {
+            "type": "string",
+            "description": "Numeric ingredient id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: unit, ingredientCategory, recipeCard."
+          }
+        },
+        "required": [
+          "ingredient_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ingredients/{ingredient_id}",
+        "queryParams": {
+          "include": "$include"
         }
       }
     },
@@ -872,6 +961,36 @@
         "path": "/users",
         "queryParams": {
           "include": "$include",
+          "sort": "$sort",
+          "page[size]": "$page_size",
+          "page[number]": "$page_number"
+        }
+      }
+    },
+    {
+      "name": "fudo_list_roles",
+      "description": "List user roles with name and permissions (e.g. list_expenses, create_expenses, view_products_cost). Use it to explain a 403: the API can only do what the API user's role allows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: id, name; prefix - for descending."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, up to 500 (default 250). The last page has fewer items than this."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/roles",
+        "queryParams": {
           "sort": "$sort",
           "page[size]": "$page_size",
           "page[number]": "$page_number"
@@ -1044,7 +1163,7 @@
     },
     {
       "name": "fudo_create_expense",
-      "description": "Record an expense (purchase, bill or cost) with amount and date, and link it to a category, provider or payment method. Returns the new expense with its id.",
+      "description": "Record an expense (purchase, bill or cost) with amount and date, and link it to a provider, category or payment method. The Fudo API cannot add purchased lines (expense items) to an expense, so it does not change stock: to raise ingredient stock after a purchase, use fudo_update_ingredient. Returns the new expense id.",
       "enabled": false,
       "parameters": {
         "type": "object",
@@ -1079,7 +1198,7 @@
           },
           "relationships": {
             "type": "object",
-            "description": "JSON:API links by id, e.g. {\"expenseCategory\": {\"data\": {\"id\": \"3\", \"type\": \"ExpenseCategory\"}}, \"provider\": {\"data\": {\"id\": \"7\", \"type\": \"Provider\"}}, \"paymentMethod\": {\"data\": {\"id\": \"1\", \"type\": \"PaymentMethod\"}}}."
+            "description": "JSON:API links by id, e.g. {\"provider\": {\"data\": {\"id\": \"7\", \"type\": \"Provider\"}}, \"expenseCategory\": {\"data\": {\"id\": \"3\", \"type\": \"ExpenseCategory\"}}, \"paymentMethod\": {\"data\": {\"id\": \"1\", \"type\": \"PaymentMethod\"}}}. Also cashRegister, receiptType and commercialDocument."
           }
         },
         "required": [
@@ -1108,8 +1227,312 @@
       }
     },
     {
+      "name": "fudo_update_expense",
+      "description": "Change an expense: amount, date, description, receipt number, due or payment date, cash-count flag, or cancel it with canceled=true. Only the fields given are sent. Returns the updated expense.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "description": "Numeric expense id."
+          },
+          "amount": {
+            "type": "number",
+            "description": "New total amount."
+          },
+          "date": {
+            "type": "string",
+            "description": "New expense date, e.g. 2026-10-06."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "receipt_number": {
+            "type": "string",
+            "description": "Invoice or receipt number."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, e.g. 2026-10-31."
+          },
+          "payment_date": {
+            "type": "string",
+            "description": "Payment date."
+          },
+          "use_in_cash_count": {
+            "type": "boolean",
+            "description": "true when paid from the cash register."
+          },
+          "canceled": {
+            "type": "boolean",
+            "description": "true to cancel the expense."
+          },
+          "relationships": {
+            "type": "object",
+            "description": "JSON:API links by id, e.g. {\"provider\": {\"data\": {\"id\": \"7\", \"type\": \"Provider\"}}, \"expenseCategory\": {\"data\": {\"id\": \"3\", \"type\": \"ExpenseCategory\"}}, \"paymentMethod\": {\"data\": {\"id\": \"1\", \"type\": \"PaymentMethod\"}}}. Also cashRegister, receiptType and commercialDocument."
+          }
+        },
+        "required": [
+          "expense_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/expenses/{expense_id}",
+        "bodyMapping": {
+          "data": {
+            "id": "$expense_id",
+            "type": "Expense",
+            "attributes": {
+              "amount": "$amount",
+              "date": "$date",
+              "description": "$description",
+              "receiptNumber": "$receipt_number",
+              "dueDate": "$due_date",
+              "paymentDate": "$payment_date",
+              "useInCashCount": "$use_in_cash_count",
+              "canceled": "$canceled"
+            },
+            "relationships": "$relationships"
+          }
+        }
+      }
+    },
+    {
+      "name": "fudo_create_expense_payment",
+      "description": "Pay an expense: record a payment of an amount with a payment method, so the expense turns PAID once fully paid. Returns the new payment id.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "description": "Numeric expense id."
+          },
+          "payment_method_id": {
+            "type": "string",
+            "description": "Payment method id from fudo_list_payment_methods (one with forExpenses)."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount paid."
+          },
+          "paid_at": {
+            "type": "string",
+            "description": "Payment date, e.g. 2026-10-06."
+          }
+        },
+        "required": [
+          "expense_id",
+          "payment_method_id",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments",
+        "bodyMapping": {
+          "data": {
+            "type": "Payment",
+            "attributes": {
+              "amount": "$amount",
+              "paidAt": "$paid_at"
+            },
+            "relationships": {
+              "expense": {
+                "data": {
+                  "id": "$expense_id",
+                  "type": "Expense"
+                }
+              },
+              "paymentMethod": {
+                "data": {
+                  "id": "$payment_method_id",
+                  "type": "PaymentMethod"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fudo_create_expense_category",
+      "description": "Create an expense category with a name, optional financial category and parent category. Returns the new category id.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Category name, up to 90 characters."
+          },
+          "financial_category": {
+            "type": "string",
+            "enum": [
+              "ADMINISTRATIVE-EXPENSES",
+              "GOODS-PURCHASES",
+              "OPERATIONAL-EXPENSES"
+            ],
+            "description": "Financial category; GOODS-PURCHASES for stock purchases."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "false to create it inactive."
+          },
+          "relationships": {
+            "type": "object",
+            "description": "Parent category, e.g. {\"parentCategory\": {\"data\": {\"id\": \"3\", \"type\": \"ExpenseCategory\"}}}."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/expense-categories",
+        "bodyMapping": {
+          "data": {
+            "type": "ExpenseCategory",
+            "attributes": {
+              "name": "$name",
+              "financialCategory": "$financial_category",
+              "active": "$active"
+            },
+            "relationships": "$relationships"
+          }
+        }
+      }
+    },
+    {
+      "name": "fudo_create_provider",
+      "description": "Create a provider (supplier) with a name and optional fiscal number, e-mail, phone, address and comment. Check fudo_list_providers with search first to avoid duplicates. Returns the new provider id.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Provider name, up to 90 characters."
+          },
+          "fiscal_number": {
+            "type": "string",
+            "description": "Tax id (RUT, CUIT, RFC, NIF...)."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address as text."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Internal note."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "false to create it inactive."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/providers",
+        "bodyMapping": {
+          "data": {
+            "type": "Provider",
+            "attributes": {
+              "name": "$name",
+              "fiscalNumber": "$fiscal_number",
+              "email": "$email",
+              "phone": "$phone",
+              "address": "$address",
+              "comment": "$comment",
+              "active": "$active"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fudo_update_provider",
+      "description": "Change a provider's name, fiscal number, e-mail, phone, address, comment or active flag. Only the fields given are sent. Returns the updated provider.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "description": "Numeric provider id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "fiscal_number": {
+            "type": "string",
+            "description": "Tax id."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address as text."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Internal note."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "false to deactivate."
+          }
+        },
+        "required": [
+          "provider_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/providers/{provider_id}",
+        "bodyMapping": {
+          "data": {
+            "id": "$provider_id",
+            "type": "Provider",
+            "attributes": {
+              "name": "$name",
+              "fiscalNumber": "$fiscal_number",
+              "email": "$email",
+              "phone": "$phone",
+              "address": "$address",
+              "comment": "$comment",
+              "active": "$active"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "fudo_update_product",
-      "description": "Change a product's price, cost, stock, minimum stock, name, code, description or active flag. Only the fields given are sent. Returns the updated product.",
+      "description": "Change a product's price, cost, stock, minimum stock, name, code, description or active flag. Only the fields given are sent. stock is the new absolute level, not a delta. Returns the updated product.",
       "enabled": false,
       "parameters": {
         "type": "object",
@@ -1176,6 +1599,60 @@
               "code": "$code",
               "description": "$description",
               "active": "$active"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fudo_update_ingredient",
+      "description": "Change an ingredient's stock, cost, minimum stock, name or stock control. stock is the new absolute level, not a delta: after a purchase, read the current stock with fudo_get_ingredient and send current + purchased quantity, in the ingredient's unit. Only the fields given are sent. Returns the updated ingredient.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ingredient_id": {
+            "type": "string",
+            "description": "Numeric ingredient id."
+          },
+          "stock": {
+            "type": "number",
+            "description": "New stock level in the ingredient's unit (absolute, not a delta)."
+          },
+          "cost": {
+            "type": "number",
+            "description": "New unit cost."
+          },
+          "min_stock": {
+            "type": "number",
+            "description": "New minimum stock."
+          },
+          "stock_control": {
+            "type": "boolean",
+            "description": "Track stock for this ingredient."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          }
+        },
+        "required": [
+          "ingredient_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/ingredients/{ingredient_id}",
+        "bodyMapping": {
+          "data": {
+            "id": "$ingredient_id",
+            "type": "Ingredient",
+            "attributes": {
+              "stock": "$stock",
+              "cost": "$cost",
+              "minStock": "$min_stock",
+              "stockControl": "$stock_control",
+              "name": "$name"
             }
           }
         }
