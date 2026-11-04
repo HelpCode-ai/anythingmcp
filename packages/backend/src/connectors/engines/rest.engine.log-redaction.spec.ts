@@ -23,8 +23,10 @@ describe('RestEngine log lines carry no credentials', () => {
 
   // A 429 asking for longer than a tool call can wait: the engine gives up
   // at once (no retry delay) and logs the warning.
+  // As axios builds it: an HTTP error also carries a code (ERR_BAD_REQUEST
+  // for any 4xx), and the log line must still show the status.
   const rateLimited = () =>
-    new AxiosError('rate limited', undefined, undefined, {}, {
+    new AxiosError('rate limited', AxiosError.ERR_BAD_REQUEST, undefined, {}, {
       status: 429,
       data: {},
       headers: { 'retry-after': '60' },
