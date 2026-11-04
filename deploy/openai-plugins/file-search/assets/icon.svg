@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <!-- folder -->
+  <rect x="176" y="262" width="300" height="140" rx="44" fill="#FFFFFF" opacity="0.78"/>
+  <rect x="176" y="322" width="672" height="482" rx="60" fill="#FFFFFF"/>
+  <!-- brand hub inside the folder -->
+  <g stroke="#2563EB" stroke-width="16" stroke-linecap="round" opacity="0.55">
+    <line x1="512" y1="575" x2="512" y2="440"/>
+    <line x1="512" y1="575" x2="382" y2="690"/>
+    <line x1="512" y1="575" x2="642" y2="690"/>
+  </g>
+  <g fill="#2563EB" opacity="0.65">
+    <circle cx="512" cy="440" r="40"/>
+    <circle cx="382" cy="690" r="40"/>
+    <circle cx="642" cy="690" r="40"/>
+  </g>
+  <circle cx="512" cy="575" r="82" fill="#2563EB"/>
+  <circle cx="512" cy="575" r="44" fill="#FFFFFF"/>
+</svg>
