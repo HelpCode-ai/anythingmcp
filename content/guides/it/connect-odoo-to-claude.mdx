@@ -1,0 +1,46 @@
+---
+title: "Come collegare Odoo a Claude — Gestisci il tuo ERP con l'AI via MCP"
+description: "Collega Odoo ERP a Claude con AnythingMCP. Cerca, leggi, crea e aggiorna qualsiasi modello Odoo — ordini, fatture, contatti, magazzino, progetti — in linguaggio naturale. Funziona con Odoo 19+ (JSON-2) e Odoo 14–18 (JSON-RPC), senza integrazioni da costruire."
+category: "connectors"
+keyword: "Odoo Claude, Odoo MCP, Odoo AI, collegare Odoo a Claude, Odoo ERP agente AI, Odoo API Claude, Odoo Model Context Protocol, automazione Odoo AI"
+publishedAt: "2026-11-04"
+adapterSlug: "odoo"
+lang: "it"
+---
+
+## Collega Odoo a Claude
+
+[Odoo](https://www.odoo.com) è un ERP completo — CRM, vendite, fatturazione, magazzino, progetti, HR e altro. Con **AnythingMCP** dai a Claude un accesso sicuro e tipizzato a qualsiasi modello Odoo, così gestisci l'azienda in linguaggio naturale invece di cliccare tra i form o scrivere script XML-RPC.
+
+Il connettore parla l'API nativa di Odoo: **Odoo 19 e successivi** tramite la moderna API JSON-2, e **Odoo 14–18** tramite il classico JSON-RPC. Espone `search`, `read`, `create` e `update` generici su qualsiasi modello — standard o personalizzato.
+
+### Cosa puoi fare
+
+- "Elenca gli ordini confermati di questo mese sopra 5.000 € e i relativi clienti."
+- "Crea una bozza di fattura per il contatto *Acme GmbH* con queste tre righe."
+- "Quali prodotti sono sotto scorta minima nel magazzino di Berlino?"
+- "Aggiungi un'attività di follow-up sul lead #4521 per martedì prossimo."
+- "Riassumi le attività di progetto aperte assegnate a me, per scadenza."
+
+### Configurazione (senza installare)
+
+La via più veloce è **AnythingMCP Cloud** — niente Docker, niente `git clone`:
+
+1. Accedi su **[cloud.anythingmcp.com](https://cloud.anythingmcp.com)**.
+2. **Connettori → Odoo** (scegli *Odoo 19+* o *Odoo 14–18* in base alla tua versione).
+3. Inserisci URL di Odoo, database e login utente + API key (consigliato un utente di integrazione dedicato con i diritti giusti).
+4. Genera una **chiave API MCP** e aggiungi l'endpoint a Claude.
+
+Preferisci il self-hosting? Esegui AnythingMCP dal [repo](https://github.com/HelpCode-ai/anythingmcp) e aggiungi il connettore Odoo allo stesso modo.
+
+### Collegalo a Claude
+
+Aggiungi l'endpoint MCP di AnythingMCP e la chiave a **Claude Desktop** o **Claude Code** come server MCP. Da lì Claude elenca i tool di Odoo e compone da solo le chiamate `search`/`read`/`create`/`update` giuste — nei limiti di ciò che l'utente del connettore può toccare.
+
+> 🔒 L'accesso è governato per workspace e per ruolo in AnythingMCP, e il connettore agisce sempre solo come l'utente Odoo che hai configurato. Dagli solo diritti in lettura se vuoi che Claude riporti e non scriva.
+
+### Funziona anche con
+
+Lo stesso connettore guida **ChatGPT, GitHub Copilot, Cursor** e qualsiasi client MCP. E tutto è scriptabile dal terminale con la [CLI `amcp`](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme).
+
+Inizia gratis su [cloud.anythingmcp.com](https://cloud.anythingmcp.com), o fai self-hosting di AnythingMCP sotto AGPL-3.0.

@@ -1,0 +1,44 @@
+---
+title: "Etsy mit Claude verbinden — Ihren Etsy-Shop per KI über MCP führen"
+description: "Verbinden Sie Ihren Etsy-Shop mit Claude über AnythingMCP. Entwürfe erstellen und veröffentlichen, Titel, Preise und Fotos bearbeiten, Bestand und Bestellungen verwalten — in natürlicher Sprache. 24 Etsy-Tools, ohne eigene Integration."
+category: "connectors"
+keyword: "Etsy Claude, Etsy MCP, Etsy KI, Etsy mit Claude verbinden, Etsy-Shop KI-Agent, Etsy Listings KI, Etsy API Claude, auf Etsy mit KI verkaufen"
+publishedAt: "2026-11-04"
+adapterSlug: "etsy"
+lang: "de"
+---
+
+## Etsy mit Claude verbinden
+
+Führen Sie Ihren [Etsy](https://www.etsy.com)-Shop aus Claude. Mit **AnythingMCP** erhält Claude 24 Etsy-Tools — Entwürfe erstellen, bearbeiten und veröffentlichen, Fotos hinzufügen, Bestand verwalten, Bestellungen lesen — Sie beschreiben, was Sie wollen, und die KI übernimmt die Klicks.
+
+### Was Sie tun können
+
+- "Erstelle einen Entwurf für meine neue Keramiktasse: Titel, Beschreibung, 5 Tags, 24 €, 12 auf Lager."
+- "Veröffentliche die drei Entwürfe von gestern."
+- "Erhöhe den Preis jeder 'Leinen'-Anzeige um 8 %."
+- "Welche meiner aktiven Anzeigen haben weniger als 3 auf Lager?"
+- "Fasse die Bestellungen dieser Woche zusammen und was noch versendet werden muss."
+
+### Einrichten (ohne Installation)
+
+Der schnellste Weg ist **AnythingMCP Cloud**:
+
+1. Melden Sie sich auf **[cloud.anythingmcp.com](https://cloud.anythingmcp.com)** an.
+2. **Connectors → Etsy**.
+3. Autorisieren Sie Ihren Etsy-Shop (OAuth), damit der Connector auf Anzeigen und Bestellungen zugreifen darf.
+4. Erstellen Sie einen **MCP-API-Schlüssel** und fügen Sie den Endpunkt in Claude hinzu.
+
+Lieber selbst hosten? Betreiben Sie AnythingMCP aus dem [Repo](https://github.com/HelpCode-ai/anythingmcp) und fügen Sie den Etsy-Connector genauso hinzu.
+
+### In Claude einbinden
+
+Fügen Sie Ihren AnythingMCP-MCP-Endpunkt und -Schlüssel in **Claude Desktop** oder **Claude Code** hinzu. Claude listet dann die Etsy-Tools und ruft die richtigen auf — Entwürfe erstellen, bearbeiten, veröffentlichen — im Rahmen der erteilten Berechtigungen.
+
+> 🔒 In einen Live-Shop zu schreiben ist mächtig: AnythingMCP markiert destruktive Tools, und Sie können den Connector nur lesend halten (nur Berichte) oder Änderungen vor dem Versand prüfen. Rollen und Tool-Zugriff werden pro Workspace gesteuert.
+
+### Funktioniert auch mit
+
+Derselbe Connector treibt **ChatGPT, GitHub Copilot, Cursor** und jeden MCP-Client an und ist per Terminal mit der [`amcp`-CLI](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme) voll skriptbar.
+
+Kostenlos starten auf [cloud.anythingmcp.com](https://cloud.anythingmcp.com), oder AnythingMCP unter AGPL-3.0 selbst hosten.

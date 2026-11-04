@@ -1,0 +1,43 @@
+---
+title: "SFTP-/FTP-Dateifreigaben mit Claude verbinden — Ihre Dokumente per MCP durchsuchen"
+description: "Verbinden Sie eine SFTP-, FTP- oder FTPS-Freigabe mit Claude über AnythingMCP File Search. Ihre KI liest und durchsucht die Dokumente — PDF, Excel, Word, Text — auf dem Server, mit semantischer und Stichwortsuche, Zugriffsregeln und Governance. Keine Datei verlässt Ihre Kontrolle."
+category: "connectors"
+keyword: "SFTP Claude, FTP Claude, SFTP mit Claude verbinden, FTP MCP, Dateifreigabe KI-Suche, Dokumentensuche KI, Claude PDF vom Server lesen, MCP File Search, Dokumenten-KI Unternehmen"
+publishedAt: "2026-11-04"
+adapterSlug: "ftp"
+lang: "de"
+---
+
+## Ihre SFTP-/FTP-Freigabe mit Claude verbinden
+
+Ihre Dokumente liegen bereits auf einem Dateiserver — Verträge, Preislisten, Datenblätter, Berichte. **AnythingMCP File Search** verbindet diese **SFTP-, FTP- oder FTPS**-Freigabe mit Claude, damit Ihre KI **in den Dateien suchen und lesen** kann — PDF, Excel, Word, Text — und daraus antwortet, statt dass Sie Ordner durchsuchen.
+
+Anders als ein roher Tool-Aufruf indexiert File Search die Freigabe und bietet **semantische** und **Stichwort-Suche (grep)**, mit **Zugriffsregeln** pro Connector und Workspace-Governance, sodass Menschen und Agenten nur das erreichen, was erlaubt ist.
+
+### Was Sie tun können
+
+- "Finde die Klausel zur Kündigungsfrist über den gesamten Vertragsordner."
+- "Welche Preisliste hat den aktuellen Wert für Teilenummer DF-UT601, und wie hoch ist er?"
+- "Fasse das Q3-Bericht-PDF zusammen und nenne die drei größten Risiken."
+- "Durchsuche den Lieferantenordner nach allem, was eine Lieferzeit über 6 Wochen erwähnt."
+
+### Einrichten (ohne Installation)
+
+1. Melden Sie sich auf **[cloud.anythingmcp.com](https://cloud.anythingmcp.com)** an.
+2. **Connectors → File Search → FTP / FTPS** (oder SFTP) und geben Sie Host, Zugangsdaten und die zu indexierenden Ordner ein.
+3. Starten Sie den ersten Scan; AnythingMCP indexiert die Dokumente und kann sie automatisch beschreiben.
+4. Legen Sie **Zugriffsregeln** fest (wer und welcher Agent welche Ordner durchsuchen darf), erstellen Sie einen **MCP-API-Schlüssel** und fügen Sie den Endpunkt in Claude hinzu.
+
+Lieber selbst hosten? Betreiben Sie AnythingMCP aus dem [Repo](https://github.com/HelpCode-ai/anythingmcp) — Ihre Dateien und der Index bleiben auf Ihrer eigenen Infrastruktur.
+
+### In Claude einbinden
+
+Fügen Sie Ihren AnythingMCP-MCP-Endpunkt und -Schlüssel in **Claude Desktop** oder **Claude Code** hinzu. Claude durchsucht dann die Freigabe und liest die passenden Seiten bei Bedarf — fundiert in Ihren echten Dokumenten, mit Verweis auf die Datei.
+
+> 🔒 Nichts wird aus Ihrer Kontrolle kopiert: File Search liest aus Ihrer Freigabe mit den von Ihnen gesetzten Zugangsdaten, beachtet Ihre Zugriffsregeln und streamt nur die Seiten, die eine Anfrage braucht.
+
+### Funktioniert auch mit
+
+Derselbe File-Search-Connector bedient **ChatGPT, GitHub Copilot, Cursor** und jeden MCP-Client und ist per Terminal mit der [`amcp`-CLI](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme) voll skriptbar.
+
+Kostenlos starten auf [cloud.anythingmcp.com](https://cloud.anythingmcp.com), oder AnythingMCP unter AGPL-3.0 selbst hosten.
