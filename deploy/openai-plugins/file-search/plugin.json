@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "file-server-search",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Search, read and cite the documents in your company folders on SFTP, FTPS, FTP, WebDAV (Nextcloud, ownCloud), S3-compatible storage or a NAS (Synology, QNAP, FRITZ!Box, Hetzner Storage Box).",
   "author": {
     "name": "KOCH Freiburg GmbH",
