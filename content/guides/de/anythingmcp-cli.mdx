@@ -1,0 +1,83 @@
+---
+title: "Die AnythingMCP CLI — Ihre MCP-Instanz vollständig im Terminal verwalten"
+description: "amcp ist der offizielle AnythingMCP-Kommandozeilen-Client. Rufen Sie MCP-Tools in der Shell auf und verwalten Sie Ihre Instanz komplett — Connectors, MCP-Server, Benutzer, Rollen, SSO und Einstellungen — mit einem Management-API-Schlüssel. Per npm installieren, im Browser anmelden, alles skripten. Für Menschen und für verbundene KI-Agenten."
+category: "announcements"
+keyword: "AnythingMCP CLI, amcp CLI, MCP CLI, Model Context Protocol CLI, MCP Kommandozeile, MCP Server im Terminal verwalten, MCP Gateway CLI, npm @anythingmcp/cli, MCP Tools im Terminal, KI-Agent CLI"
+publishedAt: "2026-11-04"
+lang: "de"
+featured: true
+---
+
+## Ihre ganze MCP-Instanz, aus dem Terminal
+
+Das ist **`amcp`**, der offizielle AnythingMCP-Kommandozeilen-Client. Er kann zweierlei:
+
+1. **MCP-Tools aufrufen** aus Ihrer Shell — entdecken, ihr Schema lesen, ausführen.
+2. **Die Management-API steuern** (`/api/*`) mit einem **Management-API-Schlüssel** — damit ein Mensch oder ein verbundener KI-Agent die gesamte Instanz konfigurieren kann (Connectors, MCP-Server, Benutzer, Rollen, SSO, Memory, Skills, den Knowledge Graph und Einstellungen), ohne das Terminal zu verlassen.
+
+Er ist Open Source (AGPL-3.0), funktioniert mit **AnythingMCP Cloud** und **selbst gehosteten** Instanzen und wird per npm installiert:
+
+```bash
+npm i -g @anythingmcp/cli
+amcp --help
+```
+
+## Anmelden
+
+Erstellen Sie einen **Management-API-Schlüssel** im Dashboard (Einstellungen → Management-API-Schlüssel, nur Lesen oder Admin), oder lassen Sie es die CLI über Ihren Browser erledigen:
+
+```bash
+amcp login --browser --url https://cloud.anythingmcp.com            # nur Lesen
+amcp login --browser --scope admin --url https://cloud.anythingmcp.com
+```
+
+`--browser` öffnet die Autorisierungsseite der Instanz, Sie bestätigen unter Ihrer bestehenden Dashboard-Sitzung (inkl. SSO), und der Schlüssel kommt über einen einmaligen `127.0.0.1`-Loopback zur CLI zurück — er taucht nie in einer URL, einem Log oder der Shell-Historie auf. Um sich stattdessen mit einem MCP-Server für Tool-Aufrufe zu verbinden, nutzen Sie `amcp login --url … --server …` mit einem MCP-Schlüssel.
+
+## MCP-Tools aufrufen
+
+```bash
+amcp tools ls                       # Tools auflisten, mit Lese-/Schreib-Hinweisen
+amcp tools describe YOUR_TOOL       # volle Beschreibung + Eingabe-JSON-Schema
+amcp tools call YOUR_TOOL --args '{"id":"123"}'
+```
+
+## Die Instanz verwalten
+
+Alles, was das Dashboard kann, kann `amcp api` mit einem Management-Schlüssel — es ist `gh api` für AnythingMCP:
+
+```bash
+amcp api GET  /api/connectors
+amcp api GET  /api/mcp-servers
+amcp api POST /api/mcp-servers --data '{"name":"ops","description":"Ops-Server"}'
+amcp api PUT  /api/mcp-servers/SERVER_ID --data '{"codeMode":"tools"}'
+```
+
+Nicht sicher, was verfügbar ist? Die CLI bringt einen Katalog aller Management-Operationen mit — ohne Schlüssel, ohne Netzwerk:
+
+```bash
+amcp api --list                 # alle Operationen, nach Ressource gruppiert
+amcp api --list mcp-servers     # nur eine Ressource
+```
+
+Ein Management-Schlüssel trägt die Identität und Rolle des Besitzers: er verleiht nie zusätzliche Rechte, Admin-Routen brauchen also weiterhin einen Admin-Besitzer, und Nur-Lese-Schlüssel können nur lesen. Die API wendet ein Rate-Limit pro Schlüssel an, sodass ein außer Kontrolle geratener Agent abgewiesen wird, statt Ihre Instanz zu überlasten.
+
+## Auch für Agenten gebaut
+
+Dieselbe Management-API ist genau das, was ein verbundener KI-Agent braucht, um einen **Workspace von Anfang bis Ende einzurichten und zu betreiben** — einen Connector hinzufügen, einen MCP-Server erstellen, Rollen zuweisen, SSO einrichten, Memory und Skills umschalten — sicher, innerhalb des Umfangs, den Sie ihm gewähren. Agenten sind standardmäßig nur lesend.
+
+## Skripte und CI
+
+```bash
+AMCP_URL=https://cloud.anythingmcp.com AMCP_API_KEY=mcp_… amcp api GET /api/users --json
+amcp completion zsh > "${fpath[1]}/_amcp"     # Shell-Vervollständigung für bash, zsh, fish
+```
+
+Schlüssel werden mit Modus `0600` gespeichert, HTTPS ist Pflicht (außer Loopback für lokale Entwicklung), Weiterleitungen werden abgelehnt, damit ein Schlüssel keiner Anfrage zu einem anderen Origin folgt, und der Schlüssel wird nie als Kommandozeilen-Argument akzeptiert.
+
+## Loslegen
+
+- **Installieren:** `npm i -g @anythingmcp/cli`
+- **Doku:** die vollständige Befehlsreferenz steht im [CLI-README auf GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme).
+- **Quellcode:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp).
+
+Noch kein AnythingMCP? Kostenlos starten auf [cloud.anythingmcp.com](https://cloud.anythingmcp.com), oder selbst hosten.
