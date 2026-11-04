@@ -597,6 +597,7 @@ import * as ted from './intl/ted.json';
 import * as telegramBot from './intl/telegram-bot.json';
 import * as telnyx from './intl/telnyx.json';
 import * as tezga from './intl/tezga.json';
+import * as tgstat from './intl/tgstat.json';
 import * as theOddsApi from './intl/the-odds-api.json';
 import * as ticktick from './intl/ticktick.json';
 import * as tidio from './intl/tidio.json';
@@ -1607,6 +1608,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   telegramBot as unknown as AdapterDefinition,
   telnyx as unknown as AdapterDefinition,
   tezga as unknown as AdapterDefinition,
+  tgstat as unknown as AdapterDefinition,
   theOddsApi as unknown as AdapterDefinition,
   ticktick as unknown as AdapterDefinition,
   tidio as unknown as AdapterDefinition,
