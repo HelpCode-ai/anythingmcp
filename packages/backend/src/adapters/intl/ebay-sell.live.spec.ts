@@ -73,6 +73,15 @@ describe('ebay-sell adapter — static spec conformance', () => {
   });
 });
 
+describe('ebay-sell adapter — setup check', () => {
+  it('probes an endpoint every seller account can read', () => {
+    // Policy endpoints answer 20403 for sellers without Business Policies,
+    // so they cannot tell a working connection from a broken one.
+    expect(a.probe?.tool).toBe('ebay_sell_get_privileges');
+    expect(a.connector.healthcheckPath).toBe('/sell/account/v1/privilege');
+  });
+});
+
 // Opt-in live check. Needs real credentials; skipped in CI.
 const live = process.env.RUN_EBAY_SELL_LIVE === '1';
 (live ? describe : describe.skip)('ebay-sell — live', () => {
