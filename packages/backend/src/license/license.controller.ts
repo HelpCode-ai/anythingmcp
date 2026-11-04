@@ -92,6 +92,13 @@ class BillingPortalDto {
   flow?: BillingPortalFlow;
 }
 
+class DpaLinkDto {
+  /** The page language on the licence site (its locales); defaults to English. */
+  @IsOptional()
+  @IsIn(['en', 'de', 'it', 'es', 'zh', 'ja', 'ru'])
+  locale?: string;
+}
+
 @ApiTags('License')
 @Controller('api/license')
 export class LicenseController {
@@ -279,6 +286,27 @@ export class LicenseController {
       );
     } catch (err: any) {
       throw new BadRequestException(err.message || 'Failed to open billing portal');
+    }
+  }
+
+  @Post('dpa-link')
+  @HttpCode(200)
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  // Each call creates a session on the licence site.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'One-hour link to accept the Data Processing Agreement on the licence site (cloud, ADMIN, paid plans)',
+  })
+  async dpaLink(@Req() req: any, @Body() dto: DpaLinkDto) {
+    if (!this.deployment.isCloud()) {
+      throw new NotFoundException('The Data Processing Agreement applies to AnythingMCP Cloud only.');
+    }
+    try {
+      return await this.licenseService.createDpaLink(req.user.organizationId, req.user.sub, dto?.locale);
+    } catch (err: any) {
+      throw new BadRequestException(err.message || 'Failed to open the DPA page.');
     }
   }
 
