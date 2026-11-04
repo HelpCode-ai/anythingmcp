@@ -479,6 +479,7 @@ import * as planeSo from './intl/plane-so.json';
 import * as playtomic from './intl/playtomic.json';
 import * as playtomicPublic from './intl/playtomic-public.json';
 import * as plivo from './intl/plivo.json';
+import * as podio from './intl/podio.json';
 import * as podium from './intl/podium.json';
 import * as postgres from './intl/postgres.json';
 import * as posthog from './intl/posthog.json';
@@ -1488,6 +1489,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   playtomic as unknown as AdapterDefinition,
   playtomicPublic as unknown as AdapterDefinition,
   plivo as unknown as AdapterDefinition,
+  podio as unknown as AdapterDefinition,
   podium as unknown as AdapterDefinition,
   postgres as unknown as AdapterDefinition,
   posthog as unknown as AdapterDefinition,
