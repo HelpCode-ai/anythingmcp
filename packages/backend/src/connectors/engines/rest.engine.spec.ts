@@ -973,6 +973,14 @@ describe('RestEngine', () => {
         expect(mockedAxios).toHaveBeenCalledTimes(1);
       });
 
+      it.each(['GET', 'PUT'])('does not resend a %s that used up its whole deadline', async (method) => {
+        mockedAxios.mockRejectedValue(
+          new AxiosError('timeout of 30000ms exceeded', 'ECONNABORTED', undefined, {}),
+        );
+        await expect(call(method)).rejects.toThrow(/\(ECONNABORTED\)/);
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+
       it.each(['GET', 'PUT'])('still retries a %s that timed out', async (method) => {
         mockedAxios
           .mockRejectedValueOnce(timeout())
