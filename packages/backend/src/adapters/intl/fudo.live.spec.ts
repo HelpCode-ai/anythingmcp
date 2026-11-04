@@ -53,6 +53,33 @@ describe('fudo adapter: static spec conformance', () => {
     expect(tool('fudo_list_products').endpointMapping.queryParams?.['filter[name]']).toBe('ilike.${name}');
   });
 
+  it('asks for the attributes Fudo leaves out by default', () => {
+    // Without a sparse fieldset Fudo answers expenses and expense categories
+    // with ids only, and providers with the name only (checked on a live
+    // account, 2026-11-04).
+    for (const name of ['fudo_list_expenses', 'fudo_get_expense']) {
+      const q = tool(name).endpointMapping.queryParams ?? {};
+      expect(q['fields[expense]']).toEqual(expect.stringContaining('receiptNumber'));
+      expect(q['fields[expense]']).toEqual(expect.stringContaining('expenseItems'));
+      expect(q['fields[expenseItem]']).toBe('canceled,detail,price,quantity,product,ingredient');
+    }
+    const cat = tool('fudo_list_expense_categories').endpointMapping.queryParams ?? {};
+    expect(cat['fields[expenseCategory]']).toBe('name,active,financialCategory,parentCategory');
+    for (const name of ['fudo_list_providers', 'fudo_get_provider']) {
+      expect(tool(name).endpointMapping.queryParams?.['fields[provider]']).toEqual(expect.stringContaining('fiscalNumber'));
+    }
+  });
+
+  it('pays an expense through POST /payments with both required links', () => {
+    const t = tool('fudo_create_expense_payment');
+    expect(t.endpointMapping.method).toBe('POST');
+    expect(t.endpointMapping.path).toBe('/payments');
+    const body = t.endpointMapping.bodyMapping as { data: { relationships: Record<string, { data: unknown }> } };
+    expect(body.data.relationships.expense.data).toEqual({ id: '$expense_id', type: 'Expense' });
+    expect(body.data.relationships.paymentMethod.data).toEqual({ id: '$payment_method_id', type: 'PaymentMethod' });
+    expect(t.parameters?.required).toEqual(['expense_id', 'payment_method_id', 'amount']);
+  });
+
   it('every declared parameter reaches the request', () => {
     for (const t of a.tools) {
       const m = t.endpointMapping;
