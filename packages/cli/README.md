@@ -3,6 +3,21 @@
 The `amcp` command connects to one AnythingMCP MCP server from your terminal.
 It supports login, logout, profile inspection, tool discovery and tool calls.
 
+## About AnythingMCP
+
+[AnythingMCP](https://anythingmcp.com) is an enterprise **agent harness and MCP
+gateway**: it turns any API, SaaS or data source into [MCP](https://modelcontextprotocol.io)
+tools your AI agents can use — Claude, ChatGPT, Cursor and others. Connect
+services like Odoo, Etsy, Shopify and HubSpot, SQL and NoSQL databases, and
+SFTP/FTP or SMB file shares, then govern who and which agent may reach each one.
+Run it on AnythingMCP Cloud or self-host it (AGPL-3.0). Source and docs:
+[github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp).
+
+This package is the command-line client. Beyond calling MCP tools, it drives the
+management API with a management-scoped key, so a person — or a connected agent —
+can configure the whole instance (connectors, MCP servers, users, roles, SSO,
+settings and more) without leaving the terminal.
+
 From the repository root:
 
 ```bash
