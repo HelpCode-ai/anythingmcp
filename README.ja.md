@@ -53,7 +53,7 @@ https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
 
 | | 内容 | エディション |
 |---|---|---|
-| **すべてのシステムを 1 つのエンドポイントで** | 694 のカタログコネクター、または独自の REST/OpenAPI、SOAP、GraphQL、OData、SQL、IMAP/SMTP、MCP のソース。ツールは実行時に登録されます。[コネクター](#connect-any-api-soap-service-or-database) | すべて |
+| **すべてのシステムを 1 つのエンドポイントで** | 695 のカタログコネクター、または独自の REST/OpenAPI、SOAP、GraphQL、OData、SQL、IMAP/SMTP、MCP のソース。ツールは実行時に登録されます。[コネクター](#connect-any-api-soap-service-or-database) | すべて |
 | **File Search（ファイル検索）** | SFTP、FTP/FTPS、WebDAV（Nextcloud、NAS）、S3、ネットワーク共有をインデックス化します。PDF の全ページ、列名付きの Excel の行、Word、PowerPoint、添付ファイル付きの Outlook メールが対象です。AI はファイル、ページ、日付を示して回答します。[File Search](docs/connectors/file-search.md) | Cloud、セルフホストは Enterprise |
 | **File Share（ファイル共有）** | フォルダー内のファイルや AI が書き出したファイル（CSV エクスポート、レポート）の一時的なダウンロードリンク。社内向けにも公開にもでき、有効期限と取り消しに対応します。[File Share](docs/connectors/file-search.md) | Cloud、セルフホストは Enterprise |
 | **社内メモリ** | ある AI クライアントで保存した事実や好みを、別のクライアントでも見つけられます。Claude で一度伝えたことを Copilot が使います。個人用と会社用の範囲があり、フォルダーとロールで制限できます。[メモリ](docs/memory.md) | Enterprise |

@@ -20,7 +20,7 @@
 <p align="center">
   <strong>AnythingMCP ist ein quelloffenes, selbst gehostetes MCP-Gateway, das Claude, ChatGPT, Copilot und Gemini mit der Software deines Unternehmens und mit den Dokumenten auf deinen Fileservern verbindet, ohne dass du einen MCP-Server programmierst.</strong><br/>
   Auf dem Gateway baut es das Gehirn deines Unternehmens auf: einen Knowledge Graph, der zeigt, wie deine Systeme zusammenhängen, dazu KI-Skills und ein Firmengedächtnis. Jeder KI-Client nutzt dasselbe, jeweils begrenzt durch die Rolle der Person.<br/>
-  694 fertige Connectors mit über 12.000 Tools, darunter SAP, Odoo, weclapp und Amazon Seller; 35 davon kommen ohne API-Schlüssel aus.
+  695 fertige Connectors mit über 12.000 Tools, darunter SAP, Odoo, weclapp und Amazon Seller; 35 davon kommen ohne API-Schlüssel aus.
 </p>
 
 <p align="center">

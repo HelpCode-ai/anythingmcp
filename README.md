@@ -51,7 +51,7 @@ A gateway forwards calls. A company brain also knows where your documents are, h
 
 | | What it does | Edition |
 |---|---|---|
-| **Every system, one endpoint** | 694 catalog connectors, or your own REST/OpenAPI, SOAP, GraphQL, OData, SQL, IMAP/SMTP or MCP source. Tools register at runtime. [Connectors](#connect-any-api-soap-service-or-database) | All |
+| **Every system, one endpoint** | 695 catalog connectors, or your own REST/OpenAPI, SOAP, GraphQL, OData, SQL, IMAP/SMTP or MCP source. Tools register at runtime. [Connectors](#connect-any-api-soap-service-or-database) | All |
 | **File Search** | Indexes SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 or a network share: every PDF page, Excel rows with their column names, Word, PowerPoint, Outlook mails with attachments. The AI answers with file, page and date. [File Search](docs/connectors/file-search.md) | Cloud; self-hosted Enterprise |
 | **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](docs/connectors/file-search.md) | Cloud; self-hosted Enterprise |
 | **Company memory** | Facts and preferences saved from one AI client and found again in any other: said once in Claude, used by Copilot. Personal and company scopes, with folders and role limits. [Memory](docs/memory.md) | Enterprise |
