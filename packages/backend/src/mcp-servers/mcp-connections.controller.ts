@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { McpConnectionGrantService } from './mcp-connection-grant.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -37,10 +37,11 @@ interface UpdateConnectionDto {
  * Changes take effect on the connection's very next request: the grant is
  * re-read, and re-validated, per request.
  */
-@ApiTags('mcp-connections')
+@ApiTags('MCP Connections')
 @Controller('api/mcp-connections')
 @UseGuards(JwtOrManagementKeyGuard)
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 export class McpConnectionsController {
   constructor(
     private readonly grants: McpConnectionGrantService,

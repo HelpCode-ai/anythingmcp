@@ -109,6 +109,7 @@ import {
   planServerResources,
 } from './mcp-resources';
 import { flattenToolSchema, jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
+import { ApiTags } from '@nestjs/swagger';
 
 function trimSlash(url: string | undefined): string {
   return (url || '').trim().replace(/\/+$/, '');
@@ -269,6 +270,7 @@ const SKILL_INSTRUCTION_MAX = 1800;
  * each MCP server its own unique URL that clients like Claude Desktop
  * can connect to independently (via OAuth or API key).
  */
+@ApiTags('MCP Endpoint')
 @Controller('mcp')
 @SkipThrottle()
 // Auth first, then the per-caller ceiling (it needs to know who is calling).

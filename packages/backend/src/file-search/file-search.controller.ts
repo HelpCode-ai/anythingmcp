@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { FileSearchService } from './file-search.service';
 import {
   FileAccessRulesDto,
@@ -22,6 +22,7 @@ import {
  */
 @ApiTags('File Search')
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/file-search')
 export class FileSearchController {

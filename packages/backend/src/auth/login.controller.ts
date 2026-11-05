@@ -47,6 +47,7 @@ import { hasDashboardHeader, setRecentSignInCookie } from './recent-sign-in.util
 import { RecentSignInService } from './recent-sign-in.service';
 import { SharedSetupRegistry, type SetupContext, type SharedSetupProvider } from '../mcp-server/shared-setup';
 import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
+import { ApiTags } from '@nestjs/swagger';
 
 /**
  * Carries the VERIFIED identity across the second step of the authorize flow.
@@ -170,6 +171,7 @@ export function fileSearchWizardPathFor(optionId: string, serverIds: readonly st
   return `/connectors/new/file-search?${q.toString()}`;
 }
 
+@ApiTags('MCP client sign-in')
 @Controller('auth')
 export class LoginController {
   private readonly logger = new Logger(LoginController.name);

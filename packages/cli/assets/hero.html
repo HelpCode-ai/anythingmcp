@@ -1,0 +1,56 @@
+<!doctype html>
+<!--
+  Source of truth for hero.png in packages/cli/README.md (also shown on npm, which
+  is why the README links the PNG by absolute raw.githubusercontent.com URL).
+  Edit this file, then re-render at 2x with headless Chrome:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+      --hide-scrollbars --force-device-scale-factor=2 --window-size=1200,600 \
+      --screenshot=packages/cli/assets/hero.png packages/cli/assets/hero.html
+
+  Commands, flags and tool names are real (catalogue Shopify/HubSpot adapters);
+  only the data in the output is made up.
+-->
+<html lang="en"><head><meta charset="utf-8" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,500&family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root { --signal:#2159e0; --signal-lift:#60a5fa; --ink:#0b1220; --ink-deep:#05070f; --line:rgba(255,255,255,.09); --fg:#f2f5fa; --muted:rgba(226,232,240,.62); }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1200px; height:600px; overflow:hidden; background:var(--ink-deep); color:var(--fg); font-family:Geist,system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  .bg { position:absolute; inset:0; background: radial-gradient(900px 500px at 85% -10%, rgba(33,89,224,.35), transparent 60%), radial-gradient(700px 400px at -10% 110%, rgba(96,165,250,.14), transparent 60%), var(--ink-deep); }
+  .win { background:var(--ink); border:1px solid #1c2740; border-radius:14px; overflow:hidden; box-shadow:0 30px 80px rgba(0,0,0,.45); }
+  .bar { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid #1c2740; font:500 12px 'Geist Mono',monospace; color:#94a3b8; }
+  .dot { width:11px; height:11px; border-radius:50%; } .r{background:#ff5f57} .y{background:#febc2e} .g{background:#28c840}
+  .bar .lbl { margin-left:auto; letter-spacing:.12em; text-transform:uppercase; font-size:10.5px; color:#64748b; }
+  pre { font:400 13.5px/1.72 'Geist Mono',ui-monospace,monospace; padding:16px 18px; white-space:pre; color:#e2e8f0; }
+  .pr{color:#38bdf8} .c{color:#64748b} .o{color:#94a3b8} .ok{color:#6ee7b7}
+  .cm{color:#64748b} .st{color:#6ee7b7} .kw{color:#c4b5fd} .am{color:#7dd3fc;font-weight:500} .nu{color:#fde68a}
+  .eyebrow { font:500 12px 'Geist Mono',monospace; letter-spacing:.16em; text-transform:uppercase; color:var(--signal-lift); }
+  h1 { font-family:Fraunces,serif; font-weight:500; letter-spacing:-.02em; line-height:1.04; }
+  h1 em { font-style:italic; color:var(--signal-lift); }
+  .lede { color:var(--muted); line-height:1.5; }
+  .pill { display:inline-flex; gap:10px; align-items:center; font:500 15px 'Geist Mono',monospace; background:rgba(255,255,255,.06); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }
+  .pill b { color:#38bdf8; font-weight:500; }
+</style></head><body><div class="bg"></div>
+<div style="position:relative;display:grid;grid-template-columns:400px 1fr;gap:36px;padding:56px 48px;height:600px;align-items:center">
+  <div>
+    <p class="eyebrow">AnythingMCP · CLI</p>
+    <h1 style="font-size:60px;margin-top:16px">amcp<br/><em>from the terminal.</em></h1>
+    <p class="lede" style="font-size:18px;margin-top:20px">Call MCP tools, run code-mode programs and manage your whole instance — by hand, in scripts or from an agent.</p>
+    <p style="margin-top:28px"><span class="pill"><b>$</b>npm i -g @anythingmcp/cli</span></p>
+  </div>
+  <div class="win"><div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span style="margin-left:8px">zsh — ~/work</span></div>
+  <pre style="font-size:12.5px"><span class="pr">$ </span>amcp login --browser --url https://cloud.anythingmcp.com
+<span class="ok">Logged in to https://cloud.anythingmcp.com (management, profile: default).</span>
+<span class="pr">$ </span>amcp tools ls --filter order
+<span class="o">shopify_search_orders   read-only   Search orders with Shopify search syntax…</span>
+<span class="o">shopify_get_order       read-only   Get one order: status, totals, items…</span>
+<span class="pr">$ </span>amcp tools call shopify_search_orders \
+    --args '{"query":"fulfillment_status:unfulfilled"}' \
+  | jq -r '.orders.nodes[] | [.name, .customer.displayName] | @tsv'
+<span class="o">#1038   Kellerhaus GmbH</span>
+<span class="o">#1035   Studio Lumen</span>
+<span class="o">#1031   Bäckerei Hofmann</span>
+<span class="pr">$ </span>amcp api POST /api/connectors/$CONN/test --yes
+<span class="o">{ "ok": true, "kind": "ok", "message": "Connection successful" }</span></pre></div>
+</div></body></html>
