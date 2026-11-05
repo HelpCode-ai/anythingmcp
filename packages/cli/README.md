@@ -51,7 +51,9 @@ their matching environment variables. If a URL is supplied by `--url` or
 saved origin. Profiles live in
 `$XDG_CONFIG_HOME/amcp/config.json` or `~/.config/amcp/config.json`, with file
 mode `0600` on Unix. Relative `XDG_CONFIG_HOME` values are ignored. `whoami`
-shows only a key prefix.
+shows only a key prefix. One profile can hold both an MCP key (for `tools`) and
+a management key (for `api`): logging in with one keeps the other when both
+point at the same instance. `amcp --version` prints the CLI version.
 
 `tools ls` shows each tool's name, read-only/destructive hint, and the first
 line of its description. `tools describe` shows the full description and input
@@ -122,7 +124,8 @@ A management key is an ordinary MCP API key minted with a management scope
 (`MANAGEMENT_READ` or `MANAGEMENT_ADMIN`) from the dashboard or `POST
 /api/mcp-keys`. It carries the owner's identity and role: it never grants
 privilege, so admin-only routes still require an admin owner. `MANAGEMENT_READ`
-keys may call only safe methods (GET/HEAD).
+keys may call only safe methods (GET/HEAD), and connector exports made with
+them never include secrets, even for an admin owner.
 
 ### Getting a management key
 

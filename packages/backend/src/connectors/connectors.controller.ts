@@ -697,6 +697,29 @@ class UpdateEnvVarsDto {
   envVars: Record<string, string>;
 }
 
+/**
+ * Whether an export may carry secret env vars and headers in clear: only for
+ * an admin, and never for a read-only management key. A MANAGEMENT_READ key
+ * inherits its owner's role, so without the scope check an admin's "read-only"
+ * key would hand out every connector credential.
+ */
+/**
+ * The caller's workspace for an export. Exports must never run without one:
+ * Prisma reads `organizationId: undefined` as "no filter", which on the
+ * multi-tenant Cloud would export every workspace.
+ */
+function requireOrganizationId(req: any): string {
+  const organizationId = req.user?.organizationId;
+  if (typeof organizationId !== 'string' || !organizationId) {
+    throw new ForbiddenException('No workspace selected');
+  }
+  return organizationId;
+}
+
+function mayExportSecrets(req: any): boolean {
+  return req.user?.role === 'ADMIN' && req.mcpKeyScope !== 'MANAGEMENT_READ';
+}
+
 @ApiTags('Connectors')
 @ApiBearerAuth()
 @UseGuards(JwtOrManagementKeyGuard)
@@ -1240,15 +1263,16 @@ export class ConnectorsController {
       'Returns all connectors with their tools, environment variables, ' +
       'and configuration. authConfig is never exported. Secret environment ' +
       'variables and headers are exported only to admins, so that a backup ' +
-      'can be restored; for every other role they are left empty and named ' +
-      'in `maskedEnvVars` / `maskedHeaders`.',
+      'can be restored; for every other role, and for a read-only ' +
+      '(MANAGEMENT_READ) API key, they are left empty and named in ' +
+      '`maskedEnvVars` / `maskedHeaders`.',
   })
   async exportAll(@Req() req: any) {
     const allConnectors = await this.prisma.connector.findMany({
-      where: { organizationId: req.user.organizationId },
+      where: { organizationId: requireOrganizationId(req) },
       include: { tools: true },
     });
-    return toExportEnvelope(allConnectors, req.user.role === 'ADMIN');
+    return toExportEnvelope(allConnectors, mayExportSecrets(req));
   }
 
   @Get(':id/export')
@@ -1258,8 +1282,8 @@ export class ConnectorsController {
       'Same file format as export-all, with a single entry in `connectors`, ' +
       'so it can be restored with import-all or import. authConfig is never ' +
       'exported. Secret environment variables and headers are exported only ' +
-      'to admins; for every other role they are left empty and named in ' +
-      '`maskedEnvVars` / `maskedHeaders`.',
+      'to admins; for every other role, and for a read-only (MANAGEMENT_READ) ' +
+      'API key, they are left empty and named in `maskedEnvVars` / `maskedHeaders`.',
   })
   @ApiQuery({ name: 'format', required: false, enum: ['json', 'yaml'] })
   async exportOne(
@@ -1272,16 +1296,17 @@ export class ConnectorsController {
     if (!EXPORT_FORMATS.includes(fmt)) {
       throw new BadRequestException('format must be "json" or "yaml"');
     }
+    // Scoped in the query itself: a connector of another workspace is simply
+    // not found, so its existence is not revealed either.
     const connector = await this.prisma.connector.findFirst({
-      where: { id },
+      where: { id, organizationId: requireOrganizationId(req) },
       include: { tools: true },
     });
     if (!connector) {
       throw new NotFoundException('Connector not found');
     }
-    this.assertOrgMatch(connector, req);
 
-    const secretsIncluded = req.user.role === 'ADMIN';
+    const secretsIncluded = mayExportSecrets(req);
     const data = toExportEnvelope([connector], secretsIncluded);
     res.setHeader('X-Secrets-Included', String(secretsIncluded));
     res.setHeader(

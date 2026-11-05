@@ -1497,6 +1497,28 @@ describe('Connector secrets are never returned', () => {
       expect(JSON.stringify(result)).not.toContain('test-header-key');
     });
 
+    it('leaves them out for an admin using a read-only management key', async () => {
+      const { controller } = buildExport();
+      const result: any = await controller.exportAll({
+        ...req('ADMIN'),
+        mcpKeyScope: 'MANAGEMENT_READ',
+      });
+      expect(result.secretsIncluded).toBe(false);
+      expect(result.connectors[0].maskedEnvVars).toEqual(['WHATSAPP_ACCESS_TOKEN']);
+      expect(JSON.stringify(result)).not.toContain(TOKEN);
+      expect(JSON.stringify(result)).not.toContain('test-header-key');
+    });
+
+    it('keeps them for an admin using an admin management key', async () => {
+      const { controller } = buildExport();
+      const result: any = await controller.exportAll({
+        ...req('ADMIN'),
+        mcpKeyScope: 'MANAGEMENT_ADMIN',
+      });
+      expect(result.secretsIncluded).toBe(true);
+      expect(result.connectors[0].envVars.WHATSAPP_ACCESS_TOKEN).toBe(TOKEN);
+    });
+
     it('never exports authConfig', async () => {
       const { controller } = buildController({
         prisma: {

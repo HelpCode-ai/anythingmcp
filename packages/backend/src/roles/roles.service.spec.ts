@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { RolesService } from './roles.service';
 
 describe('RolesService', () => {
@@ -81,6 +82,31 @@ describe('RolesService', () => {
       expect(result).toBe(role);
       expect(mockPrisma.role.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'r1' } }),
+      );
+    });
+  });
+
+  describe('duplicate names', () => {
+    const unique = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+
+    it('answers 409 when creating a role whose name exists', async () => {
+      mockPrisma.role.create.mockRejectedValue(unique);
+      await expect(service.create({ name: 'Sales', organizationId: 'org1' })).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('answers 409 when renaming a role to an existing name', async () => {
+      mockPrisma.role.updateMany.mockRejectedValue(unique);
+      await expect(service.update('r1', 'org1', { name: 'Sales' })).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('rethrows any other database error', async () => {
+      mockPrisma.role.create.mockRejectedValue(new Error('connection lost'));
+      await expect(service.create({ name: 'Sales', organizationId: 'org1' })).rejects.toThrow(
+        'connection lost',
       );
     });
   });

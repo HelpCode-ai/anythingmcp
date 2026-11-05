@@ -26,9 +26,10 @@ export const FLAGS: readonly FlagSpec[] = [
   { name: 'scope', value: 'read|admin', description: 'Scope for a browser-minted management key' },
   { name: 'json', description: 'Machine-readable output' },
   { name: 'help', short: 'h', description: 'Show usage' },
+  { name: 'version', short: 'v', description: 'Show the CLI version' },
 ];
 
-const GLOBAL_FLAGS = ['json', 'help'];
+const GLOBAL_FLAGS = ['json', 'help', 'version'];
 
 export const COMMANDS: readonly CommandSpec[] = [
   { name: 'login', description: 'Verify an API key and save a profile', flags: ['url', 'server', 'management', 'browser', 'scope', 'key-stdin', 'profile'] },
