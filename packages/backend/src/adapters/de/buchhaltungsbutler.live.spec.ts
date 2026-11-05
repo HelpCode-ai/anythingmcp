@@ -29,7 +29,7 @@ describe('buchhaltungsbutler adapter — static spec conformance', () => {
   it("carries the separate api_key in every request body", () => {
     for (const t of a.tools) {
       const body = t.endpointMapping.bodyMapping as Record<string, unknown>;
-      expect(body.api_key).toBe('$BUCHHALTUNGSBUTLER_API_KEY');
+      expect(body.api_key).toBe('{{BUCHHALTUNGSBUTLER_API_KEY}}');
     };
   });
 
@@ -58,6 +58,47 @@ describe('buchhaltungsbutler adapter — static spec conformance', () => {
     expect(required('buchhaltungsbutler_list_postings')).toEqual(
       expect.arrayContaining(['date_from', 'date_to']),
     );
+  });
+});
+
+describe('buchhaltungsbutler adapter: booking and master data writes', () => {
+  const tool = (name: string) => {
+    const t = a.tools.find((x) => x.name === name) as
+      | { name: string; enabled?: boolean; parameters: { required?: string[] }; endpointMapping: Record<string, unknown>; annotations?: Record<string, boolean> }
+      | undefined;
+    if (!t) throw new Error(`missing tool ${name}`);
+    return t;
+  };
+
+  it('maps the documented endpoints', () => {
+    const paths: Record<string, string> = {
+      buchhaltungsbutler_get_receipt: '/receipts/get/{id_by_customer}',
+      buchhaltungsbutler_book_receipt: '/postings/add/receipt',
+      buchhaltungsbutler_book_transaction: '/postings/add/transaction',
+      buchhaltungsbutler_remove_receipt_booking: '/postings/unconfirm/receipt',
+      buchhaltungsbutler_remove_transaction_booking: '/postings/unconfirm/transaction',
+      buchhaltungsbutler_link_receipt_to_transaction: '/transactions/assign/receipt',
+      buchhaltungsbutler_add_customer: '/settings/add/debtor',
+      buchhaltungsbutler_add_supplier: '/settings/add/creditor',
+      buchhaltungsbutler_trash_receipt: '/receipts/delete/{id_by_customer}',
+      buchhaltungsbutler_recover_receipt: '/receipts/restore/{id_by_customer}',
+      buchhaltungsbutler_reverse_posting: '/postings/cancel',
+    };
+    for (const [name, path] of Object.entries(paths)) expect(tool(name).endpointMapping.path).toBe(path);
+  });
+
+  it('sends the posting lines as the parallel lists the API takes', () => {
+    for (const name of ['buchhaltungsbutler_book_receipt', 'buchhaltungsbutler_book_transaction']) {
+      expect(tool(name).parameters.required).toEqual(expect.arrayContaining(['postingaccounts', 'amounts', 'vats', 'postingtexts']));
+      expect(tool(name).endpointMapping.bodyMapping).toMatchObject({ postingaccounts: '$postingaccounts', amounts: '$amounts', vats: '$vats', postingtexts: '$postingtexts' });
+    }
+  });
+
+  it('marks the receipt read as read-only and installs the delete and the reversal switched off', () => {
+    expect(tool('buchhaltungsbutler_get_receipt').annotations?.readOnlyHint).toBe(true);
+    expect(tool('buchhaltungsbutler_trash_receipt').enabled).toBe(false);
+    expect(tool('buchhaltungsbutler_reverse_posting').enabled).toBe(false);
+    expect(tool('buchhaltungsbutler_book_receipt').enabled).toBeUndefined();
   });
 });
 
