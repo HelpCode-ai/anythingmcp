@@ -1,5 +1,11 @@
 import { LicenseService } from './license.service';
-import { formatSkipReasons, parseUnclaimedLicences } from './license-unclaimed';
+import {
+  formatSkipReasons,
+  isSettled,
+  parseUnclaimedLicences,
+  UNCLAIMED_SETTLE_MS,
+  UNCLAIMED_SWEEP_MS,
+} from './license-unclaimed';
 
 const KEY_A = 'AMCP-AAAA-BBBB-CCCC-0001';
 const KEY_B = 'AMCP-AAAA-BBBB-CCCC-0002';
@@ -18,6 +24,20 @@ describe('formatSkipReasons', () => {
   });
 });
 
+describe('isSettled', () => {
+  const NOW = new Date('2026-11-05T18:31:00Z');
+  it('waits UNCLAIMED_SETTLE_MS after the sale, so the buyer\'s browser binds first', () => {
+    const at = (ms: number) => ({ key: KEY_A, email: 'a@example.com', plan: 'starter', createdAt: new Date(NOW.getTime() - ms) });
+    expect(isSettled(at(UNCLAIMED_SETTLE_MS - 1000), NOW)).toBe(false);
+    expect(isSettled(at(UNCLAIMED_SETTLE_MS), NOW)).toBe(true);
+    expect(isSettled({ key: KEY_A, email: 'a@example.com', plan: 'starter' }, NOW)).toBe(true);
+  });
+
+  it('binds within a few minutes of the payment, not at the next hourly cron', () => {
+    expect(UNCLAIMED_SETTLE_MS + UNCLAIMED_SWEEP_MS).toBeLessThanOrEqual(5 * 60 * 1000);
+  });
+});
+
 describe('parseUnclaimedLicences', () => {
   it('keeps well-formed entries, normalises the address and drops duplicates', () => {
     expect(
@@ -32,9 +52,15 @@ describe('parseUnclaimedLicences', () => {
         ],
       }),
     ).toEqual([
-      { key: KEY_A, email: 'ann@example.com', plan: 'starter' },
+      { key: KEY_A, email: 'ann@example.com', plan: 'starter', createdAt: new Date('2026-10-28T14:54:45Z') },
       { key: KEY_B, email: 'bob@example.org', plan: 'team', organizationId: 'org-b' },
     ]);
+  });
+
+  it('drops a sale date it cannot read', () => {
+    expect(
+      parseUnclaimedLicences({ licences: [{ key: KEY_A, email: 'a@example.com', plan: 'starter', createdAt: 'soon' }] }),
+    ).toEqual([{ key: KEY_A, email: 'a@example.com', plan: 'starter' }]);
   });
 
   it('returns null when the answer has no list', () => {
@@ -198,6 +224,105 @@ describe('LicenseService — paid licences that never reached their workspace', 
     ]);
 
     await expect(svc.bindUnclaimedPaidLicences(NOW)).resolves.toEqual({ listed: 2, bound: 1, skipped: 0, failed: 1 });
+  });
+
+  it('leaves a licence sold in the last two minutes for the buyer\'s browser', async () => {
+    const { svc, setKey } = make({
+      users: [{ email: 'ann@example.com', role: 'ADMIN', organizationId: 'org-a', emailVerified: true }],
+    });
+    siteLists([
+      { key: KEY_A, email: 'ann@example.com', plan: 'starter', createdAt: new Date(NOW.getTime() - 60 * 1000).toISOString() },
+    ]);
+
+    await expect(svc.bindUnclaimedPaidLicences(NOW)).resolves.toEqual({ listed: 0, bound: 0, skipped: 0, failed: 0 });
+    expect(setKey).not.toHaveBeenCalled();
+
+    siteLists([
+      { key: KEY_A, email: 'ann@example.com', plan: 'starter', createdAt: new Date(NOW.getTime() - 3 * 60 * 1000).toISOString() },
+    ]);
+    await expect(svc.bindUnclaimedPaidLicences(NOW)).resolves.toMatchObject({ bound: 1 });
+    expect(setKey).toHaveBeenCalledWith(KEY_A, 'org-a');
+  });
+
+  it('a quiet run logs only when it binds or fails, and keeps its warnings at debug', async () => {
+    const { svc, setKey } = make({
+      users: [{ email: 'tom@example.com', role: 'ADMIN', organizationId: 'org-t', emailVerified: true }],
+      locals: [{ licenseKey: 'AMCP-PAID-0000-0000-0000', organizationId: 'org-t', plan: 'starter', status: 'active', expiresAt: null }],
+    });
+    const log = jest.spyOn((svc as any).logger, 'log').mockImplementation(() => undefined);
+    const warn = jest.spyOn((svc as any).logger, 'warn').mockImplementation(() => undefined);
+    jest.spyOn((svc as any).logger, 'debug').mockImplementation(() => undefined);
+
+    siteLists([
+      { key: KEY_A, email: 'tom@example.com', plan: 'starter' },
+      { key: KEY_B, email: 'nobody@example.com', plan: 'starter' },
+    ]);
+    await expect(svc.bindUnclaimedPaidLicences(NOW, { quiet: true })).resolves.toMatchObject({ skipped: 2 });
+    expect(log).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+
+    jest.spyOn(axios, 'post').mockRejectedValueOnce(new Error('down'));
+    await svc.bindUnclaimedPaidLicences(NOW, { quiet: true });
+    expect(warn).not.toHaveBeenCalled();
+
+    // The hourly run still says it all.
+    siteLists([{ key: KEY_A, email: 'tom@example.com', plan: 'starter' }]);
+    await svc.bindUnclaimedPaidLicences(NOW);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('left unbound: already_paid'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('Unclaimed licences: listed=1 bound=0 skipped=1'));
+
+    // A quiet run that binds is logged.
+    log.mockClear();
+    siteLists([{ key: KEY_B, email: 'tom2@example.com', plan: 'starter', organizationId: 'org-b' }]);
+    (svc as any).prisma.organization.findUnique.mockResolvedValueOnce({ id: 'org-b' });
+    await expect(svc.bindUnclaimedPaidLicences(NOW, { quiet: true })).resolves.toMatchObject({ bound: 1 });
+    expect(setKey).toHaveBeenCalledWith(KEY_B, 'org-b');
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('Unclaimed licences: listed=1 bound=1'));
+  });
+
+  it('runs one binding at a time: the minute sweep and the hourly cron never overlap', async () => {
+    const { svc, setKey } = make({
+      users: [{ email: 'ann@example.com', role: 'ADMIN', organizationId: 'org-a', emailVerified: true }],
+    });
+    let release!: (v: unknown) => void;
+    jest.spyOn(axios, 'post').mockImplementation(
+      () => new Promise((resolve) => (release = () => resolve({ data: { licences: [{ key: KEY_A, email: 'ann@example.com', plan: 'starter' }] } }))),
+    );
+
+    const first = svc.bindUnclaimedPaidLicences(NOW, { quiet: true });
+    await expect(svc.bindUnclaimedPaidLicences(NOW)).resolves.toEqual({ listed: 0, bound: 0, skipped: 0, failed: 0 });
+    release(undefined);
+    await expect(first).resolves.toMatchObject({ bound: 1 });
+    expect(setKey).toHaveBeenCalledTimes(1);
+
+    // Free again once the run is over.
+    siteLists([]);
+    await expect(svc.bindUnclaimedPaidLicences(NOW)).resolves.toMatchObject({ listed: 0 });
+    expect(axios.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts the minute sweep on the Cloud only, and stops it on shutdown', async () => {
+    const cloud = make();
+    const selfHosted = make({ isCloud: false });
+    for (const { svc } of [cloud, selfHosted]) {
+      jest.spyOn(svc, 'ensureInstanceId').mockResolvedValue('inst');
+      jest.spyOn(svc as any, 'verifyOnStartup').mockResolvedValue(undefined);
+    }
+    const every = jest.spyOn(global, 'setInterval');
+    const stop = jest.spyOn(global, 'clearInterval');
+
+    await cloud.svc.onModuleInit();
+    expect(every).toHaveBeenCalledWith(expect.any(Function), UNCLAIMED_SWEEP_MS);
+    const bind = jest.spyOn(cloud.svc, 'bindUnclaimedPaidLicences').mockResolvedValue({} as any);
+    (every.mock.calls.find((c) => c[1] === UNCLAIMED_SWEEP_MS)![0] as () => void)();
+    expect(bind).toHaveBeenCalledWith(expect.any(Date), { quiet: true });
+    cloud.svc.onModuleDestroy();
+    expect(stop).toHaveBeenCalled();
+
+    every.mockClear();
+    await selfHosted.svc.onModuleInit();
+    expect(every.mock.calls.some((c) => c[1] === UNCLAIMED_SWEEP_MS)).toBe(false);
+    selfHosted.svc.onModuleDestroy();
   });
 
   it('does nothing when the site fails, without a service token, or off the Cloud', async () => {

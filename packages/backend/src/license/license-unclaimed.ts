@@ -14,7 +14,24 @@ import { normalizeEmail } from '../common/email.util';
  * The licence site lists them (POST /api/license/unclaimed, service token)
  * and LicenseService.bindUnclaimedPaidLicences binds each one to the
  * workspace of the account with the same verified address.
+ *
+ * It ran once an hour from the onboarding cron, and the site held a licence
+ * back for its first 15 minutes, so a buyer whose browser did not come back
+ * waited up to 75 minutes for the plan they had paid for (5 Nov 2026). The
+ * Cloud now asks every minute (UNCLAIMED_SWEEP_MS) and binds a licence once
+ * it is UNCLAIMED_SETTLE_MS old: about two minutes after the payment.
  */
+
+/** How often the Cloud backend asks the licence site for unclaimed licences. */
+export const UNCLAIMED_SWEEP_MS = 60 * 1000;
+
+/**
+ * A licence is left this long after the purchase, so the buyer's own browser,
+ * coming back from Stripe to /settings/license/activate, binds it first: that
+ * one knows the workspace for certain, the address match only guesses it.
+ * The site applies the same delay; this keeps it if the site does not.
+ */
+export const UNCLAIMED_SETTLE_MS = 2 * 60 * 1000;
 
 /** One entry of the licence site's answer. */
 export interface UnclaimedLicence {
@@ -24,6 +41,8 @@ export interface UnclaimedLicence {
   plan: string;
   /** Set when the checkout was started inside the app and named the workspace. */
   organizationId?: string;
+  /** When the licence was sold, when the site says. */
+  createdAt?: Date;
 }
 
 const KEY_RE = /^AMCP-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$/;
@@ -39,18 +58,28 @@ export function parseUnclaimedLicences(data: unknown): UnclaimedLicence[] | null
   const seen = new Set<string>();
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue;
-    const { key, email, plan, organizationId } = entry as Record<string, unknown>;
+    const { key, email, plan, organizationId, createdAt } = entry as Record<string, unknown>;
     if (typeof key !== 'string' || !KEY_RE.test(key) || seen.has(key)) continue;
     if (typeof email !== 'string' || !email.includes('@')) continue;
     seen.add(key);
+    const sold = typeof createdAt === 'string' ? new Date(createdAt) : null;
     out.push({
       key,
       email: normalizeEmail(email),
       plan: typeof plan === 'string' ? plan : '',
       ...(typeof organizationId === 'string' && organizationId ? { organizationId } : {}),
+      ...(sold && !Number.isNaN(sold.getTime()) ? { createdAt: sold } : {}),
     });
   }
   return out;
+}
+
+/**
+ * Whether a listed licence is old enough to bind (UNCLAIMED_SETTLE_MS). One
+ * without a sale date is: the site only lists licences it has held back.
+ */
+export function isSettled(licence: UnclaimedLicence, now: Date): boolean {
+  return !licence.createdAt || now.getTime() - licence.createdAt.getTime() >= UNCLAIMED_SETTLE_MS;
 }
 
 /** Why a listed licence was left unbound this run. */
