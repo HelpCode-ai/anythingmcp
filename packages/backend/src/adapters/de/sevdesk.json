@@ -19,6 +19,9 @@
       "headerName": "Authorization",
       "apiKey": "{{SEVDESK_API_KEY}}"
     },
+    "headers": {
+      "User-Agent": "AnythingMCP (support@anythingmcp.com)"
+    },
     "healthcheckPath": "/SevUser"
   },
   "probe": {
