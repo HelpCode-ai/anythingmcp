@@ -15,7 +15,12 @@ import {
   SharedSetupProvider,
   SharedSetupRegistry,
 } from '../mcp-server/shared-setup';
-import { ReturnAssistant, isExcludedAdapterSlug, sharedEndpointAccess } from '../mcp-server/shared-toolset';
+import {
+  ReturnAssistant,
+  isExcludedAdapterSlug,
+  sharedEndpointAccess,
+  withheldGenerationTools,
+} from '../mcp-server/shared-toolset';
 import { computeSetupState } from '../connectors/connector-setup-status.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { findSecretLiterals } from '../common/secret-literals.util';
@@ -215,7 +220,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
             alreadyInstalled: installed.has(a.slug),
             ...(sharedEndpointAccess(a.slug, ctx.profile ?? 'chatgpt') === 'read'
               ? { servedHere: 'Read tools only. Tools that move money or change payment data run on the server\'s own URL.' }
-              : {}),
+              : withheldGenerationTools(a.slug, ctx.profile ?? 'chatgpt').length
+                ? { servedHere: 'All tools except image, video and audio generation, which run on the server\'s own URL.' }
+                : {}),
             setup:
               full.setupKind === 'none'
                 ? 'Nothing to enter: installs and works right away.'
