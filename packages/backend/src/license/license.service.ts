@@ -9,7 +9,9 @@ import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-check
 import { FIRST_SUCCESS_KEY } from './card-trial-offer';
 import {
   formatSkipReasons,
+  isSettled,
   parseUnclaimedLicences,
+  UNCLAIMED_SWEEP_MS,
   type UnclaimedLicence,
   type UnclaimedSkipReason,
 } from './license-unclaimed';
@@ -221,6 +223,9 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LicenseService.name);
   private readonly apiBase = LICENSE_API_URL;
   private reverifyTimer: NodeJS.Timeout | null = null;
+  private unclaimedTimer: NodeJS.Timeout | null = null;
+  /** A binding run is in progress: the minute sweep and the hourly cron never overlap. */
+  private bindingUnclaimed = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -238,10 +243,21 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       this.reverifyTimer = setInterval(() => void this.verifyOnStartup(), 6 * 60 * 60 * 1000);
       this.reverifyTimer.unref();
     }
+    // Cloud: a paid licence whose buyer's browser did not come back to the
+    // activation page is bound within a couple of minutes, not at the next
+    // hourly cron (license-unclaimed.ts).
+    if (this.deployment.isCloud()) {
+      this.unclaimedTimer = setInterval(
+        () => void this.bindUnclaimedPaidLicences(new Date(), { quiet: true }).catch(() => undefined),
+        UNCLAIMED_SWEEP_MS,
+      );
+      this.unclaimedTimer.unref();
+    }
   }
 
   onModuleDestroy() {
     if (this.reverifyTimer) clearInterval(this.reverifyTimer);
+    if (this.unclaimedTimer) clearInterval(this.unclaimedTimer);
   }
 
   // ── Instance ID ────────────────────────────────────────────────────────────
@@ -789,8 +805,12 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Bind paid Cloud licences that never reached a workspace (see
-   * license-unclaimed.ts). Runs from the onboarding cron (hourly on the Cloud
-   * host). The licence site lists them; each one is bound like a key the
+   * license-unclaimed.ts). Runs every minute on the Cloud (quiet: only a run
+   * that binds or fails a licence is logged) and from the onboarding cron
+   * (hourly, the full summary). One run at a time: a call while another is in
+   * progress returns at once with nothing done.
+   *
+   * The licence site lists them; each one is bound like a key the
    * customer pasted (setLicenseKey) to:
    *   - the workspace the checkout named, if it still exists; otherwise
    *   - the workspace of the verified account with the licence's address, if
@@ -803,24 +823,42 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
    */
   async bindUnclaimedPaidLicences(
     now: Date = new Date(),
+    opts: { quiet?: boolean } = {},
   ): Promise<{ listed: number; bound: number; skipped: number; failed: number }> {
     const out = { listed: 0, bound: 0, skipped: 0, failed: 0 };
     if (!this.deployment.isCloud()) return out;
     const headers = this.serviceHeaders();
     if (!headers['x-amcp-service-token']) return out;
+    if (this.bindingUnclaimed) return out;
+    this.bindingUnclaimed = true;
+    try {
+      return await this.bindUnclaimedOnce(now, headers, !!opts.quiet, out);
+    } finally {
+      this.bindingUnclaimed = false;
+    }
+  }
+
+  private async bindUnclaimedOnce(
+    now: Date,
+    headers: Record<string, string>,
+    quiet: boolean,
+    out: { listed: number; bound: number; skipped: number; failed: number },
+  ): Promise<{ listed: number; bound: number; skipped: number; failed: number }> {
+    // The minute sweep keeps its warnings for the hourly run: the same
+    // site outage or the same second subscription would otherwise be logged
+    // sixty times an hour.
+    const warn = (msg: string) => (quiet ? this.logger.debug(msg) : this.logger.warn(msg));
 
     let licences: UnclaimedLicence[] | null;
     try {
       const { data } = await axios.post(`${this.apiBase}/api/license/unclaimed`, {}, { timeout: 15000, headers });
       licences = parseUnclaimedLicences(data);
     } catch (err: any) {
-      this.logger.warn(
-        `Unclaimed licence check failed (${err?.response?.status ?? 'no response'}): ${err?.message ?? err}`,
-      );
+      warn(`Unclaimed licence check failed (${err?.response?.status ?? 'no response'}): ${err?.message ?? err}`);
       return out;
     }
     if (!licences) {
-      this.logger.warn('Unclaimed licence check: the licence site sent no list.');
+      warn('Unclaimed licence check: the licence site sent no list.');
       return out;
     }
 
@@ -829,6 +867,8 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     // hourly line says how many were skipped but not why.
     const skipReasons = new Map<UnclaimedSkipReason, number>();
     for (const licence of licences) {
+      // Too fresh: the buyer's browser may still be on its way back.
+      if (!isSettled(licence, now)) continue;
       out.listed++;
       const tail = licence.key.slice(-4);
       try {
@@ -837,7 +877,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
           out.skipped++;
           skipReasons.set(target.skip, (skipReasons.get(target.skip) ?? 0) + 1);
           const log = `Unclaimed licence …${tail} (${maskEmail(licence.email)}) left unbound: ${target.skip}.`;
-          if (target.skip === 'already_paid' || target.skip === 'bound_elsewhere') this.logger.warn(log);
+          if (target.skip === 'already_paid' || target.skip === 'bound_elsewhere') warn(log);
           else this.logger.debug(log);
           continue;
         }
@@ -860,7 +900,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
-    if (out.listed > 0) {
+    if (out.listed > 0 && (!quiet || out.bound > 0 || out.failed > 0)) {
       this.logger.log(
         `Unclaimed licences: listed=${out.listed} bound=${out.bound} skipped=${out.skipped}` +
           formatSkipReasons(skipReasons) +
