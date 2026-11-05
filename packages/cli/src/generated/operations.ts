@@ -259,6 +259,16 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "hasBody": false
   },
   {
+    "resource": "audit",
+    "action": "getToolPerformance",
+    "method": "GET",
+    "path": "/api/audit/tool-performance",
+    "summary": "Get per-tool latency percentiles and failure rates",
+    "admin": false,
+    "pathParams": [],
+    "hasBody": false
+  },
+  {
     "resource": "connectors",
     "action": "list",
     "method": "GET",

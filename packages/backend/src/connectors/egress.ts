@@ -37,6 +37,7 @@ export function listIps(ips: string[]): string {
 // "Access denied" from an API is a permission, not an allowlist.
 const IP_REFUSAL_PATTERNS: RegExp[] = [
   /source_ip_undeclared/i, // Shopee
+  /not in the IP allow ?list/i, // TikTok Shop (36009033)
   /You are not allowed to use this API/i, // eMAG
   /\bIP\b(?: address)?[^\n]{0,40}\b(?:is )?not (?:allowed|whitelisted|allowlisted|authori[sz]ed|permitted|in the (?:white|allow) ?list)/i,
   /\b(?:not (?:allowed|whitelisted|allowlisted|authori[sz]ed)|blocked|denied|forbidden)[^\n]{0,30}\bfrom (?:this|your) IP\b/i,

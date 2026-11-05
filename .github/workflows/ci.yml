@@ -43,6 +43,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://amcp:testpassword@localhost:5432/anythingmcp_test
+      AUDIT_TEST_DATABASE_URL: postgresql://amcp:testpassword@localhost:5432/anythingmcp_test
       # CI-only secrets — long enough to pass our boot validation, never used
       # outside the test database.
       JWT_SECRET: ci-test-jwt-secret-at-least-32-chars-aaaaaa

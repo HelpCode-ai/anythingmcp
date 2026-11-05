@@ -27,6 +27,8 @@ function CompleteContent() {
   // A Shopee shop authorization comes back through its own callback, with the
   // shop id next to the code, and is completed by its own endpoint.
   const shopeeShopId = params.get('provider') === 'shopee' ? params.get('shop_id') : null;
+  // A TikTok Shop authorization too, completed by its own endpoint.
+  const isTikTokShop = params.get('provider') === 'tiktok-shop';
   // From the provider redirect, or from the answer when the exchange is refused.
   const [connectorId, setConnectorId] = useState<string | null>(params.get('connectorId'));
 
@@ -44,7 +46,9 @@ function CompleteContent() {
     window.history.replaceState({}, '', '/connectors/oauth/complete');
     (shopeeShopId !== null
       ? connectors.shopeeComplete(state, code, shopeeShopId, token)
-      : connectors.oauthComplete(state, code, token))
+      : isTikTokShop
+        ? connectors.tiktokShopComplete(state, code, token)
+        : connectors.oauthComplete(state, code, token))
       .then((out) => {
         const fallback = `/connectors/${out.connectorId}?oauth=success&tools=${out.toolsImported}`;
         router.replace(out.returnTo || fallback);
@@ -55,7 +59,7 @@ function CompleteContent() {
         }
         setError(err.message || 'The authorization could not be completed.');
       });
-  }, [error, state, code, shopeeShopId, token, isLoading, router]);
+  }, [error, state, code, shopeeShopId, isTikTokShop, token, isLoading, router]);
 
   if (!error && !state) {
     return <p className="text-sm text-[var(--text-2)]">Nothing to complete here.</p>;

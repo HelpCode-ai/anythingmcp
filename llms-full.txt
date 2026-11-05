@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 695 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 696 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -24,7 +24,7 @@ A gateway forwards calls. A company brain also knows where your documents are, h
 
 | | What it does | Edition |
 |---|---|---|
-| **Every system, one endpoint** | 695 catalog connectors, or your own REST/OpenAPI, SOAP, GraphQL, OData, SQL, IMAP/SMTP or MCP source. Tools register at runtime. [Connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md#connect-any-api-soap-service-or-database>) | All |
+| **Every system, one endpoint** | 696 catalog connectors, or your own REST/OpenAPI, SOAP, GraphQL, OData, SQL, IMAP/SMTP or MCP source. Tools register at runtime. [Connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md#connect-any-api-soap-service-or-database>) | All |
 | **File Search** | Indexes SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 or a network share: every PDF page, Excel rows with their column names, Word, PowerPoint, Outlook mails with attachments. The AI answers with file, page and date. [File Search](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud; self-hosted Enterprise |
 | **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud; self-hosted Enterprise |
 | **Company memory** | Facts and preferences saved from one AI client and found again in any other: said once in Claude, used by Copilot. Personal and company scopes, with folders and role limits. [Memory](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>) | Enterprise |
@@ -92,7 +92,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-695 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages.
+696 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages.
 
 | Category | Examples |
 |---|---|
@@ -3717,6 +3717,7 @@ computed exactly as described above.
 | `timestampFormat` | `s` (default, Unix seconds) or `ms` (milliseconds), for `${timestamp}`, `timestampParam` and `timestampHeader` alike. |
 | `queryParams` | Static query parameters added to every call (an app key, a fixed `sign_method`), signed like the others. |
 | `encoding` | Also `hex-upper`: hex in capitals. |
+| `excludeMultipartBody` | `true`: `${body}` is empty when the body is `multipart/form-data` (file uploads), for vendors that sign uploads without their body. |
 
 On this path the template may also use:
 
@@ -3755,6 +3756,33 @@ Their `/sync?method=...` business calls sign `${sortedParams}` (the `method`
 parameter is one of them); calls on their `/rest` gateway put the API path in
 front: `${apiPath}${sortedParams}`. JSON-valued parameters go in a form body
 with the `__json` marker, which `${sortedParams}` signs as its JSON text.
+
+TikTok Shop (`intl/tiktok-shop.json`) wraps the path, the sorted query and the
+body in the app secret: `{{SECRET}}${pathname}${sortedParams}${body}{{SECRET}}`,
+with `queryParams: { "app_key": ... }` and `excludeMultipartBody: true`. Pass
+array values as comma-separated strings on this kind of adapter: TikTok signs
+one value per query key.
+
+#### Shop authorization (token providers)
+
+Two marketplaces authorize a shop with their own flow instead of OAuth 2, set
+with `authConfig.tokenProvider` on an `HMAC` connector. The provider stores the
+shop's tokens encrypted on the connector, renews them before they expire, adds
+them to every call, and marks the connector as needing a new authorization when
+the marketplace refuses the refresh token. The connector page shows
+**Authorize with Provider** until the shop is authorized.
+
+| `tokenProvider` | Flow | What it adds to each call |
+|-----------------|------|---------------------------|
+| `shopee` | Signed `auth_partner` link; callback `<SERVER_URL>/api/shopee/callback/<state>` | `access_token` and `shop_id` query parameters, signed |
+| `tiktok-shop` | `services.tiktokshop.com/open/authorize?service_id=...` (US: `services.us.tiktokshop.com`); callback `<SERVER_URL>/api/tiktok-shop/callback`, set as the app's Redirect URL | the access token in the `x-tts-access-token` header (not signed) and `shop_cipher` in the query (signed), except on `/authorization/`, `/seller/` and upload paths |
+
+The TikTok Shop provider reads the app key from `authConfig.appKey` (or the
+`app_key` query parameter), the secret from `signature.secret` and the Service
+ID from `authConfig.serviceId`. The optional connector variables
+`TIKTOK_SHOP_MARKET` (`US`) and `TIKTOK_SHOP_SHOP_ID` (shop id, code or name,
+when one authorization covers several shops) are read when the authorization
+starts and completes.
 
 ### MCP adapters (a vendor's own MCP server)
 
@@ -7283,6 +7311,7 @@ See [Tool Definition Format](<https://github.com/HelpCode-ai/anythingmcp/blob/ma
 |--------|----------|-------------|
 | GET | `/api/audit/invocations` | List invocations (with filters) |
 | GET | `/api/audit/stats` | Get invocation stats (24h, 7d, total) |
+| GET | `/api/audit/tool-performance` | Per-tool latency percentiles, failure rates and last recorded errors |
 
 ### Query Invocations
 
@@ -7311,6 +7340,68 @@ Response:
   "total": 8721
 }
 ```
+
+### Tool Performance
+
+The **Tool performance** table on `/analytics` shows calls, failure rate,
+p50/p95/p99 latency and the last recorded error for each tool and MCP server.
+Its own time selector defaults to the last 24 hours; connector and MCP server
+filters narrow the results. This view is available on Cloud and self-hosted
+editions, using the invocation history still retained by the instance.
+
+```bash
+curl -s "http://localhost:4000/api/audit/tool-performance?hours=24&connectorId=<connectorId>&mcpServerId=<serverId>&limit=25&offset=0" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+All results belong to the signed-in user's organization. Optional parameters:
+
+| Parameter | Default | Bounds / meaning |
+|-----------|---------|------------------|
+| `hours` | `24` | Integer from 1 to 2160 (90 days), rolling window |
+| `connectorId` | All connectors | A connector in the user's organization |
+| `mcpServerId` | All servers | An MCP server in the user's organization |
+| `limit` | `25` | Integer from 1 to 100 |
+| `offset` | `0` | Non-negative integer; increase by `limit` for the next page |
+
+Response:
+
+```json
+{
+  "items": [{
+    "toolId": "tool-1",
+    "toolName": "search_orders",
+    "connectorId": "connector-1",
+    "connectorName": "Orders",
+    "mcpServerId": null,
+    "mcpServerName": null,
+    "calls": 10,
+    "errors": 2,
+    "errorRate": 20,
+    "latencySampleCount": 8,
+    "p50Ms": 120,
+    "p95Ms": 430,
+    "p99Ms": 486,
+    "lastError": "Request timed out",
+    "lastErrorAt": "2026-11-04T10:00:00.000Z"
+  }],
+  "hasMore": false
+}
+```
+
+`errors` includes both `ERROR` and `TIMEOUT`; `errorRate` is a percentage.
+Counts include the repeated failures represented by each stored record.
+Percentiles use only stored, non-null duration samples, without repeating the
+first duration for every deduplicated failure. `latencySampleCount` reports
+that sample count; absent latencies are `null`, while `0` is a valid duration.
+Repeated failures retain their first recorded server, so server attribution
+and the last recorded error reflect the saved history rather than every
+individual request. A null server means direct calls without a recorded MCP
+server. Same-name tools from different connectors remain separate.
+
+Rows are ordered by call count, with stable identity-based tie-breaking.
+`hasMore` indicates whether another page exists. The rolling window may change
+between page requests as new calls arrive.
 
 ### Replay a Tool Call
 

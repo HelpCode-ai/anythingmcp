@@ -39,6 +39,7 @@ async function fakeSession(page: Page) {
     if (url.includes('/api/connectors')) return json([]);
     if (url.includes('/api/audit/stats')) return json({ invocations24h: 0, errors24h: 0 });
     if (url.includes('/api/audit/analytics')) return json({ daily: [], topTools: [], totalInvocations: 0, successRate: 100, avgDuration: 0 });
+    if (url.includes('/api/audit/tool-performance')) return json({ items: [], hasMore: false });
     return json({});
   });
 }

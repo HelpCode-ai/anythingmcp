@@ -532,6 +532,16 @@ function SetupContent() {
         window.location.href = auth.authorizationUrl;
         return;
       }
+      // A TikTok shop likewise, through TikTok Shop's seller authorization link.
+      if (slug === 'tiktok-shop') {
+        const id = await save();
+        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
+        const auth = await connectors.tiktokShopAuthorize(id, token, returnTo);
+        if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
+        productEvents.track('oauth_started', token, { adapterSlug: slug });
+        window.location.href = auth.authorizationUrl;
+        return;
+      }
       if (info.setupKind === 'oauth_browser') {
         const id = await save();
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;

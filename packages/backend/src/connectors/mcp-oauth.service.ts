@@ -92,10 +92,11 @@ export interface PendingOAuthFlow {
    */
   dynamicClient?: boolean;
   /**
-   * Set on a Shopee shop authorization (shopee-auth.controller.ts), which is
+   * Set on a Shopee shop authorization (shopee-auth.controller.ts) or a
+   * TikTok Shop authorization (tiktok-shop-auth.controller.ts), each
    * completed by its own endpoint; unset on every OAuth flow.
    */
-  provider?: 'shopee';
+  provider?: 'shopee' | 'tiktok-shop';
   /**
    * The user signs in with their own account on a connector whose
    * credentials are per user: the tokens go to that user's
