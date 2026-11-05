@@ -1,0 +1,884 @@
+{
+  "slug": "rubrik",
+  "name": "Rubrik Security Cloud",
+  "description": "Let your AI check your Rubrik backups: cluster health and capacity, SLA Domains, protected objects and SLA compliance, snapshots, failed jobs and task reports, anomaly detection and threat hunt results. Read-only GraphQL with a service account.",
+  "aliases": [
+    "RSC",
+    "Rubrik Polaris"
+  ],
+  "instructions": "## Rubrik Security Cloud\nThis connector reads **Rubrik Security Cloud (RSC)** through its GraphQL API (`https://<account>.my.rubrik.com/api/graphql`): clusters, SLA Domains, protected objects and their SLA compliance, snapshots, activity events and task reports, anomaly detection results and threat hunts. Every curated tool is a read.\n\n**Setup (about 5 minutes)**\n1. In RSC open **Settings, Users and Access, Service Accounts** and add a service account. Give it a role that can view what you want the AI to see (a read-only custom role with view permissions on clusters, SLA Domains, objects, events and threat analytics is enough).\n2. Download the service account JSON. It holds `client_id` (starts with `client|`), `client_secret` and `access_token_uri` (`https://<account>.my.rubrik.com/api/client_token`).\n3. Set `RUBRIK_ACCOUNT` to the `<account>` part of that address, `RUBRIK_CLIENT_ID` and `RUBRIK_CLIENT_SECRET` to the two values. Check the setup with `rubrik_get_account`.\n\n**Authentication**: the connector posts the client credentials form-encoded to `/api/client_token` (`grant_type=client_credentials`) and sends the access token it gets back as `Authorization: Bearer`. The token lasts 12 hours by default (up to 24 hours in the RSC session settings) and is renewed before it expires and after a 401. The secret is shown only once in RSC; create a new service account if it is lost.\n\n**How to work**\n1. `rubrik_list_clusters` and `rubrik_get_cluster` for cluster health, connection state, version and capacity.\n2. `rubrik_get_compliance_summary` for the overview (objects in and out of compliance), then `rubrik_list_protected_objects` with `compliance_status: [\"OUT_OF_COMPLIANCE\"]` to name them. `rubrik_list_sla_domains` and `rubrik_get_sla_domain` explain the policy an object follows.\n3. `rubrik_list_snapshots` with an object's `id` lists its recovery points.\n4. `rubrik_list_events` with `last_activity_status: [\"FAILURE\"]` finds failed jobs; `rubrik_get_event_series` shows the timeline and error of one. `rubrik_list_task_details` is the report of finished tasks with durations and bytes.\n5. `rubrik_list_anomalies` with `is_anomaly: true` lists snapshots flagged by anomaly detection; `rubrik_list_threat_hunts` and `rubrik_get_threat_hunt_summary` show threat hunt results and the latest clean snapshot per object.\n\n**Identifiers**: clusters are UUIDs (`id` of a cluster). A protected object has an `id` (used by `rubrik_list_snapshots`) and an `fid` (used by event and anomaly filters). Times are ISO 8601 in UTC.\n\n**Pagination**: list tools take `first` (default 25) and `after`; call again with `after` = `pageInfo.endCursor` while `pageInfo.hasNextPage` is true. `count` is the total.\n\n**Generic GraphQL tools**: `rubrik_graphql_schema` reads a slice of the public RSC schema published in Rubrik's PowerShell SDK repository, and `rubrik_graphql_query` runs any other read query. `rubrik_graphql_mutation` and `rubrik_graphql_subscription` are installed switched off: a mutation can start backups and recoveries or delete data, so turn it on only on purpose. The published schema can be a few days newer or older than your account's deployment (`rubrik_get_account` shows its version).\n\n**Limitations**: no backups, recoveries, SLA assignments, quarantines or other changes; no file-level search inside snapshots; Rubrik CDM cluster REST APIs are not covered. What the AI sees is limited by the service account's role.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "rubrik",
+  "docsUrl": "https://developer.rubrik.com/Rubrik-Security-Cloud-API/",
+  "requiredEnvVars": [
+    "RUBRIK_ACCOUNT",
+    "RUBRIK_CLIENT_ID",
+    "RUBRIK_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "RUBRIK_ACCOUNT": {
+      "label": "Account",
+      "kind": "address",
+      "help": "The part before .my.rubrik.com in your RSC address and in the service account's access_token_uri, e.g. acme for acme.my.rubrik.com.",
+      "example": "acme",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "patternMessage": "Enter only the account name in lower case, e.g. acme, without https:// and without .my.rubrik.com."
+    },
+    "RUBRIK_CLIENT_ID": {
+      "label": "Service account client ID",
+      "kind": "credential",
+      "help": "client_id from the service account JSON downloaded in RSC under Settings, Users and Access, Service Accounts. It starts with client|.",
+      "pattern": "^client\\|[A-Za-z0-9-]{8,}$",
+      "patternMessage": "Paste the client_id from the service account JSON, e.g. client|c9bba9a9-1234-1234-b7c6-123440b4cf64."
+    },
+    "RUBRIK_CLIENT_SECRET": {
+      "label": "Service account client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "client_secret from the same service account JSON. RSC shows it only once.",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the client_secret from the service account JSON, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "RSC refused the token request. Check that RUBRIK_CLIENT_ID is the client_id from the service account JSON (it starts with client|) and that the secret belongs to it.",
+    "401": "RSC refused the service account. Copy client_id and client_secret again from the downloaded JSON, or create a new service account if the secret was lost or rotated.",
+    "403": "The service account signed in but its role cannot read this data. Give it a role with view permissions on clusters, SLA Domains, objects and events in RSC under Settings, Users and Access.",
+    "unreachable": "No RSC account answers at <account>.my.rubrik.com. Use the account name from your RSC address or from access_token_uri in the service account JSON."
+  },
+  "probe": {
+    "tool": "rubrik_get_account"
+  },
+  "connector": {
+    "name": "Rubrik Security Cloud GraphQL API",
+    "type": "GRAPHQL",
+    "baseUrl": "https://{{RUBRIK_ACCOUNT}}.my.rubrik.com/api/graphql",
+    "schemaUrl": "https://raw.githubusercontent.com/rubrikinc/rubrik-powershell-sdk/main/docs/graphql/schema-public.graphql",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://{{RUBRIK_ACCOUNT}}.my.rubrik.com/api/client_token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "grant_type": "client_credentials",
+        "client_id": "${username}",
+        "client_secret": "${password}"
+      },
+      "username": "{{RUBRIK_CLIENT_ID}}",
+      "password": "{{RUBRIK_CLIENT_SECRET}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 43200,
+      "proactiveRefreshSeconds": 1800,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "config": {
+      "graphqlBuiltinsOff": [
+        "mutation",
+        "subscription"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "rubrik_get_account",
+      "description": "Read the Rubrik Security Cloud account behind the service account: the account id and the RSC deployment version. Cheap and needs no arguments, so it is the connection check. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikAccount { accountId deploymentVersion }"
+      }
+    },
+    {
+      "name": "rubrik_list_clusters",
+      "description": "List the Rubrik clusters (CDM appliances, Cloud Clusters) registered in the account, sorted by name: id (cluster UUID), name, type, connection status, version, health, system status message, pause status, last connection, registration time, estimated runway in days and capacity in bytes (total, used, available). Filter by exact names or connection state. Use the id as cluster_id elsewhere. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25,
+            "description": "Items per page (default 25, at most 200)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer, while pageInfo.hasNextPage is true."
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only clusters with these names (exact match)."
+          },
+          "connection_state": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Connected",
+                "Disconnected",
+                "Initializing"
+              ]
+            },
+            "description": "Only clusters in these connection states."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikClusters($first: Int, $after: String, $names: [String!], $connectionState: [ClusterStatus!]) { clusterConnection(first: $first, after: $after, filter: { name: $names, connectionState: $connectionState }, sortBy: ClusterName, sortOrder: ASC) { count nodes { id name type status version isHealthy systemStatus systemStatusMessage pauseStatus lastConnectionTime registrationTime estimatedRunway metric { totalCapacity usedCapacity availableCapacity lastUpdateTime } } pageInfo { hasNextPage endCursor } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "names": "$names",
+          "connectionState": "$connection_state"
+        }
+      }
+    },
+    {
+      "name": "rubrik_get_cluster",
+      "description": "Read one Rubrik cluster by its UUID: name, type, status, version, health and system status message, time zone, address, encryption, snapshot count, estimated runway, end-of-support date and status, pause status and capacity figures in bytes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "description": "Cluster UUID, the id from rubrik_list_clusters."
+          }
+        },
+        "required": [
+          "cluster_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikCluster($clusterUuid: UUID!) { cluster(clusterUuid: $clusterUuid) { id name type status version isHealthy systemStatus systemStatusMessage pauseStatus lastConnectionTime registrationTime estimatedRunway metric { totalCapacity usedCapacity availableCapacity lastUpdateTime } timezone defaultAddress encryptionEnabled snapshotCount eosDate eosStatus } }",
+        "queryParams": {
+          "clusterUuid": "$cluster_id"
+        }
+      }
+    },
+    {
+      "name": "rubrik_list_sla_domains",
+      "description": "List SLA Domains (backup policies) sorted by name, with the number of protected objects: id, name, description, whether it is the default, object types it applies to, owner organization, base snapshot frequency, local retention and retention lock. Narrow with filter, for example [{\"field\": \"NAME\", \"text\": \"Gold\"}] or [{\"field\": \"CLUSTER_UUID\", \"text\": \"<cluster id>\"}]. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25,
+            "description": "Items per page (default 25, at most 200)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer, while pageInfo.hasNextPage is true."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Optional SLA filters, each {field, text} or {field, textList}. Useful fields: NAME (contains), NAME_EXACT_MATCH, CLUSTER_UUID, OBJECT_TYPE, SHOW_PAUSED_SLAS_ONLY.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "description": "Filter field, for example NAME or CLUSTER_UUID."
+                },
+                "text": {
+                  "type": "string",
+                  "description": "Value to match."
+                },
+                "textList": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Several values to match."
+                }
+              },
+              "required": [
+                "field"
+              ]
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikSlaDomains($first: Int, $after: String, $filter: [GlobalSlaFilterInput!]) { slaDomains(first: $first, after: $after, filter: $filter, sortBy: NAME, sortOrder: ASC, shouldShowProtectedObjectCount: true) { count nodes { id name ... on GlobalSlaReply { description isDefault objectTypes protectedObjectCount ownerOrgName isRetentionLockedSla retentionLockMode baseFrequency { duration unit } localRetentionLimit { duration unit } } ... on ClusterSlaDomain { protectedObjectCount cluster { id name } baseFrequency { duration unit } } } pageInfo { hasNextPage endCursor } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "rubrik_get_sla_domain",
+      "description": "Read one SLA Domain by id with its full snapshot schedule (minute, hourly, daily, weekly, monthly, quarterly and yearly frequency and retention), base frequency, local retention, retention lock and protected object count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sla_domain_id": {
+            "type": "string",
+            "description": "SLA Domain id from rubrik_list_sla_domains or from a protected object's slaDomain.id."
+          }
+        },
+        "required": [
+          "sla_domain_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikSlaDomain($id: UUID!) { slaDomain(id: $id) { id name ... on GlobalSlaReply { description isDefault objectTypes protectedObjectCount ownerOrgName isRetentionLockedSla retentionLockMode baseFrequency { duration unit } localRetentionLimit { duration unit } } ... on ClusterSlaDomain { protectedObjectCount cluster { id name } baseFrequency { duration unit } } ... on GlobalSlaReply { snapshotSchedule { minute { basicSchedule { frequency retention retentionUnit } } hourly { basicSchedule { frequency retention retentionUnit } } daily { basicSchedule { frequency retention retentionUnit } } weekly { basicSchedule { frequency retention retentionUnit } } monthly { basicSchedule { frequency retention retentionUnit } } quarterly { basicSchedule { frequency retention retentionUnit } } yearly { basicSchedule { frequency retention retentionUnit } } } } ... on ClusterSlaDomain { snapshotSchedule { minute { basicSchedule { frequency retention retentionUnit } } hourly { basicSchedule { frequency retention retentionUnit } } daily { basicSchedule { frequency retention retentionUnit } } weekly { basicSchedule { frequency retention retentionUnit } } monthly { basicSchedule { frequency retention retentionUnit } } quarterly { basicSchedule { frequency retention retentionUnit } } yearly { basicSchedule { frequency retention retentionUnit } } } } } }",
+        "queryParams": {
+          "id": "$sla_domain_id"
+        }
+      }
+    },
+    {
+      "name": "rubrik_list_protected_objects",
+      "description": "List workloads (protected objects such as VMs, databases, filesets, cloud and SaaS objects) with their protection and SLA compliance: id, fid, name, object type, location, protection status, compliance status (local, archival, replication), whether it waits for its first full backup, last snapshot time, missed and total snapshots, logical and physical bytes, SLA Domain and cluster. Filter by name search, object type, compliance or protection status, cluster or SLA Domain. The answer also carries the total count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25,
+            "description": "Items per page (default 25, at most 200)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer, while pageInfo.hasNextPage is true."
+          },
+          "search_term": {
+            "type": "string",
+            "description": "Text the object name contains."
+          },
+          "object_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these object types, for example VmwareVirtualMachine, Mssql, LinuxFileset, O365Mailbox, AwsNativeEc2Instance (ObjectTypeEnum values)."
+          },
+          "compliance_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "IN_COMPLIANCE",
+                "OUT_OF_COMPLIANCE",
+                "UNPROTECTED",
+                "NOT_AVAILABLE",
+                "NOT_APPLICABLE",
+                "EMPTY",
+                "NULL"
+              ]
+            },
+            "description": "Only objects with these SLA compliance states."
+          },
+          "protection_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Protected",
+                "NoSla",
+                "DoNotProtect"
+              ]
+            },
+            "description": "Only objects with these protection states."
+          },
+          "cluster_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only objects on these clusters (cluster UUIDs)."
+          },
+          "sla_domain_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only objects assigned to these SLA Domains (ids)."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "Name",
+              "ComplianceStatus",
+              "LastSnapshot",
+              "MissedSnapshots",
+              "ObjectType",
+              "ClusterName",
+              "SlaDomainName",
+              "ProtectionStatus",
+              "LogicalBytes"
+            ],
+            "default": "Name",
+            "description": "Sort field (default Name)."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction, ASC or DESC.",
+            "default": "ASC"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikProtectedObjects($first: Int, $after: String, $searchTerm: String, $objectType: [ObjectTypeEnum!], $complianceStatus: [ComplianceStatusEnum!], $protectionStatus: [ProtectionStatusEnum!], $clusterIds: [UUID!], $slaDomainIds: [String!], $sortBy: SnappableSortByEnum, $sortOrder: SortOrder) { snappableConnection(first: $first, after: $after, filter: { searchTerm: $searchTerm, objectType: $objectType, complianceStatus: $complianceStatus, protectionStatus: $protectionStatus, cluster: { id: $clusterIds }, slaDomain: { id: $slaDomainIds } }, sortBy: $sortBy, sortOrder: $sortOrder) { count nodes { id fid name objectType location objectState protectionStatus complianceStatus archivalComplianceStatus replicationComplianceStatus awaitingFirstFull protectedOn lastSnapshot latestArchivalSnapshot latestReplicationSnapshot missedSnapshots totalSnapshots localSnapshots archiveSnapshots replicaSnapshots logicalBytes physicalBytes slaDomain { id name } cluster { id name } } pageInfo { hasNextPage endCursor } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "searchTerm": "$search_term",
+          "objectType": "$object_types",
+          "complianceStatus": "$compliance_status",
+          "protectionStatus": "$protection_status",
+          "clusterIds": "$cluster_ids",
+          "slaDomainIds": "$sla_domain_ids",
+          "sortBy": "$sort_by",
+          "sortOrder": "$sort_order"
+        }
+      }
+    },
+    {
+      "name": "rubrik_get_compliance_summary",
+      "description": "Count protected objects per group, for a compliance overview: group_by ComplianceStatus (default) answers how many objects are in or out of compliance, ProtectionStatus how many are protected, ObjectType, Cluster or SlaDomain how they spread. Each group comes with its object count and total and missed snapshots. Narrow with object types, clusters or an SLA compliance window. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "ComplianceStatus",
+              "ProtectionStatus",
+              "ObjectType",
+              "Cluster",
+              "SlaDomain"
+            ],
+            "default": "ComplianceStatus",
+            "description": "How to group the objects (default ComplianceStatus)."
+          },
+          "object_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these object types (ObjectTypeEnum values, as in rubrik_list_protected_objects)."
+          },
+          "cluster_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only objects on these clusters (cluster UUIDs)."
+          },
+          "sla_time_range": {
+            "type": "string",
+            "enum": [
+              "LAST_SNAPSHOT",
+              "LAST_2_SNAPSHOTS",
+              "LAST_3_SNAPSHOTS",
+              "LAST_24_HOURS",
+              "PAST_7_DAYS",
+              "PAST_30_DAYS",
+              "PAST_90_DAYS",
+              "PAST_365_DAYS",
+              "SINCE_PROTECTION"
+            ],
+            "description": "Window the compliance status is computed over."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50,
+            "description": "Groups per page (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikComplianceSummary($groupBy: SnappableGroupByEnum!, $first: Int, $objectType: [ObjectTypeEnum!], $clusterIds: [UUID!], $slaTimeRange: SlaComplianceTimeRange) { snappableGroupByConnection(groupBy: $groupBy, first: $first, filter: { objectType: $objectType, cluster: { id: $clusterIds }, slaTimeRange: $slaTimeRange }) { count nodes { groupByInfo { __typename ... on ComplianceStatus { complianceStatus: enumValue } ... on ProtectionStatus { protectionStatus: enumValue } ... on ObjectType { objectType: enumValue } ... on Cluster { clusterId: id clusterName: name } ... on ClusterSlaDomain { slaDomainId: id slaDomainName: name } } snappableConnection { count aggregation { totalSnapshots missedSnapshots logicalBytes physicalBytes } } } } }",
+        "queryParams": {
+          "groupBy": "$group_by",
+          "first": "$first",
+          "objectType": "$object_types",
+          "clusterIds": "$cluster_ids",
+          "slaTimeRange": "$sla_time_range"
+        }
+      }
+    },
+    {
+      "name": "rubrik_list_snapshots",
+      "description": "List the snapshots (recovery points) of one protected object, newest first by default: id, date, expiration date, on-demand or SLA, expired, anomaly, quarantined, corrupted and indexed flags, plus cluster and retention lock for appliance snapshots. Optionally restrict to a time range. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25,
+            "description": "Items per page (default 25, at most 200)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer, while pageInfo.hasNextPage is true."
+          },
+          "workload_id": {
+            "type": "string",
+            "description": "The protected object's id (the id field from rubrik_list_protected_objects)."
+          },
+          "time_range": {
+            "type": "object",
+            "description": "Optional window: {\"start\": \"2026-10-01T00:00:00Z\", \"end\": \"2026-10-31T23:59:59Z\"} (ISO 8601, both required when set).",
+            "properties": {
+              "start": {
+                "type": "string",
+                "description": "Start, ISO 8601."
+              },
+              "end": {
+                "type": "string",
+                "description": "End, ISO 8601."
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction, ASC or DESC.",
+            "default": "DESC"
+          }
+        },
+        "required": [
+          "workload_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikSnapshots($workloadId: String!, $first: Int, $after: String, $sortOrder: SortOrder, $timeRange: TimeRangeInput) { snapshotOfASnappableConnection(workloadId: $workloadId, first: $first, after: $after, sortBy: CREATION_TIME, sortOrder: $sortOrder, timeRange: $timeRange) { count nodes { __typename id date expirationDate isOnDemandSnapshot isExpired isAnomaly isQuarantined isCorrupted isIndexed snappableId ... on CdmSnapshot { cdmId isRetentionLocked cluster { id name } } ... on PolarisSnapshot { isArchived isReplica isRetentionLocked } } pageInfo { hasNextPage endCursor } } }",
+        "queryParams": {
+          "workloadId": "$workload_id",
+          "first": "$first",
+          "after": "$after",
+          "sortOrder": "$sort_order",
+          "timeRange": "$time_range"
+        }
+      }
+    },
+    {
+      "name": "rubrik_list_events",
+      "description": "List recent activity (event series: backups, archival, replication, recoveries, anomalies, threat hunts and other jobs), newest update first: series id, cluster, object, type, last status and message, severity, progress, start and last update, SLA Domain, failure reason with cause, error remedy and user. Filter by status (for example FAILURE), type (for example BACKUP), severity, object name, cluster, object fid or time. Use activitySeriesId and clusterUuid with rubrik_get_event_series for the full timeline. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25,
+            "description": "Items per page (default 25, at most 200)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer, while pageInfo.hasNextPage is true."
+          },
+          "last_activity_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FAILURE",
+                "SUCCESS",
+                "RUNNING",
+                "QUEUED",
+                "CANCELED",
+                "CANCELING",
+                "PARTIAL_SUCCESS",
+                "WARNING",
+                "INFO",
+                "TASK_FAILURE",
+                "TASK_SUCCESS"
+              ]
+            },
+            "description": "Only series whose last status is one of these."
+          },
+          "last_activity_type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only series of these types (EventType values), for example BACKUP, ARCHIVE, REPLICATION, RECOVERY, ANOMALY, THREAT_HUNT, LOG_BACKUP, CONFIGURATION."
+          },
+          "severity": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "SEVERITY_CRITICAL",
+                "SEVERITY_WARNING",
+                "SEVERITY_INFO"
+              ]
+            },
+            "description": "Only series with these severities."
+          },
+          "object_name": {
+            "type": "string",
+            "description": "Text the object name contains."
+          },
+          "cluster_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only events of these clusters (cluster UUIDs)."
+          },
+          "object_fids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only events of these objects (the fid field from rubrik_list_protected_objects)."
+          },
+          "last_updated_after": {
+            "type": "string",
+            "description": "Only series updated after this time, ISO 8601, for example 2026-11-04T00:00:00Z."
+          },
+          "last_updated_before": {
+            "type": "string",
+            "description": "Only series updated before this time, ISO 8601."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction, ASC or DESC.",
+            "default": "DESC"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikEvents($first: Int, $after: String, $sortOrder: SortOrder, $lastActivityStatus: [EventStatus!], $lastActivityType: [EventType!], $severity: [EventSeverity!], $objectName: String, $clusterIds: [UUID!], $objectFids: [UUID!], $lastUpdatedTimeGt: DateTime, $lastUpdatedTimeLt: DateTime) { activitySeriesConnection(first: $first, after: $after, sortBy: LAST_UPDATED, sortOrder: $sortOrder, filters: { lastActivityStatus: $lastActivityStatus, lastActivityType: $lastActivityType, severity: $severity, objectName: $objectName, clusterId: $clusterIds, objectFid: $objectFids, lastUpdatedTimeGt: $lastUpdatedTimeGt, lastUpdatedTimeLt: $lastUpdatedTimeLt }) { count nodes { id fid activitySeriesId clusterUuid clusterName objectId objectName objectType location slaDomainName lastActivityType lastActivityStatus lastActivityMessage severity progress startTime lastUpdated isOnDemand failureReason causeErrorMessage causeErrorReason causeErrorRemedy username } pageInfo { hasNextPage endCursor } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "sortOrder": "$sort_order",
+          "lastActivityStatus": "$last_activity_status",
+          "lastActivityType": "$last_activity_type",
+          "severity": "$severity",
+          "objectName": "$object_name",
+          "clusterIds": "$cluster_ids",
+          "objectFids": "$object_fids",
+          "lastUpdatedTimeGt": "$last_updated_after",
+          "lastUpdatedTimeLt": "$last_updated_before"
+        }
+      }
+    },
+    {
+      "name": "rubrik_get_event_series",
+      "description": "Read one activity series with its individual activities (time, type, status, severity, message, progress and error info), to see why a backup or recovery failed or how far a running job is. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "activity_series_id": {
+            "type": "string",
+            "description": "activitySeriesId from rubrik_list_events (UUID)."
+          },
+          "cluster_uuid": {
+            "type": "string",
+            "description": "clusterUuid from the same event."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50,
+            "description": "How many activities to return (default 50)."
+          }
+        },
+        "required": [
+          "activity_series_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikEventSeries($activitySeriesId: UUID!, $clusterUuid: UUID, $first: Int) { activitySeries(input: { activitySeriesId: $activitySeriesId, clusterUuid: $clusterUuid }) { id fid activitySeriesId clusterUuid clusterName objectId objectName objectType location slaDomainName lastActivityType lastActivityStatus lastActivityMessage severity progress startTime lastUpdated isOnDemand failureReason causeErrorMessage causeErrorReason causeErrorRemedy username dataTransferred logicalSize effectiveThroughput activityConnection(first: $first) { count nodes { id time type status severity message progress errorInfo } } } }",
+        "queryParams": {
+          "activitySeriesId": "$activity_series_id",
+          "clusterUuid": "$cluster_uuid",
+          "first": "$first"
+        }
+      }
+    },
+    {
+      "name": "rubrik_list_task_details",
+      "description": "List finished backup, archival, replication and recovery tasks (the Task Details report), newest end time first: object, type, location, cluster, SLA Domain, task type and category, status, start and end time, duration, data transferred, logical and physical bytes, failure reason and user. Filter by time window, task status, task type or category, cluster or object name. Status and type strings are the values the report shows (read them from an unfiltered call). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25,
+            "description": "Items per page (default 25, at most 200)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer, while pageInfo.hasNextPage is true."
+          },
+          "time_after": {
+            "type": "string",
+            "description": "Only tasks after this time, ISO 8601."
+          },
+          "time_before": {
+            "type": "string",
+            "description": "Only tasks before this time, ISO 8601."
+          },
+          "task_status": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only tasks with these status values, as shown in the status field."
+          },
+          "task_type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only tasks with these taskType values."
+          },
+          "task_category": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only tasks with these taskCategory values."
+          },
+          "cluster_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only tasks of these clusters (cluster UUIDs)."
+          },
+          "search_term": {
+            "type": "string",
+            "description": "Text the object name contains."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction, ASC or DESC.",
+            "default": "DESC"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikTaskDetails($first: Int, $after: String, $sortOrder: SortOrder, $timeGt: DateTime, $timeLt: DateTime, $taskStatus: [String!], $taskType: [String!], $taskCategory: [String!], $clusterIds: [UUID!], $searchTerm: String) { taskDetailConnection(first: $first, after: $after, sortBy: EndTime, sortOrder: $sortOrder, filter: { time_gt: $timeGt, time_lt: $timeLt, taskStatus: $taskStatus, taskType: $taskType, taskCategory: $taskCategory, clusterUuid: $clusterIds, searchTerm: $searchTerm }) { count nodes { id objectName objectType objectFid location clusterName clusterUuid slaDomainName taskType taskCategory status startTime endTime duration dataTransferred logicalBytes physicalBytes failureReason userName } pageInfo { hasNextPage endCursor } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "sortOrder": "$sort_order",
+          "timeGt": "$time_after",
+          "timeLt": "$time_before",
+          "taskStatus": "$task_status",
+          "taskType": "$task_type",
+          "taskCategory": "$task_category",
+          "clusterIds": "$cluster_ids",
+          "searchTerm": "$search_term"
+        }
+      }
+    },
+    {
+      "name": "rubrik_list_anomalies",
+      "description": "List anomaly detection results (ransomware and unusual change analysis per snapshot), newest snapshot first: whether it is an anomaly, probability, severity, detection and snapshot time, workload name, id and fid, object type, location, encryption flag, files created, modified, deleted and suspicious, net bytes changed and cluster. Set is_anomaly true to see only flagged snapshots. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25,
+            "description": "Items per page (default 25, at most 200)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer, while pageInfo.hasNextPage is true."
+          },
+          "is_anomaly": {
+            "type": "boolean",
+            "description": "true: only snapshots flagged as anomalous."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Only results from this time on, ISO 8601."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Only results up to this time, ISO 8601."
+          },
+          "cluster_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these clusters (cluster UUIDs)."
+          },
+          "workload_fids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these objects (fid from rubrik_list_protected_objects)."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction, ASC or DESC.",
+            "default": "DESC"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikAnomalies($first: Int, $after: String, $sortOrder: SortOrder, $isAnomaly: Boolean, $startTime: DateTime, $endTime: DateTime, $clusterIds: [UUID!], $workloadFids: [UUID!]) { anomalyResults(first: $first, after: $after, sortBy: SNAPSHOT_DATE, sortOrder: $sortOrder, filter: { isAnomaly: $isAnomaly, startTime: $startTime, endTime: $endTime, clusterUuid: $clusterIds, workloadFid: $workloadFids }) { count nodes { id isAnomaly anomalyProbability severity detectionTime snapshotDate snapshotFid previousSnapshotDate workloadName workloadId workloadFid objectType location isEncrypted filesCreatedCount filesModifiedCount filesDeletedCount suspiciousFilesCount bytesNetChangedCount cluster { id name } } pageInfo { hasNextPage endCursor } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "sortOrder": "$sort_order",
+          "isAnomaly": "$is_anomaly",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "clusterIds": "$cluster_ids",
+          "workloadFids": "$workload_fids"
+        }
+      }
+    },
+    {
+      "name": "rubrik_list_threat_hunts",
+      "description": "List threat hunts (scans of backups for indicators of compromise): hunt id, name, type, status, start time, creator, cluster and the scan totals (objects scanned, objects with matches, affected snapshots, unique matched paths). Filter by time window or status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25,
+            "description": "Items per page (default 25, at most 200)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: pageInfo.endCursor of the previous answer, while pageInfo.hasNextPage is true."
+          },
+          "begin_time": {
+            "type": "string",
+            "description": "Only hunts from this time on, ISO 8601."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Only hunts up to this time, ISO 8601."
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "IN_PROGRESS",
+                "SUCCEEDED",
+                "PARTIALLY_SUCCEEDED",
+                "FAILED",
+                "CANCELED",
+                "CANCELING",
+                "ABORTED"
+              ]
+            },
+            "description": "Only hunts in these states."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikThreatHunts($first: Int, $after: String, $beginTime: DateTime, $endTime: DateTime, $statusFilter: [ThreatHuntStatus!]) { threatHunts(first: $first, after: $after, beginTime: $beginTime, endTime: $endTime, statusFilter: $statusFilter) { count nodes { huntId name huntType status startTime createdBy { email } huntDetails { startTime endTime cluster { id name } } stats { totalObjectsScanned totalObjectsWithMatches totalAffectedSnapshots totalUniqueMatchedPaths totalIocs } } pageInfo { hasNextPage endCursor } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "beginTime": "$begin_time",
+          "endTime": "$end_time",
+          "statusFilter": "$status"
+        }
+      }
+    },
+    {
+      "name": "rubrik_get_threat_hunt_summary",
+      "description": "Read the result of one threat hunt per scanned object: status, totals, and for each object its location, scan status, matched snapshots and paths, whether matches were quarantined, the earliest and latest matched snapshot dates and the latest clean snapshot date. Use it to pick a clean recovery point. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hunt_id": {
+            "type": "string",
+            "description": "huntId from rubrik_list_threat_hunts."
+          }
+        },
+        "required": [
+          "hunt_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query RubrikThreatHuntSummary($huntId: String!) { threatHuntSummary(huntId: $huntId) { huntId status stats { totalObjectsScanned totalObjectsWithMatches totalAffectedSnapshots totalUniqueMatchedPaths totalIocs } objectsSummary { location objectScanStatus totalMatchedSnapshots totalUniqueMatchedPaths totalMatchedPaths hasQuarantinedMatches earliestMatchedSnapshotDate latestMatchedSnapshotDate latestSnapshotWithoutMatchDate clusterInfo { id name } } } }",
+        "queryParams": {
+          "huntId": "$hunt_id"
+        }
+      }
+    }
+  ]
+}
