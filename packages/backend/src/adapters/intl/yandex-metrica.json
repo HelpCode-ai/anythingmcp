@@ -1,0 +1,1125 @@
+{
+  "slug": "yandex-metrica",
+  "name": "Yandex Metrica",
+  "aliases": [
+    "Яндекс Метрика",
+    "Яндекс.Метрика",
+    "Yandex Metrika",
+    "Yandex.Metrica"
+  ],
+  "description": "Let your AI analyse Yandex Metrica web analytics: counters, goals, filters and segments, table, time-series, drill-down and comparison reports on visits, sources, pages and conversions, and raw visits and hits through the Logs API.",
+  "instructions": "## Yandex Metrica\nThis connector uses the **Yandex Metrica API** (`https://api-metrika.yandex.net`) with an OAuth token: the Management API (counters, goals, filters, operations, segments, access), the Reporting API (tables, time series, drill-down and comparisons, sampled and fast) and the Logs API (raw unsampled visits and hits).\n\n**Setup (about 5 minutes)**\n1. Create an app at https://oauth.yandex.com (For API access or debugging) with the access **metrika:read** (Metrica statistics, counter settings, list of counters). Note its ClientID.\n2. Signed in with the Yandex account that owns or can see the counters, open `https://oauth.yandex.com/authorize?response_type=token&client_id=<ClientID>` and copy the token (it starts with `y0_`) into `YANDEX_METRICA_TOKEN`. It is sent as `Authorization: OAuth ...`, is valid for about a year and is extended while it is used.\n3. Creating Logs API requests also works with metrika:read; nothing in this connector changes counters or goals.\n\n**Where to start**: `yandex_metrica_list_counters` for the counter ids (`ids` in reports, `counterId` elsewhere), then `yandex_metrica_list_goals` for goal ids, then the reports.\n\n**Reports**\n- `yandex_metrica_get_report`: a table. Metrics and dimensions use the `ym:s:` prefix for sessions (visits) and `ym:pv:` for pageviews; e.g. `metrics=ym:s:visits,ym:s:users,ym:s:bounceRate`, `dimensions=ym:s:lastTrafficSource`. Goal metrics embed the goal id: `ym:s:goal123reaches`, `ym:s:goal123conversionRate`. Dates take `YYYY-MM-DD`, `today`, `yesterday` or `30daysAgo`. Filters use `==`, `!=`, `=@` (contains), `=~` (regex) combined with AND/OR, e.g. `ym:s:lastTrafficSource=='organic'`.\n- `yandex_metrica_get_report_by_time`: the same metrics per day, week or month (`group`) for the top `top_keys` rows.\n- `yandex_metrica_get_drilldown`: expand a dimension tree row by row with `parent_id`.\n- `yandex_metrica_compare_segments`: segment or period A against B (`date1_a`/`date2_a`, `date1_b`/`date2_b`, `filters_a`/`filters_b`).\n- Answers include `sampled` and `sample_share`: when sampled is true the figures are estimates; pass `accuracy` full for exact figures on small ranges, or use the Logs API.\n- Rows page with `limit` (default 100, at most 100,000) and `offset` (from 1).\n\n**Settings**: `yandex_metrica_get_counter`, `yandex_metrica_get_goal`, `yandex_metrica_list_filters`, `yandex_metrica_list_operations`, `yandex_metrica_list_segments` (saved segment expressions to reuse as `filters`), `yandex_metrica_list_grants`, `yandex_metrica_list_labels`.\n\n**Logs API (raw data)**: `yandex_metrica_evaluate_log_request` (can it be built?), `yandex_metrica_create_log_request`, then poll `yandex_metrica_get_log_request` or `yandex_metrica_list_log_requests` until status is `processed`, then `yandex_metrica_download_log_part` for each part (tab-separated text). `yandex_metrica_cancel_log_request` stops a pending request; `yandex_metrica_clean_log_request` (switched off at install) deletes prepared files to free the log quota. Log date ranges cannot include today.\n\n**Limits**: 5,000 requests a day per user, 200 report requests per 5 minutes per user, 3 parallel requests per user, 30 per second per IP (10 for the Logs API); 429 when exceeded. Errors: 401 a wrong or expired token, 403 no access to that counter, 400 an invalid metric, dimension or filter (the message names it).\n\n**Out of scope**: creating or editing counters, goals, filters and access; uploading offline conversions, calls, expenses, user parameters or CRM data.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "yandex-metrica",
+  "docsUrl": "https://yandex.com/dev/metrika/en/",
+  "prerequisites": "A Yandex account with access to the Metrica counters, an app on oauth.yandex.com with the metrika:read access, and an OAuth token for that account. About 5 minutes.",
+  "requiredEnvVars": [
+    "YANDEX_METRICA_TOKEN"
+  ],
+  "envVarMeta": {
+    "YANDEX_METRICA_TOKEN": {
+      "label": "OAuth token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Open https://oauth.yandex.com/authorize?response_type=token&client_id=<your ClientID> signed in with the account that sees the counters, and copy the token (starts with y0_). The app needs metrika:read.",
+      "link": "https://oauth.yandex.com/",
+      "pattern": "^(?![Bb]earer |OAuth )[A-Za-z0-9_-]{30,}$",
+      "patternMessage": "Paste only the token (it usually starts with y0_), without OAuth or Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Yandex Metrica refused the token: it is wrong, expired or revoked. Get a new one at oauth.yandex.com with your app's ClientID.",
+    "403": "The token works, but its account has no access to this counter, or the app lacks metrika:read.",
+    "429": "A Yandex Metrica quota is used up (5,000 requests a day, 200 reports per 5 minutes). Wait and verify again."
+  },
+  "probe": {
+    "tool": "yandex_metrica_list_counters",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "connector": {
+    "name": "Yandex Metrica API",
+    "type": "REST",
+    "baseUrl": "https://api-metrika.yandex.net",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "OAuth {{YANDEX_METRICA_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "yandex_metrica_list_counters",
+      "description": "List the Metrica counters (tags) the token can read: id, name, site, status, owner_login, permission (own, view, edit), time zone, creation date and, with field, goals, mirrors, grants, filters, operations. Start here to get counter ids; also checks the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_string": {
+            "type": "string",
+            "description": "Substring of the counter name or site, or a full counter id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Active",
+              "Deleted"
+            ],
+            "description": "Default Active."
+          },
+          "permission": {
+            "type": "string",
+            "description": "Comma-separated access levels: own, view, edit."
+          },
+          "favorite": {
+            "type": "boolean",
+            "description": "Only counters in Favorites."
+          },
+          "label_id": {
+            "type": "integer",
+            "description": "Only counters with this label."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "partner"
+            ],
+            "description": "simple (created in Metrica) or partner (imported from YAN)."
+          },
+          "counter_ids": {
+            "type": "string",
+            "description": "Comma-separated counter ids to fetch."
+          },
+          "field": {
+            "type": "string",
+            "description": "Extra blocks, comma-separated: goals, mirrors, grants, filters, operations, counter_flags."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "None",
+              "Default",
+              "Visits",
+              "Hits",
+              "Uniques",
+              "Name"
+            ],
+            "description": "Sort order."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Counters per page, default 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "First counter, from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counters",
+        "queryParams": {
+          "search_string": "$search_string",
+          "status": "$status",
+          "permission": "$permission",
+          "favorite": "$favorite",
+          "label_id": "$label_id",
+          "type": "$type",
+          "counter_ids": "$counter_ids",
+          "field": "$field",
+          "sort": "$sort",
+          "per_page": "$per_page",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_get_counter",
+      "description": "Get one counter's settings: name, site and mirrors, status, time zone, code status, webvisor and e-commerce options, owner and, with field, goals, grants, filters and operations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          },
+          "field": {
+            "type": "string",
+            "description": "Extra blocks, comma-separated: goals, mirrors, grants, filters, operation, counter_flags."
+          }
+        },
+        "required": [
+          "counterId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}",
+        "queryParams": {
+          "field": "$field"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_list_goals",
+      "description": "List the goals of a counter: id, name, type (url, action, number, step, phone, email, form, messenger ...), conditions, is_retargeting and default price. Use the goal ids in metrics such as ym:s:goal<id>reaches and ym:s:goal<id>conversionRate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          },
+          "useDeleted": {
+            "type": "boolean",
+            "description": "Include deleted goals."
+          }
+        },
+        "required": [
+          "counterId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/goals",
+        "queryParams": {
+          "useDeleted": "$useDeleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_get_goal",
+      "description": "Get one goal of a counter by id: name, type, conditions, steps of a composite goal and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          },
+          "goalId": {
+            "type": "integer",
+            "description": "Goal id."
+          }
+        },
+        "required": [
+          "counterId",
+          "goalId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/goal/{goalId}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_list_filters",
+      "description": "List the data filters of a counter (include or exclude traffic by IP, URL, title, referrer ...): id, attr, type, value, action, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          }
+        },
+        "required": [
+          "counterId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/filters"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_list_operations",
+      "description": "List the URL operations of a counter (cut query parameters or fragments, merge to lowercase, replace domain): id, action, attr, value, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          }
+        },
+        "required": [
+          "counterId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/operations"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_list_segments",
+      "description": "List the saved segments of a counter: segment_id, name, expression (a filter you can pass as filters in reports), status, segment_source and create_time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          }
+        },
+        "required": [
+          "counterId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/apisegment/segments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_list_grants",
+      "description": "List who has access to a counter: user_login, perm (view or edit), created_at and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          }
+        },
+        "required": [
+          "counterId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/grants"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_list_labels",
+      "description": "List the user's counter labels (folders): id and name. Filter yandex_metrica_list_counters by label_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/labels"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_get_report",
+      "description": "Build a table report from the Reporting API: metrics grouped by dimensions over a date range, with filters, sorting and paging. Use it for most questions (traffic by source, conversions per goal, top pages, countries, devices). Answer: query, data (rows with dimensions and metrics), totals, min, max, total_rows, sampled and sample_share.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Counter id, or several comma-separated, e.g. 44147844."
+          },
+          "metrics": {
+            "type": "string",
+            "description": "Comma-separated metrics, at most 20, e.g. ym:s:visits,ym:s:users,ym:s:bounceRate,ym:s:pageDepth,ym:s:avgVisitDurationSeconds,ym:s:goal<goalId>reaches. Required unless preset is given."
+          },
+          "dimensions": {
+            "type": "string",
+            "description": "Comma-separated dimensions, at most 10, e.g. ym:s:date, ym:s:lastTrafficSource, ym:s:lastSearchEngine, ym:s:regionCountry, ym:s:deviceCategory, ym:s:startURL."
+          },
+          "date1": {
+            "type": "string",
+            "description": "Start date YYYY-MM-DD, or today, yesterday, NdaysAgo (e.g. 30daysAgo). Default 6daysAgo."
+          },
+          "date2": {
+            "type": "string",
+            "description": "End date YYYY-MM-DD, or today, yesterday, NdaysAgo. Default today."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Segmentation filter, e.g. ym:s:trafficSource=='organic' AND ym:s:isRobot=='No'."
+          },
+          "preset": {
+            "type": "string",
+            "description": "Report preset instead of metrics/dimensions, e.g. sources_summary, sources_search_phrases, traffic, tech_platforms, geo_country."
+          },
+          "accuracy": {
+            "type": "string",
+            "description": "Sampling: low, medium, high, full, or a fraction like 0.1. Default: the API's choice."
+          },
+          "proposed_accuracy": {
+            "type": "boolean",
+            "description": "true lets the API raise accuracy automatically for small samples."
+          },
+          "include_undefined": {
+            "type": "boolean",
+            "description": "Include rows whose first dimension is undefined."
+          },
+          "direct_client_logins": {
+            "type": "string",
+            "description": "Comma-separated Yandex Direct client logins, for Direct cost reports."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone as +hh:mm or -hh:mm. Default: the counter's."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language of dimension names, e.g. en, ru."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated metrics or dimensions; prefix - for descending, e.g. -ym:s:visits."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "description": "Rows per page, default 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "First row, from 1."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stat/v1/data",
+        "queryParams": {
+          "ids": "$ids",
+          "metrics": "$metrics",
+          "dimensions": "$dimensions",
+          "date1": "$date1",
+          "date2": "$date2",
+          "filters": "$filters",
+          "preset": "$preset",
+          "accuracy": "$accuracy",
+          "proposed_accuracy": "$proposed_accuracy",
+          "include_undefined": "$include_undefined",
+          "direct_client_logins": "$direct_client_logins",
+          "timezone": "$timezone",
+          "lang": "$lang",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_get_report_by_time",
+      "description": "Build a time series: the metrics per day, week, month, hour or other interval for the top rows of the dimensions. Use it for trends and charts. Answer: time_intervals and, per row, the metric values per interval, plus totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Counter id, or several comma-separated, e.g. 44147844."
+          },
+          "metrics": {
+            "type": "string",
+            "description": "Comma-separated metrics, at most 20, e.g. ym:s:visits,ym:s:users,ym:s:bounceRate,ym:s:pageDepth,ym:s:avgVisitDurationSeconds,ym:s:goal<goalId>reaches. Required unless preset is given."
+          },
+          "dimensions": {
+            "type": "string",
+            "description": "Comma-separated dimensions, at most 10, e.g. ym:s:date, ym:s:lastTrafficSource, ym:s:lastSearchEngine, ym:s:regionCountry, ym:s:deviceCategory, ym:s:startURL."
+          },
+          "date1": {
+            "type": "string",
+            "description": "Start date YYYY-MM-DD, or today, yesterday, NdaysAgo (e.g. 30daysAgo). Default 6daysAgo."
+          },
+          "date2": {
+            "type": "string",
+            "description": "End date YYYY-MM-DD, or today, yesterday, NdaysAgo. Default today."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Segmentation filter, e.g. ym:s:trafficSource=='organic' AND ym:s:isRobot=='No'."
+          },
+          "preset": {
+            "type": "string",
+            "description": "Report preset instead of metrics/dimensions, e.g. sources_summary, sources_search_phrases, traffic, tech_platforms, geo_country."
+          },
+          "accuracy": {
+            "type": "string",
+            "description": "Sampling: low, medium, high, full, or a fraction like 0.1. Default: the API's choice."
+          },
+          "proposed_accuracy": {
+            "type": "boolean",
+            "description": "true lets the API raise accuracy automatically for small samples."
+          },
+          "include_undefined": {
+            "type": "boolean",
+            "description": "Include rows whose first dimension is undefined."
+          },
+          "direct_client_logins": {
+            "type": "string",
+            "description": "Comma-separated Yandex Direct client logins, for Direct cost reports."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone as +hh:mm or -hh:mm. Default: the counter's."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language of dimension names, e.g. en, ru."
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "all",
+              "auto",
+              "minute",
+              "dekaminute",
+              "hour",
+              "day",
+              "week",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "description": "Interval size. Default week."
+          },
+          "top_keys": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Number of dimension rows to chart, default 7."
+          },
+          "keys_sort": {
+            "type": "string",
+            "description": "Sort used to pick the top rows, e.g. -ym:s:visits."
+          },
+          "include_annotations": {
+            "type": "boolean",
+            "description": "Include chart annotations (comments) of the counter."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stat/v1/data/bytime",
+        "queryParams": {
+          "ids": "$ids",
+          "metrics": "$metrics",
+          "dimensions": "$dimensions",
+          "date1": "$date1",
+          "date2": "$date2",
+          "filters": "$filters",
+          "preset": "$preset",
+          "accuracy": "$accuracy",
+          "proposed_accuracy": "$proposed_accuracy",
+          "include_undefined": "$include_undefined",
+          "direct_client_logins": "$direct_client_logins",
+          "timezone": "$timezone",
+          "lang": "$lang",
+          "group": "$group",
+          "top_keys": "$top_keys",
+          "keys_sort": "$keys_sort",
+          "include_annotations": "$include_annotations"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_get_drilldown",
+      "description": "Build a tree report: the first dimension's values with their metrics, then expand one row into the next dimension with parent_id. Use it to explore a hierarchy (source, then engine, then phrase). Answer: query, data (rows with dimensions and metrics), totals, min, max, total_rows, sampled and sample_share.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Counter id, or several comma-separated, e.g. 44147844."
+          },
+          "metrics": {
+            "type": "string",
+            "description": "Comma-separated metrics, at most 20, e.g. ym:s:visits,ym:s:users,ym:s:bounceRate,ym:s:pageDepth,ym:s:avgVisitDurationSeconds,ym:s:goal<goalId>reaches. Required unless preset is given."
+          },
+          "dimensions": {
+            "type": "string",
+            "description": "Comma-separated dimensions, at most 10, e.g. ym:s:date, ym:s:lastTrafficSource, ym:s:lastSearchEngine, ym:s:regionCountry, ym:s:deviceCategory, ym:s:startURL."
+          },
+          "date1": {
+            "type": "string",
+            "description": "Start date YYYY-MM-DD, or today, yesterday, NdaysAgo (e.g. 30daysAgo). Default 6daysAgo."
+          },
+          "date2": {
+            "type": "string",
+            "description": "End date YYYY-MM-DD, or today, yesterday, NdaysAgo. Default today."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Segmentation filter, e.g. ym:s:trafficSource=='organic' AND ym:s:isRobot=='No'."
+          },
+          "preset": {
+            "type": "string",
+            "description": "Report preset instead of metrics/dimensions, e.g. sources_summary, sources_search_phrases, traffic, tech_platforms, geo_country."
+          },
+          "accuracy": {
+            "type": "string",
+            "description": "Sampling: low, medium, high, full, or a fraction like 0.1. Default: the API's choice."
+          },
+          "proposed_accuracy": {
+            "type": "boolean",
+            "description": "true lets the API raise accuracy automatically for small samples."
+          },
+          "include_undefined": {
+            "type": "boolean",
+            "description": "Include rows whose first dimension is undefined."
+          },
+          "direct_client_logins": {
+            "type": "string",
+            "description": "Comma-separated Yandex Direct client logins, for Direct cost reports."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone as +hh:mm or -hh:mm. Default: the counter's."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language of dimension names, e.g. en, ru."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "JSON list of the keys of the row to expand, e.g. [\"organic\"]. Omit for the top level."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated metrics or dimensions; prefix - for descending, e.g. -ym:s:visits."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "description": "Rows per page, default 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "First row, from 1."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stat/v1/data/drilldown",
+        "queryParams": {
+          "ids": "$ids",
+          "metrics": "$metrics",
+          "dimensions": "$dimensions",
+          "date1": "$date1",
+          "date2": "$date2",
+          "filters": "$filters",
+          "preset": "$preset",
+          "accuracy": "$accuracy",
+          "proposed_accuracy": "$proposed_accuracy",
+          "include_undefined": "$include_undefined",
+          "direct_client_logins": "$direct_client_logins",
+          "timezone": "$timezone",
+          "lang": "$lang",
+          "parent_id": "$parent_id",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_compare_segments",
+      "description": "Compare two segments or periods side by side: the same metrics and dimensions for segment A (date1_a, date2_a, filters_a) and segment B (date1_b, date2_b, filters_b). Use it for period-over-period or audience comparisons. Answer: rows with metrics a and b, and totals for both.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Counter id, or several comma-separated, e.g. 44147844."
+          },
+          "metrics": {
+            "type": "string",
+            "description": "Comma-separated metrics, at most 20, e.g. ym:s:visits,ym:s:users,ym:s:bounceRate,ym:s:pageDepth,ym:s:avgVisitDurationSeconds,ym:s:goal<goalId>reaches. Required unless preset is given."
+          },
+          "dimensions": {
+            "type": "string",
+            "description": "Comma-separated dimensions, at most 10, e.g. ym:s:date, ym:s:lastTrafficSource, ym:s:lastSearchEngine, ym:s:regionCountry, ym:s:deviceCategory, ym:s:startURL."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Segmentation filter, e.g. ym:s:trafficSource=='organic' AND ym:s:isRobot=='No'."
+          },
+          "preset": {
+            "type": "string",
+            "description": "Report preset instead of metrics/dimensions, e.g. sources_summary, sources_search_phrases, traffic, tech_platforms, geo_country."
+          },
+          "accuracy": {
+            "type": "string",
+            "description": "Sampling: low, medium, high, full, or a fraction like 0.1. Default: the API's choice."
+          },
+          "proposed_accuracy": {
+            "type": "boolean",
+            "description": "true lets the API raise accuracy automatically for small samples."
+          },
+          "include_undefined": {
+            "type": "boolean",
+            "description": "Include rows whose first dimension is undefined."
+          },
+          "direct_client_logins": {
+            "type": "string",
+            "description": "Comma-separated Yandex Direct client logins, for Direct cost reports."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone as +hh:mm or -hh:mm. Default: the counter's."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language of dimension names, e.g. en, ru."
+          },
+          "date1_a": {
+            "type": "string",
+            "description": "Start of period A (YYYY-MM-DD or NdaysAgo)."
+          },
+          "date2_a": {
+            "type": "string",
+            "description": "End of period A."
+          },
+          "date1_b": {
+            "type": "string",
+            "description": "Start of period B."
+          },
+          "date2_b": {
+            "type": "string",
+            "description": "End of period B."
+          },
+          "filters_a": {
+            "type": "string",
+            "description": "Segment filter for A."
+          },
+          "filters_b": {
+            "type": "string",
+            "description": "Segment filter for B."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated metrics or dimensions; prefix - for descending, e.g. -ym:s:visits."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "description": "Rows per page, default 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "First row, from 1."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stat/v1/data/comparison",
+        "queryParams": {
+          "ids": "$ids",
+          "metrics": "$metrics",
+          "dimensions": "$dimensions",
+          "filters": "$filters",
+          "preset": "$preset",
+          "accuracy": "$accuracy",
+          "proposed_accuracy": "$proposed_accuracy",
+          "include_undefined": "$include_undefined",
+          "direct_client_logins": "$direct_client_logins",
+          "timezone": "$timezone",
+          "lang": "$lang",
+          "date1_a": "$date1_a",
+          "date2_a": "$date2_a",
+          "date1_b": "$date1_b",
+          "date2_b": "$date2_b",
+          "filters_a": "$filters_a",
+          "filters_b": "$filters_b",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_evaluate_log_request",
+      "description": "Check whether a Logs API request for raw visits or hits can be created: possible (true or false) and max_possible_day_quantity. Call it before yandex_metrica_create_log_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          },
+          "date1": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "date2": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD; not today."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated Logs API fields of the chosen source, e.g. ym:s:visitID,ym:s:dateTime,ym:s:lastTrafficSource,ym:s:goalsID for visits or ym:pv:watchID,ym:pv:dateTime,ym:pv:URL for hits."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "visits",
+              "hits"
+            ],
+            "description": "visits (sessions) or hits (pageviews and events)."
+          }
+        },
+        "required": [
+          "counterId",
+          "date1",
+          "date2",
+          "fields",
+          "source"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/logrequests/evaluate",
+        "queryParams": {
+          "date1": "$date1",
+          "date2": "$date2",
+          "fields": "$fields",
+          "source": "$source"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_create_log_request",
+      "description": "Create a Logs API request that prepares raw, unsampled visits or hits for a date range on Yandex's side. Returns the log_request with request_id and status created; poll yandex_metrica_get_log_request until status is processed, then download its parts. Prepared logs count against the counter's log storage quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          },
+          "date1": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "date2": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD; not today."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated Logs API fields of the chosen source, e.g. ym:s:visitID,ym:s:dateTime,ym:s:lastTrafficSource,ym:s:goalsID for visits or ym:pv:watchID,ym:pv:dateTime,ym:pv:URL for hits."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "visits",
+              "hits"
+            ],
+            "description": "visits (sessions) or hits (pageviews and events)."
+          },
+          "attribution": {
+            "type": "string",
+            "enum": [
+              "FIRST",
+              "LAST",
+              "LASTSIGN",
+              "LAST_YANDEX_DIRECT_CLICK",
+              "CROSS_DEVICE_LAST_SIGNIFICANT",
+              "CROSS_DEVICE_FIRST",
+              "CROSS_DEVICE_LAST_YANDEX_DIRECT_CLICK",
+              "CROSS_DEVICE_LAST",
+              "AUTOMATIC"
+            ],
+            "description": "Attribution model for source fields. Default LASTSIGN."
+          }
+        },
+        "required": [
+          "counterId",
+          "date1",
+          "date2",
+          "fields",
+          "source"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/management/v1/counter/{counterId}/logrequests",
+        "queryParams": {
+          "date1": "$date1",
+          "date2": "$date2",
+          "fields": "$fields",
+          "source": "$source",
+          "attribution": "$attribution"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_list_log_requests",
+      "description": "List the Logs API requests of a counter: request_id, source, fields, attribution, status (created, processed, canceled, processing_failed, awaiting_retry, cleaned_by_user, cleaned_automatically_as_too_old), size and parts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          }
+        },
+        "required": [
+          "counterId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/logrequests"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_get_log_request",
+      "description": "Get one Logs API request: status and, once processed, the parts (part_number and size) to download.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          },
+          "requestId": {
+            "type": "integer",
+            "description": "Log request id."
+          }
+        },
+        "required": [
+          "counterId",
+          "requestId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/logrequest/{requestId}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_download_log_part",
+      "description": "Download one part of a processed Logs API request as tab-separated text, the first line holding the field names. Parts can be large; download them one at a time and summarise.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          },
+          "requestId": {
+            "type": "integer",
+            "description": "Log request id."
+          },
+          "partNumber": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "part_number from yandex_metrica_get_log_request, from 0."
+          }
+        },
+        "required": [
+          "counterId",
+          "requestId",
+          "partNumber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/management/v1/counter/{counterId}/logrequest/{requestId}/part/{partNumber}/download",
+        "timeoutMs": 120000
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_cancel_log_request",
+      "description": "Cancel a Logs API request that is still being prepared (status created). Returns the request with status canceled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          },
+          "requestId": {
+            "type": "integer",
+            "description": "Log request id."
+          }
+        },
+        "required": [
+          "counterId",
+          "requestId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/management/v1/counter/{counterId}/logrequest/{requestId}/cancel"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "yandex_metrica_clean_log_request",
+      "description": "Delete the prepared files of a processed Logs API request to free the counter's log storage quota. The files cannot be downloaded afterwards. Irreversible; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterId": {
+            "type": "integer",
+            "description": "Counter (tag) id from yandex_metrica_list_counters."
+          },
+          "requestId": {
+            "type": "integer",
+            "description": "Log request id."
+          }
+        },
+        "required": [
+          "counterId",
+          "requestId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/management/v1/counter/{counterId}/logrequest/{requestId}/clean"
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

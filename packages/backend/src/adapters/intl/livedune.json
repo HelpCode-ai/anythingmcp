@@ -1,0 +1,849 @@
+{
+  "slug": "livedune",
+  "name": "LiveDune",
+  "aliases": [
+    "Livedune analytics",
+    "ЛайвДюн"
+  ],
+  "description": "LiveDune social media analytics: tracked Instagram, VK, Telegram, YouTube, TikTok and other accounts, period analytics and daily history, posts, stories and videos with their metrics, audience demographics, any public account by URL, plan quota, and autoposting (writes installed switched off).",
+  "instructions": "## LiveDune\nThis connector uses the **LiveDune API** (`https://api.livedune.com`) of LiveDune, the social media analytics service: the accounts on your LiveDune dashboard (Instagram, VK, Telegram, YouTube, TikTok, Dzen, OK, Facebook, X, MAX), their statistics and history, posts, stories and videos with their metrics, audience demographics, any public account by URL, and autoposting.\n\n**Setup**\n1. In LiveDune open **Settings, API** (https://pro.livedune.com/settings/api); API access depends on your plan or an API package.\n2. Copy the token into `LIVEDUNE_ACCESS_TOKEN`. It is sent as the `access_token` query parameter on every call.\n3. Run `livedune_get_tariff_info` to check the token, see the remaining requests and the history window your plan allows.\n\n**Where to start**: `livedune_list_accounts` gives each account's `id`; pass it as `accountId`. For an account not on the dashboard, `livedune_search_account` with its URL returns an id (or a temporary UUID) to use the same way. `livedune_list_projects` and `livedune_list_tags` show how accounts are grouped.\n\n**Statistics**\n- `livedune_get_account_analytics`: totals for a period (followers and change, posts, likes, comments, reposts, views, er, erv).\n- `livedune_get_account_history`: the same day by day; `livedune_get_audience` for gender and age (Instagram, Threads, VK, OK).\n- `livedune_list_posts` and `livedune_get_post_stats`; `livedune_list_stories`; `livedune_list_videos` and `livedune_get_video_stats` (VK and own Facebook).\n- Full metrics (reach, impressions, stories, demographics) need an account linked to LiveDune (`is_linked` true); others have public figures only. Some metrics are null depending on the network.\n- Dates are `YYYY-MM-DD` and must lie in the history window of your plan.\n\n**Pagination**: lists return at most 100 items with `count` and `after`; pass `after` to get the next page, until it is missing or 0.\n\n**Quota**: each call except `livedune_get_tariff_info` counts against your API request quota; `livedune_search_account` on a new account also starts a fast analysis. Prefer one period call to many single-day calls.\n\n**Writes**: `livedune_create_tag` is on. Switched off at install: `livedune_add_account` (uses a slot of your plan), `livedune_remove_account` (irreversible), `livedune_create_scheduled_post` and `livedune_update_scheduled_post` (a scheduled post is published to the social network on its own), `livedune_delete_scheduled_post`. Turn them on deliberately, show the user what will be added, published or removed, and wait for a yes. `livedune_list_scheduled_posts` lists the queue.\n\n**Errors**: 401 or 403 a wrong or expired token, or no API access on the plan; 400 a user error (the body is a message string); 404 an unknown account or post; 429 the request quota is used up (check `livedune_get_tariff_info`).\n\n**Out of scope**: uploading media files (autoposting takes URLs of existing images or videos) and LiveDune's other modules (direct messages, competitor reports in the interface).",
+  "region": "intl",
+  "category": "social",
+  "icon": "livedune",
+  "docsUrl": "https://api.livedune.com/docs",
+  "prerequisites": "A LiveDune account whose plan or API package includes API access, and the token from Settings, API.",
+  "requiredEnvVars": [
+    "LIVEDUNE_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "LIVEDUNE_ACCESS_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In LiveDune: Settings, API (pro.livedune.com/settings/api). Copy the token.",
+      "link": "https://pro.livedune.com/settings/api",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the token, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "LiveDune refused the token. Copy it again from Settings, API (pro.livedune.com/settings/api).",
+    "403": "The token was accepted but your LiveDune plan has no API access, or no requests left. Check Settings, API.",
+    "429": "The LiveDune API request quota is used up. livedune_get_tariff_info shows what is left."
+  },
+  "probe": {
+    "tool": "livedune_get_tariff_info"
+  },
+  "connector": {
+    "name": "LiveDune API",
+    "type": "REST",
+    "baseUrl": "https://api.livedune.com",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "access_token": "{{LIVEDUNE_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "livedune_get_tariff_info",
+      "description": "Get the API quota and plan: total requests, used and left across all packages, the base tariff package with its end date, extra packages, and the history window (period.from to period.to) that history endpoints can return. Not counted against the quota; use it to check the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/info"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_list_projects",
+      "description": "List the dashboard projects (account groups): id (0 is the default project), name and accounts_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_list_accounts",
+      "description": "List the social accounts tracked on the LiveDune dashboard, up to 100 per page: id (use it as accountId), social_id, type (instagram_new, vk_group, telegram, youtube, tiktok, dzen, fb_page, ok_group, twitter, max ...), name, short_name, url, is_linked (own account connected with full statistics), followers_stat, posts_stat, tags and project. Start here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Cursor: the `after` value of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_list_tags",
+      "description": "List the dashboard tags used to group accounts: id, tag title and color.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/tags"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_search_account",
+      "description": "Find a social account by its URL. If it is on the dashboard the answer is its id; otherwise LiveDune registers it for a fast analysis and returns a temporary UUID that the account tools accept as accountId. Use it to analyse a competitor or any public account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Account URL, e.g. https://instagram.com/livedune or https://t.me/channel."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "url": "$url"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_get_account_analytics",
+      "description": "Get an account's summary for a date range: followers at the end and their change (followers_diff), posts, likes, comments, reposts, shares, views and reels views with their averages per post, and the engagement rates er and erv. Some are null depending on network and account type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD, within the history window of your plan (livedune_get_tariff_info)."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{accountId}/analytics",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_get_account_history",
+      "description": "Get an account's day-by-day history for a date range: followers, gained and lost, average likes, comments, views, reposts and reach per post, posts and their views, stories and their views, videos and reels views. Up to 100 days per page; page with after.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD, within the history window of your plan (livedune_get_tariff_info)."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Cursor: the `after` value of the previous page."
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{accountId}/history",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_get_audience",
+      "description": "Get an account's audience demographics history by gender and age, per date. Only Instagram, Threads, VK and OK accounts; categories vary by network.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "all",
+              "age",
+              "gender"
+            ],
+            "default": "all",
+            "description": "all (gender-age pairs), age or gender."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD, within the history window of your plan (livedune_get_tariff_info)."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Cursor: the `after` value of the previous page."
+          }
+        },
+        "required": [
+          "accountId",
+          "mode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{accountId}/audience/{mode}",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_list_posts",
+      "description": "List an account's posts in a date range, up to 100 per page: post_id, type, text, created, url, preview image, reactions (likes, comments, reposts ...), actions, reach, impressions, ad flag and categories, where the network provides them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD, within the history window of your plan (livedune_get_tariff_info)."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Cursor: the `after` value of the previous page."
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{accountId}/posts",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_get_post_stats",
+      "description": "Get the statistics of one post: type, url, preview image, text, reels views, reach, impressions, ad flag and categories, as the network provides them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "post_id": {
+            "type": "string",
+            "description": "post_id from livedune_list_posts."
+          }
+        },
+        "required": [
+          "accountId",
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{accountId}/posts/{post_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_list_stories",
+      "description": "List an account's stories in a date range (VK, Instagram and Telegram): id, image, type, created, text, url, reach, impressions and actions where available. Telegram works without a linked account; its cursor is timestamp:story_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD, within the history window of your plan (livedune_get_tariff_info)."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from the previous page (Unix timestamp, or timestamp:story_id for Telegram); 0 means no next page."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Stories per page, at most 100."
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{accountId}/stories",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "after": "$after",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_list_videos",
+      "description": "List an account's videos in a date range (VK and own Facebook accounts): id, preview image, type (video, clip, live), created, reactions and impressions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD, within the history window of your plan (livedune_get_tariff_info)."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Cursor: the `after` value of the previous page."
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{accountId}/video",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_get_video_stats",
+      "description": "Get the statistics of one video (VK and own Facebook accounts): id, preview image, type (video, clip, live), created, reactions and impressions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "video_id": {
+            "type": "string",
+            "description": "Video id from livedune_list_videos."
+          }
+        },
+        "required": [
+          "accountId",
+          "video_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{accountId}/video/{video_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_list_scheduled_posts",
+      "description": "List an account's autoposting posts that are not published yet: id, text, publication_time, timezone, status (draft or scheduled) and content_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Cursor: the `after` value of the previous page."
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posting/{accountId}",
+        "queryParams": {
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_add_account",
+      "description": "Add a social account to the LiveDune dashboard so its statistics are collected. Counts against the number of accounts in your plan. Returns the new account id; when it is already on the dashboard the error carries its id. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Account name or handle as on the network (Latin characters)."
+          },
+          "social": {
+            "type": "string",
+            "enum": [
+              "instagram_new",
+              "youtube",
+              "twitter",
+              "fb_page",
+              "vk_group",
+              "ok_group",
+              "telegram",
+              "dzen",
+              "max",
+              "tiktok"
+            ],
+            "description": "Social network."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project to add it to (livedune_list_projects)."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Comma-separated dashboard tag ids."
+          }
+        },
+        "required": [
+          "name",
+          "social"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounts",
+        "headers": {
+          "name": "$name",
+          "social": "$social",
+          "project_id": "$project_id",
+          "tags": "$tags"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_create_tag",
+      "description": "Create a dashboard tag to group accounts. color must be one of LiveDune's #RGB colors; an invalid color answers with the list of approved colors, an existing title with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "description": "Tag title."
+          },
+          "color": {
+            "type": "string",
+            "description": "#RGB color, e.g. #f90043."
+          }
+        },
+        "required": [
+          "tag",
+          "color"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounts/tags",
+        "queryParams": {
+          "tag": "$tag",
+          "color": "$color"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_remove_account",
+      "description": "Remove an account from the LiveDune dashboard; its collected statistics stop. Irreversible; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "LiveDune account id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/accounts",
+        "queryParams": {
+          "id": "$id"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_create_scheduled_post",
+      "description": "Create an autoposting post for a linked account: text and/or one media URL (an existing image or video), publication time and time zone, and type (post, reels, stories, tiktok_video, shorts). Scheduled posts are published to the social network automatically. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "publication_time": {
+            "type": "string",
+            "description": "Publication date-time in the given time zone, e.g. 2026-11-20 10:00:00."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone, e.g. Europe/Moscow."
+          },
+          "text": {
+            "type": "string",
+            "description": "Post text; required when content_url is empty."
+          },
+          "content_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of a prepared image or video in a format the network accepts; required when text is empty."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "post",
+              "reels",
+              "stories",
+              "tiktok_video",
+              "shorts"
+            ],
+            "description": "Post type, default post."
+          },
+          "reels_as_post": {
+            "type": "boolean",
+            "description": "Instagram reels only: also show the reel in the feed."
+          }
+        },
+        "required": [
+          "accountId",
+          "publication_time",
+          "timezone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/posting/{accountId}",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "publication_time": "$publication_time",
+          "timezone": "$timezone",
+          "text": "$text",
+          "content_url": "$content_url",
+          "type": "$type",
+          "reels_as_post": "$reels_as_post"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_update_scheduled_post",
+      "description": "Update an autoposting post that is not published yet: time, time zone, text, media URL (replaces attachments), type and status (draft or scheduled). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "postId": {
+            "type": "integer",
+            "description": "Autoposting post id from livedune_list_scheduled_posts."
+          },
+          "publication_time": {
+            "type": "string",
+            "description": "Publication date-time in the given time zone."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone, e.g. Europe/Moscow."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled"
+            ],
+            "description": "draft keeps it unpublished; scheduled publishes it at publication_time."
+          },
+          "text": {
+            "type": "string",
+            "description": "Post text; required when content_url is empty."
+          },
+          "content_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of a prepared image or video; replaces existing attachments."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "post",
+              "reels",
+              "stories",
+              "tiktok_video",
+              "shorts"
+            ],
+            "description": "Post type."
+          },
+          "reels_as_post": {
+            "type": "boolean",
+            "description": "Instagram reels only: also show the reel in the feed."
+          }
+        },
+        "required": [
+          "accountId",
+          "postId",
+          "publication_time",
+          "timezone",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/posting/{accountId}/{postId}",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "publication_time": "$publication_time",
+          "timezone": "$timezone",
+          "status": "$status",
+          "text": "$text",
+          "content_url": "$content_url",
+          "type": "$type",
+          "reels_as_post": "$reels_as_post"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "livedune_delete_scheduled_post",
+      "description": "Delete an autoposting post that is not published yet. Irreversible; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "description": "LiveDune account id from livedune_list_accounts (or the id livedune_search_account returns)."
+          },
+          "postId": {
+            "type": "integer",
+            "description": "Autoposting post id."
+          }
+        },
+        "required": [
+          "accountId",
+          "postId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/posting/{accountId}/{postId}"
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

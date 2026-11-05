@@ -152,6 +152,7 @@ import * as bubble from './intl/bubble.json';
 import * as buffer from './intl/buffer.json';
 import * as bugsnag from './intl/bugsnag.json';
 import * as buildkite from './intl/buildkite.json';
+import * as bzzoiro from './intl/bzzoiro.json';
 import * as calcom from './intl/calcom.json';
 import * as calendly from './intl/calendly.json';
 import * as canny from './intl/canny.json';
@@ -159,6 +160,7 @@ import * as canva from './intl/canva.json';
 import * as chargebee from './intl/chargebee.json';
 import * as chatwoot from './intl/chatwoot.json';
 import * as checko from './intl/checko.json';
+import * as chitChats from './intl/chit-chats.json';
 import * as circleci from './intl/circleci.json';
 import * as claap from './intl/claap.json';
 import * as clay from './intl/clay.json';
@@ -336,6 +338,7 @@ import * as invoiced from './intl/invoiced.json';
 import * as ipinfo from './intl/ipinfo.json';
 import * as iterable from './intl/iterable.json';
 import * as jev from './intl/jev.json';
+import * as jisr from './intl/jisr.json';
 import * as jobber from './intl/jobber.json';
 import * as jotform from './intl/jotform.json';
 import * as judgeMe from './intl/judge-me.json';
@@ -345,6 +348,7 @@ import * as kieAi from './intl/kie-ai.json';
 import * as kittl from './intl/kittl.json';
 import * as klaviyo from './intl/klaviyo.json';
 import * as kommo from './intl/kommo.json';
+import * as koreaInvestment from './intl/korea-investment.json';
 import * as koreaLaw from './intl/korea-law.json';
 import * as kustomer from './intl/kustomer.json';
 import * as langfuse from './intl/langfuse.json';
@@ -357,6 +361,7 @@ import * as lightspeedRetail from './intl/lightspeed-retail.json';
 import * as linear from './intl/linear.json';
 import * as linkedin from './intl/linkedin.json';
 import * as linkedinAds from './intl/linkedin-ads.json';
+import * as livedune from './intl/livedune.json';
 import * as lodgify from './intl/lodgify.json';
 import * as lokalise from './intl/lokalise.json';
 import * as loops from './intl/loops.json';
@@ -407,6 +412,7 @@ import * as mollie from './intl/mollie.json';
 import * as monday from './intl/monday.json';
 import * as monet from './intl/monet.json';
 import * as mongodb from './intl/mongodb.json';
+import * as motive from './intl/motive.json';
 import * as moz from './intl/moz.json';
 import * as mpstats from './intl/mpstats.json';
 import * as mssql from './intl/mssql.json';
@@ -455,6 +461,7 @@ import * as otter from './intl/otter.json';
 import * as outreach from './intl/outreach.json';
 import * as owncloudFileSearch from './intl/owncloud-file-search.json';
 import * as ozon from './intl/ozon.json';
+import * as ozonPerformance from './intl/ozon-performance.json';
 import * as packlink from './intl/packlink.json';
 import * as paddle from './intl/paddle.json';
 import * as pagerduty from './intl/pagerduty.json';
@@ -499,6 +506,7 @@ import * as quaderno from './intl/quaderno.json';
 import * as quickbooksOnline from './intl/quickbooks-online.json';
 import * as railway from './intl/railway.json';
 import * as ramp from './intl/ramp.json';
+import * as reamaze from './intl/reamaze.json';
 import * as recruitee from './intl/recruitee.json';
 import * as recurly from './intl/recurly.json';
 import * as reddit from './intl/reddit.json';
@@ -517,6 +525,7 @@ import * as rocketreach from './intl/rocketreach.json';
 import * as rollbar from './intl/rollbar.json';
 import * as rootly from './intl/rootly.json';
 import * as rozetka from './intl/rozetka.json';
+import * as rubrik from './intl/rubrik.json';
 import * as s3FileSearch from './intl/s3-file-search.json';
 import * as sageBusinessCloud from './intl/sage-business-cloud.json';
 import * as salesflare from './intl/salesflare.json';
@@ -570,6 +579,7 @@ import * as sonarqube from './intl/sonarqube.json';
 import * as sorare from './intl/sorare.json';
 import * as splunk from './intl/splunk.json';
 import * as sportmonks from './intl/sportmonks.json';
+import * as sportsapipro from './intl/sportsapipro.json';
 import * as spotify from './intl/spotify.json';
 import * as square from './intl/square.json';
 import * as stabilityAi from './intl/stability-ai.json';
@@ -652,6 +662,7 @@ import * as xai from './intl/xai.json';
 import * as xero from './intl/xero.json';
 import * as yandexDirect from './intl/yandex-direct.json';
 import * as yandexDisk from './intl/yandex-disk.json';
+import * as yandexMetrica from './intl/yandex-metrica.json';
 import * as youcom from './intl/youcom.json';
 import * as youtrack from './intl/youtrack.json';
 import * as youtubeData from './intl/youtube-data.json';
@@ -669,6 +680,7 @@ import * as zoom from './intl/zoom.json';
 import * as zoominfo from './intl/zoominfo.json';
 import * as zuora from './intl/zuora.json';
 import * as digisac from './br/digisac.json';
+import * as lojaIntegrada from './br/loja-integrada.json';
 import * as mercadoLibre from './br/mercado-libre.json';
 import * as mercadoPago from './br/mercado-pago.json';
 import * as tiendanube from './br/tiendanube.json';
@@ -687,6 +699,7 @@ import * as paystack from './ng/paystack.json';
 import * as arubaFatturazione from './it/aruba-fatturazione.json';
 import * as bricobravo from './it/bricobravo.json';
 import * as fattureInCloud from './it/fatture-in-cloud.json';
+import * as openapiCompany from './it/openapi-company.json';
 import * as teamsystem from './it/teamsystem.json';
 import * as zucchetti from './it/zucchetti.json';
 import * as holded from './es/holded.json';
@@ -706,7 +719,9 @@ import * as moneybird from './nl/moneybird.json';
 import * as qls from './nl/qls.json';
 import * as topdesk from './nl/topdesk.json';
 import * as falco from './be/falco.json';
+import * as nbbCbso from './be/nbb-cbso.json';
 import * as teamleader from './be/teamleader.json';
+import * as tidely from './be/tidely.json';
 import * as bexio from './ch/bexio.json';
 import * as fortnox from './se/fortnox.json';
 import * as vismaEaccounting from './se/visma-eaccounting.json';
@@ -1164,6 +1179,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   buffer as unknown as AdapterDefinition,
   bugsnag as unknown as AdapterDefinition,
   buildkite as unknown as AdapterDefinition,
+  bzzoiro as unknown as AdapterDefinition,
   calcom as unknown as AdapterDefinition,
   calendly as unknown as AdapterDefinition,
   canny as unknown as AdapterDefinition,
@@ -1171,6 +1187,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   chargebee as unknown as AdapterDefinition,
   chatwoot as unknown as AdapterDefinition,
   checko as unknown as AdapterDefinition,
+  chitChats as unknown as AdapterDefinition,
   circleci as unknown as AdapterDefinition,
   claap as unknown as AdapterDefinition,
   clay as unknown as AdapterDefinition,
@@ -1348,6 +1365,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   ipinfo as unknown as AdapterDefinition,
   iterable as unknown as AdapterDefinition,
   jev as unknown as AdapterDefinition,
+  jisr as unknown as AdapterDefinition,
   jobber as unknown as AdapterDefinition,
   jotform as unknown as AdapterDefinition,
   judgeMe as unknown as AdapterDefinition,
@@ -1357,6 +1375,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   kittl as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
   kommo as unknown as AdapterDefinition,
+  koreaInvestment as unknown as AdapterDefinition,
   koreaLaw as unknown as AdapterDefinition,
   kustomer as unknown as AdapterDefinition,
   langfuse as unknown as AdapterDefinition,
@@ -1369,6 +1388,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   linear as unknown as AdapterDefinition,
   linkedin as unknown as AdapterDefinition,
   linkedinAds as unknown as AdapterDefinition,
+  livedune as unknown as AdapterDefinition,
   lodgify as unknown as AdapterDefinition,
   lokalise as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
@@ -1419,6 +1439,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   monday as unknown as AdapterDefinition,
   monet as unknown as AdapterDefinition,
   mongodb as unknown as AdapterDefinition,
+  motive as unknown as AdapterDefinition,
   moz as unknown as AdapterDefinition,
   mpstats as unknown as AdapterDefinition,
   mssql as unknown as AdapterDefinition,
@@ -1467,6 +1488,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   outreach as unknown as AdapterDefinition,
   owncloudFileSearch as unknown as AdapterDefinition,
   ozon as unknown as AdapterDefinition,
+  ozonPerformance as unknown as AdapterDefinition,
   packlink as unknown as AdapterDefinition,
   paddle as unknown as AdapterDefinition,
   pagerduty as unknown as AdapterDefinition,
@@ -1511,6 +1533,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   quickbooksOnline as unknown as AdapterDefinition,
   railway as unknown as AdapterDefinition,
   ramp as unknown as AdapterDefinition,
+  reamaze as unknown as AdapterDefinition,
   recruitee as unknown as AdapterDefinition,
   recurly as unknown as AdapterDefinition,
   reddit as unknown as AdapterDefinition,
@@ -1529,6 +1552,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   rollbar as unknown as AdapterDefinition,
   rootly as unknown as AdapterDefinition,
   rozetka as unknown as AdapterDefinition,
+  rubrik as unknown as AdapterDefinition,
   s3FileSearch as unknown as AdapterDefinition,
   sageBusinessCloud as unknown as AdapterDefinition,
   salesflare as unknown as AdapterDefinition,
@@ -1582,6 +1606,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sorare as unknown as AdapterDefinition,
   splunk as unknown as AdapterDefinition,
   sportmonks as unknown as AdapterDefinition,
+  sportsapipro as unknown as AdapterDefinition,
   spotify as unknown as AdapterDefinition,
   square as unknown as AdapterDefinition,
   stabilityAi as unknown as AdapterDefinition,
@@ -1664,6 +1689,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   xero as unknown as AdapterDefinition,
   yandexDirect as unknown as AdapterDefinition,
   yandexDisk as unknown as AdapterDefinition,
+  yandexMetrica as unknown as AdapterDefinition,
   youcom as unknown as AdapterDefinition,
   youtrack as unknown as AdapterDefinition,
   youtubeData as unknown as AdapterDefinition,
@@ -1681,6 +1707,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zoominfo as unknown as AdapterDefinition,
   zuora as unknown as AdapterDefinition,
   digisac as unknown as AdapterDefinition,
+  lojaIntegrada as unknown as AdapterDefinition,
   mercadoLibre as unknown as AdapterDefinition,
   mercadoPago as unknown as AdapterDefinition,
   tiendanube as unknown as AdapterDefinition,
@@ -1699,6 +1726,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   arubaFatturazione as unknown as AdapterDefinition,
   bricobravo as unknown as AdapterDefinition,
   fattureInCloud as unknown as AdapterDefinition,
+  openapiCompany as unknown as AdapterDefinition,
   teamsystem as unknown as AdapterDefinition,
   zucchetti as unknown as AdapterDefinition,
   holded as unknown as AdapterDefinition,
@@ -1718,7 +1746,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   qls as unknown as AdapterDefinition,
   topdesk as unknown as AdapterDefinition,
   falco as unknown as AdapterDefinition,
+  nbbCbso as unknown as AdapterDefinition,
   teamleader as unknown as AdapterDefinition,
+  tidely as unknown as AdapterDefinition,
   bexio as unknown as AdapterDefinition,
   fortnox as unknown as AdapterDefinition,
   vismaEaccounting as unknown as AdapterDefinition,

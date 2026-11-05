@@ -1,0 +1,849 @@
+{
+  "slug": "chit-chats",
+  "name": "Chit Chats",
+  "description": "Let your AI handle Chit Chats shipping: create shipments, compare postage rates, print labels, group parcels in batches for drop-off, track deliveries and see returns. Buying postage and refunds stay off until you allow them.",
+  "instructions": "## Chit Chats\nThis connector works with **Chit Chats**, the Canadian shipping service for cross-border and domestic parcels, through its API v1 at `https://chitchats.com/api/v1/clients/<client id>`: shipments with their rates, labels and tracking, batches for drop-off, and returns.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://chitchats.com and open **Settings, Account**. Create an **API access token** and copy it into `CHIT_CHATS_ACCESS_TOKEN`. It is sent as the raw `Authorization` header (no Bearer prefix). Deleting the token revokes access at once.\n2. Copy your **client ID**, the number in the address of your Chit Chats dashboard (`https://chitchats.com/clients/<client id>/...`), into `CHIT_CHATS_CLIENT_ID`.\n3. Check the setup with `chit_chats_list_shipments`.\n\n**Money: confirm before buying.** `chit_chats_buy_postage` charges the account balance and `chit_chats_refund_shipment` voids a shipment; both are installed switched off, as are `chit_chats_delete_shipment` and `chit_chats_delete_batch`. Turn them on only if the AI may do this, and confirm the shipment, rate and price with the user before every purchase. Creating a shipment, refreshing rates and batching charge nothing.\n\n**Identifiers**: a shipment id is 10 letters and digits (`8ERNJ8SCQ9`); a batch id is a number. Amounts are decimal strings in the currency of the account.\n\n**Common workflows**\n- Ship a package: `chit_chats_create_shipment` with postage_type unknown, read the rates with `chit_chats_get_shipment`, then (after the user agrees) `chit_chats_buy_postage` with the chosen postage_type and read the shipment again until its status is ready; print the label from postage_label_png_url or postage_label_zpl_url. `chit_chats_refresh_shipment` updates stale rates or changes insurance, signature and ship date.\n- Drop-off: `chit_chats_create_batch`, `chit_chats_add_shipments_to_batch` (or `chit_chats_remove_shipments_from_batch`), then print the batch label from `chit_chats_get_batch`; `chit_chats_list_batches` and `chit_chats_count_batches` show the open ones.\n- Find and track: `chit_chats_list_shipments` (q searches id, recipient and order id; status filters), `chit_chats_count_shipments`, and `chit_chats_get_tracking` for the carrier events of any shipment. Returns coming back: `chit_chats_list_returns`.\n- Clean up: `chit_chats_delete_shipment` for a pending shipment, `chit_chats_delete_batch` for an empty batch (both switched off by default).\n\n**Pagination and limits**: list tools take `limit` (default 100, at most 1000) and `page`; a page shorter than limit is the last. The API allows 2000 requests per 5 minutes per IP and account and answers 429 beyond that.\n\n**Limitations**: the staging sandbox (staging.chitchats.com) needs a separate account and is not used by this connector. Labels are returned as PNG and ZPL URLs, not as files. Account balance, invoices and pickup scheduling are not part of the public API.",
+  "aliases": [
+    "ChitChats"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "chit-chats",
+  "docsUrl": "https://github.com/chitchats/chitchats-api-doc",
+  "requiredEnvVars": [
+    "CHIT_CHATS_ACCESS_TOKEN",
+    "CHIT_CHATS_CLIENT_ID"
+  ],
+  "envVarMeta": {
+    "CHIT_CHATS_ACCESS_TOKEN": {
+      "label": "API access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Chit Chats, Settings, Account: create an API access token and copy it.",
+      "pattern": "^[A-Za-z0-9_.-]{16,256}$",
+      "patternMessage": "Paste the access token only, without spaces or a word such as Bearer.",
+      "link": "https://chitchats.com/settings/account"
+    },
+    "CHIT_CHATS_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "setting",
+      "help": "The number in the address of your Chit Chats dashboard: https://chitchats.com/clients/<client id>/.",
+      "example": "999999",
+      "pattern": "^[1-9][0-9]{0,11}$",
+      "patternMessage": "The client ID is a number, for example 123456."
+    }
+  },
+  "verifyHints": {
+    "401": "Chit Chats refused the access token. Create a new one under Settings, Account and paste it without the word Bearer.",
+    "403": "The token does not belong to this client ID. Check the number in the address of your Chit Chats dashboard.",
+    "404": "Chit Chats found no client, shipment or batch with that id. Check CHIT_CHATS_CLIENT_ID, and use shipment ids such as 8ERNJ8SCQ9 from chit_chats_list_shipments.",
+    "rate_limited": "Chit Chats allows 2000 requests per 5 minutes per account. Wait for the Retry-After seconds and try again."
+  },
+  "probe": {
+    "tool": "chit_chats_list_shipments",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Chit Chats API v1",
+    "type": "REST",
+    "baseUrl": "https://chitchats.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{CHIT_CHATS_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json; charset=utf-8"
+    }
+  },
+  "tools": [
+    {
+      "name": "chit_chats_list_shipments",
+      "description": "List shipments of the account, newest first: id, status, batch_id, recipient address, contents, declared value, package size and weight, postage type, carrier and carrier tracking code, tracking_url, ship_date, the amounts charged and the label URLs (postage_label_png_url, postage_label_zpl_url). Search with q by shipment id, recipient name or order id. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Full-text search on shipment id, recipient name or order id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "canceled",
+              "pending",
+              "ready",
+              "in_transit",
+              "received",
+              "released",
+              "inducted",
+              "resolved",
+              "delivered",
+              "exception",
+              "voided"
+            ],
+            "description": "Only shipments in this state: pending (being created, no postage yet), ready (postage bought, waiting to be dropped off), in_transit (or in detail received, released, inducted), resolved (or in detail delivered, exception, voided), canceled."
+          },
+          "batch_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only shipments in this batch."
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Only shipments created on or after this date (YYYY-MM-DD)."
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date bound on created_at (YYYY-MM-DD), as the Chit Chats API defines to_date."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. A page shorter than limit is the last one."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments",
+        "queryParams": {
+          "q": "$q",
+          "status": "$status",
+          "batch_id": "$batch_id",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "chit_chats_count_shipments",
+      "description": "Count the shipments of the account, optionally only those in one status; returns {\"count\": n}. Use it before paging through a long list. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "canceled",
+              "pending",
+              "ready",
+              "in_transit",
+              "received",
+              "released",
+              "inducted",
+              "resolved",
+              "delivered",
+              "exception",
+              "voided"
+            ],
+            "description": "Only shipments in this state: pending (being created, no postage yet), ready (postage bought, waiting to be dropped off), in_transit (or in detail received, released, inducted), resolved (or in detail delivered, exception, voided), canceled."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments/count",
+        "queryParams": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "chit_chats_get_shipment",
+      "description": "Read one shipment with everything about it: addresses, package, status, postage and carrier, the amounts charged, the label URLs (PNG and ZPL) to print, the eligible postage rates with prices (rates) and the tracking events (tracking_events). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,20}$",
+            "description": "Chit Chats shipment id, 10 letters and digits such as 8ERNJ8SCQ9 (the id field of a shipment)."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments/{shipment_id}"
+      }
+    },
+    {
+      "name": "chit_chats_create_shipment",
+      "description": "Create a shipment for one package. With a postage_type the rate is selected right away; with postage_type unknown it is created without postage so the rates can be compared first (chit_chats_get_shipment). Creating a shipment does not charge anything: postage is bought separately. International shipments (outside Canada and the US) need line_items. Returns the new shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Recipient name."
+          },
+          "address_1": {
+            "type": "string",
+            "description": "Recipient street address, first line."
+          },
+          "address_2": {
+            "type": "string",
+            "description": "Second address line (apartment, suite)."
+          },
+          "city": {
+            "type": "string",
+            "description": "Recipient city."
+          },
+          "province_code": {
+            "type": "string",
+            "description": "State or province code, for example BC or WA. Required for Canada and the US."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal or ZIP code."
+          },
+          "country_code": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$",
+            "description": "Two-letter ISO country code, for example CA, US or GB."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Recipient phone number."
+          },
+          "email": {
+            "type": "string",
+            "description": "Recipient email, passed to final-mile carriers on international tracked postage."
+          },
+          "package_contents": {
+            "type": "string",
+            "enum": [
+              "merchandise",
+              "documents",
+              "gift",
+              "returned_goods",
+              "sample",
+              "other"
+            ],
+            "description": "What the package holds (customs category)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description of the contents, for example \"Hand made bracelet\"."
+          },
+          "value": {
+            "type": "string",
+            "description": "Declared value as a decimal string, for example \"84.99\"."
+          },
+          "value_currency": {
+            "type": "string",
+            "enum": [
+              "cad",
+              "usd"
+            ],
+            "description": "Currency of the declared value."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Your order number, searchable later with q in chit_chats_list_shipments."
+          },
+          "order_store": {
+            "type": "string",
+            "description": "Name of the store the order came from."
+          },
+          "package_type": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "card",
+              "letter",
+              "envelope",
+              "thick_envelope",
+              "parcel",
+              "flat_rate_envelope",
+              "flat_rate_legal_envelope",
+              "flat_rate_padded_envelope",
+              "flat_rate_gift_card_envelope",
+              "flat_rate_window_envelope",
+              "flat_rate_cardboard_envelope",
+              "small_flat_rate_envelope",
+              "small_flat_rate_box",
+              "medium_flat_rate_box_1",
+              "medium_flat_rate_box_2",
+              "large_flat_rate_box"
+            ],
+            "description": "Package type; most goods ship as parcel."
+          },
+          "size_unit": {
+            "type": "string",
+            "enum": [
+              "m",
+              "cm",
+              "in"
+            ],
+            "description": "Unit of size_x, size_y and size_z."
+          },
+          "size_x": {
+            "type": "number",
+            "description": "Length."
+          },
+          "size_y": {
+            "type": "number",
+            "description": "Width."
+          },
+          "size_z": {
+            "type": "number",
+            "description": "Height."
+          },
+          "weight_unit": {
+            "type": "string",
+            "enum": [
+              "lb",
+              "oz",
+              "kg",
+              "g"
+            ],
+            "description": "Unit of weight."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Package weight in weight_unit."
+          },
+          "insurance_requested": {
+            "type": "boolean",
+            "description": "Ask for insurance on the declared value."
+          },
+          "signature_requested": {
+            "type": "boolean",
+            "description": "Ask for a signature on delivery."
+          },
+          "postage_type": {
+            "type": "string",
+            "description": "Postage service, for example chit_chats_canada_tracked, chit_chats_us_edge, chit_chats_select, chit_chats_international_tracked, usps_ground_advantage, usps_priority, usps_first or usps_express. Use unknown to create the shipment without postage and compare rates first (they come back in rates)."
+          },
+          "cheapest_postage_type_requested": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ],
+            "description": "yes together with postage_type unknown selects the cheapest rate (US destinations only)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number when you supply your own postage."
+          },
+          "ship_date": {
+            "type": "string",
+            "default": "today",
+            "description": "today or a date YYYY-MM-DD."
+          },
+          "vat_reference": {
+            "type": "string",
+            "description": "Your VAT or tax identification number for international shipments."
+          },
+          "duties_paid_requested": {
+            "type": "boolean",
+            "description": "Request duties-paid postage; only with chit_chats_international_tracked and a vat_reference."
+          },
+          "return_name": {
+            "type": "string",
+            "description": "Optional US return address: name."
+          },
+          "return_address_1": {
+            "type": "string",
+            "description": "Return address, first line."
+          },
+          "return_address_2": {
+            "type": "string",
+            "description": "Return address, second line."
+          },
+          "return_city": {
+            "type": "string",
+            "description": "Return address city."
+          },
+          "return_province_code": {
+            "type": "string",
+            "description": "Return address state code."
+          },
+          "return_postal_code": {
+            "type": "string",
+            "description": "Return address ZIP code."
+          },
+          "return_phone": {
+            "type": "string",
+            "description": "Return address phone."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Customs line items, required for destinations outside Canada and the US.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "quantity": {
+                  "type": "integer"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "value_amount": {
+                  "type": "string"
+                },
+                "currency_code": {
+                  "type": "string"
+                },
+                "hs_tariff_code": {
+                  "type": "string"
+                },
+                "origin_country": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "quantity",
+                "description",
+                "value_amount",
+                "currency_code"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "address_1",
+          "city",
+          "country_code",
+          "description",
+          "value",
+          "value_currency",
+          "package_type",
+          "weight_unit",
+          "weight",
+          "postage_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments",
+        "bodyMapping": {
+          "name": "$name",
+          "address_1": "$address_1",
+          "address_2": "$address_2",
+          "city": "$city",
+          "province_code": "$province_code",
+          "postal_code": "$postal_code",
+          "country_code": "$country_code",
+          "phone": "$phone",
+          "email": "$email",
+          "package_contents": "$package_contents",
+          "description": "$description",
+          "value": "$value",
+          "value_currency": "$value_currency",
+          "order_id": "$order_id",
+          "order_store": "$order_store",
+          "package_type": "$package_type",
+          "size_unit": "$size_unit",
+          "size_x": "$size_x",
+          "size_y": "$size_y",
+          "size_z": "$size_z",
+          "weight_unit": "$weight_unit",
+          "weight": "$weight",
+          "insurance_requested": "$insurance_requested",
+          "signature_requested": "$signature_requested",
+          "postage_type": "$postage_type",
+          "cheapest_postage_type_requested": "$cheapest_postage_type_requested",
+          "tracking_number": "$tracking_number",
+          "ship_date": "$ship_date",
+          "vat_reference": "$vat_reference",
+          "duties_paid_requested": "$duties_paid_requested",
+          "return_name": "$return_name",
+          "return_address_1": "$return_address_1",
+          "return_address_2": "$return_address_2",
+          "return_city": "$return_city",
+          "return_province_code": "$return_province_code",
+          "return_postal_code": "$return_postal_code",
+          "return_phone": "$return_phone",
+          "line_items": "$line_items"
+        }
+      }
+    },
+    {
+      "name": "chit_chats_refresh_shipment",
+      "description": "Refresh a shipment and its postage rates, optionally changing insurance, media mail, signature or the ship date. Use it when rates have gone stale or before buying postage. Returns the updated shipment with its new rates. Charges nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,20}$",
+            "description": "Chit Chats shipment id, 10 letters and digits such as 8ERNJ8SCQ9 (the id field of a shipment)."
+          },
+          "insurance_requested": {
+            "type": "boolean",
+            "description": "Turn insurance on or off."
+          },
+          "media_mail_requested": {
+            "type": "boolean",
+            "description": "Ask for USPS Media Mail rates."
+          },
+          "signature_requested": {
+            "type": "boolean",
+            "description": "Turn signature confirmation on or off."
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "today or a date YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments/{shipment_id}/refresh",
+        "bodyMapping": {
+          "insurance_requested": "$insurance_requested",
+          "media_mail_requested": "$media_mail_requested",
+          "signature_requested": "$signature_requested",
+          "ship_date": "$ship_date"
+        }
+      }
+    },
+    {
+      "name": "chit_chats_buy_postage",
+      "description": "Buy postage for a shipment, charging the Chit Chats account balance. Optionally choose the rate with postage_type (one of the postage_type values in the shipment rates). The purchase runs in the background: the shipment status is postage_requested at first; read it again with chit_chats_get_shipment until it is ready (label URLs filled) or postage_purchase_failed. Spends money: installed switched off; confirm the shipment and price with the user before every call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,20}$",
+            "description": "Chit Chats shipment id, 10 letters and digits such as 8ERNJ8SCQ9 (the id field of a shipment)."
+          },
+          "postage_type": {
+            "type": "string",
+            "description": "Rate to buy, from the postage_type of an entry in the shipment rates. Without it the rate selected on the shipment is bought."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments/{shipment_id}/buy",
+        "bodyMapping": {
+          "postage_type": "$postage_type"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "chit_chats_refund_shipment",
+      "description": "Request a postage refund for a shipment, which voids it so it can no longer be shipped. Irreversible: installed switched off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,20}$",
+            "description": "Chit Chats shipment id, 10 letters and digits such as 8ERNJ8SCQ9 (the id field of a shipment)."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments/{shipment_id}/refund"
+      },
+      "enabled": false
+    },
+    {
+      "name": "chit_chats_delete_shipment",
+      "description": "Delete a pending shipment (no postage bought, not yet received). A shipment with postage cannot be deleted; refund it instead. Irreversible: installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,20}$",
+            "description": "Chit Chats shipment id, 10 letters and digits such as 8ERNJ8SCQ9 (the id field of a shipment)."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments/{shipment_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "chit_chats_add_shipments_to_batch",
+      "description": "Put shipments into a batch (a group of packages dropped off together; the batch has its own label). Returns 200 when done. Charges nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric batch id (the id field of a batch)."
+          },
+          "shipment_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Shipment ids, for example [\"ABCDE12345\", \"Q5P4R3S2T1\"]."
+          }
+        },
+        "required": [
+          "batch_id",
+          "shipment_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments/add_to_batch",
+        "bodyMapping": {
+          "batch_id": "$batch_id",
+          "shipment_ids": "$shipment_ids"
+        }
+      }
+    },
+    {
+      "name": "chit_chats_remove_shipments_from_batch",
+      "description": "Take shipments out of the batch they belong to. Returns 200 when done.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Shipment ids, for example [\"ABCDE12345\", \"Q5P4R3S2T1\"]."
+          }
+        },
+        "required": [
+          "shipment_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/shipments/remove_from_batch",
+        "bodyMapping": {
+          "shipment_ids": "$shipment_ids"
+        }
+      }
+    },
+    {
+      "name": "chit_chats_list_returns",
+      "description": "List return shipments (packages coming back to the account), newest first: id, status (on_hold, in_transit, ready, resolved), resolution and the original shipment with its recipient. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "on_hold",
+              "in_transit",
+              "ready",
+              "resolved"
+            ],
+            "description": "on_hold: received, waiting for you to choose a return method; in_transit: on its way back; ready: waiting for pickup at your branch; resolved."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. A page shorter than limit is the last one."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/returns",
+        "queryParams": {
+          "status": "$status",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "chit_chats_list_batches",
+      "description": "List the batches of the account, newest first: id, status, created_at and the batch label URLs (label_png_url, label_zpl_url). Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "ready",
+              "received"
+            ],
+            "description": "pending: not received yet; ready: not received, every shipment ready; received: dropped off and received by Chit Chats."
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date bound on created_at (YYYY-MM-DD), as the Chit Chats API defines to_date."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. A page shorter than limit is the last one."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/batches",
+        "queryParams": {
+          "state": "$state",
+          "to_date": "$to_date",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "chit_chats_count_batches",
+      "description": "Count the batches of the account; returns {\"count\": n}. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "ready",
+              "received"
+            ],
+            "description": "Only batches in this state."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/batches/count",
+        "queryParams": {
+          "state": "$state"
+        }
+      }
+    },
+    {
+      "name": "chit_chats_get_batch",
+      "description": "Read one batch: id, status, created_at and the label URLs (PNG and ZPL) to print for the drop-off. List its shipments with chit_chats_list_shipments and batch_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric batch id (the id field of a batch)."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/batches/{batch_id}"
+      }
+    },
+    {
+      "name": "chit_chats_create_batch",
+      "description": "Create a new, empty batch and return it (the new batch id is in the answer or in the Location header). Add shipments with chit_chats_add_shipments_to_batch.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/batches"
+      }
+    },
+    {
+      "name": "chit_chats_delete_batch",
+      "description": "Delete an empty batch. Fails when the batch still holds shipments. Irreversible: installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric batch id (the id field of a batch)."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v1/clients/{{CHIT_CHATS_CLIENT_ID}}/batches/{batch_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "chit_chats_get_tracking",
+      "description": "Public tracking of a Chit Chats shipment: destination, package, postage and carrier, carrier tracking code, estimated delivery, resolution and every tracking event with time and location. Works for any recent Chit Chats shipment id, also one not created by this account. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,20}$",
+            "description": "Chit Chats shipment id, 10 letters and digits such as 8ERNJ8SCQ9 (the id field of a shipment)."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking/{shipment_id}.json"
+      }
+    }
+  ]
+}
