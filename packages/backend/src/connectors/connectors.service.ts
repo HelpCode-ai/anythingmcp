@@ -1,3 +1,4 @@
+import { withCatalogUserAgent } from './catalog-user-agent.util';
 import {
   BadRequestException,
   ConflictException,
@@ -458,9 +459,9 @@ export class ConnectorsService {
       }
       const authConfig = withTokenRenewal(connector.authType, storedAuth, connector.config, envVars);
       const baseUrl = interpolateDeep(connector.baseUrl, envVars);
-      const headers = interpolateDeep(
-        (connector.headers as Record<string, string>) || undefined,
-        envVars,
+      const headers = withCatalogUserAgent(
+        interpolateDeep((connector.headers as Record<string, string>) || undefined, envVars),
+        connector.config,
       );
       // Masked in the engines' log lines.
       const logSecrets = connectorSecretValues(connector);
@@ -976,7 +977,7 @@ export class ConnectorsService {
       baseUrl: resolved.baseUrl,
       authType: connector.authType,
       authConfig: withTokenRenewal(connector.authType, authConfig, connector.config, envVars),
-      headers: resolved.headers as Record<string, string>,
+      headers: withCatalogUserAgent(resolved.headers as Record<string, string>, connector.config) as Record<string, string>,
       specUrl: connector.specUrl ?? undefined,
       connectorId: credentialKey ?? connector.id,
       errorWhen: connectorErrorWhen(connector.config),
