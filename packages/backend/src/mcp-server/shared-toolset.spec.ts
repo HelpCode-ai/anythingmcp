@@ -1,8 +1,11 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { RegisteredTool } from './tool-registry';
+import { getAdapter, listAdapters } from '../adapters/catalog';
 import {
   CHATGPT_EXTRA_TOOL_NAMES,
+  GENERATIVE_MEDIA_ADAPTERS,
+  GENERATIVE_MEDIA_TOOLS,
   SHARED_TOOL_NAMES,
   SHARED_TOOLSET_INSTRUCTIONS,
   SharedToolsetDeps,
@@ -361,6 +364,57 @@ describe('shared /mcp tool set', () => {
     expect(list.body.connectors.map((c: any) => c.id)).toEqual(['c-crm']);
     expect(list.body.notServedHere).toEqual(['c-wise']);
     expect(list.body.readToolsOnlyHere).toBeUndefined();
+  });
+
+  it('keeps image, video and audio generation off the default profile, and betting odds off ChatGPT', async () => {
+    const adapterTool = (name: string, slug: string, connectorId: string) =>
+      tool({ name, connectorId, connectorConfig: { baseUrl: '', authType: 'API_KEY', config: { adapterSlug: slug } } });
+    const SPEECH = adapterTool('elevenlabs_create_speech', 'elevenlabs', 'c-voice');
+    const IMAGE = adapterTool('openai_generate_image', 'openai', 'c-openai');
+    const ANSWER = adapterTool('openai_create_response', 'openai', 'c-openai');
+    const ODDS = adapterTool('the_odds_api_get_odds', 'the-odds-api', 'c-odds');
+
+    expect(sharedEndpointAccess('stability-ai', 'default')).toBe('none');
+    expect(sharedEndpointAccess('stability-ai', 'chatgpt')).toBe('all');
+    expect(sharedEndpointAccess('openai', 'default')).toBe('all');
+    expect(sharedEndpointAccess('the-odds-api', 'default')).toBe('all');
+    expect(sharedEndpointAccess('the-odds-api', 'chatgpt')).toBe('none');
+    expect(excludedOnSharedEndpoint(IMAGE, 'default')).toBe(true);
+    expect(excludedOnSharedEndpoint(IMAGE, 'chatgpt')).toBe(false);
+    expect(excludedOnSharedEndpoint(ANSWER, 'default')).toBe(false);
+    expect(excludedOnSharedEndpoint(ODDS, 'chatgpt')).toBe(true);
+
+    const { client, deps } = await connect([CRM_READ, SPEECH, IMAGE, ANSWER, ODDS]);
+    const names = (await call(client, 'anythingmcp_search_tools', {})).body.tools.map((t: any) => t.name);
+    expect(names).toEqual(expect.arrayContaining(['openai_create_response', 'the_odds_api_get_odds']));
+    expect(names).not.toContain('openai_generate_image');
+    expect(names).not.toContain('elevenlabs_create_speech');
+
+    const image = await call(client, 'anythingmcp_run_write_tool', { tool: 'openai_generate_image', arguments: {} });
+    expect(image.isError).toBe(true);
+    expect(image.body.error).toMatch(/generates images, video or audio/);
+    const speech = await call(client, 'anythingmcp_run_write_tool', { tool: 'elevenlabs_create_speech', arguments: {} });
+    expect(speech.body.error).toMatch(/image, video or audio generation connector/);
+    expect(deps.execute).not.toHaveBeenCalled();
+
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.notServedHere).toEqual(['c-voice']);
+    expect(list.body.generationToolsNotServedHere).toEqual(['c-openai']);
+    expect(list.body.readToolsOnlyHere).toBeUndefined();
+
+    const chatgpt = await connect([CRM_READ, IMAGE, ODDS], makeDeps(), 'chatgpt');
+    const chatgptNames = (await call(chatgpt.client, 'anythingmcp_search_tools', {})).body.tools.map((t: any) => t.name);
+    expect(chatgptNames).toContain('openai_generate_image');
+    expect(chatgptNames).not.toContain('the_odds_api_get_odds');
+  });
+
+  it('names only generation tools that exist in the catalog', () => {
+    const catalog = new Map(listAdapters().map((a) => [a.slug, a]));
+    for (const slug of GENERATIVE_MEDIA_ADAPTERS) expect(catalog.has(slug)).toBe(true);
+    for (const [slug, names] of Object.entries(GENERATIVE_MEDIA_TOOLS)) {
+      const tools = (getAdapter(slug)?.tools ?? []).map((t) => t.name);
+      for (const name of names) expect(tools).toContain(name);
+    }
   });
 
   it('keeps kg_how_to_obtain listed and says so when the graph is off', async () => {
