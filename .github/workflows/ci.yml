@@ -143,6 +143,8 @@ jobs:
           FRONTEND_URL: http://localhost:3000
           FILES_WORKER_HOST: 127.0.0.1
           FILES_WORKER_PORT: '8891'
+          # CI-only, like the secrets above (the worker refuses to start without one).
+          FILES_WORKER_TOKEN: ci-files-worker-token-aaaaaaaa
         run: |
           set -euo pipefail
           # boot <name> <log> <ready check> <command...>: start the command,
