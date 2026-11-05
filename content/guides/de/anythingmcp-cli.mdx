@@ -1,83 +1,333 @@
 ---
 title: "Die AnythingMCP CLI — Ihre MCP-Instanz vollständig im Terminal verwalten"
-description: "amcp ist der offizielle AnythingMCP-Kommandozeilen-Client. Rufen Sie MCP-Tools in der Shell auf und verwalten Sie Ihre Instanz komplett — Connectors, MCP-Server, Benutzer, Rollen, SSO und Einstellungen — mit einem Management-API-Schlüssel. Per npm installieren, im Browser anmelden, alles skripten. Für Menschen und für verbundene KI-Agenten."
+description: "amcp ist der offizielle AnythingMCP-Kommandozeilen-Client. Rufen Sie MCP-Tools mit echten Argumenten auf, leiten Sie Ergebnisse an jq und cron weiter, führen Sie Code-Mode-Programme aus, die Dutzende Tool-Aufrufe in einem Schritt bündeln, und skripten Sie die ganze Instanz — Connectors, MCP-Server, Rollen, Audit — mit einem Management-Schlüssel. Konkrete Beispiele mit Shopify, HubSpot und Slack."
 category: "announcements"
-keyword: "AnythingMCP CLI, amcp CLI, MCP CLI, Model Context Protocol CLI, MCP Kommandozeile, MCP Server im Terminal verwalten, MCP Gateway CLI, npm @anythingmcp/cli, MCP Tools im Terminal, KI-Agent CLI"
+keyword: "AnythingMCP CLI, amcp CLI, MCP CLI, Model Context Protocol CLI, MCP Kommandozeile, MCP Code-Mode, code_execute, MCP Server im Terminal verwalten, MCP Gateway CLI, npm @anythingmcp/cli, MCP Tools im Terminal, KI-Agent CLI"
 publishedAt: "2026-11-04"
+updatedAt: "2026-11-05"
 lang: "de"
 featured: true
 ---
 
 ## Ihre ganze MCP-Instanz, aus dem Terminal
 
-Das ist **`amcp`**, der offizielle AnythingMCP-Kommandozeilen-Client. Er kann zweierlei:
+**`amcp`** ist der offizielle AnythingMCP-Kommandozeilen-Client. Ein Binary, zwei Aufgaben:
 
-1. **MCP-Tools aufrufen** aus Ihrer Shell — entdecken, ihr Schema lesen, ausführen.
-2. **Die Management-API steuern** (`/api/*`) mit einem **Management-API-Schlüssel** — damit ein Mensch oder ein verbundener KI-Agent die gesamte Instanz konfigurieren kann (Connectors, MCP-Server, Benutzer, Rollen, SSO, Memory, Skills, den Knowledge Graph und Einstellungen), ohne das Terminal zu verlassen.
+1. **MCP-Tools aufrufen** — dieselben Tools, die Ihre KI-Clients nutzen (Shopify, HubSpot, SAP, Ihre SQL-Datenbank, ein Dateishare…). Von Hand, in Shell-Skripten, per cron und CI oder als **Code-Mode-Programm**, das Dutzende Aufrufe in einem Schritt verkettet.
+2. **Die Management-API steuern** (`/api/*`) mit einem **Management-Schlüssel**. Alles, was das Dashboard kann — Connectors, MCP-Server, Benutzer, Rollen, SSO, Memory, Skills, Audit — wird zum Befehl, für Sie oder einen verbundenen Agenten.
 
-Er ist Open Source (AGPL-3.0), funktioniert mit **AnythingMCP Cloud** und **selbst gehosteten** Instanzen und wird per npm installiert:
+Die CLI ist Open Source (AGPL-3.0), funktioniert mit **AnythingMCP Cloud** und **selbst gehosteten** Instanzen, braucht Node 22+ und wird über npm installiert:
 
 ```bash
 npm i -g @anythingmcp/cli
 amcp --help
 ```
 
-## Anmelden
+Alle Beispiele unten verwenden echte Befehle, Flags, Endpunkte und Tool-Namen. Die Shopify-, HubSpot- und Slack-Tools stammen aus den Katalog-Connectors. Nur die Daten in der Ausgabe sind erfunden.
 
-Erstellen Sie einen **Management-API-Schlüssel** im Dashboard (Einstellungen → Management-API-Schlüssel, nur Lesen oder Admin), oder lassen Sie es die CLI über Ihren Browser erledigen:
+## Anmelden: zwei Arten von Schlüsseln
 
-```bash
-amcp login --browser --url https://cloud.anythingmcp.com            # nur Lesen
-amcp login --browser --scope admin --url https://cloud.anythingmcp.com
-```
+`amcp` arbeitet mit zwei Arten von Schlüsseln und hält sie in getrennten Profilen:
 
-`--browser` öffnet die Autorisierungsseite der Instanz, Sie bestätigen unter Ihrer bestehenden Dashboard-Sitzung (inkl. SSO), und der Schlüssel kommt über einen einmaligen `127.0.0.1`-Loopback zur CLI zurück — er taucht nie in einer URL, einem Log oder der Shell-Historie auf. Um sich stattdessen mit einem MCP-Server für Tool-Aufrufe zu verbinden, nutzen Sie `amcp login --url … --server …` mit einem MCP-Schlüssel.
+| Sie möchten… | Schlüssel | Anmelden mit |
+|---|---|---|
+| Die Tools eines MCP-Servers aufrufen | einen **MCP-Schlüssel** für diesen Server | `amcp login --url … --server SERVER_ID` |
+| Die Instanz verwalten (`amcp api`) | einen **Management-Schlüssel** (nur lesend oder Admin) | `amcp login --browser` |
 
-## MCP-Tools aufrufen
-
-```bash
-amcp tools ls                       # Tools auflisten, mit Lese-/Schreib-Hinweisen
-amcp tools describe YOUR_TOOL       # volle Beschreibung + Eingabe-JSON-Schema
-amcp tools call YOUR_TOOL --args '{"id":"123"}'
-```
-
-## Die Instanz verwalten
-
-Alles, was das Dashboard kann, kann `amcp api` mit einem Management-Schlüssel — es ist `gh api` für AnythingMCP:
+Für einen Management-Schlüssel übernimmt der Browser die Arbeit:
 
 ```bash
-amcp api GET  /api/connectors
-amcp api GET  /api/mcp-servers
-amcp api POST /api/mcp-servers --data '{"name":"ops","description":"Ops-Server"}'
-amcp api PUT  /api/mcp-servers/SERVER_ID --data '{"codeMode":"tools"}'
+amcp login --browser --url https://cloud.anythingmcp.com              # read-only
+amcp login --browser --scope admin --url https://cloud.anythingmcp.com # read + write
 ```
 
-Nicht sicher, was verfügbar ist? Die CLI bringt einen Katalog aller Management-Operationen mit — ohne Schlüssel, ohne Netzwerk:
+Die CLI öffnet die Autorisierungsseite der Instanz und zeigt einen kurzen Code an. Sie prüfen, dass er mit der Seite übereinstimmt, und bestätigen mit Ihrer normalen Dashboard-Sitzung (inklusive SSO). Der Schlüssel kommt über einen einmaligen `127.0.0.1`-Loopback zurück und taucht nie in einer URL, einem Log oder der Shell-Historie auf.
+
+Für Tool-Aufrufe fügen Sie auf Nachfrage einen MCP-Schlüssel ein. Die CLI zeigt ihn nicht an und prüft ihn vor dem Speichern mit einem echten `tools/list`:
 
 ```bash
-amcp api --list                 # alle Operationen, nach Ressource gruppiert
-amcp api --list mcp-servers     # nur eine Ressource
+amcp login --url https://cloud.anythingmcp.com --server cmob60dvv00c01zrpeujwmnep --profile shop
+amcp whoami --profile shop
 ```
 
-Ein Management-Schlüssel trägt die Identität und Rolle des Besitzers: er verleiht nie zusätzliche Rechte, Admin-Routen brauchen also weiterhin einen Admin-Besitzer, und Nur-Lese-Schlüssel können nur lesen. Die API wendet ein Rate-Limit pro Schlüssel an, sodass ein außer Kontrolle geratener Agent abgewiesen wird, statt Ihre Instanz zu überlasten.
+## 1. Tools erkunden und aufrufen
 
-## Auch für Agenten gebaut
+Fragen Sie den Server zuerst, was er kann. `tools ls` zeigt für jedes Tool den Namen, den Hinweis nur lesend/destruktiv und die erste Zeile der Beschreibung:
 
-Dieselbe Management-API ist genau das, was ein verbundener KI-Agent braucht, um einen **Workspace von Anfang bis Ende einzurichten und zu betreiben** — einen Connector hinzufügen, einen MCP-Server erstellen, Rollen zuweisen, SSO einrichten, Memory und Skills umschalten — sicher, innerhalb des Umfangs, den Sie ihm gewähren. Agenten sind standardmäßig nur lesend.
+```console
+$ amcp tools ls --filter order
+shopify_search_orders   read-only   Search orders with Shopify search syntax (for example `financial_status:paid …
+shopify_get_order       read-only   Get one order: status, totals (subtotal, shipping, tax, discounts, refunds) …
+```
 
-## Skripte und CI
+`tools describe` zeigt die vollständige Beschreibung und das JSON-Eingabeschema, damit Sie genau wissen, welche Argumente ein Tool erwartet. Dann rufen Sie es mit echten Argumenten auf:
+
+```console
+$ amcp tools call shopify_search_orders \
+    --args '{"query":"financial_status:paid created_at:>=2026-11-01","first":2}'
+{
+  "orders": {
+    "pageInfo": { "hasNextPage": true, "endCursor": "eyJsYXN0X2lkIjo2…" },
+    "nodes": [
+      {
+        "name": "#1043",
+        "createdAt": "2026-11-04T16:12:09Z",
+        "displayFinancialStatus": "PAID",
+        "displayFulfillmentStatus": "UNFULFILLED",
+        "currentTotalPriceSet": { "shopMoney": { "amount": "412.80", "currencyCode": "EUR" } },
+        "customer": { "displayName": "Kellerhaus GmbH" }
+      },
+      …
+```
+
+Argumente können auch aus einer Datei (`--args @args.json`) oder von stdin (`--args -`) kommen. Ein als destruktiv markiertes Tool fragt im Terminal nach einer Bestätigung. In einem Skript müssen Sie `--yes` ausdrücklich angeben.
+
+## 2. In Ihre Skripte einbauen
+
+Die Textausgabe eines Tools ist sein JSON auf stdout. Fehler gehen nach stderr, mit eigenem Exit-Code. Damit verhält sich `amcp` wie jedes andere Unix-Werkzeug:
+
+```console
+$ amcp tools call shopify_search_orders \
+    --args '{"query":"fulfillment_status:unfulfilled created_at:<2026-11-03"}' \
+  | jq -r '.orders.nodes[] | [.name, .customer.displayName, .createdAt[:10]] | @tsv'
+#1038   Kellerhaus GmbH     2026-10-30
+#1035   Studio Lumen        2026-10-29
+#1031   Bäckerei Hofmann    2026-10-28
+```
+
+Exit-Codes: `0` Erfolg, `1` das Tool hat einen Fehler gemeldet, `2` ungültige Verwendung oder ungültiges JSON, `3` Authentifizierung, `4` Verbindung, Serverfehler oder Timeout.
+
+Kombiniert ergibt das einen täglichen Job. Dieser postet jeden Morgen verspätete Bestellungen in einen Slack-Kanal (der Slack-Connector liegt auf demselben Server):
 
 ```bash
-AMCP_URL=https://cloud.anythingmcp.com AMCP_API_KEY=mcp_… amcp api GET /api/users --json
-amcp completion zsh > "${fpath[1]}/_amcp"     # Shell-Vervollständigung für bash, zsh, fish
+#!/usr/bin/env bash
+# late-orders.sh — run from cron: 0 8 * * 1-5
+set -euo pipefail
+SINCE=$(date -d '-2 days' +%F)     # GNU date; on macOS: date -v-2d +%F
+LATE=$(amcp tools call shopify_search_orders \
+  --args "{\"query\":\"fulfillment_status:unfulfilled created_at:<$SINCE\"}" \
+  | jq -r '.orders.nodes[] | "• \(.name) — \(.customer.displayName)"')
+[ -z "$LATE" ] && exit 0
+jq -n --arg text "Orders waiting more than 2 days:
+$LATE" '{channel: "#fulfilment", text: $text}' \
+  | amcp tools call slack_post_message --args - --yes
 ```
 
-Schlüssel werden mit Modus `0600` gespeichert, HTTPS ist Pflicht (außer Loopback für lokale Entwicklung), Weiterleitungen werden abgelehnt, damit ein Schlüssel keiner Anfrage zu einem anderen Origin folgt, und der Schlüssel wird nie als Kommandozeilen-Argument akzeptiert.
+In der CI brauchen Sie kein Profil: `AMCP_URL`, `AMCP_SERVER` und `AMCP_API_KEY` liefern die Verbindung, und mit `--json` gibt jeder Befehl genau ein JSON-Objekt aus.
+
+## 3. Code-Mode: ein Programm, viele Tool-Aufrufe
+
+Skripte wie das obige machen einen Aufruf nach dem anderen von Ihrem Rechner aus. Der **Code-Mode** schickt stattdessen ein ganzes Programm an den Server. Steht der Code-Mode eines MCP-Servers auf `inline`, bietet der Server ein Tool namens `code_execute` an. Sie senden ihm ein kurzes JavaScript-Programm, und eine Sandbox neben Ihren Tools führt es aus, mit drei Hilfsfunktionen:
+
+- `await amcp.search("query")` findet Tools nach Name oder Beschreibung;
+- `await amcp.describe("tool")` liefert das Eingabeschema eines Tools;
+- `await amcp.run("tool", args)` ruft ein Tool auf und gibt das Ergebnis als JavaScript-Wert zurück.
+
+Einmal pro Server einschalten (Admin-Management-Schlüssel nötig):
+
+```bash
+amcp api PUT /api/mcp-servers/$SRV --yes --data '{"codeMode":"inline"}'
+```
+
+Jetzt eine Frage, die Dutzende Hin- und Rückwege bräuchte: *Wer sind unsere fünf größten Shopify-Kunden seit Oktober, und wo steht jeder davon in der HubSpot-Pipeline?* Als Programm:
+
+```js
+// top-customers.js — runs inside the AnythingMCP sandbox: read-only, your own permissions
+const byEmail = new Map();
+let after = null, pages = 0;
+
+// 1. Page through every paid Shopify order since October
+do {
+  const r = await amcp.run("shopify_search_orders", {
+    query: "financial_status:paid created_at:>=2026-10-01",
+    first: 250, after,
+  });
+  for (const o of r.orders.nodes) {
+    if (!o.email) continue;
+    const c = byEmail.get(o.email)
+      ?? { name: o.customer?.displayName, orders: 0, revenue: 0 };
+    c.orders += 1;
+    c.revenue += Number(o.currentTotalPriceSet.shopMoney.amount);
+    byEmail.set(o.email, c);
+  }
+  const { hasNextPage, endCursor } = r.orders.pageInfo;
+  after = hasNextPage ? endCursor : null;
+  pages++;
+} while (after);
+
+// 2. Keep the five biggest customers
+const top = [...byEmail]
+  .sort((a, b) => b[1].revenue - a[1].revenue)
+  .slice(0, 5);
+
+// 3. Join each one with its HubSpot contact
+const result = [];
+for (const [email, c] of top) {
+  const h = await amcp.run("hubspot_search_objects", {
+    object_type: "contacts",
+    filter_groups: [{ filters: [
+      { propertyName: "email", operator: "EQ", value: email },
+    ] }],
+    properties: ["lifecyclestage"],
+    limit: 1,
+  });
+  const stage = h.results[0]?.properties.lifecyclestage ?? "not in CRM";
+  result.push({ email, ...c, revenue: c.revenue.toFixed(2), stage });
+}
+return { pagesScanned: pages, top: result };
+```
+
+`code_execute` erwartet `{"code": "<Programm>"}`. `jq -Rs` verpackt die Datei für Sie:
+
+```console
+$ jq -Rs '{code: .}' top-customers.js | amcp tools call code_execute --args -
+{
+  "pagesScanned": 3,
+  "top": [
+    {
+      "email": "einkauf@kellerhaus.de",
+      "name": "Kellerhaus GmbH",
+      "orders": 14,
+      "revenue": "4820.50",
+      "stage": "customer"
+    },
+    {
+      "email": "m.weber@example.com",
+      "name": "Martin Weber",
+      "orders": 6,
+      "revenue": "2475.90",
+      "stage": "not in CRM"
+    },
+    …
+  ]
+}
+```
+
+Das sind **8 Tool-Aufrufe** (3 Seiten Bestellungen und 5 CRM-Abfragen) für **einen** einzigen Aufruf aus Ihrem Terminal. Zurück kommen die fünf Kunden, nach denen Sie gefragt haben, keine 750 rohen Bestellungen. Dasselbe gilt, wenn statt Ihnen ein KI-Agent aufruft: Er liest eine kurze Antwort statt 750 Bestellungen, spart Tokens und macht weniger Fehler.
+
+Sie kennen die Tool-Namen noch nicht? Lassen Sie das Programm sie finden:
+
+```js
+// discover.js
+const tools = await amcp.search("invoice");          // [{ tool, description, readOnly }, …]
+const schema = await amcp.describe(tools[0].tool);   // { name, description, inputSchema, readOnly }
+return { tools: tools.map(t => t.tool), firstSchema: schema.inputSchema };
+```
+
+**Die Schutzmechanismen sind Teil des Designs:**
+
+- **Nur lesend.** Ein Programm darf nur Tools aufrufen, die keine Daten ändern, und nur mit den Rechten des Schlüssels, der es ausführt. Schreibzugriffe bleiben ausdrückliche direkte Aufrufe, wie `slack_post_message --yes` oben.
+- **Isoliert.** Das Programm läuft in einem separaten Sandbox-Prozess ohne Dateisystem, Netzwerk oder Umgebungsvariablen, mit Zeitlimit und begrenzter Zahl von Tool-Aufrufen pro Lauf.
+- **Auditiert.** Jeder innere Tool-Aufruf wird wie ein direkter protokolliert, zusammen mit dem Code-Lauf, der ihn ausgelöst hat.
+- **Opt-in.** Inline-Code ist aus, solange der `codeMode` des Servers nicht `inline` ist *und* Ihre Rolle die Inline-Code-Berechtigung hat. Verfügbar ab dem Team-Plan.
+
+### Die guten behalten: als Tool vorschlagen
+
+Wenn ein Programm eine Frage beantwortet, die immer wieder kommt, speichert `code_propose_tool` es als Vorschlag für einen Admin. Ausgeführt wird dabei nichts. Sobald ein Admin den Vorschlag freigibt, bekommt jeder KI-Client auf diesem Server ihn als normales, benanntes Tool:
+
+```console
+$ jq -Rs '{
+    name: "top_customers_with_crm_stage",
+    description: "Top 5 Shopify customers since October, with their HubSpot lifecycle stage",
+    rationale: "Sales asks for this every Monday",
+    code: .
+  }' top-customers.js | amcp tools call code_propose_tool --args -
+{"ok":true,"proposalId":"cmh4k2…","message":"Proposal recorded for admin review. It will not run or become a tool until an admin approves it."}
+```
+
+Mehr dazu in [Code-Mode für KI-Agenten](/de/guides/code-mode).
+
+## 4. Die Instanz verwalten
+
+Mit einem Management-Schlüssel ruft `amcp api METHODE PFAD` jede `/api/*`-Route auf. Es funktioniert wie `gh api`, nur für AnythingMCP. Die Textausgabe ist der geparste JSON-Body, also funktioniert auch hier `jq`.
+
+### Einen Workspace in einem Skript aufsetzen
+
+Einen Katalog-Connector mit seinem Token installieren, dem Vertrieb einen eigenen MCP-Server geben, den Connector zuweisen, Code-Mode einschalten und die Verbindung prüfen:
+
+```bash
+#!/usr/bin/env bash
+# bootstrap.sh — needs: amcp login --browser --scope admin
+set -euo pipefail
+
+CONN=$(jq -n --arg t "$HUBSPOT_TOKEN" '{credentials: {HUBSPOT_ACCESS_TOKEN: $t}}' \
+  | amcp api POST /api/adapters/hubspot/import --data - --yes | jq -r .connectorId)
+
+SRV=$(amcp api POST /api/mcp-servers --yes \
+  --data '{"name":"Sales","description":"CRM tools for the sales team"}' | jq -r .id)
+
+amcp api PUT /api/mcp-servers/$SRV/connectors --yes --data "{\"connectorIds\":[\"$CONN\"]}"
+amcp api PUT /api/mcp-servers/$SRV --yes --data '{"codeMode":"inline"}'
+amcp api POST /api/connectors/$CONN/test --yes
+# → { "ok": true, "kind": "ok", "message": "Connection successful" }
+```
+
+Das Token erreicht die API über `jq --arg` und stdin und erscheint daher nie in `ps` oder der Shell-Historie. In einem Skript braucht jeder Aufruf außer GET ein `--yes`. Das ist Absicht: Ein Skript kann nichts versehentlich ändern.
+
+### Die eigene API zu Tools machen
+
+Nicht im Katalog? Legen Sie einen REST-Connector an und importieren Sie seine OpenAPI-Spezifikation. WSDL, GraphQL, Postman, cURL und HAR funktionieren genauso, über das Feld `source`:
+
+```bash
+ID=$(amcp api POST /api/connectors --yes --data '{
+  "name": "Acme Billing", "type": "REST",
+  "baseUrl": "https://api.acme.example/v1",
+  "authType": "BEARER_TOKEN", "authConfig": { "token": "'"$ACME_TOKEN"'" }
+}' | jq -r .id)
+
+amcp api POST /api/connectors/$ID/import --yes \
+  --data '{"source":"openapi","url":"https://api.acme.example/v1/openapi.json"}'
+```
+
+### Sehen, was Ihre Agenten getan haben
+
+Jeder Tool-Aufruf, ob von Menschen oder Agenten, landet im Audit-Log:
+
+```console
+$ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
+  | jq -r '.[] | [.createdAt[11:16], .tool.name, .user.email, .error[:40]] | @tsv'
+08:41   hubspot_search_objects   lea@acme.io         HTTP 429: retry after 1s
+07:02   shopify_get_order        ops-agent@acme.io   Order not found
+06:55   zendesk_get_ticket       marco@acme.io       HTTP 404: RecordNotFound
+```
+
+`GET /api/audit/breakdowns?days=30` liefert Nutzung und Kosten nach Connector, MCP-Server und Benutzer aufgeschlüsselt. Das passt gut für einen Monatsbericht.
+
+### Die ganze API offline entdecken
+
+Sie brauchen die Doku nicht geöffnet zu haben. Der Katalog der Management-Operationen wird mit der CLI ausgeliefert:
+
+```console
+$ amcp api --list mcp-servers
+mcp-servers
+  GET    /api/mcp-servers  — List MCP servers for current organization
+  POST   /api/mcp-servers [body]  — Create a new MCP server
+  DELETE /api/mcp-servers/:id  — Delete MCP server
+  GET    /api/mcp-servers/:id  — Get MCP server detail
+  PUT    /api/mcp-servers/:id [body]  — Update MCP server
+  …
+```
+
+`[admin]` markiert Routen, die einen Admin als Besitzer brauchen, `[body]` Routen mit Request-Body. Der Katalog wird aus den Backend-Controllern neu erzeugt, und die CI schlägt fehl, wenn eine Route fehlt. Er passt also immer zu Ihrer Instanz. Die interaktive Referenz mit Request-Beispielen finden Sie unter [/developers/api](/de/developers/api).
+
+## 5. Einem Agenten übergeben
+
+Ein Coding-Agent wie Claude Code, Codex oder der Agent von Cursor kann `amcp` genauso bedienen wie Sie. Mit einem **nur lesenden** Management-Schlüssel prüft er einen Workspace: welche Server welche Connectors anbieten und welche Aufrufe fehlschlagen. Mit einem **Admin**-Schlüssel richtet er mit den Befehlen aus Abschnitt 4 ein neues Team komplett ein.
+
+Der Umfang des Schlüssels ist das Sicherheitsnetz. Ein Management-Schlüssel trägt Identität und Rolle seines Besitzers und verleiht nie mehr. Ein nur lesender Schlüssel kann nur `GET`. Jeder Aufruf ist pro Schlüssel rate-limitiert (HTTP 429 statt einer überlasteten Instanz) und wird auditiert.
+
+## Sicher von Haus aus
+
+- Der Schlüssel wird nie als Befehlsargument akzeptiert und nie ausgegeben. `whoami` zeigt nur ein Präfix.
+- Profile liegen in `~/.config/amcp/config.json` mit Dateimodus `0600`.
+- HTTPS ist Pflicht, außer Loopback für die lokale Entwicklung.
+- Weiterleitungen werden abgelehnt, damit ein Schlüssel keiner Anfrage zu einem anderen Origin folgt.
 
 ## Loslegen
 
-- **Installieren:** `npm i -g @anythingmcp/cli`
-- **Doku:** die vollständige Befehlsreferenz steht im [CLI-README auf GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme).
-- **Quellcode:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp).
+- **Installieren:** `npm i -g @anythingmcp/cli`, dazu Shell-Vervollständigung mit `amcp completion zsh` (auch bash und fish)
+- **Überblick:** [anythingmcp.com/developers/cli](/de/developers/cli)
+- **Vollständige Befehlsreferenz:** das [CLI-README auf GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme)
+- **Quellcode:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp)
 
-Noch kein AnythingMCP? Kostenlos starten auf [cloud.anythingmcp.com](https://cloud.anythingmcp.com), oder selbst hosten.
+Noch kein AnythingMCP? Starten Sie kostenlos auf [cloud.anythingmcp.com](https://cloud.anythingmcp.com) oder hosten Sie es selbst.

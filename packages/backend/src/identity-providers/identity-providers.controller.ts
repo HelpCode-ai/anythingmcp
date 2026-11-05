@@ -18,6 +18,7 @@ import {
   ApiOperation,
   ApiProperty,
   ApiPropertyOptional,
+  ApiSecurity,
 } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import {
@@ -202,6 +203,7 @@ class ReplaceRoleMappingsDto {
  */
 @ApiTags('Identity Providers')
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 @UseGuards(SelfHostedOnlyGuard, JwtOrManagementKeyGuard, RolesGuard)
 @Roles('ADMIN')
 @Controller('api/identity-providers')

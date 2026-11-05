@@ -9,7 +9,7 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiSecurity } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { IsString, IsNumber, IsOptional, IsBoolean, IsArray, ValidateNested, Matches } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -120,6 +120,7 @@ export class SiteSettingsPublicController {
  */
 @ApiTags('Site Settings')
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/settings')
 export class SiteSettingsMemberController {
@@ -140,6 +141,7 @@ export class SiteSettingsMemberController {
 
 @ApiTags('Site Settings')
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
 @Roles('ADMIN')
 @Controller('api/admin/settings')

@@ -13,7 +13,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional, ApiSecurity } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import {
   IsString,
@@ -304,6 +304,7 @@ class PreviewMappingDto {
 
 @ApiTags('Tools')
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/connectors/:connectorId/tools')
 export class ToolsController {

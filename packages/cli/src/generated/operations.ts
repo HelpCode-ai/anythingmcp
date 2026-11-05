@@ -1807,7 +1807,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "action": "activity",
     "method": "GET",
     "path": "/api/mcp-servers/:id/activity",
-    "summary": "Calls in the last 30 days and the time of the last one. Polled by the connect page to show when the first request from an AI client arrives.",
+    "summary": "Calls in the last 30 days and the time of the last one",
     "admin": false,
     "pathParams": [
       "id"

@@ -1,5 +1,5 @@
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiSecurity, ApiResponse } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { AuditService } from './audit.service';
 import {
@@ -11,20 +11,65 @@ import { ToolPerformanceQueryDto } from './tool-performance-query.dto';
 
 @ApiTags('Audit')
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/audit')
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get('invocations')
-  @ApiOperation({ summary: 'List tool invocation logs' })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiQuery({ name: 'offset', required: false, type: Number })
-  @ApiQuery({ name: 'toolId', required: false, type: String })
-  @ApiQuery({ name: 'status', required: false, enum: ['SUCCESS', 'ERROR', 'TIMEOUT'] })
-  @ApiQuery({ name: 'search', required: false, type: String })
-  @ApiQuery({ name: 'connectorId', required: false, type: String })
-  @ApiQuery({ name: 'mcpServerId', required: false, type: String })
+  @ApiOperation({
+    summary: 'List tool invocation logs',
+    description:
+      'The audit log of tool calls in your workspace, newest first: tool and connector, caller, MCP server, `input`, ' +
+      '`output` or `error`, `status`, `durationMs` and `clientInfo` (how the caller authenticated, which key or client). ' +
+      'A failure repeated within a minute is stored once with `repeatCount`. Filters combine with AND.\n\n' +
+      'Typical uses: the last failures (`status=ERROR`), the calls of one tool or connector, or what one AI client did ' +
+      'on one server (`mcpServerId`).\n\n' +
+      '```bash\namcp api GET "/api/audit/invocations?status=ERROR&limit=20"\n```',
+  })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Rows to return (default 100).', example: 20 })
+  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip, for paging.', example: 0 })
+  @ApiQuery({ name: 'toolId', required: false, type: String, description: 'Only calls of this tool.' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['SUCCESS', 'ERROR', 'TIMEOUT'],
+    description: 'Only calls with this outcome.',
+    example: 'ERROR',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Tool name contains this text (case-insensitive).',
+    example: 'hubspot_',
+  })
+  @ApiQuery({ name: 'connectorId', required: false, type: String, description: 'Only calls of tools of this connector.' })
+  @ApiQuery({ name: 'mcpServerId', required: false, type: String, description: 'Only calls made through this MCP server.' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'array',
+      items: { type: 'object' },
+      example: [
+        {
+          id: 'cmod9e8f700f01zrpa1b2c3d4',
+          toolId: 'cmob7a1b200d01zrp5h6j7k8l',
+          status: 'ERROR',
+          durationMs: 742,
+          error: 'HTTP 403: missing scope crm.objects.deals.read',
+          input: { objectType: 'deals', limit: 10 },
+          output: null,
+          repeatCount: 1,
+          createdAt: '2026-11-05T09:41:12.000Z',
+          tool: { name: 'hubspot_list_objects', connectorId: 'cmob60dvv00c01zrpeujwmnep', connector: { name: 'HubSpot', type: 'REST' } },
+          user: { id: 'cmo8a7b6c0000abcdx1y2z3w4', email: 'ana@example.com', name: 'Ana' },
+          mcpServer: { id: 'cmo9x1k2a0001abcdpq7rs8tu', name: 'Sales', slug: 'sales' },
+        },
+      ],
+    },
+  })
   async listInvocations(
     @Req() req: any,
     @Query('limit') limit?: string,
@@ -43,7 +88,17 @@ export class AuditController {
   }
 
   @Get('stats')
-  @ApiOperation({ summary: 'Get invocation statistics' })
+  @ApiOperation({
+    summary: 'Get invocation statistics',
+    description: 'Tool-call counters for your workspace: last 24 hours, errors in the last 24 hours, last 7 days and all time.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      example: { invocations24h: 312, errors24h: 7, invocations7d: 2140, totalInvocations: 48211 },
+    },
+  })
   async getStats(@Req() req: any) {
     return this.auditService.getStats(req.user.organizationId);
   }
@@ -53,7 +108,8 @@ export class AuditController {
     summary: 'Get analytics data with daily time-series and top tools',
     description:
       'Returns a daily breakdown (UTC days, last `days`, default 7) of invocations by status, ' +
-      'top 10 most-used tools, success rate, and average duration.',
+      'top 10 most-used tools, success rate, and average duration.\n\n' +
+      '```bash\namcp api GET "/api/audit/analytics?days=30"\n```',
   })
   @ApiQuery({
     name: 'days',
@@ -94,9 +150,27 @@ export class AuditController {
     description:
       'Aggregates the last N days (default 30) of tool calls per connector, per ' +
       'MCP server and per user, with error counts, proxy-call metering and a ' +
-      'volume-based cost estimate.',
+      'volume-based cost estimate. Each list holds the top 20 by calls; `estCostMicros` is 0 unless the ' +
+      'instance sets per-call rates.',
   })
-  @ApiQuery({ name: 'days', required: false, type: Number })
+  @ApiQuery({ name: 'days', required: false, type: Number, description: 'Window in days, 1 to 365 (default 30).', example: 30 })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      example: {
+        days: 30,
+        total: 9120,
+        errors: 143,
+        proxyCalls: 0,
+        estCostMicros: 0,
+        rates: { callMicros: 0, proxyCallMicros: 0 },
+        byConnector: [{ id: 'cmob60dvv00c01zrpeujwmnep', label: 'HubSpot', count: 5210, errors: 61 }],
+        byServer: [{ id: 'cmo9x1k2a0001abcdpq7rs8tu', label: 'Sales', count: 6001, errors: 70 }],
+        byUser: [{ id: 'cmo8a7b6c0000abcdx1y2z3w4', label: 'Ana', count: 3302, errors: 12 }],
+      },
+    },
+  })
   async getBreakdowns(@Req() req: any, @Query('days') days?: string) {
     return this.auditService.getBreakdowns(
       req.user.organizationId,

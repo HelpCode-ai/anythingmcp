@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 
 /**
@@ -24,6 +25,7 @@ import type { Request, Response } from 'express';
  * resource is always `/mcp/<id>`) rather than a wildcard, to avoid any
  * path-matching ambiguity.
  */
+@ApiTags('OAuth discovery')
 @Controller('.well-known')
 export class WellKnownOAuthController {
   constructor(private readonly config: ConfigService) {}
