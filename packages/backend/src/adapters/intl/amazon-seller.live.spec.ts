@@ -26,6 +26,7 @@ import { LoginTokenService } from '../../connectors/engines/login-token.service'
 
 interface Tool {
   name: string;
+  enabled?: boolean;
   parameters: {
     properties?: Record<string, unknown>;
     required?: string[];
@@ -33,6 +34,7 @@ interface Tool {
   endpointMapping: {
     method: string;
     path: string;
+    encodePathParams?: boolean;
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
     staticResponse?: string;
@@ -83,7 +85,7 @@ describe('amazon-seller adapter — static spec conformance', () => {
 
   it('every HTTP tool targets a current SP-API versioned path', () => {
     const versioned =
-      /^\/(sellers\/v1|orders\/v0|catalog\/2022-04-01|fba\/inventory\/v1|products\/(pricing|fees)\/v0|finances\/v0|listings\/2021-08-01|reports\/2021-06-30)\//;
+      /^\/(sellers\/v1|orders\/v0|catalog\/2022-04-01|fba\/inventory\/v1|products\/(pricing|fees)\/v0|finances\/v0|listings\/2021-08-01|reports\/2021-06-30|solicitations\/v1|definitions\/2020-09-01)\//;
     for (const t of httpTools()) {
       if (!versioned.test(t.endpointMapping.path)) {
         throw new Error(
@@ -114,6 +116,71 @@ describe('amazon-seller adapter — static spec conformance', () => {
     expect(Object.keys(listings.parameters.properties ?? {})).not.toContain(
       'sellerId',
     );
+  });
+
+  it('keeps the original tool names and prefixes new ones with amazon_seller_', () => {
+    const names = a.tools.map((t) => t.name);
+    for (const name of [
+      'amazon_marketplace_ids',
+      'amazon_marketplace_participations',
+      'amazon_list_orders',
+      'amazon_get_order',
+      'amazon_get_order_items',
+      'amazon_search_catalog',
+      'amazon_get_catalog_item',
+      'amazon_fba_inventory',
+      'amazon_get_item_offers',
+      'amazon_get_fees_estimate',
+      'amazon_list_financial_events',
+      'amazon_get_listings_item',
+      'amazon_create_report',
+      'amazon_get_report',
+      'amazon_get_report_document',
+    ]) {
+      expect(names).toContain(name);
+    }
+    expect(new Set(names).size).toBe(names.length);
+    const added = names.slice(15);
+    expect(added.length).toBeGreaterThan(0);
+    for (const name of added) expect(name.startsWith('amazon_seller_')).toBe(true);
+  });
+
+  it('listings writes target the env seller id and encode the SKU', () => {
+    for (const [name, method] of [
+      ['amazon_seller_put_listings_item', 'PUT'],
+      ['amazon_seller_patch_listings_item', 'PATCH'],
+      ['amazon_seller_delete_listings_item', 'DELETE'],
+    ] as const) {
+      const t = a.tools.find((x) => x.name === name)!;
+      expect(t.endpointMapping.method).toBe(method);
+      expect(t.endpointMapping.path).toBe('/listings/2021-08-01/items/{{SPAPI_SELLER_ID}}/{sku}');
+      expect(t.endpointMapping.encodePathParams).toBe(true);
+      expect(t.endpointMapping.queryParams?.marketplaceIds).toBe('{{SPAPI_MARKETPLACE_ID}}');
+    }
+    const patch = a.tools.find((x) => x.name === 'amazon_seller_patch_listings_item')!;
+    expect(patch.endpointMapping.bodyMapping).toEqual({ productType: '$productType', patches: '$patches' });
+    const search = a.tools.find((x) => x.name === 'amazon_seller_search_listings_items')!;
+    expect(search.endpointMapping.path).toBe('/listings/2021-08-01/items/{{SPAPI_SELLER_ID}}');
+  });
+
+  it('restrictions and product type definitions carry the env seller id', () => {
+    const restrictions = a.tools.find((x) => x.name === 'amazon_seller_get_listing_restrictions')!;
+    expect(restrictions.endpointMapping.path).toBe('/listings/2021-08-01/restrictions');
+    expect(restrictions.endpointMapping.queryParams?.sellerId).toBe('{{SPAPI_SELLER_ID}}');
+    const definition = a.tools.find((x) => x.name === 'amazon_seller_get_product_type_definition')!;
+    expect(definition.endpointMapping.path).toBe('/definitions/2020-09-01/productTypes/{productType}');
+  });
+
+  it('review requests use the Solicitations API and install switched off', () => {
+    const actions = a.tools.find((x) => x.name === 'amazon_seller_get_solicitation_actions')!;
+    expect(actions.endpointMapping.path).toBe('/solicitations/v1/orders/{amazonOrderId}');
+    const request = a.tools.find((x) => x.name === 'amazon_seller_request_product_review')!;
+    expect(request.endpointMapping.method).toBe('POST');
+    expect(request.endpointMapping.path).toBe(
+      '/solicitations/v1/orders/{amazonOrderId}/solicitations/productReviewAndSellerFeedback',
+    );
+    expect(request.enabled).toBe(false);
+    expect(a.tools.find((x) => x.name === 'amazon_seller_delete_listings_item')!.enabled).toBe(false);
   });
 
   it('reports flow is complete: create → status → document', () => {
