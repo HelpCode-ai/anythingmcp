@@ -663,6 +663,36 @@ test('browser login delivers a key over the loopback callback and binds state', 
   });
   assert.equal(ok.key, 'mcp_browserflow');
 
+  // Browsers send Origin "null" when an HTTPS page posts to the http://
+  // loopback; that must still deliver the key.
+  const fromNull = await browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const u = new URL(url);
+      void postForm(u.searchParams.get('callback')!, { state: u.searchParams.get('state')!, key: 'mcp_nullorigin' }, 'null');
+    },
+  });
+  assert.equal(fromNull.key, 'mcp_nullorigin');
+
+  // A POST naming a foreign origin is refused and does not end the login; the
+  // genuine POST that follows still succeeds.
+  const foreign = await browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const u = new URL(url);
+      const callback = u.searchParams.get('callback')!;
+      const state = u.searchParams.get('state')!;
+      void (async () => {
+        const refused = await postForm(callback, { state, key: 'mcp_evil' }, 'https://evil.test');
+        assert.equal(refused.status, 403);
+        await postForm(callback, { state, key: 'mcp_genuine' }, 'https://example.test');
+      })();
+    },
+  });
+  assert.equal(foreign.key, 'mcp_genuine');
+
   // A mismatched state is rejected (a stray or forged callback cannot win).
   await assert.rejects(browserAuthorize({
     instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
