@@ -184,6 +184,9 @@ describe('magento adapter: carts, promotions, special prices, credit memos, attr
       expect(mt(n).annotations?.readOnlyHint).toBe(false);
       expect(`${n}:${/confirm/.test((mt(n) as unknown as { description: string }).description)}`).toBe(`${n}:true`);
     }
-    for (const t of m.tools) expect(t.endpointMapping.path).not.toMatch(/refund|creditmemo$/);
+    for (const t of m.tools) {
+      expect(t.endpointMapping.path).not.toMatch(/refund/);
+      expect(t.endpointMapping.path).not.toMatch(/creditmemo$/);
+    }
   });
 });
