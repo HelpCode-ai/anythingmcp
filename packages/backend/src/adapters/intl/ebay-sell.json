@@ -1,12 +1,12 @@
 {
   "slug": "ebay-sell",
   "name": "eBay Sell",
-  "description": "eBay's Sell APIs for merchants: inventory items, item groups and offers (create, publish, withdraw), orders and fulfilment, payment disputes, account policies, Promoted Listings campaigns, buyer messages, category suggestions and item specifics, and live listing lookups through the Browse API. OAuth 2.0 user token against the production marketplace.",
+  "description": "eBay's Sell APIs for merchants: inventory items, item groups and offers (create, publish, withdraw), orders and fulfilment, payment disputes, account policies, Promoted Listings campaigns, category suggestions and item specifics, and live listing lookups through the Browse API. OAuth 2.0 user token against the production marketplace.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "ebay-sell",
   "docsUrl": "https://developer.ebay.com/api-docs/sell/static/overview.html",
-  "instructions": "This connector uses eBay's Sell APIs (production) with a **User access token** for the seller's own account. You sign in to eBay once, in AnythingMCP; from then on the access token (2 hours) is renewed automatically from the refresh token eBay issues with it (valid about 18 months).\n\n**Setup**:\n1. At https://developer.ebay.com/my/keys (Application Keys) create a **Production** keyset. Before a new production keyset works, eBay asks you to subscribe to or opt out of marketplace account deletion notifications: if the keyset says *Your Keyset is currently disabled*, click the link in that message.\n2. Next to the production App ID, click **User Tokens**, open **Get a Token from eBay via Your Application** and create an **RuName** (eBay's name for a redirect address). Set its **Auth Accepted URL** (and **Auth Declined URL**) to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself (eBay requires https), and save.\n3. Enter the **App ID (Client ID)** as `EBAY_CLIENT_ID`, the **Cert ID (Client Secret)** as `EBAY_CLIENT_SECRET`, the RuName as `EBAY_RUNAME` and your marketplace as `EBAY_MARKETPLACE_ID`; leave `EBAY_REFRESH_TOKEN` empty.\n4. Click **Authorize with Provider** (the setup page does it for you): sign in with your eBay **seller** account and agree. eBay sends you back to AnythingMCP with the tools ready. eBay's `redirect_uri` is the RuName, not a URL: AnythingMCP sends it in the sign-in and in the code exchange, and the RuName's accepted URL brings the browser back.\n\n**Scopes**: the sign-in asks for the base scope `api_scope` (Browse and Taxonomy: public listings, categories and item specifics), `sell.inventory` (inventory items, item groups, offers, locations), `sell.fulfillment` (orders), `sell.account` (policies), `sell.payment.dispute` (disputes), `sell.marketing` (Promoted Listings campaigns and ads) and `commerce.message` (buyer messages). A connector authorized before the base, marketing and message scopes were added holds a token without them, and the campaign, message, Browse and Taxonomy tools answer 403 or *insufficient permissions* there: click **Authorize with Provider** again and the sign-in asks for the current list.\n\n**Already have a refresh token?** Connectors set up earlier with a refresh token pasted into `EBAY_REFRESH_TOKEN` keep working as they are. To switch to the sign-in, add `EBAY_RUNAME` under Environment Variables and click **Authorize with Provider**: the new token replaces the old one.\n\n**Marketplace**: set `EBAY_MARKETPLACE_ID` to the marketplace the seller trades on, e.g. `EBAY_DE`, `EBAY_US`, `EBAY_GB`. eBay reads it from the `X-EBAY-C-MARKETPLACE-ID` header and answers differently per marketplace.\n\n**Sandbox is a separate host.** This adapter points at `api.ebay.com` (production). The sandbox lives at `api.sandbox.ebay.com` with its own keyset, RuName and tokens; sandbox values fail here with a confusing 401.\n\n**Inventory vs Trading.** The Sell Inventory API only sees listings created through it or migrated into it. A long-established seller whose listings were created with the legacy Trading API may find `ebay_sell_list_inventory_items` almost empty while their eBay shop is full — that is expected, and the migration is a one-time API call eBay documents.\n\n**Business Policies.** `ebay_sell_list_fulfillment_policies` and `ebay_sell_list_return_policies` only work for sellers who use eBay Business Policies. For other accounts eBay answers error 20403 *User is not eligible for Business Policy*: the connection is fine, and orders, inventory, offers and disputes keep working. To use the policy tools, opt in to Business Policies in My eBay under Account.\n\n**Limits**: most Sell endpoints allow a few thousand calls a day per application. Pace bulk work.\n\n**Payment disputes live on another host.** eBay serves them from `apiz.ebay.com`, not `api.ebay.com`; `ebay_sell_list_payment_disputes` calls that host directly (the same token works).\n\n**Paging differs per API.** In the Fulfillment API (`ebay_sell_list_orders`) `offset` is the number of orders to skip. In the Inventory API (`ebay_sell_list_inventory_items`, `ebay_sell_list_offers`) `offset` is the 0-based *page* number.\n\n**Writes and Content-Language.** `ebay_sell_upsert_inventory_item`, `ebay_sell_upsert_inventory_item_group`, `ebay_sell_create_offer`, `ebay_sell_update_offer` and the bulk create tools take a `content_language` (e.g. `de-DE`): eBay requires the language of the listing text in a header. The upsert and update tools **replace** the whole record: read it first and send it back complete, or the fields you leave out are cleared. The usual order for a new listing: inventory item(s), then an item group for variations, then offer(s), then publish (`ebay_sell_publish_offer`, or `ebay_sell_publish_offers_by_item_group` for a multi-variation listing). Deleting items, groups or offers, migrating listings, ending a campaign and sending a message are installed switched off; turn them on under the connector's tools when you want them.\n\n**Browse API**: `ebay_sell_search_items`, `ebay_sell_get_item`, `ebay_sell_get_item_by_legacy_id` and `ebay_sell_get_items_by_item_group` read the public view of live listings on the connector's marketplace, other sellers' listings included (e.g. to compare prices).\n\n**Price-only updates**: `ebay_sell_update_offer_price` changes a live listing's price, which buyers see immediately. It uses eBay's `bulk_update_price_quantity` call, which answers 200 or 207 Multi-Status: a success code does not mean the offer changed, so read the per-offer `statusCode` and `errors` in the response. eBay allows 250 revisions per listing per calendar day.",
+  "instructions": "This connector uses eBay's Sell APIs (production) with a **User access token** for the seller's own account. You sign in to eBay once, in AnythingMCP; from then on the access token (2 hours) is renewed automatically from the refresh token eBay issues with it (valid about 18 months).\n\n**Setup**:\n1. At https://developer.ebay.com/my/keys (Application Keys) create a **Production** keyset. Before a new production keyset works, eBay asks you to subscribe to or opt out of marketplace account deletion notifications: if the keyset says *Your Keyset is currently disabled*, click the link in that message.\n2. Next to the production App ID, click **User Tokens**, open **Get a Token from eBay via Your Application** and create an **RuName** (eBay's name for a redirect address). Set its **Auth Accepted URL** (and **Auth Declined URL**) to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself (eBay requires https), and save.\n3. Enter the **App ID (Client ID)** as `EBAY_CLIENT_ID`, the **Cert ID (Client Secret)** as `EBAY_CLIENT_SECRET`, the RuName as `EBAY_RUNAME` and your marketplace as `EBAY_MARKETPLACE_ID`; leave `EBAY_REFRESH_TOKEN` empty.\n4. Click **Authorize with Provider** (the setup page does it for you): sign in with your eBay **seller** account and agree. eBay sends you back to AnythingMCP with the tools ready. eBay's `redirect_uri` is the RuName, not a URL: AnythingMCP sends it in the sign-in and in the code exchange, and the RuName's accepted URL brings the browser back.\n\n**Scopes**: the sign-in asks for the base scope `api_scope` (Browse and Taxonomy: public listings, categories and item specifics), `sell.inventory` (inventory items, item groups, offers, locations), `sell.fulfillment` (orders), `sell.account` (policies), `sell.payment.dispute` (disputes), and `sell.marketing` (Promoted Listings campaigns and ads). A connector authorized before the base and marketing scopes were added holds a token without them, and the campaign, Browse and Taxonomy tools answer 403 or *insufficient permissions* there: click **Authorize with Provider** again and the sign-in asks for the current list.\n\n**Already have a refresh token?** Connectors set up earlier with a refresh token pasted into `EBAY_REFRESH_TOKEN` keep working as they are. To switch to the sign-in, add `EBAY_RUNAME` under Environment Variables and click **Authorize with Provider**: the new token replaces the old one.\n\n**Marketplace**: set `EBAY_MARKETPLACE_ID` to the marketplace the seller trades on, e.g. `EBAY_DE`, `EBAY_US`, `EBAY_GB`. eBay reads it from the `X-EBAY-C-MARKETPLACE-ID` header and answers differently per marketplace.\n\n**Sandbox is a separate host.** This adapter points at `api.ebay.com` (production). The sandbox lives at `api.sandbox.ebay.com` with its own keyset, RuName and tokens; sandbox values fail here with a confusing 401.\n\n**Inventory vs Trading.** The Sell Inventory API only sees listings created through it or migrated into it. A long-established seller whose listings were created with the legacy Trading API may find `ebay_sell_list_inventory_items` almost empty while their eBay shop is full — that is expected, and the migration is a one-time API call eBay documents.\n\n**Business Policies.** `ebay_sell_list_fulfillment_policies` and `ebay_sell_list_return_policies` only work for sellers who use eBay Business Policies. For other accounts eBay answers error 20403 *User is not eligible for Business Policy*: the connection is fine, and orders, inventory, offers and disputes keep working. To use the policy tools, opt in to Business Policies in My eBay under Account.\n\n**Limits**: most Sell endpoints allow a few thousand calls a day per application. Pace bulk work.\n\n**Payment disputes live on another host.** eBay serves them from `apiz.ebay.com`, not `api.ebay.com`; `ebay_sell_list_payment_disputes` calls that host directly (the same token works).\n\n**Paging differs per API.** In the Fulfillment API (`ebay_sell_list_orders`) `offset` is the number of orders to skip. In the Inventory API (`ebay_sell_list_inventory_items`, `ebay_sell_list_offers`) `offset` is the 0-based *page* number.\n\n**Writes and Content-Language.** `ebay_sell_upsert_inventory_item`, `ebay_sell_upsert_inventory_item_group`, `ebay_sell_create_offer`, `ebay_sell_update_offer` and the bulk create tools take a `content_language` (e.g. `de-DE`): eBay requires the language of the listing text in a header. The upsert and update tools **replace** the whole record: read it first and send it back complete, or the fields you leave out are cleared. The usual order for a new listing: inventory item(s), then an item group for variations, then offer(s), then publish (`ebay_sell_publish_offer`, or `ebay_sell_publish_offers_by_item_group` for a multi-variation listing). Deleting items, groups or offers, migrating listings, ending a campaign and sending a message are installed switched off; turn them on under the connector's tools when you want them.\n\n**Browse API**: `ebay_sell_search_items`, `ebay_sell_get_item`, `ebay_sell_get_item_by_legacy_id` and `ebay_sell_get_items_by_item_group` read the public view of live listings on the connector's marketplace, other sellers' listings included (e.g. to compare prices).\n\n**Price-only updates**: `ebay_sell_update_offer_price` changes a live listing's price, which buyers see immediately. It uses eBay's `bulk_update_price_quantity` call, which answers 200 or 207 Multi-Status: a success code does not mean the offer changed, so read the per-offer `statusCode` and `errors` in the response. eBay allows 250 revisions per listing per calendar day.",
   "requiredEnvVars": [
     "EBAY_CLIENT_ID",
     "EBAY_CLIENT_SECRET",
@@ -185,7 +185,7 @@
       "tokenUrl": "https://api.ebay.com/identity/v1/oauth2/token",
       "tokenAuthMethod": "basic",
       "pkce": false,
-      "scopes": "https://api.ebay.com/oauth/api_scope https://api.ebay.com/oauth/api_scope/sell.inventory https://api.ebay.com/oauth/api_scope/sell.fulfillment https://api.ebay.com/oauth/api_scope/sell.account https://api.ebay.com/oauth/api_scope/sell.payment.dispute https://api.ebay.com/oauth/api_scope/sell.marketing https://api.ebay.com/oauth/api_scope/commerce.message",
+      "scopes": "https://api.ebay.com/oauth/api_scope https://api.ebay.com/oauth/api_scope/sell.inventory https://api.ebay.com/oauth/api_scope/sell.fulfillment https://api.ebay.com/oauth/api_scope/sell.account https://api.ebay.com/oauth/api_scope/sell.payment.dispute https://api.ebay.com/oauth/api_scope/sell.marketing",
       "providerRedirectUri": "{{EBAY_RUNAME}}",
       "clientId": "{{EBAY_CLIENT_ID}}",
       "clientSecret": "{{EBAY_CLIENT_SECRET}}",
@@ -1421,159 +1421,6 @@
           "category_id": "$category_id"
         }
       }
-    },
-    {
-      "name": "ebay_sell_list_conversations",
-      "description": "List the seller's message conversations (Message API getConversations): with buyers and other members (FROM_MEMBERS) or from eBay (FROM_EBAY). Returns conversationId, other party, subject, latest message, unread count and the listing it refers to. Needs the commerce.message scope.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "conversation_type": {
-            "type": "string",
-            "enum": [
-              "FROM_MEMBERS",
-              "FROM_EBAY"
-            ],
-            "description": "FROM_MEMBERS for buyer and member messages, FROM_EBAY for messages from eBay."
-          },
-          "conversation_status": {
-            "type": "string",
-            "description": "ACTIVE, ARCHIVE, DELETE, READ or UNREAD."
-          },
-          "other_party_username": {
-            "type": "string",
-            "description": "eBay user name of the other party."
-          },
-          "reference_id": {
-            "type": "string",
-            "description": "Listing id the conversation refers to (with reference_type LISTING)."
-          },
-          "reference_type": {
-            "type": "string",
-            "description": "LISTING."
-          },
-          "start_time": {
-            "type": "string",
-            "description": "Only conversations after this ISO 8601 time, e.g. 2026-11-01T00:00:00.000Z."
-          },
-          "end_time": {
-            "type": "string",
-            "description": "Only conversations before this ISO 8601 time."
-          },
-          "limit": {
-            "type": "number",
-            "description": "Conversations per page, 1-50 (default 10)."
-          },
-          "offset": {
-            "type": "number",
-            "description": "Number of conversations to skip."
-          }
-        },
-        "required": [
-          "conversation_type"
-        ]
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/commerce/message/v1/conversation",
-        "queryParams": {
-          "conversation_type": "$conversation_type",
-          "conversation_status": "$conversation_status",
-          "other_party_username": "$other_party_username",
-          "reference_id": "$reference_id",
-          "reference_type": "$reference_type",
-          "start_time": "$start_time",
-          "end_time": "$end_time",
-          "limit": "$limit",
-          "offset": "$offset"
-        }
-      }
-    },
-    {
-      "name": "ebay_sell_get_conversation",
-      "description": "Read the messages of one conversation, newest first (Message API getConversation): sender, recipient, text, media and time of each message. Conversation ids come from ebay_sell_list_conversations.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "conversation_id": {
-            "type": "string",
-            "description": "Conversation id."
-          },
-          "conversation_type": {
-            "type": "string",
-            "enum": [
-              "FROM_MEMBERS",
-              "FROM_EBAY"
-            ],
-            "description": "The conversation's type, as listed by ebay_sell_list_conversations."
-          },
-          "limit": {
-            "type": "number",
-            "description": "Messages per page, 1-50 (default 10)."
-          },
-          "offset": {
-            "type": "number",
-            "description": "Number of messages to skip."
-          }
-        },
-        "required": [
-          "conversation_id",
-          "conversation_type"
-        ]
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/commerce/message/v1/conversation/{conversation_id}",
-        "queryParams": {
-          "conversation_type": "$conversation_type",
-          "limit": "$limit",
-          "offset": "$offset"
-        }
-      }
-    },
-    {
-      "name": "ebay_sell_send_message",
-      "description": "Send a message to a buyer or another eBay member (Message API sendMessage): reply in an existing conversation with conversationId, or start a new one with otherPartyUsername, optionally about a listing. The recipient gets it at once; it cannot be recalled. Needs the commerce.message scope.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "messageText": {
-            "type": "string",
-            "description": "Message text, up to 2000 characters."
-          },
-          "conversationId": {
-            "type": "string",
-            "description": "Conversation to reply in. Leave out when starting a new conversation."
-          },
-          "otherPartyUsername": {
-            "type": "string",
-            "description": "eBay user name of the recipient, for a new conversation."
-          },
-          "reference": {
-            "type": "object",
-            "description": "Listing the message is about: {\"referenceType\": \"LISTING\", \"referenceId\": \"123456789012\"}."
-          },
-          "emailCopyToSender": {
-            "type": "boolean",
-            "description": "Also email a copy to the seller."
-          }
-        },
-        "required": [
-          "messageText"
-        ]
-      },
-      "endpointMapping": {
-        "method": "POST",
-        "path": "/commerce/message/v1/send_message",
-        "bodyMapping": {
-          "messageText": "$messageText",
-          "conversationId": "$conversationId",
-          "otherPartyUsername": "$otherPartyUsername",
-          "reference": "$reference",
-          "emailCopyToSender": "$emailCopyToSender"
-        }
-      },
-      "enabled": false
     }
   ]
 }

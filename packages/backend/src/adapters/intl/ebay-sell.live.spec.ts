@@ -53,12 +53,13 @@ describe('ebay-sell adapter — static spec conformance', () => {
       'sell.account',
       'sell.payment.dispute',
       'sell.marketing',
-      'commerce.message',
     ]) {
       expect(scopes).toContain(`https://api.ebay.com/oauth/api_scope/${s}`);
     }
     // The base scope covers the Browse and Taxonomy APIs.
     expect(scopes).toContain('https://api.ebay.com/oauth/api_scope');
+    // commerce.message is not granted to every keyset, and an ungranted scope fails the whole sign-in.
+    expect(scopes).not.toContain('https://api.ebay.com/oauth/api_scope/commerce.message');
   });
 
   it('lets connectors signed in with the earlier scope list widen it on re-authorization', () => {
@@ -99,7 +100,7 @@ describe('ebay-sell adapter — static spec conformance', () => {
   });
 });
 
-describe('ebay-sell adapter — inventory, browse, marketing, taxonomy and messages', () => {
+describe('ebay-sell adapter — inventory, browse, marketing and taxonomy', () => {
   const tool = (name: string) => {
     const t = a.tools.find((x) => x.name === name);
     if (!t) throw new Error(`missing tool ${name}`);
@@ -171,7 +172,7 @@ describe('ebay-sell adapter — inventory, browse, marketing, taxonomy and messa
     }
   });
 
-  it('reads Browse, Taxonomy and Message APIs on api.ebay.com', () => {
+  it('reads Browse and Taxonomy APIs on api.ebay.com', () => {
     expect(route('ebay_sell_get_item_by_legacy_id')).toBe('GET /buy/browse/v1/item/get_item_by_legacy_id');
     expect(route('ebay_sell_search_items')).toBe('GET /buy/browse/v1/item_summary/search');
     expect(route('ebay_sell_get_items_by_item_group')).toBe('GET /buy/browse/v1/item/get_items_by_item_group');
@@ -182,7 +183,6 @@ describe('ebay-sell adapter — inventory, browse, marketing, taxonomy and messa
     expect(route('ebay_sell_add_listings_to_campaign')).toBe(
       'POST /sell/marketing/v1/ad_campaign/{campaign_id}/bulk_create_ads_by_listing_id',
     );
-    expect(route('ebay_sell_list_conversations')).toBe('GET /commerce/message/v1/conversation');
   });
 
   it('marks POST lookups as read-only', () => {
@@ -197,7 +197,6 @@ describe('ebay-sell adapter — inventory, browse, marketing, taxonomy and messa
       'ebay_sell_delete_offer',
       'ebay_sell_migrate_listings',
       'ebay_sell_end_campaign',
-      'ebay_sell_send_message',
     ]) {
       expect(tool(name).enabled).toBe(false);
     }
