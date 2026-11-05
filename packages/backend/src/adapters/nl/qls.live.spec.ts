@@ -122,6 +122,28 @@ describe('qls adapter: static spec conformance', () => {
     expect(tool('qls_list_suppliers').endpointMapping.path).toBe(`${C}/suppliers`);
   });
 
+  it('maps returns, order lines, product details, suppliers, purchase order changes and webhooks', () => {
+    expect(tool('qls_create_return').endpointMapping).toMatchObject({ method: 'POST', path: `${V2}/returns`, bodyMapping: { brand_id: '$brand_id', return_products: '$return_products' } });
+    expect(tool('qls_create_return').parameters?.required).toEqual(['company_id', 'brand_id']);
+    expect(tool('qls_archive_return').endpointMapping).toEqual({ method: 'PATCH', path: `${V2}/returns/{return_id}/archive` });
+    expect(tool('qls_get_fulfillment_order_product').endpointMapping.path).toBe(`${C}/fulfillment/orders/{order_id}/products/{order_product_id}`);
+    expect(tool('qls_add_fulfillment_order_product').endpointMapping).toMatchObject({ method: 'POST', path: `${C}/fulfillment/orders/{order_id}/products`, bodyEncoding: 'form-urlencoded' });
+    expect(tool('qls_update_fulfillment_order_product').endpointMapping).toMatchObject({ method: 'PUT', path: `${C}/fulfillment/orders/{order_id}/products/{order_product_id}`, bodyEncoding: 'form-urlencoded' });
+    expect(tool('qls_list_product_barcodes').endpointMapping.path).toBe(`${C}/fulfillment/products/{product_id}/barcodes`);
+    expect(tool('qls_add_product_barcode').endpointMapping).toMatchObject({ method: 'POST', bodyMapping: { barcode: '$barcode' } });
+    expect(tool('qls_list_product_master_cartons').endpointMapping.path).toBe(`${C}/fulfillment/products/{product_id}/master-cartons`);
+    expect(tool('qls_list_product_suppliers').endpointMapping.path).toBe(`${C}/fulfillment/products/{product_id}/suppliers`);
+    expect(tool('qls_link_product_supplier').endpointMapping.bodyMapping).toEqual({ supplierName: '$supplier_name', supplierCode: '$supplier_code' });
+    expect(tool('qls_get_supplier').endpointMapping.path).toBe(`${C}/suppliers/{supplier_id}`);
+    expect(tool('qls_create_supplier').endpointMapping).toMatchObject({ method: 'POST', path: `${C}/suppliers` });
+    expect(tool('qls_update_supplier').endpointMapping).toMatchObject({ method: 'PATCH', path: `${C}/suppliers/{supplier_id}` });
+    expect(tool('qls_update_purchase_order').endpointMapping).toMatchObject({ method: 'PUT', path: `${V2}/purchase-orders/{purchase_order_id}` });
+    expect(tool('qls_cancel_purchase_order').endpointMapping).toEqual({ method: 'POST', path: `${V2}/purchase-orders/{purchase_order_id}/cancel` });
+    expect(tool('qls_cancel_purchase_order').enabled).toBe(false);
+    expect(tool('qls_list_webhook_types').endpointMapping.path).toBe(`${V2}/webhook-types`);
+    expect(tool('qls_list_webhooks').endpointMapping.path).toBe(`${V2}/webhooks`);
+  });
+
   it('drops warehouse stock locations from order and product lists, keeping the order data', () => {
     const product = { id: 'p1', name: 'Shirt', amount_total: 4, warehouse_stocks: [{ id: 'w1', rack_number: '3' }] };
     const out = applyResponseTransform(
