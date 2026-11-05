@@ -980,6 +980,24 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  // TikTok shops are authorized through TikTok Shop's own seller authorization link.
+  const handleTikTokShopAuthorize = async () => {
+    if (!token) return;
+    setAuthorizing(true);
+    try {
+      const result = await connectors.tiktokShopAuthorize(id, token);
+      if (result.authorizationUrl) {
+        window.location.href = result.authorizationUrl;
+      } else if (result.error) {
+        setMsg(result.error);
+      }
+    } catch (err: any) {
+      setMsg(t('msg.authorizationFailed', { message: err.message }));
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
   const handleDiscoverTools = async () => {
     if (!token) return;
     setDiscovering(true);
@@ -1885,6 +1903,19 @@ export default function ConnectorDetailPage() {
               {t('shopee.body')}
             </p>
             <Button variant="primary" size="lg" onClick={handleShopeeAuthorize} disabled={authorizing}>
+              {authorizing ? t('oauthCard.redirecting') : t('oauthCard.authorizeProvider')}
+            </Button>
+          </Card>
+        )}
+
+        {/* TikTok Shop seller authorization (HMAC-signed, TikTok Shop's own flow) */}
+        {connector.authType === 'HMAC' && (connector.config as any)?.adapterSlug === 'tiktok-shop' && (
+          <Card className="p-[22px]">
+            <h3 className="text-sm font-semibold mb-2">{t('tiktokShop.title')}</h3>
+            <p className="text-sm text-[var(--text-3)] mb-4">
+              {t('tiktokShop.body')}
+            </p>
+            <Button variant="primary" size="lg" onClick={handleTikTokShopAuthorize} disabled={authorizing}>
               {authorizing ? t('oauthCard.redirecting') : t('oauthCard.authorizeProvider')}
             </Button>
           </Card>
