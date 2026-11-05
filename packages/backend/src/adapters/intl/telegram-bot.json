@@ -2,8 +2,8 @@
   "slug": "telegram-bot",
   "name": "Telegram Bot",
   "aliases": ["BotFather"],
-  "description": "Send Telegram messages, photos, albums, documents, audio, video, animations, stickers, contacts, venues, locations and polls from any AI agent via the Telegram Bot API. Bot-token auth. Outbound plus a lightweight read of recent updates (no long-polling).",
-  "instructions": "This connector uses the official Telegram Bot API (https://core.telegram.org/bots/api).\n\n**Setup**:\n1. In Telegram, open chat with **@BotFather** → `/newbot` → pick a display name and a username ending in `bot`.\n2. BotFather replies with an HTTP API token like `123456789:ABCDEFghijklmnopqrstuvwxyz`. **Treat as a secret**: anyone with it can send as your bot.\n3. Set `TELEGRAM_BOT_TOKEN` to the full token.\n\n**Authentication model** (Telegram-specific): the bot token goes in the URL path, NOT in a header. The base URL is `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` and every endpoint is appended as `/methodName`. The adapter substitutes the token via the `{{TELEGRAM_BOT_TOKEN}}` env-var template in `baseUrl`.\n\n**chat_id model**: every Telegram chat (user, group, channel) has a numeric `chat_id`. For groups and channels the bot must be ADDED first; for users, the user must have sent a `/start` to the bot at least once (Telegram's privacy rule). Once you have a chat_id (extract it from `getUpdates`), pin it.\n\n**Channels**: for **public channels** you can also pass `@channelusername` (with the `@`) instead of a numeric chat_id. Private channels REQUIRE the numeric ID, which always starts with `-100`.\n\n**Markdown vs HTML**: messages support 3 parse modes: `MarkdownV2` (current, escape special chars), `HTML` (`<b>`, `<i>`, `<a href>`), or no formatting. Telegram's `MarkdownV2` requires escaping `_ * [ ] ( ) ~ ` > # + - = | { } . !`; agents that don't escape will get 400 'can't parse entities'. The HTML mode is easier for agents to compose safely.\n\n**File send model**: media tools (sendPhoto, sendDocument, sendAudio, etc.) accept the media as:\n  - **HTTPS URL** (recommended on AnythingMCP): Telegram fetches it server-side. URL must be ≤ 5MB for photos, ≤ 20MB for documents via URL.\n  - **file_id**: a string returned from a previous send (caching: reuse the same file_id to re-send the same content without re-uploading).\n  - **multipart binary**: NOT supported by this connector in a single tool call. Pre-upload elsewhere and pass the resulting URL or file_id.\n\n**Albums**: `telegram_bot_send_album` sends 2 to 10 photos and videos as one grouped message (or 2 to 10 documents, or 2 to 10 audio files). Put the caption on the first item. If Telegram answers `failed to send message #N with the error message WEBPAGE_CURL_FAILED`, it could not download item N: the URL must be public and point straight at the file, not at a web page.\n\n**getUpdates vs webhooks**: this connector exposes `telegram_bot_get_updates` (long-polling pull) for one-shot reading of recent inbound messages. For continuous inbound stream (chatbot), use Telegram's webhook (setWebhook) and host the receiver yourself, outside the MCP request/response model.\n\n**Tools**: `telegram_bot_get_me` checks the token and returns the bot's id and username. Sending: `telegram_bot_send_message` (text), `telegram_bot_send_photo`, `telegram_bot_send_document`, `telegram_bot_send_audio` (music player), `telegram_bot_send_voice` (voice note), `telegram_bot_send_video`, `telegram_bot_send_animation` (GIF), `telegram_bot_send_album`, `telegram_bot_send_sticker`, `telegram_bot_send_location`, `telegram_bot_send_venue`, `telegram_bot_send_contact` and `telegram_bot_send_poll`; each one delivers to the chat at once. `telegram_bot_edit_message_text` changes a message the bot sent, `telegram_bot_delete_message` removes one. `telegram_bot_get_chat` reads a chat's title, type and description. `telegram_bot_fetch_sticker_set` reads a sticker or custom emoji set by name, for the file_id to send with `telegram_bot_send_sticker`.\n\n**Business accounts**: when a Telegram Business user connects the bot to their account, the bot receives a `business_connection` update whose `id` is the business connection id (inbound business messages carry it too). Pass it as `business_connection_id` to the send tools and to `telegram_bot_edit_message_text` to write on behalf of that account; the bot then needs the reply right on the connection, and Telegram only lets it answer chats active in the last 24 hours.\n\n**Rate limits**: 30 messages/sec to different chats, 1 msg/sec to the same chat, 20 messages/minute to the same group. On 429, honor the `retry_after` in the response.\n\n**Out of scope**: payments, inline mode, callback query answers (these usually require a long-running webhook), passport, game scores, sticker management.\n\n**Files the bot received**: a message in `telegram_bot_get_updates` carries a `file_id` (`photo[-1]` is the largest size, or `document`, `voice`, `video`). `telegram_bot_get_file` turns it into a `file_path`, and `telegram_bot_download_file` fetches the file. An image comes back as an image the assistant can see, any other file as an attachment. A `file_id` only works with the bot that received the file, and the Bot API serves files up to 20 MB.",
+  "description": "Send Telegram messages, photos, albums, documents, audio, video, animations, stickers, contacts, venues, locations and polls from any AI agent via the Telegram Bot API, react to and pin messages, and manage group titles, invite links and forum topics. Bot-token auth. Outbound plus a lightweight read of recent updates (no long-polling).",
+  "instructions": "This connector uses the official Telegram Bot API (https://core.telegram.org/bots/api).\n\n**Setup**:\n1. In Telegram, open chat with **@BotFather** → `/newbot` → pick a display name and a username ending in `bot`.\n2. BotFather replies with an HTTP API token like `123456789:ABCDEFghijklmnopqrstuvwxyz`. **Treat as a secret**: anyone with it can send as your bot.\n3. Set `TELEGRAM_BOT_TOKEN` to the full token.\n\n**Authentication model** (Telegram-specific): the bot token goes in the URL path, NOT in a header. The base URL is `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` and every endpoint is appended as `/methodName`. The adapter substitutes the token via the `{{TELEGRAM_BOT_TOKEN}}` env-var template in `baseUrl`.\n\n**chat_id model**: every Telegram chat (user, group, channel) has a numeric `chat_id`. For groups and channels the bot must be ADDED first; for users, the user must have sent a `/start` to the bot at least once (Telegram's privacy rule). Once you have a chat_id (extract it from `getUpdates`), pin it.\n\n**Channels**: for **public channels** you can also pass `@channelusername` (with the `@`) instead of a numeric chat_id. Private channels REQUIRE the numeric ID, which always starts with `-100`.\n\n**Markdown vs HTML**: messages support 3 parse modes: `MarkdownV2` (current, escape special chars), `HTML` (`<b>`, `<i>`, `<a href>`), or no formatting. Telegram's `MarkdownV2` requires escaping `_ * [ ] ( ) ~ ` > # + - = | { } . !`; agents that don't escape will get 400 'can't parse entities'. The HTML mode is easier for agents to compose safely.\n\n**File send model**: media tools (sendPhoto, sendDocument, sendAudio, etc.) accept the media as:\n  - **HTTPS URL** (recommended on AnythingMCP): Telegram fetches it server-side. URL must be ≤ 5MB for photos, ≤ 20MB for documents via URL.\n  - **file_id**: a string returned from a previous send (caching: reuse the same file_id to re-send the same content without re-uploading).\n  - **multipart binary**: NOT supported by this connector in a single tool call. Pre-upload elsewhere and pass the resulting URL or file_id.\n\n**Albums**: `telegram_bot_send_album` sends 2 to 10 photos and videos as one grouped message (or 2 to 10 documents, or 2 to 10 audio files). Put the caption on the first item. If Telegram answers `failed to send message #N with the error message WEBPAGE_CURL_FAILED`, it could not download item N: the URL must be public and point straight at the file, not at a web page.\n\n**getUpdates vs webhooks**: this connector exposes `telegram_bot_get_updates` (long-polling pull) for one-shot reading of recent inbound messages. For continuous inbound stream (chatbot), use Telegram's webhook (setWebhook) and host the receiver yourself, outside the MCP request/response model. Telegram delivers updates to a webhook or to getUpdates, never both: while a webhook is set, `telegram_bot_get_updates` answers 409 Conflict. `telegram_bot_get_webhook_info` shows the webhook; `telegram_bot_remove_webhook` (switched off at install) deletes it, which stops whatever service receives it.\n\n**Tools**: `telegram_bot_get_me` checks the token and returns the bot's id and username. Sending: `telegram_bot_send_message` (text), `telegram_bot_send_photo`, `telegram_bot_send_document`, `telegram_bot_send_audio` (music player), `telegram_bot_send_voice` (voice note), `telegram_bot_send_video`, `telegram_bot_send_animation` (GIF), `telegram_bot_send_album`, `telegram_bot_send_sticker`, `telegram_bot_send_location`, `telegram_bot_send_venue`, `telegram_bot_send_contact` and `telegram_bot_send_poll`; each one delivers to the chat at once. `telegram_bot_edit_message_text` changes a message the bot sent, `telegram_bot_delete_message` removes one. `telegram_bot_edit_message_caption` changes the caption of a media message, `telegram_bot_react_to_message` sets the bot's emoji reaction on a message. `telegram_bot_get_chat` reads a chat's title, type and description. Chat management (the bot must be an administrator with the matching right): `telegram_bot_pin_message`, `telegram_bot_unpin_chat_message`, `telegram_bot_rename_chat`, `telegram_bot_update_chat_description`, `telegram_bot_create_chat_invite_link` and `telegram_bot_add_forum_topic` (returns the message_thread_id of the new topic). `telegram_bot_fetch_sticker_set` reads a sticker or custom emoji set by name, for the file_id to send with `telegram_bot_send_sticker`. `telegram_bot_create_sticker_set` packages existing images into a new set owned by a user (name ending in `_by_<bot username>`) and `telegram_bot_extend_sticker_set` adds one more.\n\n**Business accounts**: when a Telegram Business user connects the bot to their account, the bot receives a `business_connection` update whose `id` is the business connection id (inbound business messages carry it too). Pass it as `business_connection_id` to the send tools and to `telegram_bot_edit_message_text` to write on behalf of that account; the bot then needs the reply right on the connection, and Telegram only lets it answer chats active in the last 24 hours.\n\n**Rate limits**: 30 messages/sec to different chats, 1 msg/sec to the same chat, 20 messages/minute to the same group. On 429, honor the `retry_after` in the response.\n\n**Out of scope**: payments, inline mode, callback query answers (these usually require a long-running webhook), passport, game scores.\n\n**Files the bot received**: a message in `telegram_bot_get_updates` carries a `file_id` (`photo[-1]` is the largest size, or `document`, `voice`, `video`). `telegram_bot_get_file` turns it into a `file_path`, and `telegram_bot_download_file` fetches the file. An image comes back as an image the assistant can see, any other file as an attachment. A `file_id` only works with the bot that received the file, and the Bot API serves files up to 20 MB.",
   "region": "intl",
   "category": "messaging",
   "icon": "telegram",
@@ -644,6 +644,469 @@
           "google_place_id": "$google_place_id",
           "disable_notification": "$disable_notification"
         }
+      }
+    },
+    {
+      "name": "telegram_bot_react_to_message",
+      "description": "Set the bot's reaction on a message (the emoji under a message), or remove it with an empty list. A bot can set one reaction per message, chosen from the reactions the chat allows (by default the standard emoji set); paid reactions are not available to bots. Use it to acknowledge a message without sending a reply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (numeric; groups and channels start with -100) or @channelusername."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "message_id of the message, from the send result or telegram_bot_get_updates."
+          },
+          "reaction": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Reactions to set, e.g. [{\"type\": \"emoji\", \"emoji\": \"👍\"}] or [{\"type\": \"custom_emoji\", \"custom_emoji_id\": \"...\"}]. An empty list [] removes the bot's reaction."
+          },
+          "is_big": {
+            "type": "boolean",
+            "description": "true plays the big reaction animation."
+          }
+        },
+        "required": [
+          "chat_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/setMessageReaction",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "message_id": "$message_id",
+          "reaction": "$reaction",
+          "is_big": "$is_big"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_pin_message",
+      "description": "Pin a message in a chat, so it shows at the top. In groups and channels the bot must be an administrator with the right to pin messages; in private chats it works without. Members are notified unless disable_notification is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (numeric; groups and channels start with -100) or @channelusername."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "message_id of the message, from the send result or telegram_bot_get_updates."
+          },
+          "business_connection_id": {
+            "type": "string",
+            "description": "Business connection id, when acting on behalf of a connected business account."
+          },
+          "disable_notification": {
+            "type": "boolean",
+            "description": "true pins silently, without notifying members."
+          }
+        },
+        "required": [
+          "chat_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pinChatMessage",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "message_id": "$message_id",
+          "business_connection_id": "$business_connection_id",
+          "disable_notification": "$disable_notification"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_unpin_chat_message",
+      "description": "Unpin a pinned message in a chat; without message_id the most recently pinned message is unpinned. Same admin rights as pinning.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (numeric; groups and channels start with -100) or @channelusername."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "message_id to unpin; leave out for the most recent pinned message."
+          },
+          "business_connection_id": {
+            "type": "string",
+            "description": "Business connection id, when acting on behalf of a connected business account."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/unpinChatMessage",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "message_id": "$message_id",
+          "business_connection_id": "$business_connection_id"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_rename_chat",
+      "description": "Change the title of a group, supergroup or channel (1 to 128 characters); not possible for private chats. The bot must be an administrator with the right to change chat info. Every member sees the new title at once, so confirm it with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (numeric; groups and channels start with -100) or @channelusername."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "New chat title, 1 to 128 characters."
+          }
+        },
+        "required": [
+          "chat_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/setChatTitle",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "title": "$title"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_update_chat_description",
+      "description": "Change the description of a group, supergroup or channel (0 to 255 characters; empty removes it). The bot must be an administrator with the right to change chat info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (numeric; groups and channels start with -100) or @channelusername."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "New description, up to 255 characters."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/setChatDescription",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_add_forum_topic",
+      "description": "Create a topic in a forum supergroup (a group with topics enabled). Returns the topic with its message_thread_id, which the Bot API send methods take to post into that topic. The bot must be an administrator with the right to manage topics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (numeric; groups and channels start with -100) or @channelusername."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Topic name, 1 to 128 characters."
+          },
+          "icon_color": {
+            "type": "integer",
+            "enum": [
+              7322096,
+              16766590,
+              13338331,
+              9367192,
+              16749490,
+              16478047
+            ],
+            "description": "Icon colour as RGB integer, one of 7322096 (blue), 16766590 (yellow), 13338331 (violet), 9367192 (green), 16749490 (rose), 16478047 (red)."
+          },
+          "icon_custom_emoji_id": {
+            "type": "string",
+            "description": "Custom emoji id to use as the topic icon."
+          }
+        },
+        "required": [
+          "chat_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/createForumTopic",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "name": "$name",
+          "icon_color": "$icon_color",
+          "icon_custom_emoji_id": "$icon_custom_emoji_id"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_edit_message_caption",
+      "description": "Edit the caption of a photo, video, document, audio or animation message the bot sent (an empty caption removes it). Use telegram_bot_edit_message_text for text messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (numeric; groups and channels start with -100) or @channelusername."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "message_id of the message, from the send result or telegram_bot_get_updates."
+          },
+          "business_connection_id": {
+            "type": "string",
+            "description": "Business connection id, when acting on behalf of a connected business account."
+          },
+          "caption": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "New caption, up to 1024 characters."
+          },
+          "parse_mode": {
+            "type": "string",
+            "enum": [
+              "MarkdownV2",
+              "HTML"
+            ],
+            "description": "Formatting of the caption."
+          },
+          "show_caption_above_media": {
+            "type": "boolean",
+            "description": "true shows the caption above the media."
+          },
+          "reply_markup": {
+            "type": "object",
+            "description": "New inline keyboard (or omit to keep the current one)."
+          }
+        },
+        "required": [
+          "chat_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/editMessageCaption",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "message_id": "$message_id",
+          "business_connection_id": "$business_connection_id",
+          "caption": "$caption",
+          "parse_mode": "$parse_mode",
+          "show_caption_above_media": "$show_caption_above_media",
+          "reply_markup": "$reply_markup"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_create_chat_invite_link",
+      "description": "Create an additional invite link for a group, supergroup or channel, optionally named, expiring, limited to a number of joins, or requiring admin approval. Returns the link (invite_link). The bot must be an administrator with the right to invite users. Anyone with the link can join, so confirm the limits with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id (numeric; groups and channels start with -100) or @channelusername."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Name of the link, up to 32 characters, shown to admins."
+          },
+          "expire_date": {
+            "type": "integer",
+            "description": "When the link expires, Unix time in seconds."
+          },
+          "member_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 99999,
+            "description": "How many users can join with the link, 1 to 99999. Not with creates_join_request."
+          },
+          "creates_join_request": {
+            "type": "boolean",
+            "description": "true makes users who open the link ask to join; an admin approves them."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/createChatInviteLink",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "name": "$name",
+          "expire_date": "$expire_date",
+          "member_limit": "$member_limit",
+          "creates_join_request": "$creates_join_request"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_create_sticker_set",
+      "description": "Create a new sticker set owned by a user, with 1 to 50 first stickers from existing image files. The set name must end in _by_<bot username> (telegram_bot_get_me gives the username) and the owner must have started the bot. Returns true; the set is then at t.me/addstickers/<name>. This only packages images you pass in; it generates nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "Telegram user id of the set owner."
+          },
+          "name": {
+            "type": "string",
+            "description": "Short name for t.me/addstickers/<name>: letters, digits and underscores, ending in _by_<bot username>, up to 64 characters."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Set title, up to 64 characters."
+          },
+          "stickers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "description": "InputSticker: {\"sticker\": \"<file_id or HTTPS URL of a .webp/.png image>\", \"format\": \"static\" | \"animated\" | \"video\", \"emoji_list\": [\"😀\"], \"keywords\": [\"smile\"]}. Animated (.tgs) and video (.webm) stickers cannot be passed by URL; use a file_id. Static images are 512 px on the longer side."
+            },
+            "description": "First stickers of the set, 1 to 50 InputSticker objects."
+          },
+          "sticker_type": {
+            "type": "string",
+            "enum": [
+              "regular",
+              "mask",
+              "custom_emoji"
+            ],
+            "description": "Type of the set; regular by default."
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "title",
+          "stickers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/createNewStickerSet",
+        "bodyMapping": {
+          "user_id": "$user_id",
+          "name": "$name",
+          "title": "$title",
+          "stickers": "$stickers",
+          "sticker_type": "$sticker_type"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_extend_sticker_set",
+      "description": "Add one sticker to a sticker set the bot created (telegram_bot_create_sticker_set). A set holds up to 120 stickers (200 for custom emoji). Returns true. Check the set first with telegram_bot_fetch_sticker_set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "Telegram user id of the set owner."
+          },
+          "name": {
+            "type": "string",
+            "description": "Short name of the set (ends in _by_<bot username>)."
+          },
+          "sticker": {
+            "type": "object",
+            "description": "InputSticker: {\"sticker\": \"<file_id or HTTPS URL of a .webp/.png image>\", \"format\": \"static\" | \"animated\" | \"video\", \"emoji_list\": [\"😀\"], \"keywords\": [\"smile\"]}. Animated (.tgs) and video (.webm) stickers cannot be passed by URL; use a file_id. Static images are 512 px on the longer side."
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "sticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addStickerToSet",
+        "bodyMapping": {
+          "user_id": "$user_id",
+          "name": "$name",
+          "sticker": "$sticker"
+        }
+      }
+    },
+    {
+      "name": "telegram_bot_get_webhook_info",
+      "description": "Show whether the bot has a webhook: its url (empty when none), pending_update_count, the last error date and message, and allowed_updates. While a webhook is set, telegram_bot_get_updates fails with 409 Conflict, because Telegram delivers updates either to the webhook or to getUpdates, never both. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getWebhookInfo",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "telegram_bot_remove_webhook",
+      "description": "Remove the bot's webhook so updates can be read with telegram_bot_get_updates again. Whatever service received the webhook (a chatbot, an automation) stops getting messages, so only do this when the user confirms that integration is no longer needed. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drop_pending_updates": {
+            "type": "boolean",
+            "description": "true also discards the updates waiting for delivery."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deleteWebhook",
+        "bodyMapping": {
+          "drop_pending_updates": "$drop_pending_updates"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
       }
     }
   ]
