@@ -21,6 +21,7 @@ import { ConnectorAuthStatusService } from '../connectors/engines/connector-auth
 import { WebhookEventsService } from '../connectors/webhook-events.service';
 import { BearerTokenRenewalService } from '../connectors/engines/bearer-token-renewal.service';
 import { ShopeeTokenService } from '../connectors/engines/shopee-token.service';
+import { TikTokShopTokenService } from '../connectors/engines/tiktok-shop-token.service';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { SettingsModule } from '../settings/settings.module';
 import { GraphqlSchemaService } from '../connectors/engines/graphql-schema.service';
@@ -42,7 +43,7 @@ const ENGINES = [
 @Module({
   imports: [McpServersModule, LicenseModule, SettingsModule, FileSearchCoreModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
-  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, GraphqlSchemaService, WebhookEventsService, ...ENGINES],
-  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, DynamicMcpTools, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, UserCredentialsService, WebhookEventsService],
+  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, TikTokShopTokenService, UserCredentialsService, GraphqlSchemaService, WebhookEventsService, ...ENGINES],
+  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, DynamicMcpTools, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, TikTokShopTokenService, UserCredentialsService, WebhookEventsService],
 })
 export class McpServerModule {}

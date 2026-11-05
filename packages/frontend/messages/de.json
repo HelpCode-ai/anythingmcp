@@ -1464,6 +1464,10 @@
       "title": "Shopee-Shop-Autorisierung",
       "body": "Melden Sie sich mit dem Shop-Konto an und genehmigen Sie diese App. Die Tokens werden verschlüsselt gespeichert und automatisch erneuert. Autorisieren Sie erneut, wenn die Autorisierung abläuft oder der Connector danach fragt."
     },
+    "tiktokShop": {
+      "title": "TikTok-Shop-Autorisierung",
+      "body": "Melden Sie sich im TikTok Shop Seller Center mit dem Inhaberkonto des Shops an und genehmigen Sie Ihre App. Die Redirect URL der App im Partner Center muss Ihre AnythingMCP-Adresse gefolgt von /api/tiktok-shop/callback sein. Die Tokens werden verschlüsselt gespeichert und automatisch erneuert; autorisieren Sie erneut, wenn die Autorisierung abläuft oder der Connector danach fragt."
+    },
     "env": {
       "title": "Umgebungsvariablen",
       "hint": "Verwenden Sie {variable} in URLs, Pfaden, Headern und Body-Feldern. Variablen werden zur Laufzeit eingesetzt.",
