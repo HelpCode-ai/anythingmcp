@@ -703,6 +703,19 @@ class UpdateEnvVarsDto {
  * inherits its owner's role, so without the scope check an admin's "read-only"
  * key would hand out every connector credential.
  */
+/**
+ * The caller's workspace for an export. Exports must never run without one:
+ * Prisma reads `organizationId: undefined` as "no filter", which on the
+ * multi-tenant Cloud would export every workspace.
+ */
+function requireOrganizationId(req: any): string {
+  const organizationId = req.user?.organizationId;
+  if (typeof organizationId !== 'string' || !organizationId) {
+    throw new ForbiddenException('No workspace selected');
+  }
+  return organizationId;
+}
+
 function mayExportSecrets(req: any): boolean {
   return req.user?.role === 'ADMIN' && req.mcpKeyScope !== 'MANAGEMENT_READ';
 }
@@ -1256,7 +1269,7 @@ export class ConnectorsController {
   })
   async exportAll(@Req() req: any) {
     const allConnectors = await this.prisma.connector.findMany({
-      where: { organizationId: req.user.organizationId },
+      where: { organizationId: requireOrganizationId(req) },
       include: { tools: true },
     });
     return toExportEnvelope(allConnectors, mayExportSecrets(req));
@@ -1283,14 +1296,15 @@ export class ConnectorsController {
     if (!EXPORT_FORMATS.includes(fmt)) {
       throw new BadRequestException('format must be "json" or "yaml"');
     }
+    // Scoped in the query itself: a connector of another workspace is simply
+    // not found, so its existence is not revealed either.
     const connector = await this.prisma.connector.findFirst({
-      where: { id },
+      where: { id, organizationId: requireOrganizationId(req) },
       include: { tools: true },
     });
     if (!connector) {
       throw new NotFoundException('Connector not found');
     }
-    this.assertOrgMatch(connector, req);
 
     const secretsIncluded = mayExportSecrets(req);
     const data = toExportEnvelope([connector], secretsIncluded);
