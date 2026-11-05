@@ -43,6 +43,7 @@ type Tool = {
   endpointMapping: {
     method: string;
     path: string;
+    headers?: Record<string, string>;
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
   };
@@ -179,7 +180,11 @@ describe('mercado-libre adapter: static spec conformance', () => {
       expect(annotationsOf(tool(name)).readOnlyHint).toBe(false);
       expect(`${name}:${/confirm/i.test(tool(name).description)}`).toBe(`${name}:true`);
     }
-    expect(a.tools.filter((t) => t.enabled === false).map((t) => t.name)).toEqual(['mercado_libre_close_listing']);
+    expect(a.tools.filter((t) => t.enabled === false).map((t) => t.name)).toEqual([
+      'mercado_libre_close_listing',
+      'mercado_libre_post_answer',
+      'mercado_libre_remove_item_from_promotion',
+    ]);
     expect(annotationsOf(tool('mercado_libre_close_listing')).destructiveHint).toBe(true);
     expect(annotationsOf(tool('mercado_libre_set_listing_status')).destructiveHint).toBe(false);
   });
@@ -278,6 +283,101 @@ describe('mercado-libre adapter: static spec conformance', () => {
     mockedAxios.mockResolvedValue({ data: {} });
     await call('mercado_libre_predict_category', { site_id: 'MLA', q: 'fiat uno', limit: 3 });
     expect(sent().params).toEqual({ q: 'fiat uno', limit: 3 });
+  });
+});
+
+const SELLER_TOOLS: Array<[string, Record<string, unknown>, string, string]> = [
+  ['mercado_libre_get_items', { ids: 'MLB1,MLB2', attributes: 'id,price' }, 'GET', '/items'],
+  ['mercado_libre_get_order', { order_id: '2000001' }, 'GET', '/orders/2000001'],
+  ['mercado_libre_get_shipment_costs', { shipment_id: '4000001' }, 'GET', '/shipments/4000001/costs'],
+  ['mercado_libre_get_free_shipping_cost', { user_id: '123', item_id: 'MLB1' }, 'GET', '/users/123/shipping_options/free'],
+  ['mercado_libre_get_listing_prices', { site_id: 'MLB', price: 100 }, 'GET', '/sites/MLB/listing_prices'],
+  ['mercado_libre_get_item_visits', { ids: 'MLB1', date_from: '2026-10-01', date_to: '2026-10-31' }, 'GET', '/items/visits'],
+  ['mercado_libre_get_item_visits_by_day', { item_id: 'MLB1', last: 30 }, 'GET', '/items/MLB1/visits/time_window'],
+  ['mercado_libre_get_product', { product_id: 'MLB123' }, 'GET', '/products/MLB123'],
+  ['mercado_libre_list_product_items', { product_id: 'MLB123' }, 'GET', '/products/MLB123/items'],
+  ['mercado_libre_get_item_price_to_win', { item_id: 'MLB1' }, 'GET', '/items/MLB1/price_to_win'],
+  ['mercado_libre_get_category_trends', { site_id: 'MLB', category_id: 'MLB1055' }, 'GET', '/trends/MLB/MLB1055'],
+  ['mercado_libre_search_questions', { seller_id: '123', status: 'UNANSWERED' }, 'GET', '/questions/search'],
+  ['mercado_libre_post_answer', { question_id: 1, text: 'Sim.' }, 'POST', '/answers'],
+  ['mercado_libre_list_seller_promotions', { user_id: '123' }, 'GET', '/seller-promotions/users/123'],
+  ['mercado_libre_get_promotion', { promotion_id: 'P-MLB1', promotion_type: 'DEAL' }, 'GET', '/seller-promotions/promotions/P-MLB1'],
+  ['mercado_libre_list_promotion_items', { promotion_id: 'P-MLB1', promotion_type: 'DEAL' }, 'GET', '/seller-promotions/promotions/P-MLB1/items'],
+  ['mercado_libre_get_item_promotions', { item_id: 'MLB1' }, 'GET', '/seller-promotions/items/MLB1'],
+  ['mercado_libre_add_item_to_promotion', { item_id: 'MLB1', promotion_id: 'P-MLB1', promotion_type: 'DEAL', deal_price: 90 }, 'POST', '/seller-promotions/items/MLB1'],
+  ['mercado_libre_remove_item_from_promotion', { item_id: 'MLB1', promotion_type: 'DEAL', promotion_id: 'P-MLB1' }, 'DELETE', '/seller-promotions/items/MLB1'],
+  ['mercado_libre_list_advertisers', {}, 'GET', '/advertising/advertisers'],
+  ['mercado_libre_search_ad_campaigns', { site_id: 'MLB', advertiser_id: '99' }, 'GET', '/advertising/MLB/advertisers/99/product_ads/campaigns/search'],
+  ['mercado_libre_get_ad_campaign', { site_id: 'MLB', campaign_id: '77' }, 'GET', '/advertising/MLB/product_ads/campaigns/77'],
+  ['mercado_libre_search_product_ads', { site_id: 'MLB', advertiser_id: '99' }, 'GET', '/advertising/MLB/advertisers/99/product_ads/ads/search'],
+  ['mercado_libre_search_ad_groups', { site_id: 'MLB', advertiser_id: '99' }, 'GET', '/advertising/MLB/advertisers/99/product_ads/ad_groups/search'],
+];
+
+describe('mercado-libre adapter: orders, competition, questions, promotions and Product Ads', () => {
+  beforeEach(() => mockedAxios.mockReset());
+
+  it.each(SELLER_TOOLS)('%s sends %s to the right URL', async (name, params, method, path) => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call(name, params);
+    expect(sent()).toEqual(expect.objectContaining({ method, url: `${BASE}${path}` }));
+  });
+
+  it('marks every new GET read-only and every new write as one to confirm', () => {
+    for (const [name, , method] of SELLER_TOOLS) {
+      const ro = annotationsOf(tool(name)).readOnlyHint;
+      if (method === 'GET') {
+        expect(`${name}:${ro}`).toBe(`${name}:true`);
+      } else {
+        expect(`${name}:${ro}`).toBe(`${name}:false`);
+        expect(`${name}:${/confirm/i.test(tool(name).description)}`).toBe(`${name}:true`);
+      }
+    }
+  });
+
+  it('only points the model at tools that exist, and writes no em dashes, in the new tools', () => {
+    const names = new Set(a.tools.map((t) => t.name));
+    for (const [name] of SELLER_TOOLS) {
+      const text = JSON.stringify(tool(name));
+      for (const m of text.matchAll(/\bmercado_libre_[a-z_]+/g)) expect(names).toContain(m[0]);
+      expect(text).not.toMatch(/[–—]/);
+    }
+  });
+
+  it('sends app_version v2 on every seller-promotions call', async () => {
+    for (const [name, params] of SELLER_TOOLS.filter(([, , , p]) => p.startsWith('/seller-promotions'))) {
+      mockedAxios.mockReset();
+      mockedAxios.mockResolvedValue({ data: {} });
+      await call(name, params);
+      expect(`${name}:${sent().params?.app_version}`).toBe(`${name}:v2`);
+    }
+  });
+
+  it('joins a promotion with the promotion type and price in the body', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('mercado_libre_add_item_to_promotion', {
+      item_id: 'MLB1',
+      promotion_id: 'C-MLB302',
+      promotion_type: 'SELLER_CAMPAIGN',
+      deal_price: 3500,
+    });
+    expect(sent().data).toEqual({ promotion_id: 'C-MLB302', promotion_type: 'SELLER_CAMPAIGN', deal_price: 3500 });
+  });
+
+  it('asks Product Ads for api-version 2 and filters with filters[...] keys', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('mercado_libre_search_product_ads', { site_id: 'MLB', advertiser_id: '99', item_id: 'MLB1' });
+    expect(sent().headers).toEqual(expect.objectContaining({ 'api-version': '2' }));
+    expect(sent().params).toEqual({ 'filters[item_id]': 'MLB1' });
+    mockedAxios.mockReset();
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('mercado_libre_list_advertisers', {});
+    expect(sent().params).toEqual({ product_id: 'PADS' });
+  });
+
+  it('reads questions in the api_version 4 format', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('mercado_libre_search_questions', { seller_id: '123', status: 'UNANSWERED' });
+    expect(sent().params).toEqual({ seller_id: '123', status: 'UNANSWERED', api_version: '4' });
   });
 });
 
