@@ -1,0 +1,1122 @@
+{
+  "slug": "loja-integrada",
+  "name": "Loja Integrada",
+  "description": "Run a Loja Integrada store from your AI: search products, update stock and prices, create products, categories and brands, follow orders, change order statuses, add tracking codes and look up customers. Official API v1.",
+  "instructions": "## Loja Integrada\nThis connector works with a **Loja Integrada** store through the official API v1 (`https://api.awsli.com.br/v1`): products, stock, prices, categories, brands, variation grids, orders and their statuses and tracking codes, payment methods and customers.\n\n**Setup**\n1. In the store panel open **Configuracoes, Chave para API**, click **Cadastrar nova chave** and copy the 20-character key into `LOJA_INTEGRADA_API_KEY`. API keys are available on paid plans only.\n2. Put the application key (chave de aplicacao) into `LOJA_INTEGRADA_APP_KEY`. Integrators request it from Loja Integrada with the partner form (5 to 10 business days) and must list the IP addresses that will call the API: the application key only works from those addresses, so register the outbound IP addresses this server shows on the setup page.\n3. Check the setup with `loja_integrada_list_order_statuses`.\n\n**Authentication**: every call sends `Authorization: chave_api <API key> aplicacao <application key>`. The Personal Token login (`Authorization: Basic ...`) is not used by this connector.\n\n**Identifiers**: products, categories, brands and customers have numeric ids (`202591789`). Orders are addressed by their number (`numero`, e.g. `164`). Links between records are URIs such as `/api/v1/categoria/15246059` (the `resource_uri` field); pass them as they are in `categorias`, `marca` and `pai`. With `id_externo` 1 a product or price is looked up by your own external id.\n\n**Pagination and limits**: lists answer `{meta, objects}` with 20 items by default; pass `limit` (at most 50) and `offset`, and stop when `meta.next` is null. `meta.total_count` is the total. The API allows 100 requests per minute per store and answers 429 above that; page instead of polling.\n\n**Common workflows**\n- Stock and prices: `loja_integrada_list_products` (by `sku`), then `loja_integrada_get_stock` / `loja_integrada_update_stock` and `loja_integrada_get_price` / `loja_integrada_update_price`. `loja_integrada_list_stock` and `loja_integrada_list_prices` cover the whole catalog.\n- New product: `loja_integrada_list_categories`, `loja_integrada_list_brands` (or `loja_integrada_create_category`, `loja_integrada_create_brand`), then `loja_integrada_create_product`, then price and stock. Variations: create the parent with tipo `atributo`, then each variation with tipo `atributo_opcao` and `pai`; `loja_integrada_list_grids` and `loja_integrada_get_grid` show the grid values. Edit with `loja_integrada_get_product` then `loja_integrada_update_product`, sending every field again.\n- Orders: `loja_integrada_list_order_statuses` and `loja_integrada_list_payment_methods` for ids, `loja_integrada_search_orders`, `loja_integrada_get_order`, then `loja_integrada_update_order_status` and `loja_integrada_update_tracking_code` (with the shipment id from the order). `loja_integrada_get_order_status_history` shows when the status changed.\n- Customers: `loja_integrada_list_customers`, `loja_integrada_search_customers` (by e-mail), `loja_integrada_get_customer`.\n\n**Confirm before writing**: price changes, status changes (the buyer may be notified, a cancellation is final) and product updates change the live store. Nothing here deletes data.\n\n**Limitations**: no deletes, no product images, coupons, SEO, webhooks, invoices (NF), marketing or Enviali shipping labels, and no creation of orders.",
+  "region": "br",
+  "category": "e-commerce",
+  "icon": "loja-integrada",
+  "docsUrl": "https://api-docs.lojaintegrada.com.br/",
+  "requiredEnvVars": [
+    "LOJA_INTEGRADA_API_KEY",
+    "LOJA_INTEGRADA_APP_KEY"
+  ],
+  "envVarMeta": {
+    "LOJA_INTEGRADA_API_KEY": {
+      "label": "Chave de API",
+      "kind": "credential",
+      "secret": true,
+      "help": "Store panel, Configuracoes, Chave para API, Cadastrar nova chave. A 20-character key; paid plans only.",
+      "link": "https://ajuda.lojaintegrada.com.br/pt-BR/articles/931152-como-gerar-a-chave-api-da-minha-loja",
+      "pattern": "^[A-Za-z0-9]{16,40}$",
+      "patternMessage": "Paste only the API key (about 20 letters and digits), without 'chave_api'."
+    },
+    "LOJA_INTEGRADA_APP_KEY": {
+      "label": "Chave de aplicacao",
+      "kind": "credential",
+      "secret": true,
+      "help": "The application key Loja Integrada issues to the integration (a UUID such as dc6049f0-1234-...). It only works from the IP addresses registered with it.",
+      "link": "https://ajuda.lojaintegrada.com.br/pt-BR/articles/5360466-como-obter-a-chave-de-aplicacao-para-integrar-com-a-loja-integrada",
+      "pattern": "^[A-Za-z0-9-]{16,64}$",
+      "patternMessage": "Paste only the application key, without 'aplicacao'."
+    }
+  },
+  "requiresIpAllowlist": true,
+  "verifyHints": {
+    "401": "Loja Integrada refused the keys. Check LOJA_INTEGRADA_API_KEY (Configuracoes, Chave para API) and LOJA_INTEGRADA_APP_KEY, and that the application key is registered for this server's outbound IP addresses.",
+    "403": "The keys were read but access was denied. The application key only works from the IP addresses registered with Loja Integrada: add this server's outbound IP addresses to it.",
+    "429": "Loja Integrada allows 100 requests per minute per store. Wait a minute and page with limit and offset instead of repeating calls."
+  },
+  "probe": {
+    "tool": "loja_integrada_list_order_statuses"
+  },
+  "connector": {
+    "name": "Loja Integrada API v1",
+    "type": "REST",
+    "baseUrl": "https://api.awsli.com.br/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "chave_api {{LOJA_INTEGRADA_API_KEY}} aplicacao {{LOJA_INTEGRADA_APP_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "loja_integrada_list_products",
+      "description": "List the store's products, 20 per page: id, sku, nome, tipo (normal, atributo = parent with variations, atributo_opcao = variation), ativo, removido, categorias, grades, apelido, url, id_externo and resource_uri, under objects with paging in meta. Filter by SKU, active flag, removed flag or created/modified date. Prices and stock are not in this list: use loja_integrada_get_price and loja_integrada_get_stock. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Only the product with this SKU."
+          },
+          "ativo": {
+            "type": "boolean",
+            "description": "true: only active products; false: only inactive ones."
+          },
+          "removido": {
+            "type": "boolean",
+            "description": "true: only removed products; false: hide removed ones."
+          },
+          "modified_since": {
+            "type": "string",
+            "description": "Only products modified on or after this date, YYYY-MM-DD or YYYY-MM-DD HH:MM:SS."
+          },
+          "modified_until": {
+            "type": "string",
+            "description": "Only products modified on or before this date, same format."
+          },
+          "created_since": {
+            "type": "string",
+            "description": "Only products created on or after this date, same format."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items per page (default 20, at most 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item: 0, then 20, 40 ... (meta.next shows the next offset; it is null on the last page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/produto/",
+        "queryParams": {
+          "sku": "$sku",
+          "ativo": "$ativo",
+          "removido": "$removido",
+          "data_modificacao__gte": "$modified_since",
+          "data_modificacao__lte": "$modified_until",
+          "data_criacao__gte": "$created_since",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_get_product",
+      "description": "Read one product by its Loja Integrada id (or by your id_externo): name, SKU, type, active and featured flags, categories, brand, dimensions and weight, NCM, GTIN, images, grades, parent (pai) for a variation, SEO link, and, when asked, the full HTML description. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "produto_id": {
+            "type": "string",
+            "description": "Product id, e.g. 202591789 (id from loja_integrada_list_products)."
+          },
+          "id_externo": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Send 1 when the id in the path is your own id_externo instead of the Loja Integrada id; leave out otherwise."
+          },
+          "descricao_completa": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Send 1 to include the full HTML description."
+          }
+        },
+        "required": [
+          "produto_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/produto/{produto_id}",
+        "queryParams": {
+          "id_externo": "$id_externo",
+          "descricao_completa": "$descricao_completa"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_create_product",
+      "description": "Create a product. tipo normal is a simple product; atributo creates a parent for variations, and each variation is then created with tipo atributo_opcao and pai set to the parent's URI. Price and stock are set afterwards with loja_integrada_update_price and loja_integrada_update_stock. Returns the new product with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nome": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU, unique in the store."
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "atributo",
+              "atributo_opcao"
+            ],
+            "description": "normal = simple product; atributo = parent with variations; atributo_opcao = variation (child) of a parent, which then needs pai."
+          },
+          "pai": {
+            "type": "string",
+            "description": "For tipo atributo_opcao: URI of the parent product, e.g. /api/v1/produto/202591789."
+          },
+          "apelido": {
+            "type": "string",
+            "description": "URL slug of the product page, e.g. camiseta-azul."
+          },
+          "descricao_completa": {
+            "type": "string",
+            "description": "Full description, HTML allowed."
+          },
+          "ativo": {
+            "type": "boolean",
+            "description": "Whether the product is visible in the store."
+          },
+          "destaque": {
+            "type": "boolean",
+            "description": "Whether the product is featured."
+          },
+          "usado": {
+            "type": "boolean",
+            "description": "Whether the product is used (second hand)."
+          },
+          "removido": {
+            "type": "boolean",
+            "description": "true moves the product to the store's removed products."
+          },
+          "categorias": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category URIs, e.g. [\"/api/v1/categoria/15246059\"] (resource_uri from loja_integrada_list_categories)."
+          },
+          "marca": {
+            "type": "string",
+            "description": "Brand URI, e.g. /api/v1/marca/123456 (resource_uri from loja_integrada_list_brands)."
+          },
+          "peso": {
+            "type": "number",
+            "description": "Weight in kg, e.g. 0.35."
+          },
+          "altura": {
+            "type": "integer",
+            "description": "Height in cm."
+          },
+          "largura": {
+            "type": "integer",
+            "description": "Width in cm."
+          },
+          "profundidade": {
+            "type": "integer",
+            "description": "Depth in cm."
+          },
+          "ncm": {
+            "type": "string",
+            "description": "NCM tax code (8 digits)."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "GTIN / EAN barcode."
+          },
+          "mpn": {
+            "type": "string",
+            "description": "Manufacturer part number."
+          },
+          "id_externo": {
+            "type": "integer",
+            "description": "Your own id for the product in another system. If the product has one, its categories need one too."
+          }
+        },
+        "required": [
+          "nome",
+          "sku",
+          "tipo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/produto/",
+        "bodyMapping": {
+          "nome": "$nome",
+          "sku": "$sku",
+          "tipo": "$tipo",
+          "pai": "$pai",
+          "apelido": "$apelido",
+          "descricao_completa": "$descricao_completa",
+          "ativo": "$ativo",
+          "destaque": "$destaque",
+          "usado": "$usado",
+          "removido": "$removido",
+          "categorias": "$categorias",
+          "marca": "$marca",
+          "peso": "$peso",
+          "altura": "$altura",
+          "largura": "$largura",
+          "profundidade": "$profundidade",
+          "ncm": "$ncm",
+          "gtin": "$gtin",
+          "mpn": "$mpn",
+          "id_externo": "$id_externo"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_update_product",
+      "description": "Update a product. Loja Integrada replaces the product with what is sent, so first read it with loja_integrada_get_product and send every field again with your changes (fields left out may be cleared). Price and stock are not changed here. Returns the updated product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "produto_id": {
+            "type": "string",
+            "description": "Product id (or your id_externo with id_externo_lookup 1)."
+          },
+          "id_externo_lookup": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Send 1 when produto_id is your id_externo."
+          },
+          "nome": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU, unique in the store."
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "atributo",
+              "atributo_opcao"
+            ],
+            "description": "normal = simple product; atributo = parent with variations; atributo_opcao = variation (child) of a parent, which then needs pai."
+          },
+          "pai": {
+            "type": "string",
+            "description": "For tipo atributo_opcao: URI of the parent product, e.g. /api/v1/produto/202591789."
+          },
+          "apelido": {
+            "type": "string",
+            "description": "URL slug of the product page, e.g. camiseta-azul."
+          },
+          "descricao_completa": {
+            "type": "string",
+            "description": "Full description, HTML allowed."
+          },
+          "ativo": {
+            "type": "boolean",
+            "description": "Whether the product is visible in the store."
+          },
+          "destaque": {
+            "type": "boolean",
+            "description": "Whether the product is featured."
+          },
+          "usado": {
+            "type": "boolean",
+            "description": "Whether the product is used (second hand)."
+          },
+          "removido": {
+            "type": "boolean",
+            "description": "true moves the product to the store's removed products."
+          },
+          "categorias": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category URIs, e.g. [\"/api/v1/categoria/15246059\"] (resource_uri from loja_integrada_list_categories)."
+          },
+          "marca": {
+            "type": "string",
+            "description": "Brand URI, e.g. /api/v1/marca/123456 (resource_uri from loja_integrada_list_brands)."
+          },
+          "peso": {
+            "type": "number",
+            "description": "Weight in kg, e.g. 0.35."
+          },
+          "altura": {
+            "type": "integer",
+            "description": "Height in cm."
+          },
+          "largura": {
+            "type": "integer",
+            "description": "Width in cm."
+          },
+          "profundidade": {
+            "type": "integer",
+            "description": "Depth in cm."
+          },
+          "ncm": {
+            "type": "string",
+            "description": "NCM tax code (8 digits)."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "GTIN / EAN barcode."
+          },
+          "mpn": {
+            "type": "string",
+            "description": "Manufacturer part number."
+          },
+          "id_externo": {
+            "type": "integer",
+            "description": "Your own id for the product in another system. If the product has one, its categories need one too."
+          }
+        },
+        "required": [
+          "produto_id",
+          "nome",
+          "sku",
+          "tipo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/produto/{produto_id}",
+        "queryParams": {
+          "id_externo": "$id_externo_lookup"
+        },
+        "bodyMapping": {
+          "nome": "$nome",
+          "sku": "$sku",
+          "tipo": "$tipo",
+          "pai": "$pai",
+          "apelido": "$apelido",
+          "descricao_completa": "$descricao_completa",
+          "ativo": "$ativo",
+          "destaque": "$destaque",
+          "usado": "$usado",
+          "removido": "$removido",
+          "categorias": "$categorias",
+          "marca": "$marca",
+          "peso": "$peso",
+          "altura": "$altura",
+          "largura": "$largura",
+          "profundidade": "$profundidade",
+          "ncm": "$ncm",
+          "gtin": "$gtin",
+          "mpn": "$mpn",
+          "id_externo": "$id_externo"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_list_stock",
+      "description": "List the stock records of all products, 20 per page: produto URI, quantidade (quantity), quantidade_reservada (reserved by orders), quantidade_disponivel, gerenciado (whether stock is tracked) and the availability (situacao) shown with and without stock. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items per page (default 20, at most 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item: 0, then 20, 40 ... (meta.next shows the next offset; it is null on the last page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/produto_estoque/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_get_stock",
+      "description": "Read the stock of one product or variation: quantity, reserved and available quantity, whether stock is managed, and the availability situations used with and without stock. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "produto_id": {
+            "type": "string",
+            "description": "Product or variation id."
+          }
+        },
+        "required": [
+          "produto_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/produto_estoque/{produto_id}"
+      }
+    },
+    {
+      "name": "loja_integrada_update_stock",
+      "description": "Set the stock of one product or variation: quantidade (absolute quantity, not a delta), gerenciado (track stock) and the availability ids shown with and without stock. For a product with variations, set the stock on each variation. Returns the updated stock record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "produto_id": {
+            "type": "string",
+            "description": "Product or variation id."
+          },
+          "quantidade": {
+            "type": "integer",
+            "description": "New quantity in stock (absolute value)."
+          },
+          "gerenciado": {
+            "type": "boolean",
+            "description": "true: Loja Integrada tracks the quantity and stops selling at zero, depending on the situations."
+          },
+          "situacao_em_estoque": {
+            "type": "integer",
+            "description": "Availability id shown while in stock (0 = available now)."
+          },
+          "situacao_sem_estoque": {
+            "type": "integer",
+            "description": "Availability id shown when out of stock (for example -1 = unavailable)."
+          }
+        },
+        "required": [
+          "produto_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/produto_estoque/{produto_id}",
+        "bodyMapping": {
+          "quantidade": "$quantidade",
+          "gerenciado": "$gerenciado",
+          "situacao_em_estoque": "$situacao_em_estoque",
+          "situacao_sem_estoque": "$situacao_sem_estoque"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_list_prices",
+      "description": "List the prices of all products, 20 per page: produto URI, cheio (list price), promocional (sale price), custo (cost) and sob_consulta (price on request). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items per page (default 20, at most 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item: 0, then 20, 40 ... (meta.next shows the next offset; it is null on the last page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/produto_preco/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_get_price",
+      "description": "Read the prices of one product or variation: cheio (list price), promocional (sale price, null when none), custo (cost) and sob_consulta. Amounts come as strings such as \"32.83\" in BRL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "produto_id": {
+            "type": "string",
+            "description": "Product or variation id (or your id_externo with id_externo 1)."
+          },
+          "id_externo": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Send 1 when the id in the path is your own id_externo instead of the Loja Integrada id; leave out otherwise."
+          }
+        },
+        "required": [
+          "produto_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/produto_preco/{produto_id}",
+        "queryParams": {
+          "id_externo": "$id_externo"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_update_price",
+      "description": "Change the prices of one product or variation: cheio (list price), promocional (sale price; send 0 or null to remove it), custo (cost) and sob_consulta (show 'price on request' instead of a price). Prices are in BRL. Confirm new prices with the user before calling. Returns the updated price record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "produto_id": {
+            "type": "string",
+            "description": "Product or variation id (or your id_externo with id_externo 1)."
+          },
+          "id_externo": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Send 1 when the id in the path is your own id_externo instead of the Loja Integrada id; leave out otherwise."
+          },
+          "cheio": {
+            "type": "number",
+            "description": "List price in BRL, e.g. 129.90."
+          },
+          "promocional": {
+            "type": "number",
+            "description": "Sale price in BRL, lower than cheio."
+          },
+          "custo": {
+            "type": "number",
+            "description": "Cost price in BRL."
+          },
+          "sob_consulta": {
+            "type": "boolean",
+            "description": "true: show 'price on request'."
+          }
+        },
+        "required": [
+          "produto_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/produto_preco/{produto_id}",
+        "queryParams": {
+          "id_externo": "$id_externo"
+        },
+        "bodyMapping": {
+          "cheio": "$cheio",
+          "promocional": "$promocional",
+          "custo": "$custo",
+          "sob_consulta": "$sob_consulta"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_list_categories",
+      "description": "List the store's categories: id, nome, descricao, categoria_pai (parent URI), id_externo, url and resource_uri. Use resource_uri in a product's categorias. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items per page (default 20, at most 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item: 0, then 20, 40 ... (meta.next shows the next offset; it is null on the last page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categoria/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_create_category",
+      "description": "Create a category, optionally below a parent category. Returns the new category with its id and resource_uri.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nome": {
+            "type": "string",
+            "description": "Category name."
+          },
+          "descricao": {
+            "type": "string",
+            "description": "Description."
+          },
+          "categoria_pai": {
+            "type": "string",
+            "description": "Parent category URI, e.g. /api/v1/categoria/7645875."
+          },
+          "id_externo": {
+            "type": "integer",
+            "description": "Your own id for the category."
+          }
+        },
+        "required": [
+          "nome"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/categoria/",
+        "bodyMapping": {
+          "nome": "$nome",
+          "descricao": "$descricao",
+          "categoria_pai": "$categoria_pai",
+          "id_externo": "$id_externo"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_list_brands",
+      "description": "List the store's brands: id, nome, apelido, descricao, id_externo and resource_uri. Use resource_uri as a product's marca. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items per page (default 20, at most 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item: 0, then 20, 40 ... (meta.next shows the next offset; it is null on the last page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/marca/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_create_brand",
+      "description": "Create a brand. Returns the new brand with its id and resource_uri.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nome": {
+            "type": "string",
+            "description": "Brand name."
+          },
+          "apelido": {
+            "type": "string",
+            "description": "URL slug, e.g. marca-nova."
+          },
+          "descricao": {
+            "type": "string",
+            "description": "Description."
+          },
+          "id_externo": {
+            "type": "integer",
+            "description": "Your own id for the brand."
+          }
+        },
+        "required": [
+          "nome"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/marca/",
+        "bodyMapping": {
+          "nome": "$nome",
+          "apelido": "$apelido",
+          "descricao": "$descricao",
+          "id_externo": "$id_externo"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_list_grids",
+      "description": "List the variation grids (grades, e.g. Tamanho, Cor) of the store, including the system's default grids: id, nome, nome_visivel and resource_uri. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items per page (default 20, at most 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item: 0, then 20, 40 ... (meta.next shows the next offset; it is null on the last page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/grades/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_get_grid",
+      "description": "Read one variation grid with its variations (values such as P, M, G or Azul), each with id and nome. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "grade_id": {
+            "type": "string",
+            "description": "Grid id from loja_integrada_list_grids."
+          }
+        },
+        "required": [
+          "grade_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/grades/{grade_id}"
+      }
+    },
+    {
+      "name": "loja_integrada_search_orders",
+      "description": "Search orders, 20 per page (at most 50): numero (order number), situacao (status with codigo and nome), cliente URI, valor_total, created/modified/expiry dates and resource_uri. Filter by status id, payment method id, customer id, order number from, and created or updated date. Read details with loja_integrada_get_order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "situacao_id": {
+            "type": "integer",
+            "description": "Only orders in this status (numeric id from loja_integrada_list_order_statuses)."
+          },
+          "pagamento_id": {
+            "type": "integer",
+            "description": "Only orders paid with this payment method (id from loja_integrada_list_payment_methods)."
+          },
+          "cliente_id": {
+            "type": "integer",
+            "description": "Only orders of this customer."
+          },
+          "since_numero": {
+            "type": "integer",
+            "description": "Only orders with a number equal to or greater than this."
+          },
+          "since_criado": {
+            "type": "string",
+            "description": "Only orders created from this moment, YYYY-MM-DDTHH:MM:SS (time optional)."
+          },
+          "until_criado": {
+            "type": "string",
+            "description": "Only orders created before this moment, same format."
+          },
+          "since_atualizado": {
+            "type": "string",
+            "description": "Only orders updated from this moment, same format."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items per page (default 20, at most 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item: 0, then 20, 40 ... (meta.next shows the next offset; it is null on the last page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pedido/search/",
+        "queryParams": {
+          "situacao_id": "$situacao_id",
+          "pagamento_id": "$pagamento_id",
+          "cliente_id": "$cliente_id",
+          "since_numero": "$since_numero",
+          "since_criado": "$since_criado",
+          "until_criado": "$until_criado",
+          "since_atualizado": "$since_atualizado",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_get_order",
+      "description": "Read one order by its number: customer, billing and delivery address, items (itens with SKU, quantity and prices), payments, shipments (envios with id, shipping method, tracking objeto, price and deadline), status, coupon, totals and dates. The shipment id (envios[].id) is what loja_integrada_update_tracking_code needs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "numero": {
+            "type": "integer",
+            "description": "Order number, e.g. 164."
+          }
+        },
+        "required": [
+          "numero"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pedido/{numero}"
+      }
+    },
+    {
+      "name": "loja_integrada_list_order_statuses",
+      "description": "List the order statuses of the store: id, codigo (e.g. aguardando_pagamento, pedido_pago, pedido_enviado, pedido_entregue, pedido_cancelado), nome, and the aprovado, cancelado and final flags. Use codigo with loja_integrada_update_order_status and id with loja_integrada_search_orders. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/situacao/"
+      }
+    },
+    {
+      "name": "loja_integrada_update_order_status",
+      "description": "Move an order to another status by its codigo, for example pedido_pago, pedido_em_separacao, faturado, pedido_enviado, pronto_para_retirada, pedido_entregue or pedido_cancelado. Loja Integrada may e-mail the buyer and a final status (such as cancelled) cannot be undone, so confirm with the user first. Returns the new status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "numero": {
+            "type": "integer",
+            "description": "Order number."
+          },
+          "codigo": {
+            "type": "string",
+            "description": "Target status codigo from loja_integrada_list_order_statuses."
+          }
+        },
+        "required": [
+          "numero",
+          "codigo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/situacao/pedido/{numero}",
+        "bodyMapping": {
+          "codigo": "$codigo"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_get_order_status_history",
+      "description": "Read the status history of one order: each change with its date, the new and previous status and who changed it (alterado_por_nome), by order number or by your id_externo. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "numero": {
+            "type": "integer",
+            "description": "Order number."
+          },
+          "id_externo": {
+            "type": "integer",
+            "description": "Your own id for the order, instead of numero."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/situacao_historico/search/",
+        "queryParams": {
+          "numero": "$numero",
+          "id_externo": "$id_externo"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_update_tracking_code",
+      "description": "Set the tracking code of one shipment of an order. Use the shipment id from loja_integrada_get_order (envios[].id), not the order number. Returns the updated shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pedido_envio_id": {
+            "type": "integer",
+            "description": "Shipment id, envios[].id of the order (e.g. 69291055)."
+          },
+          "objeto": {
+            "type": "string",
+            "description": "Tracking code, e.g. AA123456789BR."
+          }
+        },
+        "required": [
+          "pedido_envio_id",
+          "objeto"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/pedido_envio/{pedido_envio_id}",
+        "bodyMapping": {
+          "objeto": "$objeto"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_list_payment_methods",
+      "description": "List the payment methods of the store: id, nome, codigo and configuracoes (ativo, disponivel). Use the id to filter loja_integrada_search_orders by payment method. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pagamento/"
+      }
+    },
+    {
+      "name": "loja_integrada_list_customers",
+      "description": "List customers, 20 per page: id, nome, email, cpf or cnpj, phone numbers, sexo, data_nascimento, group and dates. Sort by modification date. Use loja_integrada_search_customers to find one by e-mail. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "data_modificacao",
+              "-data_modificacao"
+            ],
+            "description": "Sort by modification date, oldest (data_modificacao) or newest (-data_modificacao) first."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items per page (default 20, at most 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item: 0, then 20, 40 ... (meta.next shows the next offset; it is null on the last page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cliente/",
+        "queryParams": {
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_search_customers",
+      "description": "Search customers by e-mail and/or a created or updated date window; date-filtered results come newest modification first. Returns the matching customers with id, nome, email, cpf/cnpj and phones. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cliente_email": {
+            "type": "string",
+            "description": "Exact customer e-mail."
+          },
+          "since_criado": {
+            "type": "string",
+            "description": "Created from this date, YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS."
+          },
+          "until_criado": {
+            "type": "string",
+            "description": "Created until this date, same format."
+          },
+          "since_atualizado": {
+            "type": "string",
+            "description": "Updated from this date, same format."
+          },
+          "until_atualizado": {
+            "type": "string",
+            "description": "Updated until this date, same format."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Items per page (default 20, at most 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position of the first item: 0, then 20, 40 ... (meta.next shows the next offset; it is null on the last page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cliente/search/",
+        "queryParams": {
+          "cliente_email": "$cliente_email",
+          "since_criado": "$since_criado",
+          "until_criado": "$until_criado",
+          "since_atualizado": "$since_atualizado",
+          "until_atualizado": "$until_atualizado",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "loja_integrada_get_customer",
+      "description": "Read one customer by id: name, e-mail, CPF or CNPJ, company name, phones, birth date, group and addresses (enderecos). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cliente_id": {
+            "type": "string",
+            "description": "Customer id, e.g. 34220641 (also the number at the end of an order's cliente URI)."
+          }
+        },
+        "required": [
+          "cliente_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cliente/{cliente_id}"
+      }
+    }
+  ]
+}
