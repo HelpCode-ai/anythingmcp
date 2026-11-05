@@ -263,6 +263,33 @@ test('bad key is rejected without writing a profile or printing the key', async 
   }
 });
 
+test('MCP login tells a rejected key (401) from a key not allowed on the server (403)', async () => {
+  for (const status of [401, 403]) {
+    const server = createServer((_req, res) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'private server detail' }));
+    });
+    server.listen(0, '127.0.0.1');
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Missing address');
+      const directory = await mkdtemp(join(tmpdir(), 'amcp-cli-status-'));
+      const env = { ...process.env, XDG_CONFIG_HOME: directory, AMCP_API_KEY: 'mcp_status-secret' };
+      await assert.rejects(execFileAsync(process.execPath, [join(__dirname, 'index.js'), 'login', '--url',
+        `http://127.0.0.1:${address.port}`, '--server', 'test'], { env }), (error: unknown) => {
+        const failure = error as { code: number; stdout: string; stderr: string };
+        assert.equal(failure.code, 3);
+        assert.match(failure.stderr, status === 401 ? /^Authentication failed \(401\)/ : /^Forbidden \(403\).*server ID/);
+        assert.doesNotMatch(failure.stdout + failure.stderr, /mcp_status-secret|private server detail/);
+        return true;
+      });
+    } finally {
+      server.close();
+    }
+  }
+});
+
 test('server failures report only the HTTP status', async () => {
   const server = createServer((_req, res) => { res.writeHead(503); res.end('sensitive upstream text'); });
   server.listen(0, '127.0.0.1');

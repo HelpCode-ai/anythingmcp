@@ -167,7 +167,15 @@ function classifyConnectionError(error: unknown, kind: keyof typeof TARGETS = 'm
   const status = detail?.status ?? detail?.data?.status;
   if (status === 401 || status === 403 || /\b(401|403)\b/.test(message) ||
       (error instanceof Error && error.name === 'UnauthorizedError')) {
-    return new CliError('Authentication failed (401/403)', 3);
+    // Tell a rejected key (401) from a key that is valid but not allowed here
+    // (403), without printing the server's message (see above).
+    const forbidden = status === 403 || (status !== 401 && /\b403\b/.test(message) && !/\b401\b/.test(message));
+    if (forbidden) {
+      return new CliError(kind === 'mcp'
+        ? 'Forbidden (403): this key may not use this MCP server. Pass the server ID the key was created for, and check that the server is active'
+        : 'Forbidden (403): this key may not perform this request', 3);
+    }
+    return new CliError('Authentication failed (401): the key is invalid, revoked or expired', 3);
   }
   if (typeof status === 'number' && status >= 400 && status <= 599) {
     return new CliError(`${target.name} returned HTTP ${status}`, 4);
