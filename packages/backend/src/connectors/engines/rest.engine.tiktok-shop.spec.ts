@@ -3,7 +3,7 @@ import FormData from 'form-data';
 import { RestEngine } from './rest.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
-import { TikTokShopTokenService } from './tiktok-shop-token.service';
+import { TikTokShopTokenService, tiktokShopSign } from './tiktok-shop-token.service';
 import { getAdapter } from '../../adapters/catalog';
 
 /**
@@ -60,14 +60,19 @@ describe('RestEngine: TikTok Shop signing', () => {
   });
   afterEach(() => now.mockRestore());
 
-  const run = async (tokens: jest.Mocked<TikTokShopTokenService>, toolName: string, params: Record<string, unknown>) => {
+  const run = async (
+    tokens: jest.Mocked<TikTokShopTokenService>,
+    toolName: string,
+    params: Record<string, unknown>,
+    authConfig: Record<string, unknown> = ttsAuth(),
+  ) => {
     const tool = tts.tools.find((t) => t.name === toolName)!;
     const engine = new RestEngine({} as OAuth2TokenService, {} as LoginTokenService, undefined, undefined, tokens);
     await engine.execute(
       {
         baseUrl: tts.connector.baseUrl,
         authType: tts.connector.authType,
-        authConfig: ttsAuth(),
+        authConfig,
         headers: tts.connector.headers,
         connectorId: 'conn-tts',
         errorWhen: (tts.connector as { config?: { errorWhen?: unknown } }).config?.errorWhen,
@@ -152,5 +157,90 @@ describe('RestEngine: TikTok Shop signing', () => {
     expect(cfg.headers['x-tts-access-token']).toBe('TTP_access_token_2');
     expect(cfg.params.shop_cipher).toBe(CIPHER);
     expect(Object.keys(cfg.params).filter((k) => k === 'sign')).toHaveLength(1);
+  });
+
+  describe('with a server app', () => {
+    const PLATFORM_KEY = '6abcplatform';
+    const PLATFORM_SECRET = 'platformsecret0987654321';
+    const vars = {
+      TIKTOK_SHOP_PLATFORM_APP_KEY: PLATFORM_KEY,
+      TIKTOK_SHOP_PLATFORM_APP_SECRET: PLATFORM_SECRET,
+      TIKTOK_SHOP_PLATFORM_SERVICE_ID: '7000001',
+    };
+    const saved: Record<string, string | undefined> = {};
+    beforeEach(() => {
+      for (const [k, v] of Object.entries(vars)) {
+        saved[k] = process.env[k];
+        process.env[k] = v;
+      }
+    });
+    afterEach(() => {
+      for (const k of Object.keys(vars)) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    });
+    // Installed with the three app variables saved empty.
+    const blankAuth = () =>
+      JSON.parse(
+        JSON.stringify(tts.connector.authConfig)
+          .split('{{TIKTOK_SHOP_APP_SECRET}}')
+          .join('')
+          .split('{{TIKTOK_SHOP_APP_KEY}}')
+          .join('')
+          .split('{{TIKTOK_SHOP_SERVICE_ID}}')
+          .join(''),
+      );
+
+    it('signs a connector without an App key with the server app, without sending its secret', async () => {
+      const tokens = fakeTokens();
+      const auth = blankAuth();
+      const cfg = await run(tokens, 'tiktok_shop_get_authorized_shops', {}, auth);
+      expect(cfg.params).toEqual({
+        app_key: PLATFORM_KEY,
+        timestamp: '1623812664',
+        sign: tiktokShopSign({
+          secret: PLATFORM_SECRET,
+          path: '/authorization/202309/shops',
+          query: { app_key: PLATFORM_KEY, timestamp: '1623812664' },
+        }),
+      });
+      expect(JSON.stringify(cfg)).not.toContain(PLATFORM_SECRET);
+      // The token service gets the server app too (for a renewal), and the caller's object is untouched.
+      expect(tokens.getShopCredentials).toHaveBeenCalledWith(
+        expect.objectContaining({ authConfig: expect.objectContaining({ appKey: PLATFORM_KEY }) }),
+      );
+      expect(auth.appKey).toBe('');
+    });
+
+    it('signs with the server app again after renewing a rejected token', async () => {
+      const tokens = fakeTokens();
+      tokens.renewAfterRejection.mockResolvedValue({ accessToken: 'TTP_access_token_2', shopCipher: CIPHER });
+      mockedAxios.mockRejectedValueOnce(
+        new AxiosError('Unauthorized', 'ERR_BAD_REQUEST', undefined, undefined, {
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: {},
+          config: {} as never,
+          data: { code: 105002, message: 'Expired credentials.' },
+        }),
+      );
+      const cfg = await run(tokens, 'tiktok_shop_get_authorized_shops', {}, blankAuth());
+      expect(tokens.renewAfterRejection).toHaveBeenCalledWith(
+        expect.objectContaining({ authConfig: expect.objectContaining({ appKey: PLATFORM_KEY }) }),
+        expect.any(Number),
+      );
+      expect(cfg.params.app_key).toBe(PLATFORM_KEY);
+      expect(cfg.headers['x-tts-access-token']).toBe('TTP_access_token_2');
+    });
+
+    it('keeps signing a connector that has its own App key with its own app', async () => {
+      const cfg = await run(fakeTokens(), 'tiktok_shop_get_authorized_shops', {});
+      expect(cfg.params).toEqual({
+        app_key: '38abcd',
+        timestamp: '1623812664',
+        sign: '77c8ca20f976b6e452547ae263fcf04d72800f32da727bf78067f355b55c3e89',
+      });
+    });
   });
 });

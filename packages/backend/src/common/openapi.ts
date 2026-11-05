@@ -148,7 +148,7 @@ export const OPENAPI_TAGS: ReadonlyArray<{ name: string; description: string }> 
   },
   {
     name: 'TikTok Shop',
-    description: 'Shop authorization for TikTok Shop connectors.',
+    description: 'Shop authorization and TikTok Shop App Store installs for TikTok Shop connectors.',
   },
   {
     name: 'Alerts',

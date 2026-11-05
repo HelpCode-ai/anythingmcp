@@ -6,12 +6,18 @@ import {
   isTikTokShopAccessTokenRejected,
   isTikTokShopRefreshRefused,
   pickShop,
+  resolveTikTokShopAuthConfig,
   shopCipherApplies,
   tiktokShopAppFrom,
+  tiktokShopAppOfConnector,
+  tiktokShopMissingAppVars,
   tiktokShopNeedsAuthorization,
+  tiktokShopPlatformApp,
   tiktokShopSign,
+  tiktokShopUsesPlatformApp,
   tokensFrom,
 } from './tiktok-shop-token.service';
+import { getAdapter } from '../../adapters/catalog';
 import { credentialRef } from './connector-auth-status.service';
 import { decrypt, encrypt } from '../../common/crypto/encryption.util';
 
@@ -150,6 +156,99 @@ describe('TikTok Shop signing helpers', () => {
     expect(tiktokShopNeedsAuthorization('HMAC', { tokenProvider: 'tiktok-shop', refreshToken: 'rt' })).toBe(false);
     expect(tiktokShopNeedsAuthorization('HMAC', { tokenProvider: 'shopee' })).toBe(false);
     expect(tiktokShopNeedsAuthorization('OAUTH2', { tokenProvider: 'tiktok-shop' })).toBe(false);
+  });
+});
+
+describe('TikTok Shop server app', () => {
+  const PLATFORM = { appKey: '6abcplatform', appSecret: 'platformsecret0987654321', serviceId: '7000001' };
+  const platformEnv = {
+    TIKTOK_SHOP_PLATFORM_APP_KEY: PLATFORM.appKey,
+    TIKTOK_SHOP_PLATFORM_APP_SECRET: ` ${PLATFORM.appSecret} `,
+    TIKTOK_SHOP_PLATFORM_SERVICE_ID: PLATFORM.serviceId,
+  };
+  // The catalog adapter's authConfig as installed with the three app variables saved empty.
+  const blankAuth = (): Record<string, unknown> =>
+    JSON.parse(
+      JSON.stringify(getAdapter('tiktok-shop')!.connector.authConfig)
+        .split('{{TIKTOK_SHOP_APP_SECRET}}')
+        .join('')
+        .split('{{TIKTOK_SHOP_APP_KEY}}')
+        .join('')
+        .split('{{TIKTOK_SHOP_SERVICE_ID}}')
+        .join(''),
+    );
+  const ownAuth = { tokenProvider: 'tiktok-shop', appKey: '38abcd', serviceId: '7256213', signature: { secret: SECRET, queryParams: { app_key: '38abcd' }, template: `${SECRET}\${pathname}${SECRET}` } };
+
+  it('is available only when all three server variables are set', () => {
+    expect(tiktokShopPlatformApp(platformEnv)).toEqual(PLATFORM);
+    expect(tiktokShopPlatformApp({ ...platformEnv, TIKTOK_SHOP_PLATFORM_SERVICE_ID: ' ' })).toBeUndefined();
+    expect(tiktokShopPlatformApp({})).toBeUndefined();
+  });
+
+  it('fills the server app into a connector without an App key, with the canonical template', () => {
+    const resolved = resolveTikTokShopAuthConfig('HMAC', blankAuth(), PLATFORM);
+    expect(resolved).toMatchObject({
+      tokenProvider: 'tiktok-shop',
+      appKey: PLATFORM.appKey,
+      serviceId: PLATFORM.serviceId,
+      signature: {
+        secret: PLATFORM.appSecret,
+        queryParams: { app_key: PLATFORM.appKey },
+        placement: 'query',
+        template: `${PLATFORM.appSecret}\${pathname}\${sortedParams}\${body}${PLATFORM.appSecret}`,
+      },
+    });
+    expect(tiktokShopAppFrom(resolved, API)).toEqual({ ...PLATFORM, apiHost: API });
+    // Unfilled placeholders count as empty too.
+    const placeholders = getAdapter('tiktok-shop')!.connector.authConfig as Record<string, unknown>;
+    expect(tiktokShopUsesPlatformApp('HMAC', placeholders, PLATFORM)).toBe(true);
+    // Never mutates what it was given.
+    expect(blankAuth().appKey).toBe('');
+  });
+
+  it('keeps a connector with its own App key on its own app, and changes nothing without a server app', () => {
+    expect(resolveTikTokShopAuthConfig('HMAC', ownAuth, PLATFORM)).toBe(ownAuth);
+    expect(tiktokShopUsesPlatformApp('HMAC', ownAuth, PLATFORM)).toBe(false);
+    const blank = blankAuth();
+    expect(resolveTikTokShopAuthConfig('HMAC', blank, undefined)).toBe(blank);
+    expect(resolveTikTokShopAuthConfig('HMAC', { tokenProvider: 'shopee', appKey: '' }, PLATFORM)).toEqual({ tokenProvider: 'shopee', appKey: '' });
+  });
+
+  it('names the app variables still to fill in only when there is no server app', () => {
+    expect(tiktokShopMissingAppVars('HMAC', blankAuth(), undefined)).toEqual([
+      'TIKTOK_SHOP_APP_KEY',
+      'TIKTOK_SHOP_APP_SECRET',
+      'TIKTOK_SHOP_SERVICE_ID',
+    ]);
+    expect(tiktokShopMissingAppVars('HMAC', blankAuth(), PLATFORM)).toEqual([]);
+    expect(tiktokShopMissingAppVars('HMAC', ownAuth, undefined)).toEqual([]);
+    expect(tiktokShopMissingAppVars('HMAC', { ...ownAuth, serviceId: '' }, PLATFORM)).toEqual(['TIKTOK_SHOP_SERVICE_ID']);
+    expect(tiktokShopMissingAppVars('API_KEY', blankAuth(), undefined)).toEqual([]);
+  });
+
+  it('reads a stored connector: own app from its variables, else the server app', () => {
+    const connector = (envVars: Record<string, string>) => ({
+      authType: 'HMAC',
+      authConfig: encrypt(JSON.stringify(getAdapter('tiktok-shop')!.connector.authConfig), KEY),
+      baseUrl: API,
+      envVars,
+    });
+    const blankVars = { TIKTOK_SHOP_APP_KEY: '', TIKTOK_SHOP_APP_SECRET: '', TIKTOK_SHOP_SERVICE_ID: '' };
+    expect(tiktokShopAppOfConnector(connector(blankVars), KEY, PLATFORM)).toMatchObject({
+      isTikTokShop: true,
+      usesPlatformApp: true,
+      app: { ...PLATFORM, apiHost: API },
+    });
+    expect(tiktokShopAppOfConnector(connector(blankVars), KEY, undefined)).toMatchObject({
+      isTikTokShop: true,
+      usesPlatformApp: false,
+      app: undefined,
+    });
+    const own = { TIKTOK_SHOP_APP_KEY: '38abcd', TIKTOK_SHOP_APP_SECRET: SECRET, TIKTOK_SHOP_SERVICE_ID: '7256213' };
+    expect(tiktokShopAppOfConnector(connector(own), KEY, PLATFORM)).toMatchObject({
+      usesPlatformApp: false,
+      app: { appKey: '38abcd', appSecret: SECRET, serviceId: '7256213', apiHost: API },
+    });
   });
 });
 
@@ -353,5 +452,42 @@ describe('TikTokShopTokenService', () => {
     expect(a).toEqual({ accessToken: 'at-2', shopCipher: CIPHER });
     expect(b).toEqual({ accessToken: 'at-2', shopCipher: CIPHER });
     expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('renews a connector without an App key with the server app, and never stores its secret', async () => {
+    const prev = { ...process.env };
+    process.env.TIKTOK_SHOP_PLATFORM_APP_KEY = '6abcplatform';
+    process.env.TIKTOK_SHOP_PLATFORM_APP_SECRET = 'platformsecret0987654321';
+    process.env.TIKTOK_SHOP_PLATFORM_SERVICE_ID = '7000001';
+    try {
+      const auth = {
+        tokenProvider: 'tiktok-shop',
+        appKey: '',
+        serviceId: '',
+        signature: { secret: '', queryParams: { app_key: '' } },
+        accessToken: 'at-1',
+        refreshToken: 'rt-1',
+        shopCipher: CIPHER,
+        expiresAt: Date.now() + 60 * 60 * 1000,
+        expiresIn: 604800,
+      };
+      setRow(auth);
+      mockedAxios.get.mockResolvedValueOnce(tokenAnswer('at-2', 'rt-2'));
+      expect(await service.getShopCredentials(config(auth))).toEqual({ accessToken: 'at-2', shopCipher: CIPHER });
+      const [, opts] = mockedAxios.get.mock.calls[0] as [string, any];
+      expect(opts.params).toEqual({
+        app_key: '6abcplatform',
+        app_secret: 'platformsecret0987654321',
+        refresh_token: 'rt-1',
+        grant_type: 'refresh_token',
+      });
+      expect(stored()).toMatchObject({ appKey: '', signature: { secret: '' }, accessToken: 'at-2', refreshToken: 'rt-2' });
+      expect(decrypt(row!.authConfig, KEY)).not.toContain('platformsecret');
+    } finally {
+      for (const k of ['TIKTOK_SHOP_PLATFORM_APP_KEY', 'TIKTOK_SHOP_PLATFORM_APP_SECRET', 'TIKTOK_SHOP_PLATFORM_SERVICE_ID']) {
+        if (prev[k] === undefined) delete process.env[k];
+        else process.env[k] = prev[k];
+      }
+    }
   });
 });

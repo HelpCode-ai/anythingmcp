@@ -222,4 +222,70 @@ describe('computeSetupState', () => {
       ).toBe('ready');
     });
   });
+
+  describe('a TikTok Shop connector', () => {
+    const PLATFORM_VARS = ['TIKTOK_SHOP_PLATFORM_APP_KEY', 'TIKTOK_SHOP_PLATFORM_APP_SECRET', 'TIKTOK_SHOP_PLATFORM_SERVICE_ID'];
+    const saved: Record<string, string | undefined> = {};
+    beforeEach(() => {
+      for (const k of PLATFORM_VARS) {
+        saved[k] = process.env[k];
+        delete process.env[k];
+      }
+    });
+    afterEach(() => {
+      for (const k of PLATFORM_VARS) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    });
+    const withServerApp = () => {
+      process.env.TIKTOK_SHOP_PLATFORM_APP_KEY = '6abcplatform';
+      process.env.TIKTOK_SHOP_PLATFORM_APP_SECRET = 'platformsecret0987654321';
+      process.env.TIKTOK_SHOP_PLATFORM_SERVICE_ID = '7000001';
+    };
+    // The catalog adapter's authConfig, placeholders and all.
+    const tiktok = (envVars: Record<string, string>, tokens: Record<string, unknown> = {}) =>
+      computeSetupState({
+        authType: 'HMAC',
+        authConfig: {
+          tokenProvider: 'tiktok-shop',
+          appKey: '{{TIKTOK_SHOP_APP_KEY}}',
+          serviceId: '{{TIKTOK_SHOP_SERVICE_ID}}',
+          signature: {
+            secret: '{{TIKTOK_SHOP_APP_SECRET}}',
+            queryParams: { app_key: '{{TIKTOK_SHOP_APP_KEY}}' },
+            template: '{{TIKTOK_SHOP_APP_SECRET}}${pathname}${sortedParams}${body}{{TIKTOK_SHOP_APP_SECRET}}',
+          },
+          ...tokens,
+        },
+        baseUrl: 'https://open-api.tiktokglobalshop.com',
+        envVars,
+        config: { adapterSlug: 'tiktok-shop' },
+      });
+    const blank = { TIKTOK_SHOP_APP_KEY: '', TIKTOK_SHOP_APP_SECRET: '', TIKTOK_SHOP_SERVICE_ID: '' };
+    const own = { TIKTOK_SHOP_APP_KEY: '38abcd', TIKTOK_SHOP_APP_SECRET: 'testappsecret1234567890', TIKTOK_SHOP_SERVICE_ID: '7256213' };
+
+    it('still asks for the app variables saved empty on a server without its own app', () => {
+      expect(tiktok(blank)).toEqual({
+        status: 'needs_input',
+        missing: ['TIKTOK_SHOP_APP_KEY', 'TIKTOK_SHOP_APP_SECRET', 'TIKTOK_SHOP_SERVICE_ID'],
+      });
+    });
+
+    it('waits only for the authorization when the server has its own app', () => {
+      withServerApp();
+      expect(tiktok(blank)).toEqual({ status: 'needs_authorization', missing: [] });
+      expect(tiktok(blank, { accessToken: 'at', refreshToken: 'rt' })).toEqual({ status: 'ready', missing: [] });
+    });
+
+    it('treats a connector with its own app the same on both servers', () => {
+      expect(tiktok(own)).toEqual({ status: 'needs_authorization', missing: [] });
+      withServerApp();
+      expect(tiktok(own)).toEqual({ status: 'needs_authorization', missing: [] });
+      expect(tiktok({ ...own, TIKTOK_SHOP_SERVICE_ID: '' })).toEqual({
+        status: 'needs_input',
+        missing: ['TIKTOK_SHOP_SERVICE_ID'],
+      });
+    });
+  });
 });
