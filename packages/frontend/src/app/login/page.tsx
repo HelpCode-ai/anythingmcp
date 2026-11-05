@@ -696,7 +696,14 @@ function LoginForm() {
 
           {resendMessage && <div className={alertSuccess}>{resendMessage}</div>}
 
-          <div className="space-y-4">
+          {/* A form, so Enter in the code field verifies like the button does. */}
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!loading && verificationCode.length === 6) void handleVerifyCode();
+            }}
+          >
             <div>
               <label className="block text-sm font-medium mb-1 text-[var(--text)]">{tVerify('label')}</label>
               <input
@@ -719,14 +726,14 @@ function LoginForm() {
             </div>
 
             <Button
-              onClick={handleVerifyCode}
+              type="submit"
               disabled={loading || verificationCode.length !== 6}
               className="w-full"
               size="lg"
             >
               {loading ? tVerify('verifying') : tVerify('submit')}
             </Button>
-          </div>
+          </form>
 
           <p className="text-center text-sm text-[var(--text-2)] mt-4">
             {tVerify('noCode')}{' '}
