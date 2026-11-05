@@ -1497,6 +1497,10 @@
       "title": "Shopee shop authorization",
       "body": "Sign in with the shop account and approve this app. The tokens are stored encrypted and renewed automatically. Authorize again when the authorization expires or the connector asks for it."
     },
+    "tiktokShop": {
+      "title": "TikTok Shop authorization",
+      "body": "Sign in to TikTok Shop Seller Center with the shop owner account and approve your app. The app's Redirect URL in Partner Center must be your AnythingMCP address followed by /api/tiktok-shop/callback. The tokens are stored encrypted and renewed automatically; authorize again when the authorization expires or the connector asks for it."
+    },
     "env": {
       "title": "Environment Variables",
       "hint": "Use {variable} in URLs, paths, headers, and body fields. Variables are interpolated at runtime.",

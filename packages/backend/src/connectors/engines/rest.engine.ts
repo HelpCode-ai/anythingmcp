@@ -13,6 +13,12 @@ import { buildOAuth1Header } from './oauth1-signer';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { BearerTokenRenewalService } from './bearer-token-renewal.service';
 import { ShopeeTokenService, isShopeeAccessTokenRejected, isShopeeAuth } from './shopee-token.service';
+import {
+  TikTokShopTokenService,
+  isTikTokShopAccessTokenRejected,
+  isTikTokShopAuth,
+  shopCipherApplies,
+} from './tiktok-shop-token.service';
 import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
@@ -136,6 +142,7 @@ export class RestEngine {
     private readonly loginTokenService: LoginTokenService,
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
     @Optional() private readonly shopeeTokens?: ShopeeTokenService,
+    @Optional() private readonly tiktokShopTokens?: TikTokShopTokenService,
   ) {}
 
   /**
@@ -534,10 +541,15 @@ export class RestEngine {
     // HMAC signing is here for the same reason: the canonical string most
     // of these APIs sign folds in the request body, which does not exist
     // until the block above has run. A Shopee connector also signs the
-    // shop's access token and id (undefined for every other connector).
+    // shop's access token and id, a TikTok Shop connector its shop cipher
+    // (its access token goes in a header, unsigned); undefined for every
+    // other connector.
+    const tiktokShop = isTikTokShopAuth(config.authType, config.authConfig);
     const hmacCredentials = isShopeeAuth(config.authType, config.authConfig)
       ? await this.shopeeShopParams(config)
-      : undefined;
+      : tiktokShop
+        ? await this.tiktokShopCredentials(config, axiosConfig)
+        : undefined;
     this.applyHmacSignature(axiosConfig, config, hmacCredentials);
     for (const h of headerNames(axiosConfig.headers)) {
       if (!headersBeforeSigning.includes(h)) credentialHeaders.add(h);
@@ -624,10 +636,21 @@ export class RestEngine {
       }
       // Shopee refused the shop's access token (expired early, or replaced
       // by another process's renewal): renew once, sign again, resend.
-      if (hmacCredentials && this.shopeeTokens && isShopeeAccessTokenRejected(error)) {
+      if (!tiktokShop && hmacCredentials && this.shopeeTokens && isShopeeAccessTokenRejected(error)) {
         const renewed = await this.shopeeTokens.renewAfterRejection(config, sentAt);
         if (renewed) {
           this.applyHmacSignature(axiosConfig, config, renewed);
+          rebuildBody(axiosConfig, buildBody);
+          return withMeta(await outboundRequest(axiosConfig, outbound));
+        }
+      }
+      // TikTok Shop refused the access token (105002 expired, or the header
+      // named invalid): renew once, sign again with a new timestamp, resend.
+      if (tiktokShop && this.tiktokShopTokens && isTikTokShopAccessTokenRejected(error)) {
+        const renewed = await this.tiktokShopTokens.renewAfterRejection(config, sentAt);
+        if (renewed) {
+          const params = this.applyTikTokShopCredentials(axiosConfig, renewed);
+          this.applyHmacSignature(axiosConfig, config, params);
           rebuildBody(axiosConfig, buildBody);
           return withMeta(await outboundRequest(axiosConfig, outbound));
         }
@@ -991,6 +1014,12 @@ export class RestEngine {
    *   signature.timestampFormat 's' (default, Unix seconds) | 'ms'
    *                             (milliseconds), for `${timestamp}`,
    *                             timestampParam and timestampHeader alike
+   *
+   * TikTok Shop (`authConfig.tokenProvider: "tiktok-shop"`) uses the same
+   * query signing: its shop cipher arrives as a credential parameter, and
+   *   signature.excludeMultipartBody  true: `${body}` is empty for a
+   *                             multipart/form-data body (image uploads),
+   *                             as TikTok signs those
    */
   private applyHmacSignature(
     axiosConfig: AxiosRequestConfig,
@@ -1034,13 +1063,18 @@ export class RestEngine {
     // way axios will serialize it, so the bytes signed are the bytes sent —
     // signing a different rendering is the classic way an HMAC integration
     // fails with a message about the key.
+    // A multipart body is left out of the string when the signature says so
+    // (TikTok Shop signs uploads without their body): its bytes, with their
+    // boundary, are not known here, and JSON of a FormData is never right.
     const data = axiosConfig.data;
     const body =
       data === undefined || data === null
         ? ''
-        : typeof data === 'string'
-          ? data
-          : JSON.stringify(data);
+        : extended && sig.excludeMultipartBody === true && data instanceof FormData
+          ? ''
+          : typeof data === 'string'
+            ? data
+            : JSON.stringify(data);
 
     // Query params are set separately on axiosConfig and appended later, so
     // fold them in here or they are absent from a signature that covers them.
@@ -1132,6 +1166,36 @@ export class RestEngine {
       throw new Error('Shopee connectors need the Shopee token service, which is not available here.');
     }
     return this.shopeeTokens.getShopParams(config);
+  }
+
+  /**
+   * A TikTok Shop call's credentials, renewed first when the token is about
+   * to expire: the access token goes into the `x-tts-access-token` header
+   * (TikTok does not sign it), and the shop cipher is returned as the
+   * credential query parameter the signature covers, except on the paths
+   * where TikTok refuses one. Only for `authType: HMAC` with
+   * `authConfig.tokenProvider: "tiktok-shop"`.
+   */
+  private async tiktokShopCredentials(
+    config: { baseUrl: string; authType: string; authConfig?: Record<string, unknown>; connectorId?: string },
+    axiosConfig: AxiosRequestConfig,
+  ): Promise<Record<string, string>> {
+    if (!this.tiktokShopTokens) {
+      throw new Error('TikTok Shop connectors need the TikTok Shop token service, which is not available here.');
+    }
+    return this.applyTikTokShopCredentials(axiosConfig, await this.tiktokShopTokens.getShopCredentials(config));
+  }
+
+  /** Sets the access token header; returns the credential query parameters for this path. */
+  private applyTikTokShopCredentials(
+    axiosConfig: AxiosRequestConfig,
+    creds: { accessToken: string; shopCipher?: string },
+  ): Record<string, string> {
+    axiosConfig.headers = { ...axiosConfig.headers, 'x-tts-access-token': creds.accessToken };
+    const pathname = pathnameOf(String(axiosConfig.url ?? ''));
+    return creds.shopCipher && shopCipherApplies(pathname, String(axiosConfig.method ?? 'GET'))
+      ? { shop_cipher: creds.shopCipher }
+      : {};
   }
 
   private applyOAuth1Signature(

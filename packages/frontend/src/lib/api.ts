@@ -642,6 +642,18 @@ export const connectors = {
       '/api/shopee/complete',
       { method: 'POST', token, body: { state, code, shopId } },
     ),
+  /** "Authorize with Provider" for a TikTok shop: the seller authorization link. */
+  tiktokShopAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; redirectUrl?: string; error?: string }>(
+      `/api/tiktok-shop/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of a TikTok Shop authorization: exchange the code TikTok sent back. */
+  tiktokShopComplete: (state: string, code: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/tiktok-shop/complete',
+      { method: 'POST', token, body: { state, code } },
+    ),
   oauthRedirectUri: (token: string) =>
     request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>
