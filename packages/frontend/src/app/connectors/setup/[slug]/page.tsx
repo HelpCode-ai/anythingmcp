@@ -125,6 +125,13 @@ function SetupContent() {
     error: '',
   });
   const lastProviderCheck = useRef(0);
+  // TikTok Shop: whether this server has its own app (then the seller's App
+  // key, App secret and Service ID stay empty), and whether the user chose
+  // their own app anyway. Unknown until asked: the fields show meanwhile.
+  const isTikTokShop = slug === 'tiktok-shop';
+  const [tiktokPlatform, setTiktokPlatform] = useState<{ available: boolean; redirectUrl: string } | null>(null);
+  const [ownTikTokApp, setOwnTikTokApp] = useState(false);
+  const serverTikTokApp = isTikTokShop && tiktokPlatform?.available === true && !ownTikTokApp;
 
   /** This setup's address for a saved connector, keeping the other parameters (from=…). */
   const withConnector = useCallback(
@@ -204,11 +211,21 @@ function SetupContent() {
         .then((c) => {
           const env = (c?.envVars ?? {}) as Record<string, string>;
           setValues((v) => ({ ...Object.fromEntries(Object.entries(env).filter(([, x]) => x)), ...v }));
+          // A TikTok Shop connector that has an App key of its own keeps its app.
+          if (env.TIKTOK_SHOP_APP_KEY) setOwnTikTokApp(true);
           setStoredSecrets(Array.isArray(c?.maskedEnvVars) ? c.maskedEnvVars : []);
         })
         .catch(() => {});
     }
   }, [token, slug, existingId, progressKey, backFromProvider, t, handed, router, withConnector]);
+
+  useEffect(() => {
+    if (!token || !isTikTokShop) return;
+    connectors
+      .tiktokShopPlatform(token)
+      .then(setTiktokPlatform)
+      .catch(() => setTiktokPlatform({ available: false, redirectUrl: '' }));
+  }, [token, isTikTokShop]);
 
   useEffect(() => {
     if (!token || info?.setupKind !== 'oauth_browser') return;
@@ -247,9 +264,20 @@ function SetupContent() {
       });
   }, [backFromProvider, existingId, token, slug, t]);
 
-  const fields = useMemo(() => info?.envVars ?? [], [info]);
-  const visibleFields = fields.filter((f) => !f.advanced);
-  const advancedFields = fields.filter((f) => f.advanced);
+  // TikTok Shop's app variables are optional in the catalog (empty means the
+  // server's app). Without a server app, or with the user's own app chosen,
+  // they are required here; with the server's app they are hidden and sent
+  // empty.
+  const fields = useMemo(
+    () =>
+      (info?.envVars ?? []).map((f) =>
+        isTikTokShop && TIKTOK_SHOP_APP_VARS.includes(f.name) && !serverTikTokApp ? { ...f, required: true } : f,
+      ),
+    [info, isTikTokShop, serverTikTokApp],
+  );
+  const hiddenField = (name: string) => serverTikTokApp && TIKTOK_SHOP_APP_VARS.includes(name);
+  const visibleFields = fields.filter((f) => !f.advanced && !hiddenField(f.name));
+  const advancedFields = fields.filter((f) => f.advanced && !hiddenField(f.name));
 
   const guide = mode === 'guide' ? info?.setupGuide : undefined;
   const guideSteps = useMemo(() => info?.setupGuide?.steps ?? [], [info]);
@@ -297,7 +325,8 @@ function SetupContent() {
     Object.fromEntries(
       fields
         // An address typed without https:// gets it when the pattern wants it.
-        .map((f) => [f.name, withMissingScheme(f, (values[f.name] ?? '').trim())] as const)
+        // A hidden TikTok Shop app field goes empty: the server's app is used.
+        .map((f) => [f.name, hiddenField(f.name) ? '' : withMissingScheme(f, (values[f.name] ?? '').trim())] as const)
         .filter(([name, v]) => connectorId || v !== '' || !fields.find((f) => f.name === name)?.required),
     ) as Record<string, string>;
 
@@ -326,6 +355,7 @@ function SetupContent() {
   const validate = (only?: string[]): boolean => {
     const errs: Record<string, string> = {};
     for (const f of only ? fields.filter((x) => only.includes(x.name)) : fields) {
+      if (hiddenField(f.name)) continue;
       const v = withMissingScheme(f, (values[f.name] ?? '').trim());
       if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = t('field.required');
       else if (v && f.pattern) {
@@ -943,6 +973,36 @@ function SetupContent() {
           <p className="text-sm text-[var(--text-2)]">{t('noInput')}</p>
         )}
 
+        {isTikTokShop && tiktokPlatform?.available && (
+          <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
+            <p>{t('tiktokShopApp.serverApp')}</p>
+            <label className="mt-2 flex items-center gap-2 text-[var(--text)]">
+              <input
+                type="checkbox"
+                checked={ownTikTokApp}
+                onChange={(e) => {
+                  setOwnTikTokApp(e.target.checked);
+                  setFieldErrors({});
+                }}
+              />
+              {t('tiktokShopApp.useOwn')}
+            </label>
+            {ownTikTokApp && tiktokPlatform.redirectUrl && (
+              <>
+                <p className="mt-2 text-xs">{t('tiktokShopApp.ownHint')}</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="flex-1 overflow-x-auto rounded bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--text)]">
+                    {tiktokPlatform.redirectUrl}
+                  </code>
+                  <Button size="sm" variant="secondary" onClick={() => void copyText(tiktokPlatform.redirectUrl)}>
+                    {t('copy')}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {GROUPS.map((kind) => {
           const group = visibleFields.filter((f) => f.kind === kind);
           if (group.length === 0) return null;
@@ -995,6 +1055,9 @@ function SetupContent() {
     </div>
   );
 }
+
+/** The seller's own TikTok Shop app, as the catalog adapter names its variables. */
+const TIKTOK_SHOP_APP_VARS: readonly string[] = ['TIKTOK_SHOP_APP_KEY', 'TIKTOK_SHOP_APP_SECRET', 'TIKTOK_SHOP_SERVICE_ID'];
 
 /** A setup page's draft that the "Switch to …" button may replace: old adapter → new adapter. */
 const REPLACEABLE_DRAFTS: Readonly<Record<string, string>> = { odoo: 'odoo-jsonrpc' };

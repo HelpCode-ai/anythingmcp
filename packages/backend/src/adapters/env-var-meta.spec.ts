@@ -70,4 +70,11 @@ describe('setupKind', () => {
     expect(setupKind(getAdapter('lexware-office')!)).toBe('credentials');
     expect(setupKind(getAdapter('etsy')!)).toBe('oauth_browser');
   });
+
+  it('never calls a marketplace shop that is authorized on the setup page keyless', () => {
+    // TikTok Shop asks for nothing on a server with its own app, but the shop still has to be authorized.
+    expect(getAdapter('tiktok-shop')!.requiredEnvVars).toEqual([]);
+    expect(setupKind(getAdapter('tiktok-shop')!)).toBe('credentials');
+    expect(setupKind(getAdapter('shopee')!)).toBe('credentials');
+  });
 });

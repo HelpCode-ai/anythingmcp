@@ -181,6 +181,23 @@ describe('ConnectorSetupService — find', () => {
     );
     expect((await service.install(claude, { adapter: 'binance' })).isError).toBe(true);
   });
+
+  it('keeps generation connectors off the default profile and betting odds off ChatGPT', async () => {
+    const { service, ctx } = build();
+    const claude = { ...ctx, profile: 'default' as const };
+    const media: any = (await service.find(claude, { query: 'elevenlabs stability heygen', limit: 10 })).body;
+    expect(media.results.map((r: any) => r.adapter)).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^(elevenlabs|stability-ai|heygen)$/)]),
+    );
+    expect((await service.install(claude, { adapter: 'stability-ai' })).isError).toBe(true);
+    const openai: any = (await service.find(claude, { query: 'openai', limit: 10 })).body;
+    expect(openai.results.find((r: any) => r.adapter === 'openai').servedHere).toMatch(/except image, video and audio generation/);
+
+    const odds: any = (await service.find(ctx, { query: 'the odds api', limit: 10 })).body;
+    expect(odds.results.map((r: any) => r.adapter)).not.toContain('the-odds-api');
+    const claudeOdds: any = (await service.find(claude, { query: 'the odds api', limit: 10 })).body;
+    expect(claudeOdds.results.map((r: any) => r.adapter)).toContain('the-odds-api');
+  });
 });
 
 describe('ConnectorSetupService — File Search from the chat', () => {

@@ -74,6 +74,12 @@ export function proxy(request: NextRequest) {
     // the key in sessionStorage, and it holds no data — the API it calls is
     // authenticated.
     pathname === '/settings/license/activate' ||
+    // Where a provider authorization completes. A TikTok Shop App Store
+    // install arrives here from TikTok, often before the seller has an
+    // account, and the page offers both sign-in and sign-up; every other
+    // flow is sent to /login by the page itself, as before. It holds no
+    // data, and the APIs it calls are authenticated.
+    pathname === '/connectors/oauth/complete' ||
     // Sentry tunnel (tunnelRoute in next.config.ts). Errors on /login and
     // /register come from signed-out visitors; redirecting them to /login
     // would drop exactly those reports.

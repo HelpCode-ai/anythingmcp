@@ -321,6 +321,23 @@ ID from `authConfig.serviceId`. The optional connector variables
 when one authorization covers several shops) are read when the authorization
 starts and completes.
 
+When the server sets `TIKTOK_SHOP_PLATFORM_APP_KEY`,
+`TIKTOK_SHOP_PLATFORM_APP_SECRET` and `TIKTOK_SHOP_PLATFORM_SERVICE_ID` (a
+public TikTok Shop App Store app), a connector whose app key resolves empty
+uses that app instead: the provider fills `appKey`, `serviceId`,
+`signature.secret`, the signed `app_key` and the template
+`<secret>${pathname}${sortedParams}${body}<secret>` in memory for each call,
+authorization and renewal, and never writes them to the connector. That is why
+the adapter's `TIKTOK_SHOP_APP_KEY`, `TIKTOK_SHOP_APP_SECRET` and
+`TIKTOK_SHOP_SERVICE_ID` are optional variables: saved empty, they ask for the
+server's app. On a server without one, the setup check still reports them as
+missing. A callback that carries a code but no state (an install from the
+App Store, `?app_key=...&code=...&shop_region=...`) is kept as a single-use
+install record for 30 minutes when its `app_key` is the server's; the
+dashboard completes it with `POST /api/tiktok-shop/install` once the seller is
+signed in, reusing the workspace's newest TikTok Shop connector that uses the
+server's app and has no shop authorized yet, or installing a new one.
+
 ### MCP adapters (a vendor's own MCP server)
 
 When a vendor already runs an official MCP server, the adapter bridges it

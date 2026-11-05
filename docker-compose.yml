@@ -92,6 +92,12 @@ services:
       # adapter then fills its MOTIS_URL in automatically at import. Leave
       # unset to be asked for a URL when installing the adapter.
       - MOTIS_INTERNAL_URL=${MOTIS_INTERNAL_URL:-}
+      # TikTok Shop server app: TikTok Shop connectors without an App key of
+      # their own use it (see .env.example). Unset = each connector needs the
+      # seller's own app.
+      - TIKTOK_SHOP_PLATFORM_APP_KEY=${TIKTOK_SHOP_PLATFORM_APP_KEY:-}
+      - TIKTOK_SHOP_PLATFORM_APP_SECRET=${TIKTOK_SHOP_PLATFORM_APP_SECRET:-}
+      - TIKTOK_SHOP_PLATFORM_SERVICE_ID=${TIKTOK_SHOP_PLATFORM_SERVICE_ID:-}
       # Code mode: WebSocket URL of the code-runner service that executes code
       # runs in isolation (see deploy/code-runner/README.md). Empty = code mode
       # off, the default. Set together with COMPOSE_PROFILES=code-runner to run

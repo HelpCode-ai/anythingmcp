@@ -75,7 +75,12 @@ export function needsBrowserAuthorization(adapter: Pick<AdapterDefinition, 'conn
 
 export function setupKind(adapter: Pick<AdapterDefinition, 'connector' | 'requiredEnvVars'>): SetupKind {
   if (needsBrowserAuthorization(adapter)) return 'oauth_browser';
-  return adapter.requiredEnvVars.length === 0 ? 'none' : 'credentials';
+  // A marketplace shop (HMAC with a token provider: Shopee, TikTok Shop) is
+  // authorized on the setup page even when nothing has to be typed (TikTok
+  // Shop on a server with its own app), so it never "works right away".
+  const auth = (adapter.connector.authConfig ?? {}) as Record<string, unknown>;
+  const shopAuthorization = adapter.connector.authType === 'HMAC' && typeof auth.tokenProvider === 'string';
+  return adapter.requiredEnvVars.length === 0 && !shopAuthorization ? 'none' : 'credentials';
 }
 
 /** Names an authorization fills in: `{{VAR}}` used as the OAuth refresh/access token. */

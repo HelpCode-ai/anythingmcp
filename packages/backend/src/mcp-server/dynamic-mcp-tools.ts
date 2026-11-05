@@ -1,3 +1,4 @@
+import { withCatalogUserAgent } from '../connectors/catalog-user-agent.util';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { AxiosError } from 'axios';
 import { ToolRegistry } from './tool-registry';
@@ -538,7 +539,7 @@ export class DynamicMcpTools {
         baseUrl: interpolatedConfig.baseUrl,
         authType: tool.connectorConfig.authType,
         authConfig,
-        headers: interpolatedConfig.headers,
+        headers: withCatalogUserAgent(interpolatedConfig.headers, tool.connectorConfig.config),
         specUrl: (tool.connectorConfig as any).specUrl,
         // The engines key the OAuth2 token cache, the refresh lock and the
         // saving of a renewed token on the connector id. Without it every

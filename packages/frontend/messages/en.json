@@ -1034,6 +1034,11 @@
       "selfRegistering": "After saving you sign in at {name} once. AnythingMCP registers itself with {name}'s MCP server, so there is no app to create and no key to copy.",
       "ownApp": "You need an app of your own at {name}, then you sign in once. In the app's settings, add this callback URL (also called redirect URI) exactly as shown:"
     },
+    "tiktokShopApp": {
+      "serverApp": "This server has its own TikTok Shop app: you only sign in to Seller Center and approve it. There are no app keys to enter.",
+      "useOwn": "Use your own TikTok Shop app",
+      "ownHint": "Only for a Partner Center app of your own. Set its Redirect URL to:"
+    },
     "copy": "Copy",
     "noInput": "Nothing to enter: it works without an account.",
     "working": "Working…",
@@ -1499,7 +1504,7 @@
     },
     "tiktokShop": {
       "title": "TikTok Shop authorization",
-      "body": "Sign in to TikTok Shop Seller Center with the shop owner account and approve your app. The app's Redirect URL in Partner Center must be your AnythingMCP address followed by /api/tiktok-shop/callback. The tokens are stored encrypted and renewed automatically; authorize again when the authorization expires or the connector asks for it."
+      "body": "Sign in to TikTok Shop Seller Center with the shop owner account and approve the app. With an app of your own, its Redirect URL in Partner Center must be your AnythingMCP address followed by /api/tiktok-shop/callback; without one, the connector uses this server's TikTok Shop app. The tokens are stored encrypted and renewed automatically; authorize again when the authorization expires or the connector asks for it."
     },
     "env": {
       "title": "Environment Variables",

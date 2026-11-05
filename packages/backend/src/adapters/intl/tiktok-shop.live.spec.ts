@@ -183,9 +183,15 @@ describe('tiktok-shop adapter: static spec conformance', () => {
     });
   });
 
-  it('asks for the app key, secret and service id, the secret as a secret', () => {
-    expect(a.requiredEnvVars).toEqual(['TIKTOK_SHOP_APP_KEY', 'TIKTOK_SHOP_APP_SECRET', 'TIKTOK_SHOP_SERVICE_ID']);
-    expect(a.optionalEnvVars).toEqual(['TIKTOK_SHOP_MARKET', 'TIKTOK_SHOP_SHOP_ID']);
+  it('takes the app key, secret and service id as optional (empty: the server app), the secret as a secret', () => {
+    expect(a.requiredEnvVars).toEqual([]);
+    expect(a.optionalEnvVars).toEqual([
+      'TIKTOK_SHOP_APP_KEY',
+      'TIKTOK_SHOP_APP_SECRET',
+      'TIKTOK_SHOP_SERVICE_ID',
+      'TIKTOK_SHOP_MARKET',
+      'TIKTOK_SHOP_SHOP_ID',
+    ]);
     const described = describeAdapterEnvVars(a as never);
     expect(described.find((d) => d.name === 'TIKTOK_SHOP_APP_SECRET')!.secret).toBe(true);
     expect(described.find((d) => d.name === 'TIKTOK_SHOP_SERVICE_ID')!.secret).toBe(false);
@@ -197,6 +203,12 @@ describe('tiktok-shop adapter: static spec conformance', () => {
     const base = { authType: 'HMAC', baseUrl: a.connector.baseUrl, headers: a.connector.headers, config: { adapterSlug: 'tiktok-shop' } };
     expect(computeSetupState({ ...base, authConfig: a.connector.authConfig, envVars: {} }).status).toBe('needs_input');
     expect(computeSetupState({ ...base, authConfig: a.connector.authConfig, envVars: ENV }).status).toBe('needs_authorization');
+    // Saved empty, on a server without its own TikTok Shop app: still to fill in.
+    const blank = { TIKTOK_SHOP_APP_KEY: '', TIKTOK_SHOP_APP_SECRET: '', TIKTOK_SHOP_SERVICE_ID: '' };
+    expect(computeSetupState({ ...base, authConfig: a.connector.authConfig, envVars: blank })).toEqual({
+      status: 'needs_input',
+      missing: ['TIKTOK_SHOP_APP_KEY', 'TIKTOK_SHOP_APP_SECRET', 'TIKTOK_SHOP_SERVICE_ID'],
+    });
     expect(
       computeSetupState({
         ...base,

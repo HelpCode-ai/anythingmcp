@@ -6,7 +6,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { decrypt, encrypt } from '../../common/crypto/encryption.util';
 import { getRequiredSecret } from '../../common/secrets.util';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
-import { interpolateDeep } from '../../common/env-interpolation.util';
+import { interpolateDeep, interpolateString } from '../../common/env-interpolation.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
 import { connectorPageUrl } from '../../common/url.util';
 import { ConnectorAuthStatusService, credentialRef } from './connector-auth-status.service';
@@ -28,6 +28,12 @@ import { ConnectorAuthStatusService, credentialRef } from './connector-auth-stat
  *
  * A connector opts in with `authType: "HMAC"` and `authConfig.tokenProvider:
  * "tiktok-shop"`. Nothing else uses this service.
+ *
+ * The app: the seller's own (App key, App secret and Service ID in the
+ * connector's variables), or, when the connector's App key is empty, the
+ * server's public app from TIKTOK_SHOP_PLATFORM_APP_KEY / _APP_SECRET /
+ * _SERVICE_ID (resolveTikTokShopAuthConfig). The server's secret is filled in
+ * memory only, for the call, the authorization or the renewal at hand.
  *
  * What it keeps, in the connector's encrypted authConfig (the same field
  * names as OAuth2 tokens where they mean the same, so the credential status
@@ -165,6 +171,161 @@ export function tiktokShopAppFrom(
   const unresolved = (v: string) => !v || /\{\{/.test(v);
   if (unresolved(appKey) || unresolved(appSecret) || !apiHost || apiHost === 'null') return undefined;
   return { appKey, appSecret, apiHost, ...(unresolved(serviceId) ? {} : { serviceId }) };
+}
+
+/**
+ * The server's own TikTok Shop app (a public App Store app), from the server
+ * variables. Optional; available only when all three are set.
+ */
+export const TIKTOK_SHOP_PLATFORM_VARS = {
+  appKey: 'TIKTOK_SHOP_PLATFORM_APP_KEY',
+  appSecret: 'TIKTOK_SHOP_PLATFORM_APP_SECRET',
+  serviceId: 'TIKTOK_SHOP_PLATFORM_SERVICE_ID',
+} as const;
+
+/** The connector variables of the seller's own app, as the catalog adapter names them. */
+export const TIKTOK_SHOP_OWN_APP_VARS = {
+  appKey: 'TIKTOK_SHOP_APP_KEY',
+  appSecret: 'TIKTOK_SHOP_APP_SECRET',
+  serviceId: 'TIKTOK_SHOP_SERVICE_ID',
+} as const;
+
+export interface TikTokShopPlatformApp {
+  appKey: string;
+  appSecret: string;
+  serviceId: string;
+}
+
+/**
+ * The server's TikTok Shop app, or undefined when any of its three variables
+ * is unset. Read from the process environment, where the config module also
+ * loads the .env file; the same on Cloud and self-hosted.
+ */
+export function tiktokShopPlatformApp(
+  env: Record<string, string | undefined> = process.env,
+): TikTokShopPlatformApp | undefined {
+  const read = (name: string) => String(env[name] ?? '').trim();
+  const appKey = read(TIKTOK_SHOP_PLATFORM_VARS.appKey);
+  const appSecret = read(TIKTOK_SHOP_PLATFORM_VARS.appSecret);
+  const serviceId = read(TIKTOK_SHOP_PLATFORM_VARS.serviceId);
+  if (!appKey || !appSecret || !serviceId) return undefined;
+  return { appKey, appSecret, serviceId };
+}
+
+/** Empty, or a `{{VARIABLE}}` nobody filled in. */
+function isBlank(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.trim() : value === undefined || value === null ? '' : String(value).trim();
+  return !text || /\{\{/.test(text);
+}
+
+/** The connector's own app key: authConfig.appKey, else the signed app_key parameter. */
+function ownAppKey(authConfig: Record<string, unknown>): unknown {
+  const sig = (authConfig.signature ?? {}) as Record<string, unknown>;
+  const query = (sig.queryParams ?? {}) as Record<string, unknown>;
+  return isBlank(authConfig.appKey) ? query.app_key : authConfig.appKey;
+}
+
+/**
+ * Whether a TikTok Shop connector works with the server's app: its own App
+ * key is empty (or an unfilled variable) and the server has an app. A
+ * connector with an App key of its own always uses that app.
+ */
+export function tiktokShopUsesPlatformApp(
+  authType: string | undefined,
+  authConfig: unknown,
+  platformApp: TikTokShopPlatformApp | undefined = tiktokShopPlatformApp(),
+): boolean {
+  if (!platformApp || !isTikTokShopAuth(authType, authConfig)) return false;
+  return isBlank(ownAppKey(authConfig as Record<string, unknown>));
+}
+
+/**
+ * The connector's resolved authConfig with the server's app filled in, when
+ * the connector uses it (see tiktokShopUsesPlatformApp); otherwise the same
+ * object, unchanged. Fills the app key, the Service ID, the signing secret,
+ * the signed app_key parameter and TikTok's signing template.
+ *
+ * The result lives in memory for one call or one authorization. It is never
+ * written back: the token service stores only the token fields it patches,
+ * and the connector row keeps its empty app variables.
+ */
+export function resolveTikTokShopAuthConfig<T extends Record<string, unknown> | undefined>(
+  authType: string | undefined,
+  authConfig: T,
+  platformApp: TikTokShopPlatformApp | undefined = tiktokShopPlatformApp(),
+): T {
+  if (!authConfig || !platformApp || !tiktokShopUsesPlatformApp(authType, authConfig, platformApp)) return authConfig;
+  const sig = (authConfig.signature ?? {}) as Record<string, unknown>;
+  const query = (sig.queryParams ?? {}) as Record<string, unknown>;
+  const secret = platformApp.appSecret;
+  return {
+    ...authConfig,
+    appKey: platformApp.appKey,
+    serviceId: platformApp.serviceId,
+    signature: {
+      ...sig,
+      secret,
+      queryParams: { ...query, app_key: platformApp.appKey },
+      template: `${secret}\${pathname}\${sortedParams}\${body}${secret}`,
+    },
+  } as T;
+}
+
+/**
+ * The TikTok Shop app variables a connector still needs before it can be
+ * authorized, for the setup check: none when it uses the server's app;
+ * otherwise App key, App secret and Service ID, each when it is empty. The
+ * variables are optional in the catalog (an empty value is how a connector
+ * asks for the server's app), so without this a server with no app of its
+ * own would call a connector with nothing in them ready to authorize.
+ */
+export function tiktokShopMissingAppVars(
+  authType: string | undefined,
+  authConfig: unknown,
+  platformApp: TikTokShopPlatformApp | undefined = tiktokShopPlatformApp(),
+): string[] {
+  if (!isTikTokShopAuth(authType, authConfig)) return [];
+  if (tiktokShopUsesPlatformApp(authType, authConfig, platformApp)) return [];
+  const ac = authConfig as Record<string, unknown>;
+  const sig = (ac.signature ?? {}) as Record<string, unknown>;
+  const missing: string[] = [];
+  if (isBlank(ownAppKey(ac))) missing.push(TIKTOK_SHOP_OWN_APP_VARS.appKey);
+  if (isBlank(sig.secret)) missing.push(TIKTOK_SHOP_OWN_APP_VARS.appSecret);
+  if (isBlank(ac.serviceId)) missing.push(TIKTOK_SHOP_OWN_APP_VARS.serviceId);
+  return missing;
+}
+
+/**
+ * The app a stored TikTok Shop connector authorizes and signs with: its own,
+ * or the server's when its App key is empty. `isTikTokShop` is false for any
+ * other connector; `app` is undefined when the app is incomplete.
+ */
+export function tiktokShopAppOfConnector(
+  connector: { authType: string; authConfig: string | null; baseUrl: string; envVars?: unknown },
+  encryptionKey: string,
+  platformApp: TikTokShopPlatformApp | undefined = tiktokShopPlatformApp(),
+): { app?: TikTokShopApp; isTikTokShop: boolean; usesPlatformApp: boolean; envVars: Record<string, string> } {
+  let authConfig: Record<string, unknown> = {};
+  try {
+    authConfig = connector.authConfig ? JSON.parse(decrypt(connector.authConfig, encryptionKey)) : {};
+  } catch {
+    authConfig = {};
+  }
+  const envVars = (connector.envVars as Record<string, string> | null) ?? {};
+  if (!isTikTokShopAuth(connector.authType, authConfig)) {
+    return { isTikTokShop: false, usesPlatformApp: false, envVars };
+  }
+  const resolved = interpolateDeep(authConfig, envVars);
+  const usesPlatformApp = tiktokShopUsesPlatformApp(connector.authType, resolved, platformApp);
+  return {
+    isTikTokShop: true,
+    usesPlatformApp,
+    envVars,
+    app: tiktokShopAppFrom(
+      resolveTikTokShopAuthConfig(connector.authType, resolved, platformApp),
+      interpolateString(connector.baseUrl, envVars),
+    ),
+  };
 }
 
 /**
@@ -592,7 +753,7 @@ export class TikTokShopTokenService {
     config: { baseUrl: string; authConfig?: Record<string, unknown>; connectorId?: string },
     accessToken: string,
   ): Promise<string | undefined> {
-    const app = tiktokShopAppFrom(config.authConfig, config.baseUrl);
+    const app = tiktokShopAppFrom(resolveTikTokShopAuthConfig('HMAC', config.authConfig), config.baseUrl);
     if (!app || !config.connectorId) return undefined;
     try {
       const shops = await this.fetchShops(app, accessToken);
@@ -672,7 +833,9 @@ export class TikTokShopTokenService {
         throw unauthorized(message, message);
       }
 
-      const app = tiktokShopAppFrom(authConfig, config.baseUrl);
+      // Read from the database, so the server's app (for a connector without
+      // an App key of its own) is filled in here, not by the caller.
+      const app = tiktokShopAppFrom(resolveTikTokShopAuthConfig('HMAC', authConfig), config.baseUrl);
       if (!app || !stored.refreshToken) {
         throw unauthorized('TikTok Shop: the app key, app secret or the shop authorization is missing on this connector.');
       }

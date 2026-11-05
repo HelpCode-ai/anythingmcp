@@ -17,6 +17,7 @@ import {
   TikTokShopTokenService,
   isTikTokShopAccessTokenRejected,
   isTikTokShopAuth,
+  resolveTikTokShopAuthConfig,
   shopCipherApplies,
 } from './tiktok-shop-token.service';
 import { canRenewToken } from '../oauth-grant.util';
@@ -545,12 +546,18 @@ export class RestEngine {
     // (its access token goes in a header, unsigned); undefined for every
     // other connector.
     const tiktokShop = isTikTokShopAuth(config.authType, config.authConfig);
+    // A TikTok Shop connector without an App key of its own signs, renews and
+    // reads its shops with the server's app: filled in here, in memory, for
+    // this call (and its retry) only.
+    const tiktokShopConfig = tiktokShop
+      ? { ...config, authConfig: resolveTikTokShopAuthConfig(config.authType, config.authConfig) }
+      : config;
     const hmacCredentials = isShopeeAuth(config.authType, config.authConfig)
       ? await this.shopeeShopParams(config)
       : tiktokShop
-        ? await this.tiktokShopCredentials(config, axiosConfig)
+        ? await this.tiktokShopCredentials(tiktokShopConfig, axiosConfig)
         : undefined;
-    this.applyHmacSignature(axiosConfig, config, hmacCredentials);
+    this.applyHmacSignature(axiosConfig, tiktokShopConfig, hmacCredentials);
     for (const h of headerNames(axiosConfig.headers)) {
       if (!headersBeforeSigning.includes(h)) credentialHeaders.add(h);
     }
@@ -647,10 +654,10 @@ export class RestEngine {
       // TikTok Shop refused the access token (105002 expired, or the header
       // named invalid): renew once, sign again with a new timestamp, resend.
       if (tiktokShop && this.tiktokShopTokens && isTikTokShopAccessTokenRejected(error)) {
-        const renewed = await this.tiktokShopTokens.renewAfterRejection(config, sentAt);
+        const renewed = await this.tiktokShopTokens.renewAfterRejection(tiktokShopConfig, sentAt);
         if (renewed) {
           const params = this.applyTikTokShopCredentials(axiosConfig, renewed);
-          this.applyHmacSignature(axiosConfig, config, params);
+          this.applyHmacSignature(axiosConfig, tiktokShopConfig, params);
           rebuildBody(axiosConfig, buildBody);
           return withMeta(await outboundRequest(axiosConfig, outbound));
         }

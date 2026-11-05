@@ -95,8 +95,18 @@ export interface PendingOAuthFlow {
    * Set on a Shopee shop authorization (shopee-auth.controller.ts) or a
    * TikTok Shop authorization (tiktok-shop-auth.controller.ts), each
    * completed by its own endpoint; unset on every OAuth flow.
+   * 'tiktok-shop-install' is a TikTok Shop App Store install: it arrived
+   * without a state of ours, so it has no connector and no user yet
+   * (both empty) and carries the authorization code itself.
    */
-  provider?: 'shopee' | 'tiktok-shop';
+  provider?: 'shopee' | 'tiktok-shop' | 'tiktok-shop-install';
+  /**
+   * The authorization code of a 'tiktok-shop-install', kept here (encrypted
+   * at rest) instead of in the dashboard address. Unset on every other flow.
+   */
+  code?: string;
+  /** The seller's region TikTok named on a 'tiktok-shop-install' (`shop_region`, e.g. GB, US). */
+  shopRegion?: string;
   /**
    * The user signs in with their own account on a connector whose
    * credentials are per user: the tokens go to that user's
@@ -610,9 +620,13 @@ export class McpOAuthService {
   async storePendingFlow(
     state: string,
     data: PendingOAuthFlow,
-    opts: { returnTo?: string } = {},
+    opts: { returnTo?: string; ttlMs?: number } = {},
   ): Promise<void> {
-    const expiresAt = Date.now() + PENDING_FLOW_TTL_MS;
+    // A caller may ask for longer (a store install that waits for a sign-up),
+    // never for more than an authorization code lives.
+    const ttl =
+      typeof opts.ttlMs === 'number' && opts.ttlMs > 0 ? Math.min(opts.ttlMs, PENDING_FLOW_MAX_TTL_MS) : PENDING_FLOW_TTL_MS;
+    const expiresAt = Date.now() + ttl;
     const returnTo = safeReturnTo(opts.returnTo);
     if (!this.prisma) {
       this.memoryFlows.set(state, { flow: data, returnTo, expiresAt });
@@ -747,6 +761,8 @@ export function isLocalOnlyHost(hostname: string): boolean {
 
 /** How long a started authorization waits for the user to come back. */
 export const PENDING_FLOW_TTL_MS = 15 * 60 * 1000;
+/** The longest a pending flow may be kept (`ttlMs`): 30 minutes. */
+export const PENDING_FLOW_MAX_TTL_MS = 30 * 60 * 1000;
 
 export interface PendingFlowRecord {
   flow: PendingOAuthFlow;
