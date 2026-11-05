@@ -189,6 +189,7 @@ async function fakeSession(page: Page) {
       return json({ daily: days(Number(url.searchParams.get('days') || 30)), topTools: [{ name: 'af_fixtures', count: 24, errors: 0, avgDuration: 30 }], totalInvocations: 67, successRate: 99, avgDuration: 40 });
     if (p.includes('/audit/breakdowns'))
       return json({ days: 30, total: 67, errors: 1, proxyCalls: 0, estCostMicros: 0, rates: { callMicros: 0, proxyCallMicros: 0 }, byConnector: [], byServer: [], byUser: [], byClient: [] });
+    if (p.includes('/audit/tool-performance')) return json({ items: [], hasMore: false });
     if (p.includes('/audit/invocations')) return json(LOGS);
     if (p.includes('/knowledge-folders')) return json({ folders: [], restrictionsAvailable: false });
     if (p.endsWith('/memory/status'))

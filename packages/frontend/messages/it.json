@@ -478,6 +478,39 @@
       "dayTitleWithErrors": "{date}: {total, plural, one {# chiamata} other {# chiamate}} · {errors, plural, one {# errore} other {# errori}}"
     },
     "topTools": "Strumenti più usati",
+    "performance": {
+      "title": "Prestazioni degli strumenti",
+      "description": "Chiamate, errori e latenza per strumento, connettore e server MCP. Questa tabella ha un proprio intervallo di tempo.",
+      "range": "Periodo delle prestazioni degli strumenti",
+      "ranges": { "24": "Ultime 24 ore", "168": "Ultimi 7 giorni", "720": "Ultimi 30 giorni" },
+      "connector": "Filtra le prestazioni per connettore",
+      "server": "Filtra le prestazioni per server MCP",
+      "allConnectors": "Tutti i connettori",
+      "allServers": "Tutti i server MCP",
+      "filtersFailed": "Impossibile caricare le opzioni dei filtri.",
+      "loading": "Caricamento delle prestazioni…",
+      "loadFailed": "Impossibile caricare le prestazioni degli strumenti.",
+      "retry": "Riprova",
+      "empty": "Nessuna chiamata nel periodo corrisponde a questi filtri.",
+      "noServer": "Diretto / nessun server",
+      "columns": {
+        "tool": "Strumento / connettore",
+        "server": "Server MCP",
+        "calls": "Chiamate",
+        "errorRate": "Tasso di errore",
+        "p50": "p50",
+        "p95": "p95",
+        "p99": "p99",
+        "lastError": "Ultimo errore registrato"
+      },
+      "errors": "{count, plural, one {# errore} other {# errori}}",
+      "samples": "{count, plural, one {# campione salvato} other {# campioni salvati}}",
+      "showError": "Mostra errore",
+      "page": "Pagina {page}",
+      "previous": "Precedente",
+      "next": "Successiva",
+      "samplingNote": "La latenza usa i campioni salvati. Gli errori ripetuti vengono attribuiti al primo server registrato."
+    },
     "byConnector": "Chiamate per connettore",
     "byServer": "Chiamate per server MCP",
     "byUser": "Chiamate per utente",
@@ -1463,6 +1496,10 @@
     "shopee": {
       "title": "Autorizzazione del negozio Shopee",
       "body": "Accedi con l'account del negozio e approva questa app. I token vengono salvati cifrati e rinnovati automaticamente. Autorizza di nuovo quando l'autorizzazione scade o il connettore lo chiede."
+    },
+    "tiktokShop": {
+      "title": "Autorizzazione del negozio TikTok Shop",
+      "body": "Accedi a TikTok Shop Seller Center con l'account titolare del negozio e approva la tua app. La Redirect URL dell'app nel Partner Center deve essere il tuo indirizzo AnythingMCP seguito da /api/tiktok-shop/callback. I token vengono salvati cifrati e rinnovati automaticamente; autorizza di nuovo quando l'autorizzazione scade o il connettore lo chiede."
     },
     "env": {
       "title": "Variabili d'ambiente",

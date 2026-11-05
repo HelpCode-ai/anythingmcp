@@ -858,7 +858,8 @@
           },
           "title": {
             "type": "string",
-            "description": "Listing title. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters."
+            "description": "Listing title, at most 140 characters. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters.",
+            "maxLength": 140
           },
           "description": {
             "type": "string",
@@ -1053,7 +1054,8 @@
           },
           "title": {
             "type": "string",
-            "description": "Listing title. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters."
+            "description": "Listing title, at most 140 characters. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters.",
+            "maxLength": 140
           },
           "description": {
             "type": "string",

@@ -19,6 +19,7 @@ import {
 import { pickProbe, probeResultFailure } from './probe.util';
 import { resolveDerivedEnvVars, withDerivedValues } from './derived-settings';
 import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
+import { tiktokShopNeedsAuthorization } from '../connectors/engines/tiktok-shop-token.service';
 import { odooCheckAdvice } from './odoo-database-hint';
 import { checkAdapterEnvValues, describeFieldProblems, normalizeAdapterEnvValues } from './env-var-checks';
 import { outboundRequest } from '../common/outbound-http';
@@ -1088,6 +1089,8 @@ export class AdaptersService {
     }
     // Same for a Shopee shop, authorized with "Authorize shop" after install.
     if (shopeeNeedsAuthorization(adapter.connector.authType, auth)) return null;
+    // And for a TikTok shop, authorized from the connector page too.
+    if (tiktokShopNeedsAuthorization(adapter.connector.authType, auth)) return null;
     const call = pickProbe(adapter);
     if (!call) return null;
     const started = Date.now();

@@ -642,6 +642,18 @@ export const connectors = {
       '/api/shopee/complete',
       { method: 'POST', token, body: { state, code, shopId } },
     ),
+  /** "Authorize with Provider" for a TikTok shop: the seller authorization link. */
+  tiktokShopAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; redirectUrl?: string; error?: string }>(
+      `/api/tiktok-shop/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of a TikTok Shop authorization: exchange the code TikTok sent back. */
+  tiktokShopComplete: (state: string, code: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/tiktok-shop/complete',
+      { method: 'POST', token, body: { state, code } },
+    ),
   oauthRedirectUri: (token: string) =>
     request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>
@@ -1115,7 +1127,45 @@ export const audit = {
     }>(`/api/audit/analytics?days=${days}`, { token }),
   breakdowns: (token: string, days = 30) =>
     request<AuditBreakdowns>(`/api/audit/breakdowns?days=${days}`, { token }),
+  toolPerformance: (token: string, params: ToolPerformanceQuery = {}) => {
+    const query = new URLSearchParams({
+      hours: String(params.hours ?? 24),
+      limit: String(params.limit ?? 25),
+      offset: String(params.offset ?? 0),
+    });
+    if (params.connectorId) query.set('connectorId', params.connectorId);
+    if (params.mcpServerId) query.set('mcpServerId', params.mcpServerId);
+    return request<{ items: ToolPerformance[]; hasMore: boolean }>(
+      `/api/audit/tool-performance?${query}`, { token },
+    );
+  },
 };
+
+export interface ToolPerformanceQuery {
+  hours?: number;
+  limit?: number;
+  offset?: number;
+  connectorId?: string;
+  mcpServerId?: string;
+}
+
+export interface ToolPerformance {
+  toolId: string;
+  toolName: string;
+  connectorId: string;
+  connectorName: string;
+  mcpServerId: string | null;
+  mcpServerName: string | null;
+  calls: number;
+  errors: number;
+  errorRate: number;
+  latencySampleCount: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+}
 
 export interface BreakdownRow {
   id: string | null;

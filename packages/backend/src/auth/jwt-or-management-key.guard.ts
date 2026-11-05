@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -27,8 +28,10 @@ export const DEFAULT_MANAGEMENT_RATE_LIMIT_PER_MINUTE = 300;
  *   - MANAGEMENT_READ   → safe methods only (GET/HEAD/OPTIONS).
  *   - MANAGEMENT_ADMIN  → any method, still role-capped by RolesGuard.
  *
- * Only Prisma is needed (PrismaModule is @Global), so this guard can be used on
- * any management controller without extra module wiring.
+ * Only Prisma is required (PrismaModule is @Global). Redis is optional: the
+ * guard also sits on controllers that processes without RedisModule load (the
+ * File Search worker imports SettingsModule), and without Redis the per-key
+ * rate limit falls open, as it does when Redis is down.
  */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -40,7 +43,7 @@ export class JwtOrManagementKeyGuard extends AuthGuard('jwt') {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly redis: RedisService,
+    @Optional() private readonly redis?: RedisService,
   ) {
     super();
     const raw = process.env.MANAGEMENT_RATE_LIMIT_PER_MINUTE;
@@ -120,7 +123,7 @@ export class JwtOrManagementKeyGuard extends AuthGuard('jwt') {
   }
 
   private async enforceRateLimit(keyId: string, organizationId: string): Promise<void> {
-    if (this.rateLimit === 0 || !this.redis.isConnected) return;
+    if (this.rateLimit === 0 || !this.redis?.isConnected) return;
     const redisKey = `api:prl:key:${keyId}`;
     try {
       const current = await this.redis.incr(redisKey);

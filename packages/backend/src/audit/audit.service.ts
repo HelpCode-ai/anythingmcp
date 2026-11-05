@@ -32,6 +32,12 @@ import { AdsActivationService } from './ads-activation.service';
 import { FirstSuccessService } from './first-success.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { ANALYTICS_DEFAULT_DAYS, ANALYTICS_MAX_DAYS } from './analytics-query.dto';
+import {
+  TOOL_PERFORMANCE_DEFAULT_HOURS,
+  TOOL_PERFORMANCE_DEFAULT_LIMIT,
+  ToolPerformanceQueryDto,
+} from './tool-performance-query.dto';
+import { ToolPerformanceRow, toolPerformanceQuery } from './tool-performance.query';
 
 @Injectable()
 export class AuditService implements OnModuleDestroy {
@@ -484,6 +490,43 @@ export class AuditService implements OnModuleDestroy {
       totalInvocations: totalCalls,
       successRate: totalCalls > 0 ? Math.round((successCalls / totalCalls) * 100) : 0,
       avgDuration: storedRows > 0 ? Math.round(totalDuration / storedRows) : 0,
+    };
+  }
+
+  async getToolPerformance(organizationId: string, options: ToolPerformanceQueryDto = {}) {
+    if (!organizationId) return { items: [], hasMore: false };
+
+    const hours = options.hours ?? TOOL_PERFORMANCE_DEFAULT_HOURS;
+    const limit = options.limit ?? TOOL_PERFORMANCE_DEFAULT_LIMIT;
+    const until = new Date();
+    const since = new Date(until.getTime() - hours * 60 * 60 * 1000);
+    const rows = await this.prisma.$queryRaw<ToolPerformanceRow[]>(
+      toolPerformanceQuery(organizationId, since, until, options, limit),
+    );
+
+    return {
+      items: rows.slice(0, limit).map((row) => {
+        const calls = Number(row.calls);
+        const errors = Number(row.errors);
+        return {
+          toolId: row.tool_id,
+          toolName: row.tool_name,
+          connectorId: row.connector_id,
+          connectorName: row.connector_name,
+          mcpServerId: row.mcp_server_id,
+          mcpServerName: row.mcp_server_name,
+          calls,
+          errors,
+          errorRate: calls > 0 ? Math.round((errors / calls) * 10000) / 100 : 0,
+          latencySampleCount: Number(row.latency_sample_count),
+          p50Ms: row.latency?.[0] ?? null,
+          p95Ms: row.latency?.[1] ?? null,
+          p99Ms: row.latency?.[2] ?? null,
+          lastError: row.last_error,
+          lastErrorAt: row.last_error_at?.toISOString() ?? null,
+        };
+      }),
+      hasMore: rows.length > limit,
     };
   }
 
