@@ -1,0 +1,1007 @@
+{
+  "slug": "bzzoiro",
+  "name": "Bzzoiro Sports Data",
+  "description": "Football data from Bzzoiro Sports Data: leagues, standings and leaderboards, fixtures and live scores, lineups, goals and match statistics, teams, squads and form, players and their match stats, managers, TV broadcasts and a model-based match outlook. Free API token.",
+  "instructions": "## Bzzoiro Sports Data (football)\nThis connector reads the Bzzoiro Sports Data API v2 (`https://sports.bzzoiro.com/api/v2`) for football: leagues and seasons, standings and leaderboards, matches with live scores, lineups, incidents and statistics, teams with squads and form, players with per-match statistics, managers, TV broadcasts, and a model-based match outlook. Every tool only reads.\n\n**Setup**: register for free at https://sports.bzzoiro.com/register/ and copy your API token from your account page into `BZZOIRO_API_KEY`. It is sent as `Authorization: Token <key>`. Football is free within the published limits (7,500 requests a day per account, reset at midnight UTC, plus a burst limit of about 25 requests a second). A 429 with `taster_exhausted` means the daily quota is used up; `rate_limited` means slow down for a second.\n\n**Ids**: leagues, seasons, teams, matches (called events in the API), players and managers have integer ids. Find a league with `bzzoiro_list_leagues`, its seasons with `bzzoiro_list_league_seasons`, a team with `bzzoiro_list_teams`, a player with `bzzoiro_list_players` and a manager with `bzzoiro_list_managers`. Match ids come from `bzzoiro_list_matches`, `bzzoiro_list_live_matches` and `bzzoiro_list_team_fixtures`.\n\n**Dates and paging**: all times are UTC (ISO 8601); convert before quoting a kick-off time. Date filters take `YYYY-MM-DD` or a full timestamp. Lists answer `{count, next, previous, results}`; page with `limit` (max 200) and `offset` while `next` is not null. Unknown filters are refused with 400 rather than ignored.\n\n**Common workflows**\n- Table and leaders: `bzzoiro_get_standings`, then `bzzoiro_get_league_leaders` with stat scorers or assists. Use `bzzoiro_get_league` for the current season.\n- Match preview: find the match with `bzzoiro_list_team_fixtures`, then `bzzoiro_get_head_to_head`, `bzzoiro_get_team_form` for both teams, `bzzoiro_get_team_squad` for injuries, `bzzoiro_get_match_lineups` and `bzzoiro_get_match_outlook`.\n- Match report: `bzzoiro_get_match`, `bzzoiro_get_match_incidents` (goalscorers, cards), `bzzoiro_get_match_stats` and `bzzoiro_get_match_player_stats`.\n- Live: `bzzoiro_list_live_matches`, then the match tools for one of them.\n- Players and staff: `bzzoiro_get_player`, `bzzoiro_list_player_match_stats`, `bzzoiro_get_manager`.\n- Where to watch: `bzzoiro_list_broadcasts` by match, team or country.\n\n**Match outlook**: `bzzoiro_get_match_outlook` returns the model's result probabilities, expected goals, most likely score and confidence. Present it as a statistical estimate, never as a certainty.\n\n**Limitations**: football only. Bzzoiro's other sports and its market price data are not part of this connector. Data can be late or incomplete; check before relying on it.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "bzzoiro",
+  "docsUrl": "https://sports.bzzoiro.com/docs/football/",
+  "requiredEnvVars": [
+    "BZZOIRO_API_KEY"
+  ],
+  "envVarMeta": {
+    "BZZOIRO_API_KEY": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Register for free at sports.bzzoiro.com and copy the API token from your account page. Paste the token only, without the word Token.",
+      "link": "https://sports.bzzoiro.com/register/",
+      "pattern": "^[A-Za-z0-9_-]{20,128}$",
+      "patternMessage": "Paste only the token: letters, digits, - or _, without 'Token' or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Bzzoiro refused the API token. Copy it again from your account on sports.bzzoiro.com and paste only the token, without the word Token.",
+    "403": "Bzzoiro answered 403: this token's plan does not include the resource. Football is free; other sports need a paid plan.",
+    "429": "Bzzoiro's limit is reached: 7,500 football requests a day (reset at midnight UTC) or about 25 requests a second. Wait and try again."
+  },
+  "probe": {
+    "tool": "bzzoiro_list_leagues",
+    "params": {
+      "limit": 5
+    }
+  },
+  "connector": {
+    "name": "Bzzoiro Sports Data API v2",
+    "type": "REST",
+    "baseUrl": "https://sports.bzzoiro.com/api/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Token {{BZZOIRO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "bzzoiro_list_leagues",
+      "description": "List the football leagues and cups Bzzoiro covers: id, name, country, whether it is a women's competition and the current season. Only active competitions unless include_inactive is true. Start here to find a league id. Unknown filters are refused with 400.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "Country name, case-insensitive exact match (e.g. England, Spain, Portugal)."
+          },
+          "is_women": {
+            "type": "boolean",
+            "description": "true for women's competitions, false for men's."
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "description": "true to also list competitions that are no longer active."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size (default 50, max 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip. Page with offset while `next` in the answer is not null."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leagues/",
+        "queryParams": {
+          "country": "$country",
+          "is_women": "$is_women",
+          "include_inactive": "$include_inactive",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_get_league",
+      "description": "Get one league or cup: name, country, women's or men's, whether it is active, and its current season.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league_id": {
+            "type": "integer",
+            "description": "League id from bzzoiro_list_leagues."
+          }
+        },
+        "required": [
+          "league_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leagues/{league_id}/"
+      }
+    },
+    {
+      "name": "bzzoiro_list_league_seasons",
+      "description": "List the seasons of a league that carry data, newest first, with their ids and stages (group-stage, league-phase, regular-season, knockout rounds). Use a season id to read past standings, matches or leaders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league_id": {
+            "type": "integer",
+            "description": "League id from bzzoiro_list_leagues."
+          }
+        },
+        "required": [
+          "league_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leagues/{league_id}/seasons/"
+      }
+    },
+    {
+      "name": "bzzoiro_get_standings",
+      "description": "Get the league table for a season (current season by default): position, played, won, drawn, lost, goals and points per team. Cups answer with a `groups` map, leagues with a flat `standings` list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league_id": {
+            "type": "integer",
+            "description": "League id from bzzoiro_list_leagues."
+          },
+          "season_id": {
+            "type": "integer",
+            "description": "Season id; defaults to the current season."
+          }
+        },
+        "required": [
+          "league_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leagues/{league_id}/standings/",
+        "queryParams": {
+          "season_id": "$season_id"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_get_league_leaders",
+      "description": "Rank the players of a league season by one statistic: top scorers, assists, yellow cards, red cards or fouls (current season by default). With team_id the ranking covers one squad only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league_id": {
+            "type": "integer",
+            "description": "League id from bzzoiro_list_leagues."
+          },
+          "stat": {
+            "type": "string",
+            "enum": [
+              "scorers",
+              "assists",
+              "yellowcards",
+              "redcards",
+              "fouls"
+            ],
+            "description": "Which leaderboard: scorers (goals), assists, yellowcards, redcards or fouls."
+          },
+          "season_id": {
+            "type": "integer",
+            "description": "Season id; defaults to the current season."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Rank only this team's players."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Players to return (default 20, max 50)."
+          }
+        },
+        "required": [
+          "league_id",
+          "stat"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leagues/{league_id}/top/{stat}/",
+        "queryParams": {
+          "stat": "$stat",
+          "season_id": "$season_id",
+          "team_id": "$team_id",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_list_matches",
+      "description": "Search football matches (fixtures and results) by league, season, team, status or kick-off window: teams, kick-off time (UTC), status, score, round and stage. Without filters it lists every match, so narrow with league_id plus a date range or a season. Lineups and statistics are separate calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league_id": {
+            "type": "integer",
+            "description": "League id from bzzoiro_list_leagues."
+          },
+          "season_id": {
+            "type": "integer",
+            "description": "Season id from bzzoiro_list_league_seasons."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Matches where this team played home or away."
+          },
+          "team_name": {
+            "type": "string",
+            "description": "Partial, case-insensitive match on the home or away team name."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "notstarted",
+              "inprogress",
+              "1st_half",
+              "halftime",
+              "2nd_half",
+              "extratime",
+              "penalties",
+              "finished",
+              "aet",
+              "postponed",
+              "delayed",
+              "cancelled",
+              "unresolved"
+            ],
+            "description": "Only matches with this status."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Kick-off on or after this moment: ISO 8601 UTC (2026-04-30T00:00:00Z) or a date (2026-04-30)."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Kick-off on or before this moment: ISO 8601 UTC (2026-04-30T23:59:59Z) or a date (2026-04-30)."
+          },
+          "stage": {
+            "type": "string",
+            "description": "Competition stage slug, e.g. regular-season, group-stage, league-phase, round-of-16, final (see the stages in bzzoiro_list_league_seasons)."
+          },
+          "round": {
+            "type": "integer",
+            "description": "Matchday within `stage`; needs stage."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size (default 50, max 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip. Page with offset while `next` in the answer is not null."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/",
+        "queryParams": {
+          "league_id": "$league_id",
+          "season_id": "$season_id",
+          "team_id": "$team_id",
+          "team_name": "$team_name",
+          "status": "$status",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "stage": "$stage",
+          "round": "$round",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_list_live_matches",
+      "description": "List the matches being played right now (from five minutes before kick-off until shortly after the final whistle) with score, minute and status. Refreshed about every 30 seconds; do not poll more often than every 10 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "league_id": {
+            "type": "integer",
+            "description": "League id from bzzoiro_list_leagues."
+          },
+          "season_id": {
+            "type": "integer",
+            "description": "Season id from bzzoiro_list_league_seasons."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from bzzoiro_list_teams or any match."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size (default 50, max 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip. Page with offset while `next` in the answer is not null."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/live/",
+        "queryParams": {
+          "league_id": "$league_id",
+          "season_id": "$season_id",
+          "team_id": "$team_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_get_match",
+      "description": "Get one match: teams, coaches, referee and venue ids, kick-off (UTC), status, minute, score with half-time, extra-time and penalties, round, stage, attendance, weather and a short head-to-head summary.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match (event) id from bzzoiro_list_matches, bzzoiro_list_live_matches or bzzoiro_list_team_fixtures."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{match_id}/"
+      }
+    },
+    {
+      "name": "bzzoiro_get_match_lineups",
+      "description": "Get the lineups of a match: formation, starting XI and substitutes per team. `lineup_status` says whether they are confirmed (about an hour before kick-off) or projected by Bzzoiro's model before that.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match (event) id from bzzoiro_list_matches, bzzoiro_list_live_matches or bzzoiro_list_team_fixtures."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{match_id}/lineups/"
+      }
+    },
+    {
+      "name": "bzzoiro_get_match_incidents",
+      "description": "Get every incident of a match in order: goals with scorer and assist, cards, substitutions, VAR decisions, with minute and side (is_home). This is where the goalscorers are.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match (event) id from bzzoiro_list_matches, bzzoiro_list_live_matches or bzzoiro_list_team_fixtures."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{match_id}/incidents/"
+      }
+    },
+    {
+      "name": "bzzoiro_get_match_stats",
+      "description": "Get the team statistics of a match: possession, shots, expected goals (xG), passes, corners, fouls and more, plus shot map, momentum and average positions. Flags say which xG values are estimated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match (event) id from bzzoiro_list_matches, bzzoiro_list_live_matches or bzzoiro_list_team_fixtures."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{match_id}/stats/"
+      }
+    },
+    {
+      "name": "bzzoiro_get_match_player_stats",
+      "description": "Get per-player statistics for the whole matchday squad of a match: minutes, rating, goals, assists, shots, passes, tackles and more. Unused substitutes come back with 0 minutes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match (event) id from bzzoiro_list_matches, bzzoiro_list_live_matches or bzzoiro_list_team_fixtures."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{match_id}/player-stats/"
+      }
+    },
+    {
+      "name": "bzzoiro_get_head_to_head",
+      "description": "Get the head-to-head record of the two teams of a match, oriented so that home is this match's home team: wins, draws, goals and their recent meetings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match (event) id from bzzoiro_list_matches, bzzoiro_list_live_matches or bzzoiro_list_team_fixtures."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{match_id}/h2h/"
+      }
+    },
+    {
+      "name": "bzzoiro_get_match_outlook",
+      "description": "Get Bzzoiro's statistical outlook for a match from its machine-learning model: home, draw and away probabilities (0-100) with the most likely result, expected goals per team, the most likely scoreline and the model's confidence. A model estimate, not a certainty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match (event) id from bzzoiro_list_matches, bzzoiro_list_live_matches or bzzoiro_list_team_fixtures."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/{match_id}/prediction/"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "fallbackToRaw": false,
+          "select": {
+            "id": "$.id",
+            "created_at": "$.created_at",
+            "match": "$.event",
+            "result_probabilities": "$.markets.match_result",
+            "expected_goals": "$.markets.expected_goals",
+            "most_likely_score": "$.markets.score.most_likely",
+            "confidence": "$.model.confidence",
+            "model_version": "$.model.version"
+          }
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_list_teams",
+      "description": "Search teams by name, country, league or season: id, name, short name, country and venue id. Use it to find a team id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Partial, case-insensitive match on the team name."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country code, e.g. PT, ES, BR."
+          },
+          "league_id": {
+            "type": "integer",
+            "description": "Teams with at least one match in this league."
+          },
+          "season_id": {
+            "type": "integer",
+            "description": "Teams that played in this season."
+          },
+          "in_competition": {
+            "type": "boolean",
+            "description": "true for teams with upcoming matches in the league; needs league_id."
+          },
+          "is_women": {
+            "type": "boolean",
+            "description": "Women's or men's teams; needs league_id or season_id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size (default 50, max 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip. Page with offset while `next` in the answer is not null."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/",
+        "queryParams": {
+          "name": "$name",
+          "country_code": "$country_code",
+          "league_id": "$league_id",
+          "season_id": "$season_id",
+          "in_competition": "$in_competition",
+          "is_women": "$is_women",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_get_team",
+      "description": "Get one team: name, short name, country and venue id. Use bzzoiro_get_team_squad for players and bzzoiro_list_managers with team_id for the coach.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from bzzoiro_list_teams or any match."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/"
+      }
+    },
+    {
+      "name": "bzzoiro_list_team_fixtures",
+      "description": "List a team's matches. Without dates it returns the window from three hours ago to seven days ahead (recent and next fixtures); pass date_from and date_to for other periods.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from bzzoiro_list_teams or any match."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Kick-off on or after this moment: ISO 8601 UTC (2026-04-30T00:00:00Z) or a date (2026-04-30)."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Kick-off on or before this moment: ISO 8601 UTC (2026-04-30T23:59:59Z) or a date (2026-04-30)."
+          },
+          "league_id": {
+            "type": "integer",
+            "description": "Only matches in this league."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "notstarted",
+              "inprogress",
+              "1st_half",
+              "halftime",
+              "2nd_half",
+              "extratime",
+              "penalties",
+              "finished",
+              "aet",
+              "postponed",
+              "delayed",
+              "cancelled",
+              "unresolved"
+            ],
+            "description": "Only matches with this status."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size (default 50, max 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip. Page with offset while `next` in the answer is not null."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/fixtures/",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "league_id": "$league_id",
+          "status": "$status",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_get_team_squad",
+      "description": "Get a team's current squad ordered by position and shirt number, with each player's availability, injury type and expected return.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from bzzoiro_list_teams or any match."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/squad/"
+      }
+    },
+    {
+      "name": "bzzoiro_get_team_form",
+      "description": "Get a team's form over its last N finished matches, already averaged: results, goals, points per match and the mean of every statistic, split by home and away. Each statistic carries its own `matches` count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from bzzoiro_list_teams or any match."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 40,
+            "description": "Window size, 1-40 matches (default 10)."
+          },
+          "league_id": {
+            "type": "integer",
+            "description": "Only matches of this competition (recommended for league form)."
+          },
+          "venue": {
+            "type": "string",
+            "enum": [
+              "all",
+              "home",
+              "away"
+            ],
+            "description": "Only home or away matches in the window (default all)."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/form/",
+        "queryParams": {
+          "last": "$last",
+          "league_id": "$league_id",
+          "venue": "$venue"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_list_players",
+      "description": "Search players by name (accent-insensitive), club, national team, nationality or position: id, name, position, club, nationality, date of birth.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Partial match on name or short name; accents optional (gyokeres finds Gyökeres)."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Current club id."
+          },
+          "national_team_id": {
+            "type": "integer",
+            "description": "National team id."
+          },
+          "nationality_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 nationality code, e.g. PT."
+          },
+          "position": {
+            "type": "string",
+            "enum": [
+              "G",
+              "D",
+              "M",
+              "F",
+              "GK",
+              "CB",
+              "LB",
+              "RB",
+              "LWB",
+              "RWB",
+              "DM",
+              "CM",
+              "AM",
+              "LM",
+              "RM",
+              "LW",
+              "RW",
+              "SS",
+              "ST"
+            ],
+            "description": "Generic (G, D, M, F) or specific position code."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size (default 50, max 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip. Page with offset while `next` in the answer is not null."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/",
+        "queryParams": {
+          "name": "$name",
+          "team_id": "$team_id",
+          "national_team_id": "$national_team_id",
+          "nationality_code": "$nationality_code",
+          "position": "$position",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_get_player",
+      "description": "Get one player's profile: name, position, shirt number, date of birth, height, preferred foot, nationality, club and national team, contract end, estimated market value, availability and injury, plus attribute ratings, strengths and weaknesses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player_id": {
+            "type": "integer",
+            "description": "Player id from bzzoiro_list_players or a squad."
+          }
+        },
+        "required": [
+          "player_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/{player_id}/"
+      }
+    },
+    {
+      "name": "bzzoiro_list_player_match_stats",
+      "description": "List a player's statistics match by match (minutes, rating, goals, assists, shots, passes, duels), filtered by season, league, team or date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player_id": {
+            "type": "integer",
+            "description": "Player id."
+          },
+          "season_id": {
+            "type": "integer",
+            "description": "Season id from bzzoiro_list_league_seasons."
+          },
+          "league_id": {
+            "type": "integer",
+            "description": "League id from bzzoiro_list_leagues."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Only matches played for this team."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Kick-off on or after this moment: ISO 8601 UTC (2026-04-30T00:00:00Z) or a date (2026-04-30)."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Kick-off on or before this moment: ISO 8601 UTC (2026-04-30T23:59:59Z) or a date (2026-04-30)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size (default 50, max 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip. Page with offset while `next` in the answer is not null."
+          }
+        },
+        "required": [
+          "player_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/{player_id}/stats/",
+        "queryParams": {
+          "season_id": "$season_id",
+          "league_id": "$league_id",
+          "team_id": "$team_id",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_list_managers",
+      "description": "Search football managers (head coaches) by name, club, league or nationality, with their match record and tactical profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Partial, case-insensitive match on the name."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Manager currently at this club."
+          },
+          "league_id": {
+            "type": "integer",
+            "description": "Managers who coached at least one match in this league."
+          },
+          "nationality_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 code."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size (default 50, max 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip. Page with offset while `next` in the answer is not null."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/managers/",
+        "queryParams": {
+          "name": "$name",
+          "team_id": "$team_id",
+          "league_id": "$league_id",
+          "nationality_code": "$nationality_code",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "results[*].btts_pct",
+            "results[*].over_25_pct"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_get_manager",
+      "description": "Get one manager: country, current club id, tactical profile, preferred formation, matches, wins, draws, losses, win rate, average goals scored and conceded, possession and clean-sheet rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "manager_id": {
+            "type": "integer",
+            "description": "Manager id from bzzoiro_list_managers or a match."
+          }
+        },
+        "required": [
+          "manager_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/managers/{manager_id}/"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "btts_pct",
+            "over_25_pct"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bzzoiro_list_broadcasts",
+      "description": "List which TV channels show which matches, ordered by kick-off, by country, team, league or match. Without dates it covers three hours ago to seven days ahead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Only this match."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Matches of this team."
+          },
+          "league_id": {
+            "type": "integer",
+            "description": "League id from bzzoiro_list_leagues."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country of the channel, e.g. GB, PT."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Kick-off on or after this moment: ISO 8601 UTC (2026-04-30T00:00:00Z) or a date (2026-04-30)."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Kick-off on or before this moment: ISO 8601 UTC (2026-04-30T23:59:59Z) or a date (2026-04-30)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Page size (default 50, max 200)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip. Page with offset while `next` in the answer is not null."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/broadcasts/",
+        "queryParams": {
+          "event_id": "$match_id",
+          "team_id": "$team_id",
+          "league_id": "$league_id",
+          "country_code": "$country_code",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}
