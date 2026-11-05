@@ -601,6 +601,7 @@ import * as theOddsApi from './intl/the-odds-api.json';
 import * as ticktick from './intl/ticktick.json';
 import * as tidio from './intl/tidio.json';
 import * as tiktokAds from './intl/tiktok-ads.json';
+import * as tiktokShop from './intl/tiktok-shop.json';
 import * as timetastic from './intl/timetastic.json';
 import * as tldv from './intl/tldv.json';
 import * as todoist from './intl/todoist.json';
@@ -1611,6 +1612,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   ticktick as unknown as AdapterDefinition,
   tidio as unknown as AdapterDefinition,
   tiktokAds as unknown as AdapterDefinition,
+  tiktokShop as unknown as AdapterDefinition,
   timetastic as unknown as AdapterDefinition,
   tldv as unknown as AdapterDefinition,
   todoist as unknown as AdapterDefinition,
