@@ -1,8 +1,8 @@
 {
   "slug": "amazon-seller",
   "name": "Amazon Seller Central (SP-API)",
-  "description": "Query your Amazon Seller Central account through the official Selling Partner API: orders, order items, product catalog, FBA inventory, buy-box offers, fee estimates, financial events and reports. Read-focused v1 across all Amazon marketplaces (US, EU, FE).",
-  "instructions": "This connector wraps Amazon's **Selling Partner API (SP-API)** — the official successor of MWS — using Login-with-Amazon (LWA) OAuth2. No AWS keys or SigV4 signing are needed (Amazon removed that requirement).\n\n## Setup (one-time, ~15 min + Amazon approval)\n\n1. **Register as a developer**: Seller Central → Apps & Services → *Develop Apps* (you may first need to complete the developer profile in the Solution Provider Portal; Amazon reviews it manually, allow a few days).\n2. **Create a private app**: *Develop Apps* → **Add new app client** → type *Sellers* → select the roles you need (e.g. \"Inventory and Order Tracking\", \"Pricing\", \"Amazon Fulfillment\", \"Finance and Accounting\", \"Selling Partner Insights\"). PII roles (buyer names/addresses) are restricted and NOT required for this connector.\n3. **Get LWA credentials**: on the app row choose *View* → copy **Client ID** (`amzn1.application-oa2-client.…`) and **Client Secret** (`amzn1.oa2-cs.v1.…`).\n4. **Self-authorize**: on the app row choose **Authorize** → Amazon shows the **Refresh Token** (`Atzr|…`). This token is long-lived; the connector exchanges it automatically for 1-hour access tokens (sent in the `x-amz-access-token` header — handled for you).\n5. Fill the env vars:\n   - `SPAPI_CLIENT_ID`, `SPAPI_CLIENT_SECRET`, `SPAPI_REFRESH_TOKEN` — from steps 3-4.\n   - `SPAPI_ENDPOINT` — your region's API host:\n     - Europe (DE/UK/IT/FR/ES/NL/SE/PL/TR/AE/IN/…): `https://sellingpartnerapi-eu.amazon.com`\n     - North America (US/CA/MX/BR): `https://sellingpartnerapi-na.amazon.com`\n     - Far East (JP/AU/SG): `https://sellingpartnerapi-fe.amazon.com`\n   - `SPAPI_MARKETPLACE_ID` — the marketplace you sell in (call `amazon_marketplace_ids` for the full table; e.g. DE `A1PA6795UKMFR9`, US `ATVPDKIKX0DER`, IT `APJ6JRA9NG5V4`).\n   - `SPAPI_SELLER_ID` — your merchant token (Seller Central → Account Info → *Merchant Token*). Only needed for `amazon_get_listings_item`; set any placeholder otherwise.\n\n**First call**: run `amazon_marketplace_participations` — it needs no parameters and confirms auth + region are correct.\n\n## Sandbox\n\nSet `SPAPI_ENDPOINT` to `https://sandbox.sellingpartnerapi-eu.amazon.com` (or `-na`/`-fe`) to hit the **static sandbox**: it returns canned responses when requests match predefined parameter patterns (e.g. Orders requires `CreatedAfter=TEST_CASE_200`). Same LWA credentials work; a draft app's refresh token may be sandbox-only (production returns 403 until the authorization is production-grade).\n\n## Marketplace scoping\n\nAll tools are pinned to `SPAPI_MARKETPLACE_ID`. To work across multiple marketplaces of the same region, create one connector per marketplace (cheap) — the underlying seller account and credentials can be identical.\n\n## What v1 deliberately does NOT do\n\n- **Buyer PII** (names, shipping addresses, phone numbers): requires a Restricted Data Token and an Amazon-approved restricted role. Order data returned here is the non-PII view (IDs, status, totals, SKUs, quantities).\n- **Writes** (price updates, listings edits, feeds): planned for a later version once the read workflows are proven.\n\n## Pagination & rate limits\n\nList endpoints return a `NextToken`/`pageToken` — pass it back to fetch the next page. SP-API rate limits are per-endpoint (typically 0.0055–2 req/s with small bursts); on `429` the connector retries automatically with backoff, but space out heavy report loops.\n\n## Reports flow (3 steps)\n\n1. `amazon_create_report` (e.g. `reportType: \"GET_FLAT_FILE_OPEN_LISTINGS_DATA\"`) → returns `reportId`.\n2. Poll `amazon_get_report` until `processingStatus` = `DONE` → gives `reportDocumentId`.\n3. `amazon_get_report_document` → returns a **pre-signed download `url`** (valid ~5 min; document may be gzip). Fetch that URL yourself to read the content.",
+  "description": "Query your Amazon Seller Central account through the official Selling Partner API: orders, order items, product catalog, FBA inventory, buy-box offers, fee estimates, financial events and reports, plus your own listings (search, create, patch, delete), listing restrictions, product type definitions and review requests. Works across all Amazon marketplaces (US, EU, FE).",
+  "instructions": "This connector wraps Amazon's **Selling Partner API (SP-API)** — the official successor of MWS — using Login-with-Amazon (LWA) OAuth2. No AWS keys or SigV4 signing are needed (Amazon removed that requirement).\n\n## Setup (one-time, ~15 min + Amazon approval)\n\n1. **Register as a developer**: Seller Central → Apps & Services → *Develop Apps* (you may first need to complete the developer profile in the Solution Provider Portal; Amazon reviews it manually, allow a few days).\n2. **Create a private app**: *Develop Apps* → **Add new app client** → type *Sellers* → select the roles you need (e.g. \"Inventory and Order Tracking\", \"Pricing\", \"Amazon Fulfillment\", \"Finance and Accounting\", \"Selling Partner Insights\"; \"Product Listing\" for the listings, restrictions and product type tools; \"Buyer Solicitation\" for review requests). PII roles (buyer names/addresses) are restricted and NOT required for this connector.\n3. **Get LWA credentials**: on the app row choose *View* → copy **Client ID** (`amzn1.application-oa2-client.…`) and **Client Secret** (`amzn1.oa2-cs.v1.…`).\n4. **Self-authorize**: on the app row choose **Authorize** → Amazon shows the **Refresh Token** (`Atzr|…`). This token is long-lived; the connector exchanges it automatically for 1-hour access tokens (sent in the `x-amz-access-token` header — handled for you).\n5. Fill the env vars:\n   - `SPAPI_CLIENT_ID`, `SPAPI_CLIENT_SECRET`, `SPAPI_REFRESH_TOKEN` — from steps 3-4.\n   - `SPAPI_ENDPOINT` — your region's API host:\n     - Europe (DE/UK/IT/FR/ES/NL/SE/PL/TR/AE/IN/…): `https://sellingpartnerapi-eu.amazon.com`\n     - North America (US/CA/MX/BR): `https://sellingpartnerapi-na.amazon.com`\n     - Far East (JP/AU/SG): `https://sellingpartnerapi-fe.amazon.com`\n   - `SPAPI_MARKETPLACE_ID` — the marketplace you sell in (call `amazon_marketplace_ids` for the full table; e.g. DE `A1PA6795UKMFR9`, US `ATVPDKIKX0DER`, IT `APJ6JRA9NG5V4`).\n   - `SPAPI_SELLER_ID` — your merchant token (Seller Central → Account Info → *Merchant Token*). Needed by the listings tools (`amazon_get_listings_item`, `amazon_seller_*_listings_item*`), `amazon_seller_get_listing_restrictions` and `amazon_seller_get_product_type_definition`; set any placeholder if you use none of them.\n\n**First call**: run `amazon_marketplace_participations` — it needs no parameters and confirms auth + region are correct.\n\n## Sandbox\n\nSet `SPAPI_ENDPOINT` to `https://sandbox.sellingpartnerapi-eu.amazon.com` (or `-na`/`-fe`) to hit the **static sandbox**: it returns canned responses when requests match predefined parameter patterns (e.g. Orders requires `CreatedAfter=TEST_CASE_200`). Same LWA credentials work; a draft app's refresh token may be sandbox-only (production returns 403 until the authorization is production-grade).\n\n## Marketplace scoping\n\nAll tools are pinned to `SPAPI_MARKETPLACE_ID`. To work across multiple marketplaces of the same region, create one connector per marketplace (cheap) — the underlying seller account and credentials can be identical.\n\n## Listings (Listings Items API 2021-08-01)\n\n- `amazon_seller_search_listings_items` pages through your listings or finds them by ASIN/EAN/SKU, status or issue severity; `amazon_get_listings_item` reads one SKU.\n- `amazon_seller_patch_listings_item` changes single attributes: price (`purchasable_offer`), merchant-fulfilled quantity (`fulfillment_availability`), title, bullet points. `amazon_seller_put_listings_item` creates a listing or **replaces** it completely; attributes you leave out are removed. Both need the listing's `productType` and accept `mode: VALIDATION_PREVIEW` to see the issues a change would cause without applying it.\n- Attribute names and value shapes depend on the product type: find it with `amazon_seller_search_product_types`, read its rules with `amazon_seller_get_product_type_definition` (its `schema.link.resource` is a short-lived URL to the full JSON Schema).\n- Writes answer `ACCEPTED` or `INVALID` with `issues`. ACCEPTED means queued: Amazon applies the change asynchronously, usually within minutes, and new issues show up later on `amazon_get_listings_item` with `includedData=issues`.\n- `amazon_seller_get_listing_restrictions` tells whether you may list an ASIN (and in which condition) before you try.\n- `amazon_seller_delete_listings_item` is installed switched off.\n\n## Review requests (Solicitations API)\n\n`amazon_seller_get_solicitation_actions` shows whether an order can get a review request now; `amazon_seller_request_product_review` sends Amazon's templated review and feedback email, once per order, 5-30 days after delivery. It is installed switched off because the email cannot be recalled: turn it on under the connector's tools.\n\n## What this connector does NOT do\n\n- **Buyer PII** (names, shipping addresses, phone numbers): requires a Restricted Data Token and an Amazon-approved restricted role. Order data returned here is the non-PII view (IDs, status, totals, SKUs, quantities).\n- **Feeds** (bulk uploads) and free-text buyer messages.\n\n## Pagination & rate limits\n\nList endpoints return a `NextToken`/`pageToken` — pass it back to fetch the next page. SP-API rate limits are per-endpoint (typically 0.0055–2 req/s with small bursts); on `429` the connector retries automatically with backoff, but space out heavy report loops.\n\n## Reports flow (3 steps)\n\n1. `amazon_create_report` (e.g. `reportType: \"GET_FLAT_FILE_OPEN_LISTINGS_DATA\"`) → returns `reportId`.\n2. Poll `amazon_get_report` until `processingStatus` = `DONE` → gives `reportDocumentId`.\n3. `amazon_get_report_document` → returns a **pre-signed download `url`** (valid ~5 min; document may be gzip). Fetch that URL yourself to read the content.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "amazon-seller",
@@ -447,6 +447,475 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/reports/2021-06-30/documents/{reportDocumentId}"
+      }
+    },
+    {
+      "name": "amazon_seller_search_listings_items",
+      "description": "Search YOUR listings in the connector's marketplace (Listings Items API searchListingsItems): by product identifiers (ASIN, EAN, UPC, GTIN, ISBN, SKU), by variation parent SKU, by creation or update date, by status or by issue severity. Returns each listing's SKU with the data sets asked for (summaries by default: ASIN, product type, status, item name, condition) plus numberOfResults and a pagination.nextToken. Leave the filters out to page through all listings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifiers": {
+            "type": "string",
+            "description": "Comma-separated identifiers, up to 20, e.g. B0ABCD1234,B0EFGH5678. Needs identifiersType."
+          },
+          "identifiersType": {
+            "type": "string",
+            "enum": [
+              "ASIN",
+              "EAN",
+              "FNSKU",
+              "GTIN",
+              "ISBN",
+              "JAN",
+              "MINSAN",
+              "SKU",
+              "UPC"
+            ],
+            "description": "Type of the values in identifiers."
+          },
+          "variationParentSku": {
+            "type": "string",
+            "description": "Only the variation children of this parent SKU. Not combinable with identifiers."
+          },
+          "createdAfter": {
+            "type": "string",
+            "description": "Only listings created at or after this ISO 8601 time."
+          },
+          "createdBefore": {
+            "type": "string",
+            "description": "Only listings created at or before this ISO 8601 time."
+          },
+          "lastUpdatedAfter": {
+            "type": "string",
+            "description": "Only listings updated at or after this ISO 8601 time."
+          },
+          "lastUpdatedBefore": {
+            "type": "string",
+            "description": "Only listings updated at or before this ISO 8601 time."
+          },
+          "withStatus": {
+            "type": "string",
+            "description": "Comma-separated statuses the listing must have: BUYABLE, DISCOVERABLE."
+          },
+          "withoutStatus": {
+            "type": "string",
+            "description": "Comma-separated statuses the listing must not have: BUYABLE, DISCOVERABLE."
+          },
+          "withIssueSeverity": {
+            "type": "string",
+            "description": "Only listings with issues of these severities: WARNING, ERROR."
+          },
+          "includedData": {
+            "type": "string",
+            "description": "Comma-separated data sets: summaries (default), attributes, issues, offers, fulfillmentAvailability, procurement, relationships, productTypes."
+          },
+          "sortBy": {
+            "type": "string",
+            "enum": [
+              "sku",
+              "createdDate",
+              "lastUpdatedDate"
+            ],
+            "description": "Sort attribute (default lastUpdatedDate)."
+          },
+          "sortOrder": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort order (default DESC)."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Results per page, 1-20 (default 10)."
+          },
+          "pageToken": {
+            "type": "string",
+            "description": "pagination.nextToken from the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/2021-08-01/items/{{SPAPI_SELLER_ID}}",
+        "queryParams": {
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}",
+          "identifiers": "$identifiers",
+          "identifiersType": "$identifiersType",
+          "variationParentSku": "$variationParentSku",
+          "createdAfter": "$createdAfter",
+          "createdBefore": "$createdBefore",
+          "lastUpdatedAfter": "$lastUpdatedAfter",
+          "lastUpdatedBefore": "$lastUpdatedBefore",
+          "withStatus": "$withStatus",
+          "withoutStatus": "$withoutStatus",
+          "withIssueSeverity": "$withIssueSeverity",
+          "includedData": "$includedData",
+          "sortBy": "$sortBy",
+          "sortOrder": "$sortOrder",
+          "pageSize": "$pageSize",
+          "pageToken": "$pageToken"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_patch_listings_item",
+      "description": "Change part of one of YOUR listings (Listings Items API patchListingsItem): e.g. the price (purchasable_offer), the merchant-fulfilled quantity (fulfillment_availability), the title or bullet points, without resending the whole listing. Each patch is a JSON Patch operation (add, replace, merge, delete) on an attribute path of the product type. Answers ACCEPTED or INVALID with issues; Amazon applies accepted changes asynchronously. Set mode VALIDATION_PREVIEW to check a change without applying it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU."
+          },
+          "productType": {
+            "type": "string",
+            "description": "Amazon product type of the listing, e.g. SHIRT or PRODUCT (from amazon_get_listings_item with includedData summaries)."
+          },
+          "patches": {
+            "type": "array",
+            "description": "JSON Patch operations, e.g. [{\"op\": \"replace\", \"path\": \"/attributes/fulfillment_availability\", \"value\": [{\"fulfillment_channel_code\": \"DEFAULT\", \"quantity\": 12}]}] or a purchasable_offer change with our_price. Paths and value shapes come from amazon_seller_get_product_type_definition.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "add",
+                    "replace",
+                    "merge",
+                    "delete"
+                  ],
+                  "description": "Operation."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Attribute path, e.g. /attributes/item_name."
+                },
+                "value": {
+                  "type": "array",
+                  "description": "New attribute value(s); leave out for delete of the whole attribute.",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "required": [
+                "op",
+                "path"
+              ]
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "VALIDATION_PREVIEW"
+            ],
+            "description": "VALIDATION_PREVIEW validates the patch and returns issues without changing the listing."
+          },
+          "includedData": {
+            "type": "string",
+            "description": "Data sets in the response: issues (default), identifiers."
+          },
+          "issueLocale": {
+            "type": "string",
+            "description": "Locale for issue messages, e.g. en_US, de_DE."
+          }
+        },
+        "required": [
+          "sku",
+          "productType",
+          "patches"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/listings/2021-08-01/items/{{SPAPI_SELLER_ID}}/{sku}",
+        "encodePathParams": true,
+        "queryParams": {
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}",
+          "mode": "$mode",
+          "includedData": "$includedData",
+          "issueLocale": "$issueLocale"
+        },
+        "bodyMapping": {
+          "productType": "$productType",
+          "patches": "$patches"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_put_listings_item",
+      "description": "Create a listing for a SKU, or fully replace an existing one (Listings Items API putListingsItem). All attributes are sent; attributes left out are removed from an existing listing, so prefer amazon_seller_patch_listings_item for partial changes. requirements LISTING creates product and offer, LISTING_OFFER_ONLY adds an offer to an existing ASIN (attributes then need merchant_suggested_asin, condition_type and purchasable_offer). Answers ACCEPTED or INVALID with issues; mode VALIDATION_PREVIEW only validates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU for the listing."
+          },
+          "productType": {
+            "type": "string",
+            "description": "Amazon product type, e.g. SHIRT; find it with amazon_seller_search_product_types."
+          },
+          "requirements": {
+            "type": "string",
+            "enum": [
+              "LISTING",
+              "LISTING_PRODUCT_ONLY",
+              "LISTING_OFFER_ONLY"
+            ],
+            "description": "Which requirements the attributes meet (default LISTING)."
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Attributes as the product type schema defines them, each an array of values with marketplace_id where needed, e.g. {\"item_name\": [{\"value\": \"Mug\", \"language_tag\": \"en_US\", \"marketplace_id\": \"ATVPDKIKX0DER\"}], \"condition_type\": [{\"value\": \"new_new\"}]}."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "VALIDATION_PREVIEW"
+            ],
+            "description": "VALIDATION_PREVIEW validates the listing and returns issues without saving it."
+          },
+          "includedData": {
+            "type": "string",
+            "description": "Data sets in the response: issues (default), identifiers."
+          },
+          "issueLocale": {
+            "type": "string",
+            "description": "Locale for issue messages, e.g. en_US, de_DE."
+          }
+        },
+        "required": [
+          "sku",
+          "productType",
+          "attributes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/listings/2021-08-01/items/{{SPAPI_SELLER_ID}}/{sku}",
+        "encodePathParams": true,
+        "queryParams": {
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}",
+          "mode": "$mode",
+          "includedData": "$includedData",
+          "issueLocale": "$issueLocale"
+        },
+        "bodyMapping": {
+          "productType": "$productType",
+          "requirements": "$requirements",
+          "attributes": "$attributes"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_delete_listings_item",
+      "description": "Delete one of YOUR listings by SKU in the connector's marketplace (Listings Items API deleteListingsItem). The offer disappears from Amazon; the catalog product (ASIN) stays. Answers ACCEPTED, processed asynchronously. Cannot be undone; recreate with amazon_seller_put_listings_item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU."
+          },
+          "issueLocale": {
+            "type": "string",
+            "description": "Locale for issue messages, e.g. en_US, de_DE."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/listings/2021-08-01/items/{{SPAPI_SELLER_ID}}/{sku}",
+        "encodePathParams": true,
+        "queryParams": {
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}",
+          "issueLocale": "$issueLocale"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_seller_get_listing_restrictions",
+      "description": "Check whether YOUR seller account may list an ASIN in the connector's marketplace, and in which conditions (Listings Restrictions API getListingsRestrictions). An empty restrictions array means you can list it; otherwise each restriction names the condition, the reason (e.g. APPROVAL_REQUIRED, NOT_ELIGIBLE, ASIN_NOT_FOUND) and a link to request approval.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asin": {
+            "type": "string",
+            "description": "The ASIN to check."
+          },
+          "conditionType": {
+            "type": "string",
+            "description": "Only this condition, e.g. new_new, used_like_new, used_very_good, used_good, used_acceptable, refurbished_refurbished, collectible_like_new."
+          },
+          "productType": {
+            "type": "string",
+            "description": "Product type of the item; with it Amazon also evaluates GTIN exemption restrictions."
+          },
+          "reasonLocale": {
+            "type": "string",
+            "description": "Locale for the reason text, e.g. en_US, de_DE."
+          }
+        },
+        "required": [
+          "asin"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/2021-08-01/restrictions",
+        "queryParams": {
+          "asin": "$asin",
+          "sellerId": "{{SPAPI_SELLER_ID}}",
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}",
+          "conditionType": "$conditionType",
+          "productType": "$productType",
+          "reasonLocale": "$reasonLocale"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_get_solicitation_actions",
+      "description": "List the solicitations you may send for an order right now (Solicitations API getSolicitationActionsForOrder). If productReviewAndSellerFeedback appears under _links.actions, a review request can be sent with amazon_seller_request_product_review; an empty list means not (yet) allowed, e.g. outside the 5-30 days after delivery or already requested.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amazonOrderId": {
+            "type": "string",
+            "description": "Amazon order id, e.g. 302-1234567-1234567."
+          }
+        },
+        "required": [
+          "amazonOrderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/solicitations/v1/orders/{amazonOrderId}",
+        "queryParams": {
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_request_product_review",
+      "description": "Ask the buyer of an order for a product review and seller feedback with Amazon's standard templated email (Solicitations API createProductReviewAndSellerFeedbackSolicitation), the same as the Request a Review button in Seller Central. Allowed once per order, 5 to 30 days after delivery; check with amazon_seller_get_solicitation_actions first. The email goes out at once and cannot be recalled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amazonOrderId": {
+            "type": "string",
+            "description": "Amazon order id, e.g. 302-1234567-1234567."
+          }
+        },
+        "required": [
+          "amazonOrderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/solicitations/v1/orders/{amazonOrderId}/solicitations/productReviewAndSellerFeedback",
+        "queryParams": {
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_seller_search_product_types",
+      "description": "Find the Amazon product types that fit a product in the connector's marketplace (Product Type Definitions API searchDefinitionsProductTypes), by keywords or by an item title. Returns product type names (e.g. SHIRT, KITCHEN, HOME) with display names. Use the name in amazon_seller_get_product_type_definition and as productType when listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "Comma-separated keywords, e.g. mug,ceramic. Not combinable with itemName."
+          },
+          "itemName": {
+            "type": "string",
+            "description": "A product title to get a product type recommendation for. Not combinable with keywords."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale of the display names, e.g. en_US, de_DE."
+          },
+          "searchLocale": {
+            "type": "string",
+            "description": "Language of keywords or itemName, e.g. en_US."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/definitions/2020-09-01/productTypes",
+        "queryParams": {
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}",
+          "keywords": "$keywords",
+          "itemName": "$itemName",
+          "locale": "$locale",
+          "searchLocale": "$searchLocale"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_get_product_type_definition",
+      "description": "Get the definition of a product type for the connector's marketplace (Product Type Definitions API getDefinitionsProductType): the attribute groups, the required attributes for the chosen requirements, and schema.link.resource, a pre-signed URL (valid a few minutes) to the full JSON Schema of the attributes. Read it before building attributes for amazon_seller_put_listings_item or patches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productType": {
+            "type": "string",
+            "description": "Product type name, e.g. SHIRT."
+          },
+          "requirements": {
+            "type": "string",
+            "enum": [
+              "LISTING",
+              "LISTING_PRODUCT_ONLY",
+              "LISTING_OFFER_ONLY"
+            ],
+            "description": "Requirements set (default LISTING)."
+          },
+          "requirementsEnforced": {
+            "type": "string",
+            "enum": [
+              "ENFORCED",
+              "NOT_ENFORCED"
+            ],
+            "description": "Whether the schema enforces the required attributes (default ENFORCED)."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale of labels, e.g. en_US, de_DE."
+          },
+          "productTypeVersion": {
+            "type": "string",
+            "description": "LATEST (default), RELEASE_CANDIDATE or a version id."
+          }
+        },
+        "required": [
+          "productType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/definitions/2020-09-01/productTypes/{productType}",
+        "queryParams": {
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}",
+          "sellerId": "{{SPAPI_SELLER_ID}}",
+          "requirements": "$requirements",
+          "requirementsEnforced": "$requirementsEnforced",
+          "locale": "$locale",
+          "productTypeVersion": "$productTypeVersion"
+        }
       }
     }
   ]

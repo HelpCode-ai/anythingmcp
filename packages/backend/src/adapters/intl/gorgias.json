@@ -1,8 +1,8 @@
 {
   "slug": "gorgias",
   "name": "Gorgias",
-  "description": "Manage Gorgias (e-commerce helpdesk) tickets, messages, customers, integrations from any AI agent. 10 tools, basic-auth.",
-  "instructions": "This connector wraps the Gorgias REST API (per-subdomain).\n\n**Setup**:\n1. Log into your Gorgias dashboard at https://YOUR_SUBDOMAIN.gorgias.com → **Settings → REST API**.\n2. Click **Add new API Key**. The page shows your **email** (the account email) and a freshly-generated **API key**.\n3. Set `GORGIAS_SUBDOMAIN` (just the subdomain part, e.g. `mystore`), `GORGIAS_EMAIL`, `GORGIAS_API_KEY`.\n\n**Authentication**: HTTP Basic with `username = ${GORGIAS_EMAIL}` and `password = ${GORGIAS_API_KEY}`. The adapter wires this via BASIC_AUTH.\n\n**Per-tenant baseUrl**: Gorgias is hosted per-subdomain — `https://${GORGIAS_SUBDOMAIN}.gorgias.com/api`. baseUrl uses {{}} substitution at import time.\n\n**Ticket model**: `Ticket → Messages[]`. A ticket is a conversation thread with a customer; each message is one inbound/outbound email/chat/SMS. To reply, POST a new message to the ticket; to close, PUT the ticket with `status: 'closed'`.\n\n**Channels**: Gorgias unifies email, chat, SMS, Instagram DM, Facebook DM, Shopify, voice. `via` field on each message identifies the channel.\n\n**Pagination**: cursor-based. List endpoints return `meta.next_cursor` and `meta.previous_cursor`. Use `cursor` query param for the next page; `limit` controls page size (max 100).\n\n**Search**: the `tickets` endpoint accepts `view_id` to filter by saved view, and various direct filters. For more complex queries use the dedicated `/views/{id}/items` endpoint.\n\n**Rate limits**: 40 req/s per account; 2 concurrent connections. 429 returns `Retry-After` in seconds.\n\n**Out of scope here**: macro CRUD beyond list, rule management, satisfaction surveys, voice call orchestration.",
+  "description": "Manage Gorgias (e-commerce helpdesk) tickets, messages, customers, users and macros from any AI agent. Basic auth.",
+  "instructions": "This connector wraps the Gorgias REST API (per-subdomain).\n\n**Setup**:\n1. Log into your Gorgias dashboard at https://YOUR_SUBDOMAIN.gorgias.com → **Settings → REST API**.\n2. Click **Add new API Key**. The page shows your **email** (the account email) and a freshly-generated **API key**.\n3. Set `GORGIAS_SUBDOMAIN` (just the subdomain part, e.g. `mystore`), `GORGIAS_EMAIL`, `GORGIAS_API_KEY`.\n\n**Authentication**: HTTP Basic with `username = ${GORGIAS_EMAIL}` and `password = ${GORGIAS_API_KEY}`. The adapter wires this via BASIC_AUTH.\n\n**Per-tenant baseUrl**: Gorgias is hosted per-subdomain — `https://${GORGIAS_SUBDOMAIN}.gorgias.com/api`. baseUrl uses {{}} substitution at import time.\n\n**Ticket model**: `Ticket → Messages[]`. A ticket is a conversation thread with a customer; each message is one inbound/outbound email/chat/SMS. To reply, POST a new message to the ticket; to close, PUT the ticket with `status: 'closed'`.\n\n**Channels**: Gorgias unifies email, chat, SMS, Instagram DM, Facebook DM, Shopify, voice. `via` field on each message identifies the channel.\n\n**Pagination**: cursor-based. List endpoints return `meta.next_cursor` and `meta.previous_cursor`. Use `cursor` query param for the next page; `limit` controls page size (max 100).\n\n**Search**: the `tickets` endpoint accepts `view_id` to filter by saved view, and various direct filters. For more complex queries use the dedicated `/views/{id}/items` endpoint.\n\n**Rate limits**: 40 req/s per account; 2 concurrent connections. 429 returns `Retry-After` in seconds.\n\n**Messages across tickets**: `gorgias_list_all_messages` lists messages account-wide, newest first (filter one ticket with `ticket_id`); `gorgias_list_ticket_messages` reads one conversation.\n\n**Macros** (saved replies with actions): `gorgias_find_macros` searches them and, with `order_by=relevance` and `ticket_id`, ranks the macros that best answer a ticket; `gorgias_read_macro` shows one with its actions; `gorgias_add_macro` and `gorgias_edit_macro` create and change them (the actions list you send replaces the current one); `gorgias_remove_macro` deletes one and is switched off at install. To answer with a macro, read it and send its response text with `gorgias_reply_to_ticket`.\n\n**Out of scope here**: rule management, satisfaction surveys, voice call orchestration.",
   "region": "intl",
   "category": "support",
   "icon": "gorgias",
@@ -141,7 +141,7 @@
     },
     {
       "name": "gorgias_update_ticket",
-      "description": "Update a ticket's status, assignee, tags, custom fields.",
+      "description": "Update a ticket's status, assignee, tags, priority or subject. Send only the fields to change.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -247,6 +247,322 @@
         "method": "GET",
         "path": "/users",
         "queryParams": { "cursor": "$cursor", "limit": "$limit" }
+      }
+    },
+    {
+      "name": "gorgias_list_all_messages",
+      "description": "List messages across all tickets, newest first: body text and HTML, sender and receiver, channel and via, whether it came from an agent, public or internal note, and the sent, opened or failed timestamps. Use it to review recent customer messages or agent replies account-wide; for one conversation use gorgias_list_ticket_messages. Cursor-paged: pass meta.next_cursor as cursor until it is empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "description": "Only messages of this ticket."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "created_datetime:desc",
+              "created_datetime:asc"
+            ],
+            "description": "Sort order; newest first by default."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor from meta.next_cursor."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Per page, 1 to 100 (default 30)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages",
+        "queryParams": {
+          "ticket_id": "$ticket_id",
+          "order_by": "$order_by",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "gorgias_find_macros",
+      "description": "List or search macros (saved reply templates with actions such as tags or status changes): name, intent, language, usage count and actions. Search by text, filter by tags or language, or rank the best macros to answer a ticket with order_by=relevance and ticket_id. Cursor-paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to search in macros."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only macros that carry all of these tags."
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only macros in one of these languages (ISO 639-1)."
+          },
+          "ticket_id": {
+            "type": "integer",
+            "description": "With order_by=relevance: rank macros by how well they answer this ticket."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "With order_by=relevance and ticket_id: rank by fit to this message of the ticket."
+          },
+          "number_predictions": {
+            "type": "integer",
+            "description": "How many of the most relevant macros to put at the top."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "usage:desc",
+              "usage:asc",
+              "name:asc",
+              "name:desc",
+              "created_datetime:desc",
+              "created_datetime:asc",
+              "updated_datetime:desc",
+              "updated_datetime:asc",
+              "language:asc",
+              "language:desc",
+              "relevance"
+            ],
+            "description": "Sort order; most used first by default."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true lists only archived macros."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor from meta.next_cursor."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Per page, 1 to 100 (default 30)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/macros",
+        "queryParams": {
+          "search": "$search",
+          "tags": "$tags",
+          "languages": "$languages",
+          "ticket_id": "$ticket_id",
+          "message_id": "$message_id",
+          "number_predictions": "$number_predictions",
+          "order_by": "$order_by",
+          "archived": "$archived",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "gorgias_read_macro",
+      "description": "Get one macro by its id: name, intent, language, usage count and the full list of actions with their arguments (response text, tags, status, assignee). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "macro_id": {
+            "type": "integer",
+            "description": "Macro id from gorgias_find_macros."
+          }
+        },
+        "required": [
+          "macro_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/macros/{macro_id}"
+      }
+    },
+    {
+      "name": "gorgias_add_macro",
+      "description": "Create a macro (a saved reply template agents apply to tickets) with its name, intent, language and actions such as the response text and tags. Returns the new macro. Show the user the text and actions before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Macro name, easy to search for agents."
+          },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "discount/request",
+              "exchange/request",
+              "exchange/status",
+              "feedback",
+              "order/damaged",
+              "order/cancel",
+              "order/change",
+              "order/wrong",
+              "other/no_reply",
+              "other/question",
+              "other/thanks",
+              "product/recommendation",
+              "product/question",
+              "refund/request",
+              "refund/status",
+              "return/request",
+              "return/status",
+              "shipping/change",
+              "shipping/delivery-issue",
+              "shipping/policy",
+              "shipping/status",
+              "stock/request",
+              "subscription/cancel",
+              "subscription/change"
+            ],
+            "description": "What the macro answers, e.g. shipping/status or refund/request."
+          },
+          "language": {
+            "type": "string",
+            "description": "ISO 639-1 language code, e.g. en, de, fr."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "What the macro does when applied, e.g. [{\"name\": \"setResponseText\", \"title\": \"Response text\", \"type\": \"user\", \"arguments\": {\"body_text\": \"Hi {{ticket.customer.firstname}}, ...\", \"body_html\": \"<p>Hi {{ticket.customer.firstname}}, ...</p>\"}}, {\"name\": \"addTags\", \"title\": \"Add tags\", \"type\": \"user\", \"arguments\": {\"tags\": \"shipping, wismo\"}}]. Read an existing macro with gorgias_read_macro to copy the shape of other actions."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for the macro in another system; Gorgias does not use it."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/macros",
+        "bodyMapping": {
+          "name": "$name",
+          "intent": "$intent",
+          "language": "$language",
+          "actions": "$actions",
+          "external_id": "$external_id"
+        }
+      }
+    },
+    {
+      "name": "gorgias_edit_macro",
+      "description": "Change a macro: rename it, change intent or language, or replace its actions. Send the full actions list you want to keep, because the list you send replaces the current one; read it first with gorgias_read_macro. Confirm the change with the user, as every agent uses the macro.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "macro_id": {
+            "type": "integer",
+            "description": "Macro id from gorgias_find_macros."
+          },
+          "name": {
+            "type": "string",
+            "description": "Macro name, easy to search for agents."
+          },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "discount/request",
+              "exchange/request",
+              "exchange/status",
+              "feedback",
+              "order/damaged",
+              "order/cancel",
+              "order/change",
+              "order/wrong",
+              "other/no_reply",
+              "other/question",
+              "other/thanks",
+              "product/recommendation",
+              "product/question",
+              "refund/request",
+              "refund/status",
+              "return/request",
+              "return/status",
+              "shipping/change",
+              "shipping/delivery-issue",
+              "shipping/policy",
+              "shipping/status",
+              "stock/request",
+              "subscription/cancel",
+              "subscription/change"
+            ],
+            "description": "What the macro answers, e.g. shipping/status or refund/request."
+          },
+          "language": {
+            "type": "string",
+            "description": "ISO 639-1 language code, e.g. en, de, fr."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "What the macro does when applied, e.g. [{\"name\": \"setResponseText\", \"title\": \"Response text\", \"type\": \"user\", \"arguments\": {\"body_text\": \"Hi {{ticket.customer.firstname}}, ...\", \"body_html\": \"<p>Hi {{ticket.customer.firstname}}, ...</p>\"}}, {\"name\": \"addTags\", \"title\": \"Add tags\", \"type\": \"user\", \"arguments\": {\"tags\": \"shipping, wismo\"}}]. Read an existing macro with gorgias_read_macro to copy the shape of other actions."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for the macro in another system; Gorgias does not use it."
+          }
+        },
+        "required": [
+          "macro_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/macros/{macro_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "intent": "$intent",
+          "language": "$language",
+          "actions": "$actions",
+          "external_id": "$external_id"
+        }
+      }
+    },
+    {
+      "name": "gorgias_remove_macro",
+      "description": "Delete a macro so agents can no longer apply it. This connector cannot restore it, so name the macro and get a yes first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "macro_id": {
+            "type": "integer",
+            "description": "Macro id from gorgias_find_macros."
+          }
+        },
+        "required": [
+          "macro_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/macros/{macro_id}"
       }
     }
   ]

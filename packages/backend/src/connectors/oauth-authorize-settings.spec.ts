@@ -71,6 +71,10 @@ describe('resolveRestAuthorizeSettings', () => {
     // Written back once the authorization succeeds, like every adopted value.
     expect(settings.adopted).toEqual({ scopes: etsyCatalog.scopes });
 
+    // The write set asked for before listings_d was added widens too.
+    const writeRow = { ...row, scopes: 'email_r shops_r listings_r listings_w transactions_r transactions_w' };
+    expect(resolveRestAuthorizeSettings(writeRow, null, etsyCatalog, previous).adopted).toEqual({ scopes: etsyCatalog.scopes });
+
     // A hand-picked subset is not one of the adapter's earlier sets: kept.
     const narrowed = resolveRestAuthorizeSettings({ ...row, scopes: 'listings_r' }, null, etsyCatalog, previous);
     expect(narrowed.scope).toBe('listings_r');
@@ -119,13 +123,13 @@ describe('resolveRestAuthorizeSettings', () => {
       etsyCatalog,
     );
     expect(settings.authorizationUrl).toBe('https://www.etsy.com/oauth/connect');
-    expect(settings.scope).toBe('email_r shops_r listings_r listings_w transactions_r transactions_w');
+    expect(settings.scope).toBe('email_r shops_r listings_r listings_w listings_d transactions_r transactions_w');
     expect(settings.tokenUrl).toBe('https://api.etsy.com/v3/public/oauth/token');
     // Etsy authenticates the client in the body: nothing to adopt there.
     expect(settings.tokenAuthMethod).toBeUndefined();
     expect(settings.adopted).toEqual({
       authorizationUrl: 'https://www.etsy.com/oauth/connect',
-      scopes: 'email_r shops_r listings_r listings_w transactions_r transactions_w',
+      scopes: 'email_r shops_r listings_r listings_w listings_d transactions_r transactions_w',
     });
   });
 

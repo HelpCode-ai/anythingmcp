@@ -1,12 +1,12 @@
 {
   "slug": "ebay-sell",
   "name": "eBay Sell",
-  "description": "eBay's Sell APIs for merchants: inventory items and offers, orders and fulfilment, payment disputes, and the seller's own account policies. OAuth 2.0 user token against the production marketplace.",
+  "description": "eBay's Sell APIs for merchants: inventory items, item groups and offers (create, publish, withdraw), orders and fulfilment, payment disputes, account policies, Promoted Listings campaigns, category suggestions and item specifics, and live listing lookups through the Browse API. OAuth 2.0 user token against the production marketplace.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "ebay-sell",
   "docsUrl": "https://developer.ebay.com/api-docs/sell/static/overview.html",
-  "instructions": "This connector uses eBay's Sell APIs (production) with a **User access token** for the seller's own account. You sign in to eBay once, in AnythingMCP; from then on the access token (2 hours) is renewed automatically from the refresh token eBay issues with it (valid about 18 months).\n\n**Setup**:\n1. At https://developer.ebay.com/my/keys (Application Keys) create a **Production** keyset. Before a new production keyset works, eBay asks you to subscribe to or opt out of marketplace account deletion notifications: if the keyset says *Your Keyset is currently disabled*, click the link in that message.\n2. Next to the production App ID, click **User Tokens**, open **Get a Token from eBay via Your Application** and create an **RuName** (eBay's name for a redirect address). Set its **Auth Accepted URL** (and **Auth Declined URL**) to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself (eBay requires https), and save.\n3. Enter the **App ID (Client ID)** as `EBAY_CLIENT_ID`, the **Cert ID (Client Secret)** as `EBAY_CLIENT_SECRET`, the RuName as `EBAY_RUNAME` and your marketplace as `EBAY_MARKETPLACE_ID`; leave `EBAY_REFRESH_TOKEN` empty.\n4. Click **Authorize with Provider** (the setup page does it for you): sign in with your eBay **seller** account and agree. eBay sends you back to AnythingMCP with the tools ready. eBay's `redirect_uri` is the RuName, not a URL: AnythingMCP sends it in the sign-in and in the code exchange, and the RuName's accepted URL brings the browser back.\n\n**Scopes**: the sign-in asks for `sell.inventory`, `sell.fulfillment`, `sell.account` and `sell.payment.dispute` (read your orders, inventory, offers, policies and disputes, and update offer prices).\n\n**Already have a refresh token?** Connectors set up earlier with a refresh token pasted into `EBAY_REFRESH_TOKEN` keep working as they are. To switch to the sign-in, add `EBAY_RUNAME` under Environment Variables and click **Authorize with Provider**: the new token replaces the old one.\n\n**Marketplace**: set `EBAY_MARKETPLACE_ID` to the marketplace the seller trades on, e.g. `EBAY_DE`, `EBAY_US`, `EBAY_GB`. eBay reads it from the `X-EBAY-C-MARKETPLACE-ID` header and answers differently per marketplace.\n\n**Sandbox is a separate host.** This adapter points at `api.ebay.com` (production). The sandbox lives at `api.sandbox.ebay.com` with its own keyset, RuName and tokens; sandbox values fail here with a confusing 401.\n\n**Inventory vs Trading.** The Sell Inventory API only sees listings created through it or migrated into it. A long-established seller whose listings were created with the legacy Trading API may find `ebay_sell_list_inventory_items` almost empty while their eBay shop is full — that is expected, and the migration is a one-time API call eBay documents.\n\n**Business Policies.** `ebay_sell_list_fulfillment_policies` and `ebay_sell_list_return_policies` only work for sellers who use eBay Business Policies. For other accounts eBay answers error 20403 *User is not eligible for Business Policy*: the connection is fine, and orders, inventory, offers and disputes keep working. To use the policy tools, opt in to Business Policies in My eBay under Account.\n\n**Limits**: most Sell endpoints allow a few thousand calls a day per application. Pace bulk work.\n\n**Payment disputes live on another host.** eBay serves them from `apiz.ebay.com`, not `api.ebay.com`; `ebay_sell_list_payment_disputes` calls that host directly (the same token works).\n\n**Paging differs per API.** In the Fulfillment API (`ebay_sell_list_orders`) `offset` is the number of orders to skip. In the Inventory API (`ebay_sell_list_inventory_items`, `ebay_sell_list_offers`) `offset` is the 0-based *page* number.\n\n**Writes**: `ebay_sell_update_offer_price` changes a live listing's price, which buyers see immediately. It uses eBay's `bulk_update_price_quantity` call, which answers 200 or 207 Multi-Status: a success code does not mean the offer changed, so read the per-offer `statusCode` and `errors` in the response. eBay allows 250 revisions per listing per calendar day.",
+  "instructions": "This connector uses eBay's Sell APIs (production) with a **User access token** for the seller's own account. You sign in to eBay once, in AnythingMCP; from then on the access token (2 hours) is renewed automatically from the refresh token eBay issues with it (valid about 18 months).\n\n**Setup**:\n1. At https://developer.ebay.com/my/keys (Application Keys) create a **Production** keyset. Before a new production keyset works, eBay asks you to subscribe to or opt out of marketplace account deletion notifications: if the keyset says *Your Keyset is currently disabled*, click the link in that message.\n2. Next to the production App ID, click **User Tokens**, open **Get a Token from eBay via Your Application** and create an **RuName** (eBay's name for a redirect address). Set its **Auth Accepted URL** (and **Auth Declined URL**) to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself (eBay requires https), and save.\n3. Enter the **App ID (Client ID)** as `EBAY_CLIENT_ID`, the **Cert ID (Client Secret)** as `EBAY_CLIENT_SECRET`, the RuName as `EBAY_RUNAME` and your marketplace as `EBAY_MARKETPLACE_ID`; leave `EBAY_REFRESH_TOKEN` empty.\n4. Click **Authorize with Provider** (the setup page does it for you): sign in with your eBay **seller** account and agree. eBay sends you back to AnythingMCP with the tools ready. eBay's `redirect_uri` is the RuName, not a URL: AnythingMCP sends it in the sign-in and in the code exchange, and the RuName's accepted URL brings the browser back.\n\n**Scopes**: the sign-in asks for the base scope `api_scope` (Browse and Taxonomy: public listings, categories and item specifics), `sell.inventory` (inventory items, item groups, offers, locations), `sell.fulfillment` (orders), `sell.account` (policies), `sell.payment.dispute` (disputes), and `sell.marketing` (Promoted Listings campaigns and ads). A connector authorized before the base and marketing scopes were added holds a token without them, and the campaign, Browse and Taxonomy tools answer 403 or *insufficient permissions* there: click **Authorize with Provider** again and the sign-in asks for the current list.\n\n**Already have a refresh token?** Connectors set up earlier with a refresh token pasted into `EBAY_REFRESH_TOKEN` keep working as they are. To switch to the sign-in, add `EBAY_RUNAME` under Environment Variables and click **Authorize with Provider**: the new token replaces the old one.\n\n**Marketplace**: set `EBAY_MARKETPLACE_ID` to the marketplace the seller trades on, e.g. `EBAY_DE`, `EBAY_US`, `EBAY_GB`. eBay reads it from the `X-EBAY-C-MARKETPLACE-ID` header and answers differently per marketplace.\n\n**Sandbox is a separate host.** This adapter points at `api.ebay.com` (production). The sandbox lives at `api.sandbox.ebay.com` with its own keyset, RuName and tokens; sandbox values fail here with a confusing 401.\n\n**Inventory vs Trading.** The Sell Inventory API only sees listings created through it or migrated into it. A long-established seller whose listings were created with the legacy Trading API may find `ebay_sell_list_inventory_items` almost empty while their eBay shop is full — that is expected, and the migration is a one-time API call eBay documents.\n\n**Business Policies.** `ebay_sell_list_fulfillment_policies` and `ebay_sell_list_return_policies` only work for sellers who use eBay Business Policies. For other accounts eBay answers error 20403 *User is not eligible for Business Policy*: the connection is fine, and orders, inventory, offers and disputes keep working. To use the policy tools, opt in to Business Policies in My eBay under Account.\n\n**Limits**: most Sell endpoints allow a few thousand calls a day per application. Pace bulk work.\n\n**Payment disputes live on another host.** eBay serves them from `apiz.ebay.com`, not `api.ebay.com`; `ebay_sell_list_payment_disputes` calls that host directly (the same token works).\n\n**Paging differs per API.** In the Fulfillment API (`ebay_sell_list_orders`) `offset` is the number of orders to skip. In the Inventory API (`ebay_sell_list_inventory_items`, `ebay_sell_list_offers`) `offset` is the 0-based *page* number.\n\n**Writes and Content-Language.** `ebay_sell_upsert_inventory_item`, `ebay_sell_upsert_inventory_item_group`, `ebay_sell_create_offer`, `ebay_sell_update_offer` and the bulk create tools take a `content_language` (e.g. `de-DE`): eBay requires the language of the listing text in a header. The upsert and update tools **replace** the whole record: read it first and send it back complete, or the fields you leave out are cleared. The usual order for a new listing: inventory item(s), then an item group for variations, then offer(s), then publish (`ebay_sell_publish_offer`, or `ebay_sell_publish_offers_by_item_group` for a multi-variation listing). Deleting items, groups or offers, migrating listings, ending a campaign and sending a message are installed switched off; turn them on under the connector's tools when you want them.\n\n**Browse API**: `ebay_sell_search_items`, `ebay_sell_get_item`, `ebay_sell_get_item_by_legacy_id` and `ebay_sell_get_items_by_item_group` read the public view of live listings on the connector's marketplace, other sellers' listings included (e.g. to compare prices).\n\n**Price-only updates**: `ebay_sell_update_offer_price` changes a live listing's price, which buyers see immediately. It uses eBay's `bulk_update_price_quantity` call, which answers 200 or 207 Multi-Status: a success code does not mean the offer changed, so read the per-offer `statusCode` and `errors` in the response. eBay allows 250 revisions per listing per calendar day.",
   "requiredEnvVars": [
     "EBAY_CLIENT_ID",
     "EBAY_CLIENT_SECRET",
@@ -15,6 +15,9 @@
   ],
   "optionalEnvVars": [
     "EBAY_REFRESH_TOKEN"
+  ],
+  "previousOAuthScopes": [
+    "https://api.ebay.com/oauth/api_scope/sell.inventory https://api.ebay.com/oauth/api_scope/sell.fulfillment https://api.ebay.com/oauth/api_scope/sell.account https://api.ebay.com/oauth/api_scope/sell.payment.dispute"
   ],
   "appRegistrationUrl": "https://developer.ebay.com/my/keys",
   "envVarMeta": {
@@ -182,7 +185,7 @@
       "tokenUrl": "https://api.ebay.com/identity/v1/oauth2/token",
       "tokenAuthMethod": "basic",
       "pkce": false,
-      "scopes": "https://api.ebay.com/oauth/api_scope/sell.inventory https://api.ebay.com/oauth/api_scope/sell.fulfillment https://api.ebay.com/oauth/api_scope/sell.account https://api.ebay.com/oauth/api_scope/sell.payment.dispute",
+      "scopes": "https://api.ebay.com/oauth/api_scope https://api.ebay.com/oauth/api_scope/sell.inventory https://api.ebay.com/oauth/api_scope/sell.fulfillment https://api.ebay.com/oauth/api_scope/sell.account https://api.ebay.com/oauth/api_scope/sell.payment.dispute https://api.ebay.com/oauth/api_scope/sell.marketing",
       "providerRedirectUri": "{{EBAY_RUNAME}}",
       "clientId": "{{EBAY_CLIENT_ID}}",
       "clientSecret": "{{EBAY_CLIENT_SECRET}}",
@@ -440,6 +443,982 @@
               ]
             }
           ]
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_upsert_inventory_item",
+      "description": "Create an inventory item for a SKU, or replace it completely if the SKU already exists (Inventory API createOrReplaceInventoryItem). Fields left out of `item` are cleared on a replace, so read the item first with ebay_sell_get_inventory_item and send it back whole with your changes. Answers 204 on success; the item is not listed until an offer for it is published.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Seller-defined SKU, up to 50 characters. Unique across the seller's inventory."
+          },
+          "content_language": {
+            "type": "string",
+            "description": "Language of the text in `item`, as a Content-Language value, e.g. en-US, en-GB, de-DE, fr-FR, it-IT."
+          },
+          "item": {
+            "type": "object",
+            "description": "The inventory item: `product` (title, description, aspects, imageUrls, brand, mpn, ean/upc/isbn), `condition` (e.g. NEW, USED_EXCELLENT), `conditionDescription`, `availability` ({shipToLocationAvailability: {quantity}}) and optionally `packageWeightAndSize`. Do not include `sku`; it comes from the path."
+          }
+        },
+        "required": [
+          "sku",
+          "content_language",
+          "item"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sell/inventory/v1/inventory_item/{sku}",
+        "headers": {
+          "Content-Language": "$content_language"
+        },
+        "bodyMapping": {
+          "__raw": "$item"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_delete_inventory_item",
+      "description": "Delete an inventory item by SKU (Inventory API deleteInventoryItem). This also deletes every offer for that SKU and ends any live listing built from it, published or not. Cannot be undone. Answers 204 on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "SKU of the inventory item to delete, from ebay_sell_list_inventory_items."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/sell/inventory/v1/inventory_item/{sku}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "ebay_sell_bulk_get_inventory_items",
+      "description": "Read up to 25 inventory items in one call by SKU (Inventory API bulkGetInventoryItem). Returns one response per SKU with its statusCode, the item (product, condition, availability) and any errors. Use instead of many ebay_sell_get_inventory_item calls. Does not change anything.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requests": {
+            "type": "array",
+            "description": "1 to 25 entries of the form {\"sku\": \"ABC-123\"}.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "description": "Seller-defined SKU."
+                }
+              },
+              "required": [
+                "sku"
+              ]
+            }
+          }
+        },
+        "required": [
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/bulk_get_inventory_item",
+        "bodyMapping": {
+          "requests": "$requests"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ebay_sell_bulk_upsert_inventory_items",
+      "description": "Create or fully replace up to 25 inventory items in one call (Inventory API bulkCreateOrReplaceInventoryItem). Each entry is a complete item with its `sku` and `locale`; fields left out are cleared on items that already exist. eBay answers 200 or 207 Multi-Status: read each entry's statusCode and errors in the response.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content_language": {
+            "type": "string",
+            "description": "Language of the text in the items, as a Content-Language value, e.g. en-US, de-DE."
+          },
+          "requests": {
+            "type": "array",
+            "description": "1 to 25 inventory items, each with `sku`, `locale` (e.g. en_US, de_DE), `product`, `condition`, `availability` and optionally `packageWeightAndSize`.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "content_language",
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/bulk_create_or_replace_inventory_item",
+        "headers": {
+          "Content-Language": "$content_language"
+        },
+        "bodyMapping": {
+          "requests": "$requests"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_inventory_item_group",
+      "description": "Get an inventory item group, the Inventory API's multi-variation listing (e.g. a shirt in several sizes and colours). Returns the shared title, description, aspects and images, the variant SKUs and the aspects they vary by (variesBy). Use the SKUs with ebay_sell_get_inventory_item or ebay_sell_list_offers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventoryItemGroupKey": {
+            "type": "string",
+            "description": "Seller-defined key of the group, e.g. the groupIds value of an inventory item or the key used when the group was created."
+          }
+        },
+        "required": [
+          "inventoryItemGroupKey"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/inventory/v1/inventory_item_group/{inventoryItemGroupKey}"
+      }
+    },
+    {
+      "name": "ebay_sell_upsert_inventory_item_group",
+      "description": "Create an inventory item group (a multi-variation listing) or replace an existing one completely (Inventory API createOrReplaceInventoryItemGroup). The variant inventory items must exist first. Fields left out are cleared, so read the group with ebay_sell_get_inventory_item_group and send it back whole. When the group is already published, the live listing is updated too. Answers 204 on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventoryItemGroupKey": {
+            "type": "string",
+            "description": "Seller-defined key of the group, up to 50 characters."
+          },
+          "content_language": {
+            "type": "string",
+            "description": "Language of the text in `group`, as a Content-Language value, e.g. en-US, de-DE."
+          },
+          "group": {
+            "type": "object",
+            "description": "The group: `title`, `description`, `aspects` (shared item specifics, {\"Brand\": [\"Acme\"]}), `imageUrls`, `variantSKUs` (the SKUs in the group) and `variesBy` ({aspectsImageVariesBy: [\"Color\"], specifications: [{name: \"Size\", values: [\"S\", \"M\"]}]})."
+          }
+        },
+        "required": [
+          "inventoryItemGroupKey",
+          "content_language",
+          "group"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sell/inventory/v1/inventory_item_group/{inventoryItemGroupKey}",
+        "headers": {
+          "Content-Language": "$content_language"
+        },
+        "bodyMapping": {
+          "__raw": "$group"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_delete_inventory_item_group",
+      "description": "Delete an inventory item group (Inventory API deleteInventoryItemGroup). The variant inventory items stay, but the multi-variation listing built from the group is no longer available to buyers. Withdraw it first with ebay_sell_withdraw_offers_by_item_group. Cannot be undone. Answers 204 on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventoryItemGroupKey": {
+            "type": "string",
+            "description": "Key of the inventory item group to delete."
+          }
+        },
+        "required": [
+          "inventoryItemGroupKey"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/sell/inventory/v1/inventory_item_group/{inventoryItemGroupKey}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "ebay_sell_get_offer",
+      "description": "Get one offer by its id: SKU, marketplace, format, price, available quantity, category, listing policies, merchant location, status (PUBLISHED or UNPUBLISHED) and, once published, the eBay listing id. Offer ids come from ebay_sell_list_offers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "description": "eBay offer id."
+          }
+        },
+        "required": [
+          "offerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/inventory/v1/offer/{offerId}"
+      }
+    },
+    {
+      "name": "ebay_sell_create_offer",
+      "description": "Create an unpublished offer for an existing inventory item on one marketplace (Inventory API createOffer). Returns the new offerId. Nothing is listed until the offer is published with ebay_sell_publish_offer. One offer per SKU and marketplace (two for auctions).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content_language": {
+            "type": "string",
+            "description": "Language of the text in the offer, as a Content-Language value, e.g. en-US, de-DE."
+          },
+          "offer": {
+            "type": "object",
+            "description": "The offer: `sku`, `marketplaceId` (e.g. EBAY_DE), `format` (FIXED_PRICE or AUCTION), `availableQuantity`, `categoryId`, `listingDescription`, `listingPolicies` ({fulfillmentPolicyId, paymentPolicyId, returnPolicyId}), `merchantLocationKey`, `pricingSummary` ({price: {value: \"19.99\", currency: \"EUR\"}}) and optionally `tax`, `storeCategoryNames`, `quantityLimitPerBuyer`."
+          }
+        },
+        "required": [
+          "content_language",
+          "offer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/offer",
+        "headers": {
+          "Content-Language": "$content_language"
+        },
+        "bodyMapping": {
+          "__raw": "$offer"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_update_offer",
+      "description": "Replace an offer's details (Inventory API updateOffer). This is a full replace: fields left out are cleared, so read the offer with ebay_sell_get_offer and send it back whole with your changes (without offerId, sku and marketplaceId, which cannot change). A published offer's live listing changes immediately. For a price or quantity change only, ebay_sell_update_offer_price is simpler.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "description": "Id of the offer to update."
+          },
+          "content_language": {
+            "type": "string",
+            "description": "Language of the text in the offer, as a Content-Language value, e.g. en-US, de-DE."
+          },
+          "offer": {
+            "type": "object",
+            "description": "The complete offer: availableQuantity, categoryId, listingDescription, listingPolicies, merchantLocationKey, pricingSummary, tax, storeCategoryNames and the other fields eBay returned."
+          }
+        },
+        "required": [
+          "offerId",
+          "content_language",
+          "offer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sell/inventory/v1/offer/{offerId}",
+        "headers": {
+          "Content-Language": "$content_language"
+        },
+        "bodyMapping": {
+          "__raw": "$offer"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_delete_offer",
+      "description": "Delete an offer (Inventory API deleteOffer). A published offer's listing ends; for a multi-variation listing only that variation is removed. The inventory item stays. Cannot be undone. Answers 204 on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "description": "Id of the offer to delete."
+          }
+        },
+        "required": [
+          "offerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/sell/inventory/v1/offer/{offerId}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "ebay_sell_bulk_create_offers",
+      "description": "Create up to 25 unpublished offers in one call (Inventory API bulkCreateOffer), all for the same marketplace. Returns an offerId or errors per entry; eBay answers 200 or 207 Multi-Status, so check each entry's statusCode. Publish them with ebay_sell_bulk_publish_offers or ebay_sell_publish_offers_by_item_group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content_language": {
+            "type": "string",
+            "description": "Language of the text in the offers, as a Content-Language value, e.g. en-US, de-DE."
+          },
+          "requests": {
+            "type": "array",
+            "description": "1 to 25 offers, each shaped like the `offer` of ebay_sell_create_offer (sku, marketplaceId, format, availableQuantity, categoryId, listingPolicies, merchantLocationKey, pricingSummary, ...).",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "content_language",
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/bulk_create_offer",
+        "headers": {
+          "Content-Language": "$content_language"
+        },
+        "bodyMapping": {
+          "requests": "$requests"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_publish_offer",
+      "description": "Publish an offer, turning it into a live eBay listing (Inventory API publishOffer). Returns the listingId. eBay checks that the offer and its inventory item carry everything the category needs; the errors name what is missing. Insertion fees may apply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "description": "Id of the unpublished offer."
+          }
+        },
+        "required": [
+          "offerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/offer/{offerId}/publish"
+      }
+    },
+    {
+      "name": "ebay_sell_bulk_publish_offers",
+      "description": "Publish up to 25 offers in one call (Inventory API bulkPublishOffer), each becoming its own single-variation listing. Returns a listingId or errors per offer; eBay answers 200 or 207 Multi-Status. For a multi-variation listing use ebay_sell_publish_offers_by_item_group instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requests": {
+            "type": "array",
+            "description": "1 to 25 entries of the form {\"offerId\": \"1234567890\"}.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "offerId": {
+                  "type": "string",
+                  "description": "Offer id."
+                }
+              },
+              "required": [
+                "offerId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/bulk_publish_offer",
+        "bodyMapping": {
+          "requests": "$requests"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_publish_offers_by_item_group",
+      "description": "Publish all unpublished offers of an inventory item group as one multi-variation listing on the connector's marketplace (Inventory API publishOfferByInventoryItemGroup). Every variant SKU needs an offer first. Returns the listingId and per-SKU warnings. Also use it after adding a variant to an already published group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventoryItemGroupKey": {
+            "type": "string",
+            "description": "Key of the inventory item group to publish."
+          }
+        },
+        "required": [
+          "inventoryItemGroupKey"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/offer/publish_by_inventory_item_group",
+        "bodyMapping": {
+          "inventoryItemGroupKey": "$inventoryItemGroupKey",
+          "marketplaceId": "{{EBAY_MARKETPLACE_ID}}"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_withdraw_offer",
+      "description": "End the live listing of a published single-variation offer (Inventory API withdrawOffer). The offer and inventory item stay and the offer returns to UNPUBLISHED; publishing it again creates a new listing with a new listing id. For a multi-variation listing use ebay_sell_withdraw_offers_by_item_group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "description": "Id of the published offer."
+          }
+        },
+        "required": [
+          "offerId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/offer/{offerId}/withdraw"
+      }
+    },
+    {
+      "name": "ebay_sell_withdraw_offers_by_item_group",
+      "description": "End the multi-variation listing of an inventory item group on the connector's marketplace (Inventory API withdrawOfferByInventoryItemGroup). The offers, items and group stay and can be published again with ebay_sell_publish_offers_by_item_group, which creates a new listing. Answers 204 on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventoryItemGroupKey": {
+            "type": "string",
+            "description": "Key of the inventory item group whose listing should end."
+          }
+        },
+        "required": [
+          "inventoryItemGroupKey"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/offer/withdraw_by_inventory_item_group",
+        "bodyMapping": {
+          "inventoryItemGroupKey": "$inventoryItemGroupKey",
+          "marketplaceId": "{{EBAY_MARKETPLACE_ID}}"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_listing_fees",
+      "description": "Estimate the listing fees eBay would charge to publish up to 250 unpublished offers (Inventory API getListingFees). Returns the expected fees per marketplace (insertion fee, subtitle, and so on). Final value fees are not included. Does not publish anything.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offers": {
+            "type": "array",
+            "description": "Entries of the form {\"offerId\": \"1234567890\"}; only unpublished offers.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "offerId": {
+                  "type": "string",
+                  "description": "Offer id."
+                }
+              },
+              "required": [
+                "offerId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "offers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/offer/get_listing_fees",
+        "bodyMapping": {
+          "offers": "$offers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ebay_sell_migrate_listings",
+      "description": "Move up to 5 listings created with the legacy Trading API or Seller Hub into the Inventory API model (Inventory API bulkMigrateListing). Afterwards the listing is managed through inventory items and offers, and the response names the new SKUs, offer ids and inventory item group key. One-way: a migrated listing cannot go back. Every listing needs a SKU and Business Policies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requests": {
+            "type": "array",
+            "description": "1 to 5 entries of the form {\"listingId\": \"123456789012\"}.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "listingId": {
+                  "type": "string",
+                  "description": "eBay listing (item) id."
+                }
+              },
+              "required": [
+                "listingId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/bulk_migrate_listing",
+        "bodyMapping": {
+          "requests": "$requests"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ebay_sell_list_inventory_locations",
+      "description": "List the seller's inventory locations (warehouses, stores): merchantLocationKey, name, address, type and status. Offers name their location by merchantLocationKey, so use this before creating an offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Locations per page, 1-100 (default 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Number of locations to skip."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/inventory/v1/location",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_search_items",
+      "description": "Search live eBay listings on the connector's marketplace (Browse API item_summary/search), e.g. to check competing prices or find a listing. Returns item summaries with itemId, title, price, condition, seller, image and itemWebUrl, plus total and next for paging. Needs a keyword (`q`), a category, an ePID or a GTIN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Keywords, e.g. iphone 15 case. No * wildcard."
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "One eBay category id, e.g. 9355."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "UPC, EAN or ISBN of the product."
+          },
+          "epid": {
+            "type": "string",
+            "description": "eBay product id from the eBay catalog."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Field filters, e.g. price:[10..50],priceCurrency:EUR,conditions:{NEW},buyingOptions:{FIXED_PRICE},sellers:{seller_name}."
+          },
+          "aspect_filter": {
+            "type": "string",
+            "description": "Aspect filter with its category, e.g. categoryId:15724,Color:{Red}."
+          },
+          "sort": {
+            "type": "string",
+            "description": "price, -price, distance or newlyListed. Default: best match."
+          },
+          "fieldgroups": {
+            "type": "string",
+            "description": "MATCHING_ITEMS (default), ASPECT_REFINEMENTS, CATEGORY_REFINEMENTS, BUYING_OPTION_REFINEMENTS, CONDITION_REFINEMENTS, EXTENDED or FULL, comma separated."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page, 1-200 (default 50)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Items to skip; a multiple of limit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buy/browse/v1/item_summary/search",
+        "queryParams": {
+          "q": "$q",
+          "category_ids": "$category_ids",
+          "gtin": "$gtin",
+          "epid": "$epid",
+          "filter": "$filter",
+          "aspect_filter": "$aspect_filter",
+          "sort": "$sort",
+          "fieldgroups": "$fieldgroups",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_item",
+      "description": "Get a live listing's public details by its RESTful item id (Browse API getItem): title, price, quantity sold and available, condition, item specifics, images, seller, shipping and return terms. The id looks like v1|123456789012|0 (from ebay_sell_search_items); for a plain eBay item number use ebay_sell_get_item_by_legacy_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "RESTful item id, e.g. v1|123456789012|0 or, for one variation, v1|123456789012|987654321098."
+          },
+          "fieldgroups": {
+            "type": "string",
+            "description": "PRODUCT adds eBay catalog product details; COMPACT returns only price, availability and a few other fields."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buy/browse/v1/item/{item_id}",
+        "queryParams": {
+          "fieldgroups": "$fieldgroups"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "ebay_sell_get_item_by_legacy_id",
+      "description": "Get a live listing's public details by the eBay item number shown on the listing page (Browse API getItemByLegacyId): title, price, availability, condition, item specifics, images, seller and shipping. For one variation of a multi-variation listing also pass legacy_variation_sku or legacy_variation_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "legacy_item_id": {
+            "type": "string",
+            "description": "eBay item number, e.g. 123456789012."
+          },
+          "legacy_variation_sku": {
+            "type": "string",
+            "description": "Seller SKU of the variation, for a multi-variation listing."
+          },
+          "legacy_variation_id": {
+            "type": "string",
+            "description": "Variation id, for a multi-variation listing."
+          },
+          "fieldgroups": {
+            "type": "string",
+            "description": "PRODUCT adds eBay catalog product details; ADDITIONAL_SELLER_DETAILS adds the seller's user id."
+          }
+        },
+        "required": [
+          "legacy_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buy/browse/v1/item/get_item_by_legacy_id",
+        "queryParams": {
+          "legacy_item_id": "$legacy_item_id",
+          "legacy_variation_sku": "$legacy_variation_sku",
+          "legacy_variation_id": "$legacy_variation_id",
+          "fieldgroups": "$fieldgroups"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_items_by_item_group",
+      "description": "Get every variation of a live multi-variation listing (Browse API getItemsByItemGroup): one item per variation with its price, availability, aspects (size, colour) and images, plus the aspects shared by the group. The item group id is the eBay item number of the multi-variation listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_group_id": {
+            "type": "string",
+            "description": "Item group id, i.e. the item number of the multi-variation listing."
+          }
+        },
+        "required": [
+          "item_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/buy/browse/v1/item/get_items_by_item_group",
+        "queryParams": {
+          "item_group_id": "$item_group_id"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_list_campaigns",
+      "description": "List the seller's Promoted Listings ad campaigns (Marketing API getCampaigns): campaignId, name, status, funding strategy (COST_PER_SALE or COST_PER_CLICK, with the default bid percentage), marketplace, start and end dates. Filter by status or name. Needs the sell.marketing scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_status": {
+            "type": "string",
+            "description": "Comma-separated statuses: RUNNING, PAUSED, ENDED, PENDING, SCHEDULED, ENDING_SOON, DRAFT."
+          },
+          "campaign_name": {
+            "type": "string",
+            "description": "Exact campaign name."
+          },
+          "funding_strategy": {
+            "type": "string",
+            "description": "COST_PER_SALE or COST_PER_CLICK."
+          },
+          "start_date_range": {
+            "type": "string",
+            "description": "Start-date range, e.g. 2026-01-01T00:00:00Z..2026-03-31T00:00:00Z."
+          },
+          "end_date_range": {
+            "type": "string",
+            "description": "End-date range, same format as start_date_range."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Campaigns per page, 1-500 (default 10)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Number of campaigns to skip."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/marketing/v1/ad_campaign",
+        "queryParams": {
+          "campaign_status": "$campaign_status",
+          "campaign_name": "$campaign_name",
+          "funding_strategy": "$funding_strategy",
+          "start_date_range": "$start_date_range",
+          "end_date_range": "$end_date_range",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_campaign",
+      "description": "Get one Promoted Listings campaign by id (Marketing API getCampaign): name, status, funding strategy and bid percentage, budget, marketplace, dates and selection rules. Campaign ids come from ebay_sell_list_campaigns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "eBay campaign id."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/marketing/v1/ad_campaign/{campaign_id}"
+      }
+    },
+    {
+      "name": "ebay_sell_list_campaign_ads",
+      "description": "List the ads of a Promoted Listings campaign (Marketing API getAds): adId, listingId, bid percentage and ad status. Filter by listing ids or status to check whether a listing is promoted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "eBay campaign id."
+          },
+          "listing_ids": {
+            "type": "string",
+            "description": "Comma-separated listing ids to look for."
+          },
+          "ad_status": {
+            "type": "string",
+            "description": "Comma-separated statuses: ACTIVE, PAUSED, ARCHIVED, INELIGIBLE."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Ads per page, 1-500 (default 10)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Number of ads to skip."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/marketing/v1/ad_campaign/{campaign_id}/ad",
+        "queryParams": {
+          "listing_ids": "$listing_ids",
+          "ad_status": "$ad_status",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_add_listings_to_campaign",
+      "description": "Promote up to 500 listings in a Promoted Listings campaign by listing id (Marketing API bulkCreateAdsByListingId). In a cost-per-sale campaign each ad takes a bidPercentage (the ad fee charged when the item sells after a click on the ad); in a cost-per-click campaign pass adGroupId instead. Returns an adId or errors per listing; eBay answers 200 or 207 Multi-Status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "eBay campaign id, from ebay_sell_list_campaigns."
+          },
+          "requests": {
+            "type": "array",
+            "description": "1 to 500 entries such as {\"listingId\": \"123456789012\", \"bidPercentage\": \"5.0\"} (cost per sale, 2.0-100.0) or {\"listingId\": \"...\", \"adGroupId\": \"...\"} (cost per click).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "listingId": {
+                  "type": "string",
+                  "description": "eBay listing id."
+                },
+                "bidPercentage": {
+                  "type": "string",
+                  "description": "Ad rate in percent, e.g. 5.0."
+                },
+                "adGroupId": {
+                  "type": "string",
+                  "description": "Ad group, for cost-per-click campaigns."
+                }
+              },
+              "required": [
+                "listingId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "campaign_id",
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/marketing/v1/ad_campaign/{campaign_id}/bulk_create_ads_by_listing_id",
+        "bodyMapping": {
+          "requests": "$requests"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_end_campaign",
+      "description": "End a running or paused Promoted Listings campaign (Marketing API endCampaign). Its ads stop at once. An ended campaign cannot be restarted; to stop it for a while pause it in Seller Hub instead. Answers 204 on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Id of the campaign to end."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/marketing/v1/ad_campaign/{campaign_id}/end"
+      },
+      "enabled": false
+    },
+    {
+      "name": "ebay_sell_get_default_category_tree_id",
+      "description": "Get the id and version of the category tree of the connector's marketplace (Taxonomy API getDefaultCategoryTreeId), e.g. 77 for EBAY_DE, 0 for EBAY_US, 3 for EBAY_GB. Needed by ebay_sell_get_category_suggestions and ebay_sell_get_item_aspects_for_category.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/commerce/taxonomy/v1/get_default_category_tree_id",
+        "queryParams": {
+          "marketplace_id": "{{EBAY_MARKETPLACE_ID}}"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_category_suggestions",
+      "description": "Suggest the leaf categories that best fit a product, from a short description (Taxonomy API getCategorySuggestions). Returns category ids and names with their ancestor path, best match first. Use the id as an offer's categoryId and with ebay_sell_get_item_aspects_for_category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_tree_id": {
+            "type": "string",
+            "description": "Category tree id, from ebay_sell_get_default_category_tree_id (e.g. 77 for EBAY_DE)."
+          },
+          "q": {
+            "type": "string",
+            "description": "Words that describe the item, e.g. women's leather ankle boots."
+          }
+        },
+        "required": [
+          "category_tree_id",
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/commerce/taxonomy/v1/category_tree/{category_tree_id}/get_category_suggestions",
+        "queryParams": {
+          "q": "$q"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_item_aspects_for_category",
+      "description": "List the item specifics (aspects) of a leaf category (Taxonomy API getItemAspectsForCategory): name, whether it is required or recommended, single or multiple values, free text or one of the listed values. Use it to fill product.aspects of an inventory item so publishing does not fail on missing specifics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_tree_id": {
+            "type": "string",
+            "description": "Category tree id, from ebay_sell_get_default_category_tree_id."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Leaf category id, e.g. from ebay_sell_get_category_suggestions."
+          }
+        },
+        "required": [
+          "category_tree_id",
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/commerce/taxonomy/v1/category_tree/{category_tree_id}/get_item_aspects_for_category",
+        "queryParams": {
+          "category_id": "$category_id"
         }
       }
     }

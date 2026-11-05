@@ -149,3 +149,76 @@ describe('weclapp adapter: responsible-user shortcuts and purchasing master data
     expect(t('weclapp_add_article_item_group').endpointMapping).toMatchObject({ method: 'POST', path: '/articleItemGroup' });
   });
 });
+
+describe('weclapp adapter: shipping, stock, production and purchasing', () => {
+  const all = (adapter as unknown as {
+    tools: Array<{ name: string; enabled?: boolean; endpointMapping: Record<string, unknown>; responseMapping?: Record<string, unknown> }>;
+  }).tools;
+  const t = (name: string) => byName(name);
+
+  it('maps the reads to the v2 paths', () => {
+    const reads: Array<[string, string]> = [
+      ['weclapp_find_shipments', '/shipment'],
+      ['weclapp_get_shipment', '/shipment/id/{shipmentId}'],
+      ['weclapp_read_sales_order', '/salesOrder/id/{salesOrderId}'],
+      ['weclapp_read_sales_invoice', '/salesInvoice/id/{salesInvoiceId}'],
+      ['weclapp_get_production_order', '/productionOrder/id/{productionOrderId}'],
+      ['weclapp_list_requisitions', '/purchaseRequisition'],
+      ['weclapp_find_warehouse_stock', '/warehouseStock'],
+      ['weclapp_find_batch_numbers', '/batchNumber'],
+      ['weclapp_read_batch_number', '/batchNumber/id/{batchNumberId}'],
+      ['weclapp_find_purchase_orders', '/purchaseOrder'],
+      ['weclapp_read_purchase_order', '/purchaseOrder/id/{purchaseOrderId}'],
+      ['weclapp_list_purchase_invoices', '/purchaseInvoice'],
+      ['weclapp_find_incoming_goods', '/incomingGoods'],
+      ['weclapp_find_purchase_open_items', '/purchaseOpenItem'],
+      ['weclapp_find_article_prices', '/articlePrice'],
+      ['weclapp_find_bank_transactions', '/bankTransaction'],
+      ['weclapp_list_variant_articles', '/variantArticle'],
+      ['weclapp_count_records', '/{resource}/count'],
+    ];
+    for (const [name, path] of reads) {
+      expect(t(name).endpointMapping).toMatchObject({ method: 'GET', path });
+    }
+  });
+
+  it('downloads delivery notes and invoices as files', () => {
+    for (const [name, path] of [
+      ['weclapp_download_delivery_note_pdf', '/shipment/id/{shipmentId}/downloadLatestDeliveryNotePdf'],
+      ['weclapp_download_sales_invoice_pdf', '/salesInvoice/id/{salesInvoiceId}/downloadLatestSalesInvoicePdf'],
+    ]) {
+      const tool = all.find((x) => x.name === name)!;
+      expect(tool.endpointMapping).toMatchObject({ method: 'GET', path });
+      expect(tool.responseMapping?.binary).toBeDefined();
+    }
+  });
+
+  it('maps the writes to the documented actions', () => {
+    expect(t('weclapp_create_shipment_from_sales_order').endpointMapping).toMatchObject({ method: 'POST', path: '/salesOrder/id/{salesOrderId}/createShipment' });
+    expect(t('weclapp_convert_requisition_to_production_order').endpointMapping).toMatchObject({ method: 'POST', path: '/purchaseRequisition/id/{purchaseRequisitionId}/createProductionOrder' });
+    expect(t('weclapp_run_material_planning').endpointMapping).toMatchObject({ method: 'POST', path: '/purchaseRequisition/startMaterialPlanningRun' });
+    expect(t('weclapp_add_production_order').endpointMapping).toMatchObject({ method: 'POST', path: '/productionOrder' });
+    expect(t('weclapp_book_stock_transfer').endpointMapping).toMatchObject({
+      method: 'POST',
+      path: '/warehouseStockMovement/bookDirectStockTransfer',
+      bodyMapping: { sourceStoragePlaceId: '$sourceStoragePlaceId', destinationStoragePlaceId: '$destinationStoragePlaceId' },
+    });
+    for (const [name, path] of [
+      ['weclapp_edit_shipment', '/shipment/id/{shipmentId}'],
+      ['weclapp_edit_production_order', '/productionOrder/id/{productionOrderId}'],
+      ['weclapp_edit_batch_number', '/batchNumber/id/{batchNumberId}'],
+    ]) {
+      const m = t(name).endpointMapping;
+      expect(m).toMatchObject({ method: 'PUT', path });
+      expect((m.queryParams as Record<string, string>).ignoreMissingProperties).toBe('true');
+    }
+  });
+
+  it('installs the payables writes switched off', () => {
+    for (const name of ['weclapp_set_purchase_open_item_payment_state', 'weclapp_apply_bank_transaction_to_purchase_open_item']) {
+      expect(all.find((x) => x.name === name)?.enabled).toBe(false);
+    }
+    expect(t('weclapp_set_purchase_open_item_payment_state').endpointMapping).toMatchObject({ method: 'POST', path: '/purchaseOpenItem/id/{purchaseOpenItemId}/updatePaymentState' });
+    expect(t('weclapp_apply_bank_transaction_to_purchase_open_item').endpointMapping).toMatchObject({ method: 'POST', path: '/purchaseOpenItem/id/{purchaseOpenItemId}/createPaymentApplication' });
+  });
+});

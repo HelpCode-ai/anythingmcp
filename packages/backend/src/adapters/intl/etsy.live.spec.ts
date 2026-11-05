@@ -132,8 +132,13 @@ describe('etsy adapter — static spec conformance', () => {
     const auth = a.connector.authConfig;
     expect(auth.authorizationUrl).toBe('https://www.etsy.com/oauth/connect');
     // Space-separated, as Etsy documents. Write scopes for the listing and
-    // tracking tools; no listings_d, because no tool here deletes anything.
-    expect(auth.scopes).toBe('email_r shops_r listings_r listings_w transactions_r transactions_w');
+    // tracking tools; listings_d for the delete tool, which installs off.
+    expect(auth.scopes).toBe('email_r shops_r listings_r listings_w listings_d transactions_r transactions_w');
+    // Rows holding an earlier list get the current one on re-authorization.
+    expect((adapter as unknown as { previousOAuthScopes: string[] }).previousOAuthScopes).toEqual([
+      'email_r shops_r listings_r transactions_r',
+      'email_r shops_r listings_r listings_w transactions_r transactions_w',
+    ]);
     // Etsy takes the client in the body (client_id, and the shared secret it
     // checks). Basic would change the refresh request of every Etsy row.
     expect(auth.tokenAuthMethod).toBeUndefined();
