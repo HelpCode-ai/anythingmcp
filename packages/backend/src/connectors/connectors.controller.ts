@@ -19,7 +19,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiProperty, ApiPropertyOptional, ApiSecurity, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { PaginationQueryDto } from '../common/pagination.dto';
 import { ConfigService } from '@nestjs/config';
@@ -722,6 +722,7 @@ function mayExportSecrets(req: any): boolean {
 
 @ApiTags('Connectors')
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/connectors')
 export class ConnectorsController {
@@ -778,9 +779,18 @@ export class ConnectorsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List connectors for current organization' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: '1..200' })
-  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiOperation({
+    summary: 'List connectors for current organization',
+    description:
+      'Every connector of your workspace, newest first, with its tools. Secrets are never returned: secret variables and ' +
+      'headers come back empty and are named in `maskedEnvVars` / `maskedHeaders`, and `authConfig` is left out. ' +
+      '`setupStatus` says whether the connector can serve calls: `ready`, `needs_input` (the variables in ' +
+      '`missingVariables` are empty) or `needs_authorization` (a sign-in at the provider is pending). ' +
+      'Without `limit` all connectors are returned.\n\n' +
+      '```bash\namcp api GET "/api/connectors?limit=50"\n```',
+  })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size, 1..200. Omit for all.', example: 50 })
+  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip.', example: 0 })
   async list(@Req() req: any, @Query() pagination: PaginationQueryDto) {
     const rows = await this.connectorsService.findByOrg(req.user.organizationId, {
       limit: pagination.limit,
@@ -827,7 +837,37 @@ export class ConnectorsController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new connector' })
+  @ApiOperation({
+    summary: 'Create a new connector',
+    description:
+      'Creates a hand-built connector. For an app in the catalogue, `POST /api/adapters/{slug}/import` is simpler: it ' +
+      'creates the connector with its tools in one call. A new connector has no tools: add them with ' +
+      '`POST /api/connectors/{id}/import` (from a spec, Postman, cURL, HAR or JSON), `POST /api/connectors/{id}/import-spec` ' +
+      '(from `specUrl`), `POST /api/connectors/{id}/discover-tools` (MCP connectors) or the Tools endpoints.\n\n' +
+      'A key typed into `baseUrl` or a header is moved into an encrypted variable and referenced as `{{VAR}}`. ' +
+      'The connector is added to your default MCP server. File Search connectors are created with ' +
+      '`POST /api/file-search/connectors` instead. 403 for VIEWERs or when the plan allows no more connectors.',
+  })
+  @ApiBody({
+    type: CreateConnectorDto,
+    examples: {
+      rest: {
+        summary: 'REST API with a bearer token',
+        value: {
+          name: 'Acme CRM',
+          type: 'REST',
+          baseUrl: 'https://api.acme.example/v1',
+          authType: 'BEARER_TOKEN',
+          authConfig: { token: 'sk_live_…' },
+          specUrl: 'https://api.acme.example/v1/openapi.json',
+        },
+      },
+      mcp: {
+        summary: 'Remote MCP server',
+        value: { name: 'Docs MCP', type: 'MCP', baseUrl: 'https://mcp.example.com/mcp', authType: 'NONE' },
+      },
+    },
+  })
   async create(@Req() req: any, @Body() dto: CreateConnectorDto) {
     this.assertCanCreate(req);
     if ((dto.type as string) === 'FILE_SEARCH') {
@@ -1198,7 +1238,24 @@ export class ConnectorsController {
   @ApiOperation({
     summary: 'Test connectivity of all active connectors',
     description:
-      'Runs a health check against all active connectors and returns their status.',
+      'Runs a health check against all active connectors and returns their status. Each check is a real request to the ' +
+      'provider (the connector\'s `healthcheckPath`, or its type\'s test). A connector whose credential the provider ' +
+      'refused for good is reported as `needs_reauth` without being called again.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      example: {
+        total: 2,
+        healthy: 1,
+        unhealthy: 1,
+        connectors: [
+          { id: 'cmob60dvv00c01zrpeujwmnep', name: 'HubSpot', type: 'REST', status: 'healthy', message: 'Connection successful', latencyMs: 231 },
+          { id: 'cmob61abc00c11zrpq3x8kdm2', name: 'Acme CRM', type: 'REST', status: 'unhealthy', message: 'Auth handshake reached the API, but the credentials were rejected. Update authConfig and retry.', latencyMs: 118 },
+        ],
+      },
+    },
   })
   async healthCheck(@Req() req: any) {
     const allConnectors = await this.connectorsService.findByOrg(req.user.organizationId);
@@ -1283,9 +1340,11 @@ export class ConnectorsController {
       'so it can be restored with import-all or import. authConfig is never ' +
       'exported. Secret environment variables and headers are exported only ' +
       'to admins; for every other role, and for a read-only (MANAGEMENT_READ) ' +
-      'API key, they are left empty and named in `maskedEnvVars` / `maskedHeaders`.',
+      'API key, they are left empty and named in `maskedEnvVars` / `maskedHeaders`. ' +
+      'The `X-Secrets-Included` response header says which it was.\n\n' +
+      '```bash\ncurl -s "$AMCP_URL/api/connectors/<id>/export?format=yaml" -H "Authorization: Bearer $AMCP_API_KEY" -o acme.yaml\n```',
   })
-  @ApiQuery({ name: 'format', required: false, enum: ['json', 'yaml'] })
+  @ApiQuery({ name: 'format', required: false, enum: ['json', 'yaml'], description: 'File format (default json).', example: 'yaml' })
   async exportOne(
     @Req() req: any,
     @Param('id') id: string,
@@ -1782,7 +1841,22 @@ export class ConnectorsController {
   }
 
   @Post(':id/test')
-  @ApiOperation({ summary: 'Test connector connection' })
+  @ApiOperation({
+    summary: 'Test connector connection',
+    description:
+      'Makes one request to the provider with the stored settings (the connector\'s `healthcheckPath` for REST) and ' +
+      'reports the outcome; nothing is changed. `kind` classifies it: `ok`, `auth_failed` (401/403, check the ' +
+      'credentials), `not_found` (reachable, but the path does not exist), `unreachable` (DNS, network, timeout or a ' +
+      'blocked address), `unsupported` or `error`. A connector with per-user credentials is tested with your own sign-in. ' +
+      'Only the connector owner or an admin may test it.',
+  })
+  @ApiResponse({
+    status: 201,
+    schema: {
+      type: 'object',
+      example: { ok: false, kind: 'auth_failed', httpStatus: 401, message: 'Auth handshake reached the API, but the credentials were rejected. Update authConfig and retry.' },
+    },
+  })
   async test(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
@@ -1856,7 +1930,17 @@ export class ConnectorsController {
     summary: 'Discover and import tools from a remote MCP server',
     description:
       'Connects to the remote MCP server using stored credentials, ' +
-      'lists all available tools, and imports them as MCP tools.',
+      'lists all available tools, and imports them as MCP tools.\n\n' +
+      'Run it again to pick up tools the remote server added or changed: existing tools are updated, new ones created, ' +
+      'and tools the server no longer lists are deprecated (disabled, listed in `deprecated`). MCP connectors only. On failure the answer is ' +
+      'a success status (201) with `{"error": "…"}`.',
+  })
+  @ApiResponse({
+    status: 201,
+    schema: {
+      type: 'object',
+      example: { message: 'Imported tools: created 12, updated 0', created: 12, updated: 0, deprecated: [], skipped: [], renameConflicts: [], tools: [{ id: '…', name: 'search_docs', isEnabled: true }] },
+    },
   })
   async discoverMcpTools(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
@@ -1949,7 +2033,15 @@ export class ConnectorsController {
       'or YAML, and imports it like import-all: into the caller\'s ' +
       'organization only, skipping connectors with duplicate names, never ' +
       'restoring auth credentials. Not to be confused with POST :id/import, ' +
-      'which imports tools from an API spec into an existing connector.',
+      'which imports tools from an API spec into an existing connector.\n\n' +
+      '```bash\namcp api POST /api/connectors/import --data "$(jq -Rs \'{content: .}\' acme.yaml)" --yes\n```',
+  })
+  @ApiResponse({
+    status: 201,
+    schema: {
+      type: 'object',
+      example: { message: 'Imported 1 connectors with 14 tools', created: 1, skipped: 0, tools: 14, errors: [] },
+    },
   })
   async importFile(@Req() req: any, @Body() dto: ImportFileDto) {
     this.assertCanCreate(req);
@@ -2094,7 +2186,16 @@ export class ConnectorsController {
   }
 
   @Post(':id/import-spec')
-  @ApiOperation({ summary: 'Auto-generate MCP tools from API specification' })
+  @ApiOperation({
+    summary: 'Auto-generate MCP tools from API specification',
+    description:
+      'Reads the spec the connector already points at and creates one tool per operation: the OpenAPI document at ' +
+      '`specUrl` (or the stored spec) for REST, the WSDL at `specUrl` or the base URL for SOAP, the schema by ' +
+      'introspection for GraphQL. No body. Running it again updates the tools and deprecates (disables) those the spec no longer has. ' +
+      'For other sources (Postman, cURL, HAR, JSON, inline content) use `POST /api/connectors/{id}/import`. ' +
+      'A spec that cannot be fetched or parsed answers 422; a connector without a spec, or of a type with no spec import, ' +
+      'answers a success status (201) with `{"error": "…"}`.',
+  })
   async importSpec(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
@@ -2154,6 +2255,51 @@ export class ConnectorsController {
   @Post(':id/import')
   @ApiOperation({
     summary: 'Import tools from any source: OpenAPI, Postman, cURL, HAR, WSDL, GraphQL',
+    description:
+      'Parses `content` (inline text) or `url` with the parser named by `source` and creates or updates the ' +
+      'connector\'s tools.\n\n' +
+      '- `openapi`, `postman`: `content` or `url`.\n' +
+      '- `wsdl`: `url` or `content` with the WSDL address, else the connector base URL.\n' +
+      '- `graphql`: introspects `url` or the connector base URL.\n' +
+      '- `curl`, `har`, `json`: `content` only. These **add** tools and deprecate nothing; `json` takes ' +
+      '`[{name, description, parameters, endpointMapping}]`.\n' +
+      '- `mcp`: lists the tools of the remote MCP server (MCP connectors; `url` is an optional MCP path).\n' +
+      '- `odata`: `service` path (and optional `entitySets`); its `$metadata` is fetched unless `content` holds it.\n\n' +
+      'A full spec import (OpenAPI, WSDL, GraphQL, Postman, MCP) deprecates (disables) the tools the spec no longer has; ' +
+      'an OData import only those of the same service. Tools are matched by operationId, then method and path, then name. ' +
+      'Parse failures answer a success status (201) with `{"error": "…"}`.',
+  })
+  @ApiBody({
+    type: ImportToolsDto,
+    examples: {
+      openapiUrl: {
+        summary: 'OpenAPI from a URL',
+        value: { source: 'openapi', url: 'https://api.acme.example/v1/openapi.json' },
+      },
+      curl: {
+        summary: 'One tool from a cURL command',
+        value: { source: 'curl', content: "curl -X GET 'https://api.acme.example/v1/customers?limit=10' -H 'Accept: application/json'" },
+      },
+      odata: {
+        summary: 'SAP OData service',
+        value: { source: 'odata', service: '/sap/opu/odata/sap/API_BUSINESS_PARTNER', entitySets: ['A_BusinessPartner'] },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    schema: {
+      type: 'object',
+      example: {
+        message: 'Imported tools: created 42, updated 3, deprecated 1',
+        created: 42,
+        updated: 3,
+        deprecated: ['get_legacy_report'],
+        skipped: [],
+        renameConflicts: [],
+        tools: [{ id: '…', name: 'list_customers', isEnabled: true }],
+      },
+    },
   })
   async importTools(
     @Req() req: any,
