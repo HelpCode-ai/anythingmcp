@@ -7312,6 +7312,7 @@ See [Tool Definition Format](<https://github.com/HelpCode-ai/anythingmcp/blob/ma
 |--------|----------|-------------|
 | GET | `/api/audit/invocations` | List invocations (with filters) |
 | GET | `/api/audit/stats` | Get invocation stats (24h, 7d, total) |
+| GET | `/api/audit/tool-performance` | Per-tool latency percentiles, failure rates and last recorded errors |
 
 ### Query Invocations
 
@@ -7340,6 +7341,68 @@ Response:
   "total": 8721
 }
 ```
+
+### Tool Performance
+
+The **Tool performance** table on `/analytics` shows calls, failure rate,
+p50/p95/p99 latency and the last recorded error for each tool and MCP server.
+Its own time selector defaults to the last 24 hours; connector and MCP server
+filters narrow the results. This view is available on Cloud and self-hosted
+editions, using the invocation history still retained by the instance.
+
+```bash
+curl -s "http://localhost:4000/api/audit/tool-performance?hours=24&connectorId=<connectorId>&mcpServerId=<serverId>&limit=25&offset=0" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+All results belong to the signed-in user's organization. Optional parameters:
+
+| Parameter | Default | Bounds / meaning |
+|-----------|---------|------------------|
+| `hours` | `24` | Integer from 1 to 2160 (90 days), rolling window |
+| `connectorId` | All connectors | A connector in the user's organization |
+| `mcpServerId` | All servers | An MCP server in the user's organization |
+| `limit` | `25` | Integer from 1 to 100 |
+| `offset` | `0` | Non-negative integer; increase by `limit` for the next page |
+
+Response:
+
+```json
+{
+  "items": [{
+    "toolId": "tool-1",
+    "toolName": "search_orders",
+    "connectorId": "connector-1",
+    "connectorName": "Orders",
+    "mcpServerId": null,
+    "mcpServerName": null,
+    "calls": 10,
+    "errors": 2,
+    "errorRate": 20,
+    "latencySampleCount": 8,
+    "p50Ms": 120,
+    "p95Ms": 430,
+    "p99Ms": 486,
+    "lastError": "Request timed out",
+    "lastErrorAt": "2026-11-04T10:00:00.000Z"
+  }],
+  "hasMore": false
+}
+```
+
+`errors` includes both `ERROR` and `TIMEOUT`; `errorRate` is a percentage.
+Counts include the repeated failures represented by each stored record.
+Percentiles use only stored, non-null duration samples, without repeating the
+first duration for every deduplicated failure. `latencySampleCount` reports
+that sample count; absent latencies are `null`, while `0` is a valid duration.
+Repeated failures retain their first recorded server, so server attribution
+and the last recorded error reflect the saved history rather than every
+individual request. A null server means direct calls without a recorded MCP
+server. Same-name tools from different connectors remain separate.
+
+Rows are ordered by call count, with stable identity-based tie-breaking.
+`hasMore` indicates whether another page exists. The rolling window may change
+between page requests as new calls arrive.
 
 ### Replay a Tool Call
 

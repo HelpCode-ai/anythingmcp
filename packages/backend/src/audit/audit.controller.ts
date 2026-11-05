@@ -7,6 +7,7 @@ import {
   ANALYTICS_MAX_DAYS,
   AnalyticsQueryDto,
 } from './analytics-query.dto';
+import { ToolPerformanceQueryDto } from './tool-performance-query.dto';
 
 @ApiTags('Audit')
 @ApiBearerAuth()
@@ -65,6 +66,26 @@ export class AuditController {
       req.user.organizationId,
       query.days ?? ANALYTICS_DEFAULT_DAYS,
     );
+  }
+
+  @Get('tool-performance')
+  @ApiOperation({
+    summary: 'Get per-tool latency percentiles and failure rates',
+    description:
+      'Groups the last hours (default 24, maximum 2160) by tool, connector and MCP server. ' +
+      'ERROR and TIMEOUT count as failures. Latency percentiles use stored duration samples; ' +
+      'repeated failures retain their first recorded server and duration.',
+  })
+  @ApiQuery({ name: 'hours', required: false, type: Number })
+  @ApiQuery({ name: 'connectorId', required: false, type: String })
+  @ApiQuery({ name: 'mcpServerId', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  async getToolPerformance(
+    @Req() req: { user: { organizationId: string } },
+    @Query() query: ToolPerformanceQueryDto,
+  ) {
+    return this.auditService.getToolPerformance(req.user.organizationId, query);
   }
 
   @Get('breakdowns')

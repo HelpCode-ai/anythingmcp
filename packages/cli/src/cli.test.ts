@@ -780,3 +780,14 @@ test('--version prints the package version', async () => {
   const short = await execFileAsync(process.execPath, [cli, '-v', '--json']);
   assert.deepEqual(JSON.parse(short.stdout), { version });
 });
+
+test('browserCommand passes the login URL to Windows as one argument, not through cmd', async () => {
+  const { browserCommand } = await import('./browser-auth.js');
+  const url = 'https://example.test/cli/authorize?callback=http%3A%2F%2F127.0.0.1%3A5000%2Fcb&state=abc&scope=read';
+  const [cmd, args] = browserCommand('win32', url);
+  assert.equal(cmd, 'rundll32');
+  assert.deepEqual(args, ['url.dll,FileProtocolHandler', url]);
+  assert.notEqual(cmd, 'cmd');
+  assert.deepEqual(browserCommand('darwin', url), ['open', [url]]);
+  assert.deepEqual(browserCommand('linux', url), ['xdg-open', [url]]);
+});
