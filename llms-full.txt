@@ -7099,8 +7099,9 @@ curl -s http://localhost:4000/api/auth/invite \
 single entry in `connectors`, so its file can be restored with either import
 endpoint. `authConfig` (OAuth and other stored credentials) is never exported:
 re-authorize the connector after importing it. Secret environment variables
-and headers are included only for admins; for other roles they are empty and
-named in `maskedEnvVars` / `maskedHeaders`. Per-tool `useProxy`, annotation
+and headers are included only for admins signed in to the dashboard or using a
+`MANAGEMENT_ADMIN` key. For other roles, and for any `MANAGEMENT_READ` key, they
+are empty and named in `maskedEnvVars` / `maskedHeaders`. Per-tool `useProxy`, annotation
 overrides and role access are not exported.
 
 ```bash

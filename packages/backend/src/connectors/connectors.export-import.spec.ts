@@ -197,6 +197,20 @@ describe('GET :id/export', () => {
     },
   );
 
+  it('masks secrets for an admin using a read-only management key', async () => {
+    const { controller } = buildController();
+    const res = fakeRes();
+    const text = (await controller.exportOne(
+      { ...req('ADMIN', 'org1'), mcpKeyScope: 'MANAGEMENT_READ' } as any,
+      'c1',
+      'json',
+      res as any,
+    )) as string;
+    expect(JSON.parse(text).secretsIncluded).toBe(false);
+    expect(res.headers['X-Secrets-Included']).toBe('false');
+    expect(text).not.toContain(TOKEN);
+  });
+
   it('refuses a connector of another organization with 403', async () => {
     const { controller } = buildController();
     await expect(
