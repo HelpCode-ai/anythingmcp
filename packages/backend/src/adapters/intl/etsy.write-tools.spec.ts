@@ -150,6 +150,14 @@ describe('etsy adapter: write tools', () => {
    * etsy_create_draft_listing on Etsy connectors. A catalog tool with the same
    * name would be matched to theirs by the catalog update and overwrite it.
    */
+  it("states Etsy's 140-character title limit, so the model does not send longer titles", () => {
+    for (const name of ['etsy_create_listing_draft', 'etsy_edit_listing']) {
+      const title = tool(name).parameters.properties.title as { maxLength?: number; description?: string };
+      expect(title.maxLength).toBe(140);
+      expect(title.description).toContain('at most 140 characters');
+    }
+  });
+
   it('does not reuse names customers gave their own Etsy tools', () => {
     const taken = ['etsy_update_listing', 'etsy_create_draft_listing', 'etsy_update_listing_inventory', 'etsy_upload_listing_image', 'etsy_get_listing_inventory', 'etsy_get_seller_taxonomy'];
     for (const name of taken) expect(tools.some((t) => t.name === name)).toBe(false);
