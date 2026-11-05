@@ -1,12 +1,12 @@
 {
   "slug": "kaufland",
   "name": "Kaufland Marketplace",
-  "description": "Kaufland Marketplace (formerly real.de) seller API: orders and their units, storefronts, units, tickets and warehouses. HMAC-signed requests — the signature covers the method, URL, body and a timestamp.",
+  "description": "Kaufland Marketplace (formerly real.de) seller API: orders and their units, storefronts, units, customer service tickets with their messages, returns and return units, warehouses, and tracking numbers for sent units. Answer tickets and add shipments. HMAC-signed requests: the signature covers the method, URL, body and a timestamp.",
   "region": "de",
   "category": "e-commerce",
   "icon": "kaufland",
   "docsUrl": "https://sellerapi.kaufland.com/",
-  "instructions": "**Getting credentials**\n1. You must already be a Kaufland Marketplace seller. In the **Seller Portal** open **Settings → API keys** and create a key pair.\n2. You receive a **Client Key** (public, identifies you) and a **Secret Key** (never sent — it signs the request). Set `KAUFLAND_CLIENT_KEY` and `KAUFLAND_SECRET_KEY`.\n\n**The secret never travels.** Kaufland does not accept a bearer token: every request carries `Shop-Client-Key`, `Shop-Timestamp` and `Shop-Signature`, where the signature is an HMAC-SHA256 over the canonical string\n\n```\n<METHOD>\\n<FULL URL INCLUDING QUERY>\\n<BODY>\\n<UNIX TIMESTAMP>\n```\n\nkeyed with the secret, with no newline after the timestamp. AnythingMCP computes it per request and sends the timestamp it used, so the server can recompute the same string.\n\n**A signature is only valid for a few minutes.** Kaufland rejects a request whose timestamp has drifted, which means a 401 here can be a clock problem rather than a key problem. If every call fails and the keys are definitely right, check the host's time.\n\n**Storefronts are per country.** Kaufland runs a storefront per country (`de`, `cz`, `sk`, `pl`, `at` and more); `kaufland_list_storefronts` returns the current list. Most endpoints take a `storefront` parameter. Omitting it gives you the seller's default, which is rarely what a report about one market wants.\n\n**Orders page with offset and limit**, and `ts_created_from` / `ts_created_to` bound the window — both ISO 8601. Ask for the window you mean; the default is short.\n\n**Shipments** have no list endpoint in the Seller API: for an order's delivery details call `kaufland_get_order` with `embedded=delivery`.\n\n**Order units are where the money is.** An order carries `order_units`, each with its own status, price and fulfilment state. A part-cancelled order is normal, so a revenue figure should sum the units that were actually fulfilled rather than the order total.\n\n**Cloud reachability**: sellerapi.kaufland.com is public with a valid certificate.",
+  "instructions": "**Getting credentials**\n1. You must already be a Kaufland Marketplace seller. In the **Seller Portal** open **Settings → API keys** and create a key pair.\n2. You receive a **Client Key** (public, identifies you) and a **Secret Key** (never sent — it signs the request). Set `KAUFLAND_CLIENT_KEY` and `KAUFLAND_SECRET_KEY`.\n\n**The secret never travels.** Kaufland does not accept a bearer token: every request carries `Shop-Client-Key`, `Shop-Timestamp` and `Shop-Signature`, where the signature is an HMAC-SHA256 over the canonical string\n\n```\n<METHOD>\\n<FULL URL INCLUDING QUERY>\\n<BODY>\\n<UNIX TIMESTAMP>\n```\n\nkeyed with the secret, with no newline after the timestamp. AnythingMCP computes it per request and sends the timestamp it used, so the server can recompute the same string.\n\n**A signature is only valid for a few minutes.** Kaufland rejects a request whose timestamp has drifted, which means a 401 here can be a clock problem rather than a key problem. If every call fails and the keys are definitely right, check the host's time.\n\n**Storefronts are per country.** Kaufland runs a storefront per country (`de`, `cz`, `sk`, `pl`, `at` and more); `kaufland_list_storefronts` returns the current list. Most endpoints take a `storefront` parameter. Omitting it gives you the seller's default, which is rarely what a report about one market wants.\n\n**Orders page with offset and limit**, and `ts_created_from` / `ts_created_to` bound the window — both ISO 8601. Ask for the window you mean; the default is short.\n\n**Shipments** have no list endpoint in the Seller API: for an order's delivery details call `kaufland_get_order` with `embedded=delivery`. `kaufland_add_tracking_to_order_unit` adds a carrier code and tracking number to a unit that is already marked as sent.\n\n**Tickets**: `kaufland_list_tickets` lists them, `kaufland_get_ticket_details` (with `embedded=messages`) shows one with its conversation, `kaufland_list_ticket_messages` the newest messages across tickets. `kaufland_add_ticket_message` answers the buyer in the ticket.\n\n**Returns**: `kaufland_search_returns` lists returns (one parcel each), `kaufland_get_return_details` shows its return units with the reason, `kaufland_list_return_units` lists the returned items, e.g. those with status `return_arrived` that wait for a decision.\n\n**Writes**: the ticket answer reaches the buyer and the tracking number is shown to them. Show the user exactly what will be sent and wait for confirmation before either call.\n\n**Order units are where the money is.** An order carries `order_units`, each with its own status, price and fulfilment state. A part-cancelled order is normal, so a revenue figure should sum the units that were actually fulfilled rather than the order total.\n\n**Cloud reachability**: sellerapi.kaufland.com is public with a valid certificate.",
   "requiredEnvVars": [
     "KAUFLAND_CLIENT_KEY",
     "KAUFLAND_SECRET_KEY"
@@ -239,6 +239,347 @@
           "limit": "$limit",
           "offset": "$offset"
         }
+      }
+    },
+    {
+      "name": "kaufland_get_ticket_details",
+      "description": "Read one customer service ticket: status, open reason (product_not_as_described, product_defect, product_not_delivered, product_return, contact_other), whether the seller has to act, the order unit ids and dates. embedded adds messages (the conversation), order_units, product, buyer or files. Use it before answering with kaufland_add_ticket_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_ticket": {
+            "type": "string",
+            "description": "Ticket id from kaufland_list_tickets."
+          },
+          "embedded": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "messages",
+                "order_units",
+                "product",
+                "buyer",
+                "files"
+              ]
+            },
+            "default": [
+              "messages"
+            ],
+            "description": "Extras to include. Default [\"messages\"]."
+          }
+        },
+        "required": [
+          "id_ticket"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{id_ticket}",
+        "queryParams": {
+          "embedded": "$embedded"
+        }
+      }
+    },
+    {
+      "name": "kaufland_list_ticket_messages",
+      "description": "List the latest ticket messages across all tickets: ticket id, author role (seller, buyer, system, customer_service) and name, text and time. Filter by creation time to see what came in since a moment; for one ticket use kaufland_get_ticket_details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ts_created_from_iso": {
+            "type": "string",
+            "description": "Only messages created after this time, ISO 8601."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "ts_created_iso:desc",
+              "ts_created_iso:asc"
+            ],
+            "description": "Sort by creation time."
+          },
+          "limit": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Rows per page (max 30)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/messages",
+        "queryParams": {
+          "ts_created_from_iso": "$ts_created_from_iso",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "kaufland_search_returns",
+      "description": "List returns (Retouren): return id, storefront, status (return_requested, label_generated, package_sent, package_received, label_deleted), return carrier and tracking code, fulfilment type and dates. Filter by storefront, status, tracking code or creation and update time. kaufland_get_return_details gives the units and reasons of one return.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storefront": {
+            "type": "string",
+            "enum": [
+              "de",
+              "cz",
+              "sk",
+              "pl",
+              "at",
+              "fr",
+              "it",
+              "es",
+              "nl"
+            ],
+            "description": "Storefront code, e.g. de. kaufland_list_storefronts lists them."
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "return_requested",
+                "label_generated",
+                "package_sent",
+                "package_received",
+                "label_deleted"
+              ]
+            },
+            "description": "Return statuses."
+          },
+          "ts_created_from_iso": {
+            "type": "string",
+            "description": "Only returns created after this time, YYYY-MM-ddTHH:mm:ssZ."
+          },
+          "ts_updated_from_iso": {
+            "type": "string",
+            "description": "Only returns updated after this time, YYYY-MM-ddTHH:mm:ssZ."
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "Tracking code of the return parcel."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "ts_created:desc",
+              "ts_updated:desc"
+            ],
+            "description": "Newest created (default) or newest updated first."
+          },
+          "limit": {
+            "type": "number",
+            "maximum": 100,
+            "description": "Rows per page (default 30, max 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/returns",
+        "queryParams": {
+          "storefront": "$storefront",
+          "status": "$status",
+          "ts_created_from_iso": "$ts_created_from_iso",
+          "ts_updated_from_iso": "$ts_updated_from_iso",
+          "tracking_code": "$tracking_code",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "kaufland_get_return_details",
+      "description": "Read one return: status, carrier and tracking code, and its return units with the order unit each belongs to, unit status (need_to_be_returned, return_arrived, return_accepted, return_rejected, return_in_clarification and others), the buyer's reason and note. embedded can add the buyer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_return": {
+            "type": "integer",
+            "description": "Return id from kaufland_search_returns."
+          },
+          "embedded": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "return_units",
+                "buyer"
+              ]
+            },
+            "default": [
+              "return_units"
+            ],
+            "description": "Extras to include. Default [\"return_units\"]."
+          }
+        },
+        "required": [
+          "id_return"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/returns/{id_return}",
+        "queryParams": {
+          "embedded": "$embedded"
+        }
+      }
+    },
+    {
+      "name": "kaufland_list_return_units",
+      "description": "List return units, the returned items one by one: return unit id, return id, order unit id, status, reason and note. Filter by storefront, status (e.g. return_arrived for parcels waiting for a decision) or creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storefront": {
+            "type": "string",
+            "enum": [
+              "de",
+              "cz",
+              "sk",
+              "pl",
+              "at",
+              "fr",
+              "it",
+              "es",
+              "nl"
+            ],
+            "description": "Storefront code, e.g. de. kaufland_list_storefronts lists them."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "need_to_be_returned",
+              "return_arrived",
+              "return_accepted",
+              "return_rejected",
+              "return_closed",
+              "return_in_repair",
+              "return_in_clarification"
+            ],
+            "description": "Return unit status."
+          },
+          "ts_created_from_iso": {
+            "type": "string",
+            "description": "Only units created after this time, YYYY-MM-ddTHH:mm:ssZ."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort expression."
+          },
+          "limit": {
+            "type": "number",
+            "maximum": 100,
+            "description": "Rows per page (default 30, max 100)."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Rows to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/return-units",
+        "queryParams": {
+          "storefront": "$storefront",
+          "status": "$status",
+          "ts_created_from_iso": "$ts_created_from_iso",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "kaufland_add_ticket_message",
+      "description": "Answer a customer service ticket: the text is sent to the buyer (and Kaufland customer service) in the ticket conversation. Read the ticket with kaufland_get_ticket_details first, show the user the exact text and ask for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_ticket": {
+            "type": "string",
+            "description": "Ticket id."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Message text shown to the buyer, in the storefront language."
+          }
+        },
+        "required": [
+          "id_ticket",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{id_ticket}/messages",
+        "bodyMapping": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "kaufland_add_tracking_to_order_unit",
+      "description": "Add a shipment (carrier code and tracking number) to an order unit that is already marked as sent, so the buyer can follow the parcel. carrier_code must be one of the carrier codes in the Kaufland Seller API documentation. Show the user the unit and tracking number and ask for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_order_unit": {
+            "type": "integer",
+            "description": "Order unit id from kaufland_get_order or kaufland_list_order_units."
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "Carrier code from the Kaufland Seller API documentation."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the parcel."
+          }
+        },
+        "required": [
+          "id_order_unit",
+          "carrier_code",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments",
+        "bodyMapping": {
+          "id_order_unit": "$id_order_unit",
+          "shipment_information": {
+            "carrier_code": "$carrier_code",
+            "tracking_number": "$tracking_number"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
       }
     },
     {
