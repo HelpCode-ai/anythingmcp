@@ -7,6 +7,7 @@ import { audit, type AuditBreakdowns } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
+import { ToolPerformanceCard } from '@/components/tool-performance-card';
 import { cn } from '@/lib/utils';
 
 type Analytics = Awaited<ReturnType<typeof audit.analytics>>;
@@ -151,6 +152,7 @@ export default function AnalyticsPage() {
             </p>
           </>
         )}
+        <ToolPerformanceCard />
       </div>
     </AppShell>
   );
