@@ -10,14 +10,28 @@ on:
 jobs:
   cli:
     name: CLI (test, build)
-    runs-on: ubuntu-latest
+    # The CLI ships to npm and is installed on macOS, Linux and Windows, so it
+    # is tested on all three. fail-fast is off so one OS failing still shows the
+    # others. bash is the shell on every runner (Git Bash on Windows) so the
+    # `test` guard step below is portable.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # The CLI has only pure-JS dependencies; skip workspace install scripts
+      # (Prisma engine download, native backend builds) so this job stays fast
+      # and does not fail on an unrelated backend dependency on Windows/macOS.
+      - run: npm ci --ignore-scripts
       - run: npm test -w packages/cli
       - run: npm run build -w packages/cli
       - run: test ! -e packages/cli/dist/cli.test.js
