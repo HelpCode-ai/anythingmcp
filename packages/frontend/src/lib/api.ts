@@ -654,6 +654,15 @@ export const connectors = {
       '/api/tiktok-shop/complete',
       { method: 'POST', token, body: { state, code } },
     ),
+  /** Whether this server has its own TikTok Shop app, and the Redirect URL for a seller's own app. */
+  tiktokShopPlatform: (token: string) =>
+    request<{ available: boolean; redirectUrl: string }>('/api/tiktok-shop/platform', { token }),
+  /** A TikTok Shop App Store install: add (or reuse) the connector and authorize it with the server's app. */
+  tiktokShopInstall: (state: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; created: boolean; returnTo?: string }>(
+      '/api/tiktok-shop/install',
+      { method: 'POST', token, body: { state } },
+    ),
   oauthRedirectUri: (token: string) =>
     request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>

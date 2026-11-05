@@ -14,6 +14,11 @@ import { cn } from '@/lib/utils';
  * backend callback, which only checks the state and forwards the code here;
  * this page exchanges it in an authenticated request, so the server can check
  * that the person completing the authorization is the one who started it.
+ *
+ * A TikTok Shop App Store install (`provider=tiktok-shop-install`) arrives
+ * with a state only: the code stays on the server. Nobody started it here,
+ * so a signed-out visitor is asked to sign in or create an account first,
+ * and comes back to this address to add and authorize the connector.
  */
 function CompleteContent() {
   const params = useSearchParams();
@@ -29,11 +34,30 @@ function CompleteContent() {
   const shopeeShopId = params.get('provider') === 'shopee' ? params.get('shop_id') : null;
   // A TikTok Shop authorization too, completed by its own endpoint.
   const isTikTokShop = params.get('provider') === 'tiktok-shop';
+  // A TikTok Shop App Store install: no code in the address, the server keeps it.
+  const isTikTokShopInstall = params.get('provider') === 'tiktok-shop-install';
   // From the provider redirect, or from the answer when the exchange is refused.
   const [connectorId, setConnectorId] = useState<string | null>(params.get('connectorId'));
 
   useEffect(() => {
-    if (error || !state || !code || started.current || isLoading) return;
+    if (error || !state || started.current || isLoading) return;
+    if (isTikTokShopInstall) {
+      // Signed out: the page offers sign-in and sign-up (below).
+      if (!token) return;
+      started.current = true;
+      window.history.replaceState({}, '', '/connectors/oauth/complete');
+      connectors
+        .tiktokShopInstall(state, token)
+        .then((out) => router.replace(`/connectors/${out.connectorId}?oauth=success&tools=${out.toolsImported}`))
+        .catch((err: Error) => {
+          if (err instanceof ApiError && typeof err.body?.connectorId === 'string') {
+            setConnectorId(err.body.connectorId);
+          }
+          setError(err.message || 'The TikTok Shop installation could not be completed.');
+        });
+      return;
+    }
+    if (!code) return;
     if (!token) {
       // Sign in first, then come back here with the same code.
       const here = `${window.location.pathname}${window.location.search}`;
@@ -59,10 +83,34 @@ function CompleteContent() {
         }
         setError(err.message || 'The authorization could not be completed.');
       });
-  }, [error, state, code, shopeeShopId, isTikTokShop, token, isLoading, router]);
+  }, [error, state, code, shopeeShopId, isTikTokShop, isTikTokShopInstall, token, isLoading, router]);
 
   if (!error && !state) {
     return <p className="text-sm text-[var(--text-2)]">Nothing to complete here.</p>;
+  }
+
+  // Someone coming from the TikTok Shop App Store may have no account yet:
+  // offer both, and come back here with the same state.
+  if (!error && isTikTokShopInstall && !isLoading && !token) {
+    const back = encodeURIComponent(`/connectors/oauth/complete?${params.toString()}`);
+    return (
+      <div className="space-y-4">
+        <h1 className="text-lg font-semibold text-[var(--text)]">Connect your TikTok shop</h1>
+        <p className="text-sm text-[var(--text-2)]">
+          Sign in to AnythingMCP, or create an account, to add the TikTok Shop connector to your workspace. Your shop is
+          authorized as soon as you are back here. Finish within 30 minutes, or install the app again from the TikTok
+          Shop App Store.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <Link href={`/login?redirect=${back}`} className={cn(buttonVariants({ size: 'sm' }))}>
+            Sign in
+          </Link>
+          <Link href={`/login?mode=register&redirect=${back}`} className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+            Create an account
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
@@ -80,7 +128,11 @@ function CompleteContent() {
     );
   }
 
-  return <p className="text-sm text-[var(--text-2)]">Completing the authorization…</p>;
+  return (
+    <p className="text-sm text-[var(--text-2)]">
+      {isTikTokShopInstall ? 'Adding your TikTok shop…' : 'Completing the authorization…'}
+    </p>
+  );
 }
 
 export default function OAuthCompletePage() {

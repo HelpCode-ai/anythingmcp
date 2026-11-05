@@ -17,30 +17,60 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { ConnectorsService } from './connectors.service';
 import { McpOAuthService } from './mcp-oauth.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
-import { decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
-import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import {
   TIKTOK_SHOP_AUTH_HOST,
   TIKTOK_SHOP_TOKEN_GET_PATH,
-  TikTokShopApp,
   TikTokShopTokenService,
   buildTikTokShopAuthorizationUrl,
   describeTikTokShopError,
-  isTikTokShopAuth,
-  tiktokShopAppFrom,
+  tiktokShopAppOfConnector,
   tiktokShopError,
+  tiktokShopPlatformApp,
 } from './engines/tiktok-shop-token.service';
 
 /** The connector variable that names the shop to use when the seller authorizes several. */
 export const TIKTOK_SHOP_SHOP_VAR = 'TIKTOK_SHOP_SHOP_ID';
 /** The connector variable that sends US sellers to TikTok Shop's US authorization domain. */
 export const TIKTOK_SHOP_MARKET_VAR = 'TIKTOK_SHOP_MARKET';
+/** The pending-flow provider of a TikTok Shop App Store install (no state of ours). */
+export const TIKTOK_SHOP_INSTALL_PROVIDER = 'tiktok-shop-install';
+/** How long a store install waits for the seller to sign in or sign up. A TikTok code lives 30 minutes. */
+export const TIKTOK_SHOP_INSTALL_TTL_MS = 30 * 60 * 1000;
+/** What the dashboard says when a TikTok Shop authorization is no longer pending. */
+export const TIKTOK_SHOP_EXPIRED_MESSAGE =
+  'This authorization expired or was already used. Start it again from the connector.';
+
+/**
+ * The exception for a refused or failed code exchange, as the dashboard
+ * shows it: a TikTok 5xx is "try again", anything else names what to check.
+ * A connector on the server's app has no app keys of its own to check.
+ */
+export function tiktokShopExchangeException(
+  err: unknown,
+  connectorId: string,
+  usesPlatformApp: boolean,
+): BadGatewayException | BadRequestException {
+  const said = describeTikTokShopError(err);
+  const status = tiktokShopError(err)?.status;
+  const unavailable = typeof status === 'number' && status >= 500;
+  const message = unavailable
+    ? `TikTok Shop could not complete the authorization (${said}). Try again in a few minutes.`
+    : usesPlatformApp
+      ? `TikTok Shop refused the authorization (${said}). Authorize again from the connector: a code works once ` +
+        'and only for 30 minutes.'
+      : `TikTok Shop refused the authorization (${said}). Check that TIKTOK_SHOP_APP_KEY and ` +
+        'TIKTOK_SHOP_APP_SECRET belong to the app you authorized, and authorize again: a code works once and ' +
+        'only for 30 minutes.';
+  const payload = { message, connectorId };
+  return unavailable ? new BadGatewayException(payload) : new BadRequestException(payload);
+}
 
 /**
  * Authorizing a TikTok shop from the connector page ("Authorize with Provider").
@@ -60,6 +90,15 @@ export const TIKTOK_SHOP_MARKET_VAR = 'TIKTOK_SHOP_MARKET';
  *      the OAuth callback does.
  *   3. POST /api/tiktok-shop/complete (signed in): exchanges the code, but
  *      only for the user who started the attempt, and stores the tokens.
+ *
+ * A connector with no App key of its own uses the server's TikTok Shop app
+ * (TIKTOK_SHOP_PLATFORM_APP_KEY / _APP_SECRET / _SERVICE_ID), when the server
+ * has one. Such an app is listed in the TikTok Shop App Store, and an install
+ * from there reaches the callback with a code but without a state of ours:
+ * the callback keeps it as a single-use install record and sends the seller
+ * to the dashboard, where POST /api/tiktok-shop/install
+ * (tiktok-shop-install.controller.ts, in the adapters module) adds the
+ * connector and exchanges the code once they are signed in.
  */
 @ApiTags('TikTok Shop')
 @Controller('api/tiktok-shop')
@@ -91,26 +130,18 @@ export class TikTokShopAuthController {
     return `${base}/connectors/oauth/complete?${new URLSearchParams(params).toString()}`;
   }
 
-  /** The connector's TikTok Shop app settings, resolved from its variables. */
-  private tiktokShopApp(connector: {
-    authType: string;
-    authConfig: string | null;
-    baseUrl: string;
-    envVars?: unknown;
-  }): { app?: TikTokShopApp; isTikTokShop: boolean; envVars: Record<string, string> } {
-    let authConfig: Record<string, unknown> = {};
-    try {
-      authConfig = connector.authConfig ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey)) : {};
-    } catch {
-      authConfig = {};
-    }
-    const envVars = (connector.envVars as Record<string, string> | null) ?? {};
-    if (!isTikTokShopAuth(connector.authType, authConfig)) return { isTikTokShop: false, envVars };
-    return {
-      isTikTokShop: true,
-      envVars,
-      app: tiktokShopAppFrom(interpolateDeep(authConfig, envVars), interpolateString(connector.baseUrl, envVars)),
-    };
+  /** The connector's TikTok Shop app: its own, or the server's when it has no App key. */
+  private tiktokShopApp(connector: { authType: string; authConfig: string | null; baseUrl: string; envVars?: unknown }) {
+    return tiktokShopAppOfConnector(connector, this.encryptionKey);
+  }
+
+  @Get('platform')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiOperation({
+    summary: "Whether this server has its own TikTok Shop app, and the Redirect URL to set on a seller's own app",
+  })
+  platform(): { available: boolean; redirectUrl: string } {
+    return { available: !!tiktokShopPlatformApp(), redirectUrl: this.redirectUrl() };
   }
 
   @Post('connectors/:id/authorize')
@@ -164,21 +195,30 @@ export class TikTokShopAuthController {
   }
 
   @Get('callback')
+  // Unauthenticated, and a store install writes a pending record: keep it tight.
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({ summary: "TikTok Shop's redirect after a seller authorization; forwards to the dashboard" })
   async callback(
     @Query('state') rawState: unknown,
     @Query('code') rawCode: unknown,
     @Query('error') rawError: unknown,
     @Res() res: Response,
+    @Query('app_key') rawAppKey?: unknown,
+    @Query('shop_region') rawShopRegion?: unknown,
   ) {
     const state = typeof rawState === 'string' ? rawState : '';
     // TikTok sends `code=null&error=auth_denied` when the seller declines.
     const code = typeof rawCode === 'string' && rawCode && rawCode !== 'null' ? rawCode : undefined;
+    // An install from the TikTok Shop App Store carries no state at all.
+    if (!state && code) {
+      const installState = await this.storeInstall(code, rawAppKey, rawShopRegion);
+      if (installState) {
+        return res.redirect(this.completePage({ provider: TIKTOK_SHOP_INSTALL_PROVIDER, state: installState }));
+      }
+    }
     const record = state ? await this.oauthFlows.getPendingFlow(state) : undefined;
     if (!record || record.flow.provider !== 'tiktok-shop') {
-      return res.redirect(
-        this.completePage({ error: 'This authorization expired or was already used. Start it again from the connector.' }),
-      );
+      return res.redirect(this.completePage({ error: TIKTOK_SHOP_EXPIRED_MESSAGE }));
     }
     const connectorId = record.flow.connectorId;
     if (!code) {
@@ -196,6 +236,41 @@ export class TikTokShopAuthController {
     return res.redirect(this.completePage({ provider: 'tiktok-shop', state, code }));
   }
 
+  /**
+   * Keep a store install's code as a single-use pending record and return
+   * its new state; undefined (nothing stored) when the server has no TikTok
+   * Shop app, or the install names another app's key. The code stays in the
+   * encrypted pending store, not in the dashboard address.
+   */
+  private async storeInstall(code: string, rawAppKey: unknown, rawShopRegion: unknown): Promise<string | undefined> {
+    const platform = tiktokShopPlatformApp();
+    if (!platform) return undefined;
+    const appKey = typeof rawAppKey === 'string' ? rawAppKey.trim() : '';
+    if (appKey && appKey !== platform.appKey) {
+      this.logger.warn("Refused a TikTok Shop install without a state: it names another app's key");
+      return undefined;
+    }
+    const region = typeof rawShopRegion === 'string' ? rawShopRegion.trim().toUpperCase() : '';
+    const state = this.oauthFlows.generateState();
+    await this.oauthFlows.storePendingFlow(
+      state,
+      {
+        provider: TIKTOK_SHOP_INSTALL_PROVIDER,
+        connectorId: '',
+        userId: '',
+        redirectUri: this.redirectUrl(),
+        clientId: platform.appKey,
+        tokenUrl: `${TIKTOK_SHOP_AUTH_HOST}${TIKTOK_SHOP_TOKEN_GET_PATH}`,
+        code,
+        ...(/^[A-Z]{2,3}$/.test(region) ? { shopRegion: region } : {}),
+        createdAt: Date.now(),
+      },
+      { ttlMs: TIKTOK_SHOP_INSTALL_TTL_MS },
+    );
+    this.logger.log('Stored a TikTok Shop App Store install for the dashboard to complete');
+    return state;
+  }
+
   @Post('complete')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(200)
@@ -209,7 +284,7 @@ export class TikTokShopAuthController {
     // holding the state must not be able to burn the owner's authorization.
     const pending = await this.oauthFlows.getPendingFlow(state);
     if (!pending || pending.flow.provider !== 'tiktok-shop') {
-      throw new GoneException('This authorization expired or was already used. Start it again from the connector.');
+      throw new GoneException(TIKTOK_SHOP_EXPIRED_MESSAGE);
     }
     if (pending.flow.userId !== req.user?.sub) {
       this.logger.warn(`Refused TikTok Shop completion: connector ${pending.flow.connectorId} was authorized by another user`);
@@ -220,13 +295,13 @@ export class TikTokShopAuthController {
     // Single use: a second request racing this one finds nothing to take.
     const record = await this.oauthFlows.takePendingFlow(state);
     if (!record || record.flow.provider !== 'tiktok-shop' || record.flow.userId !== req.user?.sub) {
-      throw new GoneException('This authorization expired or was already used. Start it again from the connector.');
+      throw new GoneException(TIKTOK_SHOP_EXPIRED_MESSAGE);
     }
     const { flow, returnTo } = record;
     const code = typeof body?.code === 'string' ? body.code.trim() : '';
     if (!code) throw new GoneException('TikTok Shop came back without a code. Start the authorization again.');
     const connector = await this.connectorsService.findByIdInternal(flow.connectorId);
-    const { app, envVars } = this.tiktokShopApp(connector as never);
+    const { app, envVars, usesPlatformApp } = this.tiktokShopApp(connector as never);
     if (!app) {
       throw new BadRequestException({
         message: 'The connector has no TikTok Shop app key and secret any more. Set them and authorize again.',
@@ -241,17 +316,8 @@ export class TikTokShopAuthController {
         preferredShop: envVars[TIKTOK_SHOP_SHOP_VAR],
       });
     } catch (err) {
-      const said = describeTikTokShopError(err);
-      const status = tiktokShopError(err)?.status;
-      this.logger.warn(`TikTok Shop code exchange failed for connector ${flow.connectorId}: ${said}`);
-      const message =
-        typeof status === 'number' && status >= 500
-          ? `TikTok Shop could not complete the authorization (${said}). Try again in a few minutes.`
-          : `TikTok Shop refused the authorization (${said}). Check that TIKTOK_SHOP_APP_KEY and ` +
-            'TIKTOK_SHOP_APP_SECRET belong to the app you authorized, and authorize again: a code works once and ' +
-            'only for 30 minutes.';
-      const payload = { message, connectorId: flow.connectorId };
-      throw typeof status === 'number' && status >= 500 ? new BadGatewayException(payload) : new BadRequestException(payload);
+      this.logger.warn(`TikTok Shop code exchange failed for connector ${flow.connectorId}: ${describeTikTokShopError(err)}`);
+      throw tiktokShopExchangeException(err, flow.connectorId, usesPlatformApp);
     }
     try {
       await this.mcpServer.reloadConnectorTools(flow.connectorId);

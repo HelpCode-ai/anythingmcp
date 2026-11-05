@@ -173,6 +173,12 @@ x-backend: &backend
     # from the install form), so cloud users never see or choose it.
     # Self-hosters leave it unset and enter their own MOTIS URL.
     - MOTIS_INTERNAL_URL=${MOTIS_INTERNAL_URL:-http://motis:8080}
+    # TikTok Shop server app: TikTok Shop connectors without an App key of
+    # their own use it (see .env.example). Unset = each connector needs the
+    # seller's own app.
+    - TIKTOK_SHOP_PLATFORM_APP_KEY=${TIKTOK_SHOP_PLATFORM_APP_KEY:-}
+    - TIKTOK_SHOP_PLATFORM_APP_SECRET=${TIKTOK_SHOP_PLATFORM_APP_SECRET:-}
+    - TIKTOK_SHOP_PLATFORM_SERVICE_ID=${TIKTOK_SHOP_PLATFORM_SERVICE_ID:-}
     # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
     # a private docker IP, which the guard blocks by default). Harmless on
     # self-host (no such host on their network).
