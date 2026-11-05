@@ -254,6 +254,7 @@ computed exactly as described above.
 | `timestampFormat` | `s` (default, Unix seconds) or `ms` (milliseconds), for `${timestamp}`, `timestampParam` and `timestampHeader` alike. |
 | `queryParams` | Static query parameters added to every call (an app key, a fixed `sign_method`), signed like the others. |
 | `encoding` | Also `hex-upper`: hex in capitals. |
+| `excludeMultipartBody` | `true`: `${body}` is empty when the body is `multipart/form-data` (file uploads), for vendors that sign uploads without their body. |
 
 On this path the template may also use:
 
@@ -292,6 +293,33 @@ Their `/sync?method=...` business calls sign `${sortedParams}` (the `method`
 parameter is one of them); calls on their `/rest` gateway put the API path in
 front: `${apiPath}${sortedParams}`. JSON-valued parameters go in a form body
 with the `__json` marker, which `${sortedParams}` signs as its JSON text.
+
+TikTok Shop (`intl/tiktok-shop.json`) wraps the path, the sorted query and the
+body in the app secret: `{{SECRET}}${pathname}${sortedParams}${body}{{SECRET}}`,
+with `queryParams: { "app_key": ... }` and `excludeMultipartBody: true`. Pass
+array values as comma-separated strings on this kind of adapter: TikTok signs
+one value per query key.
+
+#### Shop authorization (token providers)
+
+Two marketplaces authorize a shop with their own flow instead of OAuth 2, set
+with `authConfig.tokenProvider` on an `HMAC` connector. The provider stores the
+shop's tokens encrypted on the connector, renews them before they expire, adds
+them to every call, and marks the connector as needing a new authorization when
+the marketplace refuses the refresh token. The connector page shows
+**Authorize with Provider** until the shop is authorized.
+
+| `tokenProvider` | Flow | What it adds to each call |
+|-----------------|------|---------------------------|
+| `shopee` | Signed `auth_partner` link; callback `<SERVER_URL>/api/shopee/callback/<state>` | `access_token` and `shop_id` query parameters, signed |
+| `tiktok-shop` | `services.tiktokshop.com/open/authorize?service_id=...` (US: `services.us.tiktokshop.com`); callback `<SERVER_URL>/api/tiktok-shop/callback`, set as the app's Redirect URL | the access token in the `x-tts-access-token` header (not signed) and `shop_cipher` in the query (signed), except on `/authorization/`, `/seller/` and upload paths |
+
+The TikTok Shop provider reads the app key from `authConfig.appKey` (or the
+`app_key` query parameter), the secret from `signature.secret` and the Service
+ID from `authConfig.serviceId`. The optional connector variables
+`TIKTOK_SHOP_MARKET` (`US`) and `TIKTOK_SHOP_SHOP_ID` (shop id, code or name,
+when one authorization covers several shops) are read when the authorization
+starts and completes.
 
 ### MCP adapters (a vendor's own MCP server)
 
