@@ -19,6 +19,15 @@ function sameOrigin(url: string, storedUrl: string): boolean {
   catch { return false; }
 }
 
+/**
+ * A management login on an existing profile keeps its MCP server and key when
+ * they point at the same instance, so one profile can hold both credentials.
+ */
+function withManagementKey(previous: Profile | undefined, url: string, managementKey: string): Profile {
+  const keep = previous && previous.server && previous.key && sameOrigin(url, previous.url);
+  return { url, server: keep ? previous.server : '', key: keep ? previous.key : '', managementKey };
+}
+
 function instanceUrl(profile: Profile): string {
   return new URL(profile.url).toString().replace(/\/$/, '');
 }
@@ -137,23 +146,45 @@ async function readKey(stdin: NodeJS.ReadStream, stderr: NodeJS.WriteStream, fro
   });
 }
 
-function classifyConnectionError(error: unknown): CliError {
+/** The server message of an error response, flattened to one safe line. */
+function serverMessage(data: unknown): string {
+  const raw = (data as { message?: unknown } | null)?.message;
+  const text = Array.isArray(raw) ? raw.filter((m) => typeof m === 'string').join('; ')
+    : typeof raw === 'string' ? raw : '';
+  return singleLine(text).trim().slice(0, 300);
+}
+
+const TARGETS = {
+  mcp: { name: 'MCP server', the: 'the MCP server' },
+  management: { name: 'Management API', the: 'the management API' },
+} as const;
+
+function classifyConnectionError(error: unknown, kind: keyof typeof TARGETS = 'mcp'): CliError {
+  const target = TARGETS[kind];
   // MCP/HTTP errors may include request details. Do not print their message.
   const message = error instanceof Error ? error.message : '';
   const detail = error as { status?: number; data?: { status?: number }; cause?: { code?: string } } | null;
   const status = detail?.status ?? detail?.data?.status;
   if (status === 401 || status === 403 || /\b(401|403)\b/.test(message) ||
       (error instanceof Error && error.name === 'UnauthorizedError')) {
-    return new CliError('Authentication failed (401/403)', 3);
+    // Tell a rejected key (401) from a key that is valid but not allowed here
+    // (403), without printing the server's message (see above).
+    const forbidden = status === 403 || (status !== 401 && /\b403\b/.test(message) && !/\b401\b/.test(message));
+    if (forbidden) {
+      return new CliError(kind === 'mcp'
+        ? 'Forbidden (403): this key may not use this MCP server. Pass the server ID the key was created for, and check that the server is active'
+        : 'Forbidden (403): this key may not perform this request', 3);
+    }
+    return new CliError('Authentication failed (401): the key is invalid, revoked or expired', 3);
   }
   if (typeof status === 'number' && status >= 400 && status <= 599) {
-    return new CliError(`MCP server returned HTTP ${status}`, 4);
+    return new CliError(`${target.name} returned HTTP ${status}`, 4);
   }
   const code = detail?.cause?.code;
   if (code && /^(?:ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|CERT_[A-Z_]+|ERR_TLS_[A-Z_]+|UNABLE_TO_VERIFY_LEAF_SIGNATURE)$/.test(code)) {
-    return new CliError(`Could not connect to the MCP server (${code})`, 4);
+    return new CliError(`Could not connect to ${target.the} (${code})`, 4);
   }
-  return new CliError('Could not connect to the MCP server or complete the request', 4);
+  return new CliError(`Could not connect to ${target.the} or complete the request`, 4);
 }
 
 // Shell completion (completion.ts) must offer every option here; the tests check it.
@@ -163,7 +194,16 @@ export const OPTIONS = {
   args: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' },
   timeout: { type: 'string' }, data: { type: 'string' }, management: { type: 'boolean' },
   list: { type: 'boolean' }, browser: { type: 'boolean' }, scope: { type: 'string' },
+  version: { type: 'boolean', short: 'v' },
 } as const;
+
+/** The CLI's own version, from the package.json shipped next to dist/. */
+function cliVersion(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return (require('../package.json') as { version?: string }).version ?? 'unknown';
+  } catch { return 'unknown'; }
+}
 
 // Render the generated catalogue of management API operations, optionally
 // filtered to one resource, for `amcp api --list`.
@@ -195,6 +235,7 @@ function usage(): string {
   amcp api <GET|POST|PUT|PATCH|DELETE> <path> [--data '<json>' | --data @file.json | --data -] [--yes] [--url <instance-url>]
   amcp api --list [<resource>]
   amcp completion <bash|zsh|fish>
+  amcp --version
 
 Use --json for machine-readable output. For CI, set AMCP_URL, AMCP_SERVER and AMCP_API_KEY.
 The key is never accepted as a command argument. 'amcp api' calls the management
@@ -210,6 +251,11 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
       allowPositionals: true,
     });
     json = values.json === true;
+    if (values.version) {
+      const version = cliVersion();
+      print({ version }, json, () => process.stdout.write(`amcp ${version}\n`));
+      return 0;
+    }
     if (values.help || positionals.length === 0) {
       print({ usage: usage() }, json, () => process.stdout.write(usage() + '\n'));
       return 0;
@@ -269,12 +315,12 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
       // Verify the minted key reaches the management API before saving it.
       let result;
       try { result = await apiRequest({ url, key: auth.key, method: 'GET', path: '/api/users/me' }); }
-      catch (error) { throw classifyConnectionError(error); }
+      catch (error) { throw classifyConnectionError(error, 'management'); }
       if (result.status === 401 || result.status === 403) {
         throw new CliError('Authentication failed (401/403)', 3);
       }
       if (!result.ok) throw new CliError(`Management API returned HTTP ${result.status}`, 4);
-      const profile: Profile = { url, server: '', key: '', managementKey: auth.key };
+      const profile = withManagementKey(config.profiles[name], url, auth.key);
       config.profiles[name] = profile;
       await writeConfig(config);
       print({ loggedIn: true, profile: name, url: instanceUrl(profile), management: true, browser: true }, json,
@@ -290,12 +336,12 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
       // Verify the key reaches the management API before saving it.
       let result;
       try { result = await apiRequest({ url, key, method: 'GET', path: '/api/users/me' }); }
-      catch (error) { throw classifyConnectionError(error); }
+      catch (error) { throw classifyConnectionError(error, 'management'); }
       if (result.status === 401 || result.status === 403) {
         throw new CliError('Authentication failed (401/403)', 3);
       }
       if (!result.ok) throw new CliError(`Management API returned HTTP ${result.status}`, 4);
-      const profile: Profile = { url, server: '', key: '', managementKey: key };
+      const profile = withManagementKey(config.profiles[name], url, key);
       config.profiles[name] = profile;
       await writeConfig(config);
       print({ loggedIn: true, profile: name, url: instanceUrl(profile), management: true }, json,
@@ -315,6 +361,11 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
         throw new CliError(error instanceof Error ? error.message : 'Invalid instance URL or server ID', 2);
       }
       try { await listTools(profile); } catch (error) { throw classifyConnectionError(error); }
+      // An MCP login keeps a management key already saved for the same instance.
+      const previous = config.profiles[name];
+      if (previous?.managementKey && previous.url && sameOrigin(url, previous.url)) {
+        profile.managementKey = previous.managementKey;
+      }
       config.profiles[name] = profile;
       await writeConfig(config);
       print({ loggedIn: true, profile: name, url: instanceUrl(profile), server: profile.server }, json,
@@ -370,6 +421,9 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
         (stored?.managementKey && stored.url && sameOrigin(url, stored.url) ? stored.managementKey : '');
       if (!key) throw new CliError('Set AMCP_API_KEY, pass --key-stdin, or log in with: amcp login --management', 2);
       const safe = method === 'GET' || method === 'HEAD';
+      if (safe && values.data !== undefined) {
+        throw new CliError(`--data is not allowed with ${method}; put parameters in the path query string`, 2);
+      }
       const body = values.data !== undefined ? await readData(values.data) : undefined;
       if (!safe && !values.yes) {
         if (!process.stdin.isTTY) {
@@ -381,10 +435,14 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
       try {
         result = await apiRequest({ url, key, method: method as ApiMethod, path, body });
       } catch (error) {
-        throw classifyConnectionError(error);
+        throw classifyConnectionError(error, 'management');
       }
       if (result.status === 401 || result.status === 403) {
-        throw new CliError(`Authentication failed (${result.status})`, 3);
+        // Keep the server's reason (e.g. "This API key is read-only"): a bare
+        // "authentication failed" reads as if the key itself were broken.
+        const reason = serverMessage(result.data);
+        const label = result.status === 401 ? 'Authentication failed' : 'Forbidden';
+        throw new CliError(`${label} (${result.status})${reason ? `: ${reason}` : ''}`, 3);
       }
       print({ status: result.status, data: result.data }, json,
         () => process.stdout.write(`${JSON.stringify(result.data, null, 2)}\n`));

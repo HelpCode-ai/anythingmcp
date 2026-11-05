@@ -15,7 +15,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsIn, IsString, IsOptional, Matches } from 'class-validator';
@@ -205,6 +205,7 @@ export class LicenseController {
   @Roles('ADMIN')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({
     summary:
       'Re-verify the workspace licence now, e.g. after returning from the billing portal (cloud, ADMIN)',
@@ -260,6 +261,7 @@ export class LicenseController {
   @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({ summary: 'Set and activate a license key (ADMIN)' })
   async setLicenseKey(@Req() req: any, @Body() dto: SetLicenseKeyDto) {
     try {
@@ -274,6 +276,7 @@ export class LicenseController {
   @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({
     summary: 'Open the Stripe billing portal for the current subscription (ADMIN)',
   })
@@ -296,6 +299,7 @@ export class LicenseController {
   // Each call creates a session on the licence site.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({
     summary: 'One-hour link to accept the Data Processing Agreement on the licence site (cloud, ADMIN, paid plans)',
   })
@@ -318,6 +322,7 @@ export class LicenseController {
   // this a few times at most, a loop should not be able to do more.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({
     summary:
       'Stripe Checkout link for a cloud plan, optionally as a card trial ending with the free trial (cloud, ADMIN)',
@@ -404,6 +409,7 @@ export class LicenseController {
   @Get('pricing-link-token')
   @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({
     summary:
       "Cloud: the signed-in user's address token for links to the pricing page (#t=), null when EMAIL_LINK_SECRET is unset",
@@ -422,6 +428,7 @@ export class LicenseController {
   @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({
     summary:
       'Cloud, ADMIN: whether this address can start a card trial (kind trial), must pay today because it had a subscription (pay), or neither applies (none)',
@@ -442,6 +449,7 @@ export class LicenseController {
   @Get('card-trial-offer')
   @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({
     summary:
       'Cloud: the card-trial offer after the first successful tool call, for admins of an eligible workspace (null otherwise)',
@@ -459,6 +467,7 @@ export class LicenseController {
   @Get('wall')
   @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({
     summary:
       'Cloud: the ended-trial licence wall for an admin: its variant and the workspace\'s own numbers (null otherwise)',
@@ -480,6 +489,7 @@ export class LicenseController {
   @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({ summary: 'Force re-verify license against remote API (ADMIN)' })
   async verifyLicense(@Req() req: any) {
     const result = await this.licenseService.verifyLicense(undefined, req.user.organizationId);
@@ -489,6 +499,7 @@ export class LicenseController {
   @Post('activate-trial')
   @UseGuards(JwtOrManagementKeyGuard)
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({ summary: 'Start a 7-day cloud trial (cloud mode only)' })
   async activateTrial(@Req() req: any) {
     if (!this.deployment.isCloud()) {
@@ -542,6 +553,7 @@ export class LicenseController {
   @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @ApiOperation({ summary: 'Request a free community license (sent via email)' })
   async registerCommunity(@Req() req: any) {
     const user = await this.usersService.findById(req.user.sub);

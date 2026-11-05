@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { ConnectorSetupService } from './connector-setup.service';
@@ -37,6 +37,7 @@ export class SetupLinksController {
   @Post('resolve')
   @HttpCode(200)
   @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @UseGuards(JwtOrManagementKeyGuard)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @ApiOperation({ summary: 'Open a connector setup link with the dashboard session' })

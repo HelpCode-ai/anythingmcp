@@ -20,7 +20,8 @@ startTracing();
 import { NestFactory } from '@nestjs/core';
 import { APP_VERSION, APP_COMMIT, APP_BUILD_DATE } from './common/app-version';
 import { Logger, ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
+import { buildOpenApiConfig } from './common/openapi';
 import { ConfigService } from '@nestjs/config';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
@@ -132,26 +133,8 @@ async function bootstrap() {
     exposedHeaders: ['Content-Disposition', 'X-Secrets-Included'],
   });
 
-  // Swagger documentation
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('AnythingMCP API')
-    .setDescription(
-      'Backend API for AnythingMCP — convert any API into an MCP server. ' +
-        'Manage connectors, configure MCP tools, and monitor usage.',
-    )
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .addApiKey(
-      { type: 'apiKey', name: 'X-API-Key', in: 'header' },
-      'api-key',
-    )
-    .addTag('Auth', 'Authentication and user management')
-    .addTag('Connectors', 'Manage API connectors')
-    .addTag('Tools', 'MCP tool configuration')
-    .addTag('AI', 'AI-assisted configuration')
-    .addTag('MCP', 'MCP server management')
-    .addTag('Health', 'Health checks')
-    .build();
+  // Swagger documentation (metadata, tags and auth schemes: common/openapi.ts)
+  const swaggerConfig = buildOpenApiConfig(APP_VERSION);
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document, {

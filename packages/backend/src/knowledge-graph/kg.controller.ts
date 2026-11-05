@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
-import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   ArrayNotEmpty,
@@ -35,6 +35,39 @@ import {
 } from './kg-learning.service';
 
 const SKILL_STATUSES = ['pending', 'applied', 'dismissed'];
+
+/** Knowledge-graph workspace switches; every field is optional and boolean. */
+class KgSettingsDto {
+  @ApiPropertyOptional({ description: 'Turn the knowledge graph on or off for this workspace.' })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Let an LLM suggest entities and links.' })
+  @IsOptional()
+  @IsBoolean()
+  llmEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Capture the intent sent with tool calls.' })
+  @IsOptional()
+  @IsBoolean()
+  captureIntent?: boolean;
+
+  @ApiPropertyOptional({ description: 'Extend the graph automatically after connector changes.' })
+  @IsOptional()
+  @IsBoolean()
+  autoExtend?: boolean;
+
+  @ApiPropertyOptional({ description: 'Apply suggested skills without review.' })
+  @IsOptional()
+  @IsBoolean()
+  skillAutoApply?: boolean;
+
+  @ApiPropertyOptional({ description: 'Apply suggested links without review.' })
+  @IsOptional()
+  @IsBoolean()
+  edgeAutoApply?: boolean;
+}
 
 class CreateSkillDto {
   @ApiProperty({ description: 'Short name of the skill (stored up to 160 characters).' })
@@ -159,6 +192,7 @@ class SetMyLearningDto {
 
 @ApiTags('Knowledge Graph')
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
 @Controller('api/knowledge-graph')
 export class KgController {
@@ -195,15 +229,7 @@ export class KgController {
   @ApiOperation({ summary: 'Update knowledge-graph settings for this workspace' })
   async setSettings(
     @Req() req: any,
-    @Body()
-    body: {
-      enabled?: boolean;
-      llmEnabled?: boolean;
-      captureIntent?: boolean;
-      autoExtend?: boolean;
-      skillAutoApply?: boolean;
-      edgeAutoApply?: boolean;
-    },
+    @Body() body: KgSettingsDto,
   ) {
     return this.kg.updateSettings(req.user.organizationId, body);
   }

@@ -1,7 +1,7 @@
 {
   "name": "@anythingmcp/cli",
-  "version": "0.1.3",
-  "description": "Command-line client for AnythingMCP, the enterprise agent harness and MCP gateway: call MCP tools and fully manage your instance — connectors, MCP servers, users, roles and settings — from the terminal.",
+  "version": "0.1.4",
+  "description": "Command-line client for AnythingMCP, the open-source agent harness and MCP gateway: call MCP tools from your shell, scripts and CI, run code-mode programs that chain many tool calls in one step, and manage your instance — connectors, MCP servers, users, roles, audit — from the terminal.",
   "license": "AGPL-3.0-only",
   "keywords": [
     "anythingmcp",
@@ -18,7 +18,15 @@
     "claude",
     "anthropic",
     "chatgpt",
-    "cursor"
+    "cursor",
+    "code-mode",
+    "code-execution",
+    "mcp-tools",
+    "openapi",
+    "api-gateway",
+    "automation",
+    "devops",
+    "terminal"
   ],
   "homepage": "https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme",
   "repository": {

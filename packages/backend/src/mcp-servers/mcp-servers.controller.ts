@@ -12,7 +12,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiProperty, ApiPropertyOptional, ApiSecurity, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../common/pagination.dto';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { IsString, IsOptional, IsBoolean, IsArray, IsIn } from 'class-validator';
@@ -89,6 +89,7 @@ class UpdateMcpServerDto {
     enum: CODE_MODE_MODES,
     description:
       'Code mode for this server: off (default, no code execution), tools (saved code tools only), inline (also the generic code_execute / code_propose_tool). Needs a configured code-runner to actually run.',
+    example: 'inline',
   })
   @IsOptional()
   @IsIn(CODE_MODE_MODES as unknown as string[])
@@ -109,6 +110,7 @@ class AssignConnectorsDto {
 
 @ApiTags('MCP Servers')
 @ApiBearerAuth()
+@ApiSecurity('api-key')
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/mcp-servers')
 export class McpServersController {
@@ -135,9 +137,16 @@ export class McpServersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List MCP servers for current organization' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: '1..200' })
-  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiOperation({
+    summary: 'List MCP servers for current organization',
+    description:
+      'Every MCP server of your workspace, oldest first. Each one is an MCP endpoint at `/mcp/{id}` that exposes the ' +
+      'tools of its connectors. Includes the names of its connectors, `_count` (connectors, API keys) and `usage` ' +
+      '(`calls30d`, `lastCallAt`). Without `limit` all servers are returned.\n\n' +
+      '```bash\namcp api GET /api/mcp-servers\n```',
+  })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size, 1..200. Omit for all.', example: 50 })
+  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip.', example: 0 })
   async list(@Req() req: any, @Query() pagination: PaginationQueryDto) {
     const servers = await this.mcpServersService.findAllByOrg(req.user.organizationId, {
       limit: pagination.limit,
@@ -154,7 +163,28 @@ export class McpServersController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new MCP server' })
+  @ApiOperation({
+    summary: 'Create a new MCP server',
+    description:
+      'Creates an empty MCP server; its endpoint is `/mcp/{id}` (the `id` in the response). Then put connectors on it ' +
+      'with `PUT /api/mcp-servers/{id}/connectors`, set code mode or skills delivery with `PUT /api/mcp-servers/{id}`, ' +
+      'and give AI clients a key with `POST /api/mcp-keys` (`mcpServerId`) or let them sign in with OAuth. ' +
+      'A slug is derived from the name when omitted; a slug already used in the workspace answers 409. ' +
+      '403 when the plan allows no more MCP servers.',
+  })
+  @ApiBody({
+    type: CreateMcpServerDto,
+    examples: {
+      sales: {
+        summary: 'A server for the sales team',
+        value: {
+          name: 'Sales',
+          description: 'CRM and e-mail tools for the sales team',
+          instructions: 'Use HubSpot for customer data. Never delete records.',
+        },
+      },
+    },
+  })
   async create(@Req() req: any, @Body() dto: CreateMcpServerDto) {
     await this.licenseGuard.checkCanCreateMcpServer(req.user.sub, req.user.organizationId);
     return this.mcpServersService.create(req.user.sub, req.user.organizationId, dto);
@@ -176,8 +206,14 @@ export class McpServersController {
 
   @Get(':id/activity')
   @ApiOperation({
-    summary:
-      'Calls in the last 30 days and the time of the last one. Polled by the connect page to show when the first request from an AI client arrives.',
+    summary: 'Calls in the last 30 days and the time of the last one',
+    description:
+      'Tool calls made through this server in the last 30 days and when the last one happened. Polled by the connect ' +
+      'page to show when the first request from an AI client arrives; also a cheap way to check a server is in use.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: { type: 'object', example: { calls30d: 1284, lastCallAt: '2026-11-05T09:41:12.000Z' } },
   })
   async activity(@Req() req: any, @Param('id') id: string) {
     const server = await this.mcpServersService.findById(id);
@@ -188,7 +224,30 @@ export class McpServersController {
   }
 
   @Put(':id')
-  @ApiOperation({ summary: 'Update MCP server' })
+  @ApiOperation({
+    summary: 'Update MCP server',
+    description:
+      'Changes only the fields sent. `codeMode` controls code execution on this server:\n\n' +
+      '- `off` (default): no code execution.\n' +
+      '- `tools`: saved code tools (approved programs stored as tools) can run.\n' +
+      '- `inline`: also the generic `code_execute` (run a short program that calls several tools in one step) and ' +
+      '`code_propose_tool` (propose a program as a saved code tool for an admin to approve).\n\n' +
+      'Code runs in an isolated sandbox and needs a configured code-runner. `skillsDelivery` sets how applied skills ' +
+      'reach clients (`auto`, `inline`, `index`); `isActive: false` switches the endpoint off. Only the server owner or ' +
+      'an admin may change it; a slug already used in the workspace answers 409.\n\n' +
+      '```bash\namcp api PUT /api/mcp-servers/<id> --data \'{"codeMode":"inline"}\' --yes\n```',
+  })
+  @ApiBody({
+    type: UpdateMcpServerDto,
+    examples: {
+      codeMode: { summary: 'Turn on code mode', value: { codeMode: 'inline' } },
+      disable: { summary: 'Switch the endpoint off', value: { isActive: false } },
+      instructions: {
+        summary: 'Change the instructions sent to AI clients',
+        value: { instructions: 'Answer in English. Use the ERP for prices, never the web.' },
+      },
+    },
+  })
   async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateMcpServerDto) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
@@ -207,7 +266,16 @@ export class McpServersController {
   }
 
   @Put(':id/connectors')
-  @ApiOperation({ summary: 'Assign connectors to MCP server' })
+  @ApiOperation({
+    summary: 'Assign connectors to MCP server',
+    description:
+      'Sets the connectors whose tools this server exposes. The list **replaces** the current assignment: send every ' +
+      'connector that should stay, or `[]` to remove them all. Connected AI clients are told the tool list changed. ' +
+      '404 when an id is not a connector of your workspace. Which tools each user may call is then decided by roles ' +
+      '(`/api/roles`).\n\n' +
+      '```bash\namcp api PUT /api/mcp-servers/<id>/connectors --data \'{"connectorIds":["<connectorId>"]}\' --yes\n```',
+  })
+  @ApiResponse({ status: 200, schema: { type: 'object', example: { message: 'Connectors assigned' } } })
   async assignConnectors(
     @Req() req: any,
     @Param('id') id: string,

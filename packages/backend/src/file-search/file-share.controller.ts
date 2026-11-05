@@ -1,6 +1,6 @@
 import { Controller, Delete, ForbiddenException, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { FileShareService } from './file-share.service';
 import { FileShareConnectorService } from './file-share-connector.service';
@@ -19,6 +19,8 @@ export class FileShareController {
     private readonly connector: FileShareConnectorService,
   ) {}
 
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @UseGuards(JwtOrManagementKeyGuard)
   @Get()
   @ApiOperation({ summary: 'List File Share links' })
@@ -41,6 +43,8 @@ export class FileShareController {
     return { ...page, limits, usage, connector };
   }
 
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @UseGuards(JwtOrManagementKeyGuard)
   @Delete(':id')
   @ApiOperation({ summary: 'Revoke a File Share link' })
@@ -48,6 +52,8 @@ export class FileShareController {
     return this.shares.revoke(req.user.organizationId, id, req.user);
   }
 
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @UseGuards(JwtOrManagementKeyGuard)
   @Post('connector')
   @ApiOperation({ summary: 'Create the File Share connector (admin only)' })
@@ -68,6 +74,8 @@ export class FileShareController {
     return this.shares.issueDownload(token, null);
   }
 
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @UseGuards(JwtOrManagementKeyGuard)
   @Post('s/:token/download-internal')
   @ApiOperation({ summary: 'Issue a download for an internal share (signed-in member)' })
@@ -93,6 +101,8 @@ export class FileShareController {
     file.stream.pipe(res);
   }
 
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
   @UseGuards(JwtOrManagementKeyGuard)
   @Get('limits')
   @ApiOperation({ summary: 'Get File Share limits and usage' })

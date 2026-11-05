@@ -1,83 +1,333 @@
 ---
 title: "The AnythingMCP CLI — Run and Manage Your MCP Instance From the Terminal"
-description: "amcp is the official AnythingMCP command-line client. Call MCP tools from your shell and fully manage your instance — connectors, MCP servers, users, roles, SSO and settings — with a management-scoped API key. Install with npm, log in through the browser, script everything. Works for people and for connected AI agents."
+description: "amcp is the official AnythingMCP command-line client. Call MCP tools with real arguments, pipe results into jq and cron, run code-mode programs that loop over dozens of tool calls in one step, and script your whole instance — connectors, MCP servers, roles, audit — with a management key. Worked examples with Shopify, HubSpot and Slack."
 category: "announcements"
-keyword: "AnythingMCP CLI, amcp CLI, MCP CLI, Model Context Protocol CLI, MCP command line, manage MCP server terminal, MCP gateway CLI, npm @anythingmcp/cli, MCP tools from terminal, AI agent CLI"
+keyword: "AnythingMCP CLI, amcp CLI, MCP CLI, Model Context Protocol CLI, MCP command line, MCP code mode, code_execute, manage MCP server terminal, MCP gateway CLI, npm @anythingmcp/cli, MCP tools from terminal, AI agent CLI"
 publishedAt: "2026-11-04"
+updatedAt: "2026-11-05"
 lang: "en"
 featured: true
 ---
 
 ## Your whole MCP instance, from the terminal
 
-Meet **`amcp`**, the official AnythingMCP command-line client. It does two things:
+**`amcp`** is the official AnythingMCP command-line client. It does two things with one binary:
 
-1. **Call MCP tools** from your shell — discover them, read their schema, run them.
-2. **Drive the management API** (`/api/*`) with a **management-scoped API key** — so a person, or a connected AI agent, can configure the entire instance (connectors, MCP servers, users, roles, SSO, memory, skills, the knowledge graph and settings) without leaving the terminal.
+1. **Calls MCP tools** — the same tools your AI clients use (Shopify, HubSpot, SAP, your SQL database, a file share…). You can run them by hand, in shell scripts, from cron and CI, or as a **code-mode program** that chains dozens of calls in one step.
+2. **Drives the management API** (`/api/*`) with a **management-scoped key**. Everything the dashboard does — connectors, MCP servers, users, roles, SSO, memory, skills, audit — becomes a command, for you or for a connected agent.
 
-It is open source (AGPL-3.0), works against **AnythingMCP Cloud** and **self-hosted** instances, and installs from npm:
+It is open source (AGPL-3.0), works against **AnythingMCP Cloud** and **self-hosted** instances, needs Node 22+, and installs from npm:
 
 ```bash
 npm i -g @anythingmcp/cli
 amcp --help
 ```
 
-## Log in
+Every example below uses real commands, flags, endpoints and tool names. The Shopify, HubSpot and Slack tools come from the built-in catalogue connectors. Only the data in the output is invented.
 
-Mint a **management API key** in the dashboard (Settings → Management API keys, read-only or admin), or let the CLI do it through your browser:
+## Log in: two kinds of key
 
-```bash
-amcp login --browser --url https://cloud.anythingmcp.com            # read-only
-amcp login --browser --scope admin --url https://cloud.anythingmcp.com
-```
+`amcp` uses two kinds of key, and keeps them in separate profiles:
 
-`--browser` opens the instance's authorization page, you approve it under your existing dashboard session (SSO included), and the key comes back to the CLI over a one-shot `127.0.0.1` loopback — it never appears in a URL, log or shell history. To connect to one MCP server for tool calls instead, use `amcp login --url … --server …` with an MCP key.
+| You want to… | Key | Log in with |
+|---|---|---|
+| Call the tools of one MCP server | an **MCP key** for that server | `amcp login --url … --server SERVER_ID` |
+| Manage the instance (`amcp api`) | a **management key** (read-only or admin) | `amcp login --browser` |
 
-## Call MCP tools
-
-```bash
-amcp tools ls                       # list tools, with read-only/destructive hints
-amcp tools describe YOUR_TOOL       # full description + input JSON schema
-amcp tools call YOUR_TOOL --args '{"id":"123"}'
-```
-
-## Manage the instance
-
-Everything the dashboard can do, `amcp api` can do with a management key — it is `gh api` for AnythingMCP:
+For a management key, let the browser do the work:
 
 ```bash
-amcp api GET  /api/connectors
-amcp api GET  /api/mcp-servers
-amcp api POST /api/mcp-servers --data '{"name":"ops","description":"Ops server"}'
-amcp api PUT  /api/mcp-servers/SERVER_ID --data '{"codeMode":"tools"}'
+amcp login --browser --url https://cloud.anythingmcp.com              # read-only
+amcp login --browser --scope admin --url https://cloud.anythingmcp.com # read + write
 ```
 
-Not sure what's available? The CLI ships a catalogue of every management operation — no key, no network:
+The CLI opens the instance's authorization page and prints a short code. You check it matches the page and approve under your normal dashboard session (SSO included). The key comes back over a one-shot `127.0.0.1` loopback, so it never appears in a URL, a log or your shell history.
+
+For tool calls, paste an MCP key when prompted. The CLI doesn't echo it, and it checks the key with a real `tools/list` before saving it:
 
 ```bash
-amcp api --list                 # every operation, grouped by resource
-amcp api --list mcp-servers     # just one resource
+amcp login --url https://cloud.anythingmcp.com --server cmob60dvv00c01zrpeujwmnep --profile shop
+amcp whoami --profile shop
 ```
 
-A management key carries the owner's identity and role: it never grants privilege, so admin-only routes still need an admin owner, and read-only keys can only read. The API applies a per-key rate limit, so a runaway agent is refused rather than hammering your instance.
+## 1. Explore and call tools
 
-## Built for agents, too
+Start by asking the server what it can do. `tools ls` prints each tool's name, its read-only/destructive hint and the first line of its description:
 
-The same management API is exactly what a connected AI agent needs to **onboard and run a workspace end to end** — add a connector, create an MCP server, assign roles, wire SSO, toggle memory and skills — safely, within the scope you grant it. Agents default to read-only.
+```console
+$ amcp tools ls --filter order
+shopify_search_orders   read-only   Search orders with Shopify search syntax (for example `financial_status:paid …
+shopify_get_order       read-only   Get one order: status, totals (subtotal, shipping, tax, discounts, refunds) …
+```
 
-## Scripting and CI
+`tools describe` shows the full description and the input JSON schema, so you know exactly which arguments a tool takes. Then call it with real arguments:
+
+```console
+$ amcp tools call shopify_search_orders \
+    --args '{"query":"financial_status:paid created_at:>=2026-11-01","first":2}'
+{
+  "orders": {
+    "pageInfo": { "hasNextPage": true, "endCursor": "eyJsYXN0X2lkIjo2…" },
+    "nodes": [
+      {
+        "name": "#1043",
+        "createdAt": "2026-11-04T16:12:09Z",
+        "displayFinancialStatus": "PAID",
+        "displayFulfillmentStatus": "UNFULFILLED",
+        "currentTotalPriceSet": { "shopMoney": { "amount": "412.80", "currencyCode": "EUR" } },
+        "customer": { "displayName": "Kellerhaus GmbH" }
+      },
+      …
+```
+
+Arguments can also come from a file (`--args @args.json`) or from stdin (`--args -`). A tool marked destructive asks for confirmation in a terminal. In a script, you must pass `--yes` explicitly.
+
+## 2. Pipe it into your scripts
+
+A tool's text output is its JSON on stdout. Errors go to stderr with their own exit code. That makes `amcp` a normal Unix citizen:
+
+```console
+$ amcp tools call shopify_search_orders \
+    --args '{"query":"fulfillment_status:unfulfilled created_at:<2026-11-03"}' \
+  | jq -r '.orders.nodes[] | [.name, .customer.displayName, .createdAt[:10]] | @tsv'
+#1038   Kellerhaus GmbH     2026-10-30
+#1035   Studio Lumen        2026-10-29
+#1031   Bäckerei Hofmann    2026-10-28
+```
+
+Exit codes: `0` success, `1` the tool returned an error, `2` invalid usage or JSON, `3` authentication, `4` connection, server error or timeout.
+
+Put the two together and you get a daily job. This one posts late orders to a Slack channel every morning (the Slack connector sits on the same server):
 
 ```bash
-AMCP_URL=https://cloud.anythingmcp.com AMCP_API_KEY=mcp_… amcp api GET /api/users --json
-amcp completion zsh > "${fpath[1]}/_amcp"     # shell completion for bash, zsh, fish
+#!/usr/bin/env bash
+# late-orders.sh — run from cron: 0 8 * * 1-5
+set -euo pipefail
+SINCE=$(date -d '-2 days' +%F)     # GNU date; on macOS: date -v-2d +%F
+LATE=$(amcp tools call shopify_search_orders \
+  --args "{\"query\":\"fulfillment_status:unfulfilled created_at:<$SINCE\"}" \
+  | jq -r '.orders.nodes[] | "• \(.name) — \(.customer.displayName)"')
+[ -z "$LATE" ] && exit 0
+jq -n --arg text "Orders waiting more than 2 days:
+$LATE" '{channel: "#fulfilment", text: $text}' \
+  | amcp tools call slack_post_message --args - --yes
 ```
 
-Keys are stored with mode `0600`, HTTPS is required (except loopback for local dev), redirects are refused so a key can't follow a request to another origin, and the key is never accepted as a command argument.
+In CI, skip the profile: `AMCP_URL`, `AMCP_SERVER` and `AMCP_API_KEY` supply the connection, and `--json` makes every command print one JSON object.
+
+## 3. Code mode: one program, many tool calls
+
+Scripts like the one above make one call at a time from your machine. **Code mode** sends a whole program to the server instead. With code mode set to `inline` on an MCP server, the server offers a tool called `code_execute`. You send it a short JavaScript program, and a sandbox next to your tools runs it, with three helpers:
+
+- `await amcp.search("query")` finds tools by name or description;
+- `await amcp.describe("tool")` returns a tool's input schema;
+- `await amcp.run("tool", args)` calls a tool and returns its result as a JavaScript value.
+
+Turn it on once per server (needs an admin management key):
+
+```bash
+amcp api PUT /api/mcp-servers/$SRV --yes --data '{"codeMode":"inline"}'
+```
+
+Now a question that would take dozens of round trips: *who are our five biggest Shopify customers since October, and where is each one in the HubSpot pipeline?* Write it as a program:
+
+```js
+// top-customers.js — runs inside the AnythingMCP sandbox: read-only, your own permissions
+const byEmail = new Map();
+let after = null, pages = 0;
+
+// 1. Page through every paid Shopify order since October
+do {
+  const r = await amcp.run("shopify_search_orders", {
+    query: "financial_status:paid created_at:>=2026-10-01",
+    first: 250, after,
+  });
+  for (const o of r.orders.nodes) {
+    if (!o.email) continue;
+    const c = byEmail.get(o.email)
+      ?? { name: o.customer?.displayName, orders: 0, revenue: 0 };
+    c.orders += 1;
+    c.revenue += Number(o.currentTotalPriceSet.shopMoney.amount);
+    byEmail.set(o.email, c);
+  }
+  const { hasNextPage, endCursor } = r.orders.pageInfo;
+  after = hasNextPage ? endCursor : null;
+  pages++;
+} while (after);
+
+// 2. Keep the five biggest customers
+const top = [...byEmail]
+  .sort((a, b) => b[1].revenue - a[1].revenue)
+  .slice(0, 5);
+
+// 3. Join each one with its HubSpot contact
+const result = [];
+for (const [email, c] of top) {
+  const h = await amcp.run("hubspot_search_objects", {
+    object_type: "contacts",
+    filter_groups: [{ filters: [
+      { propertyName: "email", operator: "EQ", value: email },
+    ] }],
+    properties: ["lifecyclestage"],
+    limit: 1,
+  });
+  const stage = h.results[0]?.properties.lifecyclestage ?? "not in CRM";
+  result.push({ email, ...c, revenue: c.revenue.toFixed(2), stage });
+}
+return { pagesScanned: pages, top: result };
+```
+
+`code_execute` takes `{"code": "<program>"}`. `jq -Rs` wraps the file for you:
+
+```console
+$ jq -Rs '{code: .}' top-customers.js | amcp tools call code_execute --args -
+{
+  "pagesScanned": 3,
+  "top": [
+    {
+      "email": "einkauf@kellerhaus.de",
+      "name": "Kellerhaus GmbH",
+      "orders": 14,
+      "revenue": "4820.50",
+      "stage": "customer"
+    },
+    {
+      "email": "m.weber@example.com",
+      "name": "Martin Weber",
+      "orders": 6,
+      "revenue": "2475.90",
+      "stage": "not in CRM"
+    },
+    …
+  ]
+}
+```
+
+That is **8 tool calls** (3 pages of orders and 5 CRM lookups) for **one** call from your terminal. What comes back is the five customers you asked about, not 750 raw orders. The same holds when the caller is an AI agent instead of you: it reads one short answer instead of 750 orders, which saves tokens and avoids mistakes.
+
+Don't know the tool names yet? Let the program find them:
+
+```js
+// discover.js
+const tools = await amcp.search("invoice");          // [{ tool, description, readOnly }, …]
+const schema = await amcp.describe(tools[0].tool);   // { name, description, inputSchema, readOnly }
+return { tools: tools.map(t => t.tool), firstSchema: schema.inputSchema };
+```
+
+**The guardrails are part of the design:**
+
+- **Read-only.** A program can only call tools that don't change data, and only with the permissions of the key that runs it. Writes stay explicit direct calls, like `slack_post_message --yes` above.
+- **Isolated.** The program runs in a separate sandbox process with no filesystem, network or environment access, a deadline, and a cap on tool calls per run.
+- **Audited.** Every inner tool call is logged like a direct one, together with the code run that made it.
+- **Opt-in.** Inline code is off unless a server's `codeMode` is `inline` *and* your role has the inline-code capability. It's available on the Team plan and above.
+
+### Keep the good ones: propose them as tools
+
+When a program answers a question people keep asking, `code_propose_tool` records it as a proposal for an admin. It doesn't run anything. Once an admin approves it, every AI client on that server gets it as a normal named tool:
+
+```console
+$ jq -Rs '{
+    name: "top_customers_with_crm_stage",
+    description: "Top 5 Shopify customers since October, with their HubSpot lifecycle stage",
+    rationale: "Sales asks for this every Monday",
+    code: .
+  }' top-customers.js | amcp tools call code_propose_tool --args -
+{"ok":true,"proposalId":"cmh4k2…","message":"Proposal recorded for admin review. It will not run or become a tool until an admin approves it."}
+```
+
+Read more in [Code mode for AI agents](/guides/code-mode).
+
+## 4. Manage the instance
+
+With a management key, `amcp api METHOD PATH` calls any `/api/*` route. It works like `gh api`, but for AnythingMCP. Text output is the parsed JSON body, so `jq` works here too.
+
+### Stand up a workspace in one script
+
+Install a catalogue connector with its token, give the sales team their own MCP server, attach the connector, turn on code mode and check the connection:
+
+```bash
+#!/usr/bin/env bash
+# bootstrap.sh — needs: amcp login --browser --scope admin
+set -euo pipefail
+
+CONN=$(jq -n --arg t "$HUBSPOT_TOKEN" '{credentials: {HUBSPOT_ACCESS_TOKEN: $t}}' \
+  | amcp api POST /api/adapters/hubspot/import --data - --yes | jq -r .connectorId)
+
+SRV=$(amcp api POST /api/mcp-servers --yes \
+  --data '{"name":"Sales","description":"CRM tools for the sales team"}' | jq -r .id)
+
+amcp api PUT /api/mcp-servers/$SRV/connectors --yes --data "{\"connectorIds\":[\"$CONN\"]}"
+amcp api PUT /api/mcp-servers/$SRV --yes --data '{"codeMode":"inline"}'
+amcp api POST /api/connectors/$CONN/test --yes
+# → { "ok": true, "kind": "ok", "message": "Connection successful" }
+```
+
+The token reaches the API through `jq --arg` and stdin, so it never shows up in `ps` or your shell history. Every non-GET call in a script needs `--yes`. That is deliberate: a script can't change anything by accident.
+
+### Turn your own API into tools
+
+Not in the catalogue? Create a REST connector and import its OpenAPI spec. WSDL, GraphQL, Postman, cURL and HAR work the same way, through the `source` field:
+
+```bash
+ID=$(amcp api POST /api/connectors --yes --data '{
+  "name": "Acme Billing", "type": "REST",
+  "baseUrl": "https://api.acme.example/v1",
+  "authType": "BEARER_TOKEN", "authConfig": { "token": "'"$ACME_TOKEN"'" }
+}' | jq -r .id)
+
+amcp api POST /api/connectors/$ID/import --yes \
+  --data '{"source":"openapi","url":"https://api.acme.example/v1/openapi.json"}'
+```
+
+### See what your agents did
+
+Every tool call, from people or agents, lands in the audit log:
+
+```console
+$ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
+  | jq -r '.[] | [.createdAt[11:16], .tool.name, .user.email, .error[:40]] | @tsv'
+08:41   hubspot_search_objects   lea@acme.io         HTTP 429: retry after 1s
+07:02   shopify_get_order        ops-agent@acme.io   Order not found
+06:55   zendesk_get_ticket       marco@acme.io       HTTP 404: RecordNotFound
+```
+
+`GET /api/audit/breakdowns?days=30` returns usage and cost broken down by connector, MCP server and user. It's a good fit for a monthly report.
+
+### Discover the whole API offline
+
+You don't need the docs open. The catalogue of management operations ships with the CLI:
+
+```console
+$ amcp api --list mcp-servers
+mcp-servers
+  GET    /api/mcp-servers  — List MCP servers for current organization
+  POST   /api/mcp-servers [body]  — Create a new MCP server
+  DELETE /api/mcp-servers/:id  — Delete MCP server
+  GET    /api/mcp-servers/:id  — Get MCP server detail
+  PUT    /api/mcp-servers/:id [body]  — Update MCP server
+  …
+```
+
+`[admin]` marks routes that need an admin owner, and `[body]` marks routes that take a request body. The catalogue is regenerated from the backend controllers, and CI fails when a route is missing, so it always matches your instance. The interactive reference with request examples is at [/developers/api](/developers/api).
+
+## 5. Give it to an agent
+
+A coding agent such as Claude Code, Codex or Cursor's agent can drive `amcp` like you do. Give it a **read-only** management key and it can audit a workspace: which servers expose which connectors, and which calls fail. Give it an **admin** key and it can onboard a new team end to end with the commands from section 4.
+
+The scope is the safety net. A management key carries its owner's identity and role and never grants more. A read-only key can only `GET`. Every call is rate-limited per key (HTTP 429 instead of a hammered instance) and audited.
+
+## Secure by default
+
+- The API key is never accepted as a command argument and never printed. `whoami` shows only a prefix.
+- Profiles are stored in `~/.config/amcp/config.json` with file mode `0600`.
+- HTTPS is required, except on loopback for local development.
+- Redirects are refused, so a key can't follow a request to another origin.
 
 ## Get it
 
-- **Install:** `npm i -g @anythingmcp/cli`
-- **Docs:** the full command reference lives in the [CLI README on GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme).
-- **Source:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp).
+- **Install:** `npm i -g @anythingmcp/cli`, plus shell completion with `amcp completion zsh` (also bash and fish)
+- **Overview:** [anythingmcp.com/developers/cli](/developers/cli)
+- **Full command reference:** the [CLI README on GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme)
+- **Source:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp)
 
 No AnythingMCP yet? Start free on [cloud.anythingmcp.com](https://cloud.anythingmcp.com), or self-host it.
