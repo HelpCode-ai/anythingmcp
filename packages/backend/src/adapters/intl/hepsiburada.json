@@ -1,0 +1,308 @@
+{
+  "slug": "hepsiburada",
+  "name": "Hepsiburada Marketplace",
+  "description": "Read a Hepsiburada Marketplace seller account from an AI agent: paid orders waiting to be packed, one order by number, listings with stock and price, and customer claims (returns). Read-only. Basic auth with the merchant ID and integration secret.",
+  "instructions": "## Hepsiburada Marketplace\nThis connector reads the **Hepsiburada Marketplace merchant API**. Orders and claims are served from `https://oms-external.hepsiburada.com`, listings from `https://listing-external.hepsiburada.com`. The test hosts carry `-sit` in the name and use separate credentials; this connector calls production only.\n\n**Authentication**: HTTP Basic with the merchant ID as user name and the integration secret as password, plus a required `User-Agent` header, sent as `<merchant id> - AnythingMCP`. The merchant ID (Mağaza ID) is in the merchant panel under Hesabım > Bilgilerim > Entegrasyon. Integrators get their key (servis anahtarı) on the Entegratör Bilgileri tab of that page; a new integrator authorization can take up to 2 hours to become active. Hepsiburada's documentation requires the User-Agent but does not publish a format for it.\n\n**Identifiers**: the merchant ID is a GUID, for example `b2910839-83b9-4d45-adb6-86bad457edcb`, and is filled in for you. Order numbers look like `0116431`. A line item ID (`items.id`) is a GUID and is not accepted by `hepsiburada_get_order`, which takes the order number.\n\n**Pagination and limits**: every list tool pages with `offset` and `limit`, always sent together. `limit` is at most 100 for orders; Hepsiburada states no maximum for listings or claims. Order services allow 1,000 requests per second and answer 429 above that; the order tools return the `x-ratelimit-remaining` and `x-ratelimit-reset` headers under `_headers`. No read limit is published for listings or claims.\n\n**Common workflows**:\n- Find work to do: `hepsiburada_list_orders`, then `hepsiburada_get_order` with an `orderNumber` from the result.\n- Check stock and price: `hepsiburada_list_listings`, filtered by SKU when you know it.\n- Handle returns: `hepsiburada_list_claims_by_status` with `awaitingaction`, or `hepsiburada_list_claims` for a date range, then `hepsiburada_get_order` with the claim's order number.\n\n**Limitations**: this version only reads; it cannot pack, cancel, update stock or price, or answer claims. `hepsiburada_list_orders` returns only paid orders still waiting to be packed. With automatic packaging switched on (Hesabım > Ayarlarım > Diğer ayarlar), orders are packed within about 15 minutes and leave that list, and the package listing that holds them is not part of this version. `hepsiburada_get_order` finds no result for an unpaid order. National ID numbers, tax numbers and card holder names are removed from order responses.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "hepsiburada",
+  "docsUrl": "https://developers.hepsiburada.com",
+  "requiredEnvVars": [
+    "HEPSIBURADA_MERCHANT_ID",
+    "HEPSIBURADA_INTEGRATION_SECRET"
+  ],
+  "envVarMeta": {
+    "HEPSIBURADA_MERCHANT_ID": {
+      "label": "Merchant ID (Mağaza ID)",
+      "kind": "setting",
+      "help": "Merchant panel: Hesabım > Bilgilerim > Entegrasyon. Sent as the HTTP Basic user name, in the User-Agent and in the request path.",
+      "example": "b2910839-83b9-4d45-adb6-86bad457edcb",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The merchant ID is a GUID, for example b2910839-83b9-4d45-adb6-86bad457edcb."
+    },
+    "HEPSIBURADA_INTEGRATION_SECRET": {
+      "label": "Integration secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Your Hepsiburada integration secret, sent as the HTTP Basic password. Test and production credentials differ."
+    }
+  },
+  "verifyHints": {
+    "401": "Hepsiburada refused the credentials. Check HEPSIBURADA_MERCHANT_ID and HEPSIBURADA_INTEGRATION_SECRET; test and production credentials differ, and a new integrator authorization can take up to 2 hours to become active.",
+    "403": "Hepsiburada refused the request. Check that the integration secret belongs to this merchant ID.",
+    "rate_limited": "Hepsiburada allows 1,000 requests per second on its order services. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "hepsiburada_list_listings",
+    "params": { "offset": 0, "limit": 1 }
+  },
+  "connector": {
+    "name": "Hepsiburada Marketplace API",
+    "type": "REST",
+    "baseUrl": "https://oms-external.hepsiburada.com",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{HEPSIBURADA_MERCHANT_ID}}",
+      "password": "{{HEPSIBURADA_INTEGRATION_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "{{HEPSIBURADA_MERCHANT_ID}} - AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "hepsiburada_list_orders",
+      "description": "List paid order lines waiting to be packed (status Open or Unpacked). Returns totalCount, pageCount and items with the line ID, order number, SKU, quantity, prices, commission, due date, cargo company and shipping address. Use it to find orders to process, and hepsiburada_get_order for one order you already know. Orders that automatic packaging has already packed are not listed here. Page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Number of lines to skip. With offset 20 and limit 10, the list starts at line 21.",
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Lines per page, at most 100. Must be sent together with offset.",
+            "default": 20
+          },
+          "begindate": {
+            "type": "string",
+            "description": "Only lines added from this date on, for example 2026-10-01 00:00. Hepsiburada does not publish the format for this service; this is the format of its claims service."
+          },
+          "enddate": {
+            "type": "string",
+            "description": "Only lines added before this date, in the same format as begindate."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/merchantid/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "begindate": "$begindate",
+          "enddate": "$enddate"
+        },
+        "exposeHeaders": ["x-ratelimit-remaining", "x-ratelimit-reset"]
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "items[*].creditCardHolderName",
+            "items[*].invoice.turkishIdentityNumber",
+            "items[*].invoice.taxNumber"
+          ]
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "hepsiburada_get_order",
+      "description": "Get the details of one order by its order number: its lines, their status (such as Open, Packaged, InTransit, Delivered, ClaimCreated or a CancelledBy value) and hasInvoice, which says whether an invoice has been uploaded. Use it when you have an order number from hepsiburada_list_orders, a claim or the user. An unpaid order returns a no-result message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderNumber": {
+            "type": "string",
+            "description": "The order number, for example 0116431. Not a line item ID."
+          }
+        },
+        "required": ["orderNumber"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/ordernumber/{orderNumber}",
+        "exposeHeaders": ["x-ratelimit-remaining", "x-ratelimit-reset"]
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "creditCardHolderName",
+            "invoice.turkishIdentityNumber",
+            "invoice.taxNumber",
+            "items[*].creditCardHolderName",
+            "items[*].invoice.turkishIdentityNumber",
+            "items[*].invoice.taxNumber"
+          ]
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "hepsiburada_list_listings",
+      "description": "List the merchant's listings with stock and price: Hepsiburada and merchant SKUs, price, available stock, dispatch time, cargo companies, and whether each listing is on sale, suspended or locked (with the reasons). Use it to check inventory or look up specific SKUs. Page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Number of listings to skip.",
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Listings per page.",
+            "default": 10
+          },
+          "hbSkuList": {
+            "type": "string",
+            "description": "Only these Hepsiburada SKUs, for example HBV00000TWKQJ."
+          },
+          "merchantSkuList": {
+            "type": "string",
+            "description": "Only these merchant SKUs."
+          },
+          "salableListings": {
+            "type": "boolean",
+            "description": "True for only the listings on sale."
+          },
+          "notSalableListings": {
+            "type": "boolean",
+            "description": "True for only the listings not on sale."
+          },
+          "updateStartDate": {
+            "type": "string",
+            "description": "Only listings updated from this date on."
+          },
+          "updateEndDate": {
+            "type": "string",
+            "description": "Only listings updated up to this date."
+          },
+          "productId": {
+            "type": "string",
+            "description": "Only listings of this product."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "hbSkuList": "$hbSkuList",
+          "merchantSkuList": "$merchantSkuList",
+          "salable-listings": "$salableListings",
+          "notsalable-listings": "$notSalableListings",
+          "updateStartDate": "$updateStartDate",
+          "updateEndDate": "$updateEndDate",
+          "productId": "$productId"
+        }
+      },
+      "responseMapping": {
+        "transform": { "maxBytes": 200000 }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "hepsiburada_list_claims",
+      "description": "List the merchant's customer claims of every status: claim number, status, type (such as Return, MissingItem or MissingInvoice), reason, quantity, refund amount, order number, line item and the deadline to act. Use it to review claims over a date range, and hepsiburada_list_claims_by_status to find those in one status. Page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Number of claims to skip.",
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Claims per page.",
+            "default": 20
+          },
+          "beginDate": {
+            "type": "string",
+            "description": "Only claims created from this date on, as yyyy-MM-dd HH:mm, for example 2026-10-01 00:00."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Only claims created up to this date, as yyyy-MM-dd HH:mm."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/claims/merchantId/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "beginDate": "$beginDate",
+          "endDate": "$endDate"
+        }
+      },
+      "responseMapping": {
+        "transform": { "maxBytes": 200000 }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "hepsiburada_list_claims_by_status",
+      "description": "List the merchant's customer claims in one status, with the same fields as hepsiburada_list_claims. Use awaitingaction to find the claims the merchant must answer before their deadline, or awaitingpreapproval for product renewal requests waiting for pre-approval. Page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "The claim status.",
+            "enum": [
+              "newrequest",
+              "awaitingaction",
+              "awaitingpreapproval",
+              "indispute",
+              "accepted",
+              "rejected",
+              "refunded",
+              "cancelled"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of claims to skip.",
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Claims per page.",
+            "default": 20
+          },
+          "beginDate": {
+            "type": "string",
+            "description": "Only claims created from this date on, as yyyy-MM-dd HH:mm."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Only claims created up to this date, as yyyy-MM-dd HH:mm."
+          },
+          "statusBeginDate": {
+            "type": "string",
+            "description": "Only claims that reached their status from this date on, as yyyy-MM-dd HH:mm."
+          },
+          "statusEndDate": {
+            "type": "string",
+            "description": "Only claims that reached their status up to this date, as yyyy-MM-dd HH:mm."
+          }
+        },
+        "required": ["status"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/claims/merchantId/{{HEPSIBURADA_MERCHANT_ID}}/status/{status}",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "beginDate": "$beginDate",
+          "endDate": "$endDate",
+          "statusBeginDate": "$statusBeginDate",
+          "statusEndDate": "$statusEndDate"
+        }
+      },
+      "responseMapping": {
+        "transform": { "maxBytes": 200000 }
+      },
+      "annotations": { "readOnlyHint": true }
+    }
+  ]
+}
