@@ -1,0 +1,119 @@
+{
+  "slug": "nbb-cbso",
+  "name": "NBB Central Balance Sheet Office",
+  "aliases": ["NBB CBSO", "Balanscentrale", "Centrale des bilans", "National Bank of Belgium annual accounts", "NBB jaarrekeningen"],
+  "description": "Belgian annual accounts from the Central Balance Sheet Office of the National Bank of Belgium (authentic data web service): list every annual account a company filed by enterprise number, read a filing's reference data, and fetch its accounting data as JSON-XBRL or XBRL or the published PDF. Read-only.",
+  "instructions": "## NBB Central Balance Sheet Office (CBSO)\nThis connector uses the **CBSO authentic data web service** of the National Bank of Belgium (`https://ws.cbso.nbb.be/authentic`): the annual accounts that Belgian companies and associations filed with the Central Balance Sheet Office and that the NBB accepted. Everything is read-only.\n\n**Setup**\n1. Subscribe to the CBSO web services (the subscription form on nbb.be, Central Balance Sheet Office, products); the NBB sends a CLIENT_ID for your technical user.\n2. Sign up on the developer portal https://developer.cbso.nbb.be, open **Products**, subscribe to **NBB CBSO Web Services - Authentic Data** (the NBB approves the request) and copy the primary key from your profile into `NBB_CBSO_SUBSCRIPTION_KEY`. It is sent as the `NBB-CBSO-Subscription-Key` header.\n3. Every call also carries an `X-Request-Id` (a version 4 UUID) for tracing; the tools fill one in, and you can pass your own `request_id`.\n\n**Identifiers**\n- Enterprise number: the 10-digit number in the Crossroads Bank for Enterprises (KBO/BCE), without dots or the BE prefix, e.g. `0203201340` (BE 0203.201.340 is the NBB itself).\n- Reference number: the id of one filing (deposit), e.g. `2023-00123456`, from the `ReferenceNumber` field of the list.\n\n**Workflow**\n1. `nbb_cbso_list_annual_accounts` with the enterprise number (and `year` for one fiscal year): one entry per filing with ReferenceNumber, DepositDate, ExerciseDates (StartDate, EndDate), ModelType (full, abridged, micro, association models), DepositType (Initial or a correction), Language, Currency, company name, address, legal form, legal situation, activity code, general assembly date, AccountingDataURL and DataVersion.\n2. `nbb_cbso_get_annual_account_reference` for the same reference data of one filing.\n3. `nbb_cbso_get_annual_account_data` for the figures: JSON-XBRL by default (the rubric codes of the Belgian schema, e.g. 10/15 equity, 70 turnover, 9904 profit or loss of the period, 9087 average FTE workers) or XBRL. Only standardised accounts have this data; others exist only as PDF.\n4. `nbb_cbso_get_annual_account_pdf` for the published document as a PDF file.\n\nTake the latest filing of an exercise (a correction replaces the initial filing) and say which exercise dates the figures cover.\n\n**Formats**: the API picks the format from the `Accept` header. JSON-XBRL (`application/x.jsonxbrl`) and XBRL (`application/x.xbrl`) can arrive as an attached file rather than inline text; the PDF always does. Large filings can exceed the attachment limit of 10 MB.\n\n**Errors** come as problem JSON (`title`, `status`, `violations`): 400 a malformed enterprise or reference number or a year in the future, 401 a missing or wrong subscription key, 403 a key without an approved subscription to the authentic data product, 404 nothing found, 429 too many calls.\n\n**Limitations**: the archive, extracts (daily batches as zip) and improved-data products of the NBB need separate subscriptions and are not exposed here. Companies exempt from publication have no public documents.",
+  "region": "be",
+  "category": "government",
+  "icon": "nbb-cbso",
+  "docsUrl": "https://developer.cbso.nbb.be/",
+  "prerequisites": "A subscription to the NBB CBSO web services and an approved subscription to the 'NBB CBSO Web Services - Authentic Data' product on developer.cbso.nbb.be, which gives the subscription key.",
+  "requiredEnvVars": ["NBB_CBSO_SUBSCRIPTION_KEY"],
+  "envVarMeta": {
+    "NBB_CBSO_SUBSCRIPTION_KEY": {
+      "label": "Subscription key",
+      "kind": "credential",
+      "secret": true,
+      "help": "On developer.cbso.nbb.be: Profile, subscription to 'NBB CBSO Web Services - Authentic Data', primary key.",
+      "link": "https://developer.cbso.nbb.be/",
+      "pattern": "^[A-Za-z0-9]{20,64}$",
+      "patternMessage": "Paste the primary or secondary key of your Authentic Data subscription (letters and digits only)."
+    }
+  },
+  "verifyHints": {
+    "401": "The NBB refused the subscription key. Copy the primary key of your Authentic Data subscription from your profile on developer.cbso.nbb.be.",
+    "403": "The key is valid, but its subscription does not cover the Authentic Data product, or the NBB has not approved it yet."
+  },
+  "probe": {
+    "tool": "nbb_cbso_list_annual_accounts",
+    "params": { "enterprise_number": "0203201340" }
+  },
+  "connector": {
+    "name": "NBB CBSO Authentic Data",
+    "type": "REST",
+    "baseUrl": "https://ws.cbso.nbb.be/authentic",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "NBB-CBSO-Subscription-Key",
+      "apiKey": "{{NBB_CBSO_SUBSCRIPTION_KEY}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "nbb_cbso_list_annual_accounts",
+      "description": "List the annual accounts a Belgian company filed with the NBB Central Balance Sheet Office and the NBB accepted, by enterprise number. Each entry: ReferenceNumber, DepositDate, ExerciseDates (StartDate, EndDate), ModelType, DepositType (Initial or correction), Language, Currency, EnterpriseName, Address, LegalForm, LegalSituation, ActivityCode, GeneralAssemblyDate, AccountingDataURL, DataVersion. Start here; pass `year` for one fiscal year.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "enterprise_number": { "type": "string", "pattern": "^[01][0-9]{9}$", "description": "10-digit KBO/BCE enterprise number without dots or BE prefix, e.g. 0203201340." },
+          "year": { "type": "integer", "description": "Fiscal year (year of the exercise end date), not later than the current year. Omit for all filings." },
+          "request_id": { "type": "string", "format": "uuid", "default": "3f1c9a52-7d4e-4b8a-9c61-2e5d0f7a8b13", "description": "Version 4 UUID sent as X-Request-Id for tracing; a default is filled in." }
+        },
+        "required": ["enterprise_number"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/legalEntity/{enterprise_number}/references",
+        "queryParams": { "year": "$year" },
+        "headers": { "X-Request-Id": "$request_id", "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "nbb_cbso_get_annual_account_reference",
+      "description": "Get the reference data of one filed annual account by its reference number: deposit date, exercise dates, model type, deposit type, language, currency, company name, address, legal form, legal situation, activity code, general assembly date and data version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference_number": { "type": "string", "description": "ReferenceNumber of the filing from nbb_cbso_list_annual_accounts, e.g. 2023-00123456." },
+          "request_id": { "type": "string", "format": "uuid", "default": "3f1c9a52-7d4e-4b8a-9c61-2e5d0f7a8b13", "description": "Version 4 UUID sent as X-Request-Id for tracing; a default is filled in." }
+        },
+        "required": ["reference_number"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deposit/{reference_number}/reference",
+        "headers": { "X-Request-Id": "$request_id", "Accept": "application/json" }
+      }
+    },
+    {
+      "name": "nbb_cbso_get_annual_account_data",
+      "description": "Get the accounting data of one filed annual account: balance sheet, income statement, notes and social balance as JSON-XBRL (default) or XBRL, coded with the Belgian rubric codes (e.g. 10/15 equity, 70 turnover, 9904 profit or loss). Only standardised accounts have this data; for others use nbb_cbso_get_annual_account_pdf. The answer can arrive as an attached file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference_number": { "type": "string", "description": "ReferenceNumber of the filing from nbb_cbso_list_annual_accounts." },
+          "format": { "type": "string", "enum": ["application/x.jsonxbrl", "application/x.xbrl"], "default": "application/x.jsonxbrl", "description": "JSON-XBRL (default) or XBRL." },
+          "request_id": { "type": "string", "format": "uuid", "default": "3f1c9a52-7d4e-4b8a-9c61-2e5d0f7a8b13", "description": "Version 4 UUID sent as X-Request-Id for tracing; a default is filled in." }
+        },
+        "required": ["reference_number"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deposit/{reference_number}/accountingData",
+        "headers": { "X-Request-Id": "$request_id", "Accept": "$format" },
+        "timeoutMs": 60000
+      },
+      "responseMapping": { "binary": { "maxBytes": 10485760 } }
+    },
+    {
+      "name": "nbb_cbso_get_annual_account_pdf",
+      "description": "Download the published annual account of one filing as a PDF file (the document as filed, or the NBB's PDF reproduction), attached to the result. Works for standardised and non-standardised accounts alike.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference_number": { "type": "string", "description": "ReferenceNumber of the filing from nbb_cbso_list_annual_accounts." },
+          "request_id": { "type": "string", "format": "uuid", "default": "3f1c9a52-7d4e-4b8a-9c61-2e5d0f7a8b13", "description": "Version 4 UUID sent as X-Request-Id for tracing; a default is filled in." }
+        },
+        "required": ["reference_number"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deposit/{reference_number}/accountingData",
+        "headers": { "X-Request-Id": "$request_id", "Accept": "application/pdf" },
+        "timeoutMs": 60000
+      },
+      "responseMapping": { "binary": { "maxBytes": 10485760 } }
+    }
+  ]
+}

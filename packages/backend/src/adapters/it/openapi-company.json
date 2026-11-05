@@ -1,0 +1,769 @@
+{
+  "slug": "openapi-company",
+  "name": "Openapi.com Company",
+  "aliases": [
+    "Openapi Company",
+    "Openapi.it Company",
+    "Openapi visure aziende"
+  ],
+  "description": "Italian and international company data from Openapi.com by VAT number or tax code: company profile at three levels, PEC, SDI code, address, shareholders, stakeholders, beneficial owners, cessation and VAT-group checks, public administrations, split payment, company search, EU VIES checks and worldwide lookups. Read-only; every call is billed per request by Openapi.com.",
+  "instructions": "## Openapi.com Company\nThis connector uses the **Company API of Openapi.com** (`https://company.openapi.com`), which returns data on companies from official registries (chamber of commerce, Revenue Agency, IPA, VIES) by VAT number, tax code or company id: Italian company data at three levels (start, advanced, full), PEC, SDI code, address, shareholders, stakeholders, beneficial owners, cessation and VAT-group checks, public administrations, split payment, a company search, plus EU VAT checks and worldwide lookups.\n\n**Every call is paid.** Openapi.com bills each request to your account (wallet credit or a subscription), at a price per endpoint shown on console.openapi.com; nothing here is free. Pick the cheapest tool that answers the question (it_start or it_name before it_advanced, it_advanced before it_full), do not repeat a lookup whose answer you already have, and run `openapi_company_it_search` with `dryRun` 1 first: it returns the number of matches and the price, which you tell the user before the real search.\n\n**Setup**\n1. Sign in at https://console.openapi.com and top up credit or subscribe to the Company API.\n2. Create a token (Tokens, or the OAuth API) with the Company scopes you want, e.g. `GET:company.openapi.com/IT-advanced`; a token can carry several scopes and is valid for up to a year. Copy it into `OPENAPI_COMPANY_TOKEN`; it is sent as `Authorization: Bearer ...`.\n3. The connector calls production. Openapi.com also runs a sandbox at `https://test.company.openapi.com` with its own sandbox tokens and a fixed list of test companies (docs.openapi.it/company-sandbox-examples.html); to try it, change the connector's base URL to that address and use a sandbox token.\n\n**Identifiers**: an Italian VAT number has 11 digits (`12485671007`), a company tax code usually the same 11 digits, a sole trader's tax code 16 characters. Answers also carry an Openapi `id` that the other Italian tools accept instead. European lookups need the country: `eu_vies_check` takes it separately, `eu_start` as a prefix (`DE123456789`).\n\n**Workflows**\n- Check a customer before invoicing: `openapi_company_it_start` (or `openapi_company_it_name`), then `openapi_company_it_sdi_code` and `openapi_company_it_pec` for the e-invoice recipient code and certified mail; `openapi_company_it_split_payment` and `openapi_company_it_public_administration` for public bodies; `openapi_company_it_closed` to be sure the VAT number is still active; `openapi_company_it_vat_group` for VAT groups.\n- Company profile and due diligence: `openapi_company_it_advanced`, `openapi_company_it_address`, then `openapi_company_it_shareholders`, `openapi_company_it_stakeholders` and `openapi_company_it_ubo`; `openapi_company_it_full` only when the complete file with balance sheets is needed.\n- Find companies: `openapi_company_it_search` (dry run first), `openapi_company_it_legal_forms` for legal-form codes.\n- Outside Italy: `openapi_company_eu_vies_check` for intra-EU VAT validity, `openapi_company_eu_start`, `openapi_company_ww_start` and `openapi_company_ww_advanced`.\n- Slow sources: when the registries are slow a heavy call answers after 30 seconds with a request id (state PENDING, or a redirect to IT-check_id). Call `openapi_company_check_request` with that id a little later instead of repeating the paid lookup.\n\n**Answers** are `{\"data\": ..., \"success\": true, \"message\": \"\", \"error\": null}`; `data` is usually a list with one company. Errors carry `success: false`, an `error` code and a `message`: 401 a missing or wrong token, 402 not enough credit, 403 the token lacks the scope for that endpoint, 404 no company found, 406 a malformed VAT number or tax code, 429 too many requests or VIES busy.\n\n**Limitations**: the asynchronous POST variants with callbacks, the AML and marketing packages and the change monitoring (`/monitor`) are not exposed here, nor the country-specific FR, DE, ES, PT, GB, BE, AT, CH and PL endpoints (use the worldwide tools).",
+  "region": "it",
+  "category": "enrichment",
+  "icon": "openapi-company",
+  "docsUrl": "https://console.openapi.com/apis/company/documentation",
+  "prerequisites": "An Openapi.com account (console.openapi.com) with credit or a Company API subscription, and a token with the Company scopes. Each call is billed.",
+  "requiredEnvVars": [
+    "OPENAPI_COMPANY_TOKEN"
+  ],
+  "envVarMeta": {
+    "OPENAPI_COMPANY_TOKEN": {
+      "label": "Openapi.com token",
+      "kind": "credential",
+      "secret": true,
+      "help": "On console.openapi.com create a token with the Company scopes (e.g. GET:company.openapi.com/IT-advanced) and paste it here, without Bearer.",
+      "link": "https://console.openapi.com/apis/oauth/documentation",
+      "pattern": "^(?![Bb]earer )[A-Za-z0-9._-]{16,}$",
+      "patternMessage": "Paste only the token, without Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Openapi.com refused the token: it is wrong, expired or a sandbox token used on production.",
+    "402": "The Openapi.com account has no credit left for this call. Top up on console.openapi.com.",
+    "403": "The token lacks the scope for this Company endpoint. Create a token with the GET:company.openapi.com scopes you need."
+  },
+  "connector": {
+    "name": "Openapi.com Company API",
+    "type": "REST",
+    "baseUrl": "https://company.openapi.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{OPENAPI_COMPANY_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "openapi_company_it_start",
+      "description": "Basic data of an Italian company (paid call): company name, VAT number, tax code, registered office address, activity status and the Openapi company id. The cheapest full lookup by VAT number or tax code; start here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Italian VAT number (partita IVA, 11 digits, e.g. 12485671007), tax code (codice fiscale) or the Openapi company id from an earlier answer."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-start/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_advanced",
+      "description": "Advanced data of an Italian company (paid call): everything in it_start plus ATECO activity code, legal form, REA number and chamber of commerce, PEC, SDI code, share capital, turnover and employees of the latest balance sheets, registration and cessation dates. Use it for a company profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Italian VAT number (partita IVA, 11 digits, e.g. 12485671007), tax code (codice fiscale) or the Openapi company id from an earlier answer."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-advanced/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_full",
+      "description": "All available data of an Italian company in one answer (the most expensive call of the API): the advanced data plus managers, shareholders, stakeholders and over 400 balance-sheet figures. Use it only when the user needs the complete file; otherwise prefer it_advanced. May answer with a request id to poll with check_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vat_or_tax_code": {
+            "type": "string",
+            "description": "Italian VAT number or tax code."
+          }
+        },
+        "required": [
+          "vat_or_tax_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-full/{vat_or_tax_code}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_name",
+      "description": "Name and town of an Italian company (paid call): company name, VAT number, tax code and town. Use it to confirm whose VAT number it is.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Italian VAT number (partita IVA, 11 digits, e.g. 12485671007), tax code (codice fiscale) or the Openapi company id from an earlier answer."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-name/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_address",
+      "description": "Registered office address of an Italian company (paid call): street, number, ZIP code, town, province, region and coordinates when available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Italian VAT number (partita IVA, 11 digits, e.g. 12485671007), tax code (codice fiscale) or the Openapi company id from an earlier answer."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-address/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_pec",
+      "description": "Certified e-mail address (PEC) of an Italian company (paid call), with its history of earlier PEC addresses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Italian VAT number (partita IVA, 11 digits, e.g. 12485671007), tax code (codice fiscale) or the Openapi company id from an earlier answer."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-pec/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_sdi_code",
+      "description": "SDI recipient code (codice destinatario) of an Italian company for electronic invoices through the Sistema di Interscambio, updated in real time (paid call). Use it before issuing an e-invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Italian VAT number (partita IVA, 11 digits, e.g. 12485671007), tax code (codice fiscale) or the Openapi company id from an earlier answer."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-sdicode/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_shareholders",
+      "description": "Shareholders of an Italian company holding more than 10 percent (paid call): name or company name, tax code and share percentage.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Italian VAT number (partita IVA, 11 digits, e.g. 12485671007), tax code (codice fiscale) or the Openapi company id from an earlier answer."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-shareholders/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_stakeholders",
+      "description": "Stakeholders of an Italian company (paid call): managers and officers with their roles, shareholders and the companies it holds stakes in. May answer with a request id to poll with check_request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vat_or_tax_code": {
+            "type": "string",
+            "description": "Italian VAT number or tax code."
+          }
+        },
+        "required": [
+          "vat_or_tax_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-stakeholders/{vat_or_tax_code}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_ubo",
+      "description": "Ultimate beneficial owners of an Italian company (paid call): name, surname, tax code and the share or criterion that makes each person a beneficial owner.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Italian VAT number (partita IVA, 11 digits, e.g. 12485671007), tax code (codice fiscale) or the Openapi company id from an earlier answer."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-ubo/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_closed",
+      "description": "Whether an Italian VAT number has ceased according to the Italian Revenue Agency, checked in real time (paid call): taxCodeCeased true or false, with the cessation date when known.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Italian VAT number (partita IVA, 11 digits, e.g. 12485671007), tax code (codice fiscale) or the Openapi company id from an earlier answer."
+          },
+          "date": {
+            "type": "string",
+            "description": "Optional reference date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-closed/{id}",
+        "queryParams": {
+          "date": "$date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_vat_group",
+      "description": "Whether an Italian company belongs to a VAT group and leads it (paid call). With tax_code it also tells whether that tax code is consistent with the VAT number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vat_code": {
+            "type": "string",
+            "description": "Italian VAT number (or Openapi company id)."
+          },
+          "tax_code": {
+            "type": "string",
+            "description": "Tax code to check against the VAT number."
+          }
+        },
+        "required": [
+          "vat_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-vatgroup/{vat_code}",
+        "queryParams": {
+          "taxCode": "$tax_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_public_administration",
+      "description": "Data of an Italian public administration by tax code or VAT number (paid call): institution id, name, type, address, PEC and its IPA offices with their SDI codes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tax_or_vat_code": {
+            "type": "string",
+            "description": "Tax code or VAT number of the public body."
+          }
+        },
+        "required": [
+          "tax_or_vat_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-pa/{tax_or_vat_code}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_split_payment",
+      "description": "Whether a company is on the Italian split-payment (scissione dei pagamenti) lists, with name and category (paid call). Use it to decide whether an invoice needs split payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tax_or_vat_code": {
+            "type": "string",
+            "description": "Tax code or VAT number."
+          }
+        },
+        "required": [
+          "tax_or_vat_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-splitpayment/{tax_or_vat_code}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_search",
+      "description": "Search Italian companies by name, place, ATECO code, legal form, status, turnover, employees, shareholder, PEC or SDI code (paid call, priced by results and enrichment). Returns ids, or company data with dataEnrichment. Run with dryRun 1 first to get the number of matches and the price, and tell the user before the real search. At most 1000 results per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "description": "Company name words (at least 3 characters); * as wildcard at the start or end."
+          },
+          "autocomplete": {
+            "type": "string",
+            "description": "Names beginning with this text."
+          },
+          "province": {
+            "type": "string",
+            "description": "Province code, e.g. MI, RM."
+          },
+          "townCode": {
+            "type": "string",
+            "description": "Cadastral (Belfiore) code of the town, e.g. F205 for Milan."
+          },
+          "atecoCode": {
+            "type": "string",
+            "description": "ATECO activity code, e.g. 62.01.00."
+          },
+          "cciaa": {
+            "type": "string",
+            "description": "Chamber of commerce province code."
+          },
+          "reaCode": {
+            "type": "string",
+            "description": "REA number."
+          },
+          "sdiCode": {
+            "type": "string",
+            "description": "SDI recipient code."
+          },
+          "pec": {
+            "type": "string",
+            "description": "PEC address."
+          },
+          "legalFormCode": {
+            "type": "string",
+            "description": "Legal form code (see it_legal_forms)."
+          },
+          "shareHolderTaxCode": {
+            "type": "string",
+            "description": "Tax code of a shareholder: companies where this person or company holds shares."
+          },
+          "activityStatus": {
+            "type": "string",
+            "enum": [
+              "ATTIVA",
+              "CESSATA",
+              "REGISTRATA",
+              "INATTIVA",
+              "SOSPESA",
+              "IN_ISCRIZIONE"
+            ],
+            "description": "Chamber of commerce status."
+          },
+          "minTurnover": {
+            "type": "integer",
+            "description": "Minimum turnover in euro."
+          },
+          "maxTurnover": {
+            "type": "integer",
+            "description": "Maximum turnover in euro."
+          },
+          "minEmployees": {
+            "type": "integer",
+            "description": "Minimum number of employees."
+          },
+          "maxEmployees": {
+            "type": "integer",
+            "description": "Maximum number of employees."
+          },
+          "lat": {
+            "type": "number",
+            "description": "Latitude for a radius search."
+          },
+          "long": {
+            "type": "number",
+            "description": "Longitude for a radius search."
+          },
+          "radius": {
+            "type": "integer",
+            "description": "Radius in meters around lat/long."
+          },
+          "creationTimestamp": {
+            "type": "integer",
+            "description": "Only companies created after this Unix timestamp."
+          },
+          "lastUpdateTimestamp": {
+            "type": "integer",
+            "description": "Only companies updated after this Unix timestamp."
+          },
+          "dataEnrichment": {
+            "type": "string",
+            "enum": [
+              "start",
+              "advanced",
+              "pec",
+              "address",
+              "shareholders",
+              "name"
+            ],
+            "description": "Data to return for each hit; without it only ids are returned. Enrichment is billed per result."
+          },
+          "dryRun": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: return only the number of matches and the price, without results. Use it first."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Results to skip, for paging."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Results to return, at most 1000."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-search",
+        "queryParams": {
+          "companyName": "$companyName",
+          "autocomplete": "$autocomplete",
+          "province": "$province",
+          "townCode": "$townCode",
+          "atecoCode": "$atecoCode",
+          "cciaa": "$cciaa",
+          "reaCode": "$reaCode",
+          "sdiCode": "$sdiCode",
+          "pec": "$pec",
+          "legalFormCode": "$legalFormCode",
+          "shareHolderTaxCode": "$shareHolderTaxCode",
+          "activityStatus": "$activityStatus",
+          "minTurnover": "$minTurnover",
+          "maxTurnover": "$maxTurnover",
+          "minEmployees": "$minEmployees",
+          "maxEmployees": "$maxEmployees",
+          "lat": "$lat",
+          "long": "$long",
+          "radius": "$radius",
+          "creationTimestamp": "$creationTimestamp",
+          "lastUpdateTimestamp": "$lastUpdateTimestamp",
+          "dataEnrichment": "$dataEnrichment",
+          "dryRun": "$dryRun",
+          "skip": "$skip",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_it_legal_forms",
+      "description": "List the codes and descriptions of Italian legal forms (e.g. SR for S.R.L.), for reading legal-form codes in answers or filtering it_search.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-legalforms"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_check_request",
+      "description": "Get the result of a lookup that did not finish within 30 seconds (it_full, it_stakeholders and other heavy calls answer with a request id and state PENDING when the official sources are slow). Returns state and, once DONE, the company data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "The id returned with state PENDING."
+          }
+        },
+        "required": [
+          "request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/IT-check_id/{request_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_eu_vies_check",
+      "description": "Check in the EU VIES system whether a European VAT number is valid for intra-EU cross-border transactions (paid call): valid, normalised VAT number, company name and address when the member state publishes them. 429 means the national registry is busy; retry after a short wait.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "Two-letter country code, e.g. DE, FR, IT (EL for Greece)."
+          },
+          "vat_code": {
+            "type": "string",
+            "description": "VAT number without the country prefix."
+          }
+        },
+        "required": [
+          "country",
+          "vat_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/EU-vies/{country}/{vat_code}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_eu_start",
+      "description": "Basic data of a European company by VAT number with its country prefix (paid call): whether the VAT number is valid and formally valid, country, company name and address. Accepted prefixes: AT, BE, BG, CY, CZ, DE, DK, EE, EL, ES, FI, FR, GB, HR, HU, IE, IT, LT, LU, LV, MT, NL, PL, PT, RO, SE, SI, SK.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vat_code": {
+            "type": "string",
+            "description": "VAT number with country prefix, e.g. DE123456789."
+          }
+        },
+        "required": [
+          "vat_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/EU-start/{vat_code}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_ww_start",
+      "description": "Basic data of a company in any country (paid call): name, identifiers, address and status. Use it for companies outside Italy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "ISO two-letter country code, e.g. FR, DE, US."
+          },
+          "company_id": {
+            "type": "string",
+            "description": "VAT number, tax code, company number or Openapi company id."
+          }
+        },
+        "required": [
+          "country",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/WW-start/{country}/{company_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "openapi_company_ww_advanced",
+      "description": "Advanced data of a company in any country (paid call): basic data plus activity codes, legal form, balance-sheet figures and employees where the country's sources provide them. Use it for companies outside Italy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "ISO two-letter country code, e.g. FR, DE, US."
+          },
+          "company_id": {
+            "type": "string",
+            "description": "VAT number, tax code, company number or Openapi company id."
+          }
+        },
+        "required": [
+          "country",
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/WW-advanced/{country}/{company_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

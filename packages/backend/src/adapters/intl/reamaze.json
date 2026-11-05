@@ -1,0 +1,654 @@
+{
+  "slug": "reamaze",
+  "name": "Re:amaze",
+  "aliases": ["Re amaze"],
+  "description": "Re:amaze helpdesk from any AI agent: read and answer conversations across email, chat and social channels, post replies and internal notes, manage contacts and their notes, FAQ articles, channels, staff, response templates, satisfaction ratings and support reports.",
+  "instructions": "## Re:amaze\nThis connector uses the **Re:amaze JSON API** (`https://<brand>.reamaze.io/api/v1`) of the Re:amaze helpdesk: conversations and their messages, contacts, FAQ articles, channels, staff, response templates, satisfaction ratings and reports.\n\n**Setup**\n1. In Re:amaze open **Settings, Developer, API Token** and click **Generate New Token**. Every staff user has their own token; calls act as that user.\n2. Set `REAMAZE_LOGIN_EMAIL` to the email you sign in to Re:amaze with and `REAMAZE_API_TOKEN` to the token.\n3. Set `REAMAZE_BRAND` to the brand's host name, the part before `.reamaze.io` (Settings, Brand Settings shows it): `mybrand` for `mybrand.reamaze.io`. API calls are scoped to that brand; contacts and staff belong to the whole account.\n\n**Authentication**: HTTP Basic, login email as user name and API token as password, over HTTPS.\n\n**Identifiers**\n- A conversation is identified by its `slug` (e.g. `knock-knock-a1b2c3`), taken from `reamaze_list_conversations`.\n- A channel (internally `category`) is identified by its slug, e.g. `support`; `reamaze_list_channels` lists them.\n- A contact is identified by email address, or by mobile number in E.164 form (`+12223334444`) together with `identifier_type` `mobile`.\n- Articles by slug, response templates by numeric id.\n\n**Conversation status codes**: 0 Open, 1 Responded, 2 Done, 3 Spam, 4 Archived, 5 On Hold, 6 Auto-Done, 7 AI Agent Assigned, 8 AI Agent Done, 9 Spam (AI). **Message visibility**: 0 regular reply (sent to the customer), 1 internal note (staff only).\n\n**Workflows**\n- Triage the inbox: `reamaze_list_conversations` with `filter` `open` or `unassigned`, then `reamaze_get_conversation` and `reamaze_list_conversation_messages` for the thread. `reamaze_list_messages` lists messages across all conversations (by sender, channel or date).\n- Answer: `reamaze_create_message` with `visibility` 0 sends a reply to the customer at once (email, chat, SMS ...), so show the user the text and wait for a yes; `visibility` 1 adds an internal note. Then `reamaze_update_conversation` to set the status (2 Done), tags or assignee.\n- Open a new thread for a customer: `reamaze_create_conversation` with a channel slug, subject, message body and the customer's name and email.\n- Look up a customer: `reamaze_list_contacts` with `q` (name or email), `reamaze_get_contact_identities`, `reamaze_list_contact_notes`; change them with `reamaze_create_contact`, `reamaze_update_contact` and `reamaze_add_contact_note`.\n- Knowledge base: `reamaze_list_articles` (search with `q`), `reamaze_get_article`, `reamaze_create_article`, `reamaze_update_article`; canned answers with `reamaze_list_response_templates` and `reamaze_get_response_template`.\n- Team and setup: `reamaze_list_channels`, `reamaze_get_channel`, `reamaze_list_staff`.\n- Quality: `reamaze_get_report` (volume, response_time, staff, tags or channel_summary between two dates, at most one year) and `reamaze_list_satisfaction_ratings`. Both need the access_reports permission on the token's user.\n\n**Pagination and limits**: lists return 30 items per page with `page_size`, `page_count` and `total_count`; pass `page` (from 1) for the next one. The API is rate limited per token per minute and answers 429 above it; wait and retry.\n\n**Errors**: 401 a wrong email or token, 403 the user lacks a permission (reports, ratings), 404 an unknown slug or a wrong brand, 422 a create or update the API refused (the body says why).\n\n**Limitations**: deleting or editing contact notes, contact identities, staff user creation, the Status Page API and response template changes are not exposed here.",
+  "region": "intl",
+  "category": "support",
+  "icon": "reamaze",
+  "docsUrl": "https://www.reamaze.com/api",
+  "prerequisites": "A Re:amaze account and a staff user's API token (Settings, Developer, API Token), plus the brand host name shown in Brand Settings.",
+  "requiredEnvVars": ["REAMAZE_BRAND", "REAMAZE_LOGIN_EMAIL", "REAMAZE_API_TOKEN"],
+  "envVarMeta": {
+    "REAMAZE_BRAND": {
+      "label": "Brand host name",
+      "kind": "address",
+      "help": "The part before .reamaze.io in your brand's address (Settings, Brand Settings): mybrand for mybrand.reamaze.io.",
+      "example": "mybrand",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+      "patternMessage": "Only the brand name before .reamaze.io, letters, digits and dashes."
+    },
+    "REAMAZE_LOGIN_EMAIL": {
+      "label": "Login email",
+      "kind": "setting",
+      "help": "The email address the token's staff user signs in to Re:amaze with.",
+      "example": "agent@yourcompany.com",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "patternMessage": "An email address."
+    },
+    "REAMAZE_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Re:amaze: Settings, Developer, API Token, Generate New Token.",
+      "link": "https://www.reamaze.com/api"
+    }
+  },
+  "verifyHints": {
+    "401": "Re:amaze refused the login email or API token. Check that the email is the one of the user who generated the token (Settings, Developer, API Token).",
+    "403": "The token works, but its user lacks the permission for this area (reports and satisfaction ratings need access_reports).",
+    "404": "No Re:amaze brand answers at this host name. It is the part before .reamaze.io shown in Settings, Brand Settings."
+  },
+  "probe": {
+    "tool": "reamaze_list_channels"
+  },
+  "connector": {
+    "name": "Re:amaze API v1",
+    "type": "REST",
+    "baseUrl": "https://{{REAMAZE_BRAND}}.reamaze.io/api/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{REAMAZE_LOGIN_EMAIL}}",
+      "password": "{{REAMAZE_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "reamaze_list_conversations",
+      "description": "List conversations of the brand, 30 per page, newest first by creation unless `sort` says otherwise. Each has slug (its id), subject, status (0 Open, 1 Responded, 2 Done, 3 Spam, 4 Archived, 5 On Hold), tag_list, first message, last_customer_message, author, assignee, category (channel) and followers. By default only unarchived conversations are returned. Use it to triage the inbox or find a customer's threads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "enum": ["archived", "open", "unassigned", "all"], "description": "Only archived, open, unassigned or all conversations. Default: unarchived." },
+          "for": { "type": "string", "description": "Email of a user (customer or staff): only conversations relevant to that user." },
+          "for_id": { "type": "string", "description": "SSO user id of a customer: only conversations relevant to that customer." },
+          "sort": { "type": "string", "enum": ["updated", "changed"], "description": "updated: by last customer message, newest first; changed: by any update or status change." },
+          "tag": { "type": "string", "description": "Comma-separated tags the conversations must carry." },
+          "category": { "type": "string", "description": "Channel slug (e.g. support) to list only that channel." },
+          "origin": { "type": "string", "description": "Where the conversation was created: number or name, e.g. 1 or email, 0 or native (chat), 9 or sms, 15 or whatsapp." },
+          "start_date": { "type": "string", "description": "ISO 8601 date-time: latest customer message on or after it." },
+          "end_date": { "type": "string", "description": "ISO 8601 date-time: latest customer message on or before it." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations",
+        "queryParams": {
+          "filter": "$filter",
+          "for": "$for",
+          "for_id": "$for_id",
+          "sort": "$sort",
+          "tag": "$tag",
+          "category": "$category",
+          "origin": "$origin",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "reamaze_get_conversation",
+      "description": "Get one conversation: subject, slug, status, tags, first message, last staff and last customer message, author, assignee, channel, custom data and followers. By default `slug` is the conversation slug; with id_type ref it is the reference id, with id_type origin the origin id within a channel (then pass category).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string", "description": "Conversation slug (or reference / origin id with id_type)." },
+          "id_type": { "type": "string", "enum": ["ref", "origin"], "description": "How to read `slug`: ref for a reference id, origin for an origin id." },
+          "category": { "type": "string", "description": "Channel slug, required with id_type origin." },
+          "channel": { "type": "string", "description": "Channel type, optional with id_type origin." }
+        },
+        "required": ["slug"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{slug}",
+        "queryParams": {
+          "id_type": "$id_type",
+          "category": "$category",
+          "channel": "$channel"
+        }
+      }
+    },
+    {
+      "name": "reamaze_list_conversation_messages",
+      "description": "List the messages of one conversation, newest first, 30 per page: body, visibility (0 reply, 1 internal note), origin, created_at, user (sender), recipients and attachments. Use it to read a whole thread before answering.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string", "description": "Conversation slug." },
+          "filter": { "type": "string", "enum": ["staff", "customer"], "description": "Only staff or only customer messages." },
+          "include": { "type": "string", "enum": ["original_body"], "description": "original_body adds the message HTML when there is one." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." }
+        },
+        "required": ["slug"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conversations/{slug}/messages",
+        "queryParams": {
+          "filter": "$filter",
+          "include": "$include",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "reamaze_list_messages",
+      "description": "List messages across all conversations of the brand, newest first, 30 per page, each with its conversation (subject, slug, channel). Filter by sender type, sender email, channel, tag, origin or creation date. Use it for activity over a period, e.g. everything a staff member sent yesterday.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": { "type": "string", "enum": ["staff", "customer"], "description": "Only staff or only customer messages." },
+          "sent_by": { "type": "string", "description": "Email of the sender." },
+          "category": { "type": "string", "description": "Channel slug." },
+          "tag": { "type": "string", "description": "Comma-separated conversation tags." },
+          "origin": { "type": "integer", "description": "Origin code: 0 chat, 1 email, 2 Twitter, 3 Facebook, 7 API, 8 Instagram, 9 SMS, 10 voice, 15 WhatsApp, 16 staff outbound, 17 contact form, 19 Instagram DM, 22 TikTok." },
+          "start_date": { "type": "string", "description": "ISO 8601 date-time: created on or after it." },
+          "end_date": { "type": "string", "description": "ISO 8601 date-time: created on or before it." },
+          "include": { "type": "string", "enum": ["original_body"], "description": "original_body adds the message HTML when there is one." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages",
+        "queryParams": {
+          "filter": "$filter",
+          "sent_by": "$sent_by",
+          "category": "$category",
+          "tag": "$tag",
+          "origin": "$origin",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "include": "$include",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "reamaze_create_conversation",
+      "description": "Create a new conversation on behalf of a customer in a channel, with its first message. Returns the new conversation with its slug. Notifications go out as for any new conversation unless suppress_notifications is true. Use it for support forms, follow-ups or outbound threads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": { "type": "string", "description": "Slug of the channel to create it in (reamaze_list_channels)." },
+          "subject": { "type": "string", "description": "Subject line." },
+          "body": { "type": "string", "description": "First message text (Markdown)." },
+          "user_name": { "type": "string", "description": "Customer name." },
+          "user_email": { "type": "string", "description": "Customer email." },
+          "user_data": { "type": "object", "description": "Customer data attributes, one level of key/value pairs. Replaces the customer's existing attributes." },
+          "recipients": { "type": "array", "items": { "type": "string" }, "description": "Extra participants (emails) copied on this and later messages." },
+          "tag_list": { "type": "array", "items": { "type": "string" }, "description": "Tags to set." },
+          "status": { "type": "integer", "description": "Initial status: 0 Open, 1 Responded, 2 Done, 5 On Hold." },
+          "hold_until": { "type": "string", "description": "ISO 8601 date-time when status is 5 (On Hold)." },
+          "assignee": { "type": "string", "description": "Email of the staff user to assign." },
+          "data": { "type": "object", "description": "Custom field attributes of the conversation, key/value pairs." },
+          "attachments": { "type": "array", "items": { "type": "string", "format": "uri" }, "description": "URLs of files Re:amaze fetches and attaches." },
+          "suppress_notifications": { "type": "boolean", "description": "true: send no email or integration notifications for this message." }
+        },
+        "required": ["category", "subject", "body", "user_email"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations",
+        "bodyMapping": {
+          "conversation": {
+            "subject": "$subject",
+            "category": "$category",
+            "tag_list": "$tag_list",
+            "status": "$status",
+            "hold_until": "$hold_until",
+            "assignee": "$assignee",
+            "data": "$data",
+            "message": {
+              "body": "$body",
+              "recipients": "$recipients",
+              "attachments": "$attachments",
+              "suppress_notifications": "$suppress_notifications"
+            },
+            "user": {
+              "name": "$user_name",
+              "email": "$user_email",
+              "data": "$user_data"
+            }
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true }
+    },
+    {
+      "name": "reamaze_update_conversation",
+      "description": "Update a conversation: status (e.g. 2 Done, 5 On Hold with hold_until), tags (replaces the tag list), custom data, assignee, or move it to another email channel. Returns the updated conversation. Pass only what should change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string", "description": "Conversation slug." },
+          "status": { "type": "integer", "description": "0 Open, 1 Responded, 2 Done, 3 Spam, 4 Archived, 5 On Hold." },
+          "hold_until": { "type": "string", "description": "ISO 8601 date-time when status is 5 (On Hold)." },
+          "tag_list": { "type": "array", "items": { "type": "string" }, "description": "The full new list of tags." },
+          "data": { "type": "object", "description": "Custom field attributes to set, key/value pairs." },
+          "assignee": {
+            "type": "object",
+            "description": "Staff user to assign, as {\"email\": \"staff@example.com\"}.",
+            "properties": { "email": { "type": "string" } },
+            "required": ["email"]
+          },
+          "category": { "type": "string", "description": "Slug of an email channel to move the conversation to." },
+          "brand": { "type": "string", "description": "Brand host name of the destination channel, only when moving to another brand." }
+        },
+        "required": ["slug"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/conversations/{slug}",
+        "bodyMapping": {
+          "conversation": {
+            "status": "$status",
+            "hold_until": "$hold_until",
+            "tag_list": "$tag_list",
+            "data": "$data",
+            "assignee": "$assignee",
+            "category": "$category",
+            "brand": "$brand"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "reamaze_create_message",
+      "description": "Add a message to a conversation. visibility 0 (default) is a reply that Re:amaze sends to the customer at once over the conversation's channel; visibility 1 is an internal note only staff see. Show the user a reply's text before sending. Returns the created message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string", "description": "Conversation slug." },
+          "body": { "type": "string", "description": "Message text (Markdown)." },
+          "visibility": { "type": "integer", "enum": [0, 1], "description": "0 reply to the customer, 1 internal note." },
+          "user": {
+            "type": "object",
+            "description": "Sender as {\"email\": ..., \"name\": ...}; default is the token's user.",
+            "properties": { "email": { "type": "string" }, "name": { "type": "string" } }
+          },
+          "recipients": { "type": "array", "items": { "type": "string" }, "description": "Emails or phone numbers to receive this and later messages." },
+          "attachment": { "type": "string", "format": "uri", "description": "URL of a file Re:amaze fetches and attaches." },
+          "origin_id": { "type": "string", "description": "Your unique id for the message, to avoid duplicates." },
+          "suppress_notifications": { "type": "boolean", "description": "true: send no email or integration notifications." },
+          "suppress_autoresolve": { "type": "boolean", "description": "true: do not mark the conversation Done after a staff reply." },
+          "suppress_surveys": { "type": "boolean", "description": "true: send no satisfaction survey." }
+        },
+        "required": ["slug", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/conversations/{slug}/messages",
+        "bodyMapping": {
+          "message": {
+            "body": "$body",
+            "visibility": "$visibility",
+            "user": "$user",
+            "recipients": "$recipients",
+            "attachment": "$attachment",
+            "origin_id": "$origin_id",
+            "suppress_notifications": "$suppress_notifications",
+            "suppress_autoresolve": "$suppress_autoresolve",
+            "suppress_surveys": "$suppress_surveys"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true }
+    },
+    {
+      "name": "reamaze_list_contacts",
+      "description": "List or search the account's contacts (customers), 30 per page: name, email, friendly_name, mobile and notes. Search by name or email with `q`. Contacts belong to the account, not to one brand.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Search text over name and email." },
+          "type": { "type": "string", "enum": ["email", "mobile"], "description": "Only contacts with an email address or with a phone number." },
+          "sort": { "type": "string", "enum": ["date"], "description": "date: newest first. Default: by name." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "q": "$q",
+          "type": "$type",
+          "sort": "$sort",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "reamaze_get_contact_identities",
+      "description": "List the identities of one contact: each type (email, mobile, twitter, facebook, instagram, igsid) and identifier. Use it to see every channel a customer can be reached on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Contact email address." }
+        },
+        "required": ["email"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{email}/identities" }
+    },
+    {
+      "name": "reamaze_create_contact",
+      "description": "Create a contact with an email or a mobile number (E.164, e.g. +12223334444). Optional: name, your own user id, avatar URL, notes and data attributes. Returns the contact; 422 when it exists or is invalid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Full name." },
+          "email": { "type": "string", "description": "Email address (this or mobile is required)." },
+          "mobile": { "type": "string", "description": "Phone number in E.164 form without spaces." },
+          "id": { "type": "string", "description": "The contact's id in your own application or login system." },
+          "external_avatar_url": { "type": "string", "format": "uri", "description": "Absolute URL of an avatar image." },
+          "notes": { "type": "array", "items": { "type": "string" }, "description": "Notes to create, one per entry." },
+          "data": { "type": "object", "description": "Customer data attributes, one level of key/value pairs." }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "contact": {
+            "name": "$name",
+            "email": "$email",
+            "mobile": "$mobile",
+            "id": "$id",
+            "external_avatar_url": "$external_avatar_url",
+            "notes": "$notes",
+            "data": "$data"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true }
+    },
+    {
+      "name": "reamaze_update_contact",
+      "description": "Update a contact's name, friendly name, avatar URL or data attributes, and optionally add notes. Email and mobile cannot be changed. The contact is found by email, or by another identifier with identifier_type (mobile, facebook, twitter, instagram).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string", "description": "Contact email, or the value matching identifier_type (e.g. +12223334444)." },
+          "identifier_type": { "type": "string", "enum": ["mobile", "facebook", "twitter", "instagram"], "description": "Type of `identifier` when it is not an email." },
+          "name": { "type": "string", "description": "Full name." },
+          "friendly_name": { "type": "string", "description": "Short name used in greetings." },
+          "external_avatar_url": { "type": "string", "format": "uri", "description": "Absolute URL of an avatar image." },
+          "data": { "type": "object", "description": "Customer data attributes, one level of key/value pairs." },
+          "notes": { "type": "array", "items": { "type": "string" }, "description": "New notes to add, one per entry." }
+        },
+        "required": ["identifier"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{identifier}",
+        "queryParams": { "identifier_type": "$identifier_type" },
+        "bodyMapping": {
+          "contact": {
+            "name": "$name",
+            "friendly_name": "$friendly_name",
+            "external_avatar_url": "$external_avatar_url",
+            "data": "$data",
+            "notes": "$notes"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true }
+    },
+    {
+      "name": "reamaze_list_contact_notes",
+      "description": "List all notes on one contact: id, note text, created_at, updated_at and creator (staff name and email).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string", "description": "Contact email or phone number." }
+        },
+        "required": ["identifier"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/contacts/{identifier}/notes" }
+    },
+    {
+      "name": "reamaze_add_contact_note",
+      "description": "Add one note to a contact, optionally attributed to another staff user. Returns all notes of the contact including the new one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string", "description": "Contact email or phone number." },
+          "body": { "type": "string", "description": "Note text." },
+          "creator_email": { "type": "string", "description": "Email of the staff user the note is attributed to. Default: the token's user." },
+          "created_at": { "type": "string", "description": "ISO 8601 date-time of the note. Default: now." }
+        },
+        "required": ["identifier", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/{identifier}/notes",
+        "bodyMapping": {
+          "body": "$body",
+          "creator_email": "$creator_email",
+          "created_at": "$created_at"
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true }
+    },
+    {
+      "name": "reamaze_list_articles",
+      "description": "List or search the brand's FAQ (help center) articles, 30 per page: title, body, slug, status (0 Published, 1 Draft, 4 Internal), url, author and topic. Default: published articles only. Use it to find an answer to quote to a customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Keywords to search for." },
+          "status": { "type": "string", "enum": ["published", "draft", "internal"], "description": "Which articles to list. Default: published." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/articles",
+        "queryParams": {
+          "q": "$q",
+          "status": "$status",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "reamaze_get_article",
+      "description": "Get one FAQ article by slug: title, full body, status, url, author, topic and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string", "description": "Article slug." }
+        },
+        "required": ["slug"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/articles/{slug}" }
+    },
+    {
+      "name": "reamaze_create_article",
+      "description": "Create a FAQ article in a topic. status 1 (Draft) keeps it unpublished for review; 0 publishes it, 4 makes it internal. Returns the new article.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic_slug": { "type": "string", "description": "Slug of the FAQ topic (the topic.slug of an existing article)." },
+          "title": { "type": "string", "description": "Article title." },
+          "body": { "type": "string", "description": "Article body." },
+          "status": { "type": "integer", "enum": [0, 1, 4], "description": "0 Published, 1 Draft, 4 Internal." }
+        },
+        "required": ["topic_slug", "title", "body"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/topics/{topic_slug}/articles",
+        "bodyMapping": {
+          "article": {
+            "title": "$title",
+            "body": "$body",
+            "status": "$status"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true }
+    },
+    {
+      "name": "reamaze_update_article",
+      "description": "Update a FAQ article's title, body or status (0 Published, 1 Draft, 4 Internal). Returns the updated article.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string", "description": "Article slug." },
+          "title": { "type": "string", "description": "New title." },
+          "body": { "type": "string", "description": "New body; replaces the old one." },
+          "status": { "type": "integer", "enum": [0, 1, 4], "description": "0 Published, 1 Draft, 4 Internal." }
+        },
+        "required": ["slug"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/articles/{slug}",
+        "bodyMapping": {
+          "article": {
+            "title": "$title",
+            "body": "$body",
+            "status": "$status"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "reamaze_list_channels",
+      "description": "List the brand's channels: name, slug (used as category elsewhere), email, channel type (1 Email, 2 Twitter, 3 Facebook, 6 Chat, 8 Instagram, 9 SMS, 10 Voice, 12 Messenger, 15 WhatsApp, 16 Instagram DM, 20 TikTok), visibility, signature and brand. Also checks the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": { "type": "string", "enum": ["email", "facebook", "twitter", "chat"], "description": "Only channels of this type." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels",
+        "queryParams": { "channel": "$channel" }
+      }
+    },
+    {
+      "name": "reamaze_get_channel",
+      "description": "Get one channel by slug: name, email, type, visibility, spam filter, reply-from settings, signature, verification state and brand.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string", "description": "Channel slug." }
+        },
+        "required": ["slug"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/channels/{slug}" }
+    },
+    {
+      "name": "reamaze_list_staff",
+      "description": "List the account's staff users, 30 per page, oldest first: name, email, created_at and role. Use the emails to assign conversations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/staff",
+        "queryParams": { "page": "$page" }
+      }
+    },
+    {
+      "name": "reamaze_list_response_templates",
+      "description": "List or search response templates (canned replies) of the brand, including the user's personal ones: id, name, body and template group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Keywords to search for." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/response_templates",
+        "queryParams": {
+          "q": "$q",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "reamaze_get_response_template",
+      "description": "Get one response template (canned reply) by id: its name, full body text and template group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Response template id." }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": { "method": "GET", "path": "/response_templates/{id}" }
+    },
+    {
+      "name": "reamaze_list_satisfaction_ratings",
+      "description": "List customer satisfaction survey ratings, 30 per page: id, rating (1 to 5), comment, user_id, assignee_id, conversation_id and timestamps. Default: all brands of the account. Needs the access_reports permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand": { "type": "string", "description": "Brand host name to filter on, or all_brands." },
+          "rating": { "type": "integer", "minimum": 1, "maximum": 5, "description": "Only this rating." },
+          "assignee_id": { "type": "string", "description": "Only ratings of conversations assigned to this staff id." },
+          "created_after": { "type": "string", "description": "ISO 8601 date-time." },
+          "created_before": { "type": "string", "description": "ISO 8601 date-time." },
+          "updated_after": { "type": "string", "description": "ISO 8601 date-time." },
+          "updated_before": { "type": "string", "description": "ISO 8601 date-time." },
+          "page": { "type": "integer", "minimum": 1, "description": "Page number, from 1." }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/satisfaction_ratings",
+        "queryParams": {
+          "brand": "$brand",
+          "rating": "$rating",
+          "assignee_id": "$assignee_id",
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "reamaze_get_report",
+      "description": "Get a support report between two dates (default the last 30 days; at least 1 day, at most 1 year). report: volume (conversations per day), response_time (seconds per day plus averages, trends and the share answered within an hour, day, week), staff (responses, response time and appreciations per staff member), tags (conversations per tag) or channel_summary (per channel: responses, response time, active, resolved and archived conversations, satisfaction, thread size). Default: all brands. Needs the access_reports permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report": { "type": "string", "enum": ["volume", "response_time", "staff", "tags", "channel_summary"], "description": "Which report." },
+          "start_date": { "type": "string", "description": "First day, YYYY-MM-DD." },
+          "end_date": { "type": "string", "description": "Last day, YYYY-MM-DD." },
+          "brand": { "type": "string", "description": "Brand host name to limit the report to one brand." }
+        },
+        "required": ["report"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/{report}",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "brand": "$brand"
+        }
+      }
+    }
+  ]
+}
