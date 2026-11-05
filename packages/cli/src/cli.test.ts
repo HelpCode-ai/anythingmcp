@@ -263,6 +263,33 @@ test('bad key is rejected without writing a profile or printing the key', async 
   }
 });
 
+test('MCP login tells a rejected key (401) from a key not allowed on the server (403)', async () => {
+  for (const status of [401, 403]) {
+    const server = createServer((_req, res) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'private server detail' }));
+    });
+    server.listen(0, '127.0.0.1');
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Missing address');
+      const directory = await mkdtemp(join(tmpdir(), 'amcp-cli-status-'));
+      const env = { ...process.env, XDG_CONFIG_HOME: directory, AMCP_API_KEY: 'mcp_status-secret' };
+      await assert.rejects(execFileAsync(process.execPath, [join(__dirname, 'index.js'), 'login', '--url',
+        `http://127.0.0.1:${address.port}`, '--server', 'test'], { env }), (error: unknown) => {
+        const failure = error as { code: number; stdout: string; stderr: string };
+        assert.equal(failure.code, 3);
+        assert.match(failure.stderr, status === 401 ? /^Authentication failed \(401\)/ : /^Forbidden \(403\).*server ID/);
+        assert.doesNotMatch(failure.stdout + failure.stderr, /mcp_status-secret|private server detail/);
+        return true;
+      });
+    } finally {
+      server.close();
+    }
+  }
+});
+
 test('server failures report only the HTTP status', async () => {
   const server = createServer((_req, res) => { res.writeHead(503); res.end('sensitive upstream text'); });
   server.listen(0, '127.0.0.1');
@@ -503,10 +530,10 @@ test('bash completion suggests commands, subcommands, flags and shells', async (
   assert.deepEqual(await complete('tools', 'c'), ['call']);
   assert.deepEqual(await complete('--profile', 'work', 'tools', ''), ['call', 'describe', 'ls']);
   assert.deepEqual(await complete('tools', 'call', 'my_tool', '--t'), ['--timeout']);
-  assert.deepEqual(await complete('whoami', ''), ['--help', '--json', '--profile', '-h']);
+  assert.deepEqual(await complete('whoami', ''), ['--help', '--json', '--profile', '--version', '-h', '-v']);
   assert.deepEqual(await complete('login', '--profile', ''), []);
   assert.deepEqual(await complete('completion', ''), ['bash', 'fish', 'zsh']);
-  assert.deepEqual(await complete('-'), ['--help', '--json', '-h']);
+  assert.deepEqual(await complete('-'), ['--help', '--json', '--version', '-h', '-v']);
 });
 
 test('fish completion suggests commands, subcommands, flags and shells', async (t) => {
@@ -537,6 +564,11 @@ test('api calls the management API with a bearer key and maps status codes', asy
       res.writeHead(201, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ created: JSON.parse(body || '{}') })); return;
     }
     if (req.url === '/api/forbidden') { res.writeHead(403); res.end('{}'); return; }
+    if (req.url === '/api/read-only') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'This API key is read-only', statusCode: 403 }));
+      return;
+    }
     res.writeHead(404); res.end('{}');
   });
   server.listen(0, '127.0.0.1');
@@ -555,6 +587,18 @@ test('api calls the management API with a bearer key and maps status codes', asy
       .then(() => { throw new Error('should have failed'); }, (error: { code?: number; stdout?: string; stderr?: string }) => error);
     assert.equal(forbidden.code, 3);
     assert.doesNotMatch((forbidden.stdout || '') + (forbidden.stderr || ''), /mcp_mgmtsecret/);
+    // A 403 keeps the server's reason, so a read-only key is not mistaken for a broken one.
+    const readOnly = await execFileAsync(process.execPath, [cli, 'api', 'POST', '/api/read-only', '--yes'], { env })
+      .then(() => { throw new Error('should have failed'); }, (error: { code?: number; stderr?: string }) => error);
+    assert.equal(readOnly.code, 3);
+    assert.match(readOnly.stderr || '', /^Forbidden \(403\): This API key is read-only$/m);
+    // A GET body is refused locally with a clear message, before any request.
+    const before = seen.length;
+    const getBody = await execFileAsync(process.execPath, [cli, 'api', 'GET', '/api/users/me', '--data', '{}'], { env })
+      .then(() => { throw new Error('should have failed'); }, (error: { code?: number; stderr?: string }) => error);
+    assert.equal(getBody.code, 2);
+    assert.match(getBody.stderr || '', /--data is not allowed with GET/);
+    assert.equal(seen.length, before, 'no request sent for a GET with --data');
     assert.ok(seen.length > 0 && seen.every((r) => r.auth === 'Bearer mcp_mgmtsecret'), 'bearer key sent on every request');
   } finally {
     server.close();
@@ -596,6 +640,18 @@ test('management login stores a management key and api uses it from the profile'
     assert.doesNotMatch(me.stdout + me.stderr, /mcp_mgmtlogin/);
     const identity = await execFileAsync(process.execPath, [cli, 'whoami'], { env: noKeyEnv });
     assert.match(identity.stdout, /Management key: mcp_mgmt/);
+
+    // A management login on a profile that already holds an MCP login for the
+    // same instance keeps the MCP server and key; another instance replaces them.
+    const both = await mkdtemp(join(tmpdir(), 'amcp-both-'));
+    await writeConfig({ profiles: { default: { url: base, server: 'srv1', key: 'mcp_toolkey' } } }, configPath({ XDG_CONFIG_HOME: both }));
+    await execFileAsync(process.execPath, [cli, 'login', '--management', '--url', base], { env: { ...env, XDG_CONFIG_HOME: both } });
+    const merged = JSON.parse(await readFile(join(both, 'amcp', 'config.json'), 'utf8')).profiles.default;
+    assert.deepEqual(merged, { url: base, server: 'srv1', key: 'mcp_toolkey', managementKey: 'mcp_mgmtlogin' });
+    await writeConfig({ profiles: { default: { url: 'https://other.example', server: 'srv1', key: 'mcp_toolkey' } } }, configPath({ XDG_CONFIG_HOME: both }));
+    await execFileAsync(process.execPath, [cli, 'login', '--management', '--url', base], { env: { ...env, XDG_CONFIG_HOME: both } });
+    const replaced = JSON.parse(await readFile(join(both, 'amcp', 'config.json'), 'utf8')).profiles.default;
+    assert.deepEqual(replaced, { url: base, server: '', key: '', managementKey: 'mcp_mgmtlogin' });
   } finally {
     server.close();
   }
@@ -714,6 +770,15 @@ test('browser login delivers a key over the loopback callback and binds state', 
   }), /declined/);
 
   delete process.env.AMCP_NO_BROWSER;
+});
+
+test('--version prints the package version', async () => {
+  const cli = join(__dirname, 'index.js');
+  const { version } = JSON.parse(await readFile(join(__dirname, '..', 'package.json'), 'utf8'));
+  const plain = await execFileAsync(process.execPath, [cli, '--version']);
+  assert.equal(plain.stdout, `amcp ${version}\n`);
+  const short = await execFileAsync(process.execPath, [cli, '-v', '--json']);
+  assert.deepEqual(JSON.parse(short.stdout), { version });
 });
 
 test('browserCommand passes the login URL to Windows as one argument, not through cmd', async () => {

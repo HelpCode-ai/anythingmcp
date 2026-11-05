@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 
 @Injectable()
@@ -75,16 +75,20 @@ export class RolesService {
   }
 
   async create(data: { name: string; description?: string; organizationId?: string }) {
-    return this.prisma.role.create({
-      data: { name: data.name, description: data.description, organizationId: data.organizationId },
-    });
+    return this.prisma.role
+      .create({
+        data: { name: data.name, description: data.description, organizationId: data.organizationId },
+      })
+      .catch((err) => rethrowDuplicateName(err, data.name));
   }
 
   async update(id: string, organizationId: string, data: { name?: string; description?: string }) {
-    const result = await this.prisma.role.updateMany({
-      where: { id, organizationId },
-      data,
-    });
+    const result = await this.prisma.role
+      .updateMany({
+        where: { id, organizationId },
+        data,
+      })
+      .catch((err) => rethrowDuplicateName(err, data.name));
     if (result.count === 0) return null;
     return this.prisma.role.findUnique({ where: { id } });
   }
@@ -485,4 +489,15 @@ export class RolesService {
       );
     }
   }
+}
+
+/**
+ * Role names are unique per organization (`@@unique([organizationId, name])`).
+ * Turn the Prisma unique violation into a 409 instead of a 500.
+ */
+function rethrowDuplicateName(err: unknown, name: string | undefined): never {
+  if ((err as { code?: string } | null)?.code === 'P2002') {
+    throw new ConflictException(`A role named "${name ?? ''}" already exists in this organization`);
+  }
+  throw err;
 }

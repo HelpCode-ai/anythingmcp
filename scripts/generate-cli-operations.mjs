@@ -75,10 +75,21 @@ function apiOperationSummary(decorators) {
   return '';
 }
 
-function requiresAdmin(decorators) {
-  return decorators.some((dec) => decoratorName(dec) === 'Roles'
-    && ts.isCallExpression(dec.expression)
-    && dec.expression.arguments.some((a) => a.getText().includes("'ADMIN'") || a.getText().includes('"ADMIN"')));
+/** The @Roles(...) decorator in a list, or undefined when there is none. */
+function rolesDecorator(decorators) {
+  return decorators.find((dec) => decoratorName(dec) === 'Roles' && ts.isCallExpression(dec.expression));
+}
+
+/**
+ * True when only admins may call the route. Mirrors RolesGuard, which uses
+ * reflector.getAllAndOverride([handler, class]): a method-level @Roles wins,
+ * otherwise the controller-level @Roles applies.
+ */
+function requiresAdmin(methodDecorators, classDecorators) {
+  const roles = rolesDecorator(methodDecorators) ?? rolesDecorator(classDecorators);
+  if (!roles) return false;
+  const args = roles.expression.arguments.map((a) => a.getText());
+  return args.length > 0 && args.every((a) => a.includes("'ADMIN'") || a.includes('"ADMIN"'));
 }
 
 function joinPath(base, sub) {
@@ -120,7 +131,7 @@ function collect() {
           method,
           path,
           summary: apiOperationSummary(decs),
-          admin: requiresAdmin(decs),
+          admin: requiresAdmin(decs, classDecs),
           pathParams: [...path.matchAll(/:([A-Za-z0-9_]+)/g)].map((m) => m[1]),
           hasBody,
         });

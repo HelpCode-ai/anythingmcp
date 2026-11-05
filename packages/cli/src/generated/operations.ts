@@ -104,7 +104,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "DELETE",
     "path": "/api/admin/settings/alert-webhook",
     "summary": "Remove the connector-failure alert webhook for the current organization (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -114,7 +114,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/admin/settings/alert-webhook",
     "summary": "Get the connector-failure alert webhook for the current organization (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -124,7 +124,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/admin/settings/alert-webhook",
     "summary": "Save the connector-failure alert webhook for the current organization (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": true
   },
@@ -134,7 +134,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/admin/settings/alert-webhook/test",
     "summary": "Send a test alert to the configured webhook (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -144,7 +144,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/admin/settings/footer-links",
     "summary": "Get footer links for current organization (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -154,7 +154,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/admin/settings/footer-links",
     "summary": "Update footer links for current organization (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": true
   },
@@ -164,7 +164,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "DELETE",
     "path": "/api/admin/settings/smtp",
     "summary": "Remove the SMTP configuration for the current organization (ADMIN) — emails fall back to the platform mail service",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -174,7 +174,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/admin/settings/smtp",
     "summary": "Get SMTP configuration for current organization (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -184,7 +184,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/admin/settings/smtp",
     "summary": "Update SMTP configuration for current organization (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": true
   },
@@ -194,7 +194,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/admin/settings/smtp/test",
     "summary": "Test SMTP connection (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -204,7 +204,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/admin/settings/ssrf-allowed-hosts",
     "summary": "Get the admin-editable SSRF allowlist (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -214,7 +214,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/admin/settings/ssrf-allowed-hosts",
     "summary": "Replace the admin-editable SSRF allowlist (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": true
   },
@@ -1046,7 +1046,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/identity-providers",
     "summary": "List identity providers for this workspace (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -1056,7 +1056,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/identity-providers",
     "summary": "Create an identity provider (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": true
   },
@@ -1066,7 +1066,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "DELETE",
     "path": "/api/identity-providers/:id",
     "summary": "Delete an identity provider (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1078,7 +1078,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/identity-providers/:id",
     "summary": "Get one identity provider (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1090,7 +1090,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/identity-providers/:id",
     "summary": "Update an identity provider (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1102,7 +1102,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/identity-providers/:id/enforce-sso",
     "summary": "Require single sign-on for this workspace (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1114,7 +1114,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/identity-providers/:id/resync-roles",
     "summary": "Re-derive every SCIM-managed member's roles from stored group membership (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1126,7 +1126,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/identity-providers/:id/role-mappings",
     "summary": "List this provider's group/app-role mappings (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1138,7 +1138,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/identity-providers/:id/role-mappings",
     "summary": "Replace this provider's group/app-role mappings (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1150,7 +1150,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "DELETE",
     "path": "/api/identity-providers/:id/scim",
     "summary": "Disable SCIM provisioning and discard the token (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1162,7 +1162,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/identity-providers/:id/scim",
     "summary": "SCIM provisioning status for this provider (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1174,7 +1174,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/identity-providers/:id/scim",
     "summary": "Enable or disable SCIM provisioning (ADMIN). First enable returns the bearer token once.",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1186,7 +1186,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/identity-providers/:id/scim/rotate",
     "summary": "Rotate the SCIM bearer token (ADMIN). The old token stops working immediately.",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1198,7 +1198,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/identity-providers/:id/test",
     "summary": "Fetch the provider discovery document and verify the issuer matches (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -1220,7 +1220,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/knowledge-folders",
     "summary": "Create a folder",
-    "admin": true,
+    "admin": false,
     "pathParams": [],
     "hasBody": true
   },
@@ -1230,7 +1230,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "DELETE",
     "path": "/api/knowledge-folders/:id",
     "summary": "Delete a folder; its subfolders and items move to its parent",
-    "admin": true,
+    "admin": false,
     "pathParams": [
       "id"
     ],
@@ -1242,7 +1242,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PATCH",
     "path": "/api/knowledge-folders/:id",
     "summary": "Rename, describe or move a folder",
-    "admin": true,
+    "admin": false,
     "pathParams": [
       "id"
     ],
@@ -1266,7 +1266,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/knowledge-folders/move",
     "summary": "Move skills or company memory items into a folder",
-    "admin": true,
+    "admin": false,
     "pathParams": [],
     "hasBody": true
   },
@@ -1276,7 +1276,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/knowledge-graph",
     "summary": "Get the knowledge graph for the current workspace",
-    "admin": true,
+    "admin": false,
     "pathParams": [],
     "hasBody": false
   },
@@ -1404,7 +1404,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/knowledge-graph/settings",
     "summary": "Whether the knowledge graph is enabled for this workspace",
-    "admin": true,
+    "admin": false,
     "pathParams": [],
     "hasBody": false
   },
@@ -1424,7 +1424,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/knowledge-graph/skills",
     "summary": "List skill suggestions (filterable + paginated) with per-status counts",
-    "admin": true,
+    "admin": false,
     "pathParams": [],
     "hasBody": false
   },
@@ -1492,7 +1492,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/knowledge-graph/skills/:id/versions",
     "summary": "Earlier versions of a skill, newest first",
-    "admin": true,
+    "admin": false,
     "pathParams": [
       "id"
     ],
@@ -1534,7 +1534,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/knowledge-graph/stats",
     "summary": "Graph counts (nodes, edges, suggested)",
-    "admin": true,
+    "admin": false,
     "pathParams": [],
     "hasBody": false
   },
@@ -1876,7 +1876,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/memory/items/:id/approve",
     "summary": "Approve a pending company memory item",
-    "admin": true,
+    "admin": false,
     "pathParams": [
       "id"
     ],
@@ -1888,7 +1888,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/memory/items/:id/reject",
     "summary": "Reject a pending company memory item",
-    "admin": true,
+    "admin": false,
     "pathParams": [
       "id"
     ],
@@ -2012,7 +2012,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/roles",
     "summary": "List all roles (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": false
   },
@@ -2022,7 +2022,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "POST",
     "path": "/api/roles",
     "summary": "Create a custom role (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [],
     "hasBody": true
   },
@@ -2032,7 +2032,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "DELETE",
     "path": "/api/roles/:id",
     "summary": "Delete a role (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -2044,7 +2044,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/roles/:id",
     "summary": "Get role details with tool access (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -2056,7 +2056,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/roles/:id",
     "summary": "Update a role (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -2068,7 +2068,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/roles/:id/tools",
     "summary": "Get tools assigned to a role (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -2080,7 +2080,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/roles/:id/tools",
     "summary": "Set tool access for a role (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "id"
     ],
@@ -2092,7 +2092,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/roles/assign/:userId",
     "summary": "DEPRECATED — assign a single MCP role to a user (ADMIN). Use PUT /api/roles/assignments/:userId, which supports several roles.",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "userId"
     ],
@@ -2104,7 +2104,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/roles/assignments/:userId",
     "summary": "List the MCP roles assigned to a user (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "userId"
     ],
@@ -2116,7 +2116,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "PUT",
     "path": "/api/roles/assignments/:userId",
     "summary": "Set the MCP roles assigned to a user (ADMIN)",
-    "admin": false,
+    "admin": true,
     "pathParams": [
       "userId"
     ],
