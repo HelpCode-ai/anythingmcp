@@ -1,0 +1,1281 @@
+{
+  "slug": "tidely",
+  "name": "Tidely",
+  "aliases": [
+    "Tidely cash flow",
+    "Tidely Liquiditätsplanung"
+  ],
+  "description": "Tidely cash flow planning: the cash flow and forecast per month, week or day, scenarios, categories, bank accounts with balances and transactions, sales and purchase invoices, and planned values. Reads plus creating and updating invoices, plans, categories and transactions; deletes are installed switched off.",
+  "instructions": "## Tidely\nThis connector uses the **Tidely Public API v2** (`https://api.tidely.com/public/v2`) of Tidely, the cash flow planning and liquidity management platform: the cash flow by period, scenarios, categories, bank accounts with balances and transactions, sales and purchase invoices, and planned values.\n\n**Setup**\n1. API access must be enabled for your Tidely account (ask Tidely support if the settings page is missing).\n2. In Tidely open **Settings, API Keys** (app.tidely.com/settings/openapi), create a key with the scopes you need (read, and write for invoices, plans, categories or transactions) and copy it into `TIDELY_API_KEY`. It is sent as the `X-Authorization` header, without a prefix.\n3. Run `tidely_verify_auth` to check the key.\n\n**Where to start**: `tidely_get_cashflow` answers most liquidity questions (balance now and forecast per month, week or day; `period` MONTH, `from` the first of a month, `to` the last day of a month). `tidely_list_scenarios` gives scenario ids, `tidely_list_categories` the category tree (parentId), `tidely_list_bank_accounts` the accounts.\n\n**Workflows**\n- Liquidity and forecast: `tidely_get_cashflow`, `tidely_list_scenarios`, `tidely_get_scenario`, `tidely_list_categories`, `tidely_get_category`.\n- Banking: `tidely_list_bank_accounts`, `tidely_get_bank_account`, `tidely_list_bank_account_balances`, `tidely_list_bank_account_transactions` (needs bankAccountId), `tidely_get_bank_account_transaction`; recategorise with `tidely_update_bank_account_transaction`. For accounts fed by an integration: `tidely_check_transactions_exist`, then `tidely_create_bank_account_transaction`.\n- Invoices: `tidely_list_invoices` and `tidely_get_invoice` (both need invoiceTypeFilter SALE or PURCHASE), `tidely_create_invoice`, `tidely_update_invoice` (e.g. mark PAID with paidDate). Invoices synced from an ERP integration are read-only.\n- Planning: `tidely_create_plan` adds a planned amount to a category and scenario; `tidely_create_category` and `tidely_update_category` manage categories.\n- Switched off at install (irreversible): `tidely_delete_invoice`, `tidely_delete_category`, `tidely_delete_plans` (all plans of a category in a scenario), `tidely_delete_bank_account_transaction`. Show the user what will be deleted and wait for a yes.\n- Also: `tidely_list_companies`, `tidely_get_company`.\n\n**Amounts and dates**: amounts are decimals in the account or company currency, negative for outgoing money and expenses. Dates are `YYYY-MM-DD`.\n\n**Pagination**: paged lists take `page` (from 0) and `pageSize` (default 50) and answer with `number`, `size`, `totalElements` and `totalPages`; request pages until `totalPages - 1`.\n\n**Errors** carry `error` (a stable code such as INVALID_REQUEST, INVALID_CREDENTIALS, INSUFFICIENT_SCOPE, CATEGORY_NOT_FOUND) and `message`: 400 invalid input, 401 a missing or wrong key, 403 a key without the scope for that call, 404 an unknown id. Retry 500 after a short wait; do not retry the others unchanged.\n\n**Limitations**: no money is moved; transactions and invoices are records for planning. Bulk imports, bank account creation, update and conversion, and the Partner API (OAuth, for white-label partners) are not exposed here.",
+  "region": "be",
+  "category": "finance",
+  "icon": "tidely",
+  "docsUrl": "https://developers.tidely.com/docs/overview",
+  "prerequisites": "A Tidely account with API access enabled and an API key from Settings, API Keys.",
+  "requiredEnvVars": [
+    "TIDELY_API_KEY"
+  ],
+  "envVarMeta": {
+    "TIDELY_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Tidely: Settings, API Keys (app.tidely.com/settings/openapi). Create a key with the scopes you need and paste it without any prefix.",
+      "link": "https://developers.tidely.com/docs/end-user/intro",
+      "pattern": "^(?![Bb]earer )\\S{16,}$",
+      "patternMessage": "Paste only the API key, without Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Tidely refused the API key. Create a new one under Settings, API Keys and paste it without a prefix.",
+    "403": "The key is valid but lacks the scope for this call. Edit the key's scopes under Settings, API Keys."
+  },
+  "probe": {
+    "tool": "tidely_verify_auth"
+  },
+  "connector": {
+    "name": "Tidely Public API v2",
+    "type": "REST",
+    "baseUrl": "https://api.tidely.com/public/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Authorization",
+      "apiKey": "{{TIDELY_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "tidely_verify_auth",
+      "description": "Check that the API key is valid; returns success and the name of the user the key belongs to. Use it first or when other calls fail with 401 or 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/authentication/verify-auth"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_list_companies",
+      "description": "List the companies of the Tidely account (paged): id, parentId, name, currency, country and industry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, from 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_get_company",
+      "description": "Get one company of the Tidely account by id: name, parent company, currency, country and industry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Company id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_get_cashflow",
+      "description": "Get the cash flow of the company per period (month, week or day) for a scenario: for each period start date the opening and closing balances (actual, forecast, total, plan), open sales and purchase invoices, amounts per category, income and expense details, KPIs, plus overdraft and liquidity per period. Default: base scenario, monthly, 6 periods back and 18 ahead of today. Use it for liquidity questions and forecasts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scenarioId": {
+            "type": "integer",
+            "description": "Scenario id (tidely_list_scenarios). Default: the base forecast."
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "MONTH",
+              "WEEK",
+              "DAY"
+            ],
+            "description": "Bucket size. Default MONTH."
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the first period (first of the month for MONTH, a Monday for WEEK), YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the last period (end of month for MONTH, a Sunday for WEEK), YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cashflow",
+        "queryParams": {
+          "scenarioId": "$scenarioId",
+          "period": "$period",
+          "from": "$from",
+          "to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_list_scenarios",
+      "description": "List the planning scenarios: id, name and isBaseCase. Pass a scenario id to tidely_get_cashflow or tidely_create_plan to work on a scenario other than the base case.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scenarios"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_get_scenario",
+      "description": "Get one planning scenario by id: id, name and whether it is the base case.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scenarioId": {
+            "type": "integer",
+            "description": "Scenario id."
+          }
+        },
+        "required": [
+          "scenarioId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scenarios/{scenarioId}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_list_categories",
+      "description": "List the cash flow categories: id, name, type (INCOME_/EXPENSE_ OPERATIONAL, INVESTMENT or FINANCING), parentId for the hierarchy and whether plans may be booked on it. Filter by exact name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Exact category name, case-insensitive."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_get_category",
+      "description": "Get one category by id: name, type, parent and whether it accepts planned values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Category id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_list_bank_accounts",
+      "description": "List the bank accounts in Tidely: id, companyId, account name, bank, IBAN or account number, currency, type (CHECKING, SAVINGS, CREDITCARD ...), provider (ONLINE synced, API or OFFLINE), reference balance with its date, external id and visibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bank-accounts"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_get_bank_account",
+      "description": "Get one bank account by id: name, bank, IBAN, currency, type, provider, reference balance and visibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Bank account id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bank-accounts/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_list_bank_account_balances",
+      "description": "List the balance history of one bank account (paged): date and amount per day. Use it for balance trends.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Bank account id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, from 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page (default 50)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bank-accounts/{id}/balances",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_list_bank_account_transactions",
+      "description": "List the transactions of one bank account (paged): id, booking date, amount, counterpart name, IBAN and reference, purpose, category and external id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bankAccountId": {
+            "type": "integer",
+            "description": "Bank account id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, from 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page (default 50)."
+          }
+        },
+        "required": [
+          "bankAccountId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bank-account-transactions",
+        "queryParams": {
+          "bankAccountId": "$bankAccountId",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_get_bank_account_transaction",
+      "description": "Get one bank account transaction by id: booking date, amount, counterpart, purpose, category and external id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Transaction id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bank-account-transactions/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_check_transactions_exist",
+      "description": "Check which of up to 1000 external ids already exist as transactions on a bank account, before importing transactions from another system. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bankAccountId": {
+            "type": "integer",
+            "description": "Bank account id."
+          },
+          "externalIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "description": "External ids to look up."
+          }
+        },
+        "required": [
+          "bankAccountId",
+          "externalIds"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/bank-account-transactions/exists",
+        "bodyMapping": {
+          "bankAccountId": "$bankAccountId",
+          "externalIds": "$externalIds"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_list_invoices",
+      "description": "List sales or purchase invoices (paged): id, number, contact, dates, gross and open amount, status, category, type, source (ERP sync, manual, API, upload) and external id. Filter by status, number, external id, category, source or exact contact name; array filters take up to 100 values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceTypeFilter": {
+            "type": "string",
+            "enum": [
+              "SALE",
+              "PURCHASE"
+            ],
+            "description": "SALE for sales invoices, PURCHASE for purchase invoices."
+          },
+          "invoiceStatus": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "OPEN",
+                "PAID",
+                "PARTIALLY_PAID",
+                "CANCELED",
+                "WITHHELD",
+                "OFFER",
+                "ORDER",
+                "PLANNED",
+                "RELEASED"
+              ]
+            },
+            "description": "Statuses to include, e.g. [\"OPEN\"]."
+          },
+          "invoiceNumber": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact invoice numbers."
+          },
+          "externalId": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "External ids."
+          },
+          "categoryId": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Category ids."
+          },
+          "source": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sources, e.g. LEXOFFICE, OPEN_API."
+          },
+          "contactName": {
+            "type": "string",
+            "description": "Exact contact name, case-insensitive."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, from 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page (default 50)."
+          }
+        },
+        "required": [
+          "invoiceTypeFilter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "invoiceTypeFilter": "$invoiceTypeFilter",
+          "invoiceStatus": "$invoiceStatus",
+          "invoiceNumber": "$invoiceNumber",
+          "externalId": "$externalId",
+          "categoryId": "$categoryId",
+          "source": "$source",
+          "contactName": "$contactName",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_get_invoice",
+      "description": "Get one invoice by id; invoiceTypeFilter must match its type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Invoice id."
+          },
+          "invoiceTypeFilter": {
+            "type": "string",
+            "enum": [
+              "SALE",
+              "PURCHASE"
+            ],
+            "description": "SALE for sales invoices, PURCHASE for purchase invoices."
+          }
+        },
+        "required": [
+          "id",
+          "invoiceTypeFilter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{id}",
+        "queryParams": {
+          "invoiceTypeFilter": "$invoiceTypeFilter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_create_invoice",
+      "description": "Create a sales or purchase invoice (or credit note) so it shows up in the cash flow forecast on its due date. Required: invoiceType, invoiceNumber, contactName, totalGrossAmount. Returns the invoice with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoiceType": {
+            "type": "string",
+            "enum": [
+              "SALES_INVOICE",
+              "SALES_CREDIT_NOTE",
+              "PURCHASE_INVOICE",
+              "PURCHASE_CREDIT_NOTE"
+            ],
+            "description": "Kind of invoice."
+          },
+          "invoiceNumber": {
+            "type": "string",
+            "description": "Invoice number."
+          },
+          "contactName": {
+            "type": "string",
+            "description": "Customer (sales) or supplier (purchase) name."
+          },
+          "totalGrossAmount": {
+            "type": "number",
+            "description": "Total amount including tax."
+          },
+          "invoiceDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Invoice date, YYYY-MM-DD."
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Due date, YYYY-MM-DD; drives when the invoice lands in the cash flow forecast."
+          },
+          "paidDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Payment date, YYYY-MM-DD."
+          },
+          "invoiceStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "OPEN",
+              "PAID",
+              "PARTIALLY_PAID",
+              "CANCELED",
+              "WITHHELD",
+              "OFFER",
+              "ORDER",
+              "PLANNED",
+              "RELEASED"
+            ],
+            "description": "Invoice status."
+          },
+          "openAmount": {
+            "type": "number",
+            "description": "Amount still unpaid."
+          },
+          "note": {
+            "type": "string",
+            "description": "Description or notes."
+          },
+          "categoryId": {
+            "type": "integer",
+            "description": "Category id (tidely_list_categories)."
+          },
+          "externalId": {
+            "type": "string",
+            "description": "Your own id for the invoice, e.g. from the ERP."
+          }
+        },
+        "required": [
+          "invoiceType",
+          "invoiceNumber",
+          "contactName",
+          "totalGrossAmount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices",
+        "bodyMapping": {
+          "invoiceType": "$invoiceType",
+          "invoiceNumber": "$invoiceNumber",
+          "contactName": "$contactName",
+          "totalGrossAmount": "$totalGrossAmount",
+          "invoiceDate": "$invoiceDate",
+          "dueDate": "$dueDate",
+          "paidDate": "$paidDate",
+          "invoiceStatus": "$invoiceStatus",
+          "openAmount": "$openAmount",
+          "note": "$note",
+          "categoryId": "$categoryId",
+          "externalId": "$externalId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_update_invoice",
+      "description": "Update an invoice: only the fields you pass change (status, paid date, open amount, due date, amounts, category, note ...). Invoices synced from an ERP integration cannot be changed. invoiceTypeFilter must match its type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Invoice id."
+          },
+          "invoiceTypeFilter": {
+            "type": "string",
+            "enum": [
+              "SALE",
+              "PURCHASE"
+            ],
+            "description": "SALE for sales invoices, PURCHASE for purchase invoices."
+          },
+          "invoiceNumber": {
+            "type": "string",
+            "description": "Invoice number."
+          },
+          "contactName": {
+            "type": "string",
+            "description": "Customer (sales) or supplier (purchase) name."
+          },
+          "totalGrossAmount": {
+            "type": "number",
+            "description": "Total amount including tax."
+          },
+          "invoiceDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Invoice date, YYYY-MM-DD."
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Due date, YYYY-MM-DD; drives when the invoice lands in the cash flow forecast."
+          },
+          "paidDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Payment date, YYYY-MM-DD."
+          },
+          "invoiceStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "OPEN",
+              "PAID",
+              "PARTIALLY_PAID",
+              "CANCELED",
+              "WITHHELD",
+              "OFFER",
+              "ORDER",
+              "PLANNED",
+              "RELEASED"
+            ],
+            "description": "Invoice status."
+          },
+          "openAmount": {
+            "type": "number",
+            "description": "Amount still unpaid."
+          },
+          "note": {
+            "type": "string",
+            "description": "Description or notes."
+          },
+          "categoryId": {
+            "type": "integer",
+            "description": "Category id (tidely_list_categories)."
+          }
+        },
+        "required": [
+          "id",
+          "invoiceTypeFilter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/invoices/{id}",
+        "queryParams": {
+          "invoiceTypeFilter": "$invoiceTypeFilter"
+        },
+        "bodyMapping": {
+          "invoiceNumber": "$invoiceNumber",
+          "contactName": "$contactName",
+          "totalGrossAmount": "$totalGrossAmount",
+          "invoiceDate": "$invoiceDate",
+          "dueDate": "$dueDate",
+          "paidDate": "$paidDate",
+          "invoiceStatus": "$invoiceStatus",
+          "openAmount": "$openAmount",
+          "note": "$note",
+          "categoryId": "$categoryId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_delete_invoice",
+      "description": "Delete an invoice (not those synced from an ERP integration). Irreversible; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Invoice id."
+          },
+          "invoiceTypeFilter": {
+            "type": "string",
+            "enum": [
+              "SALE",
+              "PURCHASE"
+            ],
+            "description": "SALE for sales invoices, PURCHASE for purchase invoices."
+          }
+        },
+        "required": [
+          "id",
+          "invoiceTypeFilter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/invoices/{id}",
+        "queryParams": {
+          "invoiceTypeFilter": "$invoiceTypeFilter"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_create_category",
+      "description": "Create a cash flow category, optionally under a parent category. Returns it with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Category name."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INCOME_OPERATIONAL",
+              "INCOME_INVESTMENT",
+              "INCOME_FINANCING",
+              "EXPENSE_OPERATIONAL",
+              "EXPENSE_INVESTMENT",
+              "EXPENSE_FINANCING"
+            ],
+            "description": "Income or expense, operational, investment or financing."
+          },
+          "parentId": {
+            "type": "integer",
+            "description": "Parent category id."
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/categories",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "parentId": "$parentId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_update_category",
+      "description": "Rename a cash flow category or change its type (income or expense, operational, investment or financing).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Category id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INCOME_OPERATIONAL",
+              "INCOME_INVESTMENT",
+              "INCOME_FINANCING",
+              "EXPENSE_OPERATIONAL",
+              "EXPENSE_INVESTMENT",
+              "EXPENSE_FINANCING"
+            ],
+            "description": "New type."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/categories/{id}",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_delete_category",
+      "description": "Delete a cash flow category by id. Irreversible; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Category id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/categories/{id}"
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_create_plan",
+      "description": "Add a planned value to the forecast: a one-time amount on a category in a scenario for a day, week or month (negative for expenses, positive for income). By default it adds to existing planned values of that period; replaceCurrentValuesForThePeriod true replaces them. Without a category it goes to uncategorized income or expenses; without a scenario to the base case.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Name of the plan."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount, negative for expenses."
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "DAILY",
+              "WEEKLY",
+              "MONTHLY"
+            ],
+            "description": "Period the value applies to."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "YYYY-MM-DD; first day of the month for MONTHLY, first day of the week for WEEKLY."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ONE_TIME"
+            ],
+            "default": "ONE_TIME",
+            "description": "Plan type; ONE_TIME is the only one."
+          },
+          "categoryId": {
+            "type": "integer",
+            "description": "Category id (must accept planned values)."
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category path instead of the id, parts joined with ->."
+          },
+          "scenarioId": {
+            "type": "integer",
+            "description": "Scenario id. Default: base case."
+          },
+          "scenarioName": {
+            "type": "string",
+            "description": "Scenario name instead of the id."
+          },
+          "replaceCurrentValuesForThePeriod": {
+            "type": "boolean",
+            "description": "true replaces the existing planned values of the period."
+          }
+        },
+        "required": [
+          "name",
+          "amount",
+          "period",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/plans",
+        "bodyMapping": {
+          "name": "$name",
+          "amount": "$amount",
+          "period": "$period",
+          "date": "$date",
+          "type": "$type",
+          "categoryId": "$categoryId",
+          "categoryName": "$categoryName",
+          "scenarioId": "$scenarioId",
+          "scenarioName": "$scenarioName",
+          "replaceCurrentValuesForThePeriod": "$replaceCurrentValuesForThePeriod"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_delete_plans",
+      "description": "Delete all planned values of one category in one scenario. Irreversible; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "integer",
+            "description": "Category id."
+          },
+          "scenarioId": {
+            "type": "integer",
+            "description": "Scenario id."
+          }
+        },
+        "required": [
+          "categoryId",
+          "scenarioId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/plans",
+        "queryParams": {
+          "categoryId": "$categoryId",
+          "scenarioId": "$scenarioId"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_create_bank_account_transaction",
+      "description": "Add a transaction to a bank account kept in Tidely (an API or offline account), e.g. imported from another system. Required: bankAccountId, bookingDate, amount, counterpartName. Records data only; it moves no money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bankAccountId": {
+            "type": "integer",
+            "description": "Bank account id."
+          },
+          "bookingDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Booking date, YYYY-MM-DD."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in the account currency, negative for outgoing."
+          },
+          "counterpartName": {
+            "type": "string",
+            "description": "Counterpart name."
+          },
+          "counterpartIban": {
+            "type": "string",
+            "description": "Counterpart IBAN."
+          },
+          "counterpartAccountNumber": {
+            "type": "string",
+            "description": "Counterpart account number."
+          },
+          "counterpartCustomerReference": {
+            "type": "string",
+            "description": "Counterpart customer reference."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "Transaction description (remittance text)."
+          },
+          "categoryId": {
+            "type": "integer",
+            "description": "Category id."
+          },
+          "externalId": {
+            "type": "string",
+            "description": "Your own id for the transaction (max 255), to avoid duplicates."
+          }
+        },
+        "required": [
+          "bankAccountId",
+          "bookingDate",
+          "amount",
+          "counterpartName"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/bank-account-transactions",
+        "bodyMapping": {
+          "bankAccountId": "$bankAccountId",
+          "transaction": {
+            "bookingDate": "$bookingDate",
+            "amount": "$amount",
+            "counterpartName": "$counterpartName",
+            "counterpartIban": "$counterpartIban",
+            "counterpartAccountNumber": "$counterpartAccountNumber",
+            "counterpartCustomerReference": "$counterpartCustomerReference",
+            "purpose": "$purpose",
+            "categoryId": "$categoryId",
+            "externalId": "$externalId"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_update_bank_account_transaction",
+      "description": "Update a bank account transaction: only the fields you pass change, typically its category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Transaction id."
+          },
+          "bookingDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Booking date, YYYY-MM-DD."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in the account currency, negative for outgoing."
+          },
+          "counterpartName": {
+            "type": "string",
+            "description": "Counterpart name."
+          },
+          "counterpartIban": {
+            "type": "string",
+            "description": "Counterpart IBAN."
+          },
+          "counterpartAccountNumber": {
+            "type": "string",
+            "description": "Counterpart account number."
+          },
+          "counterpartCustomerReference": {
+            "type": "string",
+            "description": "Counterpart customer reference."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "Transaction description (remittance text)."
+          },
+          "categoryId": {
+            "type": "integer",
+            "description": "Category id."
+          },
+          "externalId": {
+            "type": "string",
+            "description": "Your own id for the transaction (max 255), to avoid duplicates."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/bank-account-transactions/{id}",
+        "bodyMapping": {
+          "bookingDate": "$bookingDate",
+          "amount": "$amount",
+          "counterpartName": "$counterpartName",
+          "counterpartIban": "$counterpartIban",
+          "counterpartAccountNumber": "$counterpartAccountNumber",
+          "counterpartCustomerReference": "$counterpartCustomerReference",
+          "purpose": "$purpose",
+          "categoryId": "$categoryId",
+          "externalId": "$externalId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tidely_delete_bank_account_transaction",
+      "description": "Delete a bank account transaction. Irreversible; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Transaction id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/bank-account-transactions/{id}"
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,575 @@
+{
+  "slug": "sportsapipro",
+  "name": "SportsAPI Pro Football",
+  "description": "Football data from SportsAPI Pro: leagues and seasons, standings and season leaders, live scores and daily schedules, match lineups, incidents, statistics, head-to-head, shot maps and best players, teams, squads, players and managers. API key.",
+  "instructions": "## SportsAPI Pro (football)\nThis connector reads the SportsAPI Pro Football V2 API (`https://api.sportsapipro.com/v2/football`): countries, leagues and tournaments, seasons, standings and season leaders, live scores and daily schedules, match details with lineups, incidents, statistics, head-to-head, shot maps, best players and average positions, teams and squads, players and managers. Every tool only reads.\n\n**Setup**: sign up at https://sportsapipro.com/register, open the Dashboard and copy the key from **API Credentials** into `SPORTSAPIPRO_API_KEY`. It is sent as the `x-api-key` header. Check it with `sportsapipro_get_account_status`.\n\n**Quota**: the daily quota is shared by every sport on the key and resets at midnight UTC: 100 requests a day on the free plan, 7,500 on Pro, 75,000 on Ultra. A 429 means the quota is used up for today; `sportsapipro_get_account_status` shows what is left. 401 means a missing or wrong key, 403 a suspended account.\n\n**Ids**: tournaments, seasons, teams, players, managers and matches have numeric ids. `sportsapipro_search` finds any of them by name; `sportsapipro_list_leagues` lists tournaments by country (slug such as england). A season id is not a year: get it from `sportsapipro_list_tournament_seasons`. Common tournament ids: 17 Premier League, 8 LaLiga, 35 Bundesliga, 23 Serie A, 34 Ligue 1, 7 Champions League. Kick-off times are Unix timestamps (`startTimestamp`, UTC); convert before quoting a time.\n\n**Paging**: `sportsapipro_list_season_matches` and `sportsapipro_list_team_matches` take `direction` (next or last) and a 0-indexed `page`; ask for the next page while `hasNextPage` is true.\n\n**Common workflows**\n- Table and leaders: `sportsapipro_search` for the competition, `sportsapipro_list_tournament_seasons`, then `sportsapipro_get_standings` and `sportsapipro_get_top_players`.\n- Today and live: `sportsapipro_list_live_matches` or `sportsapipro_list_matches_by_date`, then `sportsapipro_get_match`.\n- Match report: `sportsapipro_get_match_incidents`, `sportsapipro_get_match_statistics`, `sportsapipro_get_match_lineups`, `sportsapipro_get_match_shotmap`, `sportsapipro_get_match_best_players` and `sportsapipro_get_match_average_positions`.\n- Match preview: `sportsapipro_get_match_h2h` and `sportsapipro_list_team_matches` (direction last) for both teams' recent form.\n- Teams and people: `sportsapipro_get_team`, `sportsapipro_get_team_squad`, `sportsapipro_get_player`, `sportsapipro_get_player_statistics`, `sportsapipro_get_manager`, `sportsapipro_get_manager_career`; `sportsapipro_list_countries` to browse by country.\n\n**Limitations**: football only; the key also works for other sports, which this connector does not cover. Market price data and generated match commentary are left out. Coverage depth follows the competition tier: lower divisions can answer fewer statistics or 404.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "sportsapipro",
+  "docsUrl": "https://docs.sportsapipro.com/api-reference/football-v2/overview",
+  "requiredEnvVars": [
+    "SPORTSAPIPRO_API_KEY"
+  ],
+  "envVarMeta": {
+    "SPORTSAPIPRO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Sign up at sportsapipro.com, open the Dashboard and copy the key from API Credentials.",
+      "link": "https://sportsapipro.com/dashboard",
+      "pattern": "^[A-Za-z0-9_.-]{16,200}$",
+      "patternMessage": "Paste only the key from API Credentials, without spaces or a header name."
+    }
+  },
+  "verifyHints": {
+    "401": "SportsAPI Pro refused the key. Copy it again from API Credentials on your SportsAPI Pro dashboard; regenerating it invalidates the old one.",
+    "403": "SportsAPI Pro answered 403: access denied or the account is suspended. Check your account on the SportsAPI Pro dashboard.",
+    "429": "The daily quota of this SportsAPI Pro key is used up (100 requests on the free plan). It resets at midnight UTC."
+  },
+  "probe": {
+    "tool": "sportsapipro_get_account_status"
+  },
+  "connector": {
+    "name": "SportsAPI Pro Football V2",
+    "type": "REST",
+    "baseUrl": "https://api.sportsapipro.com/v2/football",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{SPORTSAPIPRO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "sportsapipro_get_account_status",
+      "description": "Show the SportsAPI Pro account behind the key: plan, daily request limit, requests used today, remaining requests and when the quota resets (midnight UTC). Use it to check the key or the remaining quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/status"
+      }
+    },
+    {
+      "name": "sportsapipro_search",
+      "description": "Search football teams, players, managers and tournaments by name and get their ids. The main way to find an id you do not have yet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search text, at least 2 characters, e.g. arsenal, messi, premier league."
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q"
+        }
+      }
+    },
+    {
+      "name": "sportsapipro_list_countries",
+      "description": "List the countries (football categories) with name, code and flag, to browse competitions by country.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/countries"
+      }
+    },
+    {
+      "name": "sportsapipro_list_leagues",
+      "description": "List football leagues and cups grouped by country with their tournament ids. Filter with a country slug.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "Country slug in lower case, e.g. england, spain, italy, germany, brazil."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leagues",
+        "queryParams": {
+          "country": "$country"
+        }
+      }
+    },
+    {
+      "name": "sportsapipro_list_tournament_seasons",
+      "description": "List the seasons of a tournament, newest first, with their season ids (e.g. 76986 for one Premier League season). Every standings, top-players and season-match call needs one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tournament_id": {
+            "type": "integer",
+            "description": "Tournament (competition) id, e.g. 17 Premier League, 8 LaLiga, 35 Bundesliga, 23 Serie A, 34 Ligue 1, 7 Champions League. Find others with sportsapipro_search or sportsapipro_list_leagues."
+          }
+        },
+        "required": [
+          "tournament_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tournaments/{tournament_id}/seasons"
+      }
+    },
+    {
+      "name": "sportsapipro_get_standings",
+      "description": "Get the league table of a tournament season: position, team, matches, wins, draws, losses, goals and points, with promotion and relegation markers. Group stages answer one table per group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tournament_id": {
+            "type": "integer",
+            "description": "Tournament (competition) id, e.g. 17 Premier League, 8 LaLiga, 35 Bundesliga, 23 Serie A, 34 Ligue 1, 7 Champions League. Find others with sportsapipro_search or sportsapipro_list_leagues."
+          },
+          "season_id": {
+            "type": "integer",
+            "description": "Season id of that tournament, from sportsapipro_list_tournament_seasons (not the year)."
+          }
+        },
+        "required": [
+          "tournament_id",
+          "season_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tournament/{tournament_id}/season/{season_id}/standings"
+      }
+    },
+    {
+      "name": "sportsapipro_get_top_players",
+      "description": "Get the season leaders of a tournament in one call, keyed by statistic: rating, goals, expected goals, assists, shots, key passes, dribbles, tackles, saves, clean sheets, cards and more, up to 50 players each with appearances.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tournament_id": {
+            "type": "integer",
+            "description": "Tournament (competition) id, e.g. 17 Premier League, 8 LaLiga, 35 Bundesliga, 23 Serie A, 34 Ligue 1, 7 Champions League. Find others with sportsapipro_search or sportsapipro_list_leagues."
+          },
+          "season_id": {
+            "type": "integer",
+            "description": "Season id of that tournament, from sportsapipro_list_tournament_seasons (not the year)."
+          }
+        },
+        "required": [
+          "tournament_id",
+          "season_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tournament/{tournament_id}/season/{season_id}/top-players",
+        "queryParams": {
+          "type": "overall"
+        }
+      }
+    },
+    {
+      "name": "sportsapipro_list_season_matches",
+      "description": "List the upcoming (next) or most recent finished (last) matches of a tournament season, a page at a time: teams, kick-off timestamp, status, score and round.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tournament_id": {
+            "type": "integer",
+            "description": "Tournament (competition) id, e.g. 17 Premier League, 8 LaLiga, 35 Bundesliga, 23 Serie A, 34 Ligue 1, 7 Champions League. Find others with sportsapipro_search or sportsapipro_list_leagues."
+          },
+          "season_id": {
+            "type": "integer",
+            "description": "Season id of that tournament, from sportsapipro_list_tournament_seasons (not the year)."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "last",
+              "next"
+            ],
+            "default": "next",
+            "description": "next for upcoming matches (default), last for the most recent finished ones."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, 0-indexed (0 = closest to today). Ask for the next page while the answer says hasNextPage."
+          }
+        },
+        "required": [
+          "tournament_id",
+          "season_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tournament/{tournament_id}/season/{season_id}/events/{direction}/{page}"
+      }
+    },
+    {
+      "name": "sportsapipro_list_live_matches",
+      "description": "List every football match being played right now with tournament, teams, score, status and minute. Use a match id from here with the match tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/live"
+      }
+    },
+    {
+      "name": "sportsapipro_list_matches_by_date",
+      "description": "List the matches of the top 50 tournaments on one date (fixtures and results): tournament, teams, kick-off timestamp, status and score. totalTournamentsOnDate says how many tournaments play that day in total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Date as YYYY-MM-DD, e.g. 2026-03-15."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/schedule/{date}"
+      }
+    },
+    {
+      "name": "sportsapipro_get_match",
+      "description": "Get one match: tournament, season and round, teams, status, score by period, kick-off timestamp, venue, referee and managers, with their ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match id from sportsapipro_list_live_matches, sportsapipro_list_matches_by_date, sportsapipro_list_season_matches, sportsapipro_list_team_matches or sportsapipro_search."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/match/{match_id}"
+      }
+    },
+    {
+      "name": "sportsapipro_get_match_lineups",
+      "description": "Get the lineups of a match: formation, starting XI and substitutes per team with shirt number, position, player ratings and statistics, and missing players.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match id from sportsapipro_list_live_matches, sportsapipro_list_matches_by_date, sportsapipro_list_season_matches, sportsapipro_list_team_matches or sportsapipro_search."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/match/{match_id}/lineups"
+      }
+    },
+    {
+      "name": "sportsapipro_get_match_incidents",
+      "description": "Get the incidents of a match in order: goals with scorer and assist, cards, substitutions, VAR decisions, injury time and period scores.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match id from sportsapipro_list_live_matches, sportsapipro_list_matches_by_date, sportsapipro_list_season_matches, sportsapipro_list_team_matches or sportsapipro_search."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/match/{match_id}/incidents"
+      }
+    },
+    {
+      "name": "sportsapipro_get_match_statistics",
+      "description": "Get the team statistics of a match per period (all, 1st half, 2nd half): possession, expected goals, shots, big chances, passes, duels, corners, fouls and more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match id from sportsapipro_list_live_matches, sportsapipro_list_matches_by_date, sportsapipro_list_season_matches, sportsapipro_list_team_matches or sportsapipro_search."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/match/{match_id}/statistics"
+      }
+    },
+    {
+      "name": "sportsapipro_get_match_h2h",
+      "description": "Get the head-to-head record of the two teams (wins and draws) and of the two managers before this match.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match id from sportsapipro_list_live_matches, sportsapipro_list_matches_by_date, sportsapipro_list_season_matches, sportsapipro_list_team_matches or sportsapipro_search."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/match/{match_id}/h2h"
+      }
+    },
+    {
+      "name": "sportsapipro_get_match_shotmap",
+      "description": "Get every shot of a match with player, minute, position on the pitch, body part, situation, expected goals (xG) and outcome.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match id from sportsapipro_list_live_matches, sportsapipro_list_matches_by_date, sportsapipro_list_season_matches, sportsapipro_list_team_matches or sportsapipro_search."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/match/{match_id}/shotmap"
+      }
+    },
+    {
+      "name": "sportsapipro_get_match_best_players",
+      "description": "Get the best-rated players of each team in a match and the player of the match, with their ratings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match id from sportsapipro_list_live_matches, sportsapipro_list_matches_by_date, sportsapipro_list_season_matches, sportsapipro_list_team_matches or sportsapipro_search."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/match/{match_id}/best-players"
+      }
+    },
+    {
+      "name": "sportsapipro_get_match_average_positions",
+      "description": "Get the average positions of each team's players on the pitch during a match, with the substitutes who came on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_id": {
+            "type": "integer",
+            "description": "Match id from sportsapipro_list_live_matches, sportsapipro_list_matches_by_date, sportsapipro_list_season_matches, sportsapipro_list_team_matches or sportsapipro_search."
+          }
+        },
+        "required": [
+          "match_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/match/{match_id}/average-positions"
+      }
+    },
+    {
+      "name": "sportsapipro_get_team",
+      "description": "Get one team: name, country, venue with capacity, manager, foundation date, colours, main tournament and recent form.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from sportsapipro_search, a match or a standings row."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}"
+      }
+    },
+    {
+      "name": "sportsapipro_get_team_squad",
+      "description": "Get a team's squad: players with position, nationality, shirt number, age, market value and contract expiry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from sportsapipro_search, a match or a standings row."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/players"
+      }
+    },
+    {
+      "name": "sportsapipro_list_team_matches",
+      "description": "List a team's upcoming (next) or most recent finished (last) matches in all competitions, a page at a time: tournament, opponent, kick-off timestamp, status and score.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from sportsapipro_search, a match or a standings row."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "last",
+              "next"
+            ],
+            "default": "next",
+            "description": "next for upcoming matches (default), last for the most recent finished ones."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, 0-indexed (0 = closest to today). Ask for the next page while the answer says hasNextPage."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/events/{direction}/{page}"
+      }
+    },
+    {
+      "name": "sportsapipro_get_player",
+      "description": "Get one player's profile: team, position, shirt number, country, date of birth, height, preferred foot, estimated market value and contract end.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player_id": {
+            "type": "integer",
+            "description": "Player id from sportsapipro_search or sportsapipro_get_team_squad."
+          }
+        },
+        "required": [
+          "player_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/{player_id}"
+      }
+    },
+    {
+      "name": "sportsapipro_get_player_statistics",
+      "description": "Get a player's statistics season by season across competitions: appearances, minutes, goals, assists, cards and rating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player_id": {
+            "type": "integer",
+            "description": "Player id from sportsapipro_search or sportsapipro_get_team_squad."
+          }
+        },
+        "required": [
+          "player_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/players/{player_id}/statistics"
+      }
+    },
+    {
+      "name": "sportsapipro_get_manager",
+      "description": "Get one manager: current team, nationality, date of birth, preferred formation and performance (matches, wins, draws, losses, goals scored and conceded).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "manager_id": {
+            "type": "integer",
+            "description": "Manager id from sportsapipro_search or a team or match."
+          }
+        },
+        "required": [
+          "manager_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/managers/{manager_id}"
+      }
+    },
+    {
+      "name": "sportsapipro_get_manager_career",
+      "description": "Get a manager's career history: the teams coached with start and end dates and the wins, draws and losses at each club.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "manager_id": {
+            "type": "integer",
+            "description": "Manager id from sportsapipro_search or a team or match."
+          }
+        },
+        "required": [
+          "manager_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/managers/{manager_id}/career-history"
+      }
+    }
+  ]
+}

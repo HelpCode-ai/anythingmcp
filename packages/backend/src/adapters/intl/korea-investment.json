@@ -1,0 +1,912 @@
+{
+  "slug": "korea-investment",
+  "name": "Korea Investment & Securities",
+  "aliases": [
+    "KIS Developers",
+    "KIS Open API",
+    "한국투자증권"
+  ],
+  "description": "Read Korean and overseas market data from the KIS Developers Open API of Korea Investment & Securities: stock and ETF quotes, daily and minute charts, order books, investor flows, KOSPI and KOSDAQ indices, and US, Japanese, Hong Kong and Chinese stock prices. Read-only, no trading.",
+  "instructions": "## Korea Investment & Securities (KIS) market data\nThis connector reads quotes from the **KIS Developers Open API** of Korea Investment & Securities (한국투자증권), `https://openapi.koreainvestment.com:9443`: Korean stocks, ETFs and ETNs on KRX and NXT, Korean indices, and foreign stocks, indices and exchange rates. It is **read-only market data**: it has no tools to place, change or cancel orders, and it does not read account balances or positions.\n\n**Setup**\n1. You need a Korea Investment & Securities securities account. Apply for the Open API service at https://apiportal.koreainvestment.com (KIS Developers, 'API 신청') and choose the account for **real trading (실전투자)**.\n2. Copy the **App Key** into `KIS_APP_KEY` and the **App Secret** into `KIS_APP_SECRET`.\n3. The connector exchanges them for an access token at `POST /oauth2/tokenP` (grant `client_credentials`) and sends it as `authorization: Bearer <token>`, together with the `appkey`, `appsecret`, `custtype: P` and the per-call `tr_id` headers KIS requires.\n\n**Tokens**: a KIS token lasts 24 hours and KIS allows about one token request per minute; asking again within 6 hours returns the same token, and KIS may send a KakaoTalk notice on every new token. The connector keeps the token and only asks for a new one shortly before it expires.\n\n**Mock trading (모의투자) keys are not supported**: they work only on the separate host `openapivts.koreainvestment.com:29443`. Use real-trading keys; reading quotes places no trades.\n\n**Identifiers**\n- Korean stocks, ETFs and ETNs: the six-digit short code (`005930` Samsung Electronics, `000660` SK hynix, `035420` NAVER, `069500` KODEX 200). ETNs take a `Q` in front. `market` is `J` (KRX, default), `NX` (Nextrade) or `UN` (both).\n- Korean indices: four digits, `0001` KOSPI, `1001` KOSDAQ, `2001` KOSPI 200.\n- Foreign stocks: an exchange code plus a ticker, e.g. `NAS` + `AAPL`, `NYS` + `KO`, `TSE` + `7203`, `HKS` + `00700`.\n- Dates are `YYYYMMDD` and times `HHMMSS`, both in Korean time (KST, UTC+9).\n\n**Reading the answers**: KIS returns Korean field abbreviations. Common ones: `stck_prpr` current price, `prdy_vrss` change from the previous close, `prdy_ctrt` change rate in percent, `prdy_vrss_sign` 1 upper limit, 2 up, 3 unchanged, 4 lower limit, 5 down, `stck_oprc` / `stck_hgpr` / `stck_lwpr` / `stck_clpr` open, high, low, close, `acml_vol` volume, `acml_tr_pbmn` traded value in KRW, `stck_bsop_date` trading date. Every answer carries `rt_cd` (`0` = success), `msg_cd` and `msg1`. Korean prices are in KRW, foreign prices in the local currency.\n\n**Tools**\n- Korean stocks: `korea_investment_get_stock_price` (start here), `korea_investment_get_daily_prices`, `korea_investment_get_price_chart` (custom date range), `korea_investment_get_minute_chart`, `korea_investment_get_trades_by_time`, `korea_investment_get_orderbook`, `korea_investment_get_investor_flows` (foreigners, institutions, individuals), `korea_investment_get_stock_info`.\n- Korean indices: `korea_investment_get_index_price`, `korea_investment_get_index_daily_prices`.\n- Foreign markets: `korea_investment_get_overseas_price`, `korea_investment_get_overseas_price_detail`, `korea_investment_get_overseas_daily_prices`, `korea_investment_get_overseas_orderbook`, `korea_investment_get_overseas_index_chart` (overseas indices, exchange rates), `korea_investment_get_overseas_stock_info`.\n\n**Limits**: about 20 calls per second per account on real-trading keys; on `EGW00201` slow down. Chart tools return about 100 rows per call: page back by moving the end date. Real-time US quotes need a separate subscription in the KIS app; without one US prices are delayed.\n\n**Not covered**: orders, cancellations, account balances, positions, deposits, WebSocket streaming, futures and options, bonds trading. Market data is for information only and is not investment advice.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "korea-investment",
+  "docsUrl": "https://apiportal.koreainvestment.com/apiservice-summary",
+  "requiredEnvVars": [
+    "KIS_APP_KEY",
+    "KIS_APP_SECRET"
+  ],
+  "envVarMeta": {
+    "KIS_APP_KEY": {
+      "label": "App Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "KIS Developers (apiportal.koreainvestment.com) > API 신청: the App Key of your real-trading (실전투자) account. Mock-trading keys do not work here.",
+      "link": "https://apiportal.koreainvestment.com/intro",
+      "pattern": "^[A-Za-z0-9]{20,64}$",
+      "patternMessage": "The App Key is 20 to 64 letters and digits, without spaces."
+    },
+    "KIS_APP_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the App Key in KIS Developers. It is a long string (about 180 characters).",
+      "link": "https://apiportal.koreainvestment.com/intro",
+      "pattern": "^[A-Za-z0-9+/=]{60,400}$",
+      "patternMessage": "Paste the whole App Secret, without spaces or line breaks."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "KIS refused the App Key or App Secret. Copy both again from KIS Developers and check that they belong to a real-trading (실전투자) account: mock-trading keys only work on openapivts.koreainvestment.com.",
+      "field": "KIS_APP_KEY"
+    },
+    "403": {
+      "hint": "KIS refused the request. Check that the Open API service is active for this account in KIS Developers and that the App Key has not been reissued. KIS also refuses a new token when one was requested less than a minute ago: wait a minute and check again.",
+      "field": "KIS_APP_SECRET"
+    },
+    "unreachable": "openapi.koreainvestment.com:9443 could not be reached. Outbound connections to port 9443 must be allowed from this server."
+  },
+  "probe": {
+    "tool": "korea_investment_get_stock_price",
+    "params": {
+      "stock_code": "005930"
+    }
+  },
+  "connector": {
+    "name": "KIS Developers Open API",
+    "type": "REST",
+    "baseUrl": "https://openapi.koreainvestment.com:9443",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://openapi.koreainvestment.com:9443/oauth2/tokenP",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json; charset=utf-8",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "grant_type": "client_credentials",
+        "appkey": "${username}",
+        "appsecret": "${password}"
+      },
+      "username": "{{KIS_APP_KEY}}",
+      "password": "{{KIS_APP_SECRET}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 86400,
+      "proactiveRefreshSeconds": 1800,
+      "refreshOn401": true,
+      "headerName": "authorization",
+      "headerTemplate": "Bearer ${token}",
+      "extraHeaders": {
+        "appkey": "{{KIS_APP_KEY}}",
+        "appsecret": "{{KIS_APP_SECRET}}"
+      }
+    },
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "Accept": "application/json",
+      "custtype": "P"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "msg_cd",
+          "matches": "^EGW0012[0-9]$",
+          "messagePath": "msg1",
+          "status": 401
+        },
+        {
+          "path": "msg_cd",
+          "equals": "EGW00201",
+          "messagePath": "msg1",
+          "status": 429
+        },
+        {
+          "path": "rt_cd",
+          "matches": "^[1-9]",
+          "messagePath": [
+            "msg_cd",
+            "msg1"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "korea_investment_get_stock_price",
+      "description": "Current quote of one Korean stock, ETF or ETN: last price (stck_prpr), change and change rate against the previous close (prdy_vrss, prdy_ctrt), open, high, low, upper and lower price limits, accumulated volume and traded value, 52-week high and low, PER, PBR, EPS, BPS, market capitalisation (hts_avls, in 100 million KRW), foreign ownership ratio and the trading status. Use it first for any 'how is X trading' question. Read-only market data (tr_id FHKST01010100).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "description": "Six-digit KRX short code of the stock, ETF or ETN, e.g. 005930 (Samsung Electronics), 000660 (SK hynix), 069500 (KODEX 200). ETNs take a Q in front (Q500001).",
+            "pattern": "^Q?[0-9A-Z]{6}$"
+          },
+          "market": {
+            "type": "string",
+            "description": "Market to quote: J = KRX (Korea Exchange, default), NX = NXT (Nextrade alternative exchange), UN = both combined.",
+            "enum": [
+              "J",
+              "NX",
+              "UN"
+            ],
+            "default": "J"
+          }
+        },
+        "required": [
+          "stock_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/inquire-price",
+        "queryParams": {
+          "FID_COND_MRKT_DIV_CODE": "$market",
+          "FID_INPUT_ISCD": "$stock_code"
+        },
+        "headers": {
+          "tr_id": "FHKST01010100"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_daily_prices",
+      "description": "Last 30 trading days (or 30 weeks or 30 months) of one Korean stock: per row the date (stck_bsop_date), open, high, low, close, change against the previous period, volume, and foreign ownership change. For a custom date range use korea_investment_get_price_chart. Read-only (tr_id FHKST01010400).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "description": "Six-digit KRX short code of the stock, ETF or ETN, e.g. 005930 (Samsung Electronics), 000660 (SK hynix), 069500 (KODEX 200). ETNs take a Q in front (Q500001).",
+            "pattern": "^Q?[0-9A-Z]{6}$"
+          },
+          "market": {
+            "type": "string",
+            "description": "Market to quote: J = KRX (Korea Exchange, default), NX = NXT (Nextrade alternative exchange), UN = both combined.",
+            "enum": [
+              "J",
+              "NX",
+              "UN"
+            ],
+            "default": "J"
+          },
+          "period": {
+            "type": "string",
+            "description": "D = one row per day for the last 30 trading days (default), W = per week for 30 weeks, M = per month for 30 months.",
+            "enum": [
+              "D",
+              "W",
+              "M"
+            ],
+            "default": "D"
+          },
+          "adjusted": {
+            "type": "string",
+            "description": "Price adjustment flag passed to KIS as FID_ORG_ADJ_PRC: 1 (default, the value KIS's own samples send) or 0. It controls whether past prices are restated for stock splits and consolidations; KIS documents its meaning inconsistently between endpoints, so keep the default unless the user asks for raw prices.",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "default": "1"
+          }
+        },
+        "required": [
+          "stock_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/inquire-daily-price",
+        "queryParams": {
+          "FID_COND_MRKT_DIV_CODE": "$market",
+          "FID_INPUT_ISCD": "$stock_code",
+          "FID_PERIOD_DIV_CODE": "$period",
+          "FID_ORG_ADJ_PRC": "$adjusted"
+        },
+        "headers": {
+          "tr_id": "FHKST01010400"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_price_chart",
+      "description": "Daily, weekly, monthly or yearly candles (OHLCV) of one Korean stock between two dates, at most 100 candles per call: output1 is the current quote summary, output2 the candles newest first (stck_bsop_date, stck_oprc, stck_hgpr, stck_lwpr, stck_clpr, acml_vol, acml_tr_pbmn). For longer ranges call again with an earlier end_date. Read-only (tr_id FHKST03010100).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "description": "Six-digit KRX short code of the stock, ETF or ETN, e.g. 005930 (Samsung Electronics), 000660 (SK hynix), 069500 (KODEX 200). ETNs take a Q in front (Q500001).",
+            "pattern": "^Q?[0-9A-Z]{6}$"
+          },
+          "market": {
+            "type": "string",
+            "description": "Market to quote: J = KRX (Korea Exchange, default), NX = NXT (Nextrade alternative exchange), UN = both combined.",
+            "enum": [
+              "J",
+              "NX",
+              "UN"
+            ],
+            "default": "J"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day of the range as YYYYMMDD (Korean dates), e.g. 20260105.",
+            "pattern": "^[0-9]{8}$"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of the range as YYYYMMDD (Korean dates), e.g. 20260105.",
+            "pattern": "^[0-9]{8}$"
+          },
+          "period": {
+            "type": "string",
+            "description": "Candle size: D = day (default), W = week, M = month, Y = year.",
+            "enum": [
+              "D",
+              "W",
+              "M",
+              "Y"
+            ],
+            "default": "D"
+          },
+          "price_type": {
+            "type": "string",
+            "description": "0 = prices adjusted for splits and consolidations (default), 1 = original prices.",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "default": "0"
+          }
+        },
+        "required": [
+          "stock_code",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+        "queryParams": {
+          "FID_COND_MRKT_DIV_CODE": "$market",
+          "FID_INPUT_ISCD": "$stock_code",
+          "FID_INPUT_DATE_1": "$start_date",
+          "FID_INPUT_DATE_2": "$end_date",
+          "FID_PERIOD_DIV_CODE": "$period",
+          "FID_ORG_ADJ_PRC": "$price_type"
+        },
+        "headers": {
+          "tr_id": "FHKST03010100"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_minute_chart",
+      "description": "One-minute candles of one Korean stock for today, up to 30 per call, ending at a given time: output1 is the quote summary, output2 the minute bars newest first (stck_cntg_hour, stck_prpr, stck_oprc, stck_hgpr, stck_lwpr, cntg_vol). To go further back, call again with the earliest stck_cntg_hour returned. A time in the future returns the latest bars. Read-only (tr_id FHKST03010200).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "description": "Six-digit KRX short code of the stock, ETF or ETN, e.g. 005930 (Samsung Electronics), 000660 (SK hynix), 069500 (KODEX 200). ETNs take a Q in front (Q500001).",
+            "pattern": "^Q?[0-9A-Z]{6}$"
+          },
+          "market": {
+            "type": "string",
+            "description": "Market to quote: J = KRX (Korea Exchange, default), NX = NXT (Nextrade alternative exchange), UN = both combined.",
+            "enum": [
+              "J",
+              "NX",
+              "UN"
+            ],
+            "default": "J"
+          },
+          "time": {
+            "type": "string",
+            "description": "End time as HHMMSS in Korean time (KST), e.g. 153000 for the close or 100000 for 10:00.",
+            "pattern": "^[0-9]{6}$"
+          },
+          "include_past": {
+            "type": "string",
+            "description": "Y (default) to include earlier bars before the requested time, N for only that minute.",
+            "enum": [
+              "Y",
+              "N"
+            ],
+            "default": "Y"
+          }
+        },
+        "required": [
+          "stock_code",
+          "time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+        "queryParams": {
+          "FID_COND_MRKT_DIV_CODE": "$market",
+          "FID_INPUT_ISCD": "$stock_code",
+          "FID_INPUT_HOUR_1": "$time",
+          "FID_PW_DATA_INCU_YN": "$include_past",
+          "FID_ETC_CLS_CODE": ""
+        },
+        "headers": {
+          "tr_id": "FHKST03010200"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_orderbook",
+      "description": "Order book of one Korean stock: the ten best ask and bid prices with their remaining quantities (askp1..10, bidp1..10, askp_rsqn1..10, bidp_rsqn1..10), total ask and bid quantities, and the expected auction price and volume (output2) during the opening and closing auctions. Read-only (tr_id FHKST01010200).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "description": "Six-digit KRX short code of the stock, ETF or ETN, e.g. 005930 (Samsung Electronics), 000660 (SK hynix), 069500 (KODEX 200). ETNs take a Q in front (Q500001).",
+            "pattern": "^Q?[0-9A-Z]{6}$"
+          },
+          "market": {
+            "type": "string",
+            "description": "Market to quote: J = KRX (Korea Exchange, default), NX = NXT (Nextrade alternative exchange), UN = both combined.",
+            "enum": [
+              "J",
+              "NX",
+              "UN"
+            ],
+            "default": "J"
+          }
+        },
+        "required": [
+          "stock_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn",
+        "queryParams": {
+          "FID_COND_MRKT_DIV_CODE": "$market",
+          "FID_INPUT_ISCD": "$stock_code"
+        },
+        "headers": {
+          "tr_id": "FHKST01010200"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_trades_by_time",
+      "description": "Time-and-sales of one Korean stock today: executions at or before a given time with price, change, volume per print and execution strength (tday_rltv). Use it to see how the price moved during the session. Read-only (tr_id FHPST01060000).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "description": "Six-digit KRX short code of the stock, ETF or ETN, e.g. 005930 (Samsung Electronics), 000660 (SK hynix), 069500 (KODEX 200). ETNs take a Q in front (Q500001).",
+            "pattern": "^Q?[0-9A-Z]{6}$"
+          },
+          "market": {
+            "type": "string",
+            "description": "Market to quote: J = KRX (Korea Exchange, default), NX = NXT (Nextrade alternative exchange), UN = both combined.",
+            "enum": [
+              "J",
+              "NX",
+              "UN"
+            ],
+            "default": "J"
+          },
+          "time": {
+            "type": "string",
+            "description": "Time as HHMMSS in KST; executions up to this time are returned, e.g. 113000.",
+            "pattern": "^[0-9]{6}$"
+          }
+        },
+        "required": [
+          "stock_code",
+          "time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/inquire-time-itemconclusion",
+        "queryParams": {
+          "FID_COND_MRKT_DIV_CODE": "$market",
+          "FID_INPUT_ISCD": "$stock_code",
+          "FID_INPUT_HOUR_1": "$time"
+        },
+        "headers": {
+          "tr_id": "FHPST01060000"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_investor_flows",
+      "description": "Net buying by investor type for one Korean stock over the recent trading days: individuals (prsn_ntby_qty), foreigners (frgn_ntby_qty) and institutions (orgn_ntby_qty), as quantities and as traded value (..._tr_pbmn, in million KRW), with the close of each day. Today's figures are filled in after the market closes. Read-only (tr_id FHKST01010900).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "description": "Six-digit KRX short code of the stock, ETF or ETN, e.g. 005930 (Samsung Electronics), 000660 (SK hynix), 069500 (KODEX 200). ETNs take a Q in front (Q500001).",
+            "pattern": "^Q?[0-9A-Z]{6}$"
+          },
+          "market": {
+            "type": "string",
+            "description": "Market: J = KRX (default) or NX = NXT.",
+            "enum": [
+              "J",
+              "NX"
+            ],
+            "default": "J"
+          }
+        },
+        "required": [
+          "stock_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/inquire-investor",
+        "queryParams": {
+          "FID_COND_MRKT_DIV_CODE": "$market",
+          "FID_INPUT_ISCD": "$stock_code"
+        },
+        "headers": {
+          "tr_id": "FHKST01010900"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_stock_info",
+      "description": "Basic master data of a Korean listed product: Korean and English names (prdt_name, prdt_eng_name), listing market, sector classification, listed shares, par value, capital, listing date and whether it is suspended or under administrative designation. Use it to confirm what a six-digit code refers to. Read-only (tr_id CTPF1002R).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "description": "Six-digit KRX code, e.g. 005930. ETNs start with Q (Q500001).",
+            "pattern": "^Q?[0-9A-Z]{6}$"
+          },
+          "product_type": {
+            "type": "string",
+            "description": "300 = stocks, ETFs, ETNs and ELWs (default), 301 = futures and options, 302 = bonds, 306 = ELS.",
+            "enum": [
+              "300",
+              "301",
+              "302",
+              "306"
+            ],
+            "default": "300"
+          }
+        },
+        "required": [
+          "stock_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/search-stock-info",
+        "queryParams": {
+          "PRDT_TYPE_CD": "$product_type",
+          "PDNO": "$stock_code"
+        },
+        "headers": {
+          "tr_id": "CTPF1002R"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_index_price",
+      "description": "Current level of a Korean market or sector index: index value (bstp_nmix_prpr), change and change rate, open, high, low, volume and traded value, and the number of rising, unchanged and falling issues. Read-only (tr_id FHPUP02100000).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_code": {
+            "type": "string",
+            "description": "Four-digit KRX index code: 0001 = KOSPI (default), 1001 = KOSDAQ, 2001 = KOSPI 200. Sector codes are listed in the KIS sector master file.",
+            "pattern": "^[0-9]{4}$",
+            "default": "0001"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/inquire-index-price",
+        "queryParams": {
+          "FID_COND_MRKT_DIV_CODE": "U",
+          "FID_INPUT_ISCD": "$index_code"
+        },
+        "headers": {
+          "tr_id": "FHPUP02100000"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_index_daily_prices",
+      "description": "History of a Korean market or sector index up to a given date, one row per day, week or month (about 100 rows per call): date, close, change, open, high, low, volume and traded value. Read-only (tr_id FHPUP02120000).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "index_code": {
+            "type": "string",
+            "description": "Four-digit KRX index code: 0001 = KOSPI (default), 1001 = KOSDAQ, 2001 = KOSPI 200.",
+            "pattern": "^[0-9]{4}$",
+            "default": "0001"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Most recent day to return as YYYYMMDD (Korean dates), e.g. 20260105.",
+            "pattern": "^[0-9]{8}$"
+          },
+          "period": {
+            "type": "string",
+            "description": "D = daily (default), W = weekly, M = monthly.",
+            "enum": [
+              "D",
+              "W",
+              "M"
+            ],
+            "default": "D"
+          }
+        },
+        "required": [
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/domestic-stock/v1/quotations/inquire-index-daily-price",
+        "queryParams": {
+          "FID_PERIOD_DIV_CODE": "$period",
+          "FID_COND_MRKT_DIV_CODE": "U",
+          "FID_INPUT_ISCD": "$index_code",
+          "FID_INPUT_DATE_1": "$end_date"
+        },
+        "headers": {
+          "tr_id": "FHPUP02120000"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_overseas_price",
+      "description": "Current quote of a foreign stock (US, Japan, Hong Kong, China, Vietnam): last price (last), previous close (base), change and change rate (diff, rate), volume (tvol), traded value (tamt) and whether it can be ordered through KIS (ordy). Prices are in the stock's local currency; US quotes may be delayed unless the account has a real-time US data subscription. Read-only (tr_id HHDFS00000300).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Exchange code: NAS = Nasdaq, NYS = NYSE, AMS = NYSE American (AMEX), TSE = Tokyo, HKS = Hong Kong, SHS = Shanghai, SZS = Shenzhen, SHI = Shanghai index, SZI = Shenzhen index, HSX = Ho Chi Minh, HNX = Hanoi, BAQ / BAY / BAA = US day-time trading for Nasdaq / NYSE / AMEX.",
+            "enum": [
+              "NAS",
+              "NYS",
+              "AMS",
+              "TSE",
+              "HKS",
+              "SHS",
+              "SZS",
+              "SHI",
+              "SZI",
+              "HSX",
+              "HNX",
+              "BAQ",
+              "BAY",
+              "BAA"
+            ]
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Ticker on that exchange, e.g. AAPL, TSLA, NVDA on NAS; 7203 on TSE; 00700 on HKS; 600519 on SHS."
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/overseas-price/v1/quotations/price",
+        "queryParams": {
+          "AUTH": "",
+          "EXCD": "$exchange",
+          "SYMB": "$symbol"
+        },
+        "headers": {
+          "tr_id": "HHDFS00000300"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_overseas_price_detail",
+      "description": "Detailed quote of a foreign stock: open, high, low, previous close, 52-week high and low with their dates, PER, PBR, EPS, BPS, market capitalisation, shares outstanding, currency, tick size, sector name and the exchange rate KIS applies. Read-only (tr_id HHDFS76200200).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Exchange code: NAS = Nasdaq, NYS = NYSE, AMS = NYSE American (AMEX), TSE = Tokyo, HKS = Hong Kong, SHS = Shanghai, SZS = Shenzhen, SHI = Shanghai index, SZI = Shenzhen index, HSX = Ho Chi Minh, HNX = Hanoi, BAQ / BAY / BAA = US day-time trading for Nasdaq / NYSE / AMEX.",
+            "enum": [
+              "NAS",
+              "NYS",
+              "AMS",
+              "TSE",
+              "HKS",
+              "SHS",
+              "SZS",
+              "SHI",
+              "SZI",
+              "HSX",
+              "HNX",
+              "BAQ",
+              "BAY",
+              "BAA"
+            ]
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Ticker on that exchange, e.g. AAPL, TSLA, NVDA on NAS; 7203 on TSE; 00700 on HKS; 600519 on SHS."
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/overseas-price/v1/quotations/price-detail",
+        "queryParams": {
+          "AUTH": "",
+          "EXCD": "$exchange",
+          "SYMB": "$symbol"
+        },
+        "headers": {
+          "tr_id": "HHDFS76200200"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_overseas_daily_prices",
+      "description": "Daily, weekly or monthly history of a foreign stock up to a given date, about 100 rows per call: date (xymd), close (clos), change, open, high, low, volume and traded value. Call again with an earlier base_date for older data. Read-only (tr_id HHDFS76240000).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Exchange code: NAS = Nasdaq, NYS = NYSE, AMS = NYSE American (AMEX), TSE = Tokyo, HKS = Hong Kong, SHS = Shanghai, SZS = Shenzhen, SHI = Shanghai index, SZI = Shenzhen index, HSX = Ho Chi Minh, HNX = Hanoi, BAQ / BAY / BAA = US day-time trading for Nasdaq / NYSE / AMEX.",
+            "enum": [
+              "NAS",
+              "NYS",
+              "AMS",
+              "TSE",
+              "HKS",
+              "SHS",
+              "SZS",
+              "SHI",
+              "SZI",
+              "HSX",
+              "HNX",
+              "BAQ",
+              "BAY",
+              "BAA"
+            ]
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Ticker on that exchange, e.g. AAPL, TSLA, NVDA on NAS; 7203 on TSE; 00700 on HKS; 600519 on SHS."
+          },
+          "base_date": {
+            "type": "string",
+            "description": "Most recent day to return (use today for the latest data) as YYYYMMDD (Korean dates), e.g. 20260105.",
+            "pattern": "^[0-9]{8}$"
+          },
+          "period": {
+            "type": "string",
+            "description": "0 = daily (default), 1 = weekly, 2 = monthly.",
+            "enum": [
+              "0",
+              "1",
+              "2"
+            ],
+            "default": "0"
+          },
+          "adjusted": {
+            "type": "string",
+            "description": "1 = prices adjusted for splits (default), 0 = raw prices.",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "default": "1"
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol",
+          "base_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/overseas-price/v1/quotations/dailyprice",
+        "queryParams": {
+          "AUTH": "",
+          "EXCD": "$exchange",
+          "SYMB": "$symbol",
+          "GUBN": "$period",
+          "BYMD": "$base_date",
+          "MODP": "$adjusted"
+        },
+        "headers": {
+          "tr_id": "HHDFS76240000"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_overseas_orderbook",
+      "description": "Order book of a foreign stock: best ask and bid prices with quantities (ten levels for US stocks, one level elsewhere) and the current price summary. Read-only (tr_id HHDFS76200100).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Exchange code: NAS = Nasdaq, NYS = NYSE, AMS = NYSE American (AMEX), TSE = Tokyo, HKS = Hong Kong, SHS = Shanghai, SZS = Shenzhen, SHI = Shanghai index, SZI = Shenzhen index, HSX = Ho Chi Minh, HNX = Hanoi, BAQ / BAY / BAA = US day-time trading for Nasdaq / NYSE / AMEX.",
+            "enum": [
+              "NAS",
+              "NYS",
+              "AMS",
+              "TSE",
+              "HKS",
+              "SHS",
+              "SZS",
+              "SHI",
+              "SZI",
+              "HSX",
+              "HNX",
+              "BAQ",
+              "BAY",
+              "BAA"
+            ]
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Ticker on that exchange, e.g. AAPL, TSLA, NVDA on NAS; 7203 on TSE; 00700 on HKS; 600519 on SHS."
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/overseas-price/v1/quotations/inquire-asking-price",
+        "queryParams": {
+          "AUTH": "",
+          "EXCD": "$exchange",
+          "SYMB": "$symbol"
+        },
+        "headers": {
+          "tr_id": "HHDFS76200100"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_overseas_index_chart",
+      "description": "Daily, weekly, monthly or yearly candles of a foreign index, exchange rate, government bond or gold future between two dates (about 100 candles per call): output1 is the latest value, output2 the candles (stck_bsop_date, ovrs_nmix_prpr close, open, high, low). Examples with market N: SPX (S&P 500), .DJI (Dow Jones Industrial Average). Codes for other indices, exchange rates, bonds and gold come from the KIS overseas index master file (KIS Developers forum, FAQ, overseas symbol download). For US stocks only Dow 30, Nasdaq 100 and S&P 500 members work here; use korea_investment_get_overseas_daily_prices for other stocks. Read-only (tr_id FHKST03030100).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "description": "N = overseas index (default), X = exchange rate, I = government bond, S = gold future.",
+            "enum": [
+              "N",
+              "X",
+              "I",
+              "S"
+            ],
+            "default": "N"
+          },
+          "code": {
+            "type": "string",
+            "description": "Instrument code from the KIS overseas index master, e.g. SPX or .DJI."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day of the range as YYYYMMDD (Korean dates), e.g. 20260105.",
+            "pattern": "^[0-9]{8}$"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of the range as YYYYMMDD (Korean dates), e.g. 20260105.",
+            "pattern": "^[0-9]{8}$"
+          },
+          "period": {
+            "type": "string",
+            "description": "D = day (default), W = week, M = month, Y = year.",
+            "enum": [
+              "D",
+              "W",
+              "M",
+              "Y"
+            ],
+            "default": "D"
+          }
+        },
+        "required": [
+          "code",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/overseas-price/v1/quotations/inquire-daily-chartprice",
+        "queryParams": {
+          "FID_COND_MRKT_DIV_CODE": "$market",
+          "FID_INPUT_ISCD": "$code",
+          "FID_INPUT_DATE_1": "$start_date",
+          "FID_INPUT_DATE_2": "$end_date",
+          "FID_PERIOD_DIV_CODE": "$period"
+        },
+        "headers": {
+          "tr_id": "FHKST03030100"
+        }
+      }
+    },
+    {
+      "name": "korea_investment_get_overseas_stock_info",
+      "description": "Master data of a foreign stock as KIS lists it: Korean and English names, exchange, currency, listing status, tick size, minimum order quantity and the sector. Use it to check a ticker before quoting it. Read-only (tr_id CTPF1702R).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker, e.g. AAPL."
+          },
+          "product_type": {
+            "type": "string",
+            "description": "Market: 512 = Nasdaq (default), 513 = NYSE, 529 = NYSE American (AMEX), 515 = Japan, 501 = Hong Kong, 543 = Hong Kong CNY, 558 = Hong Kong USD, 507 = Hanoi, 508 = Ho Chi Minh, 551 = Shanghai A, 552 = Shenzhen A.",
+            "enum": [
+              "512",
+              "513",
+              "529",
+              "515",
+              "501",
+              "543",
+              "558",
+              "507",
+              "508",
+              "551",
+              "552"
+            ],
+            "default": "512"
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uapi/overseas-price/v1/quotations/search-info",
+        "queryParams": {
+          "PRDT_TYPE_CD": "$product_type",
+          "PDNO": "$symbol"
+        },
+        "headers": {
+          "tr_id": "CTPF1702R"
+        }
+      }
+    }
+  ]
+}
