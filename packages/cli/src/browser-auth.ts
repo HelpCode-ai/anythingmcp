@@ -34,17 +34,25 @@ function verificationCode(state: string): string {
   return `${hex.slice(0, 4)}-${hex.slice(4, 8)}`;
 }
 
+/**
+ * The command that opens a URL in the default browser. On Windows it avoids
+ * `cmd /c start`: cmd parses the URL as a command line, cuts it at the first
+ * `&` and runs the rest as a command. `rundll32 url.dll,FileProtocolHandler`
+ * receives the URL as a plain argument.
+ */
+export function browserCommand(platform: NodeJS.Platform, url: string): [string, string[]] {
+  if (platform === 'darwin') return ['open', [url]];
+  if (platform === 'win32') return ['rundll32', ['url.dll,FileProtocolHandler', url]];
+  return ['xdg-open', [url]];
+}
+
 /** Best-effort open of a URL in the default browser; never throws. */
 function openBrowser(url: string): void {
   // Headless / CI / tests: skip launching and rely on the printed URL.
   if (process.env.AMCP_NO_BROWSER === '1') return;
-  const platform = process.platform;
-  const [cmd, args] =
-    platform === 'darwin' ? ['open', [url]]
-      : platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
-        : ['xdg-open', [url]];
+  const [cmd, args] = browserCommand(process.platform, url);
   try {
-    const child = spawn(cmd as string, args as string[], { stdio: 'ignore', detached: true });
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
     child.on('error', () => undefined);
     child.unref();
   } catch {
