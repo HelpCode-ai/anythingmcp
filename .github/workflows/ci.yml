@@ -124,6 +124,57 @@ jobs:
         run: npm run build
         working-directory: packages/backend
 
+      # Unit tests build services by hand, so a dependency Nest cannot resolve
+      # only shows when a process boots. Two did reach production: #1483
+      # (@Injectable on the wrong class, caught by the blue/green check) and
+      # #1508 (a guard needing RedisService in a module the File Search worker
+      # loads: the worker crash-looped for 14 hours, because the blue/green
+      # check boots only the backend). Boot both processes from this build,
+      # on every pull request, the way Cloud runs them.
+      - name: Boot the backend and the files worker from the build
+        working-directory: packages/backend
+        env:
+          NODE_ENV: production
+          DEPLOYMENT_MODE: cloud
+          MCP_AUTH_MODE: oauth2
+          PORT: '4100'
+          CORS_ORIGIN: http://localhost:3000
+          SERVER_URL: http://localhost:4100
+          FRONTEND_URL: http://localhost:3000
+          FILES_WORKER_HOST: 127.0.0.1
+          FILES_WORKER_PORT: '8891'
+          # CI-only, like the secrets above (the worker refuses to start without one).
+          FILES_WORKER_TOKEN: ci-files-worker-token-aaaaaaaa
+        run: |
+          set -euo pipefail
+          # boot <name> <log> <ready check> <command...>: start the command,
+          # wait up to 120 s for the check, fail if the process exits first.
+          boot() {
+            local name=$1 log=$2 ready=$3; shift 3
+            "$@" >"$log" 2>&1 &
+            local pid=$!
+            for i in $(seq 1 120); do
+              if bash -c "$ready" >/dev/null 2>&1; then
+                echo "$name ready after ${i}s"
+                kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+                return 0
+              fi
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "::error::$name exited before it was ready"
+                tail -80 "$log"; return 1
+              fi
+              sleep 1
+            done
+            echo "::error::$name was not ready after 120 s"
+            tail -80 "$log"; kill "$pid" 2>/dev/null || true; return 1
+          }
+          boot backend "$RUNNER_TEMP/backend.log" \
+            "curl -sf http://localhost:4100/health" \
+            node dist/src/main.js
+          boot files-worker "$RUNNER_TEMP/files-worker.log" \
+            "grep -q 'files-worker ready' '$RUNNER_TEMP/files-worker.log'" \
+            node dist/src/ee/file-search/files-worker.main.js
+
   frontend:
     name: Frontend (lint, typecheck, build)
     runs-on: ubuntu-latest
