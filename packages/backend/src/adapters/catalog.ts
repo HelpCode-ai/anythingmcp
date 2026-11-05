@@ -628,6 +628,7 @@ import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
 import * as wati from './intl/wati.json';
 import * as waveAccounting from './intl/wave-accounting.json';
+import * as wazuh from './intl/wazuh.json';
 import * as webdav from './intl/webdav.json';
 import * as webex from './intl/webex.json';
 import * as webflow from './intl/webflow.json';
@@ -1638,6 +1639,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   wassenger as unknown as AdapterDefinition,
   wati as unknown as AdapterDefinition,
   waveAccounting as unknown as AdapterDefinition,
+  wazuh as unknown as AdapterDefinition,
   webdav as unknown as AdapterDefinition,
   webex as unknown as AdapterDefinition,
   webflow as unknown as AdapterDefinition,
