@@ -1,8 +1,8 @@
 {
   "slug": "prestashop",
   "name": "PrestaShop",
-  "description": "Your own PrestaShop shop: products and combinations, stock, orders with their status history, customers, addresses, carriers and categories, through the shop's Webservice API. Change an order's status, a product's price or a stock quantity.",
-  "instructions": "## PrestaShop\nThis connector talks to the **Webservice API** of a self-hosted PrestaShop shop (`<shop address>/api`). It asks for JSON on every call (`output_format=JSON`). Reading works on PrestaShop 1.7 and 8; the two update tools (`prestashop_update_product_price`, `prestashop_update_stock_quantity`) use `PATCH`, which the Webservice offers from **PrestaShop 8.0**.\n\n## Setup\n1. In the back office open **Advanced Parameters → Webservice** and set **Enable PrestaShop's webservice** to **Yes**. Save.\n2. On the same page click **Add new webservice key**. Click **Generate** for a 32-character key, add a description, set **Status** to enabled.\n3. Under **Permissions** tick, per resource, the methods the key may use. For everything this connector does: **GET** on `products`, `combinations`, `stock_availables`, `orders`, `order_states`, `order_histories`, `customers`, `addresses`, `carriers`, `categories`; **POST** on `order_histories` (change an order's status); **PATCH** on `products` and `stock_availables` (price and stock). A read-only key needs only the GET column. In multistore mode, also pick the shop(s) the key may reach.\n4. Paste the shop address into `PRESTASHOP_URL` (the root, e.g. `https://shop.example.com`, or `https://example.com/shop` when the shop lives in a folder; no `/api`, no trailing slash) and the key into `PRESTASHOP_WEBSERVICE_KEY`.\n\nThe key travels as the username of HTTP Basic authentication with an empty password. Behind Apache with PHP as CGI/FastCGI, the `Authorization` header can be dropped before PrestaShop sees it (every call then answers 401): enable **CGI mode for PHP** on the Webservice page, or fix the server so it passes the header.\n\n## Lists: display, filter, sort, limit\n- **display**: without it, a list returns only ids. `full` returns every field; `[id,name,price]` returns the fields named. Customer tools always return a fixed set of fields that leaves out the password hash and secure key.\n- **filters** (where offered): extra query parameters in PrestaShop syntax, joined with `&`, for fields the tool has no argument for, e.g. `filter[date_upd]=[2026-01-01,2026-12-31]` or `filter[ean13]=[4006381333931]`. Value syntax: `[a]` exact (case-insensitive), `[a|b]` one of, `[1,10]` range, `[ab]%` starts with, `%[ab]` ends with, `%[ab]%` contains. Filtering or sorting by a field the resource does not have is answered with HTTP 500 and error code 38, which lists the fields that can be used.\n- **sort**: `[field_ASC]` or `[field1_DESC,field2_ASC]`.\n- **limit**: `20` for the first 20 rows, `40,20` for 20 rows starting at offset 40. There is no total count; page until a call returns fewer rows than asked for. An empty result comes back as `[]`.\n- Dates (`date_add`, `date_upd`) can be filtered and sorted; the order tool already sends the `date=1` switch PrestaShop needs for that.\n- **language**: multilingual fields (product `name`, `description`, `link_rewrite`, category and order status `name`) come back as a list of `{id, value}` per language when the shop has several languages; pass a language id (`1`) to get plain text.\n\n## Money and stock\n- Product `price` is the base price **without tax**, in the shop's default currency. Order totals come in `total_paid_tax_incl` / `total_paid_tax_excl`, in the order's currency (`id_currency`, `conversion_rate`).\n- Stock lives in `stock_availables`, one row per product and combination: `id_product_attribute` 0 is the product row, other rows are its combinations (sizes, colours). For a product with combinations, change the combination rows; the product row holds their total. A product with `depends_on_stock` 1 is managed by advanced stock management and its quantity cannot be set here.\n\n## Order status\n`prestashop_list_order_states` gives the shop's statuses (ids differ between shops). `prestashop_change_order_state` adds a row to the order's history, which is how PrestaShop changes `current_state` and runs what the status triggers (invoice, stock movements, and, with `send_email` 1, the status e-mail to the customer). PrestaShop changes the status before it sends the e-mail; if the shop cannot send it, the answer is *Unable to save resource* (code 46) although `current_state` has already changed. Check with `prestashop_get_order` before trying again.\n\n## Rate limits\nPrestaShop sets none; the shop's own server is the limit. Prefer `display=[…]` with the fields needed over `display=full` on long lists.\n\n## Common errors\n- **401** *Authentification key is not active* / *No permission for this authentication key*: wrong or disabled key, or the `Authorization` header is lost (see CGI mode above).\n- **401 / 405** on one resource only: the key lacks that method for that resource; tick it under Permissions.\n- **503** *The PrestaShop webservice is disabled*: switch the Webservice on (step 1).\n- **404** on `/api`: the shop has no friendly URLs rewrite (`.htaccess`) for the API; regenerate it under **Shop Parameters → Traffic & SEO** (save with Friendly URL on).\n- **405** on the update tools: the shop runs PrestaShop 1.7, whose Webservice has no `PATCH`.",
+  "description": "Your own PrestaShop shop: products with features, combinations and attributes, brands, stock, orders with their status history and shipping rows, customers, addresses, carriers and categories, through the shop's Webservice API. Create and update products and combinations, feature values, images, prices, stock, order status and tracking numbers.",
+  "instructions": "## PrestaShop\nThis connector talks to the **Webservice API** of a self-hosted PrestaShop shop (`<shop address>/api`). It asks for JSON on every call (`output_format=JSON`). Reading works on PrestaShop 1.7 and 8; the update tools (`prestashop_update_product_price`, `prestashop_update_stock_quantity`, `prestashop_update_product`, `prestashop_update_product_feature_value`, `prestashop_set_order_tracking_number`) use `PATCH`, which the Webservice offers from **PrestaShop 8.0**.\n\n## Setup\n1. In the back office open **Advanced Parameters → Webservice** and set **Enable PrestaShop's webservice** to **Yes**. Save.\n2. On the same page click **Add new webservice key**. Click **Generate** for a 32-character key, add a description, set **Status** to enabled.\n3. Under **Permissions** tick, per resource, the methods the key may use. For everything this connector does: **GET** on `products`, `combinations`, `stock_availables`, `orders`, `order_states`, `order_histories`, `order_carriers`, `customers`, `addresses`, `carriers`, `categories`, `product_features`, `product_feature_values`, `product_options`, `product_option_values`, `manufacturers`; **POST** on `order_histories` (change an order's status), `products`, `combinations` and `images` (create); **PATCH** on `products`, `stock_availables`, `product_feature_values` and `order_carriers` (updates). A read-only key needs only the GET column. In multistore mode, also pick the shop(s) the key may reach.\n4. Paste the shop address into `PRESTASHOP_URL` (the root, e.g. `https://shop.example.com`, or `https://example.com/shop` when the shop lives in a folder; no `/api`, no trailing slash) and the key into `PRESTASHOP_WEBSERVICE_KEY`.\n\nThe key travels as the username of HTTP Basic authentication with an empty password. Behind Apache with PHP as CGI/FastCGI, the `Authorization` header can be dropped before PrestaShop sees it (every call then answers 401): enable **CGI mode for PHP** on the Webservice page, or fix the server so it passes the header.\n\n## Lists: display, filter, sort, limit\n- **display**: without it, a list returns only ids. `full` returns every field; `[id,name,price]` returns the fields named. Customer tools always return a fixed set of fields that leaves out the password hash and secure key.\n- **filters** (where offered): extra query parameters in PrestaShop syntax, joined with `&`, for fields the tool has no argument for, e.g. `filter[date_upd]=[2026-01-01,2026-12-31]` or `filter[ean13]=[4006381333931]`. Value syntax: `[a]` exact (case-insensitive), `[a|b]` one of, `[1,10]` range, `[ab]%` starts with, `%[ab]` ends with, `%[ab]%` contains. Filtering or sorting by a field the resource does not have is answered with HTTP 500 and error code 38, which lists the fields that can be used.\n- **sort**: `[field_ASC]` or `[field1_DESC,field2_ASC]`.\n- **limit**: `20` for the first 20 rows, `40,20` for 20 rows starting at offset 40. There is no total count; page until a call returns fewer rows than asked for. An empty result comes back as `[]`.\n- Dates (`date_add`, `date_upd`) can be filtered and sorted; the order tool already sends the `date=1` switch PrestaShop needs for that.\n- **language**: multilingual fields (product `name`, `description`, `link_rewrite`, category and order status `name`) come back as a list of `{id, value}` per language when the shop has several languages; pass a language id (`1`) to get plain text.\n\n## Money and stock\n- Product `price` is the base price **without tax**, in the shop's default currency. Order totals come in `total_paid_tax_incl` / `total_paid_tax_excl`, in the order's currency (`id_currency`, `conversion_rate`).\n- Stock lives in `stock_availables`, one row per product and combination: `id_product_attribute` 0 is the product row, other rows are its combinations (sizes, colours). For a product with combinations, change the combination rows; the product row holds their total. A product with `depends_on_stock` 1 is managed by advanced stock management and its quantity cannot be set here.\n\n## Catalogue: features, attributes, combinations\n- Features describe a product (Material: Cotton). `prestashop_list_product_features` gives the features, `prestashop_list_product_feature_values` (with `feature_id`) their values; `prestashop_get_product_feature_value` reads one and `prestashop_update_product_feature_value` changes its text. A product links values in `associations.product_features` (pairs of feature `id` and `id_feature_value`); `prestashop_update_product` sets them.\n- Attributes build combinations (Size: M). `prestashop_list_attribute_groups` and `prestashop_list_attribute_values` give the ids; `prestashop_add_combination` creates a variant and `prestashop_list_combinations` lists them.\n- `prestashop_list_brands` lists brands (`id_manufacturer` of a product). `prestashop_upload_product_image` adds an image from a URL.\n\n## Writing products (XML)\nThe Webservice reads XML only. `prestashop_update_product`, `prestashop_add_product` and `prestashop_add_combination` take `fields_xml`: the elements to set, without the outer resource element, e.g. `<reference><![CDATA[MUG-1]]></reference>`. Wrap every text in `<![CDATA[...]]>`; multilingual fields need one `<language id=\"...\">` per language. An update sends only the elements given (PATCH), but an association list (`categories`, `product_features`, `product_option_values`) is replaced as a whole. Read the product first, show the user the change and ask for confirmation before every write.\n\n## Order status\n`prestashop_list_order_states` gives the shop's statuses (ids differ between shops). `prestashop_change_order_state` adds a row to the order's history, which is how PrestaShop changes `current_state` and runs what the status triggers (invoice, stock movements, and, with `send_email` 1, the status e-mail to the customer). PrestaShop changes the status before it sends the e-mail; if the shop cannot send it, the answer is *Unable to save resource* (code 46) although `current_state` has already changed. Check with `prestashop_get_order` before trying again.\n\n## Tracking numbers\n`prestashop_list_order_shipping` with `order_id` gives the order's shipping rows; `prestashop_set_order_tracking_number` sets the tracking number of one row. The Webservice does not send the shipping e-mail the back office sends.\n\n## Rate limits\nPrestaShop sets none; the shop's own server is the limit. Prefer `display=[…]` with the fields needed over `display=full` on long lists.\n\n## Common errors\n- **401** *Authentification key is not active* / *No permission for this authentication key*: wrong or disabled key, or the `Authorization` header is lost (see CGI mode above).\n- **401 / 405** on one resource only: the key lacks that method for that resource; tick it under Permissions.\n- **503** *The PrestaShop webservice is disabled*: switch the Webservice on (step 1).\n- **404** on `/api`: the shop has no friendly URLs rewrite (`.htaccess`) for the API; regenerate it under **Shop Parameters → Traffic & SEO** (save with Friendly URL on).\n- **405** on the update tools: the shop runs PrestaShop 1.7, whose Webservice has no `PATCH`.\n- **400** *Validation error* on a create: a required field is missing or a value has the wrong format; the message names the field.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "prestashop",
@@ -715,6 +715,532 @@
           "filter[active]": "[${active}]",
           "limit": "$limit",
           "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_product_features",
+      "description": "List the product features (Caractéristiques, Merkmale) the shop defines, such as Material or Composition: id, name and position. Feature values come from prestashop_list_product_feature_values; a product links them in associations.product_features.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "name_contains": {
+            "type": "string",
+            "description": "Text the feature name contains."
+          },
+          "display": {
+            "type": "string",
+            "description": "full (default), or a field list such as [id,name].",
+            "pattern": "^(full|\\[[A-Za-z0-9_,]+\\])$",
+            "default": "full"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20 for the first 20 rows, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$",
+            "default": "50"
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id: multilingual fields such as name come back as plain text in that language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_features",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "$display",
+          "filter[id]": "[${id}]",
+          "filter[name]": "%[${name_contains}]%",
+          "limit": "$limit",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_product_feature_values",
+      "description": "List the values of product features: id, id_feature, custom flag (1 = a value typed for one product, 0 = a predefined value) and the value text. Filter by feature_id to get the values a product can pick for that feature, or by value text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "feature_id": {
+            "type": "integer",
+            "description": "Only values of this feature (id_feature)."
+          },
+          "id": {
+            "type": "string",
+            "description": "Id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "custom": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "0 predefined values, 1 custom values."
+          },
+          "value_contains": {
+            "type": "string",
+            "description": "Text the value contains (in the language given, or any)."
+          },
+          "display": {
+            "type": "string",
+            "description": "full (default), or a field list such as [id,name].",
+            "pattern": "^(full|\\[[A-Za-z0-9_,]+\\])$",
+            "default": "full"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20 for the first 20 rows, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$",
+            "default": "50"
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id: multilingual fields such as name come back as plain text in that language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_feature_values",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "$display",
+          "filter[id_feature]": "[${feature_id}]",
+          "filter[id]": "[${id}]",
+          "filter[custom]": "[${custom}]",
+          "filter[value]": "%[${value_contains}]%",
+          "limit": "$limit",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_get_product_feature_value",
+      "description": "Get one product feature value by id: id_feature, custom flag and the value per language (or in one language with language).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "feature_value_id": {
+            "type": "integer",
+            "description": "Feature value id."
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id: multilingual fields such as name come back as plain text in that language."
+          }
+        },
+        "required": [
+          "feature_value_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_feature_values/{feature_value_id}",
+        "queryParams": {
+          "output_format": "JSON",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_attribute_groups",
+      "description": "List the attribute groups (product options such as Size or Color) used to build combinations: id, name, public name, group type (select, radio, color) and position.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "display": {
+            "type": "string",
+            "description": "full (default), or a field list such as [id,name].",
+            "pattern": "^(full|\\[[A-Za-z0-9_,]+\\])$",
+            "default": "full"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20 for the first 20 rows, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$",
+            "default": "50"
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id: multilingual fields such as name come back as plain text in that language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_options",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "$display",
+          "filter[id]": "[${id}]",
+          "limit": "$limit",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_attribute_values",
+      "description": "List the attribute values (product option values such as S, M, L or Red) of the attribute groups: id, id_attribute_group, name, color and position. Their ids go into associations.product_option_values of a combination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attribute_group_id": {
+            "type": "integer",
+            "description": "Only values of this attribute group."
+          },
+          "id": {
+            "type": "string",
+            "description": "Id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "name_contains": {
+            "type": "string",
+            "description": "Text the value name contains."
+          },
+          "display": {
+            "type": "string",
+            "description": "full (default), or a field list such as [id,name].",
+            "pattern": "^(full|\\[[A-Za-z0-9_,]+\\])$",
+            "default": "full"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20 for the first 20 rows, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$",
+            "default": "50"
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id: multilingual fields such as name come back as plain text in that language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_option_values",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "$display",
+          "filter[id_attribute_group]": "[${attribute_group_id}]",
+          "filter[id]": "[${id}]",
+          "filter[name]": "%[${name_contains}]%",
+          "limit": "$limit",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_brands",
+      "description": "List the brands (manufacturers) of the shop: id, name, active flag, dates and descriptions. A product points to its brand with id_manufacturer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "name": {
+            "type": "string",
+            "description": "Exact brand name, case-insensitive."
+          },
+          "active": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for enabled brands."
+          },
+          "display": {
+            "type": "string",
+            "description": "full (default), or a field list such as [id,name].",
+            "pattern": "^(full|\\[[A-Za-z0-9_,]+\\])$",
+            "default": "full"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20 for the first 20 rows, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$",
+            "default": "50"
+          },
+          "language": {
+            "type": "integer",
+            "description": "Language id: multilingual fields such as name come back as plain text in that language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/manufacturers",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "$display",
+          "filter[id]": "[${id}]",
+          "filter[name]": "[${name}]",
+          "filter[active]": "[${active}]",
+          "limit": "$limit",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "prestashop_list_order_shipping",
+      "description": "List the shipping rows of orders (order_carriers): id, id_order, id_carrier, invoice, weight, shipping cost with and without tax, tracking number and date. Filter by order_id; the row id is what prestashop_set_order_tracking_number changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Only the rows of this order."
+          },
+          "id": {
+            "type": "string",
+            "description": "Id, or several separated by |.",
+            "pattern": "^[0-9]+(\\|[0-9]+)*$"
+          },
+          "limit": {
+            "type": "string",
+            "description": "20 for the first 20 rows, or offset,count such as 40,20.",
+            "pattern": "^[0-9]+(,[0-9]+)?$",
+            "default": "50"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_carriers",
+        "queryParams": {
+          "output_format": "JSON",
+          "display": "full",
+          "filter[id_order]": "[${order_id}]",
+          "filter[id]": "[${id}]",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "prestashop_update_product",
+      "description": "Change fields of one product with a partial XML update (PATCH): only the elements sent change. fields_xml holds the product elements to set, for example <reference><![CDATA[MUG-1]]></reference><active>1</active>, multilingual fields as <name><language id=\"1\"><![CDATA[Mug]]></language></name>, or associations such as <associations><product_features><product_feature><id>7</id><id_feature_value>23</id_feature_value></product_feature></product_features></associations> (an association sent replaces that whole list, so include the existing entries from prestashop_get_product). Wrap text in CDATA. Needs PrestaShop 8 and the PATCH permission on products. Show the user the change and ask for confirmation before calling. Returns the updated product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          },
+          "fields_xml": {
+            "type": "string",
+            "minLength": 3,
+            "description": "XML elements of the product to change, without the <product> wrapper and without <id>."
+          }
+        },
+        "required": [
+          "product_id",
+          "fields_xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{product_id}",
+        "queryParams": {
+          "output_format": "JSON"
+        },
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "bodyMapping": {
+          "__raw": "<prestashop><product><id>${product_id}</id>${fields_xml}</product></prestashop>"
+        }
+      }
+    },
+    {
+      "name": "prestashop_add_product",
+      "description": "Create a product from XML elements. fields_xml needs at least <price> (without tax) and should carry <id_category_default>, <id_tax_rules_group>, <active>, <state>1</state>, <name> and <link_rewrite> per language (<name><language id=\"1\"><![CDATA[Mug]]></language></name>), and <associations><categories><category><id>2</id></category></categories></associations>. Stock is set afterwards with prestashop_update_stock_quantity, images with prestashop_upload_product_image. Wrap text in CDATA. Needs the POST permission on products. Show the user the product and ask for confirmation before calling. Returns the new product with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields_xml": {
+            "type": "string",
+            "minLength": 3,
+            "description": "XML elements of the new product, without the <product> wrapper."
+          }
+        },
+        "required": [
+          "fields_xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "queryParams": {
+          "output_format": "JSON"
+        },
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "bodyMapping": {
+          "__raw": "<prestashop><product>${fields_xml}</product></prestashop>"
+        }
+      }
+    },
+    {
+      "name": "prestashop_update_product_feature_value",
+      "description": "Change the text of one product feature value in one language (PATCH). A predefined value (custom 0) is shared by every product that uses it; a custom value belongs to one product. Needs PrestaShop 8 and the PATCH permission on product_feature_values. Show the user the old and new text and ask for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "feature_value_id": {
+            "type": "integer",
+            "description": "Feature value id."
+          },
+          "language_id": {
+            "type": "integer",
+            "description": "Language id of the text, e.g. 1."
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "New text, at most 255 characters."
+          }
+        },
+        "required": [
+          "feature_value_id",
+          "language_id",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/product_feature_values/{feature_value_id}",
+        "queryParams": {
+          "output_format": "JSON"
+        },
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "bodyMapping": {
+          "__raw": "<prestashop><product_feature_value><id>${feature_value_id}</id><value><language id=\"${language_id}\"><![CDATA[${value}]]></language></value></product_feature_value></prestashop>"
+        }
+      }
+    },
+    {
+      "name": "prestashop_add_combination",
+      "description": "Create a combination (variant) of a product. fields_xml carries <minimal_quantity>1</minimal_quantity> (required) and the attribute values that make it, e.g. <associations><product_option_values><product_option_value><id>4</id></product_option_value></product_option_values></associations>, plus optional <reference>, <ean13>, <price> (impact on the product price), <weight> and <default_on>. Take value ids from prestashop_list_attribute_values. The stock row of the combination appears in prestashop_list_stock_availables. Needs the POST permission on combinations. Show the user the combination and ask for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          },
+          "fields_xml": {
+            "type": "string",
+            "minLength": 3,
+            "description": "XML elements of the combination, without the <combination> wrapper and without <id_product>."
+          }
+        },
+        "required": [
+          "product_id",
+          "fields_xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/combinations",
+        "queryParams": {
+          "output_format": "JSON"
+        },
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "bodyMapping": {
+          "__raw": "<prestashop><combination><id_product>${product_id}</id_product>${fields_xml}</combination></prestashop>"
+        }
+      }
+    },
+    {
+      "name": "prestashop_upload_product_image",
+      "description": "Add an image to a product from a public image URL (JPG, PNG, GIF or WebP): the connector downloads the file and uploads it to the shop, which builds every thumbnail size. The first image of a product becomes its cover. Needs the POST permission on images. Show the user the image and ask for confirmation before calling. Returns the new image id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id."
+          },
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public URL of the image file."
+          }
+        },
+        "required": [
+          "product_id",
+          "image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/images/products/{product_id}",
+        "queryParams": {
+          "output_format": "JSON"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "image": {
+            "__file": "$image_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "prestashop_set_order_tracking_number",
+      "description": "Set the tracking number of an order's shipping row (order_carrier), found with prestashop_list_order_shipping (PATCH). The customer sees it in the order details; unlike the back office, the Webservice sends no shipping e-mail. Needs PrestaShop 8 and the PATCH permission on order_carriers. Show the user the order and number and ask for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_carrier_id": {
+            "type": "integer",
+            "description": "Shipping row id (order_carriers)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Tracking number."
+          }
+        },
+        "required": [
+          "order_carrier_id",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/order_carriers/{order_carrier_id}",
+        "queryParams": {
+          "output_format": "JSON"
+        },
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "bodyMapping": {
+          "__raw": "<prestashop><order_carrier><id>${order_carrier_id}</id><tracking_number><![CDATA[${tracking_number}]]></tracking_number></order_carrier></prestashop>"
         }
       }
     }
