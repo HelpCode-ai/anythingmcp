@@ -1,0 +1,242 @@
+{
+  "slug": "tgstat",
+  "name": "TGStat",
+  "description": "Analyze Telegram channels, monitor post statistics, and search public Telegram publications via the TGStat API.",
+  "instructions": "## TGStat\nThis connector integrates with the TGStat API (`https://api.tgstat.ru`), the leading analytics and search database for Telegram channels and groups. It provides read-only tools to retrieve channel profiles, calculate audience and reach statistics, search across public Telegram publications in real time, and monitor post engagement.\n\n## Authentication\n1. Register an account and subscribe to an API plan at https://api.tgstat.ru.\n2. Navigate to your TGStat API dashboard to generate your API access token.\n3. Configure `TGSTAT_API_TOKEN` with your token. The connector automatically authenticates every request by passing this token in the `token` query parameter (`QUERY_AUTH`).\n\n## Identifiers\n- **Channel Identifier (`channelId`)**: Accepted formats include channel usernames with or without '@' (e.g., `@telegram` or `telegram`), full Telegram channel links (e.g., `t.me/telegram`), or internal numeric TGStat channel IDs.\n- **Post Identifier (`postId`)**: Accepted formats include full public post URLs (e.g., `t.me/telegram/123`) or internal TGStat numeric post IDs.\n\n## Pagination & Limits\n- The `tgstat_search_posts` tool supports pagination using `limit` (number of records, between 1 and 50, default 20) and `offset` (record offset, starting at 0, maximum 1000).\n- TGStat enforces rate limits and quota allocations according to your purchased API tier. When quotas or rate limits are exceeded, the API returns HTTP 429 or an error status object.\n\n## Common Workflows\n- **Channel Profile & Auditing**: Retrieve basic metadata and subscriber size with `tgstat_get_channel_info`, then query `tgstat_get_channel_stats` to inspect reach, citation index, and engagement metrics.\n- **Content Monitoring**: Search for brand mentions or trending keywords across public Telegram channels using `tgstat_search_posts`, then inspect high-performing publications with `tgstat_get_post_stats`.\n\n## Limitations\n- This adapter is strictly read-only and does not publish messages or modify Telegram channels.\n- Private Telegram channels and chats are not accessible unless explicitly indexed by the TGStat platform.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "tgstat",
+  "docsUrl": "https://api.tgstat.ru/docs/ru/start/intro.html",
+  "requiredEnvVars": [
+    "TGSTAT_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "TGSTAT_API_TOKEN": {
+      "label": "API Token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Your TGStat API access token obtained from https://api.tgstat.ru.",
+      "link": "https://api.tgstat.ru"
+    }
+  },
+  "verifyHints": {
+    "401": "TGStat rejected the API token. Please verify that TGSTAT_API_TOKEN is active and copied correctly from api.tgstat.ru.",
+    "403": "Access denied. Ensure your TGStat subscription tier grants access to this endpoint.",
+    "429": "TGStat rate limit reached. Please wait before retrying."
+  },
+  "probe": {
+    "tool": "tgstat_get_channel_info",
+    "params": {
+      "channelId": "@telegram"
+    }
+  },
+  "connector": {
+    "name": "TGStat API",
+    "type": "REST",
+    "baseUrl": "https://api.tgstat.ru",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "token": "{{TGSTAT_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "tgstat_get_channel_info",
+      "description": "Retrieve comprehensive profile information and metadata for a Telegram channel or chat including title, subscriber count, and category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "type": "string",
+            "description": "Channel username (e.g. '@telegram' or 'telegram'), invite link ('t.me/telegram'), or TGStat channel ID."
+          }
+        },
+        "required": [
+          "channelId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/get",
+        "queryParams": {
+          "channelId": "$channelId"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "channel": {
+              "$from": "$.response",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "username": "username",
+                "link": "link",
+                "about": "about",
+                "category": "category",
+                "country": "country",
+                "language": "language",
+                "participants_count": "participants_count"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "tgstat_get_channel_stats",
+      "description": "Retrieve analytical metrics and performance statistics for a Telegram channel such as reach, engagement rate, and publication counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "type": "string",
+            "description": "Channel username (e.g. '@telegram'), channel link, or internal TGStat channel ID."
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "Start timestamp (Unix epoch in seconds) for filtering channel statistical data."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "End timestamp (Unix epoch in seconds) for filtering channel statistical data."
+          }
+        },
+        "required": [
+          "channelId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/stat",
+        "queryParams": {
+          "channelId": "$channelId",
+          "startDate": "$startDate",
+          "endDate": "$endDate"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "stats": "$.response"
+          }
+        }
+      }
+    },
+    {
+      "name": "tgstat_search_posts",
+      "description": "Search for Telegram posts matching keyword queries across public channels and chats with filtering by peer type, language, and date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search query or phrase to find in Telegram post text (e.g. 'artificial intelligence')."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of posts to return (between 1 and 50, default is 20)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Pagination offset for search results (default is 0, maximum is 1000)."
+          },
+          "peerType": {
+            "type": "string",
+            "enum": [
+              "channel",
+              "chat",
+              "all"
+            ],
+            "description": "Type of peer to search: 'channel', 'chat', or 'all' (default is 'all')."
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "Filter posts published on or after this Unix timestamp in seconds."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "Filter posts published on or before this Unix timestamp in seconds."
+          },
+          "language": {
+            "type": "string",
+            "description": "Two-letter ISO language code to filter posts (e.g. 'en', 'ru')."
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/search",
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit",
+          "offset": "$offset",
+          "peerType": "$peerType",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "language": "$language"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "total_count": "$.response.total_count",
+            "count": "$.response.count",
+            "items": {
+              "$from": "$.response.items[*]",
+              "$select": {
+                "id": "id",
+                "date": "date",
+                "views": "views",
+                "link": "link",
+                "text": "text",
+                "forwards_count": "forwards_count",
+                "comments_count": "comments_count"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "tgstat_get_post_stats",
+      "description": "Retrieve performance metrics and engagement statistics for a specific Telegram post including views, shares, comments, and reactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "description": "Post identifier or direct public post URL (e.g. 't.me/telegram/123')."
+          }
+        },
+        "required": [
+          "postId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/stat",
+        "queryParams": {
+          "postId": "$postId"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "status": "$.status",
+            "stats": "$.response"
+          }
+        }
+      }
+    }
+  ]
+}
