@@ -85,7 +85,10 @@ x-backend: &backend
     # end-to-end check; leave it empty otherwise.
     - SENTRY_DSN=${SENTRY_DSN_BACKEND:-}
     - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
-    - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.05}
+    # 0.5 % of HTTP requests (MCP calls a fifth of that). At 5 % Cloud sent
+    # about 1 M spans a day: far over the span quota, so Sentry accepted none
+    # and the SDK spent CPU on traces nobody could see (Nov 2026).
+    - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.005}
     - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
     # Prometheus /metrics — a separate listener, off by default (docs/operations/observability.md).
     # METRICS_TOKEN is required once METRICS_ENABLED=true; the listener refuses to start without it.
