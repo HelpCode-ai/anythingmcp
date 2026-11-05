@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://anythingmcp.com/developers/cli">
-    <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/packages/cli/assets/hero.png" alt="amcp, the AnythingMCP CLI: log in through the browser, list and call MCP tools such as shopify_search_orders, pipe the JSON into jq, and discover the 200+ operations of the management API." width="100%" />
+    <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/packages/cli/assets/hero.png" alt="amcp, the AnythingMCP CLI: log in through the browser, list and call MCP tools such as shopify_search_orders, pipe the JSON into jq, and test a connector through the management API." width="100%" />
   </a>
 </p>
 

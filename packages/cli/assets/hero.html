@@ -51,6 +51,6 @@
 <span class="o">#1038   Kellerhaus GmbH</span>
 <span class="o">#1035   Studio Lumen</span>
 <span class="o">#1031   Bäckerei Hofmann</span>
-<span class="pr">$ </span>amcp api --list | grep -c /api/
-<span class="o">204</span></pre></div>
+<span class="pr">$ </span>amcp api POST /api/connectors/$CONN/test --yes
+<span class="o">{ "ok": true, "kind": "ok", "message": "Connection successful" }</span></pre></div>
 </div></body></html>
