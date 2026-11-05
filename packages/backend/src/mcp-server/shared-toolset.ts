@@ -179,6 +179,18 @@ export function sharedEndpointMode(): 'fixed' | 'direct' {
 // Cryptocurrency connectors: the Claude directory "does not generally allow
 // cryptocurrency software", so the default profile does not serve them. The
 // ChatGPT profile keeps what it served before (all of them but Sorare).
+//
+// Image, video and audio generation: the Claude directory policy (section 4B)
+// excludes software that uses AI models to generate images, video or audio,
+// text-to-speech and voice models included; only design visuals are allowed.
+// The default profile does not serve connectors built for that, and withholds
+// the generation tools of general AI and media connectors. The ChatGPT profile
+// serves them.
+//
+// Betting odds: OpenAI's app guidelines prohibit apps that facilitate
+// sportsbook wagers, so the ChatGPT profile does not serve odds connectors.
+// The default profile does: the Claude directory policy does not exclude
+// sports data.
 const MONEY_CATEGORIES = new Set(['payments', 'banking']);
 const MONEY_ADAPTERS = ['payone'];
 const CRYPTO_ADAPTERS = [
@@ -192,6 +204,29 @@ const CRYPTO_ADAPTERS = [
   'helius',
   'blockcypher',
 ];
+export const GENERATIVE_MEDIA_ADAPTERS = [
+  'elevenlabs',
+  'fish-audio',
+  'genapi',
+  'heygen',
+  'higgsfield',
+  'kie-ai',
+  'replicate',
+  'stability-ai',
+];
+/** Generation tools of catalog connectors that are otherwise served, by adapter slug. */
+export const GENERATIVE_MEDIA_TOOLS: Record<string, string[]> = {
+  cloudinary: ['cloudinary_generate_image', 'cloudinary_generate_image_from_images', 'cloudinary_get_generation_task'],
+  deepgram: ['deepgram_text_to_speech'],
+  freepik: ['freepik_generate_image_mystic', 'freepik_get_mystic_task'],
+  gemini: ['gemini_generate_image', 'gemini_edit_image'],
+  kittl: ['kittl_generate_media'],
+  openai: ['openai_generate_image', 'openai_edit_image'],
+  openrouter: ['openrouter_generate_image'],
+  telnyx: ['telnyx_speak_text'],
+  xai: ['xai_generate_image', 'xai_edit_image'],
+};
+const BETTING_ODDS_ADAPTERS = ['odds-api', 'oddsrelay', 'the-odds-api'];
 
 /** How much of a catalog connector the shared endpoint serves. */
 export type SharedEndpointAccess = 'all' | 'read' | 'none';
@@ -207,9 +242,13 @@ function moneyAdapterSlugs(): Set<string> {
   return moneySlugs;
 }
 
+type WithheldKind = 'money' | 'crypto' | 'media' | 'odds';
+
 /** Why a connector is (partly) withheld, for the answers that name it. */
-function withheldKind(slug: string): 'money' | 'crypto' | null {
+function withheldKind(slug: string): WithheldKind | null {
   if (CRYPTO_ADAPTERS.includes(slug)) return 'crypto';
+  if (GENERATIVE_MEDIA_ADAPTERS.includes(slug)) return 'media';
+  if (BETTING_ODDS_ADAPTERS.includes(slug)) return 'odds';
   return moneyAdapterSlugs().has(slug) ? 'money' : null;
 }
 
@@ -217,8 +256,22 @@ function withheldKind(slug: string): 'money' | 'crypto' | null {
 export function sharedEndpointAccess(slug: string, profile: SharedToolsetProfile): SharedEndpointAccess {
   const kind = withheldKind(slug);
   if (!kind) return 'all';
-  if (profile === 'chatgpt') return kind === 'money' || slug === 'sorare' ? 'none' : 'all';
+  if (profile === 'chatgpt') {
+    if (kind === 'media') return 'all';
+    if (kind === 'crypto') return slug === 'sorare' ? 'none' : 'all';
+    return 'none';
+  }
+  if (kind === 'odds') return 'all';
   return kind === 'money' ? 'read' : 'none';
+}
+
+/**
+ * Tools of the catalog adapter `slug` withheld one by one in `profile`, on top
+ * of {@link sharedEndpointAccess}: the generation tools of otherwise served
+ * connectors on the default profile.
+ */
+export function withheldGenerationTools(slug: string, profile: SharedToolsetProfile): string[] {
+  return profile === 'chatgpt' ? [] : (GENERATIVE_MEDIA_TOOLS[slug] ?? []);
 }
 
 /** True for a catalog adapter the shared endpoint does not serve at all in `profile`. */
@@ -235,15 +288,26 @@ export function excludedOnSharedEndpoint(tool: RegisteredTool, profile: SharedTo
   if ((tool.endpointMapping as { method?: unknown } | undefined)?.method === 'code') return true;
   const slug = tool.connectorConfig?.config?.adapterSlug;
   if (typeof slug !== 'string') return false;
+  if (withheldGenerationTools(slug, profile).includes(tool.name)) return true;
   const served = sharedEndpointAccess(slug, profile);
   return served === 'none' || (served === 'read' && access(tool) === 'write');
 }
 
 function withheldReason(tool: RegisteredTool): string {
   const slug = String(tool.connectorConfig?.config?.adapterSlug ?? '');
-  return withheldKind(slug) === 'crypto'
-    ? `'${tool.name}' belongs to a cryptocurrency connector. Those are not served on this shared connection`
-    : `'${tool.name}' belongs to a payment or banking connector and can move money or change payment data. On this shared connection those connectors serve at most their read tools`;
+  if (GENERATIVE_MEDIA_TOOLS[slug]?.includes(tool.name)) {
+    return `'${tool.name}' generates images, video or audio. Those tools are not served on this shared connection`;
+  }
+  switch (withheldKind(slug)) {
+    case 'crypto':
+      return `'${tool.name}' belongs to a cryptocurrency connector. Those are not served on this shared connection`;
+    case 'media':
+      return `'${tool.name}' belongs to an image, video or audio generation connector. Those are not served on this shared connection`;
+    case 'odds':
+      return `'${tool.name}' belongs to a betting odds connector. Those are not served on this shared connection`;
+    default:
+      return `'${tool.name}' belongs to a payment or banking connector and can move money or change payment data. On this shared connection those connectors serve at most their read tools`;
+  }
 }
 
 function describeSetupStatus(status: RegisteredTool['setupStatus']): string {
@@ -775,11 +839,18 @@ export function registerSharedToolset(
         })
         .sort((a, b) => a.name.localeCompare(b.name));
       // Withheld whole, or only their write tools (payment and banking
-      // connectors on the default profile).
+      // connectors on the default profile), or only their generation tools.
       const servedIds = new Set(served.map((t) => t.connectorId));
-      const heldIds = [...new Set(withheld.map((t) => t.connectorId))];
+      const isGenerationTool = (t: RegisteredTool) =>
+        withheldGenerationTools(String(t.connectorConfig?.config?.adapterSlug ?? ''), profile).includes(t.name);
+      const heldIds = [...new Set(withheld.filter((t) => !isGenerationTool(t)).map((t) => t.connectorId))];
       const notServedHere = heldIds.filter((id) => !servedIds.has(id)).map((id) => connectorName(byId, id));
       const readToolsOnlyHere = heldIds.filter((id) => servedIds.has(id)).map((id) => connectorName(byId, id));
+      const generationToolsNotServedHere = [
+        ...new Set(withheld.filter(isGenerationTool).map((t) => t.connectorId)),
+      ]
+        .filter((id) => servedIds.has(id))
+        .map((id) => connectorName(byId, id));
       const needsSetup = [...new Map(pending.map((t) => [t.connectorId, t])).values()]
         .map((t) => ({
           name: connectorName(byId, t.connectorId),
@@ -802,8 +873,15 @@ export function registerSharedToolset(
               notServedHere,
               notServedHereReason:
                 profile === 'chatgpt'
-                  ? 'Payment, banking and trading connectors are only served on their server\'s own URL.'
-                  : 'Cryptocurrency connectors are only served on their server\'s own URL.',
+                  ? 'Payment, banking, trading and betting odds connectors are only served on their server\'s own URL.'
+                  : 'Cryptocurrency connectors and image, video or audio generation connectors are only served on their server\'s own URL.',
+            }
+          : {}),
+        ...(generationToolsNotServedHere.length
+          ? {
+              generationToolsNotServedHere,
+              generationToolsNotServedHereReason:
+                'These connectors serve their other tools here; their image, video and audio generation tools run on the server\'s own URL.',
             }
           : {}),
         ...(readToolsOnlyHere.length
