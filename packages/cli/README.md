@@ -298,6 +298,7 @@ $ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
 | `amcp api METHOD PATH [--data JSON\|@file\|-] [--yes]` | Call the management API |
 | `amcp api --list [RESOURCE]` | List management operations offline |
 | `amcp completion bash\|zsh\|fish` | Print a shell completion script |
+| `amcp --version` | Print the CLI version |
 
 Every command accepts `--profile NAME` and `--json`.
 
@@ -320,6 +321,8 @@ amcp logout --profile cloud
 For CI, `AMCP_URL`, `AMCP_SERVER` and `AMCP_API_KEY` provide the connection without saving a profile. `--url` and `--server` take precedence over their matching environment variables. If a URL comes from `--url` or `AMCP_URL`, supply `AMCP_API_KEY` too: a saved profile key is used only with its saved origin.
 
 Profiles live in `$XDG_CONFIG_HOME/amcp/config.json` or `~/.config/amcp/config.json`, with file mode `0600` on Unix. Relative `XDG_CONFIG_HOME` values are ignored. `whoami` shows only a key prefix.
+
+One profile can hold both an MCP key (for `tools`) and a management key (for `api`). Logging in with one keeps the other when both point at the same instance.
 
 ### Tool calls
 
@@ -357,7 +360,7 @@ CLI usage and connection errors go to stderr, also as JSON when `--json` is set,
 
 `amcp api` calls the instance's management API (`/api/*`) with a **management-scoped** key. That covers connectors, MCP servers, roles, users, SSO, settings, memory, skills, the knowledge graph and more. It works like `gh api`, but for AnythingMCP.
 
-A management key is an ordinary MCP API key minted with a management scope: `MANAGEMENT_READ` or `MANAGEMENT_ADMIN`. You can mint one from the dashboard or with `POST /api/mcp-keys`. The key carries its owner's identity and role, and it never grants privilege, so admin-only routes still need an admin owner. `MANAGEMENT_READ` keys can only call safe methods (GET/HEAD).
+A management key is an ordinary MCP API key minted with a management scope: `MANAGEMENT_READ` or `MANAGEMENT_ADMIN`. You can mint one from the dashboard or with `POST /api/mcp-keys`. The key carries its owner's identity and role, and it never grants privilege, so admin-only routes still need an admin owner. `MANAGEMENT_READ` keys can only call safe methods (GET/HEAD), and connector exports made with them never include secrets, even for an admin owner.
 
 ### Getting a management key
 
