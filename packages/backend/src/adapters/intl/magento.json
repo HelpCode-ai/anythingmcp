@@ -1,12 +1,12 @@
 {
   "slug": "magento",
   "name": "Magento (Adobe Commerce)",
-  "description": "Drive Magento 2 / Adobe Commerce from any AI agent: products, categories, orders, customers, stock and low-stock items, guest carts and checkout, and CMS pages and blocks. Bearer admin-token auth, per-store base URL.",
-  "instructions": "This connector uses the Magento 2 / Adobe Commerce REST API (developer.adobe.com/commerce/webapi/rest).\n\n**Setup**:\n1. As Magento admin open **System > Extensions > Integrations > Add New Integration**.\n2. Name and e-mail, then on the API tab grant the resources you need: Catalog (Products, Categories, Inventory), Customers, Sales (Orders), Content (Pages, Blocks).\n3. **Activate** the integration and allow access. Magento shows an **Access Token** (long-lived).\n4. Set `MAGENTO_BASE_URL` to the store address (e.g. `https://shop.example.com`, without `/rest`) and `MAGENTO_ACCESS_TOKEN` to the integration access token.\n\n**Authentication**: `Authorization: Bearer <MAGENTO_ACCESS_TOKEN>`. Since 2.4.4 this needs Stores > Configuration > Services > OAuth > Consumer Settings > \"Allow OAuth Access Tokens to be used as standalone Bearer tokens\" set to Yes.\n\n**Store views**: requests go to `/rest/default/V1/...`, the default store view. `magento_list_store_views` lists the views and their codes. The guest cart tools take the store view code as `storeCode`; CMS pages and blocks always use `all` (see below).\n\n**Search criteria**: Magento list endpoints filter with `searchCriteria[filter_groups][i][filters][j][field|value|condition_type]`, `searchCriteria[pageSize]` and `searchCriteria[currentPage]`. The search tools turn their flat parameters into these keys; filters in different groups combine with AND.\n\n**SKU as key**: product endpoints use the SKU, not the numeric id, in the URL.\n\n**Rate limits**: not enforced by Magento core; they depend on the hosting. On 429 wait and try again.\n\n**Tools**: store views `magento_list_store_views`; catalog `magento_search_products`, `magento_get_product`, `magento_create_product`, `magento_update_product`, `magento_delete_product`, `magento_update_stock`, `magento_list_low_stock_items`, `magento_list_categories`; sales `magento_search_orders`, `magento_get_order`, `magento_cancel_order`; customers `magento_search_customers`, `magento_get_customer`; CMS `magento_search_cms_pages`, `magento_get_cms_page`, `magento_search_cms_blocks`, `magento_get_cms_block`, `magento_create_cms_page`, `magento_update_cms_page`, `magento_create_cms_block`, `magento_update_cms_block`.\n\n**Low stock**: `magento_list_low_stock_items` takes a quantity threshold and the stock scope (0 for the default stock). It reads the legacy catalog inventory; with Multi-Source Inventory the per-source stock is not in this list.\n\n**Guest checkout (an order on behalf of a guest)**: the guest cart tools work in one store view (`storeCode`, `default` unless the shop has several views; keep the same code for the whole cart). Flow: `magento_create_guest_cart` returns a cart id > `magento_add_guest_cart_item` per SKU > optionally `magento_apply_guest_cart_coupon` > `magento_estimate_guest_cart_shipping` for the carrier and method codes > `magento_set_guest_cart_shipping` with the addresses and the chosen method > `magento_list_guest_cart_payment_methods` > `magento_place_guest_order` with the customer e-mail and payment method, which returns the order id. `magento_get_guest_cart` and `magento_get_guest_cart_totals` show the cart and its totals at any step. The cart writes and the order placement are installed switched off: an admin turns them on for shops that take orders this way. Before placing an order show the items, totals, address and payment method and wait for a yes.\n\n**Out of scope here**: the GraphQL endpoint, Multi-Source Inventory sources, B2B features (shared catalogs, companies) and editing sales rules.\n\n**CMS pages and blocks** always go through the `all` store code (`/rest/all/V1/cmsPage`, `/rest/all/V1/cmsBlock`), Magento's admin scope, so a page written there is not silently moved to one store view. The create and update tools change the live storefront and are installed switched off; there is no delete tool.",
+  "description": "Drive Magento 2 / Adobe Commerce from any AI agent: products (also per store view), categories, attribute options, stock per source and low-stock items, special prices, orders and credit memos, customers and carts, cart price rules and coupons, guest checkout, and CMS pages and blocks. Bearer admin-token auth, per-store base URL.",
+  "instructions": "This connector uses the Magento 2 / Adobe Commerce REST API (developer.adobe.com/commerce/webapi/rest).\n\n**Setup**:\n1. As Magento admin open **System > Extensions > Integrations > Add New Integration**.\n2. Name and e-mail, then on the API tab grant the resources you need: Catalog (Products, Categories, Inventory), Customers, Sales (Orders, Credit Memos), Carts, Marketing (Cart Price Rules), Stores (Product attributes), Content (Pages, Blocks).\n3. **Activate** the integration and allow access. Magento shows an **Access Token** (long-lived).\n4. Set `MAGENTO_BASE_URL` to the store address (e.g. `https://shop.example.com`, without `/rest`) and `MAGENTO_ACCESS_TOKEN` to the integration access token.\n\n**Authentication**: `Authorization: Bearer <MAGENTO_ACCESS_TOKEN>`. Since 2.4.4 this needs Stores > Configuration > Services > OAuth > Consumer Settings > \"Allow OAuth Access Tokens to be used as standalone Bearer tokens\" set to Yes.\n\n**Store views**: requests go to `/rest/default/V1/...`, the default store view. `magento_list_store_views` lists the views and their codes. The guest cart tools take the store view code as `storeCode`; CMS pages and blocks always use `all` (see below). `magento_update_product` writes through the default view, so the values it sends are saved for that view; `magento_update_product_in_scope` takes `storeCode` (default `all`, the global scope every view inherits) for a product change that should not become a view override.\n\n**Search criteria**: Magento list endpoints filter with `searchCriteria[filter_groups][i][filters][j][field|value|condition_type]`, `searchCriteria[pageSize]` and `searchCriteria[currentPage]`. The search tools turn their flat parameters into these keys; filters in different groups combine with AND. `magento_find_carts`, `magento_find_cart_price_rules`, `magento_find_coupons`, `magento_list_credit_memos` and `magento_list_source_items` take up to three generic filters (`filter1_field`, `filter1_value`, `filter1_condition`, ...), a sort and `fields` (e.g. `items[id,name],total_count`) to keep the answer small; they return 20 rows per page unless `pageSize` says otherwise.\n\n**SKU as key**: product endpoints use the SKU, not the numeric id, in the URL.\n\n**Rate limits**: not enforced by Magento core; they depend on the hosting. On 429 wait and try again.\n\n**Tools**: store views `magento_list_store_views`; catalog `magento_search_products`, `magento_get_product`, `magento_create_product`, `magento_update_product`, `magento_delete_product`, `magento_update_stock`, `magento_list_low_stock_items`, `magento_list_categories`; catalog extras `magento_update_product_in_scope`, `magento_list_attribute_options`, `magento_add_attribute_option`, `magento_get_special_prices`, `magento_schedule_special_prices`, `magento_list_source_items`, `magento_set_source_items`; sales `magento_search_orders`, `magento_get_order`, `magento_cancel_order`, `magento_list_credit_memos`, `magento_get_credit_memo`; customers `magento_search_customers`, `magento_get_customer`, `magento_find_carts`; promotions `magento_find_cart_price_rules`, `magento_get_cart_price_rule`, `magento_create_cart_price_rule`, `magento_update_cart_price_rule`, `magento_find_coupons`, `magento_add_coupon_code`, `magento_generate_coupon_codes`; CMS `magento_search_cms_pages`, `magento_get_cms_page`, `magento_search_cms_blocks`, `magento_get_cms_block`, `magento_create_cms_page`, `magento_update_cms_page`, `magento_create_cms_block`, `magento_update_cms_block`.\n\n**Low stock**: `magento_list_low_stock_items` takes a quantity threshold and the stock scope (0 for the default stock). It reads the legacy catalog inventory; with Multi-Source Inventory the per-source stock is not in this list.\n\n**Guest checkout (an order on behalf of a guest)**: the guest cart tools work in one store view (`storeCode`, `default` unless the shop has several views; keep the same code for the whole cart). Flow: `magento_create_guest_cart` returns a cart id > `magento_add_guest_cart_item` per SKU > optionally `magento_apply_guest_cart_coupon` > `magento_estimate_guest_cart_shipping` for the carrier and method codes > `magento_set_guest_cart_shipping` with the addresses and the chosen method > `magento_list_guest_cart_payment_methods` > `magento_place_guest_order` with the customer e-mail and payment method, which returns the order id. `magento_get_guest_cart` and `magento_get_guest_cart_totals` show the cart and its totals at any step. The cart writes and the order placement are installed switched off: an admin turns them on for shops that take orders this way. Before placing an order show the items, totals, address and payment method and wait for a yes.\n\n**Multi-Source Inventory**: `magento_list_source_items` and `magento_set_source_items` read and set the quantity per source (`source_code`, `default` on a single-source store); the salable quantity Magento shows is derived from them.\n\n**Promotions**: a cart price rule (`magento_find_cart_price_rules`) holds the discount; coupon codes belong to a rule (`magento_find_coupons` with `rule_id`). `magento_create_cart_price_rule` needs the required flags and counters shown in its example; `magento_update_cart_price_rule` saves the whole rule, so read it first. Special prices (`magento_schedule_special_prices`) are per SKU, store and period.\n\n**Out of scope here**: the GraphQL endpoint, refunds (creating credit memos), managing sources and stocks themselves, deleting rules or coupons, and B2B features (shared catalogs, companies).\n\n**CMS pages and blocks** always go through the `all` store code (`/rest/all/V1/cmsPage`, `/rest/all/V1/cmsBlock`), Magento's admin scope, so a page written there is not silently moved to one store view. The create and update tools change the live storefront and are installed switched off; there is no delete tool.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "magento",
-  "docsUrl": "https://devdocs.magento.com/guides/v2.4/rest/bk-rest.html",
+  "docsUrl": "https://developer.adobe.com/commerce/webapi/rest/",
   "requiredEnvVars": ["MAGENTO_BASE_URL", "MAGENTO_ACCESS_TOKEN"],
   "probe": {
     "tool": "magento_list_store_views"
@@ -127,6 +127,45 @@
         "method": "PUT",
         "path": "/products/{sku}",
         "bodyMapping": { "product": "$product" }
+      }
+    },
+    {
+      "name": "magento_update_product_in_scope",
+      "description": "Update a product by SKU in a chosen scope: storeCode all (default) writes the global values every store view inherits; a store view code writes values for that view only (a translated name, a view price where prices are per website). Send only the fields to change. Prefer all unless the user wants a view-specific value. Changes the live catalog: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storeCode": {
+            "type": "string",
+            "default": "all",
+            "description": "all for the global scope, or a store view code from magento_list_store_views, e.g. de."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Product SKU."
+          },
+          "product": {
+            "type": "object",
+            "description": "Partial product object: only the fields to change, e.g. {\"name\": \"Mug\", \"custom_attributes\": [{\"attribute_code\": \"description\", \"value\": \"...\"}]}."
+          }
+        },
+        "required": [
+          "storeCode",
+          "sku",
+          "product"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "{{MAGENTO_BASE_URL}}/rest/{storeCode}/V1/products/{sku}",
+        "bodyMapping": {
+          "product": "$product"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
       }
     },
     {
@@ -648,6 +687,1042 @@
         "required": ["customerId"]
       },
       "endpointMapping": { "method": "GET", "path": "/customers/{customerId}" }
+    },
+    {
+      "name": "magento_find_carts",
+      "description": "Search shopping carts (quotes) of the store, for example open carts with items to follow up abandoned baskets: cart id, active flag, customer, item count, items with SKU, quantity and price, totals and dates. Filter e.g. is_active eq 1 and items_count gt 0 and updated_at gteq a date. Carts carry customer names and addresses; use fields to keep only what is needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter1_field": {
+            "type": "string",
+            "description": "Field of filter 1, e.g. is_active (1 open), customer_email, items_count (gt 0), updated_at (gteq 2026-10-01 00:00:00)."
+          },
+          "filter1_value": {
+            "type": "string",
+            "description": "Value of filter 1; with like wrap it in %, with in separate values by commas."
+          },
+          "filter1_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 1; Magento uses eq when left out."
+          },
+          "filter2_field": {
+            "type": "string",
+            "description": "Field of filter 2; filters combine with AND."
+          },
+          "filter2_value": {
+            "type": "string",
+            "description": "Value of filter 2; with like wrap it in %, with in separate values by commas."
+          },
+          "filter2_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 2; Magento uses eq when left out."
+          },
+          "filter3_field": {
+            "type": "string",
+            "description": "Field of filter 3; filters combine with AND."
+          },
+          "filter3_value": {
+            "type": "string",
+            "description": "Value of filter 3; with like wrap it in %, with in separate values by commas."
+          },
+          "filter3_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 3; Magento uses eq when left out."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Field to sort by, e.g. updated_at."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional field list to keep the answer small, e.g. items[id,name],total_count."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 20,
+            "description": "Results per page. Default 20."
+          },
+          "currentPage": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carts/search",
+        "queryParams": {
+          "searchCriteria[filter_groups][0][filters][0][field]": "$filter1_field",
+          "searchCriteria[filter_groups][0][filters][0][value]": "$filter1_value",
+          "searchCriteria[filter_groups][0][filters][0][condition_type]": "$filter1_condition",
+          "searchCriteria[filter_groups][1][filters][0][field]": "$filter2_field",
+          "searchCriteria[filter_groups][1][filters][0][value]": "$filter2_value",
+          "searchCriteria[filter_groups][1][filters][0][condition_type]": "$filter2_condition",
+          "searchCriteria[filter_groups][2][filters][0][field]": "$filter3_field",
+          "searchCriteria[filter_groups][2][filters][0][value]": "$filter3_value",
+          "searchCriteria[filter_groups][2][filters][0][condition_type]": "$filter3_condition",
+          "searchCriteria[sortOrders][0][field]": "$sort_field",
+          "searchCriteria[sortOrders][0][direction]": "$sort_direction",
+          "fields": "$fields",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_find_cart_price_rules",
+      "description": "Search cart price rules (sales rules: discounts and coupon campaigns): rule id, name, active flag, websites, customer groups, dates, action (by_percent, by_fixed, cart_fixed, buy_x_get_y), discount amount, coupon type, usage limits and conditions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter1_field": {
+            "type": "string",
+            "description": "Field of filter 1, e.g. is_active, name (like %summer%), coupon_type, rule_id."
+          },
+          "filter1_value": {
+            "type": "string",
+            "description": "Value of filter 1; with like wrap it in %, with in separate values by commas."
+          },
+          "filter1_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 1; Magento uses eq when left out."
+          },
+          "filter2_field": {
+            "type": "string",
+            "description": "Field of filter 2; filters combine with AND."
+          },
+          "filter2_value": {
+            "type": "string",
+            "description": "Value of filter 2; with like wrap it in %, with in separate values by commas."
+          },
+          "filter2_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 2; Magento uses eq when left out."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Field to sort by, e.g. updated_at."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional field list to keep the answer small, e.g. items[id,name],total_count."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 20,
+            "description": "Results per page. Default 20."
+          },
+          "currentPage": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/salesRules/search",
+        "queryParams": {
+          "searchCriteria[filter_groups][0][filters][0][field]": "$filter1_field",
+          "searchCriteria[filter_groups][0][filters][0][value]": "$filter1_value",
+          "searchCriteria[filter_groups][0][filters][0][condition_type]": "$filter1_condition",
+          "searchCriteria[filter_groups][1][filters][0][field]": "$filter2_field",
+          "searchCriteria[filter_groups][1][filters][0][value]": "$filter2_value",
+          "searchCriteria[filter_groups][1][filters][0][condition_type]": "$filter2_condition",
+          "searchCriteria[sortOrders][0][field]": "$sort_field",
+          "searchCriteria[sortOrders][0][direction]": "$sort_direction",
+          "fields": "$fields",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_get_cart_price_rule",
+      "description": "Get one cart price rule by id with all its fields, conditions and action conditions. Read it before magento_update_cart_price_rule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ruleId": {
+            "type": "integer",
+            "description": "Rule id."
+          }
+        },
+        "required": [
+          "ruleId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/salesRules/{ruleId}"
+      }
+    },
+    {
+      "name": "magento_find_coupons",
+      "description": "Search coupon codes: coupon id, rule id, code, usage limit, uses per customer, times used, expiration and whether it is the rule's primary coupon. Filter by rule_id to list the codes of one rule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter1_field": {
+            "type": "string",
+            "description": "Field of filter 1, e.g. rule_id, code, times_used."
+          },
+          "filter1_value": {
+            "type": "string",
+            "description": "Value of filter 1; with like wrap it in %, with in separate values by commas."
+          },
+          "filter1_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 1; Magento uses eq when left out."
+          },
+          "filter2_field": {
+            "type": "string",
+            "description": "Field of filter 2; filters combine with AND."
+          },
+          "filter2_value": {
+            "type": "string",
+            "description": "Value of filter 2; with like wrap it in %, with in separate values by commas."
+          },
+          "filter2_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 2; Magento uses eq when left out."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Field to sort by, e.g. updated_at."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional field list to keep the answer small, e.g. items[id,name],total_count."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 20,
+            "description": "Results per page. Default 20."
+          },
+          "currentPage": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/coupons/search",
+        "queryParams": {
+          "searchCriteria[filter_groups][0][filters][0][field]": "$filter1_field",
+          "searchCriteria[filter_groups][0][filters][0][value]": "$filter1_value",
+          "searchCriteria[filter_groups][0][filters][0][condition_type]": "$filter1_condition",
+          "searchCriteria[filter_groups][1][filters][0][field]": "$filter2_field",
+          "searchCriteria[filter_groups][1][filters][0][value]": "$filter2_value",
+          "searchCriteria[filter_groups][1][filters][0][condition_type]": "$filter2_condition",
+          "searchCriteria[sortOrders][0][field]": "$sort_field",
+          "searchCriteria[sortOrders][0][direction]": "$sort_direction",
+          "fields": "$fields",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_get_special_prices",
+      "description": "Get the scheduled special prices of products by SKU: price, store id and the from and to dates. Magento refuses the whole call when one SKU does not exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Product SKUs."
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/special-price-information",
+        "bodyMapping": {
+          "skus": "$skus"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magento_list_credit_memos",
+      "description": "Search credit memos (refund documents): entity id, increment id, order id, state, totals refunded, adjustments, items and dates. Filter e.g. order_id eq 42 or created_at gteq a date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter1_field": {
+            "type": "string",
+            "description": "Field of filter 1, e.g. order_id, created_at (gteq 2026-10-01 00:00:00), state."
+          },
+          "filter1_value": {
+            "type": "string",
+            "description": "Value of filter 1; with like wrap it in %, with in separate values by commas."
+          },
+          "filter1_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 1; Magento uses eq when left out."
+          },
+          "filter2_field": {
+            "type": "string",
+            "description": "Field of filter 2; filters combine with AND."
+          },
+          "filter2_value": {
+            "type": "string",
+            "description": "Value of filter 2; with like wrap it in %, with in separate values by commas."
+          },
+          "filter2_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 2; Magento uses eq when left out."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Field to sort by, e.g. updated_at."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional field list to keep the answer small, e.g. items[id,name],total_count."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 20,
+            "description": "Results per page. Default 20."
+          },
+          "currentPage": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/creditmemos",
+        "queryParams": {
+          "searchCriteria[filter_groups][0][filters][0][field]": "$filter1_field",
+          "searchCriteria[filter_groups][0][filters][0][value]": "$filter1_value",
+          "searchCriteria[filter_groups][0][filters][0][condition_type]": "$filter1_condition",
+          "searchCriteria[filter_groups][1][filters][0][field]": "$filter2_field",
+          "searchCriteria[filter_groups][1][filters][0][value]": "$filter2_value",
+          "searchCriteria[filter_groups][1][filters][0][condition_type]": "$filter2_condition",
+          "searchCriteria[sortOrders][0][field]": "$sort_field",
+          "searchCriteria[sortOrders][0][direction]": "$sort_direction",
+          "fields": "$fields",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_get_credit_memo",
+      "description": "Get one credit memo by entity id: order, state, refunded totals, shipping and adjustments, items with SKU, quantity and amounts, and comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "creditmemoId": {
+            "type": "integer",
+            "description": "Credit memo entity id."
+          }
+        },
+        "required": [
+          "creditmemoId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/creditmemo/{creditmemoId}"
+      }
+    },
+    {
+      "name": "magento_list_attribute_options",
+      "description": "List the options of a select or multiselect product attribute (e.g. color, size, manufacturer): label and value (the option id to put in a product's custom_attributes).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attributeCode": {
+            "type": "string",
+            "description": "Attribute code, e.g. color."
+          }
+        },
+        "required": [
+          "attributeCode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/attributes/{attributeCode}/options"
+      }
+    },
+    {
+      "name": "magento_list_source_items",
+      "description": "List Multi-Source Inventory stock per source: SKU, source code, quantity and status (1 in stock, 0 out of stock). Filter by sku or source_code. Works only on stores that use Multi-Source Inventory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter1_field": {
+            "type": "string",
+            "description": "Field of filter 1, e.g. sku, source_code, status."
+          },
+          "filter1_value": {
+            "type": "string",
+            "description": "Value of filter 1; with like wrap it in %, with in separate values by commas."
+          },
+          "filter1_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 1; Magento uses eq when left out."
+          },
+          "filter2_field": {
+            "type": "string",
+            "description": "Field of filter 2; filters combine with AND."
+          },
+          "filter2_value": {
+            "type": "string",
+            "description": "Value of filter 2; with like wrap it in %, with in separate values by commas."
+          },
+          "filter2_condition": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq",
+              "like",
+              "nlike",
+              "in",
+              "nin",
+              "gt",
+              "lt",
+              "gteq",
+              "lteq",
+              "null",
+              "notnull",
+              "from",
+              "to"
+            ],
+            "description": "Comparison of filter 2; Magento uses eq when left out."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Field to sort by, e.g. updated_at."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional field list to keep the answer small, e.g. items[id,name],total_count."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 20,
+            "description": "Results per page. Default 20."
+          },
+          "currentPage": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "1-based page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory/source-items",
+        "queryParams": {
+          "searchCriteria[filter_groups][0][filters][0][field]": "$filter1_field",
+          "searchCriteria[filter_groups][0][filters][0][value]": "$filter1_value",
+          "searchCriteria[filter_groups][0][filters][0][condition_type]": "$filter1_condition",
+          "searchCriteria[filter_groups][1][filters][0][field]": "$filter2_field",
+          "searchCriteria[filter_groups][1][filters][0][value]": "$filter2_value",
+          "searchCriteria[filter_groups][1][filters][0][condition_type]": "$filter2_condition",
+          "searchCriteria[sortOrders][0][field]": "$sort_field",
+          "searchCriteria[sortOrders][0][direction]": "$sort_direction",
+          "fields": "$fields",
+          "searchCriteria[pageSize]": "$pageSize",
+          "searchCriteria[currentPage]": "$currentPage"
+        }
+      }
+    },
+    {
+      "name": "magento_create_cart_price_rule",
+      "description": "Create a cart price rule (a discount, optionally with coupons). Magento requires the flags and counters listed in the rule example. Show the user the rule (who, what discount, which dates) and confirm before calling. Returns the rule with its rule_id; add codes with magento_add_coupon_code or magento_generate_coupon_codes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rule": {
+            "type": "object",
+            "description": "Cart price rule fields, e.g. {\"name\": \"Autumn 10%\", \"is_active\": true, \"website_ids\": [1], \"customer_group_ids\": [0, 1], \"coupon_type\": \"SPECIFIC_COUPON\", \"simple_action\": \"by_percent\", \"discount_amount\": 10, \"uses_per_customer\": 0, \"uses_per_coupon\": 0, \"from_date\": \"2026-11-01\", \"to_date\": \"2026-11-30\", \"stop_rules_processing\": false, \"is_advanced\": true, \"sort_order\": 0, \"discount_step\": 0, \"apply_to_shipping\": false, \"times_used\": 0, \"is_rss\": false, \"use_auto_generation\": false}. coupon_type is NO_COUPON, SPECIFIC_COUPON or AUTO; simple_action is by_percent, by_fixed, cart_fixed or buy_x_get_y."
+          }
+        },
+        "required": [
+          "rule"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/salesRules",
+        "bodyMapping": {
+          "rule": "$rule"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "magento_update_cart_price_rule",
+      "description": "Change a cart price rule, e.g. its dates, discount or active flag. Magento saves the rule object sent: read it with magento_get_cart_price_rule and send it back with the changes. Show the user the change and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ruleId": {
+            "type": "integer",
+            "description": "Rule id."
+          },
+          "rule": {
+            "type": "object",
+            "description": "The rule with the changes, including its rule_id."
+          }
+        },
+        "required": [
+          "ruleId",
+          "rule"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/salesRules/{ruleId}",
+        "bodyMapping": {
+          "rule": "$rule"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "magento_add_coupon_code",
+      "description": "Add one coupon code to a cart price rule with coupon type SPECIFIC_COUPON and auto generation on, or replace its main code. Show the user the code and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rule_id": {
+            "type": "integer",
+            "description": "Rule id."
+          },
+          "code": {
+            "type": "string",
+            "description": "Coupon code."
+          },
+          "usage_limit": {
+            "type": "integer",
+            "description": "Total uses allowed; 0 for unlimited."
+          },
+          "usage_per_customer": {
+            "type": "integer",
+            "description": "Uses per customer; 0 for unlimited."
+          },
+          "is_primary": {
+            "type": "boolean",
+            "default": false,
+            "description": "true to make it the rule's main code."
+          }
+        },
+        "required": [
+          "rule_id",
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/coupons",
+        "bodyMapping": {
+          "coupon": {
+            "rule_id": "$rule_id",
+            "code": "$code",
+            "usage_limit": "$usage_limit",
+            "usage_per_customer": "$usage_per_customer",
+            "times_used": 0,
+            "is_primary": "$is_primary"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "magento_generate_coupon_codes",
+      "description": "Generate a batch of unique coupon codes for a cart price rule whose coupon type is AUTO (or SPECIFIC_COUPON with auto generation on). Returns the codes. Show the user the rule and quantity and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rule_id": {
+            "type": "integer",
+            "description": "Rule id."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Number of codes."
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 4,
+            "default": 12,
+            "description": "Code length without prefix and suffix."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "alphanum",
+              "alpha",
+              "num"
+            ],
+            "default": "alphanum",
+            "description": "Characters used."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Prefix, e.g. XMAS-."
+          },
+          "suffix": {
+            "type": "string",
+            "description": "Suffix."
+          },
+          "delimiter": {
+            "type": "string",
+            "description": "Delimiter inserted every delimiter_at_every characters."
+          },
+          "delimiter_at_every": {
+            "type": "integer",
+            "description": "Spacing of the delimiter."
+          }
+        },
+        "required": [
+          "rule_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/coupons/generate",
+        "bodyMapping": {
+          "couponSpec": {
+            "rule_id": "$rule_id",
+            "quantity": "$quantity",
+            "length": "$length",
+            "format": "$format",
+            "prefix": "$prefix",
+            "suffix": "$suffix",
+            "delimiter": "$delimiter",
+            "delimiter_at_every": "$delimiter_at_every"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "magento_schedule_special_prices",
+      "description": "Add or update special prices of products for a store and period. Each entry needs sku, price, store_id (0 for all) and price_from and price_to (Y-m-d H:i:s). Invalid entries are skipped and listed in the answer; an empty list means all were saved. Show the user every SKU with its price and dates and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prices": {
+            "type": "array",
+            "minItems": 1,
+            "description": "For example [{\"sku\": \"MUG-1\", \"price\": 9.9, \"store_id\": 0, \"price_from\": \"2026-11-20 00:00:00\", \"price_to\": \"2026-11-30 23:59:59\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string"
+                },
+                "price": {
+                  "type": "number"
+                },
+                "store_id": {
+                  "type": "integer"
+                },
+                "price_from": {
+                  "type": "string"
+                },
+                "price_to": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sku",
+                "price",
+                "store_id",
+                "price_from",
+                "price_to"
+              ]
+            }
+          }
+        },
+        "required": [
+          "prices"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/special-price",
+        "bodyMapping": {
+          "prices": "$prices"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "magento_add_attribute_option",
+      "description": "Add an option to a select or multiselect product attribute, e.g. a new color. Returns the new option id. Show the user the option and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attributeCode": {
+            "type": "string",
+            "description": "Attribute code, e.g. color."
+          },
+          "label": {
+            "type": "string",
+            "description": "Admin label of the option."
+          },
+          "sort_order": {
+            "type": "integer",
+            "description": "Position."
+          },
+          "is_default": {
+            "type": "boolean",
+            "description": "Make it the default option."
+          },
+          "store_labels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "store_id": {
+                  "type": "integer"
+                },
+                "label": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Labels per store view, e.g. [{\"store_id\": 2, \"label\": \"Rot\"}]."
+          }
+        },
+        "required": [
+          "attributeCode",
+          "label"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/attributes/{attributeCode}/options",
+        "bodyMapping": {
+          "option": {
+            "label": "$label",
+            "value": "",
+            "sort_order": "$sort_order",
+            "is_default": "$is_default",
+            "store_labels": "$store_labels"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "magento_set_source_items",
+      "description": "Set the stock of SKUs per Multi-Source Inventory source: quantity and status (1 in stock, 0 out of stock) for each sku and source_code pair. The quantity replaces the current one. Show the user the changes and confirm before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sourceItems": {
+            "type": "array",
+            "minItems": 1,
+            "description": "For example [{\"sku\": \"MUG-1\", \"source_code\": \"default\", \"quantity\": 25, \"status\": 1}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string"
+                },
+                "source_code": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "number"
+                },
+                "status": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                }
+              },
+              "required": [
+                "sku",
+                "source_code",
+                "quantity",
+                "status"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sourceItems"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory/source-items",
+        "bodyMapping": {
+          "sourceItems": "$sourceItems"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
     },
     {
       "name": "magento_search_cms_pages",
