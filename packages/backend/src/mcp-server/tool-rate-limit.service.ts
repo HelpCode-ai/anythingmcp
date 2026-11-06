@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../common/redis.service';
 import { McpPrincipalRateLimitGuard } from '../auth/mcp-principal-rate-limit.guard';
@@ -61,13 +60,13 @@ export class ToolRateLimitService {
     if (!limits || (limits.callsPerMinute === null && limits.callsPerHour === null)) return null;
 
     // Use precisely the principal guard's identity, including its key-name
-    // truncation. Hash the tuple to avoid delimiters colliding and to keep
-    // user-supplied API-key names out of Redis keys and warning messages.
+    // truncation. Encode the whole tuple to avoid delimiter/hash-slot collisions.
+    // These are IDs and key labels, never authentication key values; this is
+    // a counter identifier, not credential storage. Never log the identifier.
     const bucket = McpPrincipalRateLimitGuard.bucketFor({
       user: { sub: context.userId, authMethod: context.authMethod, apiKeyName: context.apiKeyName },
     });
-    const key = createHash('sha256')
-      .update(JSON.stringify([context.organizationId, tool.id, bucket])).digest('hex');
+    const key = Buffer.from(JSON.stringify([context.organizationId, tool.id, bucket]), 'utf8').toString('base64url');
 
     if (this.redis.isConfigured) {
       if (!this.redis.isConnected) {
