@@ -129,7 +129,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-713 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+713 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages. The [full catalog by category](docs/catalog/README.md) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini.
 
 | Category | Examples |
 |---|---|
