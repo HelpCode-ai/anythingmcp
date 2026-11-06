@@ -2,54 +2,54 @@
 
 # AnythingMCP connector catalog
 
-704 ready connectors with 13,034 MCP tools, in 45 categories. Install one on [AnythingMCP Cloud](https://cloud.anythingmcp.com) or on your own server ([run it yourself](../../README.md#run-it-yourself)), then add one MCP server URL to Claude, ChatGPT, Microsoft Copilot, Cursor or Gemini. Each connector has a setup guide for every assistant on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
+704 ready connectors with 13,037 MCP tools, in 45 categories. Install one on [AnythingMCP Cloud](https://cloud.anythingmcp.com) or on your own server ([run it yourself](../../README.md#run-it-yourself)), then add one MCP server URL to Claude, ChatGPT, Microsoft Copilot, Cursor or Gemini. Each connector has its own page here, with its tools and their parameters, and a setup guide for every assistant on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages.
 
 | Category | Connectors | Examples |
 |---|---|---|
-| [E-commerce](e-commerce.md) | 67 | Helium 10, Lightspeed Retail (X-Series), Allegro, WooCommerce, Magento (Adobe Commerce) |
-| [Public Data](data.md) | 45 | Twilio Segment, Firecrawl, Hugging Face, Mistral AI, Stability AI |
-| [Accounting](accounting.md) | 38 | Klardaten (DATEV), Daftra, freee, Zoho Books, Monet |
-| [CRM](crm.md) | 38 | Sellsy, GoHighLevel, Smartlead, Microsoft Dynamics 365 Sales (Dataverse), Freshsales |
-| [Infrastructure](infrastructure.md) | 32 | Hostinger, WorkOS, GitHub, Tailscale, Browser Use |
-| [Messaging](messaging.md) | 29 | Podium, DIGISAC, Telegram Bot, Aircall, Retell AI |
-| [Productivity](productivity.md) | 27 | Google Workspace Admin, Crowdin, n8n, Miro, Lokalise |
-| [Project Management](project-management.md) | 26 | Atlassian (Jira, Confluence), Linear, Weeek, Smartsheet, Worksection |
-| [Analytics](analytics.md) | 25 | Tableau, MPSTATS, Microsoft Power BI, Metabase, PostHog |
-| [ERP](erp.md) | 23 | weclapp Cloud ERP, Bind ERP, Microsoft Dynamics 365 Business Central, Xentral ERP, Rivile GAMA |
-| [Finance](finance.md) | 23 | TradingView, Massive, Alpha Vantage, Moss, Tidely |
-| [Payments](payments.md) | 23 | Paddle Billing, Clover, Zuora, Square, PayPal |
-| [File Storage](storage.md) | 22 | Cloudinary, SharePoint (Microsoft 365), OneDrive (Microsoft 365), Yandex Disk, pCloud |
-| [HR](hr.md) | 22 | Connecteam, HR WORKS, Deputy, Recruitee, HiBob |
-| [Monitoring](monitoring.md) | 22 | Better Stack, incident.io, Rootly, Statuspage, Rollbar |
-| [Databases](database.md) | 18 | Databricks, Supabase, Firebase, Neon, Pinecone |
-| [Logistics](logistics.md) | 18 | QLS, EasyPost, Shippo, ShipStation, JTL Fulfillment Network |
-| [Customer Support](support.md) | 17 | Intercom, Canny, Chatwoot, Re:amaze, Botpress |
-| [Data Enrichment](enrichment.md) | 14 | PhantomBuster, IPinfo, Openapi.com Company, Checko, Clay |
-| [Email](email.md) | 14 | Mailtrap, Constant Contact, Postmark, Outlook (Microsoft 365 Mail and Calendar), Gmail |
-| [Marketing Automation](marketing-automation.md) | 13 | CleverReach, GetResponse, Customer.io, GoAffPro, Braze |
-| [Publishing](publishing.md) | 13 | deed.page, ElevenLabs, HeyGen, Vimeo, Ghost |
-| [Social Media](social.md) | 13 | X (Twitter), Spotify, Facebook Pages, Instagram, LiveDune |
-| [Sports](sports.md) | 13 | API-Football, SportMonks Football, Exercise.com, Bzzoiro Sports Data, SportsAPI Pro Football |
-| [Scheduling](scheduling.md) | 11 | Mindbody, Eventbrite, Phorest, Zoom, Google Meet |
-| [Advertising](advertising.md) | 10 | OTTO Sponsored Product Ads, TikTok Ads, Ozon Performance (Ads), Meta Ads, Google Ads |
-| [E-Signature](e-signature.md) | 10 | signNow, Adobe Acrobat Sign, BoldSign, Documenso, DocuSeal |
-| [Government](government.md) | 10 | Korea Law (National Law Information Center), French Company Data, Destatis GENESIS Statistics, OpenPLZ Germany, Handelsregister (handelsregister.ai) |
-| [Time Tracking](time-tracking.md) | 10 | Crewmeister, Everhour, Clockify, Harvest, clockodo |
-| [CMS](cms.md) | 8 | WordPress, Webflow, Storyblok, Contentful, Prismic |
-| [Forms & Surveys](forms.md) | 6 | Jotform, Typeform, SurveyMonkey, Fillout, Tally |
-| [IT Service Management](itsm.md) | 6 | ServiceNow, Atera, Autotask PSA, GLPI, TOPdesk |
-| [Knowledge Base](knowledge.md) | 6 | Notion, SAP Signavio Process Manager, Slab, GitBook, Inoreader |
-| [Banking](banking.md) | 5 | Ramp, Brex, Mercury, Revolut Business, Wise (formerly TransferWise) |
-| [Maps](maps.md) | 5 | Google Maps, Mapbox, openrouteservice, HERE Geocoding & Search, Nominatim (OpenStreetMap) |
-| [Field Service](field-service.md) | 4 | MFR Mobile Field Report, ServiceTitan, ServiceM8, Jobber |
-| [Document Management](dms.md) | 3 | Paperless-ngx, DocuWare, d.velop documents |
-| [Transport](transport.md) | 3 | Deutsche Bahn Fahrplan, Deutsche Bahn Timetables API, Georgian Railway |
-| [Construction](construction.md) | 2 | Procore, PlanRadar |
-| [Food & Drink](food.md) | 2 | Fudo, Resy |
-| [Healthcare](healthcare.md) | 2 | Medmis, FHIR R4 |
-| [Real Estate](real-estate.md) | 2 | Propstack, ImmobilienScout24 API |
-| [Travel](travel.md) | 2 | apaleo, Lodgify |
-| [Remote Access](remote.md) | 1 | TeamViewer API |
-| [Wholesale](wholesale.md) | 1 | Oxomi Product & Media Portal |
+| [E-commerce](e-commerce.md) | 67 | [Helium 10](connectors/helium10.md), [Lightspeed Retail (X-Series)](connectors/lightspeed-retail.md), [Allegro](connectors/allegro.md), [WooCommerce](connectors/woocommerce.md), [Magento (Adobe Commerce)](connectors/magento.md) |
+| [Public Data](data.md) | 45 | [Twilio Segment](connectors/segment.md), [Firecrawl](connectors/firecrawl.md), [Hugging Face](connectors/huggingface.md), [Mistral AI](connectors/mistral.md), [Stability AI](connectors/stability-ai.md) |
+| [Accounting](accounting.md) | 38 | [Klardaten (DATEV)](connectors/klardaten.md), [Daftra](connectors/daftra.md), [freee](connectors/freee.md), [Zoho Books](connectors/zoho-books.md), [Monet](connectors/monet.md) |
+| [CRM](crm.md) | 38 | [Sellsy](connectors/sellsy.md), [GoHighLevel](connectors/gohighlevel.md), [Smartlead](connectors/smartlead.md), [Microsoft Dynamics 365 Sales (Dataverse)](connectors/dynamics365-sales.md), [Freshsales](connectors/freshsales.md) |
+| [Infrastructure](infrastructure.md) | 32 | [Hostinger](connectors/hostinger.md), [WorkOS](connectors/workos.md), [GitHub](connectors/github.md), [Tailscale](connectors/tailscale.md), [Browser Use](connectors/browser-use.md) |
+| [Messaging](messaging.md) | 29 | [Podium](connectors/podium.md), [DIGISAC](connectors/digisac.md), [Telegram Bot](connectors/telegram-bot.md), [Aircall](connectors/aircall.md), [Retell AI](connectors/retell-ai.md) |
+| [Productivity](productivity.md) | 27 | [Google Workspace Admin](connectors/google-admin.md), [Crowdin](connectors/crowdin.md), [n8n](connectors/n8n.md), [Miro](connectors/miro.md), [Lokalise](connectors/lokalise.md) |
+| [Project Management](project-management.md) | 26 | [Atlassian (Jira, Confluence)](connectors/atlassian.md), [Linear](connectors/linear.md), [Weeek](connectors/weeek.md), [Smartsheet](connectors/smartsheet.md), [Worksection](connectors/worksection.md) |
+| [Analytics](analytics.md) | 25 | [Tableau](connectors/tableau.md), [MPSTATS](connectors/mpstats.md), [Microsoft Power BI](connectors/power-bi.md), [Metabase](connectors/metabase.md), [PostHog](connectors/posthog.md) |
+| [ERP](erp.md) | 23 | [weclapp Cloud ERP](connectors/weclapp.md), [Bind ERP](connectors/binderp.md), [Microsoft Dynamics 365 Business Central](connectors/dynamics365-business-central.md), [Xentral ERP](connectors/xentral.md), [Rivile GAMA](connectors/rivile.md) |
+| [Finance](finance.md) | 23 | [TradingView](connectors/tradingview.md), [Massive](connectors/massive.md), [Alpha Vantage](connectors/alpha-vantage.md), [Moss](connectors/moss.md), [Tidely](connectors/tidely.md) |
+| [Payments](payments.md) | 23 | [Paddle Billing](connectors/paddle.md), [Clover](connectors/clover.md), [Zuora](connectors/zuora.md), [Square](connectors/square.md), [PayPal](connectors/paypal.md) |
+| [File Storage](storage.md) | 22 | [Cloudinary](connectors/cloudinary.md), [SharePoint (Microsoft 365)](connectors/microsoft-sharepoint.md), [OneDrive (Microsoft 365)](connectors/microsoft-onedrive.md), [Yandex Disk](connectors/yandex-disk.md), [pCloud](connectors/pcloud.md) |
+| [HR](hr.md) | 22 | [Connecteam](connectors/connecteam.md), [HR WORKS](connectors/hrworks.md), [Deputy](connectors/deputy.md), [Recruitee](connectors/recruitee.md), [HiBob](connectors/hibob.md) |
+| [Monitoring](monitoring.md) | 22 | [Better Stack](connectors/better-stack.md), [incident.io](connectors/incident-io.md), [Rootly](connectors/rootly.md), [Statuspage](connectors/statuspage.md), [Rollbar](connectors/rollbar.md) |
+| [Databases](database.md) | 18 | [Databricks](connectors/databricks.md), [Supabase](connectors/supabase.md), [Firebase](connectors/firebase.md), [Neon](connectors/neon.md), [Pinecone](connectors/pinecone.md) |
+| [Logistics](logistics.md) | 18 | [QLS](connectors/qls.md), [EasyPost](connectors/easypost.md), [Shippo](connectors/shippo.md), [ShipStation](connectors/shipstation.md), [JTL Fulfillment Network](connectors/jtl-ffn.md) |
+| [Customer Support](support.md) | 17 | [Intercom](connectors/intercom.md), [Canny](connectors/canny.md), [Chatwoot](connectors/chatwoot.md), [Re:amaze](connectors/reamaze.md), [Botpress](connectors/botpress.md) |
+| [Data Enrichment](enrichment.md) | 14 | [PhantomBuster](connectors/phantombuster.md), [IPinfo](connectors/ipinfo.md), [Openapi.com Company](connectors/openapi-company.md), [Checko](connectors/checko.md), [Clay](connectors/clay.md) |
+| [Email](email.md) | 14 | [Mailtrap](connectors/mailtrap.md), [Constant Contact](connectors/constant-contact.md), [Postmark](connectors/postmark.md), [Outlook (Microsoft 365 Mail and Calendar)](connectors/microsoft-outlook.md), [Gmail](connectors/gmail.md) |
+| [Marketing Automation](marketing-automation.md) | 13 | [CleverReach](connectors/cleverreach.md), [GetResponse](connectors/getresponse.md), [Customer.io](connectors/customer-io.md), [GoAffPro](connectors/goaffpro.md), [Braze](connectors/braze.md) |
+| [Publishing](publishing.md) | 13 | [deed.page](connectors/deed-page.md), [ElevenLabs](connectors/elevenlabs.md), [HeyGen](connectors/heygen.md), [Vimeo](connectors/vimeo.md), [Ghost](connectors/ghost.md) |
+| [Social Media](social.md) | 13 | [X (Twitter)](connectors/x.md), [Spotify](connectors/spotify.md), [Facebook Pages](connectors/facebook-pages.md), [Instagram](connectors/instagram.md), [LiveDune](connectors/livedune.md) |
+| [Sports](sports.md) | 13 | [API-Football](connectors/api-football.md), [SportMonks Football](connectors/sportmonks.md), [Exercise.com](connectors/exercise-com.md), [Bzzoiro Sports Data](connectors/bzzoiro.md), [SportsAPI Pro Football](connectors/sportsapipro.md) |
+| [Scheduling](scheduling.md) | 11 | [Mindbody](connectors/mindbody.md), [Eventbrite](connectors/eventbrite.md), [Phorest](connectors/phorest.md), [Zoom](connectors/zoom.md), [Google Meet](connectors/google-meet.md) |
+| [Advertising](advertising.md) | 10 | [OTTO Sponsored Product Ads](connectors/otto-ads.md), [TikTok Ads](connectors/tiktok-ads.md), [Ozon Performance (Ads)](connectors/ozon-performance.md), [Meta Ads](connectors/meta-ads.md), [Google Ads](connectors/google-ads.md) |
+| [E-Signature](e-signature.md) | 10 | [signNow](connectors/signnow.md), [Adobe Acrobat Sign](connectors/adobe-acrobat-sign.md), [BoldSign](connectors/boldsign.md), [Documenso](connectors/documenso.md), [DocuSeal](connectors/docuseal.md) |
+| [Government](government.md) | 10 | [Korea Law (National Law Information Center)](connectors/korea-law.md), [French Company Data](connectors/fr-company-data.md), [Destatis GENESIS Statistics](connectors/destatis-genesis.md), [OpenPLZ Germany](connectors/openplz.md), [Handelsregister (handelsregister.ai)](connectors/handelsregister.md) |
+| [Time Tracking](time-tracking.md) | 10 | [Crewmeister](connectors/crewmeister.md), [Everhour](connectors/everhour.md), [Clockify](connectors/clockify.md), [Harvest](connectors/harvest.md), [clockodo](connectors/clockodo.md) |
+| [CMS](cms.md) | 8 | [WordPress](connectors/wordpress.md), [Webflow](connectors/webflow.md), [Storyblok](connectors/storyblok.md), [Contentful](connectors/contentful.md), [Prismic](connectors/prismic.md) |
+| [Forms & Surveys](forms.md) | 6 | [Jotform](connectors/jotform.md), [Typeform](connectors/typeform.md), [SurveyMonkey](connectors/surveymonkey.md), [Fillout](connectors/fillout.md), [Tally](connectors/tally.md) |
+| [IT Service Management](itsm.md) | 6 | [ServiceNow](connectors/servicenow.md), [Atera](connectors/atera.md), [Autotask PSA](connectors/autotask.md), [GLPI](connectors/glpi.md), [TOPdesk](connectors/topdesk.md) |
+| [Knowledge Base](knowledge.md) | 6 | [Notion](connectors/notion.md), [SAP Signavio Process Manager](connectors/sap-signavio.md), [Slab](connectors/slab.md), [GitBook](connectors/gitbook.md), [Inoreader](connectors/inoreader.md) |
+| [Banking](banking.md) | 5 | [Ramp](connectors/ramp.md), [Brex](connectors/brex.md), [Mercury](connectors/mercury.md), [Revolut Business](connectors/revolut-business.md), [Wise (formerly TransferWise)](connectors/wise.md) |
+| [Maps](maps.md) | 5 | [Google Maps](connectors/google-maps.md), [Mapbox](connectors/mapbox.md), [openrouteservice](connectors/openrouteservice.md), [HERE Geocoding & Search](connectors/here-geocoding.md), [Nominatim (OpenStreetMap)](connectors/nominatim.md) |
+| [Field Service](field-service.md) | 4 | [MFR Mobile Field Report](connectors/mfr-fieldservice.md), [ServiceTitan](connectors/servicetitan.md), [ServiceM8](connectors/servicem8.md), [Jobber](connectors/jobber.md) |
+| [Document Management](dms.md) | 3 | [Paperless-ngx](connectors/paperless-ngx.md), [DocuWare](connectors/docuware.md), [d.velop documents](connectors/d-velop.md) |
+| [Transport](transport.md) | 3 | [Deutsche Bahn Fahrplan](connectors/deutsche-bahn.md), [Deutsche Bahn Timetables API](connectors/deutsche-bahn-timetables.md), [Georgian Railway](connectors/georgian-railway.md) |
+| [Construction](construction.md) | 2 | [Procore](connectors/procore.md), [PlanRadar](connectors/planradar.md) |
+| [Food & Drink](food.md) | 2 | [Fudo](connectors/fudo.md), [Resy](connectors/resy.md) |
+| [Healthcare](healthcare.md) | 2 | [Medmis](connectors/medmis.md), [FHIR R4](connectors/fhir.md) |
+| [Real Estate](real-estate.md) | 2 | [Propstack](connectors/propstack.md), [ImmobilienScout24 API](connectors/immobilienscout24.md) |
+| [Travel](travel.md) | 2 | [apaleo](connectors/apaleo.md), [Lodgify](connectors/lodgify.md) |
+| [Remote Access](remote.md) | 1 | [TeamViewer API](connectors/teamviewer.md) |
+| [Wholesale](wholesale.md) | 1 | [Oxomi Product & Media Portal](connectors/oxomi.md) |
 
 Missing a system? Any REST/OpenAPI, SOAP, GraphQL, OData or SQL source becomes a connector without code: see [Connect any API, SOAP service or database](../../README.md#connect-any-api-soap-service-or-database).
