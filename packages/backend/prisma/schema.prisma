@@ -393,6 +393,13 @@ model McpApiKey {
   keyHash        String?          @unique @map("key_hash")
   // Last 8 characters, for the masked display (`mcp_••••<suffix>`).
   keySuffix      String?          @map("key_suffix")
+  // Refused from this moment on. Null for a user's own keys (no expiry).
+  expiresAt      DateTime?        @map("expires_at")
+  // Minted by an operator (src/roles/support-keys.cli.ts) to reproduce an
+  // issue as this user. Hidden from the user's key lists; its calls are not
+  // written to the workspace's logs. The row itself is the audit record:
+  // never delete it, revoke it.
+  isSupport      Boolean          @default(false) @map("is_support")
   name           String // label: "Claude Desktop", "Cursor", etc.
   // What the key may reach. MCP: tool calls on /mcp only (the historical
   // behaviour, and the default so existing keys keep it). MANAGEMENT_READ /

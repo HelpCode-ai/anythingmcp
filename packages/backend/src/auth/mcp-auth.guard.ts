@@ -49,7 +49,7 @@ export class McpAuthGuard implements CanActivate {
     if (presentedKey) {
       const user = await this.mcpApiKeysService.resolveUserByKey(presentedKey);
       if (user) {
-        request.user = { sub: user.id, email: user.email, role: user.role, mcpRoleId: user.mcpRoleId };
+        request.user = { sub: user.id, email: user.email, role: user.role, mcpRoleId: user.mcpRoleId, supportKeyId: user.supportKeyId };
         return true;
       }
       // Invalid per-user key — fall through to 401

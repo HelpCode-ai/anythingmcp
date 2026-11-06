@@ -151,6 +151,14 @@ describe('DynamicMcpTools — response shaping', () => {
     );
   });
 
+  it('hands the support key id to the audit, so the call stays out of the workspace logs', async () => {
+    const { executor, audit } = build(makeTool(SELECT_TRANSFORM));
+    await executor.executeTool('list_devices', {}, { userId: 'u1', authMethod: 'mcp_api_key', supportKeyId: 'sk-1' });
+    expect(audit.logInvocation).toHaveBeenCalledWith(expect.objectContaining({ supportKeyId: 'sk-1' }));
+    await executor.executeTool('list_devices', {}, { userId: 'u1', authMethod: 'mcp_api_key' });
+    expect(audit.logInvocation.mock.calls[1][0].supportKeyId).toBeUndefined();
+  });
+
   it('returns the raw response and does not fail the call when the mapping is broken', async () => {
     const { executor } = build(makeTool({ transform: { select: { bad: 'a[' } } }));
     const res = await executor.executeTool('list_devices', {});

@@ -27,6 +27,8 @@ const keys = {
   memberAdminScope: `mcp_${'d'.repeat(40)}${Date.now()}`,
   inactive: `mcp_${'e'.repeat(40)}${Date.now()}`,
   hashedOnly: `mcp_${'f'.repeat(40)}${Date.now()}`,
+  expired: `mcp_${'1'.repeat(40)}${Date.now()}`,
+  support: `mcp_${'2'.repeat(40)}${Date.now()}`,
 };
 
 function contextFor(key: string | undefined, method: string): { ctx: ExecutionContext; req: Record<string, unknown> } {
@@ -71,6 +73,21 @@ beforeAll(async () => {
       scope: 'MANAGEMENT_READ',
     },
   });
+  const hashedRow = (key: string, extra: Record<string, unknown>) =>
+    prisma.mcpApiKey.create({
+      data: {
+        key: `${TAG}-placeholder-${key.slice(4, 12)}`,
+        keyHash: hashApiKey(key),
+        keySuffix: apiKeySuffix(key),
+        name: key.slice(0, 12),
+        userId: adminId,
+        organizationId: orgId,
+        scope: 'MANAGEMENT_READ',
+        ...extra,
+      },
+    });
+  await hashedRow(keys.expired, { expiresAt: new Date(Date.now() - 60_000) });
+  await hashedRow(keys.support, { expiresAt: new Date(Date.now() + 60 * 60_000), isSupport: true });
 });
 
 afterAll(async () => {
@@ -174,5 +191,19 @@ describe('JwtOrManagementKeyGuard (keys hashed at rest)', () => {
       await new Promise((r) => setTimeout(r, 25));
     }
     expect(row).toEqual({ keyHash: hashApiKey(keys.admin), keySuffix: apiKeySuffix(keys.admin) });
+  });
+});
+
+describe('JwtOrManagementKeyGuard (expiry and support keys)', () => {
+  it('rejects an expired key', async () => {
+    const { ctx } = contextFor(keys.expired, 'GET');
+    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('accepts a live support key as its user, still read-only', async () => {
+    const { ctx, req } = contextFor(keys.support, 'GET');
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(req.user).toMatchObject({ sub: adminId, organizationId: orgId });
+    await expect(guard.canActivate(contextFor(keys.support, 'POST').ctx)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

@@ -598,6 +598,7 @@ export class McpEndpointController {
             organizationId: tool.organizationId,
             authMethod: user.authMethod || 'none',
             apiKeyName: user.apiKeyName,
+            supportKeyId: user.supportKeyId,
             mcpServerId: user.mcpServerId,
             connectorIds: [tool.connectorId],
           });
@@ -1177,6 +1178,7 @@ export class McpEndpointController {
       `auth ${user.authMethod ?? 'unknown'}`,
     ];
     if (user.apiKeyName) parts.push(`key "${String(user.apiKeyName).slice(0, 60)}"`);
+    if (user.supportKeyId) parts.push(`support key ${String(user.supportKeyId).slice(0, 40)}`);
     if (user.mcpServerId) parts.push(`key bound to server ${user.mcpServerId}`);
     return parts.join(', ');
   }
@@ -1390,6 +1392,7 @@ export class McpEndpointController {
       organizationId: mcpServerConfig.organizationId as string,
       authMethod: (user?.authMethod || 'none') as string,
       apiKeyName: user?.apiKeyName as string | undefined,
+      supportKeyId: user?.supportKeyId as string | undefined,
       oauthClientId: user ? oauthClientId(user) : undefined,
       mcpServerId: mcpServerConfig.id,
       mcpServerName: mcpServerConfig.name,

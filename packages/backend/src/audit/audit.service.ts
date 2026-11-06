@@ -92,7 +92,22 @@ export class AuditService implements OnModuleDestroy {
     durationMs?: number;
     error?: string;
     clientInfo?: string;
+    /**
+     * The call used an operator's support key (roles/support-keys.ts). It is
+     * not the workspace's activity: no row in its logs, no failure alert, no
+     * first-success or activation event. One internal log line instead,
+     * without inputs or outputs.
+     */
+    supportKeyId?: string;
   }): Promise<void> {
+    if (data.supportKeyId) {
+      this.logger.log(
+        `Support call: key ${data.supportKeyId}, org ${data.organizationId ?? 'none'}, ` +
+          `user ${data.userId ?? 'none'}, tool ${data.toolId}, ${data.status}, ${data.durationMs ?? 0}ms`,
+      );
+      return;
+    }
+
     // Every failing call, not just the ones that end up as a fresh row: the
     // repeat-dedup check just below collapses an identical, fast-repeating
     // failure into a counter on the first row instead of writing it again,

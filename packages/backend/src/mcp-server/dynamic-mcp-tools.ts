@@ -93,6 +93,7 @@ interface CodeExecContext {
   organizationId?: string;
   authMethod?: string;
   apiKeyName?: string;
+  supportKeyId?: string;
   mcpServerId?: string;
   mcpServerName?: string;
   connectorIds?: string[];
@@ -217,7 +218,7 @@ export class DynamicMcpTools {
    */
   private logToolCall(
     tool: RegisteredTool,
-    context: { organizationId?: string; mcpServerId?: string; authMethod?: string } | undefined,
+    context: { organizationId?: string; mcpServerId?: string; authMethod?: string; supportKeyId?: string } | undefined,
     durationMs: number,
     status: 'SUCCESS' | 'ERROR',
     renderedText?: string,
@@ -240,6 +241,8 @@ export class DynamicMcpTools {
       organizationId: context?.organizationId,
       mcpServerId: context?.mcpServerId,
       authMethod: context?.authMethod,
+      // The internal trace of an operator's support call (no workspace log row).
+      ...(context?.supportKeyId ? { supportKeyId: context.supportKeyId } : {}),
       durationMs,
       resultBytes,
       status,
@@ -306,6 +309,8 @@ export class DynamicMcpTools {
       organizationId?: string;
       authMethod?: string;
       apiKeyName?: string;
+      /** Set when the caller used an operator's support key (support-keys.ts). */
+      supportKeyId?: string;
       mcpServerId?: string;
       mcpServerName?: string;
       connectorIds?: string[];
@@ -714,6 +719,7 @@ export class DynamicMcpTools {
           toolId: tool.id,
           userId: context?.userId,
           userEmail: context?.userEmail,
+          supportKeyId: context?.supportKeyId,
           mcpServerId: context?.mcpServerId,
           organizationId: context?.organizationId,
           connectorId: tool.connectorId,
@@ -766,6 +772,7 @@ export class DynamicMcpTools {
         toolId: tool.id,
         userId: context?.userId,
         userEmail: context?.userEmail,
+        supportKeyId: context?.supportKeyId,
         mcpServerId: context?.mcpServerId,
         organizationId: context?.organizationId,
         connectorId: tool.connectorId,
@@ -876,6 +883,7 @@ export class DynamicMcpTools {
         toolId: tool.id,
         userId: context?.userId,
         userEmail: context?.userEmail,
+        supportKeyId: context?.supportKeyId,
         mcpServerId: context?.mcpServerId,
         organizationId: context?.organizationId,
         connectorId: tool.connectorId,
@@ -1105,7 +1113,7 @@ export class DynamicMcpTools {
   private async logRateLimited(
     tool: RegisteredTool,
     params: Record<string, unknown>,
-    context: { userId?: string; userEmail?: string; organizationId?: string; mcpServerId?: string; mcpServerName?: string; authMethod?: string; apiKeyName?: string; intent?: string; learnable?: boolean } | undefined,
+    context: { userId?: string; userEmail?: string; organizationId?: string; mcpServerId?: string; mcpServerName?: string; authMethod?: string; apiKeyName?: string; supportKeyId?: string; intent?: string; learnable?: boolean } | undefined,
     message: string,
     output: { content: ToolResultContent; isError: true },
   ): Promise<void> {
@@ -1114,6 +1122,7 @@ export class DynamicMcpTools {
         toolId: tool.id,
         userId: context?.userId,
         userEmail: context?.userEmail,
+        supportKeyId: context?.supportKeyId,
         mcpServerId: context?.mcpServerId,
         organizationId: context?.organizationId,
         usedProxy: false,
@@ -1297,7 +1306,8 @@ export class DynamicMcpTools {
     // One code_runs row for the run itself (retention/quotas); the inner tool
     // calls keep their own tool_invocations rows. Best-effort: a failed audit
     // write must never fail the run. Uses the tool's own org, always present.
-    void this.prisma.codeRun
+    // A support key's run is not the workspace's (see support-keys.ts).
+    if (!context?.supportKeyId) void this.prisma.codeRun
       .create({
         data: {
           organizationId: tool.organizationId,
@@ -1318,6 +1328,7 @@ export class DynamicMcpTools {
       toolId: tool.id,
       userId: context?.userId,
       userEmail: context?.userEmail,
+      supportKeyId: context?.supportKeyId,
       mcpServerId: context?.mcpServerId,
       organizationId: context?.organizationId,
       connectorId: tool.connectorId,

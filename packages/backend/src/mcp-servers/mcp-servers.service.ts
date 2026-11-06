@@ -46,7 +46,7 @@ export class McpServersService {
     return this.prisma.mcpServerConfig.findMany({
       where: { userId },
       include: {
-        _count: { select: { connectors: true, apiKeys: true } },
+        _count: { select: { connectors: true, apiKeys: { where: { isSupport: false } } } },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -147,7 +147,7 @@ export class McpServersService {
     return this.prisma.mcpServerConfig.findMany({
       where: { organizationId },
       include: {
-        _count: { select: { connectors: true, apiKeys: true } },
+        _count: { select: { connectors: true, apiKeys: { where: { isSupport: false } } } },
         // Names only, for "exposes …" on the server cards: servers look alike
         // and a client wired to the wrong one is otherwise invisible.
         connectors: {
@@ -192,7 +192,7 @@ export class McpServersService {
             },
           },
         },
-        _count: { select: { connectors: true, apiKeys: true } },
+        _count: { select: { connectors: true, apiKeys: { where: { isSupport: false } } } },
       },
     });
   }
@@ -204,7 +204,7 @@ export class McpServersService {
    */
   async listOwnKeysForServer(mcpServerId: string, userId: string, organizationId: string) {
     const keys = await this.prisma.mcpApiKey.findMany({
-      where: { mcpServerId, userId, organizationId },
+      where: { mcpServerId, userId, organizationId, isSupport: false },
       select: {
         id: true,
         name: true,
@@ -234,7 +234,7 @@ export class McpServersService {
           instructions: data.instructions,
         },
         include: {
-          _count: { select: { connectors: true, apiKeys: true } },
+          _count: { select: { connectors: true, apiKeys: { where: { isSupport: false } } } },
         },
       }),
     );
@@ -246,7 +246,7 @@ export class McpServersService {
         where: { id },
         data,
         include: {
-          _count: { select: { connectors: true, apiKeys: true } },
+          _count: { select: { connectors: true, apiKeys: { where: { isSupport: false } } } },
         },
       }),
     );

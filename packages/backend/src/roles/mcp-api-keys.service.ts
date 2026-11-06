@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, OnApplicationBootstrap } from '@
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { apiKeyLookupWhere, apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
+import { isKeyExpired } from './support-keys';
 import type { McpApiKeyScope } from '../generated/prisma/client';
 
 @Injectable()
@@ -98,7 +99,8 @@ export class McpApiKeysService implements OnApplicationBootstrap {
 
   async listByUser(userId: string) {
     return this.prisma.mcpApiKey.findMany({
-      where: { userId },
+      // Support keys are an operator's, not the user's (see support-keys.ts).
+      where: { userId, isSupport: false },
       select: {
         id: true,
         name: true,
@@ -116,14 +118,15 @@ export class McpApiKeysService implements OnApplicationBootstrap {
 
   async revoke(id: string, userId: string) {
     return this.prisma.mcpApiKey.updateMany({
-      where: { id, userId },
+      where: { id, userId, isSupport: false },
       data: { isActive: false },
     });
   }
 
   async deleteKey(id: string, userId: string) {
     return this.prisma.mcpApiKey.deleteMany({
-      where: { id, userId },
+      // A support key row is the audit record: never deleted from here.
+      where: { id, userId, isSupport: false },
     });
   }
 
@@ -147,7 +150,7 @@ export class McpApiKeysService implements OnApplicationBootstrap {
       },
     });
 
-    if (!record || !record.isActive) return null;
+    if (!record || !record.isActive || isKeyExpired(record.expiresAt)) return null;
 
     // Defence in depth: a key is bound to one organization, and it must not
     // authenticate a user who has been deactivated there — even if the key row
@@ -170,6 +173,11 @@ export class McpApiKeysService implements OnApplicationBootstrap {
       },
     }).catch(() => {});
 
-    return { ...record.user, mcpServerId: record.mcpServerId, apiKeyName: record.name };
+    if (record.isSupport) {
+      // No key name for a support key: it would reach the workspace's logs
+      // and, through {{amcp.api_key_name}}, its connectors' target systems.
+      return { ...record.user, mcpServerId: record.mcpServerId, apiKeyName: undefined, supportKeyId: record.id };
+    }
+    return { ...record.user, mcpServerId: record.mcpServerId, apiKeyName: record.name, supportKeyId: undefined };
   }
 }

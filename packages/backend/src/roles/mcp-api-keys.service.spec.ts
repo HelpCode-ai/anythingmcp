@@ -91,7 +91,7 @@ describe('McpApiKeysService', () => {
       expect(result).toBe(keys);
       expect(mockPrisma.mcpApiKey.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId: 'user-1' },
+          where: { userId: 'user-1', isSupport: false },
           orderBy: { createdAt: 'desc' },
         }),
       );
@@ -103,7 +103,7 @@ describe('McpApiKeysService', () => {
       mockPrisma.mcpApiKey.updateMany.mockResolvedValue({ count: 1 });
       await service.revoke('key-1', 'user-1');
       expect(mockPrisma.mcpApiKey.updateMany).toHaveBeenCalledWith({
-        where: { id: 'key-1', userId: 'user-1' },
+        where: { id: 'key-1', userId: 'user-1', isSupport: false },
         data: { isActive: false },
       });
     });
@@ -114,7 +114,7 @@ describe('McpApiKeysService', () => {
       mockPrisma.mcpApiKey.deleteMany.mockResolvedValue({ count: 1 });
       await service.deleteKey('key-1', 'user-1');
       expect(mockPrisma.mcpApiKey.deleteMany).toHaveBeenCalledWith({
-        where: { id: 'key-1', userId: 'user-1' },
+        where: { id: 'key-1', userId: 'user-1', isSupport: false },
       });
     });
   });
@@ -295,6 +295,54 @@ describe('McpApiKeysService', () => {
       mockPrisma.mcpApiKey.findMany.mockResolvedValue([]);
       expect(await service.backfillKeyHashes()).toBe(0);
       expect(mockPrisma.mcpApiKey.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('support keys and expiry', () => {
+    const base = {
+      id: 'k1', isActive: true, userId: 'u1', organizationId: 'org-1', keyHash: 'h',
+      name: 'support:matteo:2026-11-06T12:00Z', mcpServerId: 'srv-1',
+      user: { id: 'u1', email: 'a@x', role: 'EDITOR', organizationId: 'org-1', mcpRoleId: null },
+    };
+
+    it('refuses an expired key', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({ ...base, isSupport: false, expiresAt: new Date(Date.now() - 1000) });
+      expect(await service.resolveUserByKey('mcp_x')).toBeNull();
+      expect(mockPrisma.mcpApiKey.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts a key whose expiry is still ahead', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({ ...base, isSupport: true, expiresAt: new Date(Date.now() + 60_000) });
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      expect(await service.resolveUserByKey('mcp_x')).toMatchObject({ id: 'u1' });
+    });
+
+    it('marks a support key and hides its name', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({ ...base, isSupport: true, expiresAt: new Date(Date.now() + 60_000) });
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      const user = await service.resolveUserByKey('mcp_x');
+      expect(user).toMatchObject({ id: 'u1', mcpServerId: 'srv-1', supportKeyId: 'k1' });
+      expect(user!.apiKeyName).toBeUndefined();
+    });
+
+    it('does not mark a user key', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({ ...base, name: 'Claude Desktop', isSupport: false, expiresAt: null });
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      const user = await service.resolveUserByKey('mcp_x');
+      expect(user!.supportKeyId).toBeUndefined();
+      expect(user!.apiKeyName).toBe('Claude Desktop');
+    });
+
+    it('never lists, revokes or deletes a support key on the user side', async () => {
+      mockPrisma.mcpApiKey.findMany.mockResolvedValue([]);
+      await service.listByUser('u1');
+      expect(mockPrisma.mcpApiKey.findMany.mock.calls[0][0].where).toEqual({ userId: 'u1', isSupport: false });
+      mockPrisma.mcpApiKey.updateMany.mockResolvedValue({ count: 0 });
+      await service.revoke('k1', 'u1');
+      expect(mockPrisma.mcpApiKey.updateMany).toHaveBeenCalledWith({ where: { id: 'k1', userId: 'u1', isSupport: false }, data: { isActive: false } });
+      mockPrisma.mcpApiKey.deleteMany.mockResolvedValue({ count: 0 });
+      await service.deleteKey('k1', 'u1');
+      expect(mockPrisma.mcpApiKey.deleteMany).toHaveBeenCalledWith({ where: { id: 'k1', userId: 'u1', isSupport: false } });
     });
   });
 });
