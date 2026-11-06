@@ -4808,7 +4808,7 @@ ChatGPT will call the appropriate MCP tool and show you the results.
 | `anythingmcp_get_workspace_guide` | The workspace's notes on its connectors |
 | `anythingmcp_get_configuration_url` | Link to the dashboard |
 
-Only database connectors set to **read-only** are queried; a connector with write access is listed as not queryable. Sign-in, the server or workspace picker, MCP roles and the audit log work as on `/mcp`. The endpoint behaves the same on Cloud and on a self-hosted instance, and needs a signed-in user (OAuth or a per-user MCP API key), not the static `MCP_API_KEY` / `MCP_BEARER_TOKEN`.
+Only database connectors set to **read-only** are queried; a connector with write access is listed as not queryable. API and application connectors (Odoo, Shopify and the like) are listed but not run here. `anythingmcp_list_connectors` then returns `otherConnectorsHint`, which tells the user to connect them to ChatGPT through the MCP server's own URL, following the ChatGPT steps on the server's page in the dashboard. The endpoint never returns server URLs itself. Sign-in, the server or workspace picker, MCP roles and the audit log work as on `/mcp`. The endpoint behaves the same on Cloud and on a self-hosted instance, and needs a signed-in user (OAuth or a per-user MCP API key), not the static `MCP_API_KEY` / `MCP_BEARER_TOKEN`.
 
 ---
 
