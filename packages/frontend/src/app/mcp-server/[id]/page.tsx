@@ -469,8 +469,12 @@ export default function McpServerDetailPage() {
   // On Cloud only: AnythingMCP's plugin in ChatGPT's plugin directory. It
   // queries company databases, so for those it is the quickest way; the
   // custom MCP server below reaches every connector on this server.
+  // The ChatGPT Plugin Directory listing serves company databases only, so it
+  // is offered only for a server whose assigned connectors are all databases.
+  const databasesOnly =
+    assignedConnectors.length > 0 && assignedConnectors.every((c) => c.type === 'DATABASE');
   const chatgptDirectoryNote = () =>
-    isCloud ? (
+    isCloud && databasesOnly ? (
       <div className="space-y-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3" data-testid="chatgpt-directory">
         <p className="text-[13px] font-semibold text-[var(--text)]">
           {t('chatgptDirectory.title')}
