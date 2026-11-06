@@ -2,7 +2,7 @@
 
 Guides for connecting AI clients to AnythingMCP, the connector types you can build, and frequently asked questions. New here? Start with the [README](../README.md) and [Get started in 60 seconds](../README.md#run-it-yourself).
 
-Per-adapter setup guides (English, German, Italian and more) live at **[anythingmcp.com/guides](https://anythingmcp.com/guides)**.
+Per-adapter setup guides (English, German, Italian and more) live at **[anythingmcp.com/guides](https://anythingmcp.com/guides)**. The [connector catalog](catalog/README.md) lists every connector by category, with links to its guide for each AI client.
 
 ---
 
