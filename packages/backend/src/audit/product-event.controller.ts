@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiExcludeEndpoint, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { ProductEvents, ProductEventService } from './product-event.service';
 
@@ -12,8 +12,10 @@ const CLIENT_SEARCH_SURFACES = new Set(['store', 'welcome']);
  * Always 204, even for an unknown event name: the page fires these and moves
  * on, and a rejected beacon would only show up as console noise. Unknown names
  * are dropped server-side; the allow-list lives in ProductEventService.
+ *
+ * Internal to the dashboard, so it is kept out of the OpenAPI document (and
+ * the controller carries no tag).
  */
-@ApiTags('Product events')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
 @Controller('api/product-events')
@@ -22,6 +24,7 @@ export class ProductEventController {
 
   @Post()
   @HttpCode(204)
+  @ApiExcludeEndpoint()
   @ApiOperation({ summary: 'Record a product-usage event for the signed-in user' })
   async record(
     @Req() req: any,

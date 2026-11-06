@@ -134,7 +134,7 @@ export class McpOAuthCallbackController {
     summary: 'OAuth2 redirect target for connector authorization',
     description:
       'Checks the state and forwards the code to the dashboard, which completes ' +
-      'the authorization with POST /api/mcp-oauth/complete.',
+      'the authorization for the user who started it.',
   })
   async oauthCallback(
     @Query('code') rawCode: unknown,
@@ -197,9 +197,12 @@ export class McpOAuthCallbackController {
     return res.redirect(this.completePage({ state, code }));
   }
 
+  // Called by the dashboard's completion page with the code the callback
+  // forwarded; not an API to drive by hand, so it stays out of the OpenAPI doc.
   @Post('api/mcp-oauth/complete')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(200)
+  @ApiExcludeEndpoint()
   @ApiOperation({
     summary: 'Complete a connector authorization (dashboard, authenticated)',
     description:

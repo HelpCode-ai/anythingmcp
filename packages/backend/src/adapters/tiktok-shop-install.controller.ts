@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { getRequiredSecret } from '../common/secrets.util';
@@ -81,9 +81,11 @@ export class TikTokShopInstallController {
     this.encryptionKey = getRequiredSecret('ENCRYPTION_KEY', this.configService.get<string>('ENCRYPTION_KEY'));
   }
 
+  // The dashboard's half of an App Store install redirect; not an API to drive by hand.
   @Post('install')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(200)
+  @ApiExcludeEndpoint()
   @ApiOperation({ summary: 'Complete a TikTok Shop App Store install (dashboard, signed in)' })
   async install(
     @Req() req: any,
