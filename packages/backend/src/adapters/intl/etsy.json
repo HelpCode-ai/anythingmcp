@@ -935,7 +935,7 @@
           },
           "tags": {
             "type": "string",
-            "description": "Up to 13 tags, comma-separated. Each tag at most 20 characters: letters, numbers, spaces, - and ' only."
+            "description": "Up to 13 tags, comma-separated: letters, numbers, spaces, - and ' only. On English listings each tag has at most 20 characters (Etsy refuses longer ones); listings in other languages may have longer tags."
           },
           "materials": {
             "type": "string",
@@ -1127,7 +1127,7 @@
           },
           "tags": {
             "type": "string",
-            "description": "Up to 13 tags, comma-separated. Each tag at most 20 characters: letters, numbers, spaces, - and ' only."
+            "description": "Up to 13 tags, comma-separated: letters, numbers, spaces, - and ' only. On English listings each tag has at most 20 characters (Etsy refuses longer ones); listings in other languages may have longer tags."
           },
           "materials": {
             "type": "string",
@@ -1569,7 +1569,7 @@
           },
           "tags": {
             "type": "string",
-            "description": "Up to 13 translated tags, comma-separated, each at most 20 characters."
+            "description": "Up to 13 translated tags, comma-separated. In English each tag has at most 20 characters; other languages may have longer tags."
           }
         },
         "required": [
@@ -1632,7 +1632,7 @@
           },
           "tags": {
             "type": "string",
-            "description": "Up to 13 translated tags, comma-separated, each at most 20 characters."
+            "description": "Up to 13 translated tags, comma-separated. In English each tag has at most 20 characters; other languages may have longer tags."
           }
         },
         "required": [

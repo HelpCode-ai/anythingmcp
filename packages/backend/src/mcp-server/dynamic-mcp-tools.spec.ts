@@ -277,6 +277,21 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
       expect(detail.hint).toMatch(/AnythingMCP Cloud calls TallyPrime over the internet/);
     });
 
+    it("names the Etsy tags over Etsy's limit, from the call's own arguments", async () => {
+      const base = 'https://openapi.etsy.com/v3/application';
+      const { executor, restEngine } = build(catalogTool('etsy', base));
+      restEngine.execute.mockRejectedValueOnce(
+        await axiosFailure(400, { error: 'There was a problem with /tags : cannot be more than 20 characters' }, base),
+      );
+      const res = await executor.executeTool('list_devices', {
+        tags: 'mug, handmade ceramic coffee mug ,gift',
+        description: 'not quoted back',
+      });
+      const detail = JSON.parse(res.content[0].text);
+      expect(detail.hint).toMatch(/^tag "handmade ceramic coffee mug" has 27 characters; Etsy allows at most 20 characters per tag on English listings\./);
+      expect(detail.hint).not.toMatch(/gift|not quoted back/);
+    });
+
     it('asks Odoo which databases it serves when a call says "No database is selected"', async () => {
       odooAdvice.mockResolvedValue('ODOO_URL has "/web" after the host, so the calls go to the wrong address: set it to https://erp.acme.de.');
       const base = 'https://erp.acme.de/web/json/2';
