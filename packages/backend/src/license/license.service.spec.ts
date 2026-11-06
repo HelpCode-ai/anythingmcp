@@ -756,6 +756,63 @@ describe('LicenseService — the subscription state reaches the app', () => {
     await expect(svc.refreshLicense('org-2')).resolves.toBe(true);
     expect(get).toHaveBeenCalledTimes(2);
   });
+
+  // 6 Nov 2026: an admin opened the licence page (refresh), upgraded in the
+  // portal and was back within the minute; the refresh was skipped and the
+  // workspace kept the old plan.
+  it('refreshes on the return from the billing portal even inside the minute', async () => {
+    const { svc } = make();
+    get.mockResolvedValue({ data: { valid: true, plan: 'team', billing: BILLING } });
+    jest.spyOn(axios, 'post').mockResolvedValueOnce({ data: { url: 'https://billing.stripe.com/p/session/z' } });
+    (svc as any).getCurrentLicense = jest.fn(async () => ({ licenseKey: 'AMCP-EEEE-0000-0000-0005', plan: 'starter' }));
+    await expect(svc.refreshLicense('org-1')).resolves.toBe(true);
+    await svc.createBillingPortalSession('org-1');
+    await expect(svc.refreshLicense('org-1')).resolves.toBe(true);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('LicenseService — the licence site reports a change', () => {
+  const axios = require('axios');
+  let get: jest.SpyInstance;
+  beforeEach(() => {
+    get = jest.spyOn(axios, 'get');
+  });
+  afterEach(() => get.mockRestore());
+
+  it('re-verifies a licence bound to a workspace, naming that workspace', async () => {
+    const licenses = [mkLicense({ licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD', organizationId: 'org-1', plan: 'starter' })];
+    const { svc, prisma } = makeService({ isCloud: true, licenses });
+    get.mockResolvedValue({ data: { valid: true, plan: 'team', features: { maxMcpServers: 10 } } });
+    await expect(svc.syncFromSite('AMCP-AAAA-BBBB-CCCC-DDDD')).resolves.toBe(true);
+    expect(get.mock.calls[0][1].params).toMatchObject({ key: 'AMCP-AAAA-BBBB-CCCC-DDDD', organizationId: 'org-1' });
+    expect(prisma.license.update).toHaveBeenCalledWith({
+      where: { licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD' },
+      data: expect.objectContaining({ plan: 'team', features: { maxMcpServers: 10 }, status: 'active' }),
+    });
+  });
+
+  it('does nothing for a key that is unknown or not bound here, or on self-hosted', async () => {
+    const unbound = makeService({ isCloud: true, licenses: [mkLicense({ licenseKey: 'AMCP-1111-1111-1111-1111' })] });
+    await expect(unbound.svc.syncFromSite('AMCP-1111-1111-1111-1111')).resolves.toBe(false);
+    await expect(unbound.svc.syncFromSite('AMCP-9999-9999-9999-9999')).resolves.toBe(false);
+    const selfHosted = makeService({
+      isCloud: false,
+      licenses: [mkLicense({ licenseKey: 'AMCP-2222-2222-2222-2222', organizationId: 'org-1' })],
+    });
+    await expect(selfHosted.svc.syncFromSite('AMCP-2222-2222-2222-2222')).resolves.toBe(false);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('verifies once for a burst of events about the same licence', async () => {
+    const licenses = [mkLicense({ licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD', organizationId: 'org-1' })];
+    const { svc } = makeService({ isCloud: true, licenses });
+    get.mockResolvedValue({ data: { valid: true, plan: 'team' } });
+    await Promise.all([svc.syncFromSite('AMCP-AAAA-BBBB-CCCC-DDDD'), svc.syncFromSite('AMCP-AAAA-BBBB-CCCC-DDDD')]);
+    expect(get).toHaveBeenCalledTimes(1);
+    await svc.syncFromSite('AMCP-AAAA-BBBB-CCCC-DDDD');
+    expect(get).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('parseLicenseBilling', () => {

@@ -320,6 +320,12 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         { timeout: 15000, headers: this.serviceHeaders() },
       );
       if (!data?.url) throw new Error('No portal URL returned.');
+      // The licence page re-verifies when the admin comes back from the
+      // portal, at most once a minute (refreshLicense). An admin who opened
+      // the page, upgraded and came back inside that minute had the refresh
+      // skipped and kept the old plan until the next daily check. Opening the
+      // portal starts the window over, so the return visit always refreshes.
+      this.lastRefresh.delete(organizationId);
       return { url: data.url as string };
     } catch (err: any) {
       const msg =
@@ -1475,5 +1481,38 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     if (!license) return false;
     await this.verifyLicense(license.licenseKey, organizationId);
     return true;
+  }
+
+  /** Syncs in progress per licence key, so a burst of Stripe events verifies once. */
+  private readonly syncing = new Map<string, Promise<boolean>>();
+
+  /**
+   * The licence site reports that a licence changed in Stripe (plan change in
+   * the billing portal, cancellation, renewal paid or failed): re-verify it
+   * now. Before this, a change made outside a checkout reached the workspace
+   * only at the next daily re-verification or when an admin happened to
+   * reload the licence page, so a customer who upgraded paid for limits they
+   * could not use for up to a day.
+   *
+   * The call carries no licence data: the outcome is whatever the licence
+   * site answers to our own verification, so a forged call can at worst cause
+   * one extra check. Only a key bound to a workspace here is verified.
+   * Returns whether a verification ran.
+   */
+  async syncFromSite(licenseKey: string): Promise<boolean> {
+    if (!this.deployment.isCloud()) return false;
+    const pending = this.syncing.get(licenseKey);
+    if (pending) return pending;
+    const run = (async () => {
+      const license = await this.prisma.license.findUnique({
+        where: { licenseKey },
+        select: { licenseKey: true, organizationId: true },
+      });
+      if (!license?.organizationId) return false;
+      await this.verifyLicense(license.licenseKey, license.organizationId);
+      return true;
+    })().finally(() => this.syncing.delete(licenseKey));
+    this.syncing.set(licenseKey, run);
+    return run;
   }
 }
