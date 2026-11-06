@@ -2088,6 +2088,19 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "roles",
+    "action": "setToolRateLimits",
+    "method": "PUT",
+    "path": "/api/roles/:id/tools/:toolId/rate-limit",
+    "summary": "Set rate limits on an existing role/tool grant (ADMIN)",
+    "admin": true,
+    "pathParams": [
+      "id",
+      "toolId"
+    ],
+    "hasBody": true
+  },
+  {
+    "resource": "roles",
     "action": "assignRole",
     "method": "PUT",
     "path": "/api/roles/assign/:userId",

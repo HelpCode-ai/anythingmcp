@@ -368,6 +368,11 @@ model ToolRoleAccess {
   toolId String  @map("tool_id")
   tool   McpTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
 
+  /// Null is unlimited. SQL CHECK enforces > 0; preserve it in future migrations.
+  callsPerMinute Int? @map("calls_per_minute")
+  /// Null is unlimited. SQL CHECK enforces > 0; preserve it in future migrations.
+  callsPerHour   Int? @map("calls_per_hour")
+
   @@unique([roleId, toolId])
   @@map("tool_role_access")
 }

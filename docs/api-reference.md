@@ -404,6 +404,7 @@ Export your key as `AMCP_MCP_API_KEY` (or `AMCP_ACCESS_TOKEN` when the server op
 | DELETE | `/api/roles/:id` | Delete a role |
 | GET | `/api/roles/:id/tools` | List tool access for a role |
 | PUT | `/api/roles/:id/tools` | Set tool access whitelist |
+| PUT | `/api/roles/:id/tools/:toolId/rate-limit` | Update rate limits on an existing tool grant |
 
 ### Create Role with Tool Whitelist
 
@@ -421,6 +422,64 @@ curl -s -X PUT http://localhost:4000/api/roles/$ROLE_ID/tools \
   -H 'Content-Type: application/json' \
   -d '{"toolIds": ["tool-id-1", "tool-id-2", "tool-id-3"]}'
 ```
+
+### Per-tool rate limits
+
+An administrator can set optional minute and hour limits on an existing
+role/tool grant. The editor UI is planned separately; configure limits through
+the API for now. `GET /api/roles/:id/tools` returns `callsPerMinute` and
+`callsPerHour` on each grant.
+
+```bash
+curl -s -X PUT "http://localhost:4000/api/roles/$ROLE_ID/tools/tool-id-1/rate-limit" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"callsPerMinute": 100, "callsPerHour": 10000}'
+```
+
+Each value must be a positive integer (at most 2,147,483,647), or `null` for
+unlimited. Omitted fields keep their current value. New grants start unlimited.
+Updating the tool whitelist preserves limits on retained grants; removing a
+grant deletes its policy. System roles cannot be modified. Configuration is
+restricted to grants and tools in the administrator's workspace.
+
+Limits are **per principal and tool within a workspace**, shared across MCP
+servers. Each user has one budget per tool, shared by their sessions and all of
+their API keys, so creating another key does not raise it. Limits are not
+shared by every member of a role. Nested Code Mode `amcp.run` calls use the
+same budget as direct calls. A saved code tool can also have its own limit.
+
+For multiple granting roles, resolve **each window independently**: the largest
+value wins, and `null` means unlimited for that window. For example, a role
+granting 100/min and 200/hour combined with one granting 10/min and 10,000/hour
+allows **100/min and 10,000/hour**, even though neither role grants that pair
+alone. A granting role with both windows unlimited removes the per-tool limit.
+Workspace ADMINs and unrestricted members with no MCP role in a workspace
+without whitelists have no per-tool limit; the existing principal limiter
+still applies to them.
+
+Both configured windows must allow the call. Each fixed window starts on its
+first admitted call and expires after 60 or 3,600 seconds respectively. Admitted
+calls count even when answered from the response cache or when the upstream
+fails. Refused calls do not consume either budget or extend the windows. A
+refusal is an MCP tool result with `isError: true`; its text contains an error
+naming the tool and reached limit, plus `retryAfter` in seconds. If both limits
+are reached, the retry time is the longer wait. No upstream call is made.
+
+Cloud and self-hosted use the same implementation. With Redis configured,
+admission and expiry are atomic across replicas. If configured Redis is
+unavailable, calls fail open with a warning; there is no process-local fallback.
+Without Redis configured, counters are process-local, reset on restart, and
+are **not shared across replicas**. Local storage is bounded to 10,000
+principal/tool/workspace buckets; expired buckets are reclaimed when capacity
+is needed. When full, calls for new buckets are allowed without tracking and
+a warning is logged at most once a minute. Existing buckets remain enforced.
+
+Workspaces without any configured limits skip rate-policy lookups using a
+bounded, five-second presence cache. Configuration changes invalidate this
+cache immediately on the instance handling the edit; other replicas observe
+new limits within five seconds. Positive policies are still read fresh per
+call, so cached presence never replaces the caller's current role policy.
 
 ---
 
