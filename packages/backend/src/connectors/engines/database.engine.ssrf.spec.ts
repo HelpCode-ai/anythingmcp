@@ -60,11 +60,12 @@ describe('DatabaseEngine — SSRF guard', () => {
   });
 
   it('allows a blocked host when explicitly allowlisted', async () => {
-    process.env.SSRF_ALLOWED_HOSTS = 'db.internal';
-    // Passes the SSRF guard (allowlisted) → fails later on the actual connection,
-    // never with SsrfBlockedError.
+    // Loopback is blocked by default; the allowlist lets it through. Port 1 is
+    // closed, so the driver fails at once with ECONNREFUSED (no DNS lookup and
+    // no connect timeout, which made a hostname like db.internal flaky in CI).
+    process.env.SSRF_ALLOWED_HOSTS = '127.0.0.1';
     await expect(
-      engine.execute(cfg('postgres://u:p@db.internal:5432/db'), query, params),
+      engine.execute(cfg('postgres://u:p@127.0.0.1:1/db'), query, params),
     ).rejects.not.toBeInstanceOf(SsrfBlockedError);
   });
 
