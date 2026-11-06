@@ -58,7 +58,7 @@ ChatGPT signs in with OAuth, so no MCP API key is needed for it.
 
 ## Step 2 — Add the connector inside ChatGPT
 
-1. Open **Plugins** in ChatGPT ([chatgpt.com/plugins](https://chatgpt.com/plugins)), click **+**, then **Add custom MCP server**.
+1. Open **Plugins** in ChatGPT ([chatgpt.com/plugins](https://chatgpt.com/plugins)), click **Add**, then **Add custom MCP server**.
 2. Fill in:
    - **Name:** `Sorare`
    - **Server URL:** your MCP endpoint URL from the server's page on `cloud.anythingmcp.com` (or your tunneled host if you self-host).

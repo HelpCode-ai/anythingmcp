@@ -2,9 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 
 /**
  * The Quick Connect modals on an MCP server page. On AnythingMCP Cloud the
- * Claude modals lead with AnythingMCP's listing in the Claude Directory; a
- * self-hosted instance must not show it, since that listing only ever
- * connects to Cloud. Meta Muse has its own modal with this server's URL.
+ * Claude modals lead with AnythingMCP's listing in the Claude Directory, and
+ * the ChatGPT modal with its listing in the ChatGPT Plugin Directory; a
+ * self-hosted instance must not show them, since those listings only ever
+ * connect to Cloud. Meta Muse has its own modal with this server's URL.
  */
 
 const USER = {
@@ -17,8 +18,17 @@ const USER = {
 };
 
 const DIRECTORY_URL = 'https://claude.ai/directory/anythingmcp';
+const CHATGPT_DIRECTORY_URL = 'https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121';
 
-async function openServerPage(page: Page, deploymentMode: 'cloud' | 'self-hosted', mcpAuthMode = 'oauth2', slug = 'search') {
+type AssignedConnector = { id: string; name: string; type: string };
+
+async function openServerPage(
+  page: Page,
+  deploymentMode: 'cloud' | 'self-hosted',
+  mcpAuthMode = 'oauth2',
+  slug = 'search',
+  assigned: AssignedConnector[] = [],
+) {
   const origin = test.info().project.use.baseURL ?? 'http://localhost:3100';
   await page.context().addCookies([{ name: 'amcp_token', value: 'test-token', url: origin }]);
   await page.addInitScript((user) => {
@@ -38,19 +48,19 @@ async function openServerPage(page: Page, deploymentMode: 'cloud' | 'self-hosted
       return json({ deploymentMode, mcpAuthMode, hasUsers: true, registrationEnabled: true, ssoProviders: [] });
     }
     if (p.endsWith('/mcp-servers/s1')) {
-      return json({ id: 's1', name: 'Search', slug, isActive: true, apiKeys: [], connectors: [] });
+      return json({ id: 's1', name: 'Search', slug, isActive: true, apiKeys: [], connectors: assigned.map((c) => ({ connector: c })) });
     }
     if (p.endsWith('/users/me/onboarding-state')) return json({ onboardingCompletedAt: '2026-01-01T00:00:00Z' });
     if (p.endsWith('/users/me')) return json(USER);
     if (p.endsWith('/organizations/current')) return json({ id: 'o1', name: 'Acme', createdAt: '2026-01-01' });
     if (p.endsWith('/organizations/mine')) return json([{ id: 'o1', name: 'Acme', role: 'ADMIN', joinedAt: '2026-01-01' }]);
     if (p.endsWith('/license/status')) return json({ plan: 'community', status: 'active' });
-    if (p.endsWith('/connectors')) return json([]);
+    if (p.endsWith('/connectors')) return json(assigned.map((c) => ({ ...c, tools: [] })));
     return json({});
   });
 
   await page.goto('/mcp-server/s1');
-  await expect(page.getByText('Assigned connectors (0)')).toBeVisible();
+  await expect(page.getByText(`Assigned connectors (${assigned.length})`)).toBeVisible();
   await expect.poll(() => serverInfoServed).toBe(true);
 }
 
@@ -84,6 +94,46 @@ test.describe('MCP server Quick Connect', () => {
     });
   }
 
+  const SALES_DB = { id: 'c-db', name: 'Sales DB', type: 'DATABASE' };
+  const CRM = { id: 'c-crm', name: 'Acme CRM', type: 'REST' };
+
+  test('ChatGPT leads with the ChatGPT Plugin Directory on Cloud for a databases-only server', async ({ page }) => {
+    await openServerPage(page, 'cloud', 'oauth2', 'search', [SALES_DB]);
+    await openClient(page, 'ChatGPT');
+
+    const directory = page.getByTestId('chatgpt-directory');
+    await expect(directory).toContainText('Quickest for company databases: the ChatGPT Plugin Directory');
+    await expect(directory.getByRole('link', { name: 'Open in the ChatGPT Plugin Directory' })).toHaveAttribute(
+      'href',
+      CHATGPT_DIRECTORY_URL,
+    );
+    // The custom MCP server steps for this one server are still there.
+    await expect(page.getByRole('link', { name: 'Open ChatGPT Plugins' })).toBeVisible();
+    await expect(page.getByTestId('claude-directory')).toHaveCount(0);
+  });
+
+  for (const [label, assigned] of [
+    ['no connectors', []],
+    ['a mix of a database and an API', [SALES_DB, CRM]],
+    ['only APIs', [CRM]],
+  ] as const) {
+    test(`ChatGPT does not offer the plugin directory for a server with ${label}`, async ({ page }) => {
+      await openServerPage(page, 'cloud', 'oauth2', 'search', [...assigned]);
+      await openClient(page, 'ChatGPT');
+      await expect(page.getByRole('link', { name: 'Open ChatGPT Plugins' })).toBeVisible();
+      await expect(page.getByTestId('chatgpt-directory')).toHaveCount(0);
+    });
+  }
+
+  test('ChatGPT does not offer the plugin directory when self-hosted', async ({ page }) => {
+    await openServerPage(page, 'self-hosted', 'oauth2', 'search', [SALES_DB]);
+    await openClient(page, 'ChatGPT');
+
+    await expect(page.getByRole('link', { name: 'Open ChatGPT Plugins' })).toBeVisible();
+    await expect(page.getByTestId('chatgpt-directory')).toHaveCount(0);
+    await expect(page.locator(`a[href="${CHATGPT_DIRECTORY_URL}"]`)).toHaveCount(0);
+  });
+
   test('Meta Muse shows its steps, this server\'s URL and the chat prompt', async ({ page }) => {
     await openServerPage(page, 'cloud');
     await openClient(page, 'Meta Muse');
@@ -95,6 +145,7 @@ test.describe('MCP server Quick Connect', () => {
     await expect(modal.locator('pre')).toContainText(/URL: .*\/mcp\/s1\n/);
     await expect(modal).toContainText('US and Canada');
     await expect(modal.getByTestId('claude-directory')).toHaveCount(0);
+    await expect(modal.getByTestId('chatgpt-directory')).toHaveCount(0);
   });
 
   for (const mode of ['cloud', 'self-hosted'] as const) {

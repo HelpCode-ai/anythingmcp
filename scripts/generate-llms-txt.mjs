@@ -21,7 +21,7 @@ const SECTIONS = [
   ['Operations and security', ['docs/operations/*.md', 'docs/sso.md', 'docs/scim-entra-setup.md', 'docs/code-mode.md', 'docs/license-faq.md']],
   ['Reference', ['docs/api-reference.md', 'docs/mcp-resources.md', 'docs/knowledge-graph.md', 'docs/memory.md']],
   ['Contributing', ['.github/CONTRIBUTING.md', 'AGENTS.md']],
-  ['Optional', ['docs/guides/*.md', 'docs/ROADMAP.md', 'docs/ADOPTERS.md']],
+  ['Optional', ['docs/catalog/*.md', 'docs/guides/*.md', 'docs/ROADMAP.md', 'docs/ADOPTERS.md']],
 ];
 const DESCRIPTIONS = {
   'README.md': 'Run AnythingMCP locally, connect an AI client, and discover ready-made connectors.',

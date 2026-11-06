@@ -39,6 +39,13 @@ describe('demo tools: anythingmcp_connect_client', () => {
     expect(result.content[0].text).toContain('https://claude.ai/directory/anythingmcp');
   });
 
+  it('points ChatGPT users at the ChatGPT Plugin Directory for databases', async () => {
+    const result = await tool.handler({ client: 'chatgpt' });
+    expect(result.content[0].text).toContain(
+      'ChatGPT Plugin Directory: https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121',
+    );
+  });
+
   it('walks ChatGPT users through Plugins, not the old connector settings', async () => {
     const result = await tool.handler({ client: 'chatgpt' });
     const text = result.content[0].text;

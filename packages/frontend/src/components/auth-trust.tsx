@@ -1,14 +1,14 @@
 import { useTranslations } from 'next-intl';
-import { CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
+import { CHATGPT_DIRECTORY_URL, CLAUDE_DIRECTORY_URL, type DirectoryListing } from '@/lib/marketing';
 import type { TrustStatsDisplay } from '@/lib/trust-stats';
 
 /**
  * Trust content next to the sign-up and sign-in forms. The numbers are live
  * (GET /api/public/stats) and simply left out when unknown; badges and claims
  * are true statements only, and the Cloud-only ones (EU hosting, DPA, trial,
- * Claude Directory listing) are never shown on a self-hosted instance. The
- * Claude Directory badge is also left out for someone connecting ChatGPT or
- * Muse: it is Anthropic's listing.
+ * Claude and ChatGPT directory listings) are never shown on a self-hosted
+ * instance. Each assistant's users see only its own listing; see
+ * directoryListingsFor.
  */
 
 const CLIENTS = [
@@ -30,10 +30,10 @@ function Tick() {
 /** The dark panel beside the Cloud sign-up form. */
 export function TrustPanel({
   stats,
-  directoryBadge = true,
+  directoryListings = ['claude', 'chatgpt'],
 }: {
   stats: TrustStatsDisplay | null;
-  directoryBadge?: boolean;
+  directoryListings?: DirectoryListing[];
 }) {
   const t = useTranslations('trust');
   const tiles = [
@@ -76,7 +76,7 @@ export function TrustPanel({
         )}
 
         <div className="mb-7 flex flex-wrap gap-2">
-          {directoryBadge && (
+          {directoryListings.includes('claude') && (
             <a
               href={CLAUDE_DIRECTORY_URL}
               target="_blank"
@@ -85,6 +85,17 @@ export function TrustPanel({
             >
               <img src="/logos/clients/claude.svg" width={14} height={14} alt="" />
               {t('directory')}
+            </a>
+          )}
+          {directoryListings.includes('chatgpt') && (
+            <a
+              href={CHATGPT_DIRECTORY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-[7px] rounded-full border border-[rgba(16,163,127,.55)] bg-[rgba(16,163,127,.10)] px-2.5 py-1.5 text-[11.5px] text-[#c4f1e3] hover:bg-[rgba(16,163,127,.18)] sm:px-3 sm:text-[12.5px]"
+            >
+              <img src="/logos/clients/chatgpt.svg" width={14} height={14} alt="" />
+              {t('directoryChatgpt')}
             </a>
           )}
           {[t('badges.euHosted'), t('badges.gdpr'), 'AES-256-GCM', t('badges.openSource')].map((b) => (

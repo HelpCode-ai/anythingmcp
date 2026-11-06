@@ -350,6 +350,52 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     expect(hint).toMatch(/etsy_read_listing_inventory/);
   });
 
+  describe('Etsy tag limit', () => {
+    const refusal = { error: 'There was a problem with /tags : cannot be more than 20 characters' };
+
+    it('names each tag over the limit with its length, and nothing else from the call', () => {
+      const hint = deriveErrorHint({
+        host: 'openapi.etsy.com',
+        status: 400,
+        body: refusal,
+        args: { tags: 'mug, handmade ceramic coffee mug,blue,personalised gift for her', title: 'Secret title' },
+      });
+      expect(hint).toBe(
+        'tag "handmade ceramic coffee mug" has 27 characters; tag "personalised gift for her" has 25 characters; ' +
+          'Etsy allows at most 20 characters per tag on English listings. ' +
+          'Shorten or replace them and call again with the other tags unchanged.',
+      );
+      expect(hint).not.toMatch(/mug,|blue|Secret/);
+    });
+
+    it('takes the limit from Etsy\'s message and counts an emoji as one character', () => {
+      const hint = deriveErrorHint({
+        adapterSlug: 'etsy',
+        body: { error: 'There was a problem with /tags : cannot be more than 5 characters' },
+        args: { tags: ['🎁🎁🎁🎁🎁', 'gifts!'] },
+      });
+      expect(hint).toBe(
+        'tag "gifts!" has 6 characters; Etsy allows at most 5 characters per tag on English listings. ' +
+          'Shorten or replace it and call again with the other tags unchanged.',
+      );
+    });
+
+    it('still states the limit when the arguments hold no tag over it', () => {
+      expect(deriveErrorHint({ host: 'openapi.etsy.com', status: 400, body: refusal, args: {} })).toBe(
+        'Etsy allows at most 20 characters per tag on English listings. Shorten every longer tag (spaces count) and call again.',
+      );
+    });
+
+    it('cuts a very long tag when quoting it', () => {
+      const hint = deriveErrorHint({ host: 'openapi.etsy.com', body: refusal, args: { tags: 'x'.repeat(500) } });
+      expect(hint).toMatch(new RegExp(`^tag "${'x'.repeat(60)}…" has 500 characters;`));
+    });
+
+    it('says nothing for the same text from another API', () => {
+      expect(deriveErrorHint({ host: 'api.example.com', status: 400, body: refusal, args: { tags: 'x'.repeat(30) } })).toBeUndefined();
+    });
+  });
+
   it('still says nothing about an error it does not recognise', () => {
     expect(deriveErrorHint({ status: 500, body: { message: 'boom' } })).toBeUndefined();
   });

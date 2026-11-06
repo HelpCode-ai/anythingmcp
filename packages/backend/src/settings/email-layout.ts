@@ -29,6 +29,8 @@ const MONO = "ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monos
 export const DEFAULT_EMAIL_ASSET_BASE = 'https://anythingmcp.com/email';
 const MARKETING = 'https://anythingmcp.com';
 export const CLAUDE_DIRECTORY_URL = 'https://claude.ai/directory/anythingmcp';
+/** AnythingMCP's listing in OpenAI's ChatGPT Plugin Directory (database queries). */
+export const CHATGPT_DIRECTORY_URL = 'https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121';
 export const GITHUB_URL = 'https://github.com/HelpCode-ai/anythingmcp';
 
 /** Escape a value for HTML text and attribute positions. Use on everything a user or an operator chose. */
@@ -44,7 +46,7 @@ export function esc(value: unknown): string {
 /** Context shared by every email: the trust numbers and which claims hold for this deployment. */
 export interface EmailBrandContext {
   stats: TrustStatsDisplay;
-  /** AnythingMCP Cloud: Frankfurt hosting, DPA, the Claude Directory listing and the workspace count apply. */
+  /** AnythingMCP Cloud: Frankfurt hosting, DPA, the Claude and ChatGPT directory listings and the workspace count apply. */
   cloud: boolean;
   /** Where the logo PNGs live. Overridden only for local previews. */
   assetBase?: string;
@@ -209,11 +211,15 @@ ${tiles
   .join('\n')}
 </tr></table></td></tr>`
     : '';
+  // An email can go to anyone, whichever assistant they use: both listings.
+  const listing = (href: string, file: string, label: string, bg: string) =>
+    `<a href="${href}" style="text-decoration:none;color:${C.ink};">${pill(
+      `<img src="${esc(assetBase)}/${file}.png" width="12" height="12" alt="" style="vertical-align:-2px;border:0;"> ${label}`,
+      bg,
+    )}</a>`;
   const directory = cloud
-    ? `<a href="${CLAUDE_DIRECTORY_URL}" style="text-decoration:none;color:${C.ink};">${pill(
-        `<img src="${esc(assetBase)}/claude.png" width="12" height="12" alt="" style="vertical-align:-2px;border:0;"> Listed in the Claude Directory`,
-        '#fffaf5',
-      )}</a>`
+    ? listing(CLAUDE_DIRECTORY_URL, 'claude', 'Listed in the Claude Directory', '#fffaf5') +
+      listing(CHATGPT_DIRECTORY_URL, 'chatgpt', 'Listed in the ChatGPT Plugin Directory', '#f3fbf8')
     : '';
   const badges =
     directory +
@@ -299,6 +305,7 @@ export function renderEmailText(input: {
   ].filter(Boolean);
   const badges = [
     cloud ? 'Listed in the Claude Directory' : null,
+    cloud ? 'Listed in the ChatGPT Plugin Directory' : null,
     cloud ? 'EU-hosted, Frankfurt' : null,
     cloud ? 'GDPR, DPA included' : null,
     'AES-256-GCM',

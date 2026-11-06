@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { license, type LicenseWallView } from '@/lib/api';
 import { useTrustStats } from '@/lib/trust-stats';
+import { directoryListingsFor } from '@/lib/marketing';
 import { useAuth } from '@/lib/auth-context';
 import { usePricingUrl } from '@/lib/use-pricing-url';
 import { useManagePlan } from '@/lib/use-manage-plan';
@@ -265,6 +266,15 @@ export function LicenseWall() {
   const clientName = recap?.client ?? tw('yourAi');
   const connectorList =
     recap && recap.connectors.length > 0 ? listFormat(locale, recap.connectors) : null;
+  // The directory listing(s) on the trust line: Claude's for a Claude
+  // workspace, ChatGPT's for a ChatGPT one, both when the client is unknown.
+  const directoryLine = (client: string | null | undefined) => {
+    const listings = directoryListingsFor(client);
+    if (listings.length === 2) return tw('directoryBoth');
+    if (listings[0] === 'chatgpt') return tw('directoryChatgpt');
+    if (listings[0] === 'claude') return tw('directory');
+    return null;
+  };
 
   const title = trustWall
     ? tw('title')
@@ -385,13 +395,19 @@ export function LicenseWall() {
                       </li>
                     ))}
                   </ul>
+                  {/* Each claim stays on one line; a narrow wall breaks between them. */}
                   <p className="text-[11px] text-[var(--text-3)]">
                     {[
                       trustStats?.workspaces ? tw('workspaces', { count: trustStats.workspaces }) : null,
-                      recap?.client === 'ChatGPT' ? null : tw('directory'),
+                      directoryLine(recap?.client),
                     ]
-                      .filter(Boolean)
-                      .join(' · ')}
+                      .filter((item): item is string => Boolean(item))
+                      .map((item, i) => (
+                        <span key={item}>
+                          {i > 0 && ' · '}
+                          <span className="whitespace-nowrap">{item}</span>
+                        </span>
+                      ))}
                   </p>
                 </div>
               )}
