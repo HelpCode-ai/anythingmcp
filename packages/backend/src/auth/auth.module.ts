@@ -31,6 +31,7 @@ import { SocialAuthController } from './social/social-auth.controller';
 import { CloudOnlyGuard } from '../common/cloud-only.guard';
 
 import { RecentSignInService } from './recent-sign-in.service';
+import { EmailVerificationService } from './email-verification.service';
 import { RecentSignInController } from './recent-sign-in.controller';
 @Global()
 @Module({
@@ -68,6 +69,7 @@ import { RecentSignInController } from './recent-sign-in.controller';
     RecoveryCodesService,
     SsoEnforcementService,
     RecentSignInService,
+    EmailVerificationService,
     JwtStrategy,
     McpAuthGuard,
     McpAuthMiddleware,
@@ -80,6 +82,7 @@ import { RecentSignInController } from './recent-sign-in.controller';
   exports: [
     AuthService,
     RecentSignInService,
+    EmailVerificationService,
     RecoveryCodesService,
     SsoEnforcementService,
     McpAuthGuard,
