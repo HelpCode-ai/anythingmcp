@@ -640,27 +640,25 @@ export class LoginController {
   }
 
   /**
-   * The code step's form (Cloud): verify the code, send a new one, continue
-   * after opening the link in the email, or continue with a social provider.
+   * What every route of the code step checks first (Cloud only): the step's
+   * CSRF token, then the pending sign-in cookie, then the account itself.
+   * Answers the request and returns null when one of them fails.
    */
-  @Post('verify-email')
-  // A code is 6 digits and lives 15 minutes: 10 tries a minute leaves no
-  // realistic guess, and a person never needs more.
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @ApiExcludeEndpoint()
-  async handleEmailCode(
-    @Req() req: Request,
-    @Body() body: { csrf?: string; code?: string; action?: string },
-    @Res() res: Response,
-  ) {
+  private async pendingCodeStep(
+    req: Request,
+    res: Response,
+    csrf: unknown,
+  ): Promise<{ id: string; email: string; name: string | null; emailVerified: boolean } | null> {
     if (!this.deployment.isCloud() || !this.emailVerification) {
-      return res.status(404).send('Not found');
+      res.status(404).send('Not found');
+      return null;
     }
     const restart = (message: string) => {
       this.clearEmailCodeStep(res);
-      return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+      res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+      return null;
     };
-    if (!this.verifySignedToken(req, VERIFY_CSRF_COOKIE, body?.csrf)) {
+    if (!this.verifySignedToken(req, VERIFY_CSRF_COOKIE, csrf)) {
       this.logger.warn('Rejected email code step with missing/invalid CSRF token');
       return restart('Your session expired. Please sign in again.');
     }
@@ -679,45 +677,47 @@ export class LoginController {
     if (!user || user.passwordLoginDisabled) {
       return restart('Please sign in again.');
     }
+    return { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified };
+  }
 
-    const action = typeof body?.action === 'string' ? body.action : 'verify';
+  /**
+   * Verified meanwhile (the link in the email, in another tab): nothing left
+   * to check, the password was proven when the step began. Returns true when
+   * it has completed the sign-in.
+   */
+  private async continueIfVerified(
+    req: Request,
+    res: Response,
+    user: { id: string; email: string; name: string | null; emailVerified: boolean },
+  ): Promise<boolean> {
+    if (!user.emailVerified) return false;
+    this.clearEmailCodeStep(res);
+    this.logger.log(`Authorization continues after email verification: ${maskEmail(user.email)}`);
+    await this.completeSignIn(req, res, user);
+    return true;
+  }
 
-    if (action.startsWith('social:')) {
-      this.clearEmailCodeStep(res);
-      return this.startSocialSignIn(req, res, action.slice('social:'.length));
-    }
+  /**
+   * The code step's form (Cloud): checks the code. Its other buttons post to
+   * their own routes below (`formaction`), so no form field picks what runs.
+   */
+  @Post('verify-email')
+  // A code is 6 digits and lives 15 minutes: 10 tries a minute leaves no
+  // realistic guess, and a person never needs more.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async handleEmailCode(
+    @Req() req: Request,
+    @Body() body: { csrf?: string; code?: string },
+    @Res() res: Response,
+  ) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user || (await this.continueIfVerified(req, res, user))) return;
 
-    // Verified meanwhile (the link in the email, in another tab): nothing
-    // left to check. The password was proven when this step began.
-    if (user.emailVerified) {
-      this.clearEmailCodeStep(res);
-      this.logger.log(`Authorization continues after email verification: ${maskEmail(user.email)}`);
-      return this.completeSignIn(req, res, user);
-    }
-
-    if (action === 'resend') {
-      if ((await this.emailVerification.codesSentWithin(user.id, CODE_RESEND_INTERVAL_MS)) > 0) {
-        return this.askForEmailCode(req, res, user, {
-          notice: 'A code was sent less than a minute ago. Check your inbox and spam folder, or ask again in a minute.',
-        });
-      }
-      if ((await this.emailVerification.codesSentWithin(user.id, 60 * 60 * 1000)) >= MAX_CODES_PER_HOUR) {
-        return this.askForEmailCode(req, res, user, { notice: TOO_MANY_CODES });
-      }
-      await this.emailVerification.sendCode(user.id, user.email, { sendInBackground: true });
-      return this.askForEmailCode(req, res, user, {
-        notice: 'A new code is on its way. Codes sent before it no longer work.',
-      });
-    }
-
-    if (action === 'continue') {
-      return this.askForEmailCode(req, res, user, {
-        error: 'Your address is not verified yet. Enter the code from the email, or open its link first.',
-      });
-    }
-
-    const code = typeof body?.code === 'string' ? body.code.replace(/\s+/g, '') : '';
-    if (!/^\d{6}$/.test(code) || !(await this.emailVerification.verifyCode(user.id, code))) {
+    // Spaces from a pasted code go; anything else simply matches no code.
+    const code = typeof body?.code === 'string' ? body.code.replace(/\s+/g, '').slice(0, 16) : '';
+    const verified = await this.emailVerification!.verifyCode(user.id, code);
+    if (!verified) {
       return this.askForEmailCode(req, res, user, {
         error: 'That code is wrong or has expired. Use the newest email, or send a new code.',
       });
@@ -726,6 +726,56 @@ export class LoginController {
     this.clearEmailCodeStep(res);
     this.logger.log(`Email verified on the authorization page: ${maskEmail(user.email)}`);
     return this.completeSignIn(req, res, user);
+  }
+
+  /** "Send a new code" of the code step: at most one a minute, five an hour. */
+  @Post('verify-email/resend')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async resendEmailCode(@Req() req: Request, @Body() body: { csrf?: string }, @Res() res: Response) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user || (await this.continueIfVerified(req, res, user))) return;
+    const verification = this.emailVerification!;
+    if ((await verification.codesSentWithin(user.id, CODE_RESEND_INTERVAL_MS)) > 0) {
+      return this.askForEmailCode(req, res, user, {
+        notice: 'A code was sent less than a minute ago. Check your inbox and spam folder, or ask again in a minute.',
+      });
+    }
+    if ((await verification.codesSentWithin(user.id, 60 * 60 * 1000)) >= MAX_CODES_PER_HOUR) {
+      return this.askForEmailCode(req, res, user, { notice: TOO_MANY_CODES });
+    }
+    await verification.sendCode(user.id, user.email, { sendInBackground: true });
+    return this.askForEmailCode(req, res, user, {
+      notice: 'A new code is on its way. Codes sent before it no longer work.',
+    });
+  }
+
+  /** "I opened the link in the email": continues once the link verified the address. */
+  @Post('verify-email/continue')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async continueAfterEmailLink(@Req() req: Request, @Body() body: { csrf?: string }, @Res() res: Response) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user || (await this.continueIfVerified(req, res, user))) return;
+    return this.askForEmailCode(req, res, user, {
+      error: 'Your address is not verified yet. Enter the code from the email, or open its link first.',
+    });
+  }
+
+  /** "Continue with <provider>" of the code step: the provider verifies the address. */
+  @Post('verify-email/social/:provider')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async socialFromEmailCode(
+    @Param('provider') provider: string,
+    @Req() req: Request,
+    @Body() body: { csrf?: string },
+    @Res() res: Response,
+  ) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user) return;
+    this.clearEmailCodeStep(res);
+    return this.startSocialSignIn(req, res, provider);
   }
 
   /**
@@ -2095,7 +2145,7 @@ export class LoginController {
         socialProviders
           .map(
             (p) =>
-              `<button type="submit" name="action" value="social:${this.escapeHtml(p.id)}" formnovalidate class="sso">` +
+              `<button type="submit" formaction="/auth/verify-email/social/${this.escapeHtml(encodeURIComponent(p.id))}" formnovalidate class="sso">` +
               providerMarkSvg(p.id) +
               `<span>Continue with ${this.escapeHtml(p.name)}</span>` +
               `</button>`,
@@ -2105,7 +2155,8 @@ export class LoginController {
       : '';
 
     // The code field and "Verify and continue" come first in the form, so
-    // Enter in the field verifies (the first submit button).
+    // Enter in the field verifies (the first submit button). Every other
+    // button posts the same CSRF field to its own route (`formaction`).
     const card = `
     ${top}
     <h1>Check your email</h1>
@@ -2115,9 +2166,9 @@ export class LoginController {
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">
       <label for="code">Verification code</label>
       <input type="text" id="code" name="code" required autofocus inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456">
-      <button type="submit" name="action" value="verify">Verify and continue</button>
-      <button type="submit" name="action" value="resend" formnovalidate class="secondary">Send a new code</button>
-      <button type="submit" name="action" value="continue" formnovalidate class="secondary">I opened the link in the email</button>
+      <button type="submit">Verify and continue</button>
+      <button type="submit" formaction="/auth/verify-email/resend" formnovalidate class="secondary">Send a new code</button>
+      <button type="submit" formaction="/auth/verify-email/continue" formnovalidate class="secondary">I opened the link in the email</button>
       ${socialHtml}
     </form>
     <p class="links">No email? Check the spam folder. <a href="/auth/login?switch=1">Use a different account</a></p>`;

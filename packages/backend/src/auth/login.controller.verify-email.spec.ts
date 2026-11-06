@@ -137,14 +137,31 @@ const signIn = async (controller: LoginController) => {
   return res;
 };
 
-/** A POST of the code step, as the browser sends it after the page above. */
+const PENDING = { pending_verify: 'u1', verify_csrf: 'vtok' };
+
+/** The code step's form posted to /auth/verify-email, as the browser sends it after the page above. */
 const submitCode = async (
   controller: LoginController,
   body: Record<string, string>,
-  signedCookies: Record<string, string> = { pending_verify: 'u1', verify_csrf: 'vtok' },
+  signedCookies: Record<string, string> = PENDING,
 ) => {
   const res = makeRes();
   await controller.handleEmailCode(makeReq({ signedCookies }), { csrf: 'vtok', ...body }, res);
+  return res;
+};
+
+/** One of the step's other buttons, which post to their own routes (`formaction`). */
+const press = async (
+  controller: LoginController,
+  button: 'resend' | 'continue' | 'social',
+  signedCookies: Record<string, string> = PENDING,
+) => {
+  const res = makeRes();
+  const req = makeReq({ signedCookies });
+  const body = { csrf: 'vtok' };
+  if (button === 'resend') await controller.resendEmailCode(req, body, res);
+  else if (button === 'continue') await controller.continueAfterEmailLink(req, body, res);
+  else await controller.socialFromEmailCode('google', req, body, res);
   return res;
 };
 
@@ -159,6 +176,10 @@ describe('LoginController — email verification on the authorization page (Clou
       expect(res._redirect).toBeUndefined();
       expect(res._sent).toContain('Check your email');
       expect(res._sent).toContain('action="/auth/verify-email"');
+      // Each other button has its own route; no form field picks what runs.
+      expect(res._sent).toContain('formaction="/auth/verify-email/resend"');
+      expect(res._sent).toContain('formaction="/auth/verify-email/continue"');
+      expect(res._sent).not.toContain('name="action"');
       expect(res._sent).toContain('autocomplete="one-time-code"');
       // Masked, never the whole address.
       expect(res._sent).toContain('ad***@example.com');
@@ -174,6 +195,22 @@ describe('LoginController — email verification on the authorization page (Clou
       expect(res._sent).toContain(`value="${res._cookies['verify_csrf'].value}"`);
       expect(res._cleared).toContain('login_csrf');
       expect(verification.sendCode).toHaveBeenCalledWith('u1', 'ada.lovelace@example.com', { sendInBackground: true });
+    });
+
+    it('offers the social providers inside an authorize flow, each on its own route', async () => {
+      const { controller, store } = setup();
+      store.getOAuthSession.mockResolvedValue({ sessionId: 's1', clientId: 'c1', redirectUri: 'https://claude.ai/cb' });
+      store.getClient.mockResolvedValue({ client_id: 'c1', client_name: 'Claude' });
+      const res = makeRes();
+      await controller.handleLogin(
+        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: 'tok' } }),
+        { email: 'ada.lovelace@example.com', password: 'pw', csrf: 'tok', action: 'approve' },
+        res,
+      );
+      expect(res._sent).toContain('formaction="/auth/verify-email/social/google"');
+      expect(res._sent).toContain('Continue with Google');
+      expect(res._sent).toContain('to finish connecting <strong>Claude</strong>');
+      expect(res._cookies['login_user']).toBeUndefined();
     });
 
     it('sends no second code within a minute of the last one', async () => {
@@ -205,7 +242,7 @@ describe('LoginController — email verification on the authorization page (Clou
     it('completes the sign-in with the right code', async () => {
       const { controller, verification } = setup();
       verification.verifyCode.mockResolvedValue(true);
-      const res = await submitCode(controller, { code: ' 123 456 ', action: 'verify' });
+      const res = await submitCode(controller, { code: ' 123 456 ' });
 
       expect(verification.verifyCode).toHaveBeenCalledWith('u1', '123456');
       expect(res._cookies['login_user'].options.signed).toBe(true);
@@ -215,7 +252,7 @@ describe('LoginController — email verification on the authorization page (Clou
 
     it('refuses a wrong or expired code and stays on the step', async () => {
       const { controller, verification } = setup();
-      const res = await submitCode(controller, { code: '000000', action: 'verify' });
+      const res = await submitCode(controller, { code: '000000' });
 
       expect(verification.verifyCode).toHaveBeenCalledWith('u1', '000000');
       expect(res._cookies['login_user']).toBeUndefined();
@@ -225,11 +262,12 @@ describe('LoginController — email verification on the authorization page (Clou
       expect(res._cookies['verify_csrf']).toBeDefined();
     });
 
-    it('never looks up a code that is not six digits', async () => {
+    it('refuses a malformed code, and bounds what it looks up', async () => {
       const { controller, verification } = setup();
-      const res = await submitCode(controller, { code: '12ab', action: 'verify' });
-      expect(verification.verifyCode).not.toHaveBeenCalled();
+      const res = await submitCode(controller, { code: '12ab'.repeat(20) });
+      expect(verification.verifyCode).toHaveBeenCalledWith('u1', '12ab'.repeat(4));
       expect(res._cookies['login_user']).toBeUndefined();
+      expect(res._sent).toContain('That code is wrong or has expired');
     });
 
     it('is refused without a matching CSRF token', async () => {
@@ -261,41 +299,79 @@ describe('LoginController — email verification on the authorization page (Clou
       expect(res._redirect).toMatch(/^\/auth\/login\?error=/);
     });
 
-    it('sends a new code on request, at most once a minute', async () => {
+  });
+
+  describe('POST /auth/verify-email/resend', () => {
+    it('sends a new code, at most once a minute', async () => {
       const { controller, verification } = setup();
-      let res = await submitCode(controller, { action: 'resend' });
+      let res = await press(controller, 'resend');
       expect(verification.sendCode).toHaveBeenCalledTimes(1);
       expect(res._sent).toContain('A new code is on its way');
 
       verification.codesSentWithin.mockResolvedValue(1);
-      res = await submitCode(controller, { action: 'resend' });
+      res = await press(controller, 'resend');
       expect(verification.sendCode).toHaveBeenCalledTimes(1);
       expect(res._sent).toContain('less than a minute ago');
       expect(res._cookies['login_user']).toBeUndefined();
     });
 
+    it('sends none past the hourly cap', async () => {
+      const { controller, verification } = setup();
+      verification.codesSentWithin.mockImplementation(async (_id: string, ms: number) => (ms > 60_000 ? 5 : 0));
+      const res = await press(controller, 'resend');
+      expect(verification.sendCode).not.toHaveBeenCalled();
+      expect(res._sent).toContain('many codes in the last hour');
+    });
+
+    it('needs the CSRF token and the pending sign-in like the code route', async () => {
+      const { controller, verification } = setup();
+      let res = await press(controller, 'resend', { pending_verify: 'u1', verify_csrf: 'other' });
+      expect(res._redirect).toMatch(/^\/auth\/login\?error=/);
+      res = await press(controller, 'resend', { verify_csrf: 'vtok' });
+      expect(res._redirect).toMatch(/^\/auth\/login\?error=/);
+      expect(verification.sendCode).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /auth/verify-email/continue', () => {
     it('continues once the address was verified through the email link', async () => {
       const { controller, verification } = setup({ user: { emailVerified: true } });
-      const res = await submitCode(controller, { action: 'continue' });
+      const res = await press(controller, 'continue');
       expect(verification.verifyCode).not.toHaveBeenCalled();
       expect(res._cookies['login_user']).toBeDefined();
       expect(res._redirect).toBe('http://mcp.test/callback');
     });
 
-    it('keeps asking when "continue" comes before the link was opened', async () => {
+    it('keeps asking before the link was opened', async () => {
       const { controller } = setup();
-      const res = await submitCode(controller, { action: 'continue' });
+      const res = await press(controller, 'continue');
       expect(res._cookies['login_user']).toBeUndefined();
       expect(res._sent).toContain('not verified yet');
     });
 
-    it('hands over to a social provider, which verifies the address', async () => {
+    it('is refused without a matching CSRF token', async () => {
+      const { controller } = setup({ user: { emailVerified: true } });
+      const res = await press(controller, 'continue', { pending_verify: 'u1', verify_csrf: 'other' });
+      expect(res._cookies['login_user']).toBeUndefined();
+      expect(res._redirect).toMatch(/^\/auth\/login\?error=/);
+    });
+  });
+
+  describe('POST /auth/verify-email/social/:provider', () => {
+    it('hands over to the provider, which verifies the address', async () => {
       const { controller, social } = setup();
-      const res = await submitCode(controller, { action: 'social:google' });
+      const res = await press(controller, 'social');
       expect(social.start).toHaveBeenCalledWith(expect.objectContaining({ provider: 'google', surface: 'MCP' }));
       expect(res._redirect).toBe('https://accounts.google.test/auth');
       expect(res._cleared).toEqual(expect.arrayContaining(['pending_verify', 'verify_csrf']));
       expect(res._cookies['login_user']).toBeUndefined();
+    });
+
+    it('is refused without the pending sign-in', async () => {
+      const { controller, social } = setup();
+      const res = await press(controller, 'social', { verify_csrf: 'vtok' });
+      expect(social.start).not.toHaveBeenCalled();
+      expect(res._redirect).toMatch(/^\/auth\/login\?error=/);
     });
   });
 
@@ -309,10 +385,14 @@ describe('LoginController — email verification on the authorization page (Clou
     });
 
     it('has no code step', async () => {
-      const { controller, verification } = setup({ cloud: false });
-      const res = await submitCode(controller, { code: '123456' });
-      expect(res._status).toBe(404);
+      const { controller, verification, social } = setup({ cloud: false });
+      expect((await submitCode(controller, { code: '123456' }))._status).toBe(404);
+      expect((await press(controller, 'resend'))._status).toBe(404);
+      expect((await press(controller, 'continue'))._status).toBe(404);
+      expect((await press(controller, 'social'))._status).toBe(404);
       expect(verification.verifyCode).not.toHaveBeenCalled();
+      expect(verification.sendCode).not.toHaveBeenCalled();
+      expect(social.start).not.toHaveBeenCalled();
     });
   });
 });
