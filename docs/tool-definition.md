@@ -251,7 +251,7 @@ computed exactly as described above.
 | `placement` | `header` (default) or `query`: the digest goes into the query parameter `paramName`. |
 | `paramName` | Name of that query parameter, default `sign`. |
 | `timestampParam` | Sends the timestamp as this query parameter. |
-| `timestampFormat` | `s` (default, Unix seconds) or `ms` (milliseconds), for `${timestamp}`, `timestampParam` and `timestampHeader` alike. |
+| `timestampFormat` | `s` (default, Unix seconds), `ms` (milliseconds) or `iso` (ISO 8601 in UTC, `2026-11-06T07:00:00+00:00`), for `${timestamp}`, `timestampParam` and `timestampHeader` alike. |
 | `queryParams` | Static query parameters added to every call (an app key, a fixed `sign_method`), signed like the others. |
 | `encoding` | Also `hex-upper`: hex in capitals. |
 | `excludeMultipartBody` | `true`: `${body}` is empty when the body is `multipart/form-data` (file uploads), for vendors that sign uploads without their body. |
@@ -269,6 +269,11 @@ On this path the template may also use:
   object contributes the same pairs the query serializer sends for it
   (`ids=1&ids=2`, `page[size]=20`). The signature parameter itself and empty
   values are left out.
+- `${sortedQuery}`: the query parameters as sent (no body), sorted by name and
+  written as `name=value` pairs joined with `&`, names and values
+  percent-encoded per RFC 3986 (only `A-Z a-z 0-9 - . _ ~` unescaped). The
+  signature parameter is left out; empty values are kept, because they are
+  sent. This is the Rocket SellerCenter signature (Falabella Seller Center).
 
 Variables are replaced in one pass, so a value that contains `${body}` is
 signed as that literal text. Shopee (`intl/shopee.json`) signs
@@ -293,6 +298,24 @@ Their `/sync?method=...` business calls sign `${sortedParams}` (the `method`
 parameter is one of them); calls on their `/rest` gateway put the API path in
 front: `${apiPath}${sortedParams}`. JSON-valued parameters go in a form body
 with the `__json` marker, which `${sortedParams}` signs as its JSON text.
+
+Falabella Seller Center (`intl/falabella-seller-center.json`) signs the
+sorted query with the user's API key and sends it as `Signature`, with an ISO
+8601 `Timestamp`:
+
+```json
+"signature": {
+  "algorithm": "sha256",
+  "encoding": "hex",
+  "secret": "{{FALABELLA_API_KEY}}",
+  "placement": "query",
+  "paramName": "Signature",
+  "timestampParam": "Timestamp",
+  "timestampFormat": "iso",
+  "queryParams": { "UserID": "{{FALABELLA_USER_ID}}", "Version": "1.0", "Format": "JSON" },
+  "template": "${sortedQuery}"
+}
+```
 
 TikTok Shop (`intl/tiktok-shop.json`) wraps the path, the sorted query and the
 body in the app secret: `{{SECRET}}${pathname}${sortedParams}${body}{{SECRET}}`,
