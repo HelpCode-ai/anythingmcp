@@ -77,9 +77,9 @@ function setup(opts: { cloud?: boolean; role?: string; sources?: Array<Record<st
   const prisma = {
     user: {
       findUnique: jest.fn(({ select }: any) =>
-        select?.organizationId ? { organizationId: 'org-1', email: 'a@b.com' } : { id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'h' },
+        select?.organizationId ? { organizationId: 'org-1', email: 'a@b.com' } : { id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'h', emailVerified: true },
       ),
-      findMany: jest.fn().mockResolvedValue([{ id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'h' }]),
+      findMany: jest.fn().mockResolvedValue([{ id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'h', emailVerified: true }]),
     },
     organizationMember: { findFirst: jest.fn().mockResolvedValue({ role: opts.role ?? 'ADMIN' }) },
     connector: {

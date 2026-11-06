@@ -620,9 +620,9 @@ describe('LoginController', () => {
       cloudPrisma.user.findUnique.mockImplementation(({ select }: any) =>
         select?.organizationId
           ? { organizationId: 'org-1', email: 'a@b.com' }
-          : { id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash' },
+          : { id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash', emailVerified: true },
       );
-      cloudPrisma.user.findMany.mockResolvedValue([{ id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash' }]);
+      cloudPrisma.user.findMany.mockResolvedValue([{ id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash', emailVerified: true }]);
       cloudPrisma.organizationMember.findFirst.mockResolvedValue({ role: opts.role ?? 'ADMIN' });
       cloudPrisma.connector.count.mockResolvedValue(opts.connectors ?? 0);
       authService.comparePassword.mockResolvedValue(true);
