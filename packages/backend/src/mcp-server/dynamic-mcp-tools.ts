@@ -835,6 +835,7 @@ export class DynamicMcpTools {
         cloud: this.deployment.isCloud(),
         egressIps: egressIps(),
         usedProxy,
+        args: params,
       });
       // Odoo JSON-2 "No database is selected": ask Odoo which databases this
       // address serves and name them, as the setup check does. One small

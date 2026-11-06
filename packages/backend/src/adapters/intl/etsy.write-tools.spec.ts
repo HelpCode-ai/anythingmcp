@@ -249,6 +249,25 @@ describe('etsy adapter: write tools', () => {
     }
   });
 
+  it('states the 20-character tag limit for English listings only, and enforces no length', () => {
+    // Etsy refused tags over 20 characters on en-US listings only; listings in
+    // other languages kept tags of up to 30 (read-only production check,
+    // 14 days to 6 Nov 2026).
+    const withTags = tools.filter((t) => 'tags' in t.parameters.properties);
+    expect(withTags.map((t) => t.name).sort()).toEqual([
+      'etsy_add_listing_translation',
+      'etsy_create_listing_draft',
+      'etsy_edit_listing',
+      'etsy_replace_listing_translation',
+    ]);
+    for (const t of withTags) {
+      const tags = t.parameters.properties.tags as Record<string, unknown>;
+      expect(tags.description).toMatch(/In English|On English listings/);
+      expect(tags.description).toMatch(/other languages may have longer tags/);
+      expect(tags.maxLength).toBeUndefined();
+    }
+  });
+
   it('does not reuse names customers gave their own Etsy tools', () => {
     const taken = ['etsy_update_listing', 'etsy_create_draft_listing', 'etsy_update_listing_inventory', 'etsy_upload_listing_image', 'etsy_get_listing_inventory', 'etsy_get_seller_taxonomy'];
     for (const name of taken) expect(tools.some((t) => t.name === name)).toBe(false);
