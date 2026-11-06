@@ -2303,7 +2303,14 @@
       "all": "Tutti",
       "none": "Nessuno",
       "saving": "Salvataggio...",
-      "save": "{count, plural, one {Salva (# strumento)} other {Salva (# strumenti)}}"
+      "save": "{count, plural, one {Salva (# strumento)} other {Salva (# strumenti)}}",
+      "limitsHint": "Facoltativo: quante volte ogni membro con questo ruolo può chiamare uno strumento selezionato, al minuto e all’ora. Lascia il campo vuoto per nessun limite. Il limite vale per utente e strumento, su tutte le sue chiavi API e sessioni; gli amministratori del workspace non sono mai limitati. Le chiamate rifiutate compaiono nei Log.",
+      "perMinute": "/min",
+      "perHour": "/h",
+      "limitMinuteLabel": "Chiamate al minuto per {tool}",
+      "limitHourLabel": "Chiamate all’ora per {tool}",
+      "invalidLimit": "I limiti devono essere numeri interi da 1 in su, oppure vuoti per nessun limite ({tool}).",
+      "limitedCount": "{count} limitati"
     },
     "assign": {
       "title": "Ruoli MCP degli utenti",

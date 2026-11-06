@@ -24,6 +24,23 @@ interface ToolItem {
   connectorName: string;
 }
 
+/** Limits as typed in the form: '' means unlimited. */
+interface LimitDraft {
+  minute: string;
+  hour: string;
+}
+
+type SavedLimits = { callsPerMinute: number | null; callsPerHour: number | null };
+
+/** '' → null (unlimited); a whole number ≥ 1 → that number; anything else → undefined (invalid). */
+function parseLimit(value: string): number | null | undefined {
+  const v = value.trim();
+  if (!v) return null;
+  if (!/^\d+$/.test(v)) return undefined;
+  const n = Number(v);
+  return n >= 1 && n <= 2147483647 ? n : undefined;
+}
+
 interface UserItem {
   id: string;
   email: string;
@@ -58,6 +75,9 @@ export default function SettingsRolesPage() {
   const [savingTools, setSavingTools] = useState(false);
   const [collapsedConnectors, setCollapsedConnectors] = useState<Set<string>>(new Set());
   const [toolSearch, setToolSearch] = useState('');
+  // Per-tool rate limits of the role being edited, keyed by tool id.
+  const [limitDrafts, setLimitDrafts] = useState<Record<string, LimitDraft>>({});
+  const [savedLimits, setSavedLimits] = useState<Record<string, SavedLimits>>({});
 
   const loadData = async () => {
     if (!token) return;
@@ -141,6 +161,16 @@ export default function SettingsRolesPage() {
     try {
       const access = await roles.getToolAccess(roleId, token);
       setSelectedToolIds(access.map((a: any) => a.tool.id));
+      const saved: Record<string, SavedLimits> = {};
+      const drafts: Record<string, LimitDraft> = {};
+      for (const a of access) {
+        const minute = a.callsPerMinute ?? null;
+        const hour = a.callsPerHour ?? null;
+        saved[a.tool.id] = { callsPerMinute: minute, callsPerHour: hour };
+        drafts[a.tool.id] = { minute: minute === null ? '' : String(minute), hour: hour === null ? '' : String(hour) };
+      }
+      setSavedLimits(saved);
+      setLimitDrafts(drafts);
     } catch (err: any) {
       setMsg(t('error', { message: err.message }));
     }
@@ -148,9 +178,29 @@ export default function SettingsRolesPage() {
 
   const handleSaveToolAccess = async () => {
     if (!token || !managingToolsForRole) return;
+    // Validate the limits first, so nothing is saved half-way.
+    const changes: Array<{ toolId: string; limits: SavedLimits }> = [];
+    for (const toolId of selectedToolIds) {
+      const draft = limitDrafts[toolId] ?? { minute: '', hour: '' };
+      const callsPerMinute = parseLimit(draft.minute);
+      const callsPerHour = parseLimit(draft.hour);
+      if (callsPerMinute === undefined || callsPerHour === undefined) {
+        const name = allTools.find((x) => x.id === toolId)?.name ?? toolId;
+        setMsg(t('access.invalidLimit', { tool: name }));
+        return;
+      }
+      const before = savedLimits[toolId] ?? { callsPerMinute: null, callsPerHour: null };
+      if (before.callsPerMinute !== callsPerMinute || before.callsPerHour !== callsPerHour) {
+        changes.push({ toolId, limits: { callsPerMinute, callsPerHour } });
+      }
+    }
     setSavingTools(true);
     try {
       await roles.setToolAccess(managingToolsForRole, selectedToolIds, token);
+      // Grants exist now (new ones start unlimited); then apply the limits.
+      for (const { toolId, limits } of changes) {
+        await roles.setToolRateLimits(managingToolsForRole, toolId, limits, token);
+      }
       setManagingToolsForRole(null);
       setMsg(t('toolAccessUpdated'));
       loadData();
@@ -176,6 +226,22 @@ export default function SettingsRolesPage() {
     } catch (err: any) {
       setMsg(t('error', { message: err.message }));
     }
+  };
+
+  const setLimitDraft = (toolId: string, field: keyof LimitDraft, value: string) => {
+    setLimitDrafts((prev) => ({
+      ...prev,
+      [toolId]: { ...(prev[toolId] ?? { minute: '', hour: '' }), [field]: value },
+    }));
+  };
+
+  /** "10/min · 200/h" for a tool with limits, '' without. */
+  const limitSummary = (toolId: string) => {
+    const d = limitDrafts[toolId];
+    if (!d) return '';
+    return [d.minute.trim() && `${d.minute.trim()}${t('access.perMinute')}`, d.hour.trim() && `${d.hour.trim()}${t('access.perHour')}`]
+      .filter(Boolean)
+      .join(' · ');
   };
 
   const toggleToolId = (toolId: string) => {
@@ -366,9 +432,14 @@ export default function SettingsRolesPage() {
                         <h4 className="text-sm font-semibold text-[var(--text)] mb-2">
                           {t('access.title')}
                         </h4>
-                        <p className="text-xs text-[var(--text-2)] mb-3">
+                        <p className="text-xs text-[var(--text-2)] mb-1">
                           {t('access.body')}
                         </p>
+                        {!role.isSystem && (
+                          <p className="text-xs text-[var(--text-2)] mb-3" data-testid="rate-limit-hint">
+                            {t('access.limitsHint')}
+                          </p>
+                        )}
                         {allTools.length === 0 ? (
                           <p className="text-xs text-[var(--text-3)]">{t('access.noTools')}</p>
                         ) : (
@@ -429,6 +500,14 @@ export default function SettingsRolesPage() {
                                         <span className="text-[10px] text-[var(--text-3)] bg-[var(--surface)] px-1.5 py-0.5 rounded-full">
                                           {selected}/{total}
                                         </span>
+                                        {(() => {
+                                          const limited = toolsByConnector[connectorName].filter(
+                                            (x) => selectedToolIds.includes(x.id) && limitSummary(x.id),
+                                          ).length;
+                                          return limited > 0 ? (
+                                            <Badge tone="neutral">{t('access.limitedCount', { count: limited })}</Badge>
+                                          ) : null;
+                                        })()}
                                       </button>
                                       <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                                         <button
@@ -448,21 +527,53 @@ export default function SettingsRolesPage() {
 
                                     {/* Tools list */}
                                     {!isCollapsed && (
-                                      <div className="px-3 py-2 grid grid-cols-1 sm:grid-cols-2 gap-0.5">
-                                        {tools.map((tool) => (
-                                          <label
-                                            key={tool.id}
-                                            className="flex items-center gap-2 text-sm cursor-pointer px-2 py-1.5 rounded-[9px] hover:bg-[var(--surface-2)]"
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              checked={selectedToolIds.includes(tool.id)}
-                                              onChange={() => toggleToolId(tool.id)}
-                                              className="shrink-0 accent-[var(--brand)]"
-                                            />
-                                            <span className="font-mono text-xs truncate text-[var(--text)]">{tool.name}</span>
-                                          </label>
-                                        ))}
+                                      <div className="px-3 py-2 grid grid-cols-1 lg:grid-cols-2 gap-0.5">
+                                        {tools.map((tool) => {
+                                          const checked = selectedToolIds.includes(tool.id);
+                                          const draft = limitDrafts[tool.id] ?? { minute: '', hour: '' };
+                                          const limitInput =
+                                            'h-7 w-16 rounded-[7px] border border-[var(--border)] bg-[var(--surface)] px-1.5 text-xs text-[var(--text)] outline-none focus:border-[var(--brand)] placeholder:text-[var(--text-3)]';
+                                          return (
+                                            <div
+                                              key={tool.id}
+                                              className="flex items-center gap-2 px-2 py-1 rounded-[9px] hover:bg-[var(--surface-2)]"
+                                            >
+                                              <label className="flex items-center gap-2 text-sm cursor-pointer min-w-0 flex-1 py-0.5">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={checked}
+                                                  onChange={() => toggleToolId(tool.id)}
+                                                  className="shrink-0 accent-[var(--brand)]"
+                                                />
+                                                <span className="font-mono text-xs truncate text-[var(--text)]">{tool.name}</span>
+                                              </label>
+                                              {checked && !role.isSystem && (
+                                                <div className="flex items-center gap-1 shrink-0" data-testid={`rate-limit-${tool.name}`}>
+                                                  <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={draft.minute}
+                                                    onChange={(e) => setLimitDraft(tool.id, 'minute', e.target.value)}
+                                                    placeholder="∞"
+                                                    aria-label={t('access.limitMinuteLabel', { tool: tool.name })}
+                                                    className={limitInput}
+                                                  />
+                                                  <span className="text-[10px] text-[var(--text-3)]">{t('access.perMinute')}</span>
+                                                  <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={draft.hour}
+                                                    onChange={(e) => setLimitDraft(tool.id, 'hour', e.target.value)}
+                                                    placeholder="∞"
+                                                    aria-label={t('access.limitHourLabel', { tool: tool.name })}
+                                                    className={limitInput}
+                                                  />
+                                                  <span className="text-[10px] text-[var(--text-3)]">{t('access.perHour')}</span>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     )}
                                   </div>

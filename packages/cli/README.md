@@ -284,6 +284,31 @@ $ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
 
 `GET /api/audit/breakdowns?days=30` returns usage and cost by connector, MCP server and user.
 
+### Limit how often a role may call a tool
+
+A role grants tools to its members. Each grant can also carry a limit per minute and per hour. The limit counts per user and tool, across all of that user's API keys and sessions. Workspace admins are never limited. Setting limits needs an admin management key:
+
+```bash
+ROLE=$(amcp api GET /api/roles | jq -r '.[] | select(.name=="Sales") | .id')
+TOOL=$(amcp api GET /api/roles/$ROLE/tools | jq -r '.[] | select(.tool.name=="erp_query") | .tool.id')
+
+# 10 calls per minute and 200 per hour for each member of the role
+amcp api PUT /api/roles/$ROLE/tools/$TOOL/rate-limit --yes \
+  --data '{"callsPerMinute":10,"callsPerHour":200}'
+
+# Remove the per-minute limit and keep the hourly one (null means unlimited)
+amcp api PUT /api/roles/$ROLE/tools/$TOOL/rate-limit --yes --data '{"callsPerMinute":null}'
+```
+
+The AI client gets a tool error with the limit and the seconds to wait. Refused calls are logged with an error starting `Rate limit reached`:
+
+```bash
+amcp api GET "/api/audit/invocations?status=ERROR&limit=50" \
+  | jq -r '.[] | select(.error | startswith("Rate limit reached")) | [.createdAt[0:16], .tool.name, .user.email] | @tsv'
+```
+
+The same limits can be set in the dashboard under Settings → Roles → Manage tools.
+
 ## Command reference
 
 | Command | What it does |

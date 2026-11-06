@@ -1965,6 +1965,13 @@ export const roles = {
     request<any[]>(`/api/roles/${id}/tools`, { token }),
   setToolAccess: (id: string, toolIds: string[], token: string) =>
     request(`/api/roles/${id}/tools`, { method: 'PUT', body: { toolIds }, token }),
+  /** Per-tool limits on an existing grant; null clears a window (unlimited). */
+  setToolRateLimits: (
+    id: string,
+    toolId: string,
+    limits: { callsPerMinute: number | null; callsPerHour: number | null },
+    token: string,
+  ) => request(`/api/roles/${id}/tools/${toolId}/rate-limit`, { method: 'PUT', body: limits, token }),
   assignToUser: (userId: string, roleId: string | null, token: string) =>
     request(`/api/roles/assign/${userId}`, { method: 'PUT', body: { roleId }, token }),
 };

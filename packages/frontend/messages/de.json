@@ -2303,7 +2303,14 @@
       "all": "Alle",
       "none": "Keine",
       "saving": "Wird gespeichert...",
-      "save": "{count, plural, one {Speichern (# Tool)} other {Speichern (# Tools)}}"
+      "save": "{count, plural, one {Speichern (# Tool)} other {Speichern (# Tools)}}",
+      "limitsHint": "Optional: Wie oft darf jedes Mitglied mit dieser Rolle ein angehaktes Tool aufrufen, pro Minute und pro Stunde? Leeres Feld heißt ohne Limit. Das Limit gilt pro Benutzer und Tool, über alle seine API-Keys und Sitzungen; Workspace-Admins sind nie begrenzt. Abgelehnte Aufrufe erscheinen unter Logs.",
+      "perMinute": "/Min.",
+      "perHour": "/Std.",
+      "limitMinuteLabel": "Aufrufe pro Minute für {tool}",
+      "limitHourLabel": "Aufrufe pro Stunde für {tool}",
+      "invalidLimit": "Limits müssen ganze Zahlen ab 1 sein, oder leer für kein Limit ({tool}).",
+      "limitedCount": "{count} begrenzt"
     },
     "assign": {
       "title": "MCP-Rollen der Benutzer",
