@@ -25,6 +25,7 @@
 
 <p align="center">
   <a href="https://claude.ai/directory/anythingmcp"><img src="https://img.shields.io/badge/Claude-%E5%85%AC%E5%BC%8F%E3%83%87%E3%82%A3%E3%83%AC%E3%82%AF%E3%83%88%E3%83%AA%E6%8E%B2%E8%BC%89-D97757?logo=claude&logoColor=white&labelColor=0b1220" alt="Claude 公式ディレクトリに掲載"></a>
+  <a href="https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121"><img src="https://img.shields.io/badge/ChatGPT-%E3%83%97%E3%83%A9%E3%82%B0%E3%82%A4%E3%83%B3%E3%83%87%E3%82%A3%E3%83%AC%E3%82%AF%E3%83%88%E3%83%AA%E6%8E%B2%E8%BC%89-10A37F?logo=openai&logoColor=white&labelColor=0b1220" alt="ChatGPT プラグインディレクトリ掲載"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=flat&logo=github&logoColor=white&color=2563eb&labelColor=0b1220" alt="GitHub Stars"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/open%20source-AGPL--3.0-2563eb?labelColor=0b1220" alt="Open source, AGPL-3.0"></a>
@@ -36,7 +37,7 @@
 </p>
 
 <p align="center">
-  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>クラウド版を 7 日間無料で試す</strong></a> · <a href="https://claude.ai/directory/anythingmcp">Claude に追加</a> · <a href="#run-it-yourself">自分で動かす</a> · <a href="docs/guides.md">ドキュメント</a> · <a href="https://anythingmcp.com/ja/guides">コネクターガイド</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
+  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>クラウド版を 7 日間無料で試す</strong></a> · <a href="https://claude.ai/directory/anythingmcp">Claude に追加</a> · <a href="https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121">ChatGPT に追加</a> · <a href="#run-it-yourself">自分で動かす</a> · <a href="docs/guides.md">ドキュメント</a> · <a href="https://anythingmcp.com/ja/guides">コネクターガイド</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
 **Claude への 1 つの質問に、Etsy、SAP、物流 API のデータで答えます。**
