@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { McpServerService } from './mcp-server.service';
 import { ToolRegistry } from './tool-registry';
 import { DynamicMcpTools } from './dynamic-mcp-tools';
+import { ToolRateLimitService } from './tool-rate-limit.service';
 import { CodeExecutorService } from './code-executor.service';
 import { McpEndpointController } from './mcp-endpoint.controller';
 import { WellKnownOAuthController } from './well-known-oauth.controller';
@@ -43,7 +44,7 @@ const ENGINES = [
 @Module({
   imports: [McpServersModule, LicenseModule, SettingsModule, FileSearchCoreModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
-  providers: [SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, TikTokShopTokenService, UserCredentialsService, GraphqlSchemaService, WebhookEventsService, ...ENGINES],
+  providers: [ToolRateLimitService, SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, TikTokShopTokenService, UserCredentialsService, GraphqlSchemaService, WebhookEventsService, ...ENGINES],
   exports: [McpServerService, ToolRegistry, SharedSetupRegistry, DynamicMcpTools, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, TikTokShopTokenService, UserCredentialsService, WebhookEventsService],
 })
 export class McpServerModule {}

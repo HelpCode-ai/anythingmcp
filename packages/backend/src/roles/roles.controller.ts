@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiSecurity, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
-import { IsString, IsOptional, IsArray, ArrayMaxSize } from 'class-validator';
+import { IsString, IsOptional, IsArray, ArrayMaxSize, IsInt, Min, Max } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { RolesService } from './roles.service';
 
@@ -49,6 +49,22 @@ class SetToolAccessDto {
   @IsArray()
   @IsString({ each: true })
   toolIds: string[];
+}
+
+export class SetToolRateLimitsDto {
+  @ApiPropertyOptional({ description: 'Calls per minute. Null clears the limit; omission preserves it.', type: Number, nullable: true, minimum: 1, maximum: 2147483647 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  callsPerMinute?: number | null;
+
+  @ApiPropertyOptional({ description: 'Calls per hour. Null clears the limit; omission preserves it.', type: Number, nullable: true, minimum: 1, maximum: 2147483647 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  callsPerHour?: number | null;
 }
 
 class AssignRoleDto {
@@ -162,6 +178,7 @@ export class RolesController {
     summary: 'Set tool access for a role (ADMIN)',
     description:
       'Sets the tools members with this role may call. The list **replaces** the current one; `[]` allows none. ' +
+      'Retained grants keep their rate limits; new grants start unlimited. ' +
       'Tool ids are the `id` of each tool in `GET /api/connectors` (its `tools`) or `GET /api/connectors/{id}/tools`, ' +
       'and must all belong to your workspace. System roles cannot be changed.\n\n' +
       '```bash\namcp api PUT /api/roles/<roleId>/tools --data \'{"toolIds":["<toolId>","<toolId>"]}\' --yes\n```',
@@ -185,6 +202,24 @@ export class RolesController {
     if (!role) throw new NotFoundException('Role not found');
     await this.rolesService.setToolAccess(id, dto.toolIds, req.user.organizationId);
     return { message: 'Tool access updated' };
+  }
+
+  @Put(':id/tools/:toolId/rate-limit')
+  @ApiOperation({
+    summary: 'Set rate limits on an existing role/tool grant (ADMIN)',
+    description: 'Positive integer calls per minute/hour, per user or user/API-key name. Null clears a window; omitted fields are preserved. Across granting roles each window uses its highest value, with null meaning unlimited. System roles cannot be modified.',
+  })
+  @ApiBody({ type: SetToolRateLimitsDto })
+  async setToolRateLimits(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('toolId') toolId: string,
+    @Body() dto: SetToolRateLimitsDto,
+  ) {
+    const role = await this.rolesService.findByIdForOrg(id, req.user.organizationId);
+    if (!role) throw new NotFoundException('Role not found');
+    if (role.isSystem) throw new ForbiddenException('Cannot modify system roles');
+    return this.rolesService.setToolRateLimits(id, toolId, req.user.organizationId, dto);
   }
 
   // ── User assignment ───────────────────────────────────────────────────────
