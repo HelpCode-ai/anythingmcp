@@ -11,6 +11,32 @@ const DEFAULT_MARKETING_URL = 'https://anythingmcp.com';
 export const CLAUDE_DIRECTORY_URL = 'https://claude.ai/directory/anythingmcp';
 
 /**
+ * AnythingMCP's listing in OpenAI's ChatGPT plugin directory. The plugin runs
+ * read-only database queries on AnythingMCP Cloud, so like the Claude listing
+ * it is only offered on Cloud.
+ */
+export const CHATGPT_DIRECTORY_URL = 'https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121';
+
+/** An AI assistant's directory that lists AnythingMCP Cloud. */
+export type DirectoryListing = 'claude' | 'chatgpt';
+
+/**
+ * Which directory listings to show someone, from the AI client they are
+ * connecting ('claude', 'chatgpt', 'muse', 'other' or none). One assistant's
+ * listing is never shown to another assistant's users: Claude sees the Claude
+ * Directory, ChatGPT its plugin directory, Meta's Muse neither. Anyone else,
+ * including someone not connecting a client, sees both. The backend's
+ * authorization page applies the same rule (auth-page.ts).
+ */
+export function directoryListingsFor(client: string | null | undefined): DirectoryListing[] {
+  const c = (client ?? '').toLowerCase();
+  if (c === 'claude') return ['claude'];
+  if (c === 'chatgpt') return ['chatgpt'];
+  if (c === 'muse') return [];
+  return ['claude', 'chatgpt'];
+}
+
+/**
  * Opens claude.ai straight on its "Add custom connector" dialog. Connectors
  * moved from Settings to Customize → Connectors; the old settings URL now only
  * says so. Connectors added on claude.ai also appear in Claude Desktop.

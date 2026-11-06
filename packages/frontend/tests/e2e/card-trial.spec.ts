@@ -454,6 +454,8 @@ test.describe('card-trial entry points (cloud)', () => {
     await expect(trust).toContainText('Secure payment by Stripe');
     await expect(trust).toContainText('Hosted in Frankfurt');
     await expect(trust).toContainText('Listed in the Claude Directory');
+    // A Claude workspace sees Claude's listing only.
+    await expect(trust).not.toContainText('ChatGPT');
     if (process.env.WALL_SHOT) {
       await page.waitForTimeout(800);
       await page.screenshot({ path: `${process.env.WALL_SHOT}/wall-trust-desktop.png` });
@@ -467,6 +469,21 @@ test.describe('card-trial entry points (cloud)', () => {
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
   });
 
+  test('a ChatGPT workspace sees the ChatGPT plugin directory on the wall, not the Claude Directory', async ({ page }) => {
+    await cloudSession(page, {
+      seed: SHOWN,
+      license: ENDED,
+      wall: {
+        variant: 'trust',
+        recap: { successfulCalls: 12, connectors: ['PostgreSQL'], client: 'ChatGPT', blockedSinceEnd: false },
+      },
+    });
+    await page.goto('/connectors');
+    const trust = page.getByTestId('wall-trust');
+    await expect(trust).toContainText('Listed in the ChatGPT plugin directory', { timeout: 15_000 });
+    await expect(trust).not.toContainText('Claude Directory');
+  });
+
   test('a workspace that never made a successful call sees no numbers on the wall', async ({ page }) => {
     await cloudSession(page, { seed: SHOWN, license: ENDED, wall: { variant: 'trust', recap: null } });
     await page.goto('/connectors');
@@ -474,6 +491,10 @@ test.describe('card-trial entry points (cloud)', () => {
     await expect(page.getByText('Subscribe and your AI keeps working with your connectors.', { exact: false })).toBeVisible();
     await expect(page.getByTestId('wall-recap')).toHaveCount(0);
     await expect(page.getByTestId('wall-trust')).toBeVisible();
+    // No client known: both listings.
+    await expect(page.getByTestId('wall-trust')).toContainText(
+      'Listed in the Claude and ChatGPT directories',
+    );
     if (process.env.WALL_SHOT) await page.screenshot({ path: `${process.env.WALL_SHOT}/wall-trust-norecap.png` });
   });
 

@@ -1,4 +1,5 @@
 import {
+  CHATGPT_DIRECTORY_URL,
   CLAUDE_DIRECTORY_URL,
   EmailBrandContext,
   button,
@@ -384,12 +385,13 @@ export function onboardingReminderEmail(
         ]) +
         button(welcomeUrl, 'Open the welcome wizard') +
         small(
-          `Fastest with Claude: AnythingMCP is in ${link(CLAUDE_DIRECTORY_URL, 'Claude&rsquo;s connector directory')}, one click and you&rsquo;re connected. Stuck, or the app you need is missing? Reply and tell us which one.`,
+          `Fastest with Claude: AnythingMCP is in ${link(CLAUDE_DIRECTORY_URL, 'Claude&rsquo;s connector directory')}, one click and you&rsquo;re connected. ${ctx.cloud ? `For databases in ChatGPT, it is in the ${link(CHATGPT_DIRECTORY_URL, 'ChatGPT plugin directory')}. ` : ''}Stuck, or the app you need is missing? Reply and tell us which one.`,
         ),
       bodyText:
         `${greeting(input.name)}\n\n` +
         `Your AnythingMCP workspace is ready but has no apps yet. Two ways to add one:\n\n` +
         `1. From the chat: add AnythingMCP to Claude (connector directory: ${CLAUDE_DIRECTORY_URL}), ChatGPT, Copilot, Cursor or Meta Muse with ${mcpUrl}, then ask "Connect my Shopify store". The assistant installs the connector and gives you a one-time link to sign in to the app.\n` +
+        (ctx.cloud ? `   For databases in ChatGPT, AnythingMCP is in the ChatGPT plugin directory: ${CHATGPT_DIRECTORY_URL}\n` : '') +
         `2. From the dashboard: pick one of 200+ ready-made connectors.\n\n` +
         `Open the welcome wizard: ${welcomeUrl}\n\n` +
         `Stuck, or the app you need is missing? Reply and tell us which one.`,
@@ -730,7 +732,7 @@ export function trialWinbackEmail(
       h1('Your workspace is still here.', 'Connect your first app in two minutes.') +
       p(`${esc(hi)} your AnythingMCP trial ended on ${endedOn} before you connected an app, so you never saw the part that matters. It is quicker than it looks.`) +
       p(
-        `<strong style="font-weight:600;">You can set it up from the chat.</strong> Add AnythingMCP to Claude (it is in ${link(CLAUDE_DIRECTORY_URL, 'Claude&rsquo;s connector directory')}) or to ChatGPT with ${code(mcpUrl)}, then just ask: <em>&ldquo;Connect my Shopify store&rdquo;</em> or <em>&ldquo;Add HubSpot&rdquo;</em>. The assistant finds the connector, installs it in your workspace and gives you a one-time link where you sign in to the app. No API keys pasted into the chat.`,
+        `<strong style="font-weight:600;">You can set it up from the chat.</strong> Add AnythingMCP to Claude (it is in ${link(CLAUDE_DIRECTORY_URL, 'Claude&rsquo;s connector directory')}) or to ChatGPT with ${code(mcpUrl)}${ctx.cloud ? ` (for databases, it is in the ${link(CHATGPT_DIRECTORY_URL, 'ChatGPT plugin directory')})` : ''}, then just ask: <em>&ldquo;Connect my Shopify store&rdquo;</em> or <em>&ldquo;Add HubSpot&rdquo;</em>. The assistant finds the connector, installs it in your workspace and gives you a one-time link where you sign in to the app. No API keys pasted into the chat.`,
       ) +
       p(`You can also pick from 200+ apps in the dashboard: ${link(connectorsUrl, esc(hostOf(connectorsUrl)))}.`) +
       p('Your workspace is still there. To use it again, choose a plan:') +
@@ -738,7 +740,7 @@ export function trialWinbackEmail(
       small("Not sure it fits what you need? Reply with the app you want to connect and we'll tell you honestly."),
     bodyText:
       `${hi}\n\nYour AnythingMCP trial ended on ${endedOn} before you connected an app.\n\n` +
-      `You can set it up from the chat: add AnythingMCP to Claude (connector directory: ${CLAUDE_DIRECTORY_URL}) or ChatGPT with ${mcpUrl} and ask "Connect my Shopify store". ` +
+      `You can set it up from the chat: add AnythingMCP to Claude (connector directory: ${CLAUDE_DIRECTORY_URL}) or ChatGPT with ${mcpUrl}${ctx.cloud ? ` (for databases it is in the ChatGPT plugin directory: ${CHATGPT_DIRECTORY_URL})` : ''} and ask "Connect my Shopify store". ` +
       `The assistant installs the connector and gives you a one-time link to sign in to the app.\n\n` +
       `Or pick from 200+ apps: ${connectorsUrl}\nPlans: ${pricingUrl}\n\n` +
       `Not sure it fits what you need? Reply with the app you want to connect and we'll tell you honestly.`,

@@ -39,6 +39,7 @@ test('cloud sign-up shows the numbers, never below their floors', async ({ page 
   await expect(panel.getByText('3,800+')).toBeVisible();
   await expect(panel.getByText(/stars on GitHub/)).toHaveCount(0);
   await expect(panel.getByText('Listed in the Claude Directory')).toBeVisible();
+  await expect(panel.getByText('Listed in the ChatGPT plugin directory')).toBeVisible();
   await expect(panel.getByText('Your 7-day trial includes')).toBeVisible();
 });
 
@@ -61,18 +62,26 @@ test('self-hosted sign-up makes no Cloud claims', async ({ page }) => {
   await expect(page.getByText('Open source on GitHub')).toBeVisible();
 });
 
-test('the Claude Directory badge is hidden for ChatGPT and Muse only', async ({ page }) => {
+test('each assistant sees only its own directory badge, Muse neither, anyone else both', async ({ page }) => {
   await mock(page, 'cloud', { message: 'down' }, 503);
   const panel = page.getByRole('complementary', { name: 'Why teams build on AnythingMCP' });
+  const claude = panel.getByRole('link', { name: 'Listed in the Claude Directory' });
+  const chatgpt = panel.getByRole('link', { name: 'Listed in the ChatGPT plugin directory' });
+  const expected: Record<string, [boolean, boolean]> = {
+    claude: [true, false],
+    chatgpt: [false, true],
+    muse: [false, false],
+    other: [true, true],
+  };
 
-  for (const client of ['claude', 'other']) {
-    await page.goto(`/login?mode=register&redirect=%2Fauth%2Flogin&client=${client}`);
-    await expect(panel.getByText('Listed in the Claude Directory')).toBeVisible();
-  }
-
-  for (const client of ['chatgpt', 'muse']) {
+  for (const [client, [showsClaude, showsChatgpt]] of Object.entries(expected)) {
     await page.goto(`/login?mode=register&redirect=%2Fauth%2Flogin&client=${client}`);
     await expect(panel.getByText('AES-256-GCM')).toBeVisible();
-    await expect(panel.getByText('Listed in the Claude Directory')).toHaveCount(0);
+    await expect(claude).toHaveCount(showsClaude ? 1 : 0);
+    await expect(chatgpt).toHaveCount(showsChatgpt ? 1 : 0);
   }
+  await expect(chatgpt).toHaveAttribute(
+    'href',
+    'https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121',
+  );
 });

@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 import { ApiError, auth, license, recentSignIn, server, social, sso, type SocialProviderButton, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/toast';
-import { buildEnterpriseContactUrl } from '@/lib/marketing';
+import { buildEnterpriseContactUrl, directoryListingsFor } from '@/lib/marketing';
 import { LogoIcon } from '@/components/logo-icon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { ProviderMark } from '@/components/provider-mark';
@@ -120,10 +120,10 @@ function LoginForm() {
   // account first. Not a Next route, so it needs a full navigation.
   const returningToAuthorization = redirectTo.startsWith('/auth/');
   // The AI client being connected, as the authorization page recognised it:
-  // 'claude', 'chatgpt', 'muse' or 'other'. The Claude Directory badge is left
-  // out for ChatGPT and Muse only, as on the authorization page.
-  const clientParam = searchParams.get('client');
-  const showDirectoryBadge = clientParam !== 'chatgpt' && clientParam !== 'muse';
+  // 'claude', 'chatgpt', 'muse' or 'other'. It picks the directory badges as
+  // the authorization page does: Claude's listing for Claude, ChatGPT's for
+  // ChatGPT, none for Muse, both for anyone else (or no client at all).
+  const directoryListings = directoryListingsFor(searchParams.get('client'));
   const goTo = (target: string) => {
     if (target.startsWith('/auth/')) window.location.assign(target);
     else router.push(target);
@@ -1403,7 +1403,7 @@ function LoginForm() {
     return (
       <div className="grid w-full lg:min-h-dvh lg:grid-cols-2">
         <div className="flex items-center justify-center px-4 py-6 sm:py-10 lg:px-6 lg:py-12">{formCard}</div>
-        <TrustPanel stats={trustStats} directoryBadge={showDirectoryBadge} />
+        <TrustPanel stats={trustStats} directoryListings={directoryListings} />
       </div>
     );
   }

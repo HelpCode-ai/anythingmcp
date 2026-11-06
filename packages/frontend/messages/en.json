@@ -207,6 +207,7 @@
       "workspaces": "workspaces on AnythingMCP Cloud"
     },
     "directory": "Listed in the Claude Directory",
+    "directoryChatgpt": "Listed in the ChatGPT plugin directory",
     "badges": {
       "euHosted": "🇪🇺 EU-hosted · Frankfurt",
       "gdpr": "GDPR · DPA included",
@@ -584,6 +585,10 @@
       "title": "Fastest: add AnythingMCP from the Claude Directory",
       "open": "Open the Claude Directory",
       "body": "The directory connects your shared <code>/mcp</code> endpoint: you choose which servers it reaches when you sign in. The steps below add this server only."
+    },
+    "chatgptDirectory": {
+      "title": "Quickest for company databases: the ChatGPT plugin directory",
+      "open": "Open in the ChatGPT plugin directory"
     },
     "modal": {
       "title": "Connect to {client}",
@@ -3593,6 +3598,8 @@
       "gdpr": "GDPR · DPA"
     },
     "workspaces": "{count} workspaces on AnythingMCP Cloud",
-    "directory": "Listed in the Claude Directory"
+    "directory": "Listed in the Claude Directory",
+    "directoryChatgpt": "Listed in the ChatGPT plugin directory",
+    "directoryBoth": "Listed in the Claude and ChatGPT directories"
   }
 }

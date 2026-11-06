@@ -15,7 +15,7 @@ import { ConnectionCheck } from '@/components/connection-check';
 import { FirstSuccessOffer } from '@/components/first-success-offer';
 import { copyText } from '@/lib/clipboard';
 import { getApiOrigin } from '@/lib/origin';
-import { CLAUDE_ADD_CONNECTOR_URL, CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
+import { CHATGPT_DIRECTORY_URL, CLAUDE_ADD_CONNECTOR_URL, CLAUDE_DIRECTORY_URL } from '@/lib/marketing';
 import { INSPECTOR_URL, inspectorCommand } from '@/lib/inspector-url';
 import {
   cursorDeepLink as buildCursorDeepLink,
@@ -466,6 +466,19 @@ export default function McpServerDetailPage() {
       </div>
     ) : null;
 
+  // On Cloud only: AnythingMCP's plugin in ChatGPT's plugin directory. It
+  // queries company databases, so for those it is the quickest way; the
+  // custom MCP server below reaches every connector on this server.
+  const chatgptDirectoryNote = () =>
+    isCloud ? (
+      <div className="space-y-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3" data-testid="chatgpt-directory">
+        <p className="text-[13px] font-semibold text-[var(--text)]">
+          {t('chatgptDirectory.title')}
+        </p>
+        {linkAction(CHATGPT_DIRECTORY_URL, t('chatgptDirectory.open'), true)}
+      </div>
+    ) : null;
+
   const renderModalContent = (clientId: string) => {
     switch (clientId) {
       case 'cursor':
@@ -580,6 +593,7 @@ export default function McpServerDetailPage() {
       case 'chatgpt':
         return (
           <div className="space-y-4">
+            {chatgptDirectoryNote()}
             <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
               {t.rich('modal.chatgptStep1', rich)}<br />
               {t.rich('modal.chatgptStep2', rich)}<br />
