@@ -14,6 +14,10 @@ export const EXCLUDED_DOCS = [
   'docs/operations/signup-attribution.md',
   'docs/plans/file-search.md',
 ];
+// Generated per-connector pages (docs/catalog/connectors/<slug>.md, 700+ of
+// them): the catalog's category pages, which llms.txt lists, link to each one.
+// Listing every page would bury the guides.
+export const EXCLUDED_DOC_DIRS = ['docs/catalog/connectors/'];
 const SECTIONS = [
   ['Getting started', ['README.md', 'docs/deployment.md', 'docs/guides.md']],
   ['Connectors', ['docs/connectors/*.md', 'docs/tool-definition.md']],

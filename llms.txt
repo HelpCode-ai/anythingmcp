@@ -59,7 +59,7 @@
 
 ## Optional
 
-- [AnythingMCP connector catalog](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/catalog/README.md): 704 ready connectors with 13,034 MCP tools, in 45 categories.
+- [AnythingMCP connector catalog](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/catalog/README.md): 704 ready connectors with 13,037 MCP tools, in 45 categories.
 - [Accounting MCP connectors](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/catalog/accounting.md): 38 accounting connectors for AnythingMCP.
 - [Advertising MCP connectors](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/catalog/advertising.md): 10 advertising connectors for AnythingMCP.
 - [Analytics MCP connectors](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/catalog/analytics.md): 25 analytics connectors for AnythingMCP.

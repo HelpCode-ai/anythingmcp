@@ -4,10 +4,10 @@
 
 1 remote access connector for AnythingMCP. Each one gives Claude, ChatGPT, Microsoft Copilot, Cursor and Gemini the MCP tools of one system, on [AnythingMCP Cloud](https://cloud.anythingmcp.com) or on your own server ([run it yourself](../../README.md#run-it-yourself)).
 
-The links open the setup guide for each connector and assistant on anythingmcp.com, in seven languages. All remote access connectors: [anythingmcp.com/marketplace/category/remote](https://anythingmcp.com/marketplace/category/remote).
+Each connector's page lists its tools with their parameters and how to start without code; the guide links open the setup guide on anythingmcp.com, in seven languages. All remote access connectors: [anythingmcp.com/marketplace/category/remote](https://anythingmcp.com/marketplace/category/remote).
 
 | Connector | What it does | Tools | Setup guides |
 |---|---|---|---|
-| [TeamViewer API](https://anythingmcp.com/guides/teamviewer-to-mcp) | Read your TeamViewer account through the Web API: devices and their online status, contacts, groups, account details and service-queue sessions. | 6 | [Claude](https://anythingmcp.com/guides/connect-teamviewer-to-claude) · [ChatGPT](https://anythingmcp.com/guides/connect-teamviewer-to-chatgpt) · [Copilot](https://anythingmcp.com/guides/connect-teamviewer-to-copilot) · [Cursor](https://anythingmcp.com/guides/connect-teamviewer-to-cursor) · [Gemini CLI](https://anythingmcp.com/guides/connect-teamviewer-to-gemini) · [Meta Muse](https://anythingmcp.com/guides/connect-teamviewer-to-muse) |
+| [TeamViewer API](connectors/teamviewer.md) | Read your TeamViewer account through the Web API: devices and their online status, contacts, groups, account details and service-queue sessions. | 6 | [Guide](https://anythingmcp.com/guides/teamviewer-to-mcp) · [Claude](https://anythingmcp.com/guides/connect-teamviewer-to-claude) · [ChatGPT](https://anythingmcp.com/guides/connect-teamviewer-to-chatgpt) · [Copilot](https://anythingmcp.com/guides/connect-teamviewer-to-copilot) · [Cursor](https://anythingmcp.com/guides/connect-teamviewer-to-cursor) · [Gemini CLI](https://anythingmcp.com/guides/connect-teamviewer-to-gemini) · [Meta Muse](https://anythingmcp.com/guides/connect-teamviewer-to-muse) |
 
 [← All categories](README.md)
