@@ -27,8 +27,11 @@
 #      for more), and `release.sh --restart` swaps colour on the same release;
 #   7. the cold fallback (no room for two backends): the release still goes
 #      live, backend routes are down while it boots, the frontend is not.
-# After every scenario: exactly one backend, one frontend and the Caddy, and
-# no preview container — nothing orphaned.
+# After every scenario: exactly one backend, one frontend, the files worker
+# and the Caddy, and no preview container — nothing orphaned. Along the way:
+# the logs of every replaced container are saved (gzipped, 600, in a 700
+# directory), old saved logs are deleted, and a log that cannot be saved
+# does not fail the release.
 # =============================================================================
 set -euo pipefail
 
@@ -177,6 +180,10 @@ services:
     <<: *frontend
     container_name: ${PROJECT}-frontend-green
     profiles: [green]
+  files-worker:
+    image: ${IMAGE}:latest
+    container_name: ${PROJECT}-files-worker
+    restart: unless-stopped
 ${CADDY_SERVICE}
 EOF
 }
@@ -273,9 +280,18 @@ load_failed() { grep -v ' 200$' "$WORK/load.txt" | grep -c "${1:-}" || true; }
 assert_clean() {
   local names
   names=$(docker ps -a --filter "label=com.docker.compose.project=${PROJECT}" --format '{{.Names}}' | sort | tr '\n' ' ')
-  [ "$names" = "${PROJECT}-backend ${PROJECT}-caddy ${PROJECT}-frontend " ] || fail "$1: containers left: $names"
+  [ "$names" = "${PROJECT}-backend ${PROJECT}-caddy ${PROJECT}-files-worker ${PROJECT}-frontend " ] || fail "$1: containers left: $names"
   docker inspect "${PROJECT}-caddy-preview" >/dev/null 2>&1 && fail "$1: preview Caddy left running"
   return 0
+}
+
+# Logs saved by release.sh of replaced containers. $1 = container name.
+LOGS="$WORK/app/logs"
+saved() { find "$LOGS" -maxdepth 1 -name "${1}-2*.log.gz" 2>/dev/null | sort; }
+saved_count() { saved "$1" | grep -c . || true; }
+assert_logs_private() {
+  [ -n "$(find "$LOGS" -maxdepth 0 -perm 0700)" ] || fail "$1: $LOGS is not mode 700"
+  [ -z "$(find "$LOGS" -name '*.log.gz' ! -perm 0600)" ] || fail "$1: a saved log is not mode 600"
 }
 
 RESULTS=""
@@ -308,10 +324,17 @@ sleep 1; load_stop
 grep -q "Caddyfile changed: reloaded" "$WORK/release.log" || fail "migration: Caddy was not reloaded"
 grep -q "old colour drained" "$WORK/release.log" || fail "migration: no drain"
 assert_clean migration
+[ "$(saved_count "${PROJECT}-backend")" = 1 ] || fail "migration: the legacy backend's log was not saved: $(ls "$LOGS" 2>&1)"
+[ "$(saved_count "${PROJECT}-frontend")" = 1 ] \
+  || fail "migration: the legacy frontend's log was not saved: $(ls "$LOGS" 2>&1)"
+assert_logs_private migration
 report "0. legacy → blue: $(load_total) requests, $(load_failed) failed; in-flight slow request completed on the old release"
 
 # ── 1. healthy release ──
 docker tag "${IMAGE}:r3" "${IMAGE}:latest"
+# A saved log past the retention, to be deleted by this release.
+gzip -c </dev/null > "$LOGS/${PROJECT}-backend-20200101T000000Z.log.gz"
+touch -t 202001010000 "$LOGS/${PROJECT}-backend-20200101T000000Z.log.gz"
 load_start; code=$(release); sleep 1; load_stop
 [ "$code" = 0 ] || fail "healthy release exited $code"
 [ "$(serving)" = r3 ] && [ "$(serving_backend)" = r3 ] || fail "healthy release: site serves '$(serving)'/'$(serving_backend)'"
@@ -320,6 +343,14 @@ load_start; code=$(release); sleep 1; load_stop
 grep -q "Caddyfile changed" "$WORK/release.log" && fail "healthy release: Caddy was reloaded for an unchanged Caddyfile"
 docker logs "${PROJECT}-backend" 2>&1 | grep -q "registry catch-up called" || fail "healthy release: registry catch-up not called"
 assert_clean "healthy release"
+# The old blue backend was asked for the catch-up in scenario 0: its saved
+# log has that line, with Docker's timestamp in front.
+gzip -dc "$(saved "${PROJECT}-backend" | tail -1)" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[^ ]+ registry catch-up called' \
+  || fail "healthy release: the old backend's saved log lacks its lines"
+[ "$(saved_count "${PROJECT}-frontend")" = 2 ] || fail "healthy release: the old frontend's log was not saved"
+[ "$(saved_count "${PROJECT}-files-worker")" = 1 ] || fail "healthy release: the recreated files worker's log was not saved"
+[ -e "$LOGS/${PROJECT}-backend-20200101T000000Z.log.gz" ] && fail "healthy release: a saved log past the retention was not deleted"
+assert_logs_private "healthy release"
 report "1. healthy blue → green: $(load_total) requests, $(load_failed) failed"
 
 # ── 2. broken image ──
@@ -329,6 +360,8 @@ load_start; code=$(release); sleep 1; load_stop
 [ "$(serving)" = r3 ] || fail "broken image: site serves '$(serving)', expected r3"
 [ "$(live_service)" = backend-green ] || fail "broken image: live is '$(live_service)'"
 grep -q "did not become healthy" "$WORK/release.log" || fail "broken image: no health failure reported"
+gzip -dc "$(saved "${PROJECT}-backend-blue" | tail -1)" 2>/dev/null | grep -q "refusing to start" \
+  || fail "broken image: the rejected backend's log was not saved"
 [ "$(load_failed)" = 0 ] || fail "broken image: $(load_failed) failed requests"
 assert_clean "broken image"
 report "2. broken image: $(load_total) requests, $(load_failed) failed; green kept serving"
@@ -388,8 +421,11 @@ done
 
 # ── 6b. release.sh --restart: same release, other colour ──
 before_rel=$(serving); before_live=$(live_service)
+workers_saved=$(saved_count "${PROJECT}-files-worker")
 load_start; code=$(RELEASE_ARGS=--restart release); sleep 1; load_stop
 [ "$code" = 0 ] || fail "--restart exited $code"
+# Same image, same compose file: compose leaves the files worker, nothing to save.
+[ "$(saved_count "${PROJECT}-files-worker")" = "$workers_saved" ] || fail "--restart: saved the log of a files worker that was not replaced"
 [ "$(serving)" = "$before_rel" ] || fail "--restart: site serves '$(serving)', expected $before_rel"
 [ "$(live_service)" != "$before_live" ] || fail "--restart: colour did not change"
 [ "$(load_failed)" = 0 ] || fail "--restart: $(load_failed) failed requests"
@@ -399,8 +435,10 @@ report "6b. --restart ($before_rel, $before_live → $(live_service)): $(load_to
 # ── 7. cold fallback ──
 docker tag "${IMAGE}:r8" "${IMAGE}:latest"
 cold_expect=$([ "$(live_service)" = backend-blue ] && echo backend-green || echo backend-blue)
-load_start; code=$(release SWAP_MODE=cold); sleep 1; load_stop
+# And a log directory that cannot be created: the logs are lost, the release is not.
+load_start; code=$(release SWAP_MODE=cold RELEASE_LOG_DIR=/dev/null/logs); sleep 1; load_stop
 [ "$code" = 0 ] || fail "cold release exited $code"
+grep -q "not saving the logs" "$WORK/release.log" || fail "cold release: no warning for the unwritable log directory"
 [ "$(serving)" = r8 ] || fail "cold release: site serves '$(serving)'"
 [ "$(live_service)" = "$cold_expect" ] || fail "cold release: live is '$(live_service)', expected $cold_expect"
 [ "$(load_failed /login)" = 0 ] || fail "cold release: the frontend failed $(load_failed /login) requests"
