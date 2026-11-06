@@ -48,6 +48,12 @@ export interface ErrorHintInput {
   egressIps?: string[];
   /** The call went through the proxy / web-unblocker, whose addresses change. */
   usedProxy?: boolean;
+  /**
+   * The tool arguments the caller sent. Only a rule that has to name the
+   * offending value reads them (Etsy's tag limit), and it quotes nothing
+   * but that value back.
+   */
+  args?: Record<string, unknown>;
 }
 
 const MISSING_SCOPE_HINT =
@@ -153,6 +159,52 @@ const ETSY_NO_SHOP_HINT =
   'User"). Retrying or trying other shop ids will not help. Tell the user to open the connector in ' +
   'AnythingMCP, click Authorize with Provider again and sign in at Etsy with the Etsy account that ' +
   'owns the shop (a buyer or second account has none).';
+
+// Etsy refuses a tag over 20 characters on English (en-US) listings with
+// "There was a problem with /tags : cannot be more than 20 characters", without
+// saying which tag. Listings in other languages take longer tags (up to 30 in
+// the calls Etsy accepted in Oct/Nov 2026), so nothing is refused before the
+// call: the hint names the tags over the limit once Etsy has refused them.
+const ETSY_TAG_LIMIT = /\/tags\s*:\s*cannot be more than (\d+) characters/i;
+
+// A tag is quoted back to the model at most this long.
+const QUOTED_ITEM_MAX = 60;
+
+function etsyTagLengthHint(tags: unknown, max: number): string {
+  const rule = `Etsy allows at most ${max} characters per tag on English listings.`;
+  const long = overlongListItems(tags, max);
+  if (long.length === 0) {
+    return `${rule} Shorten every longer tag (spaces count) and call again.`;
+  }
+  const named = long
+    .map(({ item, length }) => {
+      const shown = [...item].length > QUOTED_ITEM_MAX ? `${[...item].slice(0, QUOTED_ITEM_MAX).join('')}…` : item;
+      return `tag ${JSON.stringify(shown)} has ${length} characters`;
+    })
+    .join('; ');
+  return `${named}; ${rule} Shorten or replace ${long.length === 1 ? 'it' : 'them'} and call again with the other tags unchanged.`;
+}
+
+/**
+ * The items of a list argument that are longer than `max` characters, with
+ * their lengths: a comma-separated string or an array of strings. Items are
+ * trimmed and counted in code points, so an emoji is one character.
+ */
+export function overlongListItems(
+  value: unknown,
+  max: number,
+): Array<{ item: string; length: number }> {
+  const items =
+    typeof value === 'string'
+      ? value.split(',')
+      : Array.isArray(value)
+        ? value.filter((v): v is string => typeof v === 'string')
+        : [];
+  return items
+    .map((raw) => raw.trim())
+    .map((item) => ({ item, length: [...item].length }))
+    .filter(({ length }) => length > max);
+}
 
 // Zoho answers NO_PERMISSION naming Crm_Implied_Api_Access when the CRM user
 // may not use the API at all: the Free edition has no API access, and on paid
@@ -709,6 +761,11 @@ function ruleHint(input: ErrorHintInput, text: string): string | undefined {
   }
   if (hostMatches(input.host, 'etsy.com') && /Could not find a shop for User/i.test(text)) {
     return ETSY_NO_SHOP_HINT;
+  }
+  const tagLimit =
+    hostMatches(input.host, 'etsy.com') || input.adapterSlug === 'etsy' ? ETSY_TAG_LIMIT.exec(text) : null;
+  if (tagLimit) {
+    return etsyTagLengthHint(input.args?.tags, Number(tagLimit[1]));
   }
 
   if (/Crm_Implied_Api_Access/.test(text)) {
