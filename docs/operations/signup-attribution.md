@@ -86,9 +86,9 @@ Stored metadata (the channel is derived on the server, see `packages/backend/src
 
 Channels: `google_ads`, `chatgpt_ads` (`utm_source=chatgpt_ads`, the tag on our ChatGPT Ads URLs, or an `oppref`; organic ChatGPT links say `utm_source=chatgpt.com` and stay `ai_assistant`), `paid_other`, `ai_assistant`, `github`, `organic_google`, `organic_search`, `social`, `email`, `website` (came from anythingmcp.com but without its touch, e.g. scripts blocked), `referral`, `direct`.
 
-### Sign-ups from the ChatGPT plugin directory
+### Sign-ups from the ChatGPT Plugin Directory
 
-A user who connects one of AnythingMCP's plugins from OpenAI's plugin directory reaches the login page through an OAuth redirect. The visit has no referrer and no campaign tag, so the sign-up is recorded as `direct`. When the new account then authorizes the plugin's endpoint (`/mcp/chatgpt-app` or `/mcp/file-search`, read from the RFC 8707 `resource`) within two hours of being created, the server:
+A user who connects one of AnythingMCP's plugins from OpenAI's ChatGPT Plugin Directory reaches the login page through an OAuth redirect. The visit has no referrer and no campaign tag, so the sign-up is recorded as `direct`. When the new account then authorizes the plugin's endpoint (`/mcp/chatgpt-app` or `/mcp/file-search`, read from the RFC 8707 `resource`) within two hours of being created, the server:
 
 - adds `"directory": "chatgpt"` and `"directory_plugin": "chatgpt-app"` (or `"file-search"`) to the account's `signup_attributed` metadata;
 - writes one `directory_signup` event with the same two values as `directory` and `plugin`.
