@@ -77,6 +77,14 @@ export const ProductEvents = {
    */
   AI_CLIENT_CONNECTED: 'ai_client_connected',
   /**
+   * A new account (created minutes before) authorized one of AnythingMCP's
+   * plugins in OpenAI's plugin directory; metadata.directory = 'chatgpt',
+   * metadata.plugin = the plugin endpoint ('chatgpt-app', 'file-search').
+   * The account's signup_attributed gets the same two fields. Server-only.
+   * Answers: how many sign-ups the ChatGPT directory brings.
+   */
+  DIRECTORY_SIGNUP: 'directory_signup',
+  /**
    * Cloud: after approving an AI client, the user was told their workspace
    * is empty and shown how to add an app (chat or dashboard). Server-only.
    * Read against setup_completed: does the prompt lead to a first connector.
@@ -317,6 +325,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.SIGNUP_ATTRIBUTED,
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
+  ProductEvents.DIRECTORY_SIGNUP,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
   ProductEvents.FILE_SEARCH_AUTHORIZE_OFFERED,
   ProductEvents.POST_APPROVE_APP_PICKED,

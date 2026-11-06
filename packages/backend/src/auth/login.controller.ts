@@ -23,7 +23,13 @@ import { findUserByEmail } from '../common/email.util';
 import type { User } from '../generated/prisma/client';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { SsoService } from '../identity-providers/sso.service';
-import { MCP_APP_COOKIE, MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
+import {
+  MCP_APP_COOKIE,
+  MCP_DIRECTORY_COOKIE,
+  MCP_RESOURCE_COOKIE,
+  type DirectoryPluginEndpoint,
+} from './resource-indicator.middleware';
+import { markDirectorySignup } from '../audit/directory-signup';
 import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
@@ -590,6 +596,12 @@ export class LoginController {
       return this.maybeOfferFileSearchSetup(req, res, userId, encodedProfile, callbackUrl);
     }
     return this.maybeOfferFirstConnector(req, res, userId, encodedProfile, callbackUrl, socialProvider);
+  }
+
+  /** The directory plugin this authorization asked for (MCP_DIRECTORY_COOKIE), or null. */
+  private requestedDirectoryPlugin(req: Request): DirectoryPluginEndpoint | null {
+    const value = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[MCP_DIRECTORY_COOKIE];
+    return value === 'chatgpt-app' || value === 'file-search' ? value : null;
   }
 
   /** The fixed plugin endpoint this authorization asked for (MCP_APP_COOKIE), or null. */
@@ -1172,6 +1184,11 @@ export class LoginController {
     const consent = await this.loadConsentContext(req);
     // Not an authorize flow — a bare visit to the login page. Nothing to grant.
     if (!consent) return false;
+
+    // A brand-new account authorizing a plugin from OpenAI's directory:
+    // record that the sign-up came from there (the sign-up itself looks 'direct').
+    const plugin = this.requestedDirectoryPlugin(req);
+    if (plugin) await markDirectorySignup(this.prisma, this.productEvents, userId, plugin);
 
     // The client asked for one specific server via RFC 8707. It has already
     // said what it wants; asking again would be noise. Still goes through

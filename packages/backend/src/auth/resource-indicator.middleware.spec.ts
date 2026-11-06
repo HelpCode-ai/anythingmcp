@@ -2,6 +2,7 @@ import {
   ResourceIndicatorMiddleware,
   parseServerId,
   MCP_RESOURCE_COOKIE,
+  MCP_DIRECTORY_COOKIE,
 } from './resource-indicator.middleware';
 
 describe('parseServerId', () => {
@@ -114,7 +115,14 @@ describe('parseAppEndpoint and the plugin endpoint cookie', () => {
 
     const res2: any = { cookie: jest.fn(), clearCookie: jest.fn() };
     m.use({ method: 'GET', query: { resource: 'https://h/mcp/chatgpt-app' }, headers: {}, secure: false } as any, res2, jest.fn());
-    expect(res2.cookie).not.toHaveBeenCalled();
+    // The database plugin has no app step, only the directory marker.
+    expect(res2.cookie).not.toHaveBeenCalledWith(MCP_APP_COOKIE, expect.anything(), expect.anything());
+    expect(res2.cookie).toHaveBeenCalledWith(MCP_DIRECTORY_COOKIE, 'chatgpt-app', expect.objectContaining({ httpOnly: true, signed: true }));
     expect(res2.clearCookie).toHaveBeenCalledWith(MCP_APP_COOKIE);
+
+    const res3: any = { cookie: jest.fn(), clearCookie: jest.fn() };
+    m.use({ method: 'GET', query: { resource: 'https://h/mcp' }, headers: {}, secure: false } as any, res3, jest.fn());
+    expect(res3.cookie).not.toHaveBeenCalled();
+    expect(res3.clearCookie).toHaveBeenCalledWith(MCP_DIRECTORY_COOKIE);
   });
 });
