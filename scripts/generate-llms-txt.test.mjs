@@ -5,7 +5,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { absoluteLink, cleanMarkdown, collectDocuments, EXCLUDED_DOCS, generate, rewriteLinks } from './generate-llms-txt.mjs';
+import { absoluteLink, cleanMarkdown, collectDocuments, EXCLUDED_DOC_DIRS, EXCLUDED_DOCS, generate, rewriteLinks } from './generate-llms-txt.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -132,8 +132,9 @@ function assertDocsCovered(root) {
     return entry.isDirectory() ? scan(path) : entry.isFile() && entry.name.endsWith('.md') ? [path] : [];
   });
   const included = collectDocuments(root).flatMap(section => section.paths).filter(path => path.startsWith('docs/'));
-  assert.deepEqual([...included, ...EXCLUDED_DOCS].sort(), scan('docs').sort(),
-    'Every docs/**/*.md must be included in SECTIONS or explicitly listed in EXCLUDED_DOCS');
+  const scanned = scan('docs').filter(path => !EXCLUDED_DOC_DIRS.some(dir => path.startsWith(dir)));
+  assert.deepEqual([...included, ...EXCLUDED_DOCS].sort(), scanned.sort(),
+    'Every docs/**/*.md must be included in SECTIONS or explicitly listed in EXCLUDED_DOCS or EXCLUDED_DOC_DIRS');
 }
 
 test('every docs/**/*.md is included or explicitly excluded, including newly nested docs', t => {
