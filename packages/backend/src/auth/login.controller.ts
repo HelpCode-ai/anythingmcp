@@ -40,11 +40,11 @@ import { SOCIAL_BIND_COOKIE, SocialAuthError, SocialAuthService } from './social
 import { setSocialBindCookie } from './social/social-auth.controller';
 import {
   AMCP_MARK_SVG as AMCP_MARK,
-  claudeMark,
   clientTilePair,
   knownClientFor,
   renderAuthPage,
-  showsDirectoryBadge,
+  directoryBadgeHtml,
+  directoryBadgesFor,
   signupClientFor,
   type TrustRowOptions,
 } from './auth-page';
@@ -1752,12 +1752,11 @@ export class LoginController {
         : `Sign in to let ${client} use your ${server} tools. You stay in control and can disconnect at any time.`
       : `Authorize access to ${server} MCP Server`;
 
-    // Claude's directory lists AnythingMCP Cloud, so the badge appears only
-    // there, and not to someone connecting ChatGPT or Muse.
+    // Claude's and ChatGPT's directories list AnythingMCP Cloud, so the
+    // badge appears only there. Each assistant's users see only its own
+    // listing (see directoryBadgesFor); any other client sees both.
     const directoryPill =
-      signupClient && showsDirectoryBadge(signupClient) && this.deployment.isCloud()
-        ? `<div class="verified">${claudeMark(12)}<span>Listed in Anthropic&#39;s Claude Directory</span></div>`
-        : '';
+      signupClient && this.deployment.isCloud() ? directoryBadgeHtml(directoryBadgesFor(signupClient)) : '';
 
     const DEFAULT_SCOPE = "Access to your organization's MCP tools and connected servers.";
     const toolsLine = requestedServer
@@ -1806,8 +1805,8 @@ export class LoginController {
     // phone. After a failed sign-in (that person has an account and is fixing a
     // typo) it shrinks back to the small link under the form.
     //
-    // `client` tells the sign-up page who sent them: it leaves the Claude
-    // Directory badge out for ChatGPT and Muse, as this page does.
+    // `client` tells the sign-up page who sent them: it picks the directory
+    // badges the same way this page does.
     const signupHref =
       '/login?mode=register&amp;redirect=%2Fauth%2Flogin' + (signupClient ? `&amp;client=${signupClient}` : '');
     const offerSignup = !sessionUser && this.deployment.isCloud();

@@ -15,6 +15,7 @@ const ALLOWED_HOSTS = new Set([
   'cloud.anythingmcp.com',
   'github.com',
   'claude.ai',
+  'chatgpt.com',
 ]);
 
 const cloud: EmailBrandContext = { stats: formatTrustStats(SAMPLE_TRUST_STATS), cloud: true };
@@ -121,7 +122,7 @@ describe.each([
     it('makes Cloud-only claims only on Cloud', () => {
       // A personal email has no trust band at all, on either deployment.
       if (PLAIN_SAMPLE_IDS.has(id)) return;
-      const claims = /Frankfurt|DPA included|Claude Directory|workspaces on AnythingMCP Cloud|AI tool calls last month/;
+      const claims = /Frankfurt|DPA included|Claude Directory|ChatGPT Plugin Directory|workspaces on AnythingMCP Cloud|AI tool calls last month/;
       if (ctx.cloud) {
         expect(email.html).toMatch(/Frankfurt/);
       } else {
@@ -153,6 +154,24 @@ describe('trust band', () => {
     // Badges and the client list stay.
     expect(html).toContain('AES-256-GCM');
     expect(html).toContain('Works with');
+  });
+
+  it('names both directory listings on Cloud, in the HTML and the text, and neither on self-hosted', () => {
+    const email = verify.render(cloud, { name: 'A', other: 'B' });
+    expect(email.html).toContain('href="https://claude.ai/directory/anythingmcp"');
+    expect(email.html).toContain('https://anythingmcp.com/email/claude.png');
+    expect(email.html).toContain('Listed in the Claude Directory');
+    expect(email.html).toContain(
+      'href="https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121"',
+    );
+    expect(email.html).toContain('<img src="https://anythingmcp.com/email/chatgpt.png" width="12" height="12"');
+    expect(email.html).toContain('Listed in the ChatGPT Plugin Directory');
+    expect(email.text).toContain('Listed in the Claude Directory · Listed in the ChatGPT Plugin Directory');
+
+    const self = verify.render(selfHosted, { name: 'A', other: 'B' });
+    for (const part of [self.html, self.text]) {
+      expect(part).not.toMatch(/Claude Directory|ChatGPT Plugin Directory|plugin_asdk_app/);
+    }
   });
 
   it('shows the user’s own usage in trial emails', () => {

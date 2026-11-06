@@ -25,7 +25,7 @@
 
 <p align="center">
   <a href="https://claude.ai/directory/anythingmcp"><img src="https://img.shields.io/badge/Claude-in%20the%20official%20directory-D97757?logo=claude&logoColor=white&labelColor=0b1220" alt="Listed in the official Claude directory"></a>
-  <a href="https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121"><img src="https://img.shields.io/badge/ChatGPT-plugin%20directory-10A37F?logo=openai&logoColor=white&labelColor=0b1220" alt="Listed in the ChatGPT plugin directory"></a>
+  <a href="https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121"><img src="https://img.shields.io/badge/ChatGPT-plugin%20directory-10A37F?logo=openai&logoColor=white&labelColor=0b1220" alt="Listed in the ChatGPT Plugin Directory"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=flat&logo=github&logoColor=white&color=2563eb&labelColor=0b1220" alt="GitHub Stars"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/open%20source-AGPL--3.0-2563eb?labelColor=0b1220" alt="Open source, AGPL-3.0"></a>
@@ -33,7 +33,7 @@
 </p>
 
 <p align="center">
-  <strong>16,000+ workspaces on AnythingMCP Cloud</strong> · <strong>1.5M+ AI tool calls a month</strong> · <strong>listed in the official Claude directory and the ChatGPT plugin directory</strong>
+  <strong>16,000+ workspaces on AnythingMCP Cloud</strong> · <strong>1.5M+ AI tool calls a month</strong> · <strong>listed in the official Claude directory and the ChatGPT Plugin Directory</strong>
 </p>
 
 <p align="center">
@@ -238,7 +238,7 @@ Everything runs on your infrastructure, so you decide what leaves it. OAuth2, ro
 The same MCP server works in every client that speaks MCP, so you build a connector once:
 
 - **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](https://claude.ai/directory/anythingmcp). [Claude setup](docs/integrations/claude.md)
-- **ChatGPT.** On AnythingMCP Cloud, the [AnythingMCP plugin in the ChatGPT plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121) answers questions from your company databases, read-only. For every connector, add the server under *Plugins* in ChatGPT (*+ → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](docs/integrations/chatgpt.md)
+- **ChatGPT.** On AnythingMCP Cloud, the [AnythingMCP plugin in the ChatGPT Plugin Directory](https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121) answers questions from your company databases, read-only. For every connector, add the server under *Plugins* in ChatGPT (*Add → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](docs/integrations/chatgpt.md)
 - **Meta Muse.** In Muse, open *Settings → Connectors → Add custom connector*, paste the server URL and sign in to AnythingMCP. [Muse setup](docs/integrations/muse.md)
 - **Copilot, Gemini, Cursor** and other MCP clients: [client setup guides](docs/guides.md).
 

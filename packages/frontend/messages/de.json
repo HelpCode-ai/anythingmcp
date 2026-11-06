@@ -207,6 +207,7 @@
       "workspaces": "Workspaces auf AnythingMCP Cloud"
     },
     "directory": "Gelistet im Claude Directory",
+    "directoryChatgpt": "Gelistet im ChatGPT-Plugin-Verzeichnis",
     "badges": {
       "euHosted": "🇪🇺 In der EU gehostet · Frankfurt",
       "gdpr": "DSGVO · AVV inklusive",
@@ -585,6 +586,10 @@
       "open": "Claude Directory öffnen",
       "body": "Das Directory verbindet Ihren gemeinsamen <code>/mcp</code>-Endpunkt: Beim Anmelden wählen Sie, welche Server es erreicht. Die Schritte unten fügen nur diesen Server hinzu."
     },
+    "chatgptDirectory": {
+      "title": "Am schnellsten für Firmendatenbanken: das ChatGPT-Plugin-Verzeichnis",
+      "open": "Im ChatGPT-Plugin-Verzeichnis öffnen"
+    },
     "modal": {
       "title": "Mit {client} verbinden",
       "runCommand": "Führen Sie diesen Befehl im Terminal aus:",
@@ -609,7 +614,7 @@
       "claudeDesktopStep3": "3. Geben Sie einen Namen ein, fügen Sie die MCP-Endpunkt-URL von unten ein und klicken Sie auf <strong>Add</strong>.",
       "bridgeSummary": "Lieber die Konfigurationsdatei? Nutzen Sie die mcp-remote-Brücke",
       "bridgeBody": "Benötigt Node.js. Das Paket <code>mcp-remote</code> stellt den Remote-Server als lokalen Befehl bereit. Fügen Sie es in <code>claude_desktop_config.json</code> ein und starten Sie Claude Desktop neu.",
-      "chatgptStep1": "1. Klicken Sie auf die Schaltfläche unten, um <strong>Plugins</strong> in ChatGPT zu öffnen, und klicken Sie dann auf <strong>+</strong> und <strong>Add custom MCP server</strong>.",
+      "chatgptStep1": "1. Klicken Sie auf die Schaltfläche unten, um <strong>Plugins</strong> in ChatGPT zu öffnen, und klicken Sie dann auf <strong>Add</strong> und <strong>Add custom MCP server</strong>.",
       "chatgptStep2": "2. Geben Sie einen Namen ein (z. B. AnythingMCP), fügen Sie die MCP-Endpunkt-URL von unten als <strong>Server URL</strong> ein und lassen Sie <strong>Authentication</strong> auf <strong>OAuth</strong>.",
       "chatgptStep3": "3. Wählen Sie <strong>I understand and want to continue</strong>, dann <strong>Create as a plugin</strong>, und melden Sie sich bei AnythingMCP an, wenn Sie dazu aufgefordert werden.",
       "chatgptStep4": "4. Installieren Sie das Plugin aus Ihren persönlichen Plugins und tippen Sie dann <strong>@</strong> in einem Chat, um es zu nutzen.",
@@ -1109,7 +1114,7 @@
       "directory": "Oder fügen Sie AnythingMCP aus dem <link>Claude Directory</link> hinzu und wählen Sie diesen Server bei der Anmeldung."
     },
     "chatgpt": {
-      "step1": "Öffnen Sie in ChatGPT <b>Plugins</b>, klicken Sie auf <b>+</b> und dann auf <b>Add custom MCP server</b>.",
+      "step1": "Öffnen Sie in ChatGPT <b>Plugins</b>, klicken Sie auf <b>Add</b> und dann auf <b>Add custom MCP server</b>.",
       "step2": "Geben Sie einen Namen ein, fügen Sie die URL unten als <b>Server URL</b> ein und lassen Sie <b>Authentication</b> auf <b>OAuth</b>.",
       "step3": "Wählen Sie <b>I understand and want to continue</b>, dann <b>Create as a plugin</b>, und melden Sie sich bei AnythingMCP an.",
       "step4": "Installieren Sie das Plugin aus Ihren persönlichen Plugins und tippen Sie dann im Chat <b>@</b>, um es zu nutzen.",
@@ -3593,6 +3598,8 @@
       "gdpr": "DSGVO · AVV"
     },
     "workspaces": "{count} Workspaces auf AnythingMCP Cloud",
-    "directory": "Gelistet im Claude Directory"
+    "directory": "Gelistet im Claude Directory",
+    "directoryChatgpt": "Gelistet im ChatGPT-Plugin-Verzeichnis",
+    "directoryBoth": "Gelistet in den Verzeichnissen von Claude und ChatGPT"
   }
 }

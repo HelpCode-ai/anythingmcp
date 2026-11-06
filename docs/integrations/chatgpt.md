@@ -47,7 +47,7 @@ SERVER_URL=https://mcp.yourdomain.com
 ## Step 3: Add MCP Server in ChatGPT
 
 1. Open **Plugins** in ChatGPT on the web: [chatgpt.com/plugins](https://chatgpt.com/plugins)
-2. Click **+**, then **Add custom MCP server**
+2. Click **Add** (top right), then **Add custom MCP server**
 3. Enter a name (e.g. AnythingMCP) and an optional description
 4. Under **Connection**, enter the **Server URL**: `https://mcp.yourdomain.com/mcp` (on AnythingMCP Cloud, the endpoint URL shown on your server's page)
 5. Set **Authentication** to **OAuth**
@@ -72,7 +72,7 @@ ChatGPT will call the appropriate MCP tool and show you the results.
 
 ## The fixed plugin endpoint: `/mcp/chatgpt-app`
 
-`https://<your-host>/mcp/chatgpt-app` serves one fixed set of tools, the same for every user. It is the endpoint of the [AnythingMCP plugin in OpenAI's plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121) (on AnythingMCP Cloud), whose guidelines require every operation to be its own tool. It does not run your connectors' own tools; use `/mcp/<server-id>` (or `/mcp`) for that.
+`https://<your-host>/mcp/chatgpt-app` serves one fixed set of tools, the same for every user. It is the endpoint of the [AnythingMCP plugin in the ChatGPT Plugin Directory](https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121) (on AnythingMCP Cloud), whose guidelines require every operation to be its own tool. It does not run your connectors' own tools; use `/mcp/<server-id>` (or `/mcp`) for that.
 
 | Tool | What it does |
 |------|--------------|
@@ -91,7 +91,7 @@ Only database connectors set to **read-only** are queried; a connector with writ
 
 ## The File Search plugin endpoint: `/mcp/file-search`
 
-`https://<your-host>/mcp/file-search` serves the File Search plugin ("SFTP & NAS Search by Helpcode" in OpenAI's plugin directory). Like `/mcp/chatgpt-app`, it has one fixed set of tools, the same for every user, and each tool is one operation. It only reaches the workspace's File Search folders; catalog connectors, databases and the File Share connector are not served here.
+`https://<your-host>/mcp/file-search` serves the File Search plugin ("SFTP & NAS Search by Helpcode" in the ChatGPT Plugin Directory). Like `/mcp/chatgpt-app`, it has one fixed set of tools, the same for every user, and each tool is one operation. It only reaches the workspace's File Search folders; catalog connectors, databases and the File Share connector are not served here.
 
 | Tool | What it does |
 |------|--------------|

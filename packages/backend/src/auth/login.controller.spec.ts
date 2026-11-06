@@ -1447,42 +1447,60 @@ describe('LoginController', () => {
       expect(html).toContain('Only continue if you started this');
     });
 
-    it('shows the directory badge to every client but ChatGPT and Muse, and tells the sign-up page who it is', async () => {
+    it("shows each assistant only its own directory badge, both to other clients, and tells the sign-up page who it is", async () => {
       const link = (client: string) => `href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=${client}"`;
+      const CLAUDE_ONLY = 'Listed in Anthropic&#39;s Claude Directory';
+      const CHATGPT_ONLY = 'Listed in OpenAI&#39;s ChatGPT Plugin Directory';
+      const BOTH = 'Listed in the Claude and ChatGPT directories';
 
       session('https://claude.ai/api/mcp/auth_callback', 'Claude');
       let html = await page(make(DEPLOY.cloud));
-      expect(html).toContain('Claude Directory');
+      expect(html).toContain(CLAUDE_ONLY);
+      expect(html).not.toMatch(/ChatGPT Plugin Directory|directories/);
       expect(html).toContain(link('claude'));
 
       session('https://chatgpt.com/connector_platform_oauth_redirect', 'ChatGPT');
       html = await page(make(DEPLOY.cloud));
-      expect(html).not.toContain('Claude Directory');
+      expect(html).toContain(CHATGPT_ONLY);
+      expect(html).toContain('class="verified verified-chatgpt"');
+      expect(html).not.toMatch(/Claude Directory|directories/);
       expect(html).toContain(link('chatgpt'));
 
-      // Muse by Meta's domains, or by name while its host is not known yet.
+      // Muse by Meta's domains, or by name while its host is not known yet:
+      // neither assistant's listing.
       for (const [uri, name] of [
         ['https://www.meta.ai/oauth/callback', 'Meta AI'],
         ['https://connectors.example.net/cb', 'Muse'],
       ]) {
         session(uri, name);
         html = await page(make(DEPLOY.cloud));
-        expect(html).not.toContain('Claude Directory');
+        expect(html).not.toContain('class="verified');
+        expect(html).not.toMatch(/Directory|directories|plugin directory/);
         expect(html).toContain(link('muse'));
       }
 
-      // Any other client (Cursor, Copilot, Grok…) sees it.
+      // Any other client (Cursor, Copilot, Grok…) sees both, in one pill.
       session('https://grok.com/connectors-oauth-exchange-code/', 'Grok');
       html = await page(make(DEPLOY.cloud));
-      expect(html).toContain('Claude Directory');
+      expect(html).toContain(BOTH);
+      expect(html).not.toContain(CLAUDE_ONLY);
+      expect(html).not.toContain(CHATGPT_ONLY);
       expect(html).toContain(link('other'));
     });
 
-    it('shows no directory badge on self-hosted, even for Claude', async () => {
+    it('shows no directory badge on self-hosted, for any client', async () => {
+      for (const [uri, name] of [
+        ['https://claude.ai/api/mcp/auth_callback', 'Claude'],
+        ['https://chatgpt.com/connector_platform_oauth_redirect', 'ChatGPT'],
+        ['https://grok.com/connectors-oauth-exchange-code/', 'Grok'],
+      ]) {
+        session(uri, name);
+        const html = await page(make(DEPLOY.selfHosted));
+        expect(html).not.toContain('class="verified');
+        expect(html).not.toMatch(/Directory|directories|plugin directory/);
+      }
       session('https://claude.ai/api/mcp/auth_callback', 'Claude');
-      const html = await page(make(DEPLOY.selfHosted));
-      expect(html).toContain('class="tile tile-claude"');
-      expect(html).not.toContain('Claude Directory');
+      expect(await page(make(DEPLOY.selfHosted))).toContain('class="tile tile-claude"');
     });
 
     it('puts Allow before Cancel in the markup, so Enter never cancels', async () => {
