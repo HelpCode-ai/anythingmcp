@@ -112,4 +112,18 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
     expect(await roles.getAllowedToolIds(userId, orgIds[0])).toBeNull();
     expect(await roles.getToolRateLimits(userId, orgIds[0], toolIds[0])).toBeNull();
   });
+
+  it('invalidates a cached unconfigured workspace when the first limit is saved', async () => {
+    await prisma.toolRoleAccess.deleteMany({ where: { roleId: roleIds[2] } });
+    await prisma.toolRoleAccess.updateMany({
+      where: { roleId: roleIds[0] }, data: { callsPerMinute: null, callsPerHour: null },
+    });
+    // The second workspace still has limits: its presence must not contaminate
+    // this workspace's negative flag.
+    expect(await roles.getToolRateLimits(userId, orgIds[0], toolIds[0])).toBeNull();
+    expect(await roles.getToolRateLimits(userId, orgIds[0], toolIds[0])).toBeNull();
+    await roles.setToolRateLimits(roleIds[0], toolIds[0], orgIds[0], { callsPerMinute: 7 });
+    expect(await roles.getToolRateLimits(userId, orgIds[0], toolIds[0]))
+      .toEqual({ callsPerMinute: 7, callsPerHour: null });
+  });
 });

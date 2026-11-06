@@ -48,6 +48,7 @@ export class ToolRateLimitService {
   private readonly logger = new Logger(ToolRateLimitService.name);
   private readonly counters = new Map<string, Counters>();
   private lastWarningAt = -Infinity;
+  private lastCapacityWarningAt = -Infinity;
 
   constructor(private readonly roles: RolesService, private readonly redis: RedisService) {}
 
@@ -106,10 +107,13 @@ export class ToolRateLimitService {
           if (value.minute.expiresAt <= now && value.hour.expiresAt <= now) this.counters.delete(id);
         }
         if (this.counters.size >= MAX_LOCAL_BUCKETS) {
-          // Evicting a live bucket would let a caller reset its own allowance.
-          const retryAfter = Math.max(1, Math.ceil(Math.min(...[...this.counters.values()]
-            .map((value) => Math.max(value.minute.expiresAt, value.hour.expiresAt) - now)) / 1000));
-          return { error: `Tool '${name}' rate limiter is at capacity; retry in ${retryAfter}s.`, retryAfter };
+          // Preserve existing budgets, but capacity pressure must not block a
+          // new principal/tool pair. Warn at most once per minute.
+          if (now - this.lastCapacityWarningAt >= 60_000) {
+            this.lastCapacityWarningAt = now;
+            this.logger.warn('Per-tool rate limiting: local counter store is full; allowing calls without tracking new buckets.');
+          }
+          return null;
         }
       }
       counters = { minute: { count: 0, expiresAt: now + 60_000 }, hour: { count: 0, expiresAt: now + 3_600_000 } };

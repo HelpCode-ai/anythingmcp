@@ -472,8 +472,14 @@ unavailable, calls fail open with a warning; there is no process-local fallback.
 Without Redis configured, counters are process-local, reset on restart, and
 are **not shared across replicas**. Local storage is bounded to 10,000
 principal/tool/workspace buckets; expired buckets are reclaimed when capacity
-is needed. When full, new buckets receive a retry error rather than
-evicting a live budget. Existing buckets continue to be enforced.
+is needed. When full, calls for new buckets are allowed without tracking and
+a warning is logged at most once a minute. Existing buckets remain enforced.
+
+Workspaces without any configured limits skip rate-policy lookups using a
+bounded, five-second presence cache. Configuration changes invalidate this
+cache immediately on the instance handling the edit; other replicas observe
+new limits within five seconds. Positive policies are still read fresh per
+call, so cached presence never replaces the caller's current role policy.
 
 ---
 

@@ -6,9 +6,18 @@ export interface ToolRateLimits {
   callsPerHour: number | null;
 }
 
+interface LimitPresence {
+  expiresAt: number;
+  value: Promise<boolean>;
+}
+
+const LIMIT_PRESENCE_TTL_MS = 5_000;
+const MAX_LIMIT_PRESENCE_ENTRIES = 1_000;
+
 @Injectable()
 export class RolesService {
   private readonly logger = new Logger(RolesService.name);
+  private readonly limitPresence = new Map<string, LimitPresence>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -111,6 +120,7 @@ export class RolesService {
       data: { mcpRoleId: null },
     });
     await this.prisma.role.delete({ where: { id } });
+    this.limitPresence.delete(organizationId);
     return true;
   }
 
@@ -158,6 +168,7 @@ export class RolesService {
         });
       }
     });
+    this.limitPresence.delete(organizationId);
   }
 
   async setToolRateLimits(
@@ -176,7 +187,40 @@ export class RolesService {
       data: limits,
     });
     if (result.count === 0) throw new NotFoundException('Tool grant not found');
+    this.limitPresence.delete(organizationId);
     return { message: 'Tool rate limits updated' };
+  }
+
+  /**
+   * Most workspaces have no limits. Cache one cheap, tenant-scoped existence
+   * probe so cached absence skips membership and per-tool policy queries.
+   * Cache the pending promise too, to coalesce simultaneous first calls.
+   * Local edits invalidate immediately; other replicas refresh within 5s.
+   */
+  private hasToolRateLimits(organizationId: string): Promise<boolean> {
+    const cached = this.limitPresence.get(organizationId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (this.limitPresence.size >= MAX_LIMIT_PRESENCE_ENTRIES) {
+      const oldest = this.limitPresence.keys().next().value;
+      if (oldest !== undefined) this.limitPresence.delete(oldest);
+    }
+    const entry: LimitPresence = {
+      expiresAt: Date.now() + LIMIT_PRESENCE_TTL_MS,
+      value: this.prisma.toolRoleAccess.findFirst({
+        where: {
+          tool: { connector: { organizationId } },
+          role: { OR: [{ organizationId }, { isSystem: true }] },
+          OR: [{ callsPerMinute: { not: null } }, { callsPerHour: { not: null } }],
+        },
+        select: { id: true },
+      }).then((row) => row !== null).catch((error: unknown) => {
+        if (this.limitPresence.get(organizationId) === entry) this.limitPresence.delete(organizationId);
+        throw error;
+      }),
+    };
+    // A late response cannot repopulate this entry after an edit invalidates it.
+    this.limitPresence.set(organizationId, entry);
+    return entry.value;
   }
 
   /**
@@ -189,6 +233,7 @@ export class RolesService {
     organizationId: string,
     toolId: string,
   ): Promise<ToolRateLimits | null> {
+    if (!(await this.hasToolRateLimits(organizationId))) return null;
     const membership = await this.prisma.organizationMember.findUnique({
       where: { userId_organizationId: { userId, organizationId } },
       select: { role: true, deactivatedAt: true },
@@ -231,6 +276,9 @@ export class RolesService {
     await this.prisma.toolRoleAccess.deleteMany({
       where: { roleId, toolId },
     });
+    // This legacy helper has no workspace argument; a cold presence probe is
+    // preferable to retaining a stale flag after revoking the last limit.
+    this.limitPresence.clear();
   }
 
   // ── Tool access query for MCP filtering ───────────────────────────────────

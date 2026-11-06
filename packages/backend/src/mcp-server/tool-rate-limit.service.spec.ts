@@ -88,14 +88,23 @@ describe('per-tool rate-limit admission', () => {
     expect(await service.check(tool, context)).toBeNull();
   });
 
-  it('bounds local state without evicting active quotas, and reclaims expired buckets', async () => {
+  it('fails open with a throttled warning at local capacity, preserves existing quotas and reclaims expired buckets', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const { service, roles } = build();
     roles.getToolRateLimits.mockResolvedValue({ callsPerMinute: 1, callsPerHour: null });
     for (let i = 0; i < 10_000; i++) await service.check(tool, { ...context, userId: `u${i}` });
-    expect(await service.check(tool, context)).toMatchObject({ error: expect.stringContaining('capacity'), retryAfter: 3600 });
+    expect(await service.check(tool, context)).toBeNull();
+    expect(await service.check(tool, context)).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('local counter store is full'));
     expect(await service.check(tool, { ...context, userId: 'u0' })).toMatchObject({ error: expect.stringContaining('1/min') });
+    jest.setSystemTime(60_000);
+    expect(await service.check(tool, context)).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(2);
     jest.setSystemTime(3_600_000);
     expect(await service.check(tool, context)).toBeNull();
+    expect(await service.check(tool, context)).not.toBeNull();
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 
   it('fails open with a throttled warning if configured Redis is disconnected; no local fallback', async () => {
