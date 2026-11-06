@@ -236,10 +236,14 @@ lets AI clients publish files they write.
   workspace. On a managed database where the application user may not create
   roles, the migration skips the role and the policies apply to the
   application user itself (as long as it is not a superuser).
-- Self-hosted with an external database: the application's database user
-  needs superuser or `BYPASSRLS` for the worker's cross-workspace jobs
-  (picking due syncs, deleting expired share files). The default Docker
-  setup already uses one; see issue #1418 for managed databases.
+- Every query on the `file_*` tables, the worker's cross-workspace jobs
+  included (picking due syncs and scans, lease renewal, cleanups, deleting
+  expired share files), runs one workspace at a time with that workspace set
+  for the transaction. No job needs a database user that bypasses
+  Row-Level Security. A share link is looked up by the SHA-256 of its token
+  under a read-only policy that shows only the row with that hash.
+- Self-hosted with an external database: see
+  [Database user](#database-user) below.
 - Credentials are stored encrypted and decrypted only in `files-worker`; the
   text extractor runs on an internal network with no route out, no database
   and no secrets, read-only, without capabilities.
@@ -260,6 +264,41 @@ lets AI clients publish files they write.
    `FILE_SOURCE_ROOTS=/mnt/knowledge`.
 3. `docker compose up -d`. **Connectors → New → File Search** shows whether the
    worker and the extractor are reachable.
+
+### Database user
+
+File Search works with an ordinary database user: neither superuser nor
+`BYPASSRLS` is needed. The default Docker setup connects as the database
+owner (a superuser), which works too.
+
+- **`amcp_files`** is a `NOLOGIN` role without `BYPASSRLS` that the File
+  Search migration creates and grants to the migrating user. Every query on
+  the `file_*` tables switches to it for its transaction (`SET LOCAL ROLE`),
+  so the Row-Level Security policies apply even to a superuser. It has
+  `SELECT, INSERT, UPDATE, DELETE` on the `file_*` tables, the `file_chunks`
+  id sequence, and `SELECT` on `connectors (id, organization_id, type,
+  is_active, name)`.
+- **Managed databases** (RDS, Azure, Cloud SQL, Supabase…): if the migrating
+  user may not create roles, the migration skips `amcp_files` with a notice
+  and the policies apply to the application user directly. That is enough as
+  long as the user does not bypass RLS. Give the application user the
+  ordinary rights on the schema, for example:
+  ```sql
+  GRANT USAGE ON SCHEMA public TO app_user;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
+  ```
+  If an administrator creates `amcp_files` later, also grant it to the
+  application user (`GRANT amcp_files TO app_user;`) and give it the rights
+  listed above.
+- Run the migrations with the same user the application uses, or with the
+  owner of the tables, so later migrations can alter them.
+- At start the `files-worker` log names the mode in use: `role amcp_files`,
+  `application user subject to Row-Level Security`, or `application user
+  bypassing Row-Level Security` (superuser or `BYPASSRLS` without
+  `amcp_files`: then only the queries' workspace filters separate
+  workspaces). It warns once when File Search folders exist but no source is
+  visible, which means the user lacks rights on the `file_*` tables.
 
 The sync engine (`packages/backend/src/ee/file-search`) and the extractor
 (`deploy/ee/file-extractor`) are under the AnythingMCP Commercial License.

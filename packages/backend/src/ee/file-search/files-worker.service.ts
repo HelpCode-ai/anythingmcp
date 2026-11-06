@@ -51,18 +51,54 @@ export class FilesWorkerService implements OnApplicationBootstrap, OnApplication
    * lease. The sync itself continues on its own; no file loses its progress.
    */
   async closeInterruptedRuns(): Promise<number> {
+    let total = 0;
+    let tenants: string[];
     try {
-      const n = await this.prisma.$executeRaw`
-        UPDATE file_sync_runs r
-           SET status = 'partial', finished_at = now(),
-               error = 'Interrupted: the File Search worker restarted. The sync continues on its own.'
-         WHERE r.status = 'running'
-           AND NOT EXISTS (SELECT 1 FROM file_sources s WHERE s.connector_id = r.connector_id AND s.lease_until > now())`;
-      if (n > 0) this.logger.log(`closed ${n} interrupted sync run(s)`);
-      return n;
+      tenants = await this.repo.tenantsWithFileSearch();
     } catch (err) {
       this.logger.warn(`could not close interrupted sync runs: ${(err as Error).message}`);
       return 0;
+    }
+    // One workspace at a time, inside its tenant transaction (#1418).
+    for (const org of tenants) {
+      try {
+        total += await this.repo.withTenant(org, (tx) =>
+          tx.$executeRaw`
+            UPDATE file_sync_runs r
+               SET status = 'partial', finished_at = now(),
+                   error = 'Interrupted: the File Search worker restarted. The sync continues on its own.'
+             WHERE r.organization_id = ${org} AND r.status = 'running'
+               AND NOT EXISTS (SELECT 1 FROM file_sources s WHERE s.connector_id = r.connector_id AND s.organization_id = ${org} AND s.lease_until > now())`,
+        );
+      } catch (err) {
+        this.logger.warn(`could not close interrupted sync runs of workspace ${org}: ${(err as Error).message}`);
+      }
+    }
+    if (total > 0) this.logger.log(`closed ${total} interrupted sync run(s)`);
+    return total;
+  }
+
+  /**
+   * Says in the log how the worker meets the file_* policies, and warns once
+   * when File Search folders exist but none of their sources is visible: the
+   * database user then lacks rights on the file_* tables.
+   */
+  async logDatabaseMode(): Promise<void> {
+    try {
+      const v = await this.repo.visibility();
+      const how = {
+        amcp_files: 'role amcp_files (Row-Level Security applies)',
+        rls: 'application user subject to Row-Level Security (no amcp_files role)',
+        bypass: 'application user bypassing Row-Level Security (superuser or BYPASSRLS, no amcp_files role): only query filters separate workspaces',
+      }[v.mode];
+      this.logger.log(`file_* tables accessed as ${how}`);
+      if (v.connectors > 0 && v.visibleSources === 0) {
+        this.logger.warn(
+          `${v.connectors} File Search folder(s) exist, but no file_sources row is visible in any workspace: check the database user's rights on the file_* tables (docs/connectors/file-search.md, "Database user")`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`could not check File Search database access: ${(err as Error).message}`);
     }
   }
 
@@ -79,7 +115,9 @@ export class FilesWorkerService implements OnApplicationBootstrap, OnApplication
     this.server = new InternalServer(this.prisma, this.repo, extractor, this.scheduler);
     this.server.listen(Number(process.env.FILES_WORKER_PORT ?? 8891), process.env.FILES_WORKER_HOST ?? '0.0.0.0');
     // Close the runs a stopped worker left open first, then start syncing.
-    void this.closeInterruptedRuns().finally(() => this.scheduler.start());
+    void this.logDatabaseMode()
+      .then(() => this.closeInterruptedRuns())
+      .finally(() => this.scheduler.start());
     this.logger.log(`files-worker ${this.workerId} started (concurrency ${concurrency}, extractor ${extractor.configured ? 'configured' : 'NOT configured'})`);
   }
 
