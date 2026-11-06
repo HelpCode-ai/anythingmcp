@@ -48,9 +48,17 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getLocale } from 'next-intl/server';
 
 export const metadata: Metadata = {
-  title: 'AnythingMCP — Custom connectors for Claude, ChatGPT, Copilot & any AI agent',
+  // Under 70 characters: Bing flags longer titles (Webmaster Tools, Nov 2026).
+  title: 'AnythingMCP — Connect any system to Claude, ChatGPT & Copilot',
   description:
     'Create custom connectors for Claude, ChatGPT, Copilot, Meta Muse and any AI agent. Turn any REST, SOAP, GraphQL or SQL system into AI tools — no code.',
+  // The application, not a website: every page is behind sign-in or is a
+  // step of a flow (password reset, invitations, setup links). Signed-out
+  // crawlers were redirected to /login?redirect=<page> and Bing indexed
+  // each of those URLs with the same title and description. Only the
+  // sign-in page opts back in, and only on Cloud (app/login/layout.tsx).
+  // `follow` stays on so a crawler still reaches /login from a link.
+  robots: { index: false, follow: true },
   // favicon.ico lives in src/app (Next serves it at /favicon.ico); it used
   // to be an empty file in public/, which is what anything asking for
   // "the site's icon" without parsing HTML — directory crawlers, chat

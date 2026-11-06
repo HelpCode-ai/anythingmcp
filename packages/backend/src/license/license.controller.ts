@@ -15,7 +15,8 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiSecurity, ApiExcludeEndpoint } from '@nestjs/swagger';
+import { timingSafeEqual } from 'crypto';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsIn, IsString, IsOptional, Matches } from 'class-validator';
@@ -216,6 +217,24 @@ export class LicenseController {
       .refreshLicense(req.user.organizationId)
       .catch(() => false);
     return { refreshed };
+  }
+
+  @Post('sync')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 300, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async syncFromSite(@Req() req: any, @Body() dto: SetLicenseKeyDto): Promise<{ synced: boolean }> {
+    // Called by the licence site from its Stripe webhook when a licence
+    // changes. Only the site holds the shared service token; anyone else,
+    // and every self-hosted server, gets a 404.
+    if (!this.deployment.isCloud() || !serviceTokenMatches(req.headers?.['x-amcp-service-token'])) {
+      throw new NotFoundException();
+    }
+    const synced = await this.licenseService.syncFromSite(dto.licenseKey).catch((err) => {
+      this.logger.warn(`Licence sync failed: ${err?.message ?? err}`);
+      return false;
+    });
+    return { synced };
   }
 
   @Get('instance-id')
@@ -578,4 +597,17 @@ function trialDaysLeftOf(license: { plan: string; expiresAt: Date | null }): num
   return license.plan === 'trial' && license.expiresAt
     ? Math.max(0, Math.ceil((new Date(license.expiresAt).getTime() - Date.now()) / 86400000))
     : undefined;
+}
+
+/**
+ * Whether a request presents the licence site's service token
+ * (LICENSE_SERVICE_TOKEN, the secret this server also presents to the site).
+ * False when the server has no token configured.
+ */
+export function serviceTokenMatches(presented: unknown): boolean {
+  const expected = process.env.LICENSE_SERVICE_TOKEN;
+  if (!expected || typeof presented !== 'string' || !presented) return false;
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
