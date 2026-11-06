@@ -1,0 +1,986 @@
+{
+  "slug": "falabella-seller-center",
+  "name": "Falabella Seller Center",
+  "aliases": [
+    "Falabella",
+    "Falabella Marketplace",
+    "Seller Center Falabella",
+    "FSC"
+  ],
+  "description": "Let your AI run your falabella.com store in Chile, Colombia or Peru through Falabella Seller Center: products, stock per warehouse, brands, categories and their attributes, orders and their items, shipping labels and feed results, plus creating products and changing prices, stock and images.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "falabella",
+  "docsUrl": "https://developers.falabella.com/docs/getting-started",
+  "instructions": "## Falabella Seller Center\nThis connector calls the **Falabella Seller Center API** (`sellercenter-api.falabella.com`) for one seller on falabella.com in Chile, Colombia or Peru: products, stock, brands, categories and their attributes, warehouses, feeds, orders with their items and shipping labels, and writing products, prices, stock and images. **There is no sandbox**: every call, writes included, acts on the live store.\n\n**What you need**: a seller account on Falabella Seller Center, a Seller Center user with an API role, that user's API key and your Seller ID. About 5 minutes.\n\n**Setup**\n1. Sign in at https://sellercenter.falabella.com with the user the connector should act as (an administrator can add a dedicated one under **Mi cuenta → Usuarios → Agregar Usuario**).\n2. Open **Mi cuenta → Usuarios**. The user's e-mail address goes into `FALABELLA_USER_ID`; the value in that row's **API Key** column into `FALABELLA_API_KEY`.\n3. Give the user an API role: **Seller API Access** (every method), **Seller API Product Access** (products, brands, categories, images and feeds) or **Seller API Order Access** (orders). A method outside the role answers `E009: Access Denied`.\n4. Copy your **Seller ID**, shown under **Mi cuenta**, into `FALABELLA_SELLER_ID`.\n5. Set `FALABELLA_BUSINESS_UNIT` to your country: `FACL` Chile, `FACO` Colombia, `FAPE` Peru. A connector serves one country; add a second connector for another.\n\n**How it signs**: every call goes to `/` with `Action=<method>`, `UserID`, `Version=1.0`, `Format=JSON`, an ISO 8601 UTC `Timestamp` and `Signature`, the HMAC-SHA256 (hex) of all query parameters sorted by name and URL-encoded, keyed with the API key. The key itself is never sent, and a request whose timestamp is too far off is refused (`E003`). Each call carries the User-Agent Falabella asks integrations for: `<Seller ID>/AnythingMCP/1.0/ANYTHINGMCP/<business unit>`.\n\n**Business unit and OperatorCode**: the business unit is upper case (`FACL`); inside product XML the same country is the `OperatorCode` in **lower case**: `facl`, `faco`, `fape`. Use your connector's country in every BusinessUnit.\n\n**Writes are feeds**: creating, updating, pricing, stocking, imaging and removing products is asynchronous. A successful answer only means the request was accepted; `SuccessResponse.Head.RequestId` (for UpdateStock `Body.Stocks.feed`) is the feed id. Call `falabella_seller_center_feed_status` until `Status` is `Finished`, `Error` or `Canceled`, then read `FailedRecords` and `FeedErrors`: a feed can finish with some records rejected. Falabella allows 50 feed calls freely, then one every 2 minutes per seller (`429` otherwise), so put several products into one request (up to 1,000, about 500 suggested) instead of one call per SKU.\n\n**Where to start**\n- Catalog: `falabella_seller_center_get_products` (status filter, search, SKU list, dates, limit and offset), `falabella_seller_center_get_stock` (stock per warehouse, Fulfillment by Falabella included), `falabella_seller_center_get_warehouses`.\n- New products: `falabella_seller_center_get_category_suggestion` from a title or `falabella_seller_center_get_category_tree` (leaf categories only), `falabella_seller_center_get_category_attributes` for the attributes and which are mandatory, `falabella_seller_center_get_brands` for the exact brand name, then `falabella_seller_center_create_products`, `falabella_seller_center_set_images` and `falabella_seller_center_feed_status`.\n- Changes: `falabella_seller_center_update_price` and `falabella_seller_center_update_stock` for one SKU, `falabella_seller_center_update_stock_xml` for several SKUs or a specific warehouse, `falabella_seller_center_update_products` for any field of several products.\n- Feeds: `falabella_seller_center_feed_list`, `falabella_seller_center_feed_offset_list` (filtered, paged), `falabella_seller_center_feed_count`, `falabella_seller_center_feed_status`.\n- Orders: `falabella_seller_center_get_orders`, `falabella_seller_center_get_order`, `falabella_seller_center_get_order_items` (the OrderItemId and PackageId that labels and status changes need), `falabella_seller_center_get_multiple_order_items`, `falabella_seller_center_get_document` (shipping label in base64).\n- Switched off at install: `falabella_seller_center_remove_products`, `falabella_seller_center_set_status_ready_to_ship` and `falabella_seller_center_set_status_canceled`. Turn them on in the connector's tools when the AI should use them, and confirm each call.\n\n**Formats**: date filters are ISO 8601 (`2026-11-01T00:00:00+00:00`); offer dates in XML are `YYYY-MM-DD HH:MM:SS`; prices use a dot as decimal separator. Id lists go in brackets: `[123456,123457]`. In XML escape `&`, `<` and `>`, and wrap an HTML description in `<![CDATA[...]]>`. Elements sent empty are ignored, so an update only changes what it contains.\n\n**Answers and errors**: data sits under `SuccessResponse.Body`. Refusals arrive with HTTP 200 as `ErrorResponse.Head` (`ErrorCode`, `ErrorMessage`) and are reported as failed calls: `E007` (signature mismatch: API key and user do not match) and `E003`/`E004` (timestamp) as authentication errors, `E009` (access denied: the user's role) as a permission error, `E429` as rate limiting, everything else (`E001` missing parameter, `1000` format errors with an `ErrorDetail` per field) as a bad request.",
+  "prerequisites": "A seller account on Falabella Seller Center (sellercenter.falabella.com) and a Seller Center user with the Seller API Access role (or the Product or Order API role), its API key and your Seller ID. There is no sandbox: the connector works on your live store.",
+  "requiredEnvVars": [
+    "FALABELLA_USER_ID",
+    "FALABELLA_API_KEY",
+    "FALABELLA_SELLER_ID",
+    "FALABELLA_BUSINESS_UNIT"
+  ],
+  "envVarMeta": {
+    "FALABELLA_USER_ID": {
+      "label": "User ID (e-mail)",
+      "kind": "setting",
+      "help": "The e-mail address of the Seller Center user the connector acts as: Mi cuenta → Usuarios. The user needs an API role (Seller API Access, or the Product or Order API role).",
+      "example": "integrations@yourstore.cl",
+      "link": "https://sellercenter.falabella.com",
+      "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+      "patternMessage": "The User ID is the user's e-mail address."
+    },
+    "FALABELLA_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Mi cuenta → Usuarios, the API Key column in the row of that user. It signs every request and is never sent.",
+      "link": "https://sellercenter.falabella.com",
+      "pattern": "^\\S{20,128}$",
+      "patternMessage": "Paste the API key alone, without spaces or quotes."
+    },
+    "FALABELLA_SELLER_ID": {
+      "label": "Seller ID",
+      "kind": "setting",
+      "help": "Your seller identifier, shown under Mi cuenta in Seller Center. It goes into the User-Agent Falabella requires on every call.",
+      "link": "https://sellercenter.falabella.com",
+      "pattern": "^[A-Za-z0-9_-]{2,40}$",
+      "patternMessage": "The Seller ID is a short code of letters and digits, without spaces."
+    },
+    "FALABELLA_BUSINESS_UNIT": {
+      "label": "Business unit (country)",
+      "kind": "setting",
+      "help": "FACL for Chile, FACO for Colombia, FAPE for Peru. In product XML the same country is the OperatorCode in lower case (facl, faco, fape).",
+      "example": "FACL",
+      "pattern": "^FA(CL|CO|PE)$",
+      "patternMessage": "One of FACL (Chile), FACO (Colombia) or FAPE (Peru), in capitals."
+    }
+  },
+  "verifyHints": {
+    "401": "Falabella refused the signature (E007) or the timestamp. Check that FALABELLA_API_KEY is the API key of the user in FALABELLA_USER_ID (Mi cuenta → Usuarios, same row), copied whole.",
+    "403": "Falabella answered Access Denied (E009): the user in FALABELLA_USER_ID lacks the API role for this method. Give it Seller API Access (or the Product or Order API role) under Mi cuenta → Usuarios.",
+    "rate_limited": "Falabella's limit was reached: after 50 feed calls it accepts one every 2 minutes per seller. Wait and try again, and batch several products into one request."
+  },
+  "probe": {
+    "tool": "falabella_seller_center_feed_count"
+  },
+  "connector": {
+    "name": "Falabella Seller Center API",
+    "type": "REST",
+    "baseUrl": "https://sellercenter-api.falabella.com",
+    "authType": "HMAC",
+    "authConfig": {
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex",
+        "secret": "{{FALABELLA_API_KEY}}",
+        "placement": "query",
+        "paramName": "Signature",
+        "timestampParam": "Timestamp",
+        "timestampFormat": "iso",
+        "queryParams": {
+          "UserID": "{{FALABELLA_USER_ID}}",
+          "Version": "1.0",
+          "Format": "JSON"
+        },
+        "template": "${sortedQuery}"
+      }
+    },
+    "headers": {
+      "User-Agent": "{{FALABELLA_SELLER_ID}}/AnythingMCP/1.0/ANYTHINGMCP/{{FALABELLA_BUSINESS_UNIT}}",
+      "Accept": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "ErrorResponse.Head.ErrorCode",
+          "matches": "^E?0*7$",
+          "messagePath": "ErrorResponse.Head.ErrorMessage",
+          "status": 401
+        },
+        {
+          "path": "ErrorResponse.Head.ErrorCode",
+          "matches": "^E?0*[34]$",
+          "messagePath": "ErrorResponse.Head.ErrorMessage",
+          "messageMatches": "Timestamp",
+          "status": 401
+        },
+        {
+          "path": "ErrorResponse.Head.ErrorCode",
+          "matches": "^E?0*9$",
+          "messagePath": "ErrorResponse.Head.ErrorMessage",
+          "status": 403
+        },
+        {
+          "path": "ErrorResponse.Head.ErrorCode",
+          "matches": "^E?429$",
+          "messagePath": "ErrorResponse.Head.ErrorMessage",
+          "status": 429
+        },
+        {
+          "path": "ErrorResponse.Head.ErrorCode",
+          "matches": ".+",
+          "messagePath": "ErrorResponse.Head.ErrorMessage",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "falabella_seller_center_get_products",
+      "description": "List the seller's products with SellerSku, ShopSku, name, brand, description, primary category, attributes (ProductData), images, QC status, isPublished, content score and, per BusinessUnit, price, sale price and dates, stock and status. Filter by status, a search text, a list of SKUs or created/updated dates; page with limit and offset (at most 1000 per call).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Product status to return: all, live, inactive, deleted, image-missing, pending, rejected or sold-out. Default all.",
+            "enum": [
+              "all",
+              "live",
+              "inactive",
+              "deleted",
+              "image-missing",
+              "pending",
+              "rejected",
+              "sold-out"
+            ],
+            "default": "all"
+          },
+          "search": {
+            "type": "string",
+            "description": "Text contained in the product name or SellerSku."
+          },
+          "sku_seller_list": {
+            "type": "string",
+            "description": "Only these SellerSkus, as a JSON array, e.g. [\"SKU-1\",\"SKU-2\"]."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only products created on or after this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only products created on or before this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only products updated on or after this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Only products updated on or before this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, 1 to 1000. Default 50.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of products to skip, for paging.",
+            "minimum": 0
+          },
+          "global_identifier": {
+            "type": "integer",
+            "description": "1 returns brand, categories and attributes as global identifiers instead of names. Default 0.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetProducts",
+          "Filter": "$filter",
+          "Search": "$search",
+          "SkuSellerList": "$sku_seller_list",
+          "CreatedAfter": "$created_after",
+          "CreatedBefore": "$created_before",
+          "UpdatedAfter": "$updated_after",
+          "UpdatedBefore": "$updated_before",
+          "Limit": "$limit",
+          "Offset": "$offset",
+          "GlobalIdentifier": "$global_identifier"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_stock",
+      "description": "Sellable stock per SellerSku in each of the seller's warehouses (SellerWarehouseId, FacilityId, Quantity) and in Fulfillment by Falabella warehouses (FulfillmentWarehouses). Units reserved by open orders are not included. Filter by SKU or warehouse; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_sku": {
+            "type": "string",
+            "description": "A SellerSku to look up. The docs allow up to 5 SKUs; pass several as a JSON array, e.g. [\"SKU-1\",\"SKU-2\"]."
+          },
+          "facility_id": {
+            "type": "string",
+            "description": "Only this warehouse, by the FacilityId Falabella assigned (from falabella_seller_center_get_warehouses)."
+          },
+          "seller_warehouse_id": {
+            "type": "string",
+            "description": "Only this warehouse, by the SellerWarehouseId you assigned (from falabella_seller_center_get_warehouses)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000. Default 100.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of rows to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetStock",
+          "SellerSku": "$seller_sku",
+          "FacilityId": "$facility_id",
+          "SellerWarehouseId": "$seller_warehouse_id",
+          "Limit": "$limit",
+          "Offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_brands",
+      "description": "Every brand registered on falabella.com, with its BrandId, Name and GlobalIdentifier. The Brand of a new product must match one of these names exactly; when the brand is missing, sell under 'Genérico' or ask Falabella to add it. The list is long and changes rarely, so it is cached for a day.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetBrands"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 86400
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_category_tree",
+      "description": "The full category tree, nested under Categories, each category with Name, CategoryId, GlobalIdentifier and AttributeSetId. Products can only be created in a last-level (leaf) category; its CategoryId is the PrimaryCategory of a product. Large and stable, cached for a day.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetCategoryTree"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 86400
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_category_attributes",
+      "description": "The attributes of one category: Name, Label, FeedName (the XML element to use in a product), isMandatory, GroupName, IsGlobalAttribute, InputType, AttributeType, MaxLength and the allowed Options. Read it before creating products: mandatory attributes go into ProductData, attributes with GroupName Variation and IsGlobalAttribute 0 go on the Product itself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "primary_category": {
+            "type": "integer",
+            "description": "CategoryId of a leaf category, from falabella_seller_center_get_category_tree or falabella_seller_center_get_category_suggestion."
+          }
+        },
+        "required": [
+          "primary_category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetCategoryAttributes",
+          "PrimaryCategory": "$primary_category"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_category_suggestion",
+      "description": "Suggest a category for a product from its listing title. Returns the suggested CategoryId and CategoryName; confirm it against falabella_seller_center_get_category_tree before using it as PrimaryCategory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Listing title of the product, in Spanish, e.g. 'Pantalón de trekking hombre'."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetCategorySuggestion",
+          "Name": "$name"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_warehouses",
+      "description": "The seller's logistics warehouses: name, sellerWarehouseId, facilityId, nodeID, address, working schedule, warehouseType (only_shipments, only_returns), whether it is the default and enabled, and whether it is Fulfillment by Falabella. The ids are what get_stock and update_stock_xml use for a specific warehouse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "facility_id": {
+            "type": "string",
+            "description": "Only the warehouse with this FacilityId (assigned by Falabella)."
+          },
+          "seller_warehouse_id": {
+            "type": "string",
+            "description": "Only the warehouse with this SellerWarehouseId (assigned by you)."
+          },
+          "warehouse_type": {
+            "type": "string",
+            "description": "Only warehouses of this type, e.g. only_shipments or only_returns."
+          },
+          "is_enabled": {
+            "type": "integer",
+            "description": "1 for enabled warehouses only, 0 for disabled ones.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "is_default": {
+            "type": "integer",
+            "description": "1 for the default warehouse only, 0 for the others.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Warehouses per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of warehouses to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetWarehouse",
+          "FacilityId": "$facility_id",
+          "SellerWarehouseId": "$seller_warehouse_id",
+          "WarehouseType": "$warehouse_type",
+          "IsEnabled": "$is_enabled",
+          "IsDefault": "$is_default",
+          "Limit": "$limit",
+          "Offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_feed_list",
+      "description": "Every feed (asynchronous product, price, stock and image request) of the last 30 days, with Feed id, Status (Queued, Processing, Finished, Canceled, Error), Action, creation and update dates, Source, TotalRecords, ProcessedRecords, FailedRecords and a base64 CSV failure report when records failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "FeedList"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_feed_offset_list",
+      "description": "The feeds of the last 30 days, filtered by status or date and paged: Feed id, Status, Action, dates and record counts, like falabella_seller_center_feed_list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only feeds with this status.",
+            "enum": [
+              "Queued",
+              "Processing",
+              "Finished",
+              "Canceled",
+              "Error"
+            ]
+          },
+          "creation_date": {
+            "type": "string",
+            "description": "Only feeds created after this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "updated_date": {
+            "type": "string",
+            "description": "Only feeds updated after this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Feeds per page.",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first feed to return.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "FeedOffsetList",
+          "Status": "$status",
+          "CreationDate": "$creation_date",
+          "UpdatedDate": "$updated_date",
+          "PageSize": "$page_size",
+          "Offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_feed_count",
+      "description": "How many feeds the seller sent in the last 30 days: Total, Queued, Processing, Finished and Canceled. No parameters; a light call that also checks the credentials.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "FeedCount"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_feed_status",
+      "description": "The outcome of one feed: Status (Queued, Processing, Finished, Canceled, Error), Action, dates, TotalRecords, ProcessedRecords, FailedRecords and FeedErrors with the SellerSku, field and message of every record that failed. Call it after each write until Status is Finished, Error or Canceled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "feed_id": {
+            "type": "string",
+            "description": "Feed id (UUID): the RequestId a write returned, or a Feed from falabella_seller_center_feed_list."
+          }
+        },
+        "required": [
+          "feed_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "FeedStatus",
+          "FeedID": "$feed_id"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_orders",
+      "description": "List orders with OrderId, OrderNumber, customer name, payment method, total Price, status of the items (Statuses), item count, gift options, billing and shipping address, promised shipping time and created/updated dates; Head.TotalCount is the number of matches. Filter by created/updated dates, status and fulfillment type; sort and page (at most 100 per call).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Only orders created on or after this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only orders created on or before this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only orders updated on or after this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Only orders updated on or before this moment. ISO 8601 date and time, e.g. 2026-11-01T00:00:00+00:00."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only orders in this status: pending, readytoship, shipped, delivered, canceled or returned.",
+            "enum": [
+              "pending",
+              "canceled",
+              "readytoship",
+              "delivered",
+              "returned",
+              "shipped"
+            ]
+          },
+          "shipping_type": {
+            "type": "string",
+            "description": "dropshipping for orders you ship yourself, own_warehouse for Fulfillment by Falabella.",
+            "enum": [
+              "dropshipping",
+              "own_warehouse"
+            ]
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort column: createdat or updatedat.",
+            "enum": [
+              "createdat",
+              "updatedat"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "ASC or DESC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100 (the default and maximum is 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of orders to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetOrders",
+          "CreatedAfter": "$created_after",
+          "CreatedBefore": "$created_before",
+          "UpdatedAfter": "$updated_after",
+          "UpdatedBefore": "$updated_before",
+          "Status": "$status",
+          "ShippingType": "$shipping_type",
+          "SortBy": "$sort_by",
+          "SortDirection": "$sort_direction",
+          "Limit": "$limit",
+          "Offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_order",
+      "description": "One order by its OrderId: order number, customer, payment method, total, item statuses, billing and shipping address, gift options and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "OrderId assigned by Seller Center (from falabella_seller_center_get_orders), not the OrderNumber."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetOrder",
+          "OrderId": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_order_items",
+      "description": "The items of one order: OrderItemId, SKU, name, ShopSku, status, item and paid price, shipping amount, shipment provider and tracking code, PackageId, shipping type, warehouse and promised shipping time. OrderItemId and PackageId are what labels and status changes need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "OrderId assigned by Seller Center (from falabella_seller_center_get_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetOrderItems",
+          "OrderId": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_multiple_order_items",
+      "description": "The items of several orders in one call, grouped by order, with the same fields as falabella_seller_center_get_order_items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id_list": {
+            "type": "string",
+            "description": "OrderIds in brackets, separated by commas, e.g. [123456,123457]."
+          }
+        },
+        "required": [
+          "order_id_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetMultipleOrderItems",
+          "OrderIdList": "$order_id_list"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_get_document",
+      "description": "The shipping label of order items, as Document with DocumentType, MimeType (application/pdf, or text/plain for ZPL labels in Chile) and File, the label encoded in base64. Only for items already ready to ship that you ship yourself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "string",
+            "description": "OrderItemIds in brackets, separated by commas, e.g. [987654,987655] (from falabella_seller_center_get_order_items)."
+          }
+        },
+        "required": [
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/",
+        "queryParams": {
+          "Action": "GetDocument",
+          "DocumentType": "shippingParcel",
+          "OrderItemIds": "$order_item_ids"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_create_products",
+      "description": "Create one or more products (up to 1000 per call, 500 suggested) from a ProductCreate XML document. Each Product needs SellerSku, Name, PrimaryCategory (a leaf CategoryId), Brand (exact name from get_brands), Description (6 to 25000 characters), ProductData with ConditionType, PackageHeight, PackageWidth, PackageLength (cm) and PackageWeight (kg) plus the category's mandatory attributes from get_category_attributes (TaxPercentage in Colombia), and BusinessUnits/BusinessUnit with OperatorCode (facl, faco, fape), Price, Stock and Status (active or inactive). Variants share a ParentSku. Asynchronous: the answer only confirms the request was accepted. Its SuccessResponse.Head.RequestId is the feed id; check the result with falabella_seller_center_feed_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "xml": {
+            "type": "string",
+            "description": "The whole XML document: <?xml version=\"1.0\" encoding=\"UTF-8\" ?><Request><Product><SellerSku>SKU-1</SellerSku><Name>...</Name><PrimaryCategory>2723</PrimaryCategory><Description>...</Description><Brand>Genérico</Brand><BusinessUnits><BusinessUnit><OperatorCode>facl</OperatorCode><Price>19990</Price><Stock>10</Stock><Status>active</Status></BusinessUnit></BusinessUnits><ProductData><ConditionType>Nuevo</ConditionType><PackageHeight>10</PackageHeight><PackageWidth>10</PackageWidth><PackageLength>10</PackageLength><PackageWeight>1</PackageWeight></ProductData></Product></Request>. Escape & < > in text; wrap an HTML description in <![CDATA[...]]>. Optional: ProductId (EAN/UPC), SpecialPrice with SpecialFromDate and SpecialToDate (YYYY-MM-DD HH:MM:SS), ParentSku and variation attributes on the Product."
+          }
+        },
+        "required": [
+          "xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "Action": "ProductCreate"
+        },
+        "bodyEncoding": "xml",
+        "bodyMapping": {
+          "__raw": "$xml"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_update_products",
+      "description": "Update one or more existing products, matched by SellerSku, from a ProductUpdate XML document. Only the elements you send change and empty elements are ignored; each Product needs SellerSku and a BusinessUnit with its OperatorCode (facl, faco, fape) plus at least one field to change: Name, Description, Brand, attributes, ProductData, or Price, SpecialPrice, SpecialFromDate, SpecialToDate, Stock and Status (active, inactive; also restores a removed product) in the BusinessUnit. Asynchronous: the answer only confirms the request was accepted. Its SuccessResponse.Head.RequestId is the feed id; check the result with falabella_seller_center_feed_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "xml": {
+            "type": "string",
+            "description": "The whole XML document: <?xml version=\"1.0\" encoding=\"UTF-8\" ?><Request><Product><SellerSku>SKU-1</SellerSku><BusinessUnits><BusinessUnit><OperatorCode>facl</OperatorCode><Status>inactive</Status></BusinessUnit></BusinessUnits></Product></Request>. Several Product elements per request are allowed (up to 1000). Escape & < > in text; wrap HTML in <![CDATA[...]]>."
+          }
+        },
+        "required": [
+          "xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "Action": "ProductUpdate"
+        },
+        "bodyEncoding": "xml",
+        "bodyMapping": {
+          "__raw": "$xml"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_update_price",
+      "description": "Change the price of one product in one country store (a ProductUpdate for one SellerSku), optionally with a sale price and its period. Leave the sale fields out to change only the regular price. Asynchronous: the answer only confirms the request was accepted. Its SuccessResponse.Head.RequestId is the feed id; check the result with falabella_seller_center_feed_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_sku": {
+            "type": "string",
+            "description": "SellerSku of the product."
+          },
+          "operator_code": {
+            "type": "string",
+            "description": "Country store of the product, as the lower-case OperatorCode: facl (Chile), faco (Colombia), fape (Peru). Use your connector's country (FALABELLA_BUSINESS_UNIT in lower case).",
+            "enum": [
+              "facl",
+              "faco",
+              "fape"
+            ]
+          },
+          "price": {
+            "type": "string",
+            "description": "New regular price, with a dot as decimal separator, e.g. 19990 or 1600.00."
+          },
+          "special_price": {
+            "type": "string",
+            "description": "Optional sale price, lower than price. Needs special_from_date and special_to_date."
+          },
+          "special_from_date": {
+            "type": "string",
+            "description": "Start of the sale, YYYY-MM-DD HH:MM:SS, e.g. 2026-11-20 00:00:00."
+          },
+          "special_to_date": {
+            "type": "string",
+            "description": "End of the sale, YYYY-MM-DD HH:MM:SS, e.g. 2026-11-30 23:59:59."
+          }
+        },
+        "required": [
+          "seller_sku",
+          "operator_code",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "Action": "ProductUpdate"
+        },
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"UTF-8\" ?><Request><Product><SellerSku>${seller_sku}</SellerSku><BusinessUnits><BusinessUnit><OperatorCode>${operator_code}</OperatorCode><Price>${price}</Price><SpecialPrice>${special_price}</SpecialPrice><SpecialFromDate>${special_from_date}</SpecialFromDate><SpecialToDate>${special_to_date}</SpecialToDate></BusinessUnit></BusinessUnits></Product></Request>"
+      }
+    },
+    {
+      "name": "falabella_seller_center_update_stock",
+      "description": "Set the stock of one SellerSku in the seller's default warehouse (UpdateStock). For several SKUs or a specific warehouse use falabella_seller_center_update_stock_xml; Fulfillment by Falabella stock cannot be set. Asynchronous: the feed id is in Body.Stocks.feed; check it with falabella_seller_center_feed_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_sku": {
+            "type": "string",
+            "description": "SellerSku of the product."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "New sellable quantity in the default warehouse.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "seller_sku",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "Action": "UpdateStock"
+        },
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"UTF-8\" ?><Request><Warehouse><Stock><SellerSku>${seller_sku}</SellerSku><Quantity>${quantity}</Quantity></Stock></Warehouse></Request>"
+      }
+    },
+    {
+      "name": "falabella_seller_center_update_stock_xml",
+      "description": "Set the stock of several SKUs, or in specific warehouses, from an UpdateStock XML document (up to 1000 Stock entries, 500 suggested). Each Stock has SellerSku and Quantity and, for a warehouse other than the default, either GSCFacilityId or SellerWarehouseId (from get_warehouses), never both in one request. Asynchronous: the feed id is in Body.Stocks.feed; check it with falabella_seller_center_feed_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "xml": {
+            "type": "string",
+            "description": "The whole XML document: <?xml version=\"1.0\" encoding=\"UTF-8\" ?><Request><Warehouse><Stock><SellerWarehouseId>WH-1</SellerWarehouseId><SellerSku>SKU-1</SellerSku><Quantity>25</Quantity></Stock><Stock><SellerWarehouseId>WH-2</SellerWarehouseId><SellerSku>SKU-1</SellerSku><Quantity>5</Quantity></Stock></Warehouse></Request>. Leave out the warehouse elements to use the default warehouse."
+          }
+        },
+        "required": [
+          "xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "Action": "UpdateStock"
+        },
+        "bodyEncoding": "xml",
+        "bodyMapping": {
+          "__raw": "$xml"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_set_images",
+      "description": "Set the images of one or more products from an Image XML document. The list replaces every image the product had; the first becomes the main image. At most 8 images per product, JPG or PNG between 500x500 and 2000x2000 pixels, at public URLs that Falabella downloads. Asynchronous: the answer only confirms the request was accepted. Its SuccessResponse.Head.RequestId is the feed id; check the result with falabella_seller_center_feed_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "xml": {
+            "type": "string",
+            "description": "The whole XML document: <?xml version=\"1.0\" encoding=\"UTF-8\" ?><Request><ProductImage><SellerSku>SKU-1</SellerSku><Images><Image>https://cdn.example.com/sku-1-front.jpg</Image><Image>https://cdn.example.com/sku-1-back.jpg</Image></Images></ProductImage></Request>. One ProductImage element per product."
+          }
+        },
+        "required": [
+          "xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "Action": "Image"
+        },
+        "bodyEncoding": "xml",
+        "bodyMapping": {
+          "__raw": "$xml"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_remove_products",
+      "description": "Remove one or more products by SellerSku from a ProductRemove XML document. A removed product can be restored with falabella_seller_center_update_products by sending its Status. Switched off at install. Asynchronous: the answer only confirms the request was accepted. Its SuccessResponse.Head.RequestId is the feed id; check the result with falabella_seller_center_feed_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "xml": {
+            "type": "string",
+            "description": "The whole XML document: <?xml version=\"1.0\" encoding=\"UTF-8\" ?><Request><Product><SellerSku>SKU-1</SellerSku></Product><Product><SellerSku>SKU-2</SellerSku></Product></Request>."
+          }
+        },
+        "required": [
+          "xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "Action": "ProductRemove"
+        },
+        "bodyEncoding": "xml",
+        "bodyMapping": {
+          "__raw": "$xml"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "falabella_seller_center_set_status_ready_to_ship",
+      "description": "Mark order items as ready to ship (from pending), for orders you ship yourself; every item of the order changes with them. Returns PurchaseOrderId and PurchaseOrderNumber. Not allowed for Fulfillment by Falabella orders. Switched off at install.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "string",
+            "description": "OrderItemIds of one order in brackets, separated by commas, e.g. [987654,987655] (from falabella_seller_center_get_order_items)."
+          },
+          "package_id": {
+            "type": "string",
+            "description": "PackageId of the items, from falabella_seller_center_get_order_items."
+          }
+        },
+        "required": [
+          "order_item_ids",
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "Action": "SetStatusToReadyToShip",
+          "OrderItemIds": "$order_item_ids",
+          "PackageId": "$package_id"
+        }
+      }
+    },
+    {
+      "name": "falabella_seller_center_set_status_canceled",
+      "description": "Cancel one order item that is still pending, with a reason. Not allowed for Fulfillment by Falabella orders. Switched off at install.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "integer",
+            "description": "OrderItemId to cancel (from falabella_seller_center_get_order_items)."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the cancellation, e.g. SHORTAGE (out of stock)."
+          },
+          "reason_detail": {
+            "type": "string",
+            "description": "Optional longer explanation."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "Action": "SetStatusToCanceled",
+          "OrderItemId": "$order_item_id",
+          "Reason": "$reason",
+          "ReasonDetail": "$reason_detail"
+        }
+      }
+    }
+  ]
+}

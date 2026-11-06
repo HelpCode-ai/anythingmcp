@@ -72,7 +72,7 @@ ChatGPT will call the appropriate MCP tool and show you the results.
 
 ## The fixed plugin endpoint: `/mcp/chatgpt-app`
 
-`https://<your-host>/mcp/chatgpt-app` serves one fixed set of tools, the same for every user. It is the endpoint for a plugin published in OpenAI's plugin directory, whose guidelines require every operation to be its own tool. It does not run your connectors' own tools; use `/mcp/<server-id>` (or `/mcp`) for that.
+`https://<your-host>/mcp/chatgpt-app` serves one fixed set of tools, the same for every user. It is the endpoint of the [AnythingMCP plugin in OpenAI's plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121) (on AnythingMCP Cloud), whose guidelines require every operation to be its own tool. It does not run your connectors' own tools; use `/mcp/<server-id>` (or `/mcp`) for that.
 
 | Tool | What it does |
 |------|--------------|

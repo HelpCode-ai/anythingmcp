@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP verbindet Claude, ChatGPT, Copilot und Gemini mit ERP-, E-Commerce-, REST-, SOAP- und SQL-Systemen und mit deinen Fileservern: 712 Connectors, dazu Firmengedächtnis, Skills und Dateisuche." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP verbindet Claude, ChatGPT, Copilot und Gemini mit ERP-, E-Commerce-, REST-, SOAP- und SQL-Systemen und mit deinen Fileservern: 713 Connectors, dazu Firmengedächtnis, Skills und Dateisuche." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: das Open-Source-MCP-Gateway, das zum Gehirn deines Unternehmens wird</h1>
@@ -25,6 +25,7 @@
 
 <p align="center">
   <a href="https://claude.ai/directory/anythingmcp"><img src="https://img.shields.io/badge/Claude-im%20offiziellen%20Verzeichnis-D97757?logo=claude&logoColor=white&labelColor=0b1220" alt="Im offiziellen Claude-Verzeichnis gelistet"></a>
+  <a href="https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121"><img src="https://img.shields.io/badge/ChatGPT-im%20Plugin--Verzeichnis-10A37F?logo=openai&logoColor=white&labelColor=0b1220" alt="Im ChatGPT-Plugin-Verzeichnis gelistet"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=flat&logo=github&logoColor=white&color=2563eb&labelColor=0b1220" alt="GitHub Stars"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/open%20source-AGPL--3.0-2563eb?labelColor=0b1220" alt="Open source, AGPL-3.0"></a>
@@ -36,7 +37,7 @@
 </p>
 
 <p align="center">
-  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>Die Cloud 7 Tage kostenlos testen</strong></a> · <a href="https://claude.ai/directory/anythingmcp">Zu Claude hinzufügen</a> · <a href="#run-it-yourself">Selbst betreiben</a> · <a href="docs/guides.md">Doku</a> · <a href="https://anythingmcp.com/de/guides">Connector-Anleitungen</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
+  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>Die Cloud 7 Tage kostenlos testen</strong></a> · <a href="https://claude.ai/directory/anythingmcp">Zu Claude hinzufügen</a> · <a href="https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121">Zu ChatGPT hinzufügen</a> · <a href="#run-it-yourself">Selbst betreiben</a> · <a href="docs/guides.md">Doku</a> · <a href="https://anythingmcp.com/de/guides">Connector-Anleitungen</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
 **Eine Frage in Claude, beantwortet aus Etsy, SAP und einer Logistik-API.**
@@ -53,7 +54,7 @@ Ein Gateway reicht Aufrufe weiter. Ein Firmengehirn weiß außerdem, wo deine Do
 
 | | Was es macht | Edition |
 |---|---|---|
-| **Jedes System, ein Endpunkt** | 712 Connectors aus dem Katalog oder deine eigene REST-/OpenAPI-, SOAP-, GraphQL-, OData-, SQL-, IMAP/SMTP- oder MCP-Quelle. Tools werden zur Laufzeit registriert. [Connectors](#connect-any-api-soap-service-or-database) | Alle |
+| **Jedes System, ein Endpunkt** | 713 Connectors aus dem Katalog oder deine eigene REST-/OpenAPI-, SOAP-, GraphQL-, OData-, SQL-, IMAP/SMTP- oder MCP-Quelle. Tools werden zur Laufzeit registriert. [Connectors](#connect-any-api-soap-service-or-database) | Alle |
 | **File Search** | Indexiert SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 oder eine Netzwerkfreigabe: jede PDF-Seite, Excel-Zeilen mit ihren Spaltennamen, Word, PowerPoint, Outlook-Mails mit Anhängen. Die KI antwortet mit Datei, Seite und Datum. [File Search](docs/connectors/file-search.md) | Cloud; selbst gehostet Enterprise |
 | **File Share** | Befristete Download-Links für Dateien aus deinen Ordnern oder für Dateien, die die KI erstellt (einen CSV-Export, einen Bericht), intern oder öffentlich, mit Ablaufdatum und Widerruf. [File Share](docs/connectors/file-search.md) | Cloud; selbst gehostet Enterprise |
 | **Firmengedächtnis** | Fakten und Vorlieben, in einem KI-Client gespeichert und in jedem anderen wiedergefunden: einmal in Claude gesagt, von Copilot genutzt. Persönlicher und firmenweiter Bereich, mit Ordnern und Rollengrenzen. [Gedächtnis](docs/memory.md) | Enterprise |
@@ -138,7 +139,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 ## Connector-Katalog
 
-712 Adapter mit über 12.000 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
+713 Adapter mit über 12.000 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|

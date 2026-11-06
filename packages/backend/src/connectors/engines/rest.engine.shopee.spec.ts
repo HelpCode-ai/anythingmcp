@@ -212,7 +212,7 @@ describe('opt-in: adapters signed before query signing keep the original path', 
 
   it('every catalog HMAC adapter except the query-signed ones uses none of the new fields', () => {
     // Shopee, TikTok Shop and the AliExpress (IOP) adapters were written for query signing.
-    const querySigned = ['aliexpress-affiliate', 'aliexpress-dropshipping', 'shopee', 'tiktok-shop'];
+    const querySigned = ['aliexpress-affiliate', 'aliexpress-dropshipping', 'falabella-seller-center', 'shopee', 'tiktok-shop'];
     const hmac = listAdapters()
       .map((m) => getAdapter(m.slug)!)
       .filter((a) => a.connector.authType === 'HMAC');
