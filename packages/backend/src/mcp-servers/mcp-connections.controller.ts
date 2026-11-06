@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
-import { ApiBearerAuth, ApiOperation, ApiTags, ApiSecurity } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { McpConnectionGrantService } from './mcp-connection-grant.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -109,7 +109,33 @@ export class McpConnectionsController {
   }
 
   @Put(':clientId')
-  @ApiOperation({ summary: 'Change what a connected client may reach' })
+  @ApiOperation({
+    summary: 'Change what a connected client may reach',
+    description:
+      'Replaces the grant of one connected AI client (`clientId` from GET /api/mcp-connections): either a whole ' +
+      'workspace (`organizationId`) or a list of MCP servers (`serverIds`), as listed by GET /api/mcp-connections/targets. ' +
+      'When both are given, `organizationId` wins. The change applies from the client\'s next request.\n\n' +
+      'Answers `{ "ok": true }`, or `{ "ok": false, "reason": … }`: `not-a-member` (you are not in that workspace), ' +
+      '`nothing-granted` (you can reach none of the servers; unreachable ids are dropped) or `empty-selection` (neither field given).\n\n' +
+      '```bash\namcp api PUT /api/mcp-connections/$CLIENT_ID --data \'{"serverIds":["cmo9x1k2a0001abcdpq7rs8tu"]}\' --yes\n```',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        organizationId: { type: 'string', description: 'Grant every MCP server of this workspace.' },
+        serverIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Grant only these MCP servers; ignored when `organizationId` is given.',
+        },
+      },
+    },
+    examples: {
+      servers: { summary: 'Only one MCP server', value: { serverIds: ['cmo9x1k2a0001abcdpq7rs8tu'] } },
+      workspace: { summary: 'A whole workspace', value: { organizationId: 'cmo9w7y3b0000abcdk1lm2nop' } },
+    },
+  })
   async update(
     @Req() req: any,
     @Param('clientId') clientId: string,

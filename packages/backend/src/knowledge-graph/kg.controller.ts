@@ -12,7 +12,15 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
-import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags, ApiSecurity } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiProperty,
+  ApiPropertyOptional,
+  ApiTags,
+  ApiSecurity,
+} from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   ArrayNotEmpty,
@@ -388,7 +396,42 @@ export class KgController {
 
   @Post('nodes')
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Create a custom entity attached to a connector' })
+  @ApiOperation({
+    summary: 'Create a custom entity attached to a connector',
+    description:
+      'Adds an entity of your own to the graph, for a concept the tool names do not show. It belongs to one connector of ' +
+      'this workspace, is served to the MCP servers that use that connector, and survives rebuilds. ' +
+      '`label` is trimmed and kept up to 200 characters, `description` up to 2000. `entity` is the stable key: ' +
+      'lower case letters, digits and underscores, up to 80 characters, derived from `label` when omitted.\n\n' +
+      'Returns the new node. 403 without `connectorId`, 404 when the connector is not in this workspace, ' +
+      '409 when `label` is empty or the connector already has an entity with that key. ADMIN only.\n\n' +
+      '```bash\namcp api POST /api/knowledge-graph/nodes --data \'{"connectorId":"cmob60dvv00c01zrpeujwmnep","label":"Sales region"}\' --yes\n```',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['connectorId', 'label'],
+      properties: {
+        connectorId: { type: 'string', description: 'The connector of this workspace the entity belongs to.' },
+        label: { type: 'string', maxLength: 200, description: 'Name shown in the graph and to AI clients.' },
+        entity: {
+          type: 'string',
+          description: 'Stable key, normalized to lower case `a-z0-9_` (max 80). Defaults to the label, normalized.',
+        },
+        description: { type: 'string', maxLength: 2000, description: 'What the entity is; served to AI clients.' },
+      },
+    },
+    examples: {
+      region: {
+        summary: 'A sales region on a CRM connector',
+        value: {
+          connectorId: 'cmob60dvv00c01zrpeujwmnep',
+          label: 'Sales region',
+          description: 'The territory a deal belongs to; matches the region field on companies and deals.',
+        },
+      },
+    },
+  })
   async createNode(
     @Req() req: any,
     @Body() body: { connectorId: string; label: string; entity?: string; description?: string },
@@ -398,7 +441,44 @@ export class KgController {
 
   @Post('edges')
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Create a manual link between two entities' })
+  @ApiOperation({
+    summary: 'Create a manual link between two entities',
+    description:
+      'Links two entity nodes of this workspace (ids from GET /api/knowledge-graph). The link is active straight away ' +
+      'and marked manual, so rebuilds keep it. Creating a link that exists (same nodes and kind) confirms it instead, ' +
+      'and replaces its note when one is given. `note` is kept up to 1000 characters.\n\n' +
+      'Returns the edge. 403 when a node id is missing or both are the same, 404 when a node is not in this workspace. ' +
+      'ADMIN only.\n\n' +
+      '```bash\namcp api POST /api/knowledge-graph/edges --data \'{"sourceNodeId":"cmoc1hk4p0003abcdx9yz1abc","targetNodeId":"cmoc1hk4p0007abcdq2rs3def","kind":"same_identity"}\' --yes\n```',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['sourceNodeId', 'targetNodeId'],
+      properties: {
+        sourceNodeId: { type: 'string', description: 'Id of the first entity node.' },
+        targetNodeId: { type: 'string', description: 'Id of the second entity node; must differ from the first.' },
+        kind: {
+          type: 'string',
+          default: 'same_identity',
+          description:
+            'Kind of link. The graph uses `same_identity`, `references`, `produces_consumes` and `parent_child`.',
+        },
+        note: { type: 'string', maxLength: 1000, description: 'Why the two are linked; served to AI clients.' },
+      },
+    },
+    examples: {
+      sameCustomer: {
+        summary: 'The same customer in a CRM and a shop',
+        value: {
+          sourceNodeId: 'cmoc1hk4p0003abcdx9yz1abc',
+          targetNodeId: 'cmoc1hk4p0007abcdq2rs3def',
+          kind: 'same_identity',
+          note: 'A HubSpot contact and a Shopify customer with the same email are the same person.',
+        },
+      },
+    },
+  })
   async createEdge(
     @Req() req: any,
     @Body()
@@ -409,7 +489,41 @@ export class KgController {
 
   @Patch('edges/:id')
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Edit an edge: status, kind, and/or description (note)' })
+  @ApiOperation({
+    summary: 'Edit an edge: status, kind, and/or description (note)',
+    description:
+      'Send only the fields to change. `status` confirms (`active`) or rejects a suggested link; `kind` retypes it; ' +
+      '`note` sets the description (null removes it, kept up to 1000 characters) and marks the edge manual; ' +
+      '`matchKey` names the field the two entities share (null removes it).\n\n' +
+      'Returns the edge. 404 when it is not in this workspace, 409 when retyping clashes with an existing link of that ' +
+      'kind between the same entities. ADMIN only.\n\n' +
+      '```bash\namcp api PATCH /api/knowledge-graph/edges/cmoc1kq8r0011abcdm4no5ghi --data \'{"status":"active"}\' --yes\n```',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['active', 'rejected', 'suggested'] },
+        kind: {
+          type: 'string',
+          description: 'New kind: `same_identity`, `references`, `produces_consumes` or `parent_child`.',
+        },
+        note: { type: 'string', nullable: true, maxLength: 1000, description: 'Description of the link; null removes it.' },
+        matchKey: {
+          type: 'string',
+          nullable: true,
+          description: 'Field the two entities share, e.g. `email`; null removes it.',
+        },
+      },
+    },
+    examples: {
+      confirm: { summary: 'Confirm a suggested link', value: { status: 'active' } },
+      describe: {
+        summary: 'Describe a link',
+        value: { note: 'Orders reference the customer by customer_id.', matchKey: 'customer_id' },
+      },
+    },
+  })
   async updateEdge(
     @Req() req: any,
     @Param('id') id: string,
@@ -433,7 +547,32 @@ export class KgController {
 
   @Patch('nodes/:id')
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Edit an entity node: label and/or description' })
+  @ApiOperation({
+    summary: 'Edit an entity node: label and/or description',
+    description:
+      'Send only the fields to change. `label` is trimmed and kept up to 200 characters (an empty label is ignored); ' +
+      '`description` is kept up to 2000 characters, and null removes it. Both are served to AI clients.\n\n' +
+      'Returns the node. 404 when it is not in this workspace. ADMIN only.\n\n' +
+      '```bash\namcp api PATCH /api/knowledge-graph/nodes/cmoc1hk4p0003abcdx9yz1abc --data \'{"description":"A paying customer, not a lead."}\' --yes\n```',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        label: { type: 'string', maxLength: 200, description: 'New name; an empty string leaves it unchanged.' },
+        description: {
+          type: 'string',
+          nullable: true,
+          maxLength: 2000,
+          description: 'What the entity is; null removes it.',
+        },
+      },
+    },
+    examples: {
+      describe: { summary: 'Describe an entity', value: { description: 'A paying customer, not a lead.' } },
+      rename: { summary: 'Rename an entity', value: { label: 'Customer' } },
+    },
+  })
   async updateNode(
     @Req() req: any,
     @Param('id') id: string,
