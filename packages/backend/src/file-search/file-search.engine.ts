@@ -5,6 +5,7 @@ import { FileSearchQueryService, relPath, type FileScope } from './file-search-q
 import { FileSearchAccessService } from './file-search-access.service';
 import { FilesWorkerClient } from './files-worker.client';
 import { FileShareService, mimeFor } from './file-share.service';
+import { FileSearchRepository } from './file-search.repository';
 import { isFileSearchMethod, type FileSearchMethod } from './file-search-builtins';
 import { VIEWABLE_EXTENSIONS, extOf } from './file-search.types';
 
@@ -45,6 +46,7 @@ export class FileSearchEngine {
     private readonly access: FileSearchAccessService,
     private readonly worker: FilesWorkerClient,
     private readonly shares: FileShareService,
+    private readonly repo: FileSearchRepository,
   ) {}
 
   /**
@@ -52,14 +54,20 @@ export class FileSearchEngine {
    * rules sees everything, allow rules narrow a role to some folders, deny
    * rules always win, administrators and calls without a user (API keys) are
    * not narrowed. The query layer applies the scope in SQL.
+   *
+   * The rules are read inside the workspace's tenant transaction (#1418):
+   * outside it a database user subject to RLS sees no rules and deny rules
+   * would be ignored. Any failure throws, never a scope without the rules.
    */
   async scopeFor(ctx: FileToolContext): Promise<FileScope> {
     const scope: FileScope = { organizationId: ctx.organizationId, connectorId: ctx.connectorId };
     if (!ctx.userId) return scope;
-    const rules = await this.prisma.fileAccessRule.findMany({
-      where: { organizationId: ctx.organizationId, connectorId: ctx.connectorId },
-      select: { roleId: true, pattern: true, effect: true },
-    });
+    const rules = await this.repo.withTenant(ctx.organizationId, (tx) =>
+      tx.fileAccessRule.findMany({
+        where: { organizationId: ctx.organizationId, connectorId: ctx.connectorId },
+        select: { roleId: true, pattern: true, effect: true },
+      }),
+    );
     if (!rules.length) return scope;
     const a = await this.access.resolve(ctx.organizationId);
     if (!a.allowed || !a.quota.folderRules) return scope;
@@ -92,7 +100,17 @@ export class FileSearchEngine {
     if (!a.allowed) {
       return { error: 'file_search_locked', message: `${a.message} Ask a workspace administrator.` };
     }
-    const scope = await this.scopeFor(ctx);
+    let scope: FileScope;
+    try {
+      scope = await this.scopeFor(ctx);
+    } catch (err) {
+      // Fail closed: without the folder rules no file is shown.
+      this.logger.error(`folder rules unavailable org=${ctx.organizationId} connector=${ctx.connectorId}: ${(err as Error).message}`);
+      return {
+        error: 'folder_rules_unavailable',
+        message: 'The folder permissions could not be checked, so no files are shown. Try again in a moment; if it keeps failing, ask a workspace administrator.',
+      };
+    }
     return this.dispatch(method, params, ctx, scope);
   }
 

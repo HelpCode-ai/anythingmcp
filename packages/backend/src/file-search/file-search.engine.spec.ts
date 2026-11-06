@@ -12,7 +12,7 @@ function make(opts: { entry?: { path: string; size: number; status: string } | n
       opts.render ?? { ok: true, mimeType: 'image/jpeg', base64: JPEG_BASE64, width: 1131, height: 1600, page: 2, pageCount: 3 },
     ),
   };
-  const engine = new FileSearchEngine({} as any, query as any, access as any, worker as any, {} as any);
+  const engine = new FileSearchEngine({} as any, query as any, access as any, worker as any, {} as any, {} as any);
   return { engine, query, access, worker };
 }
 
