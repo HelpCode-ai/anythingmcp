@@ -388,6 +388,11 @@ model McpApiKey {
   mcpServerId    String?          @map("mcp_server_id")
   mcpServer      McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
   key            String           @unique
+  // HMAC-SHA256 of the key (see common/crypto/api-key-hash.util.ts). Lookups
+  // use it; `key` is kept only until every row is hashed, then dropped.
+  keyHash        String?          @unique @map("key_hash")
+  // Last 8 characters, for the masked display (`mcp_••••<suffix>`).
+  keySuffix      String?          @map("key_suffix")
   name           String // label: "Claude Desktop", "Cursor", etc.
   // What the key may reach. MCP: tool calls on /mcp only (the historical
   // behaviour, and the default so existing keys keep it). MANAGEMENT_READ /
