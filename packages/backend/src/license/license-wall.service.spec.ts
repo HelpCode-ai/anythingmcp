@@ -44,6 +44,7 @@ describe('knownClientName', () => {
     expect(knownClientName('Claude')).toBe('Claude');
     expect(knownClientName('claude-code')).toBe('Claude');
     expect(knownClientName('ChatGPT')).toBe('ChatGPT');
+    expect(knownClientName('Raycast')).toBe('Raycast');
     expect(knownClientName('My internal bot')).toBeNull();
     expect(knownClientName(undefined)).toBeNull();
   });
