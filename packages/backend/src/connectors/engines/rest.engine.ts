@@ -1019,6 +1019,8 @@ export class RestEngine {
    *                             (`/auth/token/create` under `.../rest`).
    *   signature.encoding        'hex-upper': hex in capitals
    *   signature.timestampFormat 's' (default, Unix seconds) | 'ms'
+   *                             (milliseconds) | 'iso' (ISO 8601 in UTC,
+   *                             `2026-11-06T07:00:00+00:00`; Falabella)
    *                             (milliseconds), for `${timestamp}`,
    *                             timestampParam and timestampHeader alike
    *
@@ -1043,10 +1045,7 @@ export class RestEngine {
     const headerName = String(sig.headerName ?? 'Signature');
 
     const extended = usesExtendedHmac(sig, credentialParams);
-    const timestamp =
-      extended && String(sig.timestampFormat ?? 's') === 'ms'
-        ? String(Date.now())
-        : String(Math.floor(Date.now() / 1000));
+    const timestamp = extended ? hmacTimestamp(sig.timestampFormat) : String(Math.floor(Date.now() / 1000));
     if (extended) {
       // Static and credential parameters first, so the query below (and the
       // signature over it) includes them. A tool's own parameter of the same
@@ -1120,6 +1119,8 @@ export class RestEngine {
               formBodyOf(axiosConfig),
               String(sig.placement ?? 'header') === 'query' ? signParam : undefined,
             ),
+          sortedQuery: () =>
+            sortedQueryString(params, String(sig.placement ?? 'header') === 'query' ? signParam : undefined),
         })
       : String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}')
           .replace(/\\n/g, '\n')
@@ -1399,7 +1400,7 @@ export function usesExtendedHmac(
     sig.queryParams !== undefined ||
     sig.timestampFormat !== undefined ||
     sig.encoding === 'hex-upper' ||
-    /\$\{(sortedParams|apiPath)\}/.test(String(sig.template ?? '')) ||
+    /\$\{(sortedParams|sortedQuery|apiPath)\}/.test(String(sig.template ?? '')) ||
     credentialParams !== undefined
   );
 }
@@ -1452,6 +1453,41 @@ export function sortedParamsString(
     .join('');
 }
 
+/**
+ * `${sortedQuery}`: the query parameters as sent, sorted by name (code unit
+ * order) and written as `name=value` pairs joined with `&`, each name and
+ * value percent-encoded per RFC 3986 (only `A-Z a-z 0-9 - . _ ~` stay as they
+ * are). The signature parameter is left out; empty values are kept, since
+ * they are sent. No body is included. This is the Rocket SellerCenter
+ * signature string (Falabella Seller Center: PHP `rawurlencode`, `ksort`,
+ * `implode('&')`). An array or object contributes the pairs the query
+ * serializer sends for it.
+ */
+export function sortedQueryString(query: Record<string, unknown>, excludeKey?: string): string {
+  return flattenParams(query)
+    .filter(([k]) => k !== excludeKey)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${rfc3986(k)}=${rfc3986(v)}`)
+    .join('&');
+}
+
+/** RFC 3986 percent-encoding: encodeURIComponent plus `! ' ( ) *`. */
+function rfc3986(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/**
+ * The timestamp an extended HMAC signature uses: Unix seconds (default),
+ * milliseconds (`ms`) or ISO 8601 in UTC without fractions (`iso`,
+ * `2026-11-06T07:00:00+00:00`).
+ */
+export function hmacTimestamp(format: unknown, now: number = Date.now()): string {
+  const f = String(format ?? 's');
+  if (f === 'ms') return String(now);
+  if (f === 'iso') return new Date(now).toISOString().replace(/\.\d{3}Z$/, '+00:00');
+  return String(Math.floor(now / 1000));
+}
+
 /** The path of a URL without its query; the input as given when it is relative. */
 function pathnameOf(url: string): string {
   try {
@@ -1480,12 +1516,14 @@ export function renderExtendedHmacTemplate(
     query: Record<string, unknown>;
     /** Computed only when the template asks for it. */
     sortedParams?: () => string;
+    /** Computed only when the template asks for it. */
+    sortedQuery?: () => string;
   },
 ): string {
   return template
     .replace(/\\n/g, '\n')
     .replace(
-      /\$\{(method|url|path|pathname|apiPath|body|timestamp|sortedParams|query\.([^{}]+))\}/g,
+      /\$\{(method|url|path|pathname|apiPath|body|timestamp|sortedParams|sortedQuery|query\.([^{}]+))\}/g,
       (_m, name: string, q?: string) => {
         if (q !== undefined) {
           const v = vars.query[q];
@@ -1493,6 +1531,7 @@ export function renderExtendedHmacTemplate(
           return Array.isArray(v) ? v.map(String).join(',') : String(v);
         }
         if (name === 'sortedParams') return vars.sortedParams ? vars.sortedParams() : '';
+        if (name === 'sortedQuery') return vars.sortedQuery ? vars.sortedQuery() : '';
         if (name === 'apiPath') return vars.apiPath ?? vars.pathname;
         return String(vars[name as 'method' | 'url' | 'path' | 'pathname' | 'body' | 'timestamp']);
       },

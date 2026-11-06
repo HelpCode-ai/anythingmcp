@@ -236,6 +236,7 @@ import * as exa from './intl/exa.json';
 import * as exerciseCom from './intl/exercise-com.json';
 import * as facebookPages from './intl/facebook-pages.json';
 import * as factorialHr from './intl/factorial-hr.json';
+import * as falabellaSellerCenter from './intl/falabella-seller-center.json';
 import * as fathom from './intl/fathom.json';
 import * as fhir from './intl/fhir.json';
 import * as figma from './intl/figma.json';
@@ -1264,6 +1265,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   exerciseCom as unknown as AdapterDefinition,
   facebookPages as unknown as AdapterDefinition,
   factorialHr as unknown as AdapterDefinition,
+  falabellaSellerCenter as unknown as AdapterDefinition,
   fathom as unknown as AdapterDefinition,
   fhir as unknown as AdapterDefinition,
   figma as unknown as AdapterDefinition,
