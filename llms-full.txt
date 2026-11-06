@@ -189,7 +189,7 @@ Everything runs on your infrastructure, so you decide what leaves it. OAuth2, ro
 The same MCP server works in every client that speaks MCP, so you build a connector once:
 
 - **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](<https://claude.ai/directory/anythingmcp>). [Claude setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>)
-- **ChatGPT.** Apps in ChatGPT are built on MCP. Add the server under *Plugins* in ChatGPT (*+ → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/chatgpt.md>)
+- **ChatGPT.** On AnythingMCP Cloud, the [AnythingMCP plugin in the ChatGPT plugin directory](<https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121>) answers questions from your company databases, read-only. For every connector, add the server under *Plugins* in ChatGPT (*+ → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/chatgpt.md>)
 - **Meta Muse.** In Muse, open *Settings → Connectors → Add custom connector*, paste the server URL and sign in to AnythingMCP. [Muse setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/muse.md>)
 - **Copilot, Gemini, Cursor** and other MCP clients: [client setup guides](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/guides.md>).
 
@@ -4772,7 +4772,7 @@ ChatGPT will call the appropriate MCP tool and show you the results.
 
 ## The fixed plugin endpoint: `/mcp/chatgpt-app`
 
-`https://<your-host>/mcp/chatgpt-app` serves one fixed set of tools, the same for every user. It is the endpoint for a plugin published in OpenAI's plugin directory, whose guidelines require every operation to be its own tool. It does not run your connectors' own tools; use `/mcp/<server-id>` (or `/mcp`) for that.
+`https://<your-host>/mcp/chatgpt-app` serves one fixed set of tools, the same for every user. It is the endpoint of the [AnythingMCP plugin in OpenAI's plugin directory](<https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121>) (on AnythingMCP Cloud), whose guidelines require every operation to be its own tool. It does not run your connectors' own tools; use `/mcp/<server-id>` (or `/mcp`) for that.
 
 | Tool | What it does |
 |------|--------------|
