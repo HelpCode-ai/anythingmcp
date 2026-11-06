@@ -242,12 +242,16 @@ export class FileShareService {
     }
   }
 
+  /**
+   * The row behind a link token, before its workspace is known: the lookup
+   * runs under the SELECT-only `share_by_token` policy (#1418), which shows
+   * only the row whose hash the transaction names. The token itself is never
+   * stored or logged.
+   */
   private async byToken(token: string) {
     if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) throw new NotFoundException('This link does not exist.');
-    const row = await this.prisma.fileShare.findUnique({
-      where: { tokenHash: sha256(token) },
-      include: { organization: { select: { name: true } } },
-    });
+    const tokenHash = sha256(token);
+    const row = await this.repo.withShareToken(tokenHash, (tx) => tx.fileShare.findUnique({ where: { tokenHash } }));
     if (!row) throw new NotFoundException('This link does not exist.');
     return row;
   }
@@ -262,12 +266,14 @@ export class FileShareService {
   /** The interstitial page's data. Never says more than file name, size, workspace and expiry. */
   async describe(token: string) {
     const row = await this.byToken(token);
+    // organizations has no RLS; amcp_files cannot read it, so it is a separate query.
+    const org = await this.prisma.organization.findUnique({ where: { id: row.organizationId }, select: { name: true } });
     return {
       filename: row.filename,
       bytes: row.bytes,
       mimeType: row.mimeType,
       access: row.access,
-      workspace: row.organization?.name ?? '',
+      workspace: org?.name ?? '',
       expiresAt: row.expiresAt?.toISOString() ?? null,
       state: this.state(row),
     };
@@ -288,24 +294,36 @@ export class FileShareService {
         throw new ForbiddenException('This link is for members of another workspace.');
       }
     }
-    await this.prisma.fileShare.update({ where: { id: row.id }, data: { downloadCount: { increment: 1 } } });
+    await this.repo.withTenant(row.organizationId, (tx) =>
+      tx.fileShare.update({ where: { id: row.id, organizationId: row.organizationId }, data: { downloadCount: { increment: 1 } } }),
+    );
     const exp = Math.floor(Date.now() / 1000) + DOWNLOAD_URL_TTL_S;
-    const payload = `${row.id}.${exp}`;
-    const sig = createHmac('sha256', this.signingKey()).update(payload).digest('base64url');
+    const payload = `${row.id}.${row.organizationId}.${exp}`;
+    const sig = this.sign(payload).toString('base64url');
     this.logger.log(`File Share download issued share=${row.id} org=${row.organizationId} access=${row.access}`);
     return { url: `${this.downloadBase()}/api/file-share/d/${payload}.${sig}`, expiresInSeconds: DOWNLOAD_URL_TTL_S };
   }
 
-  /** Verifies a signed download URL and opens the stored file. */
+  /** HMAC of a signed download URL's payload `<share id>.<organization id>.<expiry>`. */
+  private sign(payload: string): Buffer {
+    return createHmac('sha256', this.signingKey()).update(`download-v2:${payload}`).digest();
+  }
+
+  /**
+   * Verifies a signed download URL and opens the stored file. The workspace id
+   * is part of the signed payload, so the row is read inside that workspace
+   * only after the signature checks out. URLs in the earlier `<id>.<exp>.<sig>`
+   * form are refused: they lived DOWNLOAD_URL_TTL_S seconds.
+   */
   async openSigned(signed: string): Promise<{ stream: Readable; filename: string; mimeType: string; bytes: number }> {
-    const m = signed.match(/^([a-f0-9]{24})\.(\d{10})\.([A-Za-z0-9_-]{20,})$/);
+    const m = signed.match(/^([a-f0-9]{24})\.([A-Za-z0-9_-]{1,100})\.(\d{10})\.([A-Za-z0-9_-]{20,})$/);
     if (!m) throw new NotFoundException('Invalid download link.');
-    const [, id, expRaw, sig] = m;
-    const expected = createHmac('sha256', this.signingKey()).update(`${id}.${expRaw}`).digest();
+    const [, id, organizationId, expRaw, sig] = m;
+    const expected = this.sign(`${id}.${organizationId}.${expRaw}`);
     const given = Buffer.from(sig, 'base64url');
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) throw new NotFoundException('Invalid download link.');
     if (Number(expRaw) < Math.floor(Date.now() / 1000)) throw new GoneException('This download link has expired. Open the share link again.');
-    const row = await this.prisma.fileShare.findUnique({ where: { id } });
+    const row = await this.repo.withTenant(organizationId, (tx) => tx.fileShare.findFirst({ where: { id, organizationId } }));
     if (!row || this.state({ ...row, downloadCount: 0 }) !== 'active') throw new GoneException('This link is no longer available.');
     const { stream } = await this.storage.open(row.storageKey);
     return { stream, filename: row.filename, mimeType: row.mimeType, bytes: row.bytes };
@@ -370,19 +388,40 @@ export class FileShareService {
     return { ok: true };
   }
 
-  /** Deletes the files of expired and revoked links (run by the worker every 10 minutes). */
-  async sweep(limit = 200): Promise<number> {
+  /**
+   * Deletes the files of expired and revoked links (run by the worker every
+   * 10 minutes), one workspace at a time inside its tenant transaction
+   * (#1418). `organizationIds` defaults to the workspaces with a File Search
+   * connector.
+   */
+  async sweep(organizationIds?: string[], limit = 200): Promise<number> {
+    const tenants = organizationIds ?? (await this.repo.tenantsWithFileSearch());
+    let n = 0;
+    for (const organizationId of tenants) {
+      try {
+        n += await this.sweepWorkspace(organizationId, limit);
+      } catch (err) {
+        this.logger.warn(`sweep of workspace ${organizationId}: ${(err as Error).message}`);
+      }
+    }
+    return n;
+  }
+
+  private async sweepWorkspace(organizationId: string, limit: number): Promise<number> {
     const now = new Date();
-    const rows = await this.prisma.fileShare.findMany({
-      where: { purgedAt: null, OR: [{ revokedAt: { not: null } }, { expiresAt: { lte: now } }] },
-      select: { id: true, storageKey: true },
-      take: limit,
-    });
+    const rows = await this.repo.withTenant(organizationId, (tx) =>
+      tx.fileShare.findMany({
+        where: { organizationId, purgedAt: null, OR: [{ revokedAt: { not: null } }, { expiresAt: { lte: now } }] },
+        select: { id: true, storageKey: true },
+        take: limit,
+      }),
+    );
     let n = 0;
     for (const r of rows) {
       try {
+        // Storage first, outside the transaction; the row is marked once the file is gone.
         await this.storage.delete(r.storageKey);
-        await this.prisma.fileShare.update({ where: { id: r.id }, data: { purgedAt: now } });
+        await this.repo.withTenant(organizationId, (tx) => tx.fileShare.update({ where: { id: r.id, organizationId }, data: { purgedAt: now } }));
         n++;
       } catch (err) {
         this.logger.warn(`sweep ${r.id}: ${(err as Error).message}`);
