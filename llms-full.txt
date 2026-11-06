@@ -189,7 +189,7 @@ Everything runs on your infrastructure, so you decide what leaves it. OAuth2, ro
 The same MCP server works in every client that speaks MCP, so you build a connector once:
 
 - **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](<https://claude.ai/directory/anythingmcp>). [Claude setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>)
-- **ChatGPT.** On AnythingMCP Cloud, the [AnythingMCP plugin in the ChatGPT Plugin Directory](<https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121>) answers questions from your company databases, read-only. For every connector, add the server under *Plugins* in ChatGPT (*+ → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/chatgpt.md>)
+- **ChatGPT.** On AnythingMCP Cloud, the [AnythingMCP plugin in the ChatGPT Plugin Directory](<https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121>) answers questions from your company databases, read-only. For every connector, add the server under *Plugins* in ChatGPT (*Add → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/chatgpt.md>)
 - **Meta Muse.** In Muse, open *Settings → Connectors → Add custom connector*, paste the server URL and sign in to AnythingMCP. [Muse setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/muse.md>)
 - **Copilot, Gemini, Cursor** and other MCP clients: [client setup guides](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/guides.md>).
 
@@ -4770,7 +4770,7 @@ SERVER_URL=https://mcp.yourdomain.com
 ## Step 3: Add MCP Server in ChatGPT
 
 1. Open **Plugins** in ChatGPT on the web: [chatgpt.com/plugins](<https://chatgpt.com/plugins>)
-2. Click **+**, then **Add custom MCP server**
+2. Click **Add** (top right), then **Add custom MCP server**
 3. Enter a name (e.g. AnythingMCP) and an optional description
 4. Under **Connection**, enter the **Server URL**: `https://mcp.yourdomain.com/mcp` (on AnythingMCP Cloud, the endpoint URL shown on your server's page)
 5. Set **Authentication** to **OAuth**
@@ -8595,7 +8595,7 @@ ChatGPT signs in with OAuth, so no MCP API key is needed for it.
 
 ## Step 2 — Add the connector inside ChatGPT
 
-1. Open **Plugins** in ChatGPT ([chatgpt.com/plugins](<https://chatgpt.com/plugins>)), click **+**, then **Add custom MCP server**.
+1. Open **Plugins** in ChatGPT ([chatgpt.com/plugins](<https://chatgpt.com/plugins>)), click **Add**, then **Add custom MCP server**.
 2. Fill in:
    - **Name:** `Sorare`
    - **Server URL:** your MCP endpoint URL from the server's page on `cloud.anythingmcp.com` (or your tunneled host if you self-host).

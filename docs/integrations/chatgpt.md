@@ -47,7 +47,7 @@ SERVER_URL=https://mcp.yourdomain.com
 ## Step 3: Add MCP Server in ChatGPT
 
 1. Open **Plugins** in ChatGPT on the web: [chatgpt.com/plugins](https://chatgpt.com/plugins)
-2. Click **+**, then **Add custom MCP server**
+2. Click **Add** (top right), then **Add custom MCP server**
 3. Enter a name (e.g. AnythingMCP) and an optional description
 4. Under **Connection**, enter the **Server URL**: `https://mcp.yourdomain.com/mcp` (on AnythingMCP Cloud, the endpoint URL shown on your server's page)
 5. Set **Authentication** to **OAuth**
