@@ -1,5 +1,5 @@
 import { withCatalogUserAgent } from '../connectors/catalog-user-agent.util';
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AxiosError } from 'axios';
 import { ToolRegistry } from './tool-registry';
 import { CodeExecutorService } from './code-executor.service';
@@ -63,6 +63,7 @@ import { hashContent } from '../adapters/catalog-fingerprint';
 import { getAdapter } from '../adapters/catalog';
 import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
+import { ToolRateLimitService } from './tool-rate-limit.service';
 import { connectorErrorWhen } from '../connectors/error-when.util';
 import {
   isBinaryBody,
@@ -141,6 +142,8 @@ export class DynamicMcpTools {
     @Optional() private readonly codeExecutor?: CodeExecutorService,
     @Optional() productEvents?: ProductEventService,
     @Optional() private readonly fileSearchEngine?: FileSearchEngine,
+    // Required by Nest (no @Optional); older manually built test fixtures may omit it.
+    @Inject(ToolRateLimitService) private readonly toolRateLimits?: ToolRateLimitService,
   ) {
     this.blockedCalls = new TrialBlockedCallRecorder(prisma, productEvents);
   }
@@ -402,6 +405,23 @@ export class DynamicMcpTools {
         ],
         isError: true,
       };
+    }
+
+    // Apply to every invocation, including cache hits, code tools themselves
+    // and nested bridge calls. The limiter re-reads the caller's role policy;
+    // a definer-mode bridge's broader allowedToolIds must not bypass it.
+    if (this.toolRateLimits) {
+      try {
+        const refused = await this.toolRateLimits.check(tool, context);
+        if (refused) {
+          return { content: [{ type: 'text', text: JSON.stringify(refused) }], isError: true };
+        }
+      } catch {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: `Could not check rate limits for tool '${toolName}'. Please retry.` }) }],
+          isError: true,
+        };
+      }
     }
 
     // Code tools run a stored program in the out-of-process runner instead of
