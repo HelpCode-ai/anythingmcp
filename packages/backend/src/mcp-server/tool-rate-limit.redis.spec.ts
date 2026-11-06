@@ -60,7 +60,10 @@ const url = process.env.TOOL_RATE_LIMIT_TEST_REDIS_URL;
   it('allows calls after real Redis expiry and returns the longest retry time', async () => {
     roles.getToolRateLimits.mockResolvedValue({ callsPerMinute: 1, callsPerHour: 1 });
     await service.check(tool, context);
-    expect(await service.check(tool, context)).toMatchObject({ retryAfter: 3600 });
+    const refused = await service.check(tool, context);
+    expect(refused?.error).toContain('1/min, 1/hour');
+    expect(refused?.retryAfter).toBeGreaterThan(3500);
+    expect(refused?.retryAfter).toBeLessThanOrEqual(3600);
     for (const key of keys) await client.pexpire(key, 1);
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(await service.check(tool, context)).toBeNull();
