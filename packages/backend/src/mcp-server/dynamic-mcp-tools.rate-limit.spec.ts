@@ -29,6 +29,7 @@ function build(cached = false) {
   };
   const tools = [read, code] as RegisteredTool[];
   const engine = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+  const audit = { logInvocation: jest.fn().mockResolvedValue(undefined) };
   const runner = {
     isConfigured: () => true,
     run: jest.fn(async (input: CodeRunInput) => {
@@ -45,7 +46,7 @@ function build(cached = false) {
       getTool: (name: string) => tools.find((tool) => tool.name === name),
       getToolForOrg: (name: string) => tools.find((tool) => tool.name === name),
     } as any,
-    { logInvocation: jest.fn().mockResolvedValue(undefined) } as any,
+    audit as any,
     redis as any,
     { checkLicenseActive: jest.fn().mockResolvedValue(undefined) } as any,
     { isCloud: () => false } as any,
@@ -57,7 +58,7 @@ function build(cached = false) {
     { scheduleObservationalIngest: jest.fn() } as any, {} as any,
     undefined, undefined, undefined, runner as any, undefined, undefined, limiter,
   );
-  return { executor, engine, roles, runner };
+  return { executor, engine, roles, runner, audit };
 }
 
 describe('per-tool limits in the common executor', () => {
@@ -71,6 +72,28 @@ describe('per-tool limits in the common executor', () => {
     const refused = await executor.executeTool('sap_query', {}, { ...context, mcpServerId: 'server', connectorIds: ['connector'] });
     expect(refused.isError).toBe(true);
     expect(JSON.parse(refused.content[0].text)).toMatchObject({ error: expect.stringContaining('1/min'), retryAfter: 60 });
+    expect(engine.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a refused call in the invocation log, without the connector', async () => {
+    const { executor, audit } = build();
+    await executor.executeTool('sap_query', { q: 1 }, context);
+    audit.logInvocation.mockClear();
+    await executor.executeTool('sap_query', { q: 2 }, context);
+    expect(audit.logInvocation).toHaveBeenCalledTimes(1);
+    const row = audit.logInvocation.mock.calls[0][0];
+    expect(row).toMatchObject({ toolId: 'read', organizationId: 'org', userId: 'user', status: 'ERROR', input: { q: 2 } });
+    expect(row.error).toMatch(/^Rate limit reached: .*1\/min/);
+    // Connector health and failure alerts group by connector; a refusal is not a connector failure.
+    expect(row.connectorId).toBeUndefined();
+  });
+
+  it('still refuses when the log cannot be written', async () => {
+    const { executor, audit, engine } = build();
+    await executor.executeTool('sap_query', {}, context);
+    audit.logInvocation.mockRejectedValueOnce(new Error('db down'));
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    expect((await executor.executeTool('sap_query', {}, context)).isError).toBe(true);
     expect(engine.execute).toHaveBeenCalledTimes(1);
   });
 

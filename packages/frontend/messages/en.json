@@ -2303,7 +2303,14 @@
       "all": "All",
       "none": "None",
       "saving": "Saving...",
-      "save": "Save ({count} tools)"
+      "save": "Save ({count} tools)",
+      "limitsHint": "Optional: limit how often each member with this role may call a ticked tool, per minute and per hour. Leave a field empty for no limit. The limit counts per user and tool, across all their API keys and sessions; workspace admins are never limited. Refused calls show up under Logs.",
+      "perMinute": "/min",
+      "perHour": "/h",
+      "limitMinuteLabel": "Calls per minute for {tool}",
+      "limitHourLabel": "Calls per hour for {tool}",
+      "invalidLimit": "Limits must be whole numbers of 1 or more, or empty for no limit ({tool}).",
+      "limitedCount": "{count} limited"
     },
     "assign": {
       "title": "User MCP Role Assignment",

@@ -414,7 +414,9 @@ export class DynamicMcpTools {
       try {
         const refused = await this.toolRateLimits.check(tool, context);
         if (refused) {
-          return { content: [{ type: 'text', text: JSON.stringify(refused) }], isError: true };
+          const result: { content: ToolResultContent; isError: true } = { content: [{ type: 'text', text: JSON.stringify(refused) }], isError: true };
+          await this.logRateLimited(tool, params, context, refused.error, result);
+          return result;
         }
       } catch {
         return {
@@ -1090,6 +1092,50 @@ export class DynamicMcpTools {
    * bare axios message ("Request failed with status code 400") hides. Keeping it
    * in the audit log makes failures diagnosable without re-running the call.
    */
+  /**
+   * A call refused by a per-tool rate limit is recorded like any failed call,
+   * so administrators see it under Logs and in GET /api/audit/invocations
+   * (status ERROR, error "Rate limit reached: ..."). The upstream system is
+   * never called. A failure to write the log never changes the refusal.
+   *
+   * No connectorId on purpose: connector health, the failure alerts and the
+   * support desk's connector_issues group errors by connector, and a refusal
+   * we made ourselves says nothing about the connector.
+   */
+  private async logRateLimited(
+    tool: RegisteredTool,
+    params: Record<string, unknown>,
+    context: { userId?: string; userEmail?: string; organizationId?: string; mcpServerId?: string; mcpServerName?: string; authMethod?: string; apiKeyName?: string; intent?: string; learnable?: boolean } | undefined,
+    message: string,
+    output: { content: ToolResultContent; isError: true },
+  ): Promise<void> {
+    try {
+      await this.auditService.logInvocation({
+        toolId: tool.id,
+        userId: context?.userId,
+        userEmail: context?.userEmail,
+        mcpServerId: context?.mcpServerId,
+        organizationId: context?.organizationId,
+        usedProxy: false,
+        intent: context?.intent,
+        learnable: false,
+        input: params,
+        output,
+        status: 'ERROR',
+        durationMs: 0,
+        error: `Rate limit reached: ${message}`,
+        clientInfo: context ? JSON.stringify({
+          authMethod: context.authMethod,
+          apiKeyName: context.apiKeyName,
+          userEmail: context.userEmail,
+          mcpServerName: context.mcpServerName,
+        }) : undefined,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Could not log a rate-limited call of ${tool.name}: ${err?.message ?? err}`);
+    }
+  }
+
   private formatStoredError(detail: Record<string, unknown>): string {
     const parts: string[] = [];
     const head = detail.status
