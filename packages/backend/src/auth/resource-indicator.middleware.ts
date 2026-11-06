@@ -20,6 +20,17 @@ export const APP_ENDPOINTS = ['file-search'] as const;
 export type AppEndpoint = (typeof APP_ENDPOINTS)[number];
 
 /**
+ * The endpoints of AnythingMCP's plugins in OpenAI's plugin directory. An
+ * authorization for one of them marks a sign-up that came from the ChatGPT
+ * directory (see audit/directory-signup.ts). Kept in its own signed cookie:
+ * like MCP_APP_COOKIE it is unauthenticated client input, used for the
+ * sign-up report only.
+ */
+export const DIRECTORY_PLUGIN_ENDPOINTS = ['chatgpt-app', 'file-search'] as const;
+export type DirectoryPluginEndpoint = (typeof DIRECTORY_PLUGIN_ENDPOINTS)[number];
+export const MCP_DIRECTORY_COOKIE = 'mcp_directory';
+
+/**
  * Captures the RFC 8707 `resource` indicator the client sends to /authorize.
  *
  * The MCP 2026-07-28 authorization spec makes `resource` mandatory on both the
@@ -69,6 +80,21 @@ export class ResourceIndicatorMiddleware implements NestMiddleware {
       });
     } else {
       res.clearCookie(MCP_APP_COOKIE);
+    }
+
+    const plugin = typeof raw === 'string' ? parseDirectoryPlugin(raw) : null;
+    if (plugin) {
+      const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+      res.cookie(MCP_DIRECTORY_COOKIE, plugin, {
+        httpOnly: true,
+        secure: isSecure,
+        // Sign-up, checkout and Approve can take a while; 30 min like MCP_APP_COOKIE.
+        maxAge: 30 * 60 * 1000,
+        sameSite: isSecure ? 'none' : 'lax',
+        signed: true,
+      });
+    } else {
+      res.clearCookie(MCP_DIRECTORY_COOKIE);
     }
 
     if (serverId) {
@@ -134,4 +160,19 @@ export function parseAppEndpoint(resource: string): AppEndpoint | null {
   const segments = url.pathname.split('/').filter(Boolean);
   if (segments.length !== 2 || segments[0] !== 'mcp') return null;
   return (APP_ENDPOINTS as readonly string[]).includes(segments[1]) ? (segments[1] as AppEndpoint) : null;
+}
+
+/** The directory plugin endpoint a resource indicator names (`https://host/mcp/chatgpt-app`), or null. */
+export function parseDirectoryPlugin(resource: string): DirectoryPluginEndpoint | null {
+  let url: URL;
+  try {
+    url = new URL(resource);
+  } catch {
+    return null;
+  }
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length !== 2 || segments[0] !== 'mcp') return null;
+  return (DIRECTORY_PLUGIN_ENDPOINTS as readonly string[]).includes(segments[1])
+    ? (segments[1] as DirectoryPluginEndpoint)
+    : null;
 }

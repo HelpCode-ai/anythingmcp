@@ -59,6 +59,17 @@ export const CHATGPT_APP_INSTRUCTIONS = [
   '- Never ask for passwords, connection strings or API keys in the chat. The user adds and changes databases in the dashboard (anythingmcp_get_configuration_url).',
 ].join('\n');
 
+/**
+ * This app queries databases only. A workspace's API and application
+ * connectors (Odoo, Shopify, ...) are listed but not run here; the hint tells
+ * the model so, and where the user connects them to ChatGPT, instead of
+ * leaving them listed but unusable. Server URLs stay in the dashboard: this
+ * app never hands out a workspace's own MCP endpoint.
+ */
+export const OTHER_CONNECTORS_HINT = (names: string[]): string =>
+  `This app runs read-only database queries only. ${names.join(', ')} ${names.length === 1 ? 'is an API or application connector and is' : 'are API or application connectors and are'} not used from here. ` +
+  'The user connects them to ChatGPT from the AnythingMCP dashboard (anythingmcp_get_configuration_url): open MCP Servers, then the server, and choose ChatGPT to see the steps.';
+
 export interface ConnectorActivity {
   connectorId: string;
   calls: number;
@@ -292,11 +303,17 @@ export function registerChatgptAppToolset(
           finishSetupUrl: deps.connectorUrl(t.connectorId),
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
+      // Connectors this app does not query (APIs, business applications):
+      // the user reaches them through the workspace's own server URL.
+      const otherConnectors = connectors.filter((c) => !databases.has(c.id)).map((c) => c.name);
       return json({
         connectors,
         ...(needsSetup.length ? { needsSetup } : {}),
         ...(connectors.length === 0 && needsSetup.length === 0
           ? { hint: 'This connection reaches no connectors yet. The user adds them in the dashboard: call anythingmcp_get_configuration_url.' }
+          : {}),
+        ...(otherConnectors.length
+          ? { otherConnectorsHint: OTHER_CONNECTORS_HINT(otherConnectors) }
           : {}),
       });
     },

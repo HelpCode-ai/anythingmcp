@@ -245,6 +245,17 @@ describe('/mcp/chatgpt-app tool set', () => {
     expect(text).not.toMatch(/Wise/);
   });
 
+  it('says which listed connectors are APIs not used here, and where they connect, without server URLs', async () => {
+    const { client } = await connect([...SALES_DB, CRM_READ]);
+    const { body, text } = await call(client, 'anythingmcp_list_connectors');
+    expect(body.otherConnectorsHint).toMatch(/Acme CRM is an API or application connector/);
+    expect(body.otherConnectorsHint).toMatch(/anythingmcp_get_configuration_url/);
+    expect(body.otherConnectorsHint).not.toMatch(/Sales DB/);
+    expect(text).not.toMatch(/\/mcp\//);
+    const dbOnly = await connect([...SALES_DB]);
+    expect((await call(dbOnly.client, 'anythingmcp_list_connectors')).body.otherConnectorsHint).toBeUndefined();
+  });
+
   it('reports activity per connector in scope, counts only', async () => {
     const { client, deps } = await connect([...SALES_DB, CRM_READ]);
     const { body } = await call(client, 'anythingmcp_get_connector_activity', { days: 30 });
