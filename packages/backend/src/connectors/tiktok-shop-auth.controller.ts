@@ -16,7 +16,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -146,7 +146,30 @@ export class TikTokShopAuthController {
 
   @Post('connectors/:id/authorize')
   @UseGuards(AuthGuard('jwt'))
-  @ApiOperation({ summary: 'Start the authorization of a TikTok shop for a connector' })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Start the authorization of a TikTok shop for a connector',
+    description:
+      'Returns the TikTok Shop URL where the seller authorizes the app, and `redirectUrl`, the Redirect URL to set ' +
+      'on a seller\'s own app. TikTok Shop then sends the browser back to this server. Without the app values ' +
+      '(TIKTOK_SHOP_APP_KEY, TIKTOK_SHOP_APP_SECRET, TIKTOK_SHOP_SERVICE_ID) on the connector, or for a connector ' +
+      'that is not a TikTok Shop one, the answer is `{ "error": "…" }`. Dashboard session only; ' +
+      'the connector owner or an admin, never a VIEWER.',
+  })
+  @ApiBody({
+    required: false,
+    schema: {
+      type: 'object',
+      properties: {
+        returnTo: {
+          type: 'string',
+          maxLength: 500,
+          description: 'Dashboard path to come back to when the authorization is done; only a path on this site is kept.',
+        },
+      },
+    },
+    examples: { default: { summary: 'Come back to the connector page', value: {} } },
+  })
   async authorize(
     @Req() req: any,
     @Param('id') id: string,
@@ -271,9 +294,11 @@ export class TikTokShopAuthController {
     return state;
   }
 
+  // Called by the dashboard's completion page; not an API to drive by hand.
   @Post('complete')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(200)
+  @ApiExcludeEndpoint()
   @ApiOperation({ summary: 'Complete a TikTok Shop seller authorization (dashboard, signed in)' })
   async complete(
     @Req() req: any,

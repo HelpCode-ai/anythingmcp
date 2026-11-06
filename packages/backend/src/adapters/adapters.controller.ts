@@ -221,7 +221,51 @@ export class AdaptersController {
     summary: 'Install connectors from the starter pack',
     description:
       'Installs the chosen starter-pack connectors and puts them on your default MCP server. ' +
-      'Each one is reported separately, so one failure does not undo the others.',
+      'Each one is reported separately, so one failure does not undo the others.\n\n' +
+      'Pick the slugs from GET /api/adapters/starter-pack. A slug that is already installed is reported as ' +
+      '`already_installed`; one that hits the plan limit or fails to install is `failed`, with the reason in `error`. ' +
+      '`server` is the default MCP server the new connectors were put on (null when none was). ' +
+      `400 when \`slugs\` is not a list of 1 to ${STARTER_PACK_MAX_INSTALL} strings or names a connector outside the starter pack; ` +
+      '403 for VIEWERs.\n\n' +
+      '```bash\namcp api POST /api/adapters/starter-pack/install --data \'{"slugs":["hackernews","openplz"]}\' --yes\n```',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['slugs'],
+      properties: {
+        slugs: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          maxItems: STARTER_PACK_MAX_INSTALL,
+          description: 'Slugs of starter-pack connectors (`items[].slug` on GET /api/adapters/starter-pack).',
+        },
+      },
+    },
+    examples: {
+      two: { summary: 'Install two keyless connectors', value: { slugs: ['hackernews', 'openplz'] } },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'One result per requested slug.',
+    schema: {
+      type: 'object',
+      example: {
+        results: [
+          {
+            slug: 'hackernews',
+            status: 'installed',
+            connectorId: 'cmob60dvv00c01zrpeujwmnep',
+            toolsCreated: 8,
+            probeOk: true,
+          },
+          { slug: 'openplz', status: 'already_installed' },
+        ],
+        server: { id: 'cmo9x1k2a0001abcdpq7rs8tu', name: 'Default' },
+      },
+    },
   })
   async installStarterPack(@Req() req: any, @Body() body: { slugs?: unknown }) {
     if (req.user.role === 'VIEWER') {

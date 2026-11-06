@@ -1884,7 +1884,38 @@ export class ConnectorsController {
     description:
       'For MCP connectors: discovers OAuth endpoints via .well-known and optionally registers dynamically. ' +
       'For REST/GraphQL connectors: uses authorizationUrl and tokenUrl from authConfig. ' +
-      'Returns an authorization URL for the user to visit.',
+      'Returns an authorization URL for the user to visit.\n\n' +
+      'Open `authorizationUrl` in a browser and sign in at the provider; the provider then sends the browser back to ' +
+      'this server, which stores the tokens on the connector (or, for per-user credentials, for you only). ' +
+      'When the flow cannot start, the answer is `{ "error": "…" }` instead, e.g. for a connector whose auth type is not OAUTH2.\n\n' +
+      '```bash\namcp api POST /api/connectors/cmob60dvv00c01zrpeujwmnep/oauth/authorize --yes\n```',
+  })
+  @ApiBody({
+    required: false,
+    schema: {
+      type: 'object',
+      properties: {
+        returnTo: {
+          type: 'string',
+          maxLength: 500,
+          description:
+            'Dashboard path to come back to when the authorization is done, e.g. `/connectors/{id}`. ' +
+            'Only a path on this site is kept; anything else falls back to the connector page.',
+        },
+      },
+    },
+    examples: {
+      default: { summary: 'Come back to the connector page', value: {} },
+      returnTo: { summary: 'Come back to a given page', value: { returnTo: '/connectors' } },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'The URL to open, or the reason the flow could not start.',
+    schema: {
+      type: 'object',
+      example: { authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=…&state=…' },
+    },
   })
   async initiateOAuth(
     @Req() req: any,
