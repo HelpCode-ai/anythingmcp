@@ -16,7 +16,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { ConnectorsService } from './connectors.service';
@@ -102,7 +102,29 @@ export class ShopeeAuthController {
 
   @Post('connectors/:id/authorize')
   @UseGuards(AuthGuard('jwt'))
-  @ApiOperation({ summary: 'Start the authorization of a Shopee shop for a connector' })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Start the authorization of a Shopee shop for a connector',
+    description:
+      'Returns the Shopee URL where the seller signs in and picks the shop; Shopee then sends the browser back to ' +
+      'this server. Needs SHOPEE_PARTNER_ID and SHOPEE_PARTNER_KEY on the connector: without them, or for a ' +
+      'connector that is not a Shopee one, the answer is `{ "error": "…" }`. Dashboard session only; ' +
+      'the connector owner or an admin, never a VIEWER.',
+  })
+  @ApiBody({
+    required: false,
+    schema: {
+      type: 'object',
+      properties: {
+        returnTo: {
+          type: 'string',
+          maxLength: 500,
+          description: 'Dashboard path to come back to when the authorization is done; only a path on this site is kept.',
+        },
+      },
+    },
+    examples: { default: { summary: 'Come back to the connector page', value: {} } },
+  })
   async authorize(
     @Req() req: any,
     @Param('id') id: string,
@@ -183,9 +205,11 @@ export class ShopeeAuthController {
     return res.redirect(this.completePage({ provider: 'shopee', state, code, shop_id: shopId }));
   }
 
+  // Called by the dashboard's completion page; not an API to drive by hand.
   @Post('complete')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(200)
+  @ApiExcludeEndpoint()
   @ApiOperation({ summary: 'Complete a Shopee shop authorization (dashboard, signed in)' })
   async complete(
     @Req() req: any,

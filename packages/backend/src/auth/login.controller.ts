@@ -53,7 +53,7 @@ import { hasDashboardHeader, setRecentSignInCookie } from './recent-sign-in.util
 import { RecentSignInService } from './recent-sign-in.service';
 import { SharedSetupRegistry, type SetupContext, type SharedSetupProvider } from '../mcp-server/shared-setup';
 import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 
 /**
  * Carries the VERIFIED identity across the second step of the authorize flow.
@@ -378,8 +378,10 @@ export class LoginController {
     }
   }
 
+  // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
   async handleLogin(
     @Req() req: Request,
     @Body()
@@ -712,8 +714,10 @@ export class LoginController {
    * that asked for the File Search plugin, and this browser's recent sign-in
    * cookie for the same user. Admins only, as for the page itself.
    */
+  // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('file-search/session')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
   async fileSearchSetupSession(
     @Req() req: Request,
     @Body() body: { csrf?: unknown; option?: unknown },
@@ -1273,8 +1277,10 @@ export class LoginController {
    * only ever produce a NARROWER grant than the user was entitled to, never a
    * wider one.
    */
+  // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('select-servers')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
   async handleServerSelection(
     @Req() req: Request,
     @Body() body: { servers?: string | string[]; workspace?: string; csrf?: string },
@@ -1369,8 +1375,10 @@ export class LoginController {
    * and the app must be one of the page's own. The OAuth flow is untouched:
    * this answers JSON, and "Continue" goes to the callback as before.
    */
+  // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('first-app')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
   async pickFirstApp(
     @Req() req: Request,
     @Body() body: { adapter?: unknown; csrf?: unknown },
