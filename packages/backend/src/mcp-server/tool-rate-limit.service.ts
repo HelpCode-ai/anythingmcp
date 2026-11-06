@@ -7,6 +7,8 @@ export interface ToolRateLimitContext {
   organizationId?: string;
   authMethod?: string;
   apiKeyName?: string;
+  /** An operator's support key: same limits, its own counter. */
+  supportKeyId?: string;
 }
 
 interface WindowCounter { count: number; expiresAt: number }
@@ -63,7 +65,10 @@ export class ToolRateLimitService {
     // client the call arrives with. Keying on the API-key name let a limited
     // member multiply the budget by creating more keys (any member can).
     // Encode the tuple to avoid delimiter and hash-slot collisions.
-    const key = Buffer.from(JSON.stringify([context.organizationId, tool.id, context.userId]), 'utf8').toString('base64url');
+    // An operator's support key (only operators can mint one) counts apart, so
+    // a reproduction never uses up the user's own budget.
+    const principal = context.supportKeyId ? ['support', context.supportKeyId] : [context.userId];
+    const key = Buffer.from(JSON.stringify([context.organizationId, tool.id, ...principal]), 'utf8').toString('base64url');
 
     if (this.redis.isConfigured) {
       if (!this.redis.isConnected) {

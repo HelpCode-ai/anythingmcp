@@ -49,7 +49,7 @@ export class McpAuthMiddleware implements NestMiddleware {
         (req as any).user = {
           sub: user.id, email: user.email, role: user.role,
           mcpRoleId: user.mcpRoleId, mcpServerId: user.mcpServerId,
-          authMethod: 'mcp_api_key', apiKeyName: user.apiKeyName,
+          authMethod: 'mcp_api_key', apiKeyName: user.apiKeyName, supportKeyId: user.supportKeyId,
         };
         return next();
       }

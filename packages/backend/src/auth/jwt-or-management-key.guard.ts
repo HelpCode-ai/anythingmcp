@@ -12,6 +12,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { apiKeyLookupWhere, apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
+import { isKeyExpired } from '../roles/support-keys';
 
 /** Default per-key ceiling for the management API, per minute. 0 disables. */
 export const DEFAULT_MANAGEMENT_RATE_LIMIT_PER_MINUTE = 300;
@@ -74,7 +75,7 @@ export class JwtOrManagementKeyGuard extends AuthGuard('jwt') {
     });
     // Same answer for missing, inactive, or non-management keys: do not reveal
     // which it was.
-    if (!record || !record.isActive || record.scope === 'MCP') {
+    if (!record || !record.isActive || isKeyExpired(record.expiresAt) || record.scope === 'MCP') {
       throw new UnauthorizedException(
         'Invalid or non-management API key for the management API',
       );

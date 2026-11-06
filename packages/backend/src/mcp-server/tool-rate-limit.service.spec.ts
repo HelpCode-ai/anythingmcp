@@ -30,6 +30,18 @@ describe('per-tool rate-limit admission', () => {
     expect(await service.check(tool, context)).toBeNull();
   });
 
+  it('counts a support key apart from the user, with the same limits', async () => {
+    const { service, roles } = build();
+    roles.getToolRateLimits.mockResolvedValue({ callsPerMinute: 1, callsPerHour: null });
+    const support = { ...context, authMethod: 'mcp_api_key', supportKeyId: 'sk-1' };
+    expect(await service.check(tool, support)).toBeNull();
+    // The support call did not use the user's budget...
+    expect(await service.check(tool, context)).toBeNull();
+    // ...and the support key has its own limit, from the user's role.
+    expect(await service.check(tool, support)).toMatchObject({ error: expect.stringContaining('1/min') });
+    expect(roles.getToolRateLimits).toHaveBeenCalledWith('user', 'org', 'tool');
+  });
+
   it('uses the longest wait when both windows are exhausted', async () => {
     const { service, roles } = build();
     roles.getToolRateLimits.mockResolvedValue({ callsPerMinute: 1, callsPerHour: 1 });

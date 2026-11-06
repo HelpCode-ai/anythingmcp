@@ -50,6 +50,38 @@ describe('AuditService', () => {
       );
     });
 
+    it('writes nothing for the workspace on a support-key call: no row, alert or first success', async () => {
+      const alerts = { recordFailure: jest.fn().mockResolvedValue(undefined) };
+      const firstSuccess = { onFirstSuccess: jest.fn() };
+      const withHooks = new AuditService(mockPrisma, undefined, alerts as any, firstSuccess as any);
+      const log = jest.spyOn((withHooks as any).logger, 'log').mockImplementation(() => undefined);
+      try {
+        for (const status of ['SUCCESS', 'ERROR'] as const) {
+          await withHooks.logInvocation({
+            toolId: 'tool-1',
+            userId: 'user-1',
+            organizationId: 'org-1',
+            connectorId: 'conn-1',
+            input: { secret: 'customer data' },
+            output: { result: 'customer data' },
+            status,
+            error: status === 'ERROR' ? 'boom' : undefined,
+            durationMs: 12,
+            supportKeyId: 'sk-1',
+          });
+        }
+        expect(mockPrisma.toolInvocation.create).not.toHaveBeenCalled();
+        expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+        expect(alerts.recordFailure).not.toHaveBeenCalled();
+        expect(log).toHaveBeenCalledTimes(2);
+        const line = String(log.mock.calls[0][0]);
+        expect(line).toBe('Support call: key sk-1, org org-1, user user-1, tool tool-1, SUCCESS, 12ms');
+        expect(line).not.toContain('customer data');
+      } finally {
+        await withHooks.onModuleDestroy();
+      }
+    });
+
     it('should not throw if persistence fails', async () => {
       mockPrisma.toolInvocation.create.mockRejectedValue(new Error('DB down'));
 

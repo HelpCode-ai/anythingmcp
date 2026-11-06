@@ -69,6 +69,8 @@ describe('McpPrincipalRateLimitGuard', () => {
 
   it('buckets sessions by user and anonymous callers by IP', () => {
     expect(McpPrincipalRateLimitGuard.bucketFor({ user: { authMethod: 'jwt', sub: 'u9' }, headers: {} })).toBe('user:u9');
+    // An operator's support key has its own bucket, apart from the user's keys.
+    expect(McpPrincipalRateLimitGuard.bucketFor({ user: { authMethod: 'mcp_api_key', sub: 'u9', supportKeyId: 'sk-1' }, headers: {} })).toBe('support:sk-1');
     expect(McpPrincipalRateLimitGuard.bucketFor({ user: { authMethod: 'none' }, headers: {}, ip: '1.2.3.4' })).toBe('ip:1.2.3.4');
   });
 
