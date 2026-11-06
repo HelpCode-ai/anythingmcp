@@ -11,6 +11,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaService } from '../common/prisma.service';
 import { RedisService } from '../common/redis.service';
+import { apiKeyLookupWhere, apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
 
 /** Default per-key ceiling for the management API, per minute. 0 disables. */
 export const DEFAULT_MANAGEMENT_RATE_LIMIT_PER_MINUTE = 300;
@@ -63,8 +64,8 @@ export class JwtOrManagementKeyGuard extends AuthGuard('jwt') {
       return (await super.canActivate(context)) as boolean;
     }
 
-    const record = await this.prisma.mcpApiKey.findUnique({
-      where: { key: presentedKey },
+    const record = await this.prisma.mcpApiKey.findFirst({
+      where: apiKeyLookupWhere(presentedKey),
       include: {
         user: {
           select: { id: true, email: true, role: true, organizationId: true },
@@ -114,9 +115,18 @@ export class JwtOrManagementKeyGuard extends AuthGuard('jwt') {
     };
     (request as { mcpKeyScope?: string }).mcpKeyScope = record.scope;
 
-    // Best-effort last-used stamp; never block the request on it.
+    // Best-effort last-used stamp (and hash for a row not hashed yet); never
+    // block the request on it.
     void this.prisma.mcpApiKey
-      .update({ where: { id: record.id }, data: { lastUsedAt: new Date() } })
+      .update({
+        where: { id: record.id },
+        data: {
+          lastUsedAt: new Date(),
+          ...(record.keyHash
+            ? {}
+            : { keyHash: hashApiKey(presentedKey), keySuffix: apiKeySuffix(presentedKey) }),
+        },
+      })
       .catch(() => undefined);
 
     return true;

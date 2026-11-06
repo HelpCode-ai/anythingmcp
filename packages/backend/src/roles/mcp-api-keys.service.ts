@@ -1,17 +1,56 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnApplicationBootstrap } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
+import { apiKeyLookupWhere, apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
 import type { McpApiKeyScope } from '../generated/prisma/client';
 
 @Injectable()
-export class McpApiKeysService {
+export class McpApiKeysService implements OnApplicationBootstrap {
   private readonly logger = new Logger(McpApiKeysService.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
+  onApplicationBootstrap() {
+    // Fire-and-forget so a slow table never blocks boot. Idempotent, so two
+    // containers running it during a blue/green release do no harm.
+    void this.backfillKeyHashes().catch((err) =>
+      this.logger.error(`API key hash backfill failed: ${err?.message ?? err}`),
+    );
+  }
+
+  /**
+   * Hash the keys created before `key_hash` existed. Returns how many rows
+   * were updated. Never logs a key.
+   */
+  async backfillKeyHashes(batchSize = 500): Promise<number> {
+    let updated = 0;
+    for (;;) {
+      const rows = await this.prisma.mcpApiKey.findMany({
+        where: { keyHash: null },
+        select: { id: true, key: true },
+        take: batchSize,
+      });
+      if (rows.length === 0) break;
+      let progressed = 0;
+      for (const row of rows) {
+        const res = await this.prisma.mcpApiKey.updateMany({
+          where: { id: row.id, keyHash: null },
+          data: { keyHash: hashApiKey(row.key), keySuffix: apiKeySuffix(row.key) },
+        });
+        progressed += res.count;
+      }
+      updated += progressed;
+      // A short batch is the last one; a batch that changed nothing would be
+      // read again forever (e.g. writes refused), so stop there too.
+      if (rows.length < batchSize || progressed === 0) break;
+    }
+    if (updated > 0) this.logger.log(`Hashed ${updated} API key(s) created before key_hash existed`);
+    return updated;
+  }
+
   /**
    * Generate a new MCP API key for a user.
-   * Key format: mcp_<32 random hex chars>
+   * Key format: mcp_<64 hex chars> (32 random bytes, 256 bits).
    */
   async generate(
     userId: string,
@@ -43,7 +82,16 @@ export class McpApiKeysService {
     const key = `mcp_${randomBytes(32).toString('hex')}`;
 
     return this.prisma.mcpApiKey.create({
-      data: { userId, organizationId, key, name, mcpServerId: mcpServerId || null, scope },
+      data: {
+        userId,
+        organizationId,
+        key,
+        keyHash: hashApiKey(key),
+        keySuffix: apiKeySuffix(key),
+        name,
+        mcpServerId: mcpServerId || null,
+        scope,
+      },
       select: { id: true, key: true, name: true, isActive: true, mcpServerId: true, scope: true, createdAt: true },
     });
   }
@@ -84,8 +132,8 @@ export class McpApiKeysService {
    * Returns the user with their role info, or null if key is invalid/inactive.
    */
   async resolveUserByKey(apiKey: string) {
-    const record = await this.prisma.mcpApiKey.findUnique({
-      where: { key: apiKey },
+    const record = await this.prisma.mcpApiKey.findFirst({
+      where: apiKeyLookupWhere(apiKey),
       include: {
         user: {
           select: {
@@ -112,10 +160,14 @@ export class McpApiKeysService {
     });
     if (!membership || membership.deactivatedAt) return null;
 
-    // Update last used timestamp
+    // Update last used timestamp; hash a key that an older container created
+    // after the boot backfill ran.
     await this.prisma.mcpApiKey.update({
       where: { id: record.id },
-      data: { lastUsedAt: new Date() },
+      data: {
+        lastUsedAt: new Date(),
+        ...(record.keyHash ? {} : { keyHash: hashApiKey(apiKey), keySuffix: apiKeySuffix(apiKey) }),
+      },
     }).catch(() => {});
 
     return { ...record.user, mcpServerId: record.mcpServerId, apiKeyName: record.name };

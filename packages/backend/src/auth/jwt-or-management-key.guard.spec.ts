@@ -1,6 +1,9 @@
 import { ExecutionContext, ForbiddenException, HttpException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { JwtOrManagementKeyGuard } from './jwt-or-management-key.guard';
+import { apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
+
+process.env.ENCRYPTION_KEY ??= 'unit-test-encryption-key-0123456789abcdef';
 
 /**
  * Integration test for the management-key path of the guard, against a real
@@ -23,6 +26,7 @@ const keys = {
   admin: `mcp_${'c'.repeat(40)}${Date.now()}`,
   memberAdminScope: `mcp_${'d'.repeat(40)}${Date.now()}`,
   inactive: `mcp_${'e'.repeat(40)}${Date.now()}`,
+  hashedOnly: `mcp_${'f'.repeat(40)}${Date.now()}`,
 };
 
 function contextFor(key: string | undefined, method: string): { ctx: ExecutionContext; req: Record<string, unknown> } {
@@ -55,6 +59,18 @@ beforeAll(async () => {
   await mk(keys.admin, adminId, 'MANAGEMENT_ADMIN');
   await mk(keys.memberAdminScope, memberId, 'MANAGEMENT_ADMIN');
   await mk(keys.inactive, adminId, 'MANAGEMENT_ADMIN', false);
+  // A row whose plaintext column no longer holds the key: only the hash can match.
+  await prisma.mcpApiKey.create({
+    data: {
+      key: `${TAG}-not-a-key`,
+      keyHash: hashApiKey(keys.hashedOnly),
+      keySuffix: apiKeySuffix(keys.hashedOnly),
+      name: 'hashed-only',
+      userId: adminId,
+      organizationId: orgId,
+      scope: 'MANAGEMENT_READ',
+    },
+  });
 });
 
 afterAll(async () => {
@@ -129,5 +145,34 @@ describe('JwtOrManagementKeyGuard (management-key path)', () => {
       if (previous === undefined) delete process.env.MANAGEMENT_RATE_LIMIT_PER_MINUTE;
       else process.env.MANAGEMENT_RATE_LIMIT_PER_MINUTE = previous;
     }
+  });
+});
+
+describe('JwtOrManagementKeyGuard (keys hashed at rest)', () => {
+  it('authenticates a key matched by its hash alone', async () => {
+    const { ctx, req } = contextFor(keys.hashedOnly, 'GET');
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(req.user).toMatchObject({ sub: adminId, organizationId: orgId });
+  });
+
+  it('does not accept the stored hash as a key', async () => {
+    const { ctx } = contextFor(`mcp_${hashApiKey(keys.hashedOnly)}`, 'GET');
+    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('hashes a plaintext-only row the first time it is used', async () => {
+    const { ctx } = contextFor(keys.admin, 'GET');
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    // The stamp is fire-and-forget; poll briefly for it.
+    let row: { keyHash: string | null; keySuffix: string | null } | null = null;
+    for (let i = 0; i < 20; i++) {
+      row = await prisma.mcpApiKey.findUnique({
+        where: { key: keys.admin },
+        select: { keyHash: true, keySuffix: true },
+      });
+      if (row?.keyHash) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(row).toEqual({ keyHash: hashApiKey(keys.admin), keySuffix: apiKeySuffix(keys.admin) });
   });
 });

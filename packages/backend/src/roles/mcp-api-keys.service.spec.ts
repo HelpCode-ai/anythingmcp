@@ -1,4 +1,7 @@
 import { McpApiKeysService } from './mcp-api-keys.service';
+import { hashApiKey } from '../common/crypto/api-key-hash.util';
+
+process.env.ENCRYPTION_KEY ??= 'unit-test-encryption-key-0123456789abcdef';
 
 describe('McpApiKeysService', () => {
   let service: McpApiKeysService;
@@ -9,7 +12,7 @@ describe('McpApiKeysService', () => {
       mcpApiKey: {
         create: jest.fn(),
         findMany: jest.fn(),
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         updateMany: jest.fn(),
         deleteMany: jest.fn(),
         update: jest.fn(),
@@ -125,7 +128,7 @@ describe('McpApiKeysService', () => {
         name: 'My Key',
         user: { id: 'u1', email: 'a@b.com', role: 'USER', mcpRoleId: 'r1' },
       };
-      mockPrisma.mcpApiKey.findUnique.mockResolvedValue(record);
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue(record);
       mockPrisma.mcpApiKey.update.mockResolvedValue({});
 
       const result = await service.resolveUserByKey('mcp_abc');
@@ -140,7 +143,7 @@ describe('McpApiKeysService', () => {
     });
 
     it('should return null when key is inactive', async () => {
-      mockPrisma.mcpApiKey.findUnique.mockResolvedValue({
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({
         id: 'key-1',
         isActive: false,
         user: { id: 'u1' },
@@ -150,7 +153,7 @@ describe('McpApiKeysService', () => {
     });
 
     it('should return null when key not found', async () => {
-      mockPrisma.mcpApiKey.findUnique.mockResolvedValue(null);
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue(null);
       const result = await service.resolveUserByKey('mcp_invalid');
       expect(result).toBeNull();
     });
@@ -163,7 +166,7 @@ describe('McpApiKeysService', () => {
         name: 'Key',
         user: { id: 'u1', email: 'a@b.com', role: 'USER', mcpRoleId: null },
       };
-      mockPrisma.mcpApiKey.findUnique.mockResolvedValue(record);
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue(record);
       mockPrisma.mcpApiKey.update.mockRejectedValue(new Error('DB error'));
 
       const result = await service.resolveUserByKey('mcp_abc');
@@ -179,7 +182,7 @@ describe('McpApiKeysService', () => {
     };
 
     it('resolves a key whose owner is an active member', async () => {
-      mockPrisma.mcpApiKey.findUnique.mockResolvedValue(record);
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue(record);
       mockPrisma.mcpApiKey.update.mockResolvedValue({});
       expect(await service.resolveUserByKey('mcp_x')).toMatchObject({ id: 'u1' });
       expect(mockPrisma.organizationMember.findUnique).toHaveBeenCalledWith({
@@ -191,15 +194,107 @@ describe('McpApiKeysService', () => {
     // Defence in depth: even a key row that escaped deactivation must not
     // authenticate a member who was deactivated in the key's organization.
     it('refuses a key whose owner is deactivated in that organization', async () => {
-      mockPrisma.mcpApiKey.findUnique.mockResolvedValue(record);
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue(record);
       mockPrisma.organizationMember.findUnique.mockResolvedValue({ deactivatedAt: new Date() });
       expect(await service.resolveUserByKey('mcp_x')).toBeNull();
     });
 
     it('refuses a key whose owner is no longer a member', async () => {
-      mockPrisma.mcpApiKey.findUnique.mockResolvedValue(record);
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue(record);
       mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
       expect(await service.resolveUserByKey('mcp_x')).toBeNull();
+    });
+  });
+
+  describe('hashing at rest', () => {
+    it('stores the key hash and suffix with a new key', async () => {
+      mockPrisma.mcpApiKey.create.mockImplementation((args: any) =>
+        Promise.resolve({ id: 'key-1', key: args.data.key }),
+      );
+      const result = await service.generate('user-1', 'org-1', 'Key');
+      const data = mockPrisma.mcpApiKey.create.mock.calls[0][0].data;
+      expect(data.keyHash).toBe(hashApiKey(result.key));
+      expect(data.keyHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(data.keyHash).not.toContain(result.key.slice(4));
+      expect(data.keySuffix).toBe(result.key.slice(-8));
+    });
+
+    it('looks a key up by hash, falling back to the plaintext column', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue(null);
+      await service.resolveUserByKey('mcp_abc');
+      expect(mockPrisma.mcpApiKey.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { OR: [{ keyHash: hashApiKey('mcp_abc') }, { key: 'mcp_abc' }] },
+        }),
+      );
+    });
+
+    it('hashes a row found through the plaintext fallback', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({
+        id: 'k1', isActive: true, userId: 'u1', organizationId: 'org-1', keyHash: null,
+        name: 'n', mcpServerId: null, user: { id: 'u1' },
+      });
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      await service.resolveUserByKey('mcp_abcdef0123456789');
+      expect(mockPrisma.mcpApiKey.update).toHaveBeenCalledWith({
+        where: { id: 'k1' },
+        data: {
+          lastUsedAt: expect.any(Date),
+          keyHash: hashApiKey('mcp_abcdef0123456789'),
+          keySuffix: '23456789',
+        },
+      });
+    });
+
+    it('only stamps lastUsedAt for a row that is already hashed', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({
+        id: 'k1', isActive: true, userId: 'u1', organizationId: 'org-1', keyHash: 'h',
+        name: 'n', mcpServerId: null, user: { id: 'u1' },
+      });
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      await service.resolveUserByKey('mcp_abc');
+      expect(mockPrisma.mcpApiKey.update).toHaveBeenCalledWith({
+        where: { id: 'k1' },
+        data: { lastUsedAt: expect.any(Date) },
+      });
+    });
+
+    it('backfills unhashed rows in batches and only where still unhashed', async () => {
+      mockPrisma.mcpApiKey.findMany
+        .mockResolvedValueOnce([
+          { id: 'a', key: 'mcp_aaaaaaaaaaaa' },
+          { id: 'b', key: 'mcp_bbbbbbbbbbbb' },
+        ])
+        .mockResolvedValueOnce([{ id: 'c', key: 'mcp_cccccccccccc' }]);
+      mockPrisma.mcpApiKey.updateMany.mockResolvedValue({ count: 1 });
+
+      expect(await service.backfillKeyHashes(2)).toBe(3);
+      expect(mockPrisma.mcpApiKey.findMany).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.mcpApiKey.findMany).toHaveBeenCalledWith({
+        where: { keyHash: null },
+        select: { id: true, key: true },
+        take: 2,
+      });
+      expect(mockPrisma.mcpApiKey.updateMany).toHaveBeenCalledWith({
+        where: { id: 'c', keyHash: null },
+        data: { keyHash: hashApiKey('mcp_cccccccccccc'), keySuffix: 'cccccccc' },
+      });
+    });
+
+    it('stops when a full batch changes nothing instead of looping', async () => {
+      mockPrisma.mcpApiKey.findMany.mockResolvedValue([
+        { id: 'a', key: 'mcp_aaaaaaaaaaaa' },
+        { id: 'b', key: 'mcp_bbbbbbbbbbbb' },
+      ]);
+      mockPrisma.mcpApiKey.updateMany.mockResolvedValue({ count: 0 });
+      expect(await service.backfillKeyHashes(2)).toBe(0);
+      expect(mockPrisma.mcpApiKey.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing when every row is hashed', async () => {
+      mockPrisma.mcpApiKey.findMany.mockResolvedValue([]);
+      expect(await service.backfillKeyHashes()).toBe(0);
+      expect(mockPrisma.mcpApiKey.updateMany).not.toHaveBeenCalled();
     });
   });
 });
