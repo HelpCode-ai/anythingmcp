@@ -469,7 +469,7 @@ test.describe('card-trial entry points (cloud)', () => {
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
   });
 
-  test('a ChatGPT workspace sees the ChatGPT plugin directory on the wall, not the Claude Directory', async ({ page }) => {
+  test('a ChatGPT workspace sees the ChatGPT Plugin Directory on the wall, not the Claude Directory', async ({ page }) => {
     await cloudSession(page, {
       seed: SHOWN,
       license: ENDED,
@@ -480,7 +480,7 @@ test.describe('card-trial entry points (cloud)', () => {
     });
     await page.goto('/connectors');
     const trust = page.getByTestId('wall-trust');
-    await expect(trust).toContainText('Listed in the ChatGPT plugin directory', { timeout: 15_000 });
+    await expect(trust).toContainText('Listed in the ChatGPT Plugin Directory', { timeout: 15_000 });
     await expect(trust).not.toContainText('Claude Directory');
   });
 

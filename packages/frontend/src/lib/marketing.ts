@@ -11,7 +11,7 @@ const DEFAULT_MARKETING_URL = 'https://anythingmcp.com';
 export const CLAUDE_DIRECTORY_URL = 'https://claude.ai/directory/anythingmcp';
 
 /**
- * AnythingMCP's listing in OpenAI's ChatGPT plugin directory. The plugin runs
+ * AnythingMCP's listing in OpenAI's ChatGPT Plugin Directory. The plugin runs
  * read-only database queries on AnythingMCP Cloud, so like the Claude listing
  * it is only offered on Cloud.
  */

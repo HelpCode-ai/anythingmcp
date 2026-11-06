@@ -39,7 +39,7 @@ test('cloud sign-up shows the numbers, never below their floors', async ({ page 
   await expect(panel.getByText('3,800+')).toBeVisible();
   await expect(panel.getByText(/stars on GitHub/)).toHaveCount(0);
   await expect(panel.getByText('Listed in the Claude Directory')).toBeVisible();
-  await expect(panel.getByText('Listed in the ChatGPT plugin directory')).toBeVisible();
+  await expect(panel.getByText('Listed in the ChatGPT Plugin Directory')).toBeVisible();
   await expect(panel.getByText('Your 7-day trial includes')).toBeVisible();
 });
 
@@ -66,7 +66,7 @@ test('each assistant sees only its own directory badge, Muse neither, anyone els
   await mock(page, 'cloud', { message: 'down' }, 503);
   const panel = page.getByRole('complementary', { name: 'Why teams build on AnythingMCP' });
   const claude = panel.getByRole('link', { name: 'Listed in the Claude Directory' });
-  const chatgpt = panel.getByRole('link', { name: 'Listed in the ChatGPT plugin directory' });
+  const chatgpt = panel.getByRole('link', { name: 'Listed in the ChatGPT Plugin Directory' });
   const expected: Record<string, [boolean, boolean]> = {
     claude: [true, false],
     chatgpt: [false, true],

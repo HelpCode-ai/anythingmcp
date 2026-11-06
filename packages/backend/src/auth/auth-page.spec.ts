@@ -22,7 +22,7 @@ describe('directory badges on the authorization page', () => {
     expect(claude).not.toContain('ChatGPT');
 
     const chatgpt = directoryBadgeHtml(['chatgpt']);
-    expect(chatgpt).toContain('Listed in OpenAI&#39;s ChatGPT plugin directory');
+    expect(chatgpt).toContain('Listed in OpenAI&#39;s ChatGPT Plugin Directory');
     expect(chatgpt).toContain('class="verified verified-chatgpt"');
     expect(chatgpt).toContain('fill="#10A37F"');
     expect(chatgpt).not.toContain('Claude');

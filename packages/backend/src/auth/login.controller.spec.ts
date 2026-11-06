@@ -1450,13 +1450,13 @@ describe('LoginController', () => {
     it("shows each assistant only its own directory badge, both to other clients, and tells the sign-up page who it is", async () => {
       const link = (client: string) => `href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=${client}"`;
       const CLAUDE_ONLY = 'Listed in Anthropic&#39;s Claude Directory';
-      const CHATGPT_ONLY = 'Listed in OpenAI&#39;s ChatGPT plugin directory';
+      const CHATGPT_ONLY = 'Listed in OpenAI&#39;s ChatGPT Plugin Directory';
       const BOTH = 'Listed in the Claude and ChatGPT directories';
 
       session('https://claude.ai/api/mcp/auth_callback', 'Claude');
       let html = await page(make(DEPLOY.cloud));
       expect(html).toContain(CLAUDE_ONLY);
-      expect(html).not.toMatch(/ChatGPT plugin directory|directories/);
+      expect(html).not.toMatch(/ChatGPT Plugin Directory|directories/);
       expect(html).toContain(link('claude'));
 
       session('https://chatgpt.com/connector_platform_oauth_redirect', 'ChatGPT');

@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * The Quick Connect modals on an MCP server page. On AnythingMCP Cloud the
  * Claude modals lead with AnythingMCP's listing in the Claude Directory, and
- * the ChatGPT modal with its listing in the ChatGPT plugin directory; a
+ * the ChatGPT modal with its listing in the ChatGPT Plugin Directory; a
  * self-hosted instance must not show them, since those listings only ever
  * connect to Cloud. Meta Muse has its own modal with this server's URL.
  */
@@ -86,13 +86,13 @@ test.describe('MCP server Quick Connect', () => {
     });
   }
 
-  test('ChatGPT leads with the ChatGPT plugin directory on Cloud', async ({ page }) => {
+  test('ChatGPT leads with the ChatGPT Plugin Directory on Cloud', async ({ page }) => {
     await openServerPage(page, 'cloud');
     await openClient(page, 'ChatGPT');
 
     const directory = page.getByTestId('chatgpt-directory');
-    await expect(directory).toContainText('Quickest for company databases: the ChatGPT plugin directory');
-    await expect(directory.getByRole('link', { name: 'Open in the ChatGPT plugin directory' })).toHaveAttribute(
+    await expect(directory).toContainText('Quickest for company databases: the ChatGPT Plugin Directory');
+    await expect(directory.getByRole('link', { name: 'Open in the ChatGPT Plugin Directory' })).toHaveAttribute(
       'href',
       CHATGPT_DIRECTORY_URL,
     );

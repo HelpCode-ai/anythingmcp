@@ -367,7 +367,7 @@ describe('EmailService', () => {
     const { service } = make({ cloud: false });
     await service.sendPasswordResetEmail('a@b.com', 'https://mcp.example.com/reset?t=1');
     const mail = sent();
-    expect(mail.html).not.toMatch(/Frankfurt|DPA|Claude Directory|ChatGPT plugin directory|AI tool calls/);
+    expect(mail.html).not.toMatch(/Frankfurt|DPA|Claude Directory|ChatGPT Plugin Directory|AI tool calls/);
     expect(mail.html).toContain('Open source');
   });
 

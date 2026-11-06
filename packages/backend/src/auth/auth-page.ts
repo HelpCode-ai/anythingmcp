@@ -85,7 +85,7 @@ export type DirectoryListing = 'claude' | 'chatgpt';
 /**
  * Which directory listings are shown to someone connecting this client. One
  * assistant's listing is never shown to another assistant's users: Claude
- * sees the Claude Directory, ChatGPT the ChatGPT plugin directory, Meta's
+ * sees the Claude Directory, ChatGPT the ChatGPT Plugin Directory, Meta's
  * Muse neither. Every other client sees both.
  */
 export function directoryBadgesFor(client: SignupClient): DirectoryListing[] {
@@ -115,7 +115,7 @@ export function directoryBadgeHtml(listings: DirectoryListing[]): string {
     return `<div class="verified">${claudeMark(12)}<span>Listed in Anthropic&#39;s Claude Directory</span></div>`;
   }
   if (chatgpt) {
-    return `<div class="verified verified-chatgpt">${chatgptMark(12)}<span>Listed in OpenAI&#39;s ChatGPT plugin directory</span></div>`;
+    return `<div class="verified verified-chatgpt">${chatgptMark(12)}<span>Listed in OpenAI&#39;s ChatGPT Plugin Directory</span></div>`;
   }
   return '';
 }

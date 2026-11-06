@@ -29,7 +29,7 @@ const MONO = "ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monos
 export const DEFAULT_EMAIL_ASSET_BASE = 'https://anythingmcp.com/email';
 const MARKETING = 'https://anythingmcp.com';
 export const CLAUDE_DIRECTORY_URL = 'https://claude.ai/directory/anythingmcp';
-/** AnythingMCP's listing in OpenAI's ChatGPT plugin directory (database queries). */
+/** AnythingMCP's listing in OpenAI's ChatGPT Plugin Directory (database queries). */
 export const CHATGPT_DIRECTORY_URL = 'https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121';
 export const GITHUB_URL = 'https://github.com/HelpCode-ai/anythingmcp';
 
@@ -219,7 +219,7 @@ ${tiles
     )}</a>`;
   const directory = cloud
     ? listing(CLAUDE_DIRECTORY_URL, 'claude', 'Listed in the Claude Directory', '#fffaf5') +
-      listing(CHATGPT_DIRECTORY_URL, 'chatgpt', 'Listed in the ChatGPT plugin directory', '#f3fbf8')
+      listing(CHATGPT_DIRECTORY_URL, 'chatgpt', 'Listed in the ChatGPT Plugin Directory', '#f3fbf8')
     : '';
   const badges =
     directory +
@@ -305,7 +305,7 @@ export function renderEmailText(input: {
   ].filter(Boolean);
   const badges = [
     cloud ? 'Listed in the Claude Directory' : null,
-    cloud ? 'Listed in the ChatGPT plugin directory' : null,
+    cloud ? 'Listed in the ChatGPT Plugin Directory' : null,
     cloud ? 'EU-hosted, Frankfurt' : null,
     cloud ? 'GDPR, DPA included' : null,
     'AES-256-GCM',
