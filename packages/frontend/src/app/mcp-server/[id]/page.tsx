@@ -475,7 +475,15 @@ export default function McpServerDetailPage() {
         <p className="text-[13px] font-semibold text-[var(--text)]">
           {t('chatgptDirectory.title')}
         </p>
-        {linkAction(CHATGPT_DIRECTORY_URL, t('chatgptDirectory.open'), true)}
+        {/* Secondary: the main button below opens Plugins for the custom MCP server. */}
+        <a
+          href={CHATGPT_DIRECTORY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}
+        >
+          {t('chatgptDirectory.open')}
+        </a>
       </div>
     ) : null;
 
