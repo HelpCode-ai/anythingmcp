@@ -7514,8 +7514,8 @@ grant deletes its policy. System roles cannot be modified. Configuration is
 restricted to grants and tools in the administrator's workspace.
 
 Limits are **per principal and tool within a workspace**, shared across MCP
-servers: a user session has its own budget, and each user/API-key name has its
-own budget, using the same identity as the principal limiter. They are not
+servers. Each user has one budget per tool, shared by their sessions and all of
+their API keys, so creating another key does not raise it. Limits are not
 shared by every member of a role. Nested Code Mode `amcp.run` calls use the
 same budget as direct calls. A saved code tool can also have its own limit.
 

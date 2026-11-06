@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../common/redis.service';
-import { McpPrincipalRateLimitGuard } from '../auth/mcp-principal-rate-limit.guard';
 import { RolesService, type ToolRateLimits } from '../roles/roles.service';
 
 export interface ToolRateLimitContext {
@@ -60,14 +59,11 @@ export class ToolRateLimitService {
     const limits = await this.roles.getToolRateLimits(context.userId, context.organizationId, tool.id);
     if (!limits || (limits.callsPerMinute === null && limits.callsPerHour === null)) return null;
 
-    // Use precisely the principal guard's identity, including its key-name
-    // truncation. Encode the whole tuple to avoid delimiter/hash-slot collisions.
-    // These are IDs and key labels, never authentication key values; this is
-    // a counter identifier, not credential storage. Never log the identifier.
-    const bucket = McpPrincipalRateLimitGuard.bucketFor({
-      user: { sub: context.userId, authMethod: context.authMethod, apiKeyName: context.apiKeyName },
-    });
-    const key = Buffer.from(JSON.stringify([context.organizationId, tool.id, bucket]), 'utf8').toString('base64url');
+    // One budget per user, tool and workspace, whatever key, session or
+    // client the call arrives with. Keying on the API-key name let a limited
+    // member multiply the budget by creating more keys (any member can).
+    // Encode the tuple to avoid delimiter and hash-slot collisions.
+    const key = Buffer.from(JSON.stringify([context.organizationId, tool.id, context.userId]), 'utf8').toString('base64url');
 
     if (this.redis.isConfigured) {
       if (!this.redis.isConnected) {

@@ -43,7 +43,7 @@ describe('per-tool rate-limit admission', () => {
     expect(results.filter((value) => value === null)).toHaveLength(2);
   });
 
-  it('isolates organizations, tools, users and API-key names', async () => {
+  it('isolates organizations, tools and users', async () => {
     const { service, roles } = build();
     roles.getToolRateLimits.mockResolvedValue({ callsPerMinute: 1, callsPerHour: null });
     await service.check(tool, context);
@@ -51,8 +51,6 @@ describe('per-tool rate-limit admission', () => {
     for (const other of [
       { ...context, organizationId: 'other-org' },
       { ...context, userId: 'other-user' },
-      { ...context, authMethod: 'mcp_api_key', apiKeyName: 'agent-a' },
-      { ...context, authMethod: 'mcp_api_key', apiKeyName: 'agent-b' },
     ]) {
       expect(await service.check(tool, other)).toBeNull();
       expect(await service.check(tool, other)).not.toBeNull();
@@ -60,11 +58,14 @@ describe('per-tool rate-limit admission', () => {
     expect(await service.check({ ...tool, id: 'other-tool' }, context)).toBeNull();
   });
 
-  it('uses the same 80-character API-key name bucket as the principal guard', async () => {
+  it('gives a user one budget across sessions and all of their API keys', async () => {
     const { service, roles } = build();
-    roles.getToolRateLimits.mockResolvedValue({ callsPerMinute: 1, callsPerHour: null });
-    await service.check(tool, { ...context, authMethod: 'mcp_api_key', apiKeyName: 'a'.repeat(80) + 'x' });
-    expect(await service.check(tool, { ...context, authMethod: 'mcp_api_key', apiKeyName: 'a'.repeat(80) + 'y' })).not.toBeNull();
+    roles.getToolRateLimits.mockResolvedValue({ callsPerMinute: 3, callsPerHour: null });
+    expect(await service.check(tool, { ...context, authMethod: 'jwt' })).toBeNull();
+    expect(await service.check(tool, { ...context, authMethod: 'mcp_api_key', apiKeyName: 'agent-a' })).toBeNull();
+    expect(await service.check(tool, { ...context, authMethod: 'mcp_api_key', apiKeyName: 'agent-b' })).toBeNull();
+    // A new key does not bring a new budget.
+    expect(await service.check(tool, { ...context, authMethod: 'mcp_api_key', apiKeyName: 'agent-c' })).not.toBeNull();
   });
 
   it('does not count unrestricted callers, operator calls, or unlimited grants', async () => {

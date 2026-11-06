@@ -207,7 +207,7 @@ export class RolesController {
   @Put(':id/tools/:toolId/rate-limit')
   @ApiOperation({
     summary: 'Set rate limits on an existing role/tool grant (ADMIN)',
-    description: 'Positive integer calls per minute/hour, per user or user/API-key name. Null clears a window; omitted fields are preserved. Across granting roles each window uses its highest value, with null meaning unlimited. System roles cannot be modified.',
+    description: 'Positive integer calls per minute/hour, per user, shared across their sessions and API keys. Null clears a window; omitted fields are preserved. Across granting roles each window uses its highest value, with null meaning unlimited. System roles cannot be modified.',
   })
   @ApiBody({ type: SetToolRateLimitsDto })
   async setToolRateLimits(
