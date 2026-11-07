@@ -4,6 +4,7 @@ import { Prisma, UserRole } from '../generated/prisma/client';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { LastAdminConflictException } from './last-admin.exception';
 import { LicenseReleaseService } from '../license/license-release.service';
+import { CASCADE_DELETE_TRANSACTION } from '../common/cascade-delete-transaction';
 
 /** Ordered least- to most-privileged; used to tell a demotion from a promotion. */
 const ORG_ROLE_RANK: Record<UserRole, number> = { VIEWER: 1, EDITOR: 2, ADMIN: 3 };
@@ -497,7 +498,7 @@ export class OrganizationsService {
         },
         activeOrganization: activeOrg,
       };
-    });
+    }, CASCADE_DELETE_TRANSACTION);
 
     // The workspace's licence is left without one; end it on the licence site.
     this.licenseRelease.releaseInBackground();

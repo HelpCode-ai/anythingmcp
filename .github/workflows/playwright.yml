@@ -11,7 +11,10 @@ jobs:
   e2e:
     name: Frontend e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The browser install (--with-deps) waits on the Ubuntu apt mirror, which
+    # sometimes takes 10-12 minutes instead of seconds; 15 left no room for
+    # the tests themselves.
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v6
