@@ -288,4 +288,21 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
     await flush();
     expect(events.log).not.toHaveBeenCalled();
   });
+
+  it('tells the user anyone can reactivate with the link, no sign-in, and names no administrator', async () => {
+    const { executor } = build(new TrialEndedException(ENDED));
+    const body = JSON.parse((await executor.executeTool('etsy_list_listings', {}, ctx)).content[0].text);
+    expect(body.error).toContain('no sign-in is needed');
+    expect(body.error).not.toMatch(/administrator/i);
+  });
+
+  it('gives the list notice of an ended trial with the same link, and nothing for any other licence refusal', async () => {
+    const ended = build(new TrialEndedException(ENDED)).executor;
+    const notice = await ended.trialEndedNotice('org-1', 'u1');
+    expect(notice?.message).toContain('trial ended on 28 October 2026');
+    expect(notice?.message.endsWith(notice!.reactivateUrl)).toBe(true);
+    expect(await ended.trialEndedNotice(undefined)).toBeNull();
+    expect(await build(new ForbiddenException('no licence')).executor.trialEndedNotice('org-1')).toBeNull();
+  });
 });
+
