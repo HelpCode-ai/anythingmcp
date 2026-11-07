@@ -468,7 +468,7 @@ export class ProductEventService {
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
-  'tool', 'profile', 'setupTool', 'variant', 'calls',
+  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
@@ -490,8 +490,11 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   protocol: KNOWN_PROTOCOLS,
   preset: KNOWN_PRESETS,
   files: KNOWN_FILE_BUCKETS,
-  // license_wall_viewed (license-wall.service.ts).
-  variant: new Set(['trust', 'control']),
+  // license_wall_viewed (license-wall.service.ts): trust / control;
+  // trial_expired_call_blocked (the reactivation-link test, license-checkout.ts): page / pricing.
+  variant: new Set(['trust', 'control', 'page', 'pricing']),
+  // reactivate_page_viewed (reactivation.controller.ts).
+  state: new Set(['trial-ended', 'active', 'payment-failed', 'no-license']),
 };
 const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
