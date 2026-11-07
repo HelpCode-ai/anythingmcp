@@ -16,10 +16,13 @@ featured: true
 1. **Calls MCP tools** — the same tools your AI clients use (Shopify, HubSpot, SAP, your SQL database, a file share…). You can run them by hand, in shell scripts, from cron and CI, or as a **code-mode program** that chains dozens of calls in one step.
 2. **Drives the management API** (`/api/*`) with a **management-scoped key**. Everything the dashboard does — connectors, MCP servers, users, roles, SSO, memory, skills, audit — becomes a command, for you or for a connected agent.
 
-It is open source (AGPL-3.0), works against **AnythingMCP Cloud** and **self-hosted** instances, needs Node 22+, and installs from npm:
+It is open source (AGPL-3.0), works against **AnythingMCP Cloud** and **self-hosted** instances, needs Node 22+, and installs from npm or Homebrew:
 
 ```bash
 npm i -g @anythingmcp/cli
+# or, on macOS and Linux (Node and shell completions included):
+brew install helpcode-ai/tap/amcp
+
 amcp --help
 ```
 
@@ -325,7 +328,7 @@ The scope is the safety net. A management key carries its owner's identity and r
 
 ## Get it
 
-- **Install:** `npm i -g @anythingmcp/cli`, plus shell completion with `amcp completion zsh` (also bash and fish)
+- **Install:** `npm i -g @anythingmcp/cli` or `brew install helpcode-ai/tap/amcp`, plus shell completion with `amcp completion zsh` (also bash and fish)
 - **Overview:** [anythingmcp.com/developers/cli](/developers/cli)
 - **Full command reference:** the [CLI README on GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme)
 - **Source:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp)

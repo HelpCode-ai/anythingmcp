@@ -38,7 +38,13 @@ It works with [AnythingMCP Cloud](https://cloud.anythingmcp.com) and self-hosted
 npm i -g @anythingmcp/cli
 ```
 
-Requires Node.js 22.12 or newer. The examples below use real commands, flags, endpoints and tool names (the Shopify, HubSpot and Slack tools come from the built-in catalogue connectors). Only the data in the output is invented.
+Or with Homebrew on macOS and Linux, which also installs Node.js and the shell completions:
+
+```bash
+brew install helpcode-ai/tap/amcp
+```
+
+With npm, it requires Node.js 22.12 or newer. The examples below use real commands, flags, endpoints and tool names (the Shopify, HubSpot and Slack tools come from the built-in catalogue connectors). Only the data in the output is invented.
 
 ## Contents
 
