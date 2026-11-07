@@ -1625,7 +1625,8 @@ export interface ReactivationView {
   state: 'trial-ended' | 'active' | 'payment-failed' | 'no-license';
   workspaceName: string;
   trialEndedAt: string | null;
-  client: 'Claude' | 'ChatGPT' | null;
+  /** The AI client whose chat showed the link (else the first one connected). */
+  client: 'Claude' | 'ChatGPT' | 'Cursor' | 'Copilot' | null;
   usage: { connectors: number; mcpServers: number; users: number };
 }
 

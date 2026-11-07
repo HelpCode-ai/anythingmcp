@@ -1,33 +1,54 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useLocale, useTranslations } from 'next-intl';
 import { ApiError, reactivation, type ReactivationView } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { useTrustStats } from '@/lib/trust-stats';
-import { CHATGPT_DIRECTORY_URL, CLAUDE_DIRECTORY_URL, getMarketingUrl } from '@/lib/marketing';
+import { useLocalPricing } from '@/lib/local-currency';
+import { CHATGPT_DIRECTORY_URL, CLAUDE_DIRECTORY_URL, buildEnterpriseContactUrl, getMarketingUrl } from '@/lib/marketing';
 import {
+  CLOUD_PLANS,
   DEFAULT_SELECTION,
+  formatEur,
+  limitsExceeded,
   planById,
   selectionForUsage,
+  yearlyPerMonth,
   type PlanSelection,
 } from '@/lib/card-trial';
-import { PlanPicker } from '@/components/plan-picker';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { COPY, DATE_LOCALE, fmt, pickPageLang, splitTag, type PageLang, type ReactivateCopy } from './copy';
 
 /** How often the page asks whether the payment reached the workspace, and for how long. */
 const PAID_POLL_MS = 4000;
 const PAID_POLL_LIMIT = 90;
+
+/** Logos of the AI clients the page can name (public/logos/clients). */
+const CLIENT_LOGOS: Record<string, string> = {
+  Claude: 'claude',
+  ChatGPT: 'chatgpt',
+  Copilot: 'copilot',
+  Cursor: 'cursor',
+};
+const WORKS_WITH = [
+  { file: 'claude', label: 'Claude' },
+  { file: 'chatgpt', label: 'ChatGPT' },
+  { file: 'copilot', label: 'Copilot' },
+  { file: 'cursor', label: 'Cursor' },
+  { file: 'muse', label: 'Meta Muse' },
+];
 
 /**
  * The page an AI client links to when a tool call is refused because the
  * workspace's trial ended (A/B against the pricing page). No sign-in: the
  * token names the workspace, and the checkout it opens is for that workspace
  * alone, so the paid licence reaches it without anyone activating a key.
- * Back from Stripe (`?paid=1`) it waits until the workspace is active.
+ * Back from Stripe (`?paid=1`) it waits until the workspace is active. The
+ * words follow the visitor's language among the website's seven (copy.ts).
  */
 export default function ReactivatePage() {
   // useSearchParams (the ?paid=1 return from Stripe) needs a Suspense boundary.
@@ -38,12 +59,23 @@ export default function ReactivatePage() {
   );
 }
 
+function usePageLang(): PageLang {
+  const [lang, setLang] = useState<PageLang>('en');
+  useEffect(() => {
+    // Read after mount: the server render has no cookie or browser languages.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLang(pickPageLang(document.cookie, navigator.languages?.length ? navigator.languages : [navigator.language]));
+  }, []);
+  return lang;
+}
+
 function ReactivateContent() {
-  const t = useTranslations('reactivate');
-  const locale = useLocale();
+  const lang = usePageLang();
+  const c = COPY[lang];
   const { token } = useParams<{ token: string }>();
   const searchParams = useSearchParams();
   const backFromStripe = searchParams.get('paid') === '1';
+  const { token: session } = useAuth();
   const [view, setView] = useState<ReactivationView | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -103,96 +135,116 @@ function ReactivateContent() {
       });
       window.location.href = url;
     } catch (e) {
-      setCheckoutError(e instanceof ApiError && e.status === 409 ? e.message : t('checkoutFailed'));
+      setCheckoutError(e instanceof ApiError && e.status === 409 ? e.message : c.checkoutFailed);
       setOpening(false);
     }
   };
 
   const client = view?.client ?? null;
-  const clientName = client ?? t('yourAi');
+  const clientName = client ?? c.yourAi;
   const endedOn = view?.trialEndedAt
-    ? new Date(view.trialEndedAt).toLocaleDateString(locale, { day: 'numeric', month: 'long', timeZone: 'UTC' })
+    ? new Date(view.trialEndedAt).toLocaleDateString(DATE_LOCALE[lang], { day: 'numeric', month: 'long', timeZone: 'UTC' })
     : null;
-  const plan = planById(selection.plan);
+  // Each assistant's users see its own directory listing; anyone else both.
+  const showClaude = client !== 'ChatGPT';
+  const showChatgpt = client !== 'Claude';
+  const selling = !!view && (view.state === 'trial-ended' || view.state === 'no-license') && !backFromStripe;
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+    <div lang={lang} className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
       <header className="border-b border-[var(--border)] bg-[var(--surface)]">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-          <a href={marketing} className="flex items-center gap-2 font-semibold" target="_blank" rel="noopener noreferrer">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-3 px-4">
+          <a href={marketing} className="flex shrink-0 items-center gap-2 font-semibold" target="_blank" rel="noopener noreferrer">
             <LogoIcon size={26} />
             <span>AnythingMCP</span>
           </a>
-          <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-2)]">
-            <LockIcon />
-            {t('secureCheckout')}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="hidden items-center gap-1.5 text-xs text-[var(--text-2)] sm:inline-flex">
+              <LockIcon />
+              {c.nav.secureCheckout}
+            </span>
+            <Link
+              href={session ? '/' : '/login?redirect=%2F'}
+              className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'whitespace-nowrap')}
+            >
+              {session ? c.nav.openWorkspace : c.nav.signIn}
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
         {!view && !notFound && !loadError && (
-          <p className="py-24 text-center text-sm text-[var(--text-3)]">{t('loading')}</p>
+          <p className="py-24 text-center text-sm text-[var(--text-3)]">{c.loading}</p>
         )}
 
         {(notFound || loadError) && (
           <Notice
-            title={notFound ? t('expiredTitle') : t('errorTitle')}
-            body={notFound ? t('expiredBody') : t('errorBody')}
-            action={{ href: '/login', label: t('signIn') }}
+            title={notFound ? c.expiredTitle : c.errorTitle}
+            body={notFound ? c.expiredBody : c.errorBody}
+            action={{ href: '/login', label: c.signIn }}
           />
         )}
 
         {view && view.state === 'active' && (
           <Notice
             tone="success"
-            title={backFromStripe ? t('paidTitle') : t('activeTitle')}
-            body={t('activeBody', { client: clientName, workspace: view.workspaceName })}
-            action={{ href: '/', label: t('openDashboard') }}
+            title={backFromStripe ? c.paidTitle : c.activeTitle}
+            body={fmt(c.activeBody, { client: clientName, workspace: view.workspaceName })}
+            action={{ href: '/', label: c.openDashboard }}
           />
         )}
 
         {view && view.state !== 'active' && backFromStripe && (
           <Notice
-            title={t('processingTitle')}
-            body={pollsLeft > 0 ? t('processingBody') : t('processingSlow')}
-            action={{ href: '/login', label: t('signIn') }}
+            title={c.processingTitle}
+            body={pollsLeft > 0 ? c.processingBody : c.processingSlow}
+            action={{ href: '/login', label: c.signIn }}
           />
         )}
 
         {view && view.state === 'payment-failed' && !backFromStripe && (
-          <Notice
-            title={t('paymentFailedTitle')}
-            body={t('paymentFailedBody')}
-            action={{ href: '/login', label: t('signIn') }}
-          />
+          <Notice title={c.paymentFailedTitle} body={c.paymentFailedBody} action={{ href: '/login', label: c.signIn }} />
         )}
 
-        {view && (view.state === 'trial-ended' || view.state === 'no-license') && !backFromStripe && (
+        {selling && view && (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-10">
             <section aria-labelledby="reactivate-title">
-              <p className="mb-3 inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-2)]">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warning)]" aria-hidden />
-                <span className="truncate">
-                  {t('workspace')}: <span className="font-medium text-[var(--text)]">{view.workspaceName}</span>
+              <div className="mb-3 flex flex-wrap gap-2">
+                <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-2)]">
+                  <span className="truncate">
+                    {c.workspace}: <span className="font-medium text-[var(--text)]">{view.workspaceName}</span>
+                  </span>
                 </span>
-              </p>
+                {client && (
+                  <span
+                    data-testid="client-paused"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-2)]"
+                  >
+                    {CLIENT_LOGOS[client] && (
+                      <img src={`/logos/clients/${CLIENT_LOGOS[client]}.svg`} width={14} height={14} alt="" />
+                    )}
+                    {fmt(c.paused, { client })}
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--warning)]" aria-hidden />
+                  </span>
+                )}
+              </div>
               <h1 id="reactivate-title" className="text-[28px] font-bold leading-tight tracking-tight sm:text-[34px]">
-                {t('title', { client: clientName })}
+                {fmt(c.title, { client: clientName })}
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-[var(--text-2)]">
-                {endedOn ? t('bodyEnded', { date: endedOn, client: clientName }) : t('body', { client: clientName })}
+                {endedOn ? fmt(c.bodyEnded, { date: endedOn, client: clientName }) : fmt(c.body, { client: clientName })}
               </p>
 
               <div className="mt-6 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
-                <PlanPicker value={selection} onChange={pickPlan} disabled={opening} usage={view.usage} />
+                <PlanChooser copy={c} value={selection} onChange={pickPlan} disabled={opening} usage={view.usage} />
                 <button
                   type="button"
                   onClick={subscribe}
                   disabled={opening}
                   className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'mt-5 w-full text-[15px]')}
                 >
-                  {opening ? t('opening') : t('cta', { plan: plan.name })}
+                  {opening ? c.opening : fmt(c.cta, { plan: planById(selection.plan).name })}
                 </button>
                 {checkoutError && (
                   <p role="alert" className="mt-2 text-center text-xs text-[var(--danger)]">
@@ -200,7 +252,7 @@ function ReactivateContent() {
                   </p>
                 )}
                 <ul className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-xs text-[var(--text-2)]">
-                  {[t('trust.cancel'), t('trust.stripe'), t('trust.noSetup')].map((item) => (
+                  {[c.chips.cancel, c.chips.stripe, c.chips.noSetup].map((item) => (
                     <li key={item} className="inline-flex items-center gap-1">
                       <Check />
                       {item}
@@ -211,13 +263,63 @@ function ReactivateContent() {
             </section>
 
             <aside className="space-y-4">
+              <div data-testid="reactivate-trust" className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
+                {(trust?.workspaces || trust?.toolCalls) && (
+                  <div className="mb-4 grid grid-cols-2 gap-2.5">
+                    {trust?.workspaces && <StatTile n={trust.workspaces} label={c.stats.workspaces} />}
+                    {trust?.toolCalls && <StatTile n={trust.toolCalls} label={c.stats.toolCalls} />}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {showClaude && (
+                    <a
+                      href={CLAUDE_DIRECTORY_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(217,119,87,.45)] bg-[rgba(217,119,87,.08)] px-2.5 py-1 text-[12px] text-[var(--text)] hover:bg-[rgba(217,119,87,.14)]"
+                    >
+                      <img src="/logos/clients/claude.svg" width={13} height={13} alt="" />
+                      {c.badges.claude}
+                    </a>
+                  )}
+                  {showChatgpt && (
+                    <a
+                      href={CHATGPT_DIRECTORY_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(16,163,127,.45)] bg-[rgba(16,163,127,.08)] px-2.5 py-1 text-[12px] text-[var(--text)] hover:bg-[rgba(16,163,127,.14)]"
+                    >
+                      <img src="/logos/clients/chatgpt.svg" width={13} height={13} alt="" />
+                      {c.badges.chatgpt}
+                    </a>
+                  )}
+                  {[c.badges.eu, c.badges.gdpr, c.badges.encrypted, c.badges.openSource].map((b) => (
+                    <span
+                      key={b}
+                      className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1 text-[12px] text-[var(--text-2)]"
+                    >
+                      {b}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-[var(--text-3)]">
+                  <span>{c.worksWith}</span>
+                  {WORKS_WITH.map((w) => (
+                    <span key={w.file} className="inline-flex items-center gap-1.5 text-[var(--text-2)]">
+                      <img src={`/logos/clients/${w.file}.svg`} width={16} height={16} alt="" />
+                      {w.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
               <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
-                <h2 className="text-sm font-semibold">{t('next.title')}</h2>
+                <h2 className="text-sm font-semibold">{c.next.title}</h2>
                 <ol className="mt-4 space-y-4">
                   {[
-                    { title: t('next.payTitle'), body: t('next.payBody') },
-                    { title: t('next.activeTitle'), body: t('next.activeBody') },
-                    { title: t('next.backTitle', { client: clientName }), body: t('next.backBody', { client: clientName }) },
+                    { title: c.next.payTitle, body: c.next.payBody },
+                    { title: c.next.activeTitle, body: c.next.activeBody },
+                    { title: fmt(c.next.backTitle, { client: clientName }), body: c.next.backBody },
                   ].map((step, i) => (
                     <li key={step.title} className="flex gap-3">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--brand-tint)] text-xs font-semibold text-[var(--brand)]">
@@ -233,58 +335,187 @@ function ReactivateContent() {
               </div>
 
               <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
-                <h2 className="text-sm font-semibold">{t('why.title')}</h2>
+                <h2 className="text-sm font-semibold">{c.why.title}</h2>
                 <ul className="mt-3 space-y-2.5 text-[13px] text-[var(--text-2)]">
-                  <TrustRow>{t('why.kept')}</TrustRow>
-                  <TrustRow>{t('why.cancel')}</TrustRow>
-                  <TrustRow>{t('why.eu')}</TrustRow>
+                  <TrustRow>{c.why.kept}</TrustRow>
+                  <TrustRow>{c.why.cancel}</TrustRow>
                   <TrustRow>
-                    {t.rich('why.directories', {
-                      claude: (chunks) => (
-                        <a href={CLAUDE_DIRECTORY_URL} target="_blank" rel="noopener noreferrer" className="text-[var(--brand)] hover:underline">
-                          {chunks}
-                        </a>
-                      ),
-                      chatgpt: (chunks) => (
-                        <a href={CHATGPT_DIRECTORY_URL} target="_blank" rel="noopener noreferrer" className="text-[var(--brand)] hover:underline">
-                          {chunks}
-                        </a>
-                      ),
-                    })}
+                    <Tagged text={c.why.support} tag="mail" href="mailto:support@anythingmcp.com" />
                   </TrustRow>
-                  {trust?.workspaces && <TrustRow>{t('why.workspaces', { count: trust.workspaces })}</TrustRow>}
                 </ul>
               </div>
-
-              <p className="px-1 text-xs leading-relaxed text-[var(--text-3)]">
-                {t.rich('questions', {
-                  mail: (chunks) => (
-                    <a href="mailto:support@anythingmcp.com" className="text-[var(--brand)] hover:underline">
-                      {chunks}
-                    </a>
-                  ),
-                })}
-              </p>
             </aside>
           </div>
         )}
       </main>
 
       <footer className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 pb-8 text-xs text-[var(--text-3)]">
-        <span>{t('footer')}</span>
+        <span>{c.footer}</span>
         <span className="flex gap-3">
           <a href={`${marketing}/impressum`} target="_blank" rel="noopener noreferrer" className="hover:underline">
-            {t('imprint')}
+            {c.imprint}
           </a>
           <a href={`${marketing}/datenschutz`} target="_blank" rel="noopener noreferrer" className="hover:underline">
-            {t('privacy')}
+            {c.privacy}
           </a>
           <a href={`${marketing}/agb`} target="_blank" rel="noopener noreferrer" className="hover:underline">
-            {t('terms')}
+            {c.terms}
           </a>
         </span>
       </footer>
     </div>
+  );
+}
+
+/**
+ * The Cloud plans with the billing-period switch, in the page's language
+ * (the dashboard's PlanPicker is English only). A plan the workspace has
+ * outgrown says so.
+ */
+function PlanChooser({
+  copy,
+  value,
+  onChange,
+  disabled,
+  usage,
+}: {
+  copy: ReactivateCopy;
+  value: PlanSelection;
+  onChange: (next: PlanSelection) => void;
+  disabled: boolean;
+  usage: ReactivationView['usage'];
+}) {
+  const p = copy.plans;
+  const pricing = useLocalPricing(true);
+  const footer = pricing?.currency
+    ? fmt(p.pricesLocal, { currency: pricing.currency })
+    : pricing?.vat === false
+      ? p.pricesNoVat
+      : p.pricesVat;
+  const enterprise = useMemo(() => splitTag(p.enterprise, 'link'), [p.enterprise]);
+  const period = (id: PlanSelection['period'], label: React.ReactNode) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={value.period === id}
+      disabled={disabled}
+      onClick={() => onChange({ ...value, period: id })}
+      className={cn(
+        'h-8 rounded-[7px] px-3 text-[12.5px] font-semibold transition-colors',
+        value.period === id
+          ? 'bg-[var(--surface)] text-[var(--text)] shadow-[var(--shadow-sm)]'
+          : 'text-[var(--text-2)] hover:text-[var(--text)]',
+      )}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-center">
+        <div
+          role="radiogroup"
+          aria-label={`${p.monthly} / ${p.yearly}`}
+          className="inline-flex items-center gap-1 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-1"
+        >
+          {period('monthly', p.monthly)}
+          {period(
+            'yearly',
+            <>
+              {p.yearly} · <span className="text-[var(--brand)]">{p.twoMonthsFree}</span>
+            </>,
+          )}
+        </div>
+      </div>
+      <div role="radiogroup" aria-label="Plan" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {CLOUD_PLANS.map((plan) => {
+          const selected = value.plan === plan.id;
+          const outgrown = limitsExceeded(plan, usage).length > 0;
+          const yearly = value.period === 'yearly';
+          return (
+            <button
+              key={plan.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={disabled}
+              onClick={() => onChange({ ...value, plan: plan.id })}
+              className={cn(
+                'rounded-[12px] border p-4 text-left transition-colors',
+                selected
+                  ? 'border-[var(--brand)] bg-[var(--brand-tint)] ring-1 ring-[var(--brand)]'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:border-[var(--text-3)]',
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className={cn(
+                    'flex h-4 w-4 items-center justify-center rounded-full border',
+                    selected ? 'border-[var(--brand)]' : 'border-[var(--text-3)]',
+                  )}
+                >
+                  {selected && <span className="h-2 w-2 rounded-full bg-[var(--brand)]" />}
+                </span>
+                <span className="font-semibold">{plan.name}</span>
+                {plan.popular && <span className="text-[11px] font-semibold text-[var(--brand)]">{p.mostPopular}</span>}
+              </span>
+              <span className="mt-2 block text-xs text-[var(--text-2)]">{plan.id === 'starter' ? p.starter : p.team}</span>
+              {outgrown && <span className="mt-1 block text-xs text-[var(--warning-text)]">{p.outgrown}</span>}
+              <span className="mt-3 block">
+                <span className="text-[17px] font-semibold">{formatEur(yearly ? plan.yearly : plan.monthly)}</span>
+                <span className="text-sm text-[var(--text-2)]">{yearly ? p.perYear : p.perMonth}</span>
+              </span>
+              {yearly && (
+                <span className="mt-0.5 block text-xs text-[var(--text-3)]">
+                  {fmt(p.yearlyEquiv, { price: formatEur(yearlyPerMonth(plan)) })}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-center text-[11.5px] text-[var(--text-3)]">
+        {footer}{' '}
+        {enterprise && (
+          <>
+            {enterprise[0]}
+            <a
+              href={buildEnterpriseContactUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--brand)] hover:underline"
+            >
+              {enterprise[1]}
+            </a>
+            {enterprise[2]}
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function StatTile({ n, label }: { n: string; label: string }) {
+  return (
+    <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
+      <div className="text-[19px] font-semibold tracking-tight">{n}</div>
+      <div className="mt-0.5 text-[11.5px] leading-snug text-[var(--text-2)]">{label}</div>
+    </div>
+  );
+}
+
+function Tagged({ text, tag, href }: { text: string; tag: string; href: string }) {
+  const parts = splitTag(text, tag);
+  if (!parts) return <>{text}</>;
+  return (
+    <>
+      {parts[0]}
+      <a href={href} className="text-[var(--brand)] hover:underline">
+        {parts[1]}
+      </a>
+      {parts[2]}
+    </>
   );
 }
 

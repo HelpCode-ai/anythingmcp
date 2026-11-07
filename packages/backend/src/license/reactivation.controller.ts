@@ -19,7 +19,7 @@ import { DeploymentService } from '../common/deployment.service';
 import { ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { LicenseService } from './license.service';
 import { LicenseGuardService } from './license-guard.service';
-import { LicenseWallService } from './license-wall.service';
+import { LicenseWallService, knownClientName } from './license-wall.service';
 import { readReactivationToken, type ReactivationTokenPayload } from './reactivation-token';
 import {
   CHECKOUT_BILLING_PERIODS,
@@ -33,13 +33,19 @@ import {
 /** What the page shows, as the app's licence wall would (license-wall.tsx `reasonFor`). */
 export type ReactivationState = 'trial-ended' | 'active' | 'payment-failed' | 'no-license';
 
+export type ReactivationClient = 'Claude' | 'ChatGPT' | 'Cursor' | 'Copilot';
+
 export interface ReactivationView {
   state: ReactivationState;
   workspaceName: string;
   /** When the free trial ended (ISO), for 'trial-ended'; null otherwise. */
   trialEndedAt: string | null;
-  /** The AI client the workspace connected, when it is one of these. */
-  client: 'Claude' | 'ChatGPT' | null;
+  /**
+   * The AI client the page names: the one whose tool call was blocked last
+   * (the link came from its chat), else the first one the workspace
+   * connected; null when neither is one we can name.
+   */
+  client: ReactivationClient | null;
   /** The workspace's current counts (GET /api/license/usage, without the caps). */
   usage: { connectors: number; mcpServers: number; users: number };
 }
@@ -107,14 +113,14 @@ export class ReactivationController {
     const [{ state, trialEndedAt }, usage, client] = await Promise.all([
       this.stateOf(organizationId),
       this.licenseGuard.getUsage(undefined, organizationId),
-      this.licenseWall?.connectedClient(organizationId).catch(() => null) ?? Promise.resolve(null),
+      this.clientOf(organizationId).catch(() => null),
     ]);
     await this.recordView(organizationId, state);
     return {
       state,
       workspaceName: org.name,
       trialEndedAt: trialEndedAt ? trialEndedAt.toISOString() : null,
-      client: client === 'Claude' || client === 'ChatGPT' ? client : null,
+      client,
       usage: {
         connectors: usage.connectors.current,
         mcpServers: usage.mcpServers.current,
@@ -227,6 +233,27 @@ export class ReactivationController {
    * administrator of the workspace, else its longest-standing active
    * administrator. Null when it has none.
    */
+  /**
+   * The AI client to name on the page. The link is shown by the client whose
+   * tool call was blocked, so its OAuth client (`metadata.client` on the
+   * latest `trial_expired_call_blocked`, last 30 days) comes first; the first
+   * client the workspace connected is the fallback.
+   */
+  private async clientOf(organizationId: string): Promise<ReactivationClient | null> {
+    const blocked = await this.prisma.productEvent.findFirst({
+      where: {
+        organizationId,
+        event: ProductEvents.TRIAL_EXPIRED_CALL_BLOCKED,
+        createdAt: { gte: new Date(Date.now() - 30 * 86_400_000) },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { metadata: true },
+    });
+    const fromBlocked = knownClientName((blocked?.metadata as Record<string, unknown> | null)?.client);
+    const name = fromBlocked ?? (await this.licenseWall?.connectedClient(organizationId)) ?? null;
+    return name === 'Claude' || name === 'ChatGPT' || name === 'Cursor' || name === 'Copilot' ? name : null;
+  }
+
   private async adminFor(link: ReactivationTokenPayload): Promise<{ userId: string; email: string } | null> {
     if (link.userId) {
       const member = await this.prisma.organizationMember.findUnique({

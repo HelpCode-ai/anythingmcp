@@ -3608,58 +3608,5 @@
     "directory": "Presente nella Claude Directory",
     "directoryChatgpt": "Presente nella directory dei plugin di ChatGPT",
     "directoryBoth": "Presente nelle directory di Claude e ChatGPT"
-  },
-  "reactivate": {
-    "title": "Riprendi da dove {client} si è fermato",
-    "yourAi": "la tua AI",
-    "workspace": "Workspace",
-    "bodyEnded": "La tua prova gratuita è terminata il {date}. Connettori e impostazioni sono ancora tutti qui. Abbonati e {client} potrà usarli di nuovo in pochi minuti, senza rifare la configurazione.",
-    "body": "La tua prova gratuita è terminata. Connettori e impostazioni sono ancora tutti qui. Abbonati e {client} potrà usarli di nuovo in pochi minuti, senza rifare la configurazione.",
-    "cta": "Abbonati a {plan}",
-    "opening": "Apertura del checkout sicuro…",
-    "checkoutFailed": "Non è stato possibile aprire il checkout. Riprova tra un momento.",
-    "secureCheckout": "Checkout sicuro con Stripe",
-    "loading": "Caricamento del workspace…",
-    "trust": {
-      "cancel": "Disdici quando vuoi",
-      "stripe": "Pagamento con Stripe",
-      "noSetup": "Nessuna nuova configurazione"
-    },
-    "next": {
-      "title": "Cosa succede dopo",
-      "payTitle": "Paghi in sicurezza con Stripe",
-      "payBody": "Carta, addebito SEPA e altri metodi. Non vediamo mai i dati della tua carta.",
-      "activeTitle": "Il workspace si riattiva",
-      "activeBody": "In automatico, di solito in due o tre minuti. Senza login, senza chiave di licenza.",
-      "backTitle": "Chiedi di nuovo a {client}",
-      "backBody": "Torna nella tua chat e ripeti la richiesta. I tuoi connettori rispondono come prima."
-    },
-    "why": {
-      "title": "Perché i team restano con AnythingMCP",
-      "kept": "Tutto quello che hai configurato resta: connettori, accessi e impostazioni.",
-      "cancel": "Nessun vincolo sui piani mensili. Disdici quando vuoi dal portale di fatturazione.",
-      "eu": "Ospitato a Francoforte, UE. Conforme al GDPR, DPA disponibile.",
-      "directories": "Presente nella <claude>Claude Directory</claude> e nella <chatgpt>ChatGPT Plugin Directory</chatgpt>.",
-      "workspaces": "{count} workspace su AnythingMCP Cloud."
-    },
-    "questions": "Domande prima di abbonarti? Scrivi a <mail>support@anythingmcp.com</mail>.",
-    "footer": "AnythingMCP di helpcode.ai",
-    "imprint": "Impressum",
-    "privacy": "Privacy",
-    "terms": "Termini",
-    "expiredTitle": "Questo link è scaduto",
-    "expiredBody": "I link di riattivazione valgono 30 giorni. Accedi per vedere i piani del tuo workspace.",
-    "errorTitle": "Qualcosa è andato storto",
-    "errorBody": "Non siamo riusciti a caricare la pagina. Riprova tra un momento, oppure accedi per vedere i piani.",
-    "signIn": "Accedi",
-    "activeTitle": "Questo workspace è attivo",
-    "paidTitle": "Pagamento ricevuto, è tutto pronto",
-    "activeBody": "{workspace} è di nuovo attivo. Torna su {client} e ripeti la richiesta: i tuoi connettori rispondono come prima.",
-    "openDashboard": "Apri la dashboard",
-    "processingTitle": "Stiamo confermando il pagamento…",
-    "processingBody": "Di solito ci vogliono due o tre minuti. Lascia aperta questa pagina, oppure torna alla tua chat tra un momento.",
-    "processingSlow": "Il pagamento è ancora in conferma. Se il workspace non è attivo tra qualche minuto, accedi o scrivi a support@anythingmcp.com.",
-    "paymentFailedTitle": "L'ultimo pagamento non è andato a buon fine",
-    "paymentFailedBody": "Accedi e aggiorna il metodo di pagamento: l'abbonamento riprende appena il pagamento viene incassato."
   }
 }

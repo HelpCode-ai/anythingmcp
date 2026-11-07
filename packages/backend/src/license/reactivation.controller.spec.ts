@@ -26,6 +26,8 @@ interface MakeOpts {
   failed?: any;
   lastInactive?: any;
   client?: string | null;
+  /** metadata.client of the latest blocked call. */
+  blockedClient?: string | null;
   seenToday?: boolean;
   tokenMember?: any;
   firstAdmin?: any;
@@ -43,7 +45,14 @@ function make(opts: MakeOpts = {}) {
         opts.firstAdmin === undefined ? { userId: 'admin-1', user: { email: 'first-admin@example.com' } } : opts.firstAdmin,
       ),
     },
-    productEvent: { findFirst: jest.fn().mockResolvedValue(opts.seenToday ? { id: 'e1' } : null) },
+    productEvent: {
+      findFirst: jest.fn().mockImplementation(async (args: any) => {
+        if (args?.where?.event === 'trial_expired_call_blocked') {
+          return opts.blockedClient ? { metadata: { toolName: 't', client: opts.blockedClient } } : null;
+        }
+        return opts.seenToday ? { id: 'e1' } : null;
+      }),
+    },
   };
   const licenseService = {
     getCurrentLicense: jest.fn().mockResolvedValue(opts.current ?? null),
@@ -148,9 +157,15 @@ describe('ReactivationController', () => {
       expect(view.trialEndedAt).toBeNull();
     });
 
-    it('names only Claude or ChatGPT', async () => {
-      const { controller } = make({ current: license('trial', { expiresAt: ended }), client: 'Cursor' });
-      expect((await controller.view(token())).client).toBeNull();
+    it('names the client whose call was blocked before the first one connected', async () => {
+      const { controller } = make({ current: license('trial', { expiresAt: ended }), client: 'Claude', blockedClient: 'ChatGPT' });
+      expect((await controller.view(token())).client).toBe('ChatGPT');
+    });
+
+    it('falls back to the first connected client, and names only the clients it knows', async () => {
+      const ended1 = license('trial', { expiresAt: ended });
+      expect((await make({ current: ended1, client: 'Cursor' }).controller.view(token())).client).toBe('Cursor');
+      expect((await make({ current: ended1, blockedClient: 'Some Agent', client: null }).controller.view(token())).client).toBeNull();
     });
 
     it('records the view once a UTC day', async () => {

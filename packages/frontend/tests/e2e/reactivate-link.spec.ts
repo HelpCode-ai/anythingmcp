@@ -10,7 +10,7 @@ type View = {
   state: 'trial-ended' | 'active' | 'payment-failed' | 'no-license';
   workspaceName: string;
   trialEndedAt: string | null;
-  client: 'Claude' | 'ChatGPT' | null;
+  client: 'Claude' | 'ChatGPT' | 'Cursor' | 'Copilot' | null;
   usage: { connectors: number; mcpServers: number; users: number };
 };
 
@@ -63,9 +63,19 @@ test.describe('reactivation link (cloud, signed out)', () => {
     await expect(page.getByRole('heading', { name: 'Pick up where Claude left off' })).toBeVisible({ timeout: 15_000 });
     await expect(page).toHaveURL(/\/reactivate\/tok_abc$/);
     await expect(page.getByText('Acme Logistics')).toBeVisible();
-    await expect(page.getByText(/Your free trial ended on (4 November|November 4)\./)).toBeVisible();
+    await expect(page.getByText(/Your free trial ended on 4 November\./)).toBeVisible();
     await expect(page.getByText('What happens next')).toBeVisible();
-    await expect(page.getByText('1,200+ workspaces on AnythingMCP Cloud.')).toBeVisible();
+    const trust = page.getByTestId('reactivate-trust');
+    await expect(trust).toContainText('1,200+');
+    await expect(trust).toContainText('workspaces on AnythingMCP Cloud');
+    await expect(trust).toContainText('2M+');
+    await expect(trust).toContainText('AI tool calls last month');
+    // A Claude workspace sees Claude's listing only, and its paused connection.
+    await expect(trust).toContainText('Listed in the Claude Directory');
+    await expect(trust).not.toContainText('ChatGPT Plugin Directory');
+    await expect(page.getByTestId('client-paused')).toHaveText(/Claude connection paused/);
+    // Signed out: the nav offers a sign-in that comes back to the dashboard.
+    await expect(page.getByRole('banner').getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login?redirect=%2F');
     // No usage numbers are shown.
     await expect(page.getByText(/successful call/)).toHaveCount(0);
     if (process.env.REACTIVATE_SHOT) {
@@ -87,6 +97,48 @@ test.describe('reactivation link (cloud, signed out)', () => {
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'yearly' }]);
   });
 
+  test('a ChatGPT chat gets ChatGPT wording and its own directory', async ({ page }) => {
+    await publicPage(page, [{ ...ENDED, client: 'ChatGPT' }]);
+    await page.goto('/reactivate/tok_abc');
+    await expect(page.getByRole('heading', { name: 'Pick up where ChatGPT left off' })).toBeVisible({ timeout: 15_000 });
+    const trust = page.getByTestId('reactivate-trust');
+    await expect(trust).toContainText('Listed in the ChatGPT Plugin Directory');
+    await expect(trust).not.toContainText('Claude Directory');
+    await expect(page.getByText('Ask ChatGPT again')).toBeVisible();
+  });
+
+  test('an unknown client gets neutral wording and both directories', async ({ page }) => {
+    await publicPage(page, [{ ...ENDED, client: null }]);
+    await page.goto('/reactivate/tok_abc');
+    await expect(page.getByRole('heading', { name: 'Pick up where your AI left off' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('client-paused')).toHaveCount(0);
+    const trust = page.getByTestId('reactivate-trust');
+    await expect(trust).toContainText('Listed in the Claude Directory');
+    await expect(trust).toContainText('Listed in the ChatGPT Plugin Directory');
+  });
+
+  for (const [lang, title, cta] of [
+    ['de-DE', 'Machen Sie dort weiter, wo Claude aufgehört hat', 'Starter abonnieren'],
+    ['it-IT', 'Riprendi da dove Claude si è fermato', 'Abbonati a Starter'],
+    ['es-ES', 'Retoma donde Claude lo dejó', 'Suscribirse a Starter'],
+    ['zh-CN', '让 Claude 从中断处继续', '订阅 Starter'],
+    ['ja-JP', 'Claude の作業をそのまま再開', 'Starter に登録する'],
+    ['ru-RU', 'Продолжите с того места, где остановился Claude', 'Подписаться на Starter'],
+  ] as const) {
+    test(`speaks ${lang} to a ${lang} browser`, async ({ browser }) => {
+      const context = await browser.newContext({ locale: lang });
+      const page = await context.newPage();
+      await publicPage(page, [ENDED]);
+      await page.goto('/reactivate/tok_abc');
+      await expect(page.getByRole('heading', { name: title })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('button', { name: cta })).toBeVisible();
+      if (process.env.REACTIVATE_SHOT && lang === 'ja-JP') {
+        await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-ja-1440.png`, fullPage: true });
+      }
+      await context.close();
+    });
+  }
+
   test('preselects Team for a workspace that outgrew Starter', async ({ page }) => {
     const { posted } = await publicPage(page, [{ ...ENDED, usage: { connectors: 8, mcpServers: 2, users: 1 } }]);
     await page.goto('/reactivate/tok_abc');
@@ -99,7 +151,7 @@ test.describe('reactivation link (cloud, signed out)', () => {
     await publicPage(page, 404);
     await page.goto('/reactivate/tok_old');
     await expect(page.getByRole('heading', { name: 'This link has expired' })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
+    await expect(page.getByRole('main').getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
   });
 
   test('back from Stripe it waits until the workspace is active', async ({ page }) => {
