@@ -1,0 +1,341 @@
+{
+  "slug": "faire",
+  "name": "Faire",
+  "description": "Let your AI read your Faire brand account: wholesale orders with their items, shipments and payout, your product catalog with variants and prices, and inventory by SKU or variant. Read-only, through the Faire External API v2.",
+  "instructions": "This connector reads a brand's data on Faire, the wholesale marketplace, through the Faire External API v2 (https://www.faire.com/external-api/v2). It is read-only: it lists and fetches orders, products and inventory, and never accepts, ships, cancels or edits anything.\n\n**Authentication**: Faire's API uses OAuth. Register an app in the Faire Developer Portal to get an application ID and secret, let the brand authorize it (scopes READ_BRAND, READ_ORDERS, READ_PRODUCTS, READ_INVENTORIES), and exchange the code for an access token. Every request sends two headers: X-FAIRE-OAUTH-ACCESS-TOKEN (the access token) and X-FAIRE-APP-CREDENTIALS (applicationId:applicationSecret, Base64-encoded).\n\n**Identifiers**: orders start with bo_ (e.g. bo_bxdmjbwxid; the Faire website shows it as #BXDMJBWXID, the display_id). Products start with p_ (p_123), variants with po_, brands with b_. Inventory is looked up by your own SKUs or by Faire variant IDs.\n\n**Pagination and limits**: list tools return a cursor; pass it back as cursor to get the next page, and stop when it is empty. limit sets the page size (up to 50 here). Filter by updated_at_min (ISO 8601) to fetch only what changed since a date. Faire answers 429 when a token sends too many requests; wait and retry.\n\n**Money**: amounts come as integer minor units with a currency, e.g. {\"amount_minor\": 1250, \"currency\": \"USD\"} is 12.50 USD. Older *_cents fields carry the same value.\n\n**Common workflows**: list new orders (faire_list_orders with excluded_states to skip DELIVERED and CANCELED), then open one with faire_get_order for the full address and payout. List products, then check stock for their SKUs with faire_get_inventory_by_skus. Start with faire_get_brand_profile to confirm which brand the token belongs to.\n\n**Limitations**: no write tools yet (accepting, shipping or cancelling orders, editing products, setting inventory or prices). Retailer profiles, reviews and prepacks are not covered. OAuth works only with External API v2.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "faire",
+  "docsUrl": "https://faire.github.io/external-api-v2-docs/",
+  "prerequisites": "A Faire brand account and an app registered in the Faire Developer Portal that the brand has authorized, with an OAuth access token. About 10 minutes.",
+  "requiredEnvVars": [
+    "FAIRE_OAUTH_ACCESS_TOKEN",
+    "FAIRE_APP_CREDENTIALS"
+  ],
+  "envVarMeta": {
+    "FAIRE_OAUTH_ACCESS_TOKEN": {
+      "label": "OAuth access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The access token Faire returns when you exchange the authorization code after the brand approves your app. Sent as X-FAIRE-OAUTH-ACCESS-TOKEN.",
+      "link": "https://faire.github.io/external-api-v2-docs/",
+      "pattern": "^\\S{10,}$",
+      "patternMessage": "Paste only the token, without spaces."
+    },
+    "FAIRE_APP_CREDENTIALS": {
+      "label": "App credentials (Base64)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Your app's applicationId:applicationSecret from the Faire Developer Portal, Base64-encoded, e.g. the output of: printf 'APP_ID:APP_SECRET' | base64. Sent as X-FAIRE-APP-CREDENTIALS.",
+      "link": "https://faire.github.io/external-api-v2-docs/",
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+      "patternMessage": "Paste the Base64 value of applicationId:applicationSecret, not the raw ID and secret."
+    }
+  },
+  "verifyHints": {
+    "401": "Faire refused the credentials. Check that FAIRE_OAUTH_ACCESS_TOKEN is a current OAuth token for this brand and that FAIRE_APP_CREDENTIALS is the Base64 of applicationId:applicationSecret for the same app.",
+    "403": "The token works but lacks a scope. Ask the brand to authorize the app again with READ_BRAND, READ_ORDERS, READ_PRODUCTS and READ_INVENTORIES.",
+    "rate_limited": "Faire is rate limiting this token. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "faire_get_brand_profile"
+  },
+  "connector": {
+    "name": "Faire External API v2",
+    "type": "REST",
+    "baseUrl": "https://www.faire.com/external-api/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-FAIRE-OAUTH-ACCESS-TOKEN",
+      "apiKey": "{{FAIRE_OAUTH_ACCESS_TOKEN}}",
+      "extraHeaders": {
+        "X-FAIRE-APP-CREDENTIALS": "{{FAIRE_APP_CREDENTIALS}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "faire_get_brand_profile",
+      "description": "Get the Faire brand the credentials belong to: brand ID (b_...), name, currency and locale. No parameters. Use it first to confirm the connection and the brand's currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brands/profile"
+      }
+    },
+    {
+      "name": "faire_list_orders",
+      "description": "List the brand's Faire wholesale orders, oldest update first, with state, retailer, ship dates, items (SKU, quantity, price), shipments and total payout. Use excluded_states to skip finished orders and updated_at_min to fetch only recent changes; pass the returned cursor to get the next page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, up to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous page's response. Leave empty for the first page."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only orders updated at or after this ISO 8601 timestamp, e.g. 2026-10-01T00:00:00.000Z."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only orders created at or after this ISO 8601 timestamp."
+          },
+          "excluded_states": {
+            "type": "string",
+            "description": "Comma-separated order states to leave out, e.g. DELIVERED,CANCELED. States: NEW, PROCESSING, PRE_TRANSIT, IN_TRANSIT, DELIVERED, CANCELED, BACKORDERED, PENDING_RETAILER_CONFIRMATION."
+          },
+          "ship_after_max": {
+            "type": "string",
+            "description": "Only orders whose earliest ship date is at or before this ISO 8601 timestamp, i.e. ready to ship by then."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "updated_at_min": "$updated_at_min",
+          "created_at_min": "$created_at_min",
+          "excluded_states": "$excluded_states",
+          "ship_after_max": "$ship_after_max"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "cursor": "$.cursor",
+            "orders": {
+              "$from": "$.orders[*]",
+              "$select": {
+                "id": "id",
+                "display_id": "display_id",
+                "state": "state",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "ship_after": "ship_after",
+                "expected_ship_date": "expected_ship_date",
+                "retailer_id": "retailer_id",
+                "customer": "customer",
+                "ship_to_company": "address.company_name",
+                "ship_to_city": "address.city",
+                "ship_to_country": "address.country_code",
+                "purchase_order_number": "purchase_order_number",
+                "is_free_shipping": "is_free_shipping",
+                "total_payout": "payout_costs.total_payout",
+                "subtotal_after_brand_discounts": "payout_costs.subtotal_after_brand_discounts",
+                "items": {
+                  "$from": "items[*]",
+                  "$select": {
+                    "id": "id",
+                    "product_id": "product_id",
+                    "variant_id": "variant_id",
+                    "sku": "sku",
+                    "product_name": "product_name",
+                    "variant_name": "variant_name",
+                    "quantity": "quantity",
+                    "price": "price",
+                    "state": "state"
+                  }
+                },
+                "shipments": {
+                  "$from": "shipments[*]",
+                  "$select": {
+                    "carrier": "carrier",
+                    "tracking_code": "tracking_code",
+                    "shipping_type": "shipping_type",
+                    "created_at": "created_at"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "faire_get_order",
+      "description": "Get one Faire order by its ID (bo_...) with everything Faire returns: items with prices and discounts, shipping address, shipments with tracking, payout costs (commission, fees, total payout), notes and cancellation details. Use it after faire_list_orders when you need the full picture of an order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order ID beginning with bo_, e.g. bo_bxdmjbwxid. For a display ID like #BXDMJBWXID, use bo_ plus the lower-case ID."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      }
+    },
+    {
+      "name": "faire_list_products",
+      "description": "List the brand's Faire products with their sale and lifecycle state and variants (variant ID, SKU, options, available quantity, wholesale and retail prices). Filter by sku or updated_at_min; pass the returned cursor to get the next page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, up to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The cursor from the previous page's response. Leave empty for the first page."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Only the product that has a variant with this exact SKU."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only products updated at or after this ISO 8601 timestamp."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "Also return deleted products. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "sku": "$sku",
+          "updated_at_min": "$updated_at_min",
+          "include_deleted": "$include_deleted"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "cursor": "$.cursor",
+            "products": {
+              "$from": "$.products[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "short_description": "short_description",
+                "sale_state": "sale_state",
+                "lifecycle_state": "lifecycle_state",
+                "minimum_order_quantity": "minimum_order_quantity",
+                "unit_multiplier": "unit_multiplier",
+                "made_in_country": "made_in_country",
+                "updated_at": "updated_at",
+                "variants": {
+                  "$from": "variants[*]",
+                  "$select": {
+                    "id": "id",
+                    "sku": "sku",
+                    "name": "name",
+                    "options": "options",
+                    "sale_state": "sale_state",
+                    "lifecycle_state": "lifecycle_state",
+                    "available_quantity": "available_quantity",
+                    "backordered_until": "backordered_until",
+                    "prices": "prices",
+                    "wholesale_price_cents": "wholesale_price_cents",
+                    "retail_price_cents": "retail_price_cents",
+                    "gtin": "gtin"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "faire_get_product",
+      "description": "Get one Faire product by its ID (p_...) with its full description, images, options, every variant with prices by market, measurements, preorder and lead-time settings, and any publication warnings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product ID beginning with p_, e.g. p_123, as returned by faire_list_products."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}"
+      }
+    },
+    {
+      "name": "faire_get_inventory_by_skus",
+      "description": "Get inventory for product variants by your SKUs: on-hand, committed (allocated to unfulfilled orders) and available quantity for each SKU. Use it to check stock before promising a reorder. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "string",
+            "description": "Comma-separated SKUs exactly as set on the variants, e.g. CANDLE-RED-L,CANDLE-BLUE-L."
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product-inventory/by-skus",
+        "queryParams": {
+          "skus": "$skus"
+        }
+      }
+    },
+    {
+      "name": "faire_get_inventory_by_variant_ids",
+      "description": "Get inventory for product variants by Faire variant ID: on-hand, committed and available quantity for each. Use it when you have variant IDs from faire_list_products or an order item rather than SKUs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated Faire product variant IDs, e.g. po_123,po_456."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product-inventory/by-product-variant-ids",
+        "queryParams": {
+          "ids": "$ids"
+        }
+      }
+    }
+  ]
+}
