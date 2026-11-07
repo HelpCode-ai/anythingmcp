@@ -97,6 +97,7 @@ import { parseODataTools } from './parsers/odata.parser';
 import { normalizeSettings } from './engines/odata.engine';
 import { buildEmailBuiltinTools } from './email/email-builtins';
 import { buildWebhookBuiltinTools, wantsWebhookBuiltins, webhookToolPrefix } from './webhook-builtins';
+import { WebhookEventsService } from './webhook-events.service';
 import { EmailConnectorError, emailToolPrefix, resolveEmailSettings } from './email/email-settings';
 import { computeSetupState } from './connector-setup-status.util';
 import { EditionService } from '../ee/licensing/edition.service';
@@ -745,6 +746,7 @@ export class ConnectorsController {
     private readonly licenseGuard: LicenseGuardService,
     private readonly mcpServers: McpServersService,
     private readonly deployment: DeploymentService,
+    private readonly webhookEvents: WebhookEventsService,
     @Optional() private readonly edition?: EditionService,
     @Optional() private readonly userCredentials?: UserCredentialsService,
   ) {
@@ -1385,6 +1387,50 @@ export class ConnectorsController {
     const connector = await this.connectorsService.findById(id);
     this.assertOrgMatch(connector, req);
     return this.withSetupState(connector);
+  }
+
+  @Get(':id/webhook/url')
+  @ApiOperation({
+    summary: 'The inbound webhook URL for this connector',
+    description:
+      'Computed by the server from SERVER_URL, like GET /api/connectors/oauth/redirect-uri, so it always matches ' +
+      'the path webhook-ingest.controller.ts listens on.',
+  })
+  async webhookUrl(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+    return { url: `${this.serverBaseUrl()}/api/webhooks/${connector.id}` };
+  }
+
+  @Get(':id/webhook/events')
+  @ApiOperation({
+    summary: 'Recent webhook deliveries for this connector',
+    description:
+      'The same events the `<prefix>_recent_events` MCP tool reads, for the dashboard. Each event was verified ' +
+      '(signature checked) before being stored. Gated like any other connector setting: the connector owner or an ' +
+      'admin, since a stored payload can carry whatever personal data the provider sent (e.g. a Stripe customer\'s ' +
+      'name, e-mail and address).',
+  })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer' }, description: 'At most this many events (default 20, max 50).' })
+  @ApiQuery({ name: 'since', required: false, schema: { type: 'string' }, description: 'ISO 8601 timestamp; only events received at or after this time.' })
+  async webhookEventsList(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+    @Query('since') since?: string,
+  ) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+    const events = await this.webhookEvents.recentEvents(connector.id, connector.organizationId, {
+      limit: limit !== undefined ? Number(limit) : undefined,
+      since,
+    });
+    return { events };
+  }
+
+  /** Shared with oauthCallbackUrl(); both compute from SERVER_URL so a dashboard link always matches the live route. */
+  private serverBaseUrl(): string {
+    return (this.configService.get<string>('SERVER_URL') || 'http://localhost:4000').replace(/\/+$/, '');
   }
 
   @Put(':id')

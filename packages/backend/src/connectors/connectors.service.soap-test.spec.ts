@@ -313,6 +313,7 @@ describe('ConnectorsService.testConnection for SOAP connectors', () => {
         {} as any,
         {} as any,
         {} as any,
+        { recentEvents: jest.fn().mockResolvedValue([]) } as any,
       );
 
       const health = await controller.healthCheck({ user: { organizationId: 'org-1' } });

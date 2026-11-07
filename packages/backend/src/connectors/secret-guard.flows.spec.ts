@@ -82,6 +82,7 @@ function buildConnectors(stored: Record<string, any> = {}, overrides: { harParse
     { checkCanCreateConnector: jest.fn() } as any,
     { attachToDefaultServer: jest.fn().mockResolvedValue(null) } as any,
     { isCloud: () => true } as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any,
   );
   return { controller, connectorsService, prisma, connector };
 }
