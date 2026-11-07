@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { PrismaService } from '../common/prisma.service';
 import { ProductEvents, type ProductEventService } from '../audit/product-event.service';
-import { trialReactivationUrl } from '../license/license-checkout';
+import { trialReactivationUrl, type ReactivationLinkVariant } from '../license/license-checkout';
 
 /**
  * A tool call refused because the workspace's Cloud trial ended
@@ -24,7 +24,8 @@ function endedOn(d: Date): string {
  * The tool result's text: what happened, that nothing was lost, and the link
  * an administrator reactivates the workspace with, which the AI is asked to
  * show. The link carries no email token, since this text reaches the AI
- * provider.
+ * provider. The text is the same for both arms of the reactivation-link test
+ * (trialReactivationLink): only the URL differs.
  */
 export function trialEndedToolResult(
   trialEndedAt: Date | null,
@@ -90,6 +91,8 @@ export interface BlockedCallInput {
   adapterSlug?: string;
   /** The OAuth client the access token was issued to, when there is one. */
   oauthClientId?: string;
+  /** Which reactivation link the AI was given (reactivationLinkVariant). */
+  variant?: ReactivationLinkVariant;
 }
 
 /**
@@ -137,6 +140,7 @@ export class TrialBlockedCallRecorder {
           toolName: input.toolName,
           ...(input.adapterSlug ? { adapterSlug: input.adapterSlug } : {}),
           ...(client ? { client } : {}),
+          ...(input.variant ? { variant: input.variant } : {}),
         },
       });
     } catch (err: any) {

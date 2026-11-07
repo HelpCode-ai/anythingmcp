@@ -3608,5 +3608,58 @@
     "directory": "Gelistet im Claude Directory",
     "directoryChatgpt": "Gelistet im ChatGPT-Plugin-Verzeichnis",
     "directoryBoth": "Gelistet in den Verzeichnissen von Claude und ChatGPT"
+  },
+  "reactivate": {
+    "title": "Machen Sie dort weiter, wo {client} aufgehört hat",
+    "yourAi": "Ihre KI",
+    "workspace": "Workspace",
+    "bodyEnded": "Ihre kostenlose Testphase ist am {date} abgelaufen. Ihre Connectoren und Einstellungen sind vollständig erhalten. Mit einem Abo kann {client} sie innerhalb weniger Minuten wieder nutzen, ohne neue Einrichtung.",
+    "body": "Ihre kostenlose Testphase ist abgelaufen. Ihre Connectoren und Einstellungen sind vollständig erhalten. Mit einem Abo kann {client} sie innerhalb weniger Minuten wieder nutzen, ohne neue Einrichtung.",
+    "cta": "{plan} abonnieren",
+    "opening": "Sicherer Checkout wird geöffnet…",
+    "checkoutFailed": "Der Checkout konnte gerade nicht geöffnet werden. Bitte versuchen Sie es gleich noch einmal.",
+    "secureCheckout": "Sicherer Checkout mit Stripe",
+    "loading": "Ihr Workspace wird geladen…",
+    "trust": {
+      "cancel": "Jederzeit kündbar",
+      "stripe": "Zahlung über Stripe",
+      "noSetup": "Keine neue Einrichtung"
+    },
+    "next": {
+      "title": "So geht es weiter",
+      "payTitle": "Sicher mit Stripe bezahlen",
+      "payBody": "Karte, SEPA-Lastschrift und weitere Methoden. Ihre Kartendaten sehen wir nie.",
+      "activeTitle": "Ihr Workspace ist wieder aktiv",
+      "activeBody": "Automatisch, meist innerhalb von zwei bis drei Minuten. Ohne Anmeldung, ohne Lizenzschlüssel.",
+      "backTitle": "Fragen Sie {client} erneut",
+      "backBody": "Gehen Sie zurück in Ihren Chat und wiederholen Sie die Anfrage. Ihre Connectoren antworten wie zuvor."
+    },
+    "why": {
+      "title": "Warum Teams bei AnythingMCP bleiben",
+      "kept": "Alles, was Sie eingerichtet haben, bleibt erhalten: Connectoren, Anmeldungen und Einstellungen.",
+      "cancel": "Keine Mindestlaufzeit bei Monatsplänen. Jederzeit im Abrechnungsportal kündbar.",
+      "eu": "Gehostet in Frankfurt, EU. DSGVO-konform, AVV verfügbar.",
+      "directories": "Gelistet im <claude>Claude Directory</claude> und im <chatgpt>ChatGPT Plugin Directory</chatgpt>.",
+      "workspaces": "{count} Workspaces auf AnythingMCP Cloud."
+    },
+    "questions": "Fragen vor dem Abo? Schreiben Sie an <mail>support@anythingmcp.com</mail>.",
+    "footer": "AnythingMCP von helpcode.ai",
+    "imprint": "Impressum",
+    "privacy": "Datenschutz",
+    "terms": "AGB",
+    "expiredTitle": "Dieser Link ist abgelaufen",
+    "expiredBody": "Reaktivierungslinks sind 30 Tage gültig. Melden Sie sich an, um die Tarife Ihres Workspace zu sehen.",
+    "errorTitle": "Etwas ist schiefgelaufen",
+    "errorBody": "Die Seite konnte nicht geladen werden. Bitte versuchen Sie es gleich noch einmal oder melden Sie sich an.",
+    "signIn": "Anmelden",
+    "activeTitle": "Dieser Workspace ist aktiv",
+    "paidTitle": "Zahlung erhalten, alles erledigt",
+    "activeBody": "{workspace} ist wieder aktiv. Gehen Sie zurück zu {client} und fragen Sie erneut: Ihre Connectoren antworten wie zuvor.",
+    "openDashboard": "Dashboard öffnen",
+    "processingTitle": "Ihre Zahlung wird bestätigt…",
+    "processingBody": "Das dauert meist zwei bis drei Minuten. Lassen Sie diese Seite offen oder kehren Sie gleich zu Ihrem Chat zurück.",
+    "processingSlow": "Ihre Zahlung wird noch bestätigt. Ist der Workspace in ein paar Minuten nicht aktiv, melden Sie sich an oder schreiben Sie an support@anythingmcp.com.",
+    "paymentFailedTitle": "Ihre letzte Zahlung ist fehlgeschlagen",
+    "paymentFailedBody": "Melden Sie sich an und aktualisieren Sie Ihre Zahlungsmethode: Das Abo läuft weiter, sobald die Zahlung eingegangen ist."
   }
 }

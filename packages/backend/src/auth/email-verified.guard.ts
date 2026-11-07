@@ -44,6 +44,9 @@ export class EmailVerifiedGuard implements CanActivate {
     '/api/auth/social/exchange',
     // Unverified users must reach support (e.g. the code never arrived).
     '/api/support/widget',
+    // The no-login reactivation page: the link token is its only credential,
+    // so a session the browser happens to send must not matter.
+    '/api/license/reactivate/',
     '/health',
   ];
 

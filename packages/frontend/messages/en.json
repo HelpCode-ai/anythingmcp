@@ -3608,5 +3608,58 @@
     "directory": "Listed in the Claude Directory",
     "directoryChatgpt": "Listed in the ChatGPT Plugin Directory",
     "directoryBoth": "Listed in the Claude and ChatGPT directories"
+  },
+  "reactivate": {
+    "title": "Pick up where {client} left off",
+    "yourAi": "your AI",
+    "workspace": "Workspace",
+    "bodyEnded": "Your free trial ended on {date}. Your connectors and settings are all still here. Subscribe and {client} can use them again within a few minutes, with no new setup.",
+    "body": "Your free trial has ended. Your connectors and settings are all still here. Subscribe and {client} can use them again within a few minutes, with no new setup.",
+    "cta": "Subscribe to {plan}",
+    "opening": "Opening secure checkout…",
+    "checkoutFailed": "The checkout could not be opened right now. Please try again in a moment.",
+    "secureCheckout": "Secure checkout with Stripe",
+    "loading": "Loading your workspace…",
+    "trust": {
+      "cancel": "Cancel any time",
+      "stripe": "Payment by Stripe",
+      "noSetup": "No new setup"
+    },
+    "next": {
+      "title": "What happens next",
+      "payTitle": "Pay securely with Stripe",
+      "payBody": "Card, SEPA Direct Debit and other methods. We never see your card details.",
+      "activeTitle": "Your workspace switches back on",
+      "activeBody": "Automatically, usually within two or three minutes. No sign-in, no licence key.",
+      "backTitle": "Ask {client} again",
+      "backBody": "Go back to your chat and repeat your request. Your connectors answer as before."
+    },
+    "why": {
+      "title": "Why teams stay with AnythingMCP",
+      "kept": "Everything you set up is kept: connectors, sign-ins and settings.",
+      "cancel": "No minimum term on monthly plans. Cancel any time from the billing portal.",
+      "eu": "Hosted in Frankfurt, EU. GDPR-compliant, DPA available.",
+      "directories": "Listed in the <claude>Claude Directory</claude> and the <chatgpt>ChatGPT Plugin Directory</chatgpt>.",
+      "workspaces": "{count} workspaces on AnythingMCP Cloud."
+    },
+    "questions": "Questions before you subscribe? Write to <mail>support@anythingmcp.com</mail>.",
+    "footer": "AnythingMCP by helpcode.ai",
+    "imprint": "Imprint",
+    "privacy": "Privacy",
+    "terms": "Terms",
+    "expiredTitle": "This link has expired",
+    "expiredBody": "Reactivation links stay valid for 30 days. Sign in to see your workspace's plans.",
+    "errorTitle": "Something went wrong",
+    "errorBody": "We could not load this page. Please try again in a moment, or sign in to see your plans.",
+    "signIn": "Sign in",
+    "activeTitle": "This workspace is active",
+    "paidTitle": "Payment received, you're all set",
+    "activeBody": "{workspace} is active again. Go back to {client} and ask again: your connectors answer as before.",
+    "openDashboard": "Open the dashboard",
+    "processingTitle": "Confirming your payment…",
+    "processingBody": "This usually takes two or three minutes. Keep this page open, or go back to your chat in a moment.",
+    "processingSlow": "Your payment is still being confirmed. If the workspace is not active in a few minutes, sign in or write to support@anythingmcp.com.",
+    "paymentFailedTitle": "Your last payment didn't go through",
+    "paymentFailedBody": "Sign in and update your payment method: your subscription resumes as soon as the payment is taken."
   }
 }

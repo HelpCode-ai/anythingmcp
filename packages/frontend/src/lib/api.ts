@@ -1616,6 +1616,29 @@ export interface PublicStats {
   updatedAt: string | null;
 }
 
+/**
+ * The no-login reactivation page (/reactivate/<token>): the link an AI client
+ * shows when a tool call is refused because the workspace's trial ended. The
+ * token is the credential; no session is sent.
+ */
+export interface ReactivationView {
+  state: 'trial-ended' | 'active' | 'payment-failed' | 'no-license';
+  workspaceName: string;
+  trialEndedAt: string | null;
+  client: 'Claude' | 'ChatGPT' | null;
+  usage: { connectors: number; mcpServers: number; users: number };
+}
+
+export const reactivation = {
+  get: (linkToken: string) =>
+    request<ReactivationView>(`/api/license/reactivate/${encodeURIComponent(linkToken)}`),
+  checkout: (linkToken: string, body: { plan: 'starter' | 'team'; billingPeriod: 'monthly' | 'yearly' }) =>
+    request<{ url: string }>(`/api/license/reactivate/${encodeURIComponent(linkToken)}/checkout`, {
+      method: 'POST',
+      body,
+    }),
+};
+
 export const publicStats = {
   get: () => request<PublicStats>('/api/public/stats'),
 };
