@@ -96,7 +96,7 @@
     },
     {
       "name": "weclapp_list_sales_orders",
-      "description": "List sales orders from weclapp ERP. Returns order numbers, amounts, status and the record address. NOTE: salesOrder has NO 'customerName' field: do not request it in `properties` (weclapp returns 400). The customer's name is in `recordAddress`; the customer link is `customerId`. Use `filter` to narrow results and leave `properties` empty (e.g. 'orderNumber-eq=SO-1042'). Date fields are Unix epoch milliseconds (e.g. 'orderDate-gt=1767225600000').",
+      "description": "List sales orders from weclapp ERP. Returns order numbers, amounts, status and the record address. NOTE: salesOrder has NO 'customerName' field: do not request it in `properties` (weclapp returns 400). The customer's name is in `recordAddress`; the customer link is `customerId`. There is no `customerNumber` on a sales order, not even as a filter: look the customer up with weclapp_list_customers ('customerNumber-eq=...') and filter here on 'customerId-eq=<party id>'. Use `filter` to narrow results and leave `properties` empty (e.g. 'orderNumber-eq=SO-1042'). Date fields are Unix epoch milliseconds (e.g. 'orderDate-gt=1767225600000').",
       "parameters": {
         "type": "object",
         "properties": {
@@ -136,7 +136,7 @@
     },
     {
       "name": "weclapp_list_invoices",
-      "description": "List sales invoices from weclapp ERP. Returns invoice numbers, amounts, due dates, and payment status. NOTE: invoice has NO 'customerName' field: do not request it in `properties` (weclapp returns 400); the name is in `recordAddress`, the link is `customerId`. Other common 400 traps: line items are `salesInvoiceItems` (not `invoiceItems`); the invoice-type field/filter is `salesInvoiceType` (not `invoiceType`); there is no `currencyName` (currency is `recordCurrencyId`, amounts are `netAmount`/`grossAmount`/`netAmountInCompanyCurrency`); a cancelled invoice is `status-eq=CANCELLED`, not an invoiceType. Use `filter` for queries like 'paid-eq=false'. To find the invoices of a sales order, filter on its id with 'salesOrders.id-eq=<sales order id>': an invoice has no `salesOrderId` filter (weclapp answers 400 \"unexpected filter property\"). Date fields are Unix epoch milliseconds (e.g. 'invoiceDate-gt=1767225600000' for 2026-01-01).",
+      "description": "List sales invoices from weclapp ERP. Returns invoice numbers, amounts, due dates, and payment status. NOTE: invoice has NO 'customerName' field: do not request it in `properties` (weclapp returns 400); the name is in `recordAddress`, the link is `customerId`. There is no `customerNumber` on an invoice, not even as a filter: look the customer up with weclapp_list_customers ('customerNumber-eq=...') and filter on 'customerId-eq=<party id>'. Other common 400 traps: line items are `salesInvoiceItems` (not `invoiceItems`); the invoice-type field/filter is `salesInvoiceType` (not `invoiceType`); there is no `currencyName` (currency is `recordCurrencyId`, amounts are `netAmount`/`grossAmount`/`netAmountInCompanyCurrency`); a cancelled invoice is `status-eq=CANCELLED`, not an invoiceType. Use `filter` for queries like 'paid-eq=false'. To find the invoices of a sales order, filter on its id with 'salesOrders.id-eq=<sales order id>': an invoice has no `salesOrderId` filter (weclapp answers 400 \"unexpected filter property\"). Date fields are Unix epoch milliseconds (e.g. 'invoiceDate-gt=1767225600000' for 2026-01-01).",
       "parameters": {
         "type": "object",
         "properties": {

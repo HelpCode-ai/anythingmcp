@@ -76,7 +76,7 @@
           },
           "fields": {
             "type": "array",
-            "description": "Field names to return. Omitting this returns every column. On res.partner ask for `phone`, not `mobile`: Odoo 19 removed `mobile`.",
+            "description": "Field names to return. Omitting this returns every column. On res.partner ask for `phone`, not `mobile`: Odoo 19 removed `mobile`. Odoo saas-19.3 and later also have no `company_type`: use `is_company` (true for a company).",
             "items": {
               "type": "string"
             }
@@ -129,7 +129,7 @@
           },
           "fields": {
             "type": "array",
-            "description": "Field names to return. On res.partner ask for `phone`, not `mobile`: Odoo 19 removed `mobile`.",
+            "description": "Field names to return. On res.partner ask for `phone`, not `mobile`: Odoo 19 removed `mobile`. Odoo saas-19.3 and later also have no `company_type`: use `is_company` (true for a company).",
             "items": {
               "type": "string"
             }
@@ -401,7 +401,7 @@
           },
           "values": {
             "type": "object",
-            "description": "Field values for the new record, e.g. {\"name\": \"Muster GmbH\", \"email\": \"info@muster.de\"}. On res.partner put any phone number in `phone`: Odoo 19 has no `mobile`."
+            "description": "Field values for the new record, e.g. {\"name\": \"Muster GmbH\", \"email\": \"info@muster.de\"}. On res.partner put any phone number in `phone`: Odoo 19 has no `mobile`. On Odoo saas-19.3 and later set `is_company` (true for a company), not `company_type`."
           }
         },
         "required": [
@@ -438,7 +438,7 @@
           },
           "values": {
             "type": "object",
-            "description": "Field values to set, e.g. {\"note\": \"Called 2026-09-17\"}. On res.partner put any phone number in `phone`: Odoo 19 has no `mobile`."
+            "description": "Field values to set, e.g. {\"note\": \"Called 2026-09-17\"}. On res.partner put any phone number in `phone`: Odoo 19 has no `mobile`. On Odoo saas-19.3 and later set `is_company` (true for a company), not `company_type`."
           }
         },
         "required": [
