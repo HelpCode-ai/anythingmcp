@@ -3,6 +3,7 @@ import { OrganizationsService } from './organizations.service';
 import { LastAdminConflictException } from './last-admin.exception';
 import { SecurityEventService } from '../audit/security-event.service';
 import { PrismaService } from '../common/prisma.service';
+import { CASCADE_DELETE_TRANSACTION } from '../common/cascade-delete-transaction';
 
 const ORG = 'org-1';
 
@@ -309,6 +310,8 @@ describe('OrganizationsService', () => {
 
       expect(prisma.organization.delete).toHaveBeenCalledWith({ where: { id: ORG } });
       expect(licenseRelease.releaseInBackground).toHaveBeenCalledTimes(1);
+      // The cascade can outlast Prisma's default 5 s transaction timeout.
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), CASCADE_DELETE_TRANSACTION);
     });
 
     it('deletes nothing while the workspace has a live subscription', async () => {
