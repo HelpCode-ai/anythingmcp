@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { license, type LicenseWallView } from '@/lib/api';
 import { useTrustStats } from '@/lib/trust-stats';
 import { directoryListingsFor } from '@/lib/marketing';
@@ -23,6 +23,20 @@ import { PlanPicker } from '@/components/plan-picker';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { parseCheckoutSource, type CheckoutSource } from '@/lib/checkout-source';
+
+/** sessionStorage key: this tab came to the wall from an AI client's link. */
+const WALL_SOURCE_KEY = 'amcp_wall_source';
+
+/** The ended-trial wall's checkout source: `mcp_blocked` after the AI client's link, else its own. */
+function wallCheckoutSource(): CheckoutSource {
+  try {
+    if (sessionStorage.getItem(WALL_SOURCE_KEY) === 'mcp_blocked') return 'mcp_blocked';
+  } catch {
+    // Storage blocked.
+  }
+  return 'trial_ended_wall';
+}
 
 // 'lapsed' is a paid subscription that stopped being active without being
 // cancelled — the website marks a licence expired on any non-active status,
@@ -43,13 +57,23 @@ export function LicenseWall() {
   const [startErr, setStartErr] = useState<string | null>(null);
   const pathname = usePathname();
   const isCloud = deploymentMode === 'cloud';
+  // A visit from the link an AI client shows on a blocked tool call
+  // (`?source=mcp_blocked`) is remembered for the tab's session: /login and
+  // the onboarding redirects drop the query before the wall's checkout.
+  useEffect(() => {
+    try {
+      const fromUrl = parseCheckoutSource(new URLSearchParams(window.location.search).get('source'));
+      if (fromUrl === 'mcp_blocked') sessionStorage.setItem(WALL_SOURCE_KEY, fromUrl);
+    } catch {
+      // Storage blocked: the checkout keeps the wall's own source.
+    }
+  }, [pathname]);
   const checkout = useCardCheckout();
   const [selection, setSelection] = useState<PlanSelection>(DEFAULT_SELECTION);
   // What the workspace already has, so a plan it has outgrown is not the one
   // preselected (and says so).
   const [usage, setUsage] = useState<WorkspaceUsage | null>(null);
   const tw = useTranslations('licenseWall');
-  const locale = useLocale();
   const trustStats = useTrustStats(isCloud && reason === 'trial-ended' && user?.role === 'ADMIN');
   // Once the admin picks a plan, the usage answer no longer moves it.
   const picked = useRef(false);
@@ -262,10 +286,9 @@ export function LicenseWall() {
   // the earlier one. Nothing is shown until the variant is known.
   const wallLoading = buyInPlace && wall === undefined;
   const trustWall = buyInPlace && wall !== undefined && wall?.variant !== 'control';
-  const recap = trustWall ? wall?.recap ?? null : null;
-  const clientName = recap?.client ?? tw('yourAi');
-  const connectorList =
-    recap && recap.connectors.length > 0 ? listFormat(locale, recap.connectors) : null;
+  // The AI client the workspace used (Claude, ChatGPT), named in the body and
+  // the directory line. The wall shows no usage numbers.
+  const wallClient = trustWall ? wall?.recap?.client ?? null : null;
   // The directory listing(s) on the trust line: Claude's for a Claude
   // workspace, ChatGPT's for a ChatGPT one, both when the client is unknown.
   const directoryLine = (client: string | null | undefined) => {
@@ -289,7 +312,7 @@ export function LicenseWall() {
           : 'Your License Has Expired';
 
   const body = trustWall
-    ? tw('body', { client: recap?.client ?? tw('yourAi') })
+    ? tw('body', { client: wallClient ?? tw('yourAi') })
     : reason === 'payment-failed'
       ? isAdmin
         ? 'Your last payment didn’t go through, so your subscription is on hold. Update your payment method and it resumes right away: the open payment is taken as soon as the new one is saved. Your connectors and configurations are preserved.'
@@ -328,22 +351,6 @@ export function LicenseWall() {
           <p className={cn('text-[var(--text-2)] text-sm', trustWall ? 'mb-4' : 'mb-6')}>{body}</p>
         )}
 
-        {recap && (
-          <div
-            data-testid="wall-recap"
-            className="mb-4 rounded-[12px] border border-[var(--border)] bg-[var(--brand-tint)] px-4 py-2.5 text-left text-sm text-[var(--text)]"
-          >
-            <p>
-              {connectorList
-                ? tw('recapCallsWith', { client: clientName, count: recap.successfulCalls, connectors: connectorList })
-                : tw('recapCalls', { client: clientName, count: recap.successfulCalls })}
-            </p>
-            {recap.blockedSinceEnd && (
-              <p className="mt-1.5 text-xs text-[var(--text-2)]">{tw('recapBlocked', { client: clientName })}</p>
-            )}
-          </div>
-        )}
-
         <div className="space-y-3">
           {reason === 'no-license' && isCloud ? (
             <>
@@ -378,7 +385,7 @@ export function LicenseWall() {
                 />
               </div>
               <button
-                onClick={() => checkout.start(selection, false, 'trial_ended_wall')}
+                onClick={() => checkout.start(selection, false, wallCheckoutSource())}
                 disabled={checkout.loading}
                 className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
               >
@@ -399,7 +406,7 @@ export function LicenseWall() {
                   <p className="text-[11px] text-[var(--text-3)]">
                     {[
                       trustStats?.workspaces ? tw('workspaces', { count: trustStats.workspaces }) : null,
-                      directoryLine(recap?.client),
+                      directoryLine(wallClient),
                     ]
                       .filter((item): item is string => Boolean(item))
                       .map((item, i) => (
@@ -513,11 +520,3 @@ export function LicenseWall() {
   );
 }
 
-/** "Etsy", "Etsy and Telegram", "Etsy, Telegram and Odoo", in the page's language. */
-function listFormat(locale: string, items: string[]): string {
-  try {
-    return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(items);
-  } catch {
-    return items.join(', ');
-  }
-}

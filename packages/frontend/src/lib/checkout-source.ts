@@ -45,6 +45,11 @@ export const CHECKOUT_SOURCES = [
   'file_quota',
   /** File Search: the feature is locked (no plan includes it, trial over). */
   'file_search_licence',
+  /**
+   * The ended-trial wall opened from the link an AI client shows when a tool
+   * call is refused because the trial ended (`/?source=mcp_blocked`).
+   */
+  'mcp_blocked',
   /** Any checkout the page did not name (the backend's default). */
   'app',
 ] as const;

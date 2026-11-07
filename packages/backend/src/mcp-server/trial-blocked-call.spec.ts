@@ -40,29 +40,26 @@ function makePrisma(opts: { recent?: boolean; clientName?: string | null } = {})
 }
 
 describe('trialReactivationUrl', () => {
-  it('links the pricing page with the mcp_blocked source and the Cloud activation page, no token', () => {
-    const url = trialReactivationUrl({ MARKETING_URL: 'https://site.test/', FRONTEND_URL: 'https://cloud.test' } as any);
-    expect(url).toBe(
-      `https://site.test/pricing?return_url=${encodeURIComponent('https://cloud.test/settings/license/activate')}&source=mcp_blocked`,
-    );
+  it('links the Cloud dashboard (the ended-trial wall) with the mcp_blocked source, no token', () => {
+    const url = trialReactivationUrl({ MARKETING_URL: 'https://site.test/', FRONTEND_URL: 'https://cloud.test/' } as any);
+    expect(url).toBe('https://cloud.test/?source=mcp_blocked');
     expect(url).not.toMatch(/token|email/i);
   });
 
   it('falls back to the public sites', () => {
-    expect(trialReactivationUrl({} as any)).toBe(
-      `https://anythingmcp.com/pricing?return_url=${encodeURIComponent('https://cloud.anythingmcp.com/settings/license/activate')}&source=mcp_blocked`,
-    );
+    expect(trialReactivationUrl({} as any)).toBe('https://cloud.anythingmcp.com/?source=mcp_blocked');
   });
 });
 
 describe('trialEndedToolResult', () => {
   it('says when the trial ended, that nothing is lost, and asks the AI to show the link', () => {
-    const r = trialEndedToolResult(ENDED, 'https://site.test/pricing?source=mcp_blocked');
+    expect(trialEndedToolResult(ENDED, 'https://x.test').error).toContain('subscribe to a plan in the AnythingMCP dashboard');
+    const r = trialEndedToolResult(ENDED, 'https://cloud.test/?source=mcp_blocked');
     expect(r.error).toContain('trial ended on 28 October 2026');
     expect(r.error).toContain('connectors and settings are kept');
-    expect(r.error).toContain('Show this link to the user: https://site.test/pricing?source=mcp_blocked');
-    expect(r.error.endsWith('https://site.test/pricing?source=mcp_blocked')).toBe(true);
-    expect(r.reactivateUrl).toBe('https://site.test/pricing?source=mcp_blocked');
+    expect(r.error).toContain('Show this link to the user: https://cloud.test/?source=mcp_blocked');
+    expect(r.error.endsWith('https://cloud.test/?source=mcp_blocked')).toBe(true);
+    expect(r.reactivateUrl).toBe('https://cloud.test/?source=mcp_blocked');
   });
 
   it('still reads well without an end date', () => {
@@ -197,9 +194,8 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
     const body = JSON.parse(res.content[0].text);
     expect(body.error).toContain('trial ended on 28 October 2026');
     expect(body.error).toContain('Show this link to the user: ');
-    expect(body.reactivateUrl).toContain('/pricing?');
-    expect(body.reactivateUrl).toContain('source=mcp_blocked');
-    expect(body.reactivateUrl).toContain(encodeURIComponent('/settings/license/activate'));
+    expect(body.reactivateUrl).toMatch(/\/\?source=mcp_blocked$/);
+    expect(body.reactivateUrl).not.toContain('/pricing');
     expect(restEngine.execute).not.toHaveBeenCalled();
     await flush();
     expect(events.log).toHaveBeenCalledWith({
