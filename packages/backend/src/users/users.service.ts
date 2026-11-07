@@ -6,6 +6,7 @@ import { UserLifecycleService, LifecycleContext } from './user-lifecycle.service
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import { LicenseReleaseService } from '../license/license-release.service';
 import { findUserByEmail, findUsersByEmail, normalizeEmail } from '../common/email.util';
+import { CASCADE_DELETE_TRANSACTION } from '../common/cascade-delete-transaction';
 
 @Injectable()
 export class UsersService {
@@ -289,7 +290,7 @@ export class UsersService {
       ),
       this.prisma.oAuthAuthorizationCode.deleteMany({ where: { userId } }),
       this.prisma.user.delete({ where: { id: userId } }),
-    ]);
+    ], CASCADE_DELETE_TRANSACTION);
 
     // The deleted workspaces' licences are left without one; end them on the
     // licence site, which stops the trial emails.
