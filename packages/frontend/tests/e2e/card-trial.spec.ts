@@ -500,17 +500,6 @@ test.describe('card-trial entry points (cloud)', () => {
     if (process.env.WALL_SHOT) await page.screenshot({ path: `${process.env.WALL_SHOT}/wall-trust-norecap.png` });
   });
 
-  test('the wall opened from the AI client\'s blocked-call link checks out as mcp_blocked', async ({ page }) => {
-    const { posted } = await cloudSession(page, { seed: SHOWN, license: ENDED, wall: { variant: 'trust', recap: null } });
-    await page.goto('/?source=mcp_blocked');
-    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
-    // The source survives an in-app navigation (the onboarding redirects drop the query).
-    await page.goto('/connectors');
-    await page.getByRole('button', { name: 'Subscribe to Starter' }).click({ timeout: 15_000 });
-    await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
-    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'mcp_blocked' }]);
-  });
-
   test('a non-admin keeps the plain pricing link in the banner', async ({ page }) => {
     await cloudSession(page, { user: { ...ADMIN, role: 'EDITOR' }, seed: SHOWN });
     await page.goto('/connectors');

@@ -22,9 +22,9 @@ function endedOn(d: Date): string {
 
 /**
  * The tool result's text: what happened, that nothing was lost, and the link
- * to the workspace's plans in the Cloud dashboard, which the AI is asked to
- * show. It names no price: the dashboard shows the current ones. The link
- * carries no token, since this text reaches the AI provider.
+ * an administrator reactivates the workspace with, which the AI is asked to
+ * show. The link carries no email token, since this text reaches the AI
+ * provider.
  */
 export function trialEndedToolResult(
   trialEndedAt: Date | null,
@@ -34,8 +34,7 @@ export function trialEndedToolResult(
   return {
     error:
       `This workspace's AnythingMCP trial ${ended}. Its connectors and settings are kept. ` +
-      'To keep using this tool, subscribe to a plan in the AnythingMCP dashboard ' +
-      '(a workspace administrator signs in and picks a plan there). ' +
+      'To keep using this tool, an administrator can reactivate the workspace. ' +
       // The link comes last, so no punctuation sticks to it when it is shown.
       `Show this link to the user: ${url}`,
     reactivateUrl: url,

@@ -23,20 +23,6 @@ import { PlanPicker } from '@/components/plan-picker';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { parseCheckoutSource, type CheckoutSource } from '@/lib/checkout-source';
-
-/** sessionStorage key: this tab came to the wall from an AI client's link. */
-const WALL_SOURCE_KEY = 'amcp_wall_source';
-
-/** The ended-trial wall's checkout source: `mcp_blocked` after the AI client's link, else its own. */
-function wallCheckoutSource(): CheckoutSource {
-  try {
-    if (sessionStorage.getItem(WALL_SOURCE_KEY) === 'mcp_blocked') return 'mcp_blocked';
-  } catch {
-    // Storage blocked.
-  }
-  return 'trial_ended_wall';
-}
 
 // 'lapsed' is a paid subscription that stopped being active without being
 // cancelled — the website marks a licence expired on any non-active status,
@@ -57,17 +43,6 @@ export function LicenseWall() {
   const [startErr, setStartErr] = useState<string | null>(null);
   const pathname = usePathname();
   const isCloud = deploymentMode === 'cloud';
-  // A visit from the link an AI client shows on a blocked tool call
-  // (`?source=mcp_blocked`) is remembered for the tab's session: /login and
-  // the onboarding redirects drop the query before the wall's checkout.
-  useEffect(() => {
-    try {
-      const fromUrl = parseCheckoutSource(new URLSearchParams(window.location.search).get('source'));
-      if (fromUrl === 'mcp_blocked') sessionStorage.setItem(WALL_SOURCE_KEY, fromUrl);
-    } catch {
-      // Storage blocked: the checkout keeps the wall's own source.
-    }
-  }, [pathname]);
   const checkout = useCardCheckout();
   const [selection, setSelection] = useState<PlanSelection>(DEFAULT_SELECTION);
   // What the workspace already has, so a plan it has outgrown is not the one
@@ -385,7 +360,7 @@ export function LicenseWall() {
                 />
               </div>
               <button
-                onClick={() => checkout.start(selection, false, wallCheckoutSource())}
+                onClick={() => checkout.start(selection, false, 'trial_ended_wall')}
                 disabled={checkout.loading}
                 className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
               >
