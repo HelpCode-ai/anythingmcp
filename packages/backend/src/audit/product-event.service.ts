@@ -254,8 +254,10 @@ export const ProductEvents = {
   /**
    * Cloud: an AI client called a tool of a workspace whose free trial had
    * ended, and was refused with the reactivation link (dynamic-mcp-tools.ts).
-   * metadata.toolName, adapterSlug (catalog connectors only) and client (the
-   * OAuth client's name, when the call came through one). At most one row per
+   * metadata.toolName, adapterSlug (catalog connectors only), client (the
+   * OAuth client's name, when the call came through one) and variant (the
+   * reactivation link given: 'page' or 'pricing', reactivationLinkVariant;
+   * absent on rows from before 7 Nov 2026). At most one row per
    * workspace and tool an hour, so a looping agent cannot flood the table.
    * Server-only. Answers how many workspaces come back after their trial, and
    * with which app.
@@ -313,6 +315,16 @@ export const ProductEvents = {
    * checkout_source 'trial_ended_wall' by organizationId, per variant.
    */
   LICENSE_WALL_VIEWED: 'license_wall_viewed',
+  /**
+   * Cloud: the no-login reactivation page (/reactivate/<token>, the link an
+   * AI client gets in the 'page' arm when an ended trial blocks a tool call)
+   * was opened with a valid token (reactivation.controller.ts).
+   * metadata.state = what the page showed ('trial-ended', 'active',
+   * 'payment-failed', 'no-license'). At most once per workspace a UTC day.
+   * Server-only. Read with `trial_expired_call_blocked` (metadata.variant)
+   * and Stripe's checkouts of checkout_source 'mcp_reactivate'.
+   */
+  REACTIVATE_PAGE_VIEWED: 'reactivate_page_viewed',
 } as const;
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
@@ -342,6 +354,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.ONBOARDING_REMINDER_SENT,
   ProductEvents.ONBOARDING_REMINDER_HOLDOUT,
   ProductEvents.LICENSE_WALL_VIEWED,
+  ProductEvents.REACTIVATE_PAGE_VIEWED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),

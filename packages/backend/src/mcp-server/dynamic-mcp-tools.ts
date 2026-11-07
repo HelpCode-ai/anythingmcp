@@ -26,6 +26,7 @@ import {
 } from '../license/code-run-quotas';
 import { ProductEventService } from '../audit/product-event.service';
 import { TrialBlockedCallRecorder, trialEndedToolResult } from './trial-blocked-call';
+import { trialReactivationLink, trialReactivationUrl } from '../license/license-checkout';
 import { DeploymentService } from '../common/deployment.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -349,6 +350,11 @@ export class DynamicMcpTools {
       // hand the AI the reactivation link to show. The blocked call is
       // recorded in the background; it never delays or breaks this answer.
       if (err instanceof TrialEndedException) {
+        // Half of the workspaces get the no-login reactivation page, half the
+        // pricing page (the reactivation-link test, license-checkout.ts).
+        const link = context?.organizationId
+          ? trialReactivationLink(context.organizationId, context.userId)
+          : { url: trialReactivationUrl(), variant: undefined };
         const blocked = this.resolveTool(toolName, context);
         if (blocked && context?.organizationId) {
           const slug = (blocked.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
@@ -358,10 +364,11 @@ export class DynamicMcpTools {
             toolName: blocked.name,
             adapterSlug: typeof slug === 'string' && slug ? slug : undefined,
             oauthClientId: context.oauthClientId,
+            variant: link.variant,
           });
         }
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(trialEndedToolResult(err.trialEndedAt)) }],
+          content: [{ type: 'text' as const, text: JSON.stringify(trialEndedToolResult(err.trialEndedAt, link.url)) }],
           isError: true,
         };
       }

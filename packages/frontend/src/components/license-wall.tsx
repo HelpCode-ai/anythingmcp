@@ -249,6 +249,8 @@ export function LicenseWall() {
     pathname === '/reset-password' ||
     pathname.startsWith('/accept-invite') ||
     pathname === '/settings' ||
+    // The no-login reactivation page sells the same plans itself.
+    pathname.startsWith('/reactivate/') ||
     pathname === '/settings/license' ||
     pathname.startsWith('/settings/license/');
 
