@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 713 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 714 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -92,7 +92,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-713 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini.
+714 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini.
 
 | Category | Examples |
 |---|---|
@@ -1863,7 +1863,7 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   },
 
   // ─── Where to find the token & expiry in the login response ────
-  "tokenJsonPath":  "data.signIn.jwtToken.token",
+  "tokenJsonPath":  "data.signIn.jwtToken.token",   // or a list, see below
   "expiryJsonPath": "data.signIn.jwtToken.expiredAt",
   "audJsonPath":    "data.signIn.jwtToken.aud",      // optional — overrides authConfig.aud
   "expiryFormat":   "iso8601",                       // iso8601 | unix | ttl_seconds
@@ -1885,6 +1885,19 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
     "JWT-AUD": "${aud}"
   }
 }
+```
+
+### Several candidate token paths
+
+When the vendor does not document the login answer, `tokenJsonPath` can be a
+list of paths, tried in order; the first that holds a non-empty string is the
+token. `"."` takes the whole body, for a login that answers with a bare
+string. A login that finds none fails with every path named (or with the
+service's own refusal message, when the body carries one). A single string
+works as before.
+
+```json
+"tokenJsonPath": ["AuthenticationResult.IdToken", "IdToken", "idToken", "data.idToken", "token", "."]
 ```
 
 ### Placeholders available in templates
@@ -4747,6 +4760,8 @@ The engine handles salt fetch → bcrypt → login → token cache → proactive
 ```
 
 A login that takes HTTP Basic credentials (Wazuh's `POST /security/user/authenticate`) sets `"loginBasicAuth": true`: the engine sends `Authorization: Basic base64(username:password)` on the login request only (the API calls keep using `headerTemplate`), the password is never offered to the body templates (`${password}` renders empty), and no body is sent without a `loginBody`. An `Authorization` in `loginHeaders` is refused rather than overridden, as are `signedJwt`, bcrypt `passwordHashing` and a username containing `:`; `scripts/validate-adapters.mjs` reports the same mistakes (rule `login-basic-auth`).
+
+When the login answer is not documented, `tokenJsonPath` may be a list of paths tried in order (the first non-empty string wins), e.g. `["AuthenticationResult.IdToken", "idToken", "token", "."]`.
 
 See [`docs/connectors/login-token-auth.md`](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md>) for the full field-by-field reference, salt-source types (`fetch` vs `static`), expiry formats (`iso8601` / `unix` / `ttl_seconds`), and re-login policies.
 

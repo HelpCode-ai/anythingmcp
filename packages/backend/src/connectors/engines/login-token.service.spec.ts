@@ -339,6 +339,72 @@ describe('LoginTokenService', () => {
       /token not found at "data.signIn.token"/,
     );
   });
+
+  describe('tokenJsonPath as a list (login answer not documented)', () => {
+    const listAuth: LoginTokenAuthConfig = {
+      loginUrl: 'https://login.example.com/token',
+      loginHeaders: { 'x-api-key': 'key-1' },
+      loginBody: { username: '${username}', password: '${password}' },
+      username: 'seller@example.com',
+      password: 'plain-password',
+      tokenJsonPath: ['AuthenticationResult.IdToken', 'data.idToken', 'token', '.'],
+      tokenTTLSeconds: 3600,
+    };
+    const answer = (data: unknown) =>
+      (mockedAxios as unknown as jest.Mock).mockImplementation(async () => ({ data }));
+
+    it('takes the first path that holds a string', async () => {
+      answer({ data: { idToken: 'id-2' }, token: 'later-3' });
+      const bundle = await service.getToken(listAuth, 'conn-list-1');
+      expect(bundle.token).toBe('id-2');
+    });
+
+    it('reads a Cognito-shaped answer from the first path', async () => {
+      answer({ AuthenticationResult: { IdToken: 'id-1', AccessToken: 'acc-1', ExpiresIn: 3600 } });
+      const bundle = await service.getToken(listAuth, 'conn-list-2');
+      expect(bundle.token).toBe('id-1');
+    });
+
+    it('skips empty strings and non-strings', async () => {
+      answer({ AuthenticationResult: { IdToken: '' }, data: { idToken: { nested: true } }, token: 'tok-3' });
+      const bundle = await service.getToken(listAuth, 'conn-list-3');
+      expect(bundle.token).toBe('tok-3');
+    });
+
+    it('takes a bare string answer through "."', async () => {
+      answer('bare-jwt');
+      const bundle = await service.getToken(listAuth, 'conn-list-4');
+      expect(bundle.token).toBe('bare-jwt');
+    });
+
+    it('names every path when none holds a token', async () => {
+      answer({ ok: true });
+      await expect(
+        service.getToken({ ...listAuth, tokenJsonPath: ['a.b', 'c'] }, 'conn-list-5'),
+      ).rejects.toThrow(/token not found at "a.b", "c" in login response/);
+    });
+
+    it('still quotes the refusal the service gave', async () => {
+      answer({ errors: [{ message: 'Usuario o contraseña inválidos' }] });
+      await expect(service.getToken(listAuth, 'conn-list-6')).rejects.toThrow(
+        /refused the login — Usuario o contraseña inválidos/,
+      );
+    });
+
+    it('refuses an empty list or a non-string entry before logging in', async () => {
+      const calls = (mockedAxios as unknown as jest.Mock).mock.calls.length;
+      await expect(
+        service.getToken({ ...listAuth, tokenJsonPath: [] }, 'conn-list-7'),
+      ).rejects.toThrow(/tokenJsonPath is required/);
+      await expect(
+        service.getToken(
+          { ...listAuth, tokenJsonPath: ['token', 5 as unknown as string] },
+          'conn-list-8',
+        ),
+      ).rejects.toThrow(/tokenJsonPath is required/);
+      expect((mockedAxios as unknown as jest.Mock).mock.calls.length).toBe(calls);
+    });
+  });
 });
 
 describe('proactiveRefreshWindowMs', () => {
