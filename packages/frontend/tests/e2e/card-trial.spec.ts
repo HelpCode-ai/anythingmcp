@@ -435,7 +435,7 @@ test.describe('card-trial entry points (cloud)', () => {
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
   });
 
-  test('the ended-trial wall shows what the workspace really did, the trust line, and sells in place', async ({ page }) => {
+  test('the ended-trial wall shows the trust line without usage numbers, and sells in place', async ({ page }) => {
     const { posted } = await cloudSession(page, {
       seed: SHOWN,
       license: ENDED,
@@ -446,9 +446,11 @@ test.describe('card-trial entry points (cloud)', () => {
     });
     await page.goto('/connectors');
     await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
-    const recap = page.getByTestId('wall-recap');
-    await expect(recap).toContainText('Claude made 214 successful calls in this workspace, with Etsy and Telegram.');
-    await expect(recap).toContainText('Since your trial ended, Claude has tried to use them again.');
+    await expect(page.getByText('Subscribe and Claude keeps working with your connectors.', { exact: false })).toBeVisible();
+    // No usage recap: no call count, no connector names.
+    await expect(page.getByTestId('wall-recap')).toHaveCount(0);
+    await expect(page.getByText(/successful call/)).toHaveCount(0);
+    await expect(page.getByText(/Etsy and Telegram/)).toHaveCount(0);
     const trust = page.getByTestId('wall-trust');
     await expect(trust).toContainText('Cancel any time');
     await expect(trust).toContainText('Secure payment by Stripe');
@@ -484,7 +486,7 @@ test.describe('card-trial entry points (cloud)', () => {
     await expect(trust).not.toContainText('Claude Directory');
   });
 
-  test('a workspace that never made a successful call sees no numbers on the wall', async ({ page }) => {
+  test('a workspace with no known AI client gets the generic wording and both listings', async ({ page }) => {
     await cloudSession(page, { seed: SHOWN, license: ENDED, wall: { variant: 'trust', recap: null } });
     await page.goto('/connectors');
     await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
