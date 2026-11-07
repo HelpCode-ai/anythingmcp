@@ -85,6 +85,14 @@ const ODOO_FIELD_HINT =
 // Odoo 18.3 dropped `mobile` from contacts (res.partner, and res.users through
 // it); one number field is left. On 10 Oct 2026 a scheduled job asked for it 28
 // times in a day on Odoo 19, and the generic field hint did not stop it.
+// Odoo saas-19.3 and later (20.0 included) dropped `company_type` from
+// contacts; Odoo 19.0 and older still have it. In the first week of Nov 2026
+// it failed in 5 workspaces (read, search_read, create, and a KeyError on write).
+const ODOO_PARTNER_COMPANY_TYPE_HINT =
+  'This Odoo database (saas-19.3 or later) has no `company_type` field on contacts. Use the ' +
+  'boolean `is_company` instead: true for a company, false for a person, in fields, domains ' +
+  'and values alike. Leave `company_type` out and call again.';
+
 const ODOO_PARTNER_MOBILE_HINT =
   'Odoo 18.3 and later (Odoo 19 included) have no `mobile` field on contacts: every number is ' +
   'in `phone`. Ask for `phone` instead and leave `mobile` out of fields and domains.';
@@ -165,7 +173,10 @@ const ETSY_NO_SHOP_HINT =
 // saying which tag. Listings in other languages take longer tags (up to 30 in
 // the calls Etsy accepted in Oct/Nov 2026), so nothing is refused before the
 // call: the hint names the tags over the limit once Etsy has refused them.
-const ETSY_TAG_LIMIT = /\/tags\s*:\s*cannot be more than (\d+) characters/i;
+// createDraftListing answers the same refusal as a JSON array instead:
+// [{"path":"/tags","type":"too_long","message":"cannot be more than 20 characters"}].
+const ETSY_TAG_LIMIT =
+  /\/tags\s*:\s*cannot be more than (\d+) characters|"path"\s*:\s*"\/tags"[^}]*?cannot be more than (\d+) characters/i;
 
 // A tag is quoted back to the model at most this long.
 const QUOTED_ITEM_MAX = 60;
@@ -693,7 +704,14 @@ function ruleHint(input: ErrorHintInput, text: string): string | undefined {
   if (/Invalid field '?(?:res\.(?:partner|users)\.)?mobile'? (?:on '?res\.(?:partner|users)|in leaf)/i.test(text)) {
     return ODOO_PARTNER_MOBILE_HINT;
   }
-  if (/Invalid field '[^']+' on '[^']+'|Invalid field [\w.]+ in leaf|Invalid field '[^']+' on model/i.test(text)) {
+  if (
+    /Invalid field '?(?:res\.partner\.)?company_type'? (?:on|in) '?res\.partner|"builtins\.KeyError","message":"company_type"/i.test(
+      text,
+    )
+  ) {
+    return ODOO_PARTNER_COMPANY_TYPE_HINT;
+  }
+  if (/Invalid field '[^']+' (?:on|in) '[^']+'|Invalid field [\w.]+ in leaf|Invalid field '[^']+' on model/i.test(text)) {
     return ODOO_FIELD_HINT;
   }
   if (/Object [\w.]+ doesn't exist|Model not found: [\w.]+/i.test(text)) {
@@ -765,7 +783,7 @@ function ruleHint(input: ErrorHintInput, text: string): string | undefined {
   const tagLimit =
     hostMatches(input.host, 'etsy.com') || input.adapterSlug === 'etsy' ? ETSY_TAG_LIMIT.exec(text) : null;
   if (tagLimit) {
-    return etsyTagLengthHint(input.args?.tags, Number(tagLimit[1]));
+    return etsyTagLengthHint(input.args?.tags, Number(tagLimit[1] ?? tagLimit[2]));
   }
 
   if (/Crm_Implied_Api_Access/.test(text)) {
