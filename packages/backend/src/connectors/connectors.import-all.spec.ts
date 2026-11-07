@@ -99,6 +99,7 @@ function buildController(over: { prisma?: any; licenseGuard?: any } = {}) {
     licenseGuard as any,
     {} as any, // mcpServers
     { isCloud: () => true } as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any, // webhookEvents
   );
   return { controller, prisma, licenseGuard, mcpServer };
 }
