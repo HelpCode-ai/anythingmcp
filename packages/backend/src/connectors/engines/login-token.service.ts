@@ -121,7 +121,9 @@ export interface LoginTokenAuthConfig {
     outputParam?: string; // template param name (default: passwordHashed)
   };
 
-  tokenJsonPath: string;
+  // One path, or several tried in order when the vendor does not document
+  // the login answer's shape: the first that holds a non-empty string wins.
+  tokenJsonPath: string | string[];
   expiryJsonPath?: string;
   audJsonPath?: string;
   expiryFormat?: 'iso8601' | 'unix' | 'ttl_seconds';
@@ -312,7 +314,7 @@ export class LoginTokenService {
       this.requireString(authConfig.password, 'password');
     }
     if (authConfig.tokenSource !== 'cookie') {
-      this.requireString(authConfig.tokenJsonPath, 'tokenJsonPath');
+      tokenJsonPaths(authConfig.tokenJsonPath);
     }
 
     const basicAuth = loginBasicAuthHeader(authConfig);
@@ -419,8 +421,9 @@ export class LoginTokenService {
         );
       }
     } else {
-      token = jsonPath(response.data, authConfig.tokenJsonPath);
-      if (!token || typeof token !== 'string') {
+      const paths = tokenJsonPaths(authConfig.tokenJsonPath);
+      token = readTokenAt(response.data, paths);
+      if (!token) {
         // Far and away the commonest reason the token is missing is that the
         // login itself was refused — wrong password, 2FA, a locked account.
         // The endpoint answers 200 and puts the reason in the body, so saying
@@ -431,7 +434,7 @@ export class LoginTokenService {
         throw new Error(
           refusal
             ? `LOGIN_TOKEN: the service refused the login — ${refusal}`
-            : `LOGIN_TOKEN: token not found at "${authConfig.tokenJsonPath}" in login response`,
+            : `LOGIN_TOKEN: token not found at ${paths.map((p) => `"${p}"`).join(', ')} in login response`,
         );
       }
     }
@@ -699,6 +702,30 @@ function scrubLoginError(err: unknown, secrets: string[]): void {
     for (const secret of secrets) if (secret) m = m.split(secret).join('[redacted]');
     e.message = m;
   }
+}
+
+/**
+ * The token path(s) of an authConfig as a list. A single string is the usual
+ * form; a list is for logins whose answer is undocumented, tried in order.
+ * Anything else (missing, empty, a non-string entry) is a configuration error.
+ */
+export function tokenJsonPaths(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : [value];
+  if (list.length === 0 || list.some((p) => !p || typeof p !== 'string')) {
+    throw new Error(
+      'LOGIN_TOKEN: authConfig.tokenJsonPath is required (a path, or a list of paths)',
+    );
+  }
+  return list as string[];
+}
+
+/** The first non-empty string found at one of `paths`, in order. */
+export function readTokenAt(body: unknown, paths: string[]): string | undefined {
+  for (const path of paths) {
+    const value = jsonPath(body, path);
+    if (typeof value === 'string' && value.trim() !== '') return value;
+  }
+  return undefined;
 }
 
 /**

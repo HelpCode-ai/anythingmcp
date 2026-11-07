@@ -1,0 +1,1496 @@
+{
+  "slug": "exito-marketplace",
+  "name": "Grupo Éxito Marketplace",
+  "aliases": [
+    "Éxito",
+    "Exito",
+    "Grupo Éxito",
+    "Éxito Marketplace",
+    "Exito Seller Center",
+    "exito.com"
+  ],
+  "description": "Let your AI run your exito.com marketplace store in Colombia through Grupo Éxito's seller API: list your products and their approval status, create products with images, descriptions and attributes, set prices and stock, and read orders and payout statements.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "exito",
+  "docsUrl": "https://developers.exito.com/",
+  "instructions": "## Grupo Éxito Marketplace\nThis connector calls the **Grupo Éxito marketplace seller API** (documented at https://developers.exito.com/) for one seller on exito.com and Éxito's other sites in Colombia: products and their approval status, categories and their specifications, offers (price and stock), orders and payout statements. The API is spread over several Amazon API Gateway addresses (`*.execute-api.us-east-1.amazonaws.com`, stage `-pdn`); the connector knows each one. **No sandbox is documented**: every call, writes included, acts on the live store.\n\n**What you need**: API access granted by Éxito. With it Éxito sends authentication instructions with a **username**, a **password**, an **API key** (`x-api-key`) and the **address that issues the token**. You also need your numeric **seller id**.\n\n**Setup**\n1. `EXITO_USERNAME` and `EXITO_PASSWORD`: the API username and password from Éxito's instructions.\n2. `EXITO_API_KEY`: the `x-api-key` from the same instructions.\n3. `EXITO_LOGIN_URL`: the full `https://` address of the token request in those instructions. It is not published on developers.exito.com, so copy it from the document Éxito sent.\n4. `EXITO_SELLER_ID`: your numeric seller id (idSeller, e.g. 11795). `exito_marketplace_get_bulk_upload_status` also shows it as `data.idSeller`.\n\n**How it signs in**: the connector sends `POST` to `EXITO_LOGIN_URL` with the header `x-api-key` and the body `{\"username\": ..., \"password\": ...}`, takes the token from the answer and sends it as `Authorization: <token>` (no `Bearer`; Éxito's docs call it COGNITO_TOKEN) together with `x-api-key` on every call. Tokens are renewed automatically, every hour at the latest and right away when Éxito answers 401. The password and the key are stored encrypted and never shown to the AI.\n\n**How selling on Éxito works (asynchronous)**\n1. Pick the most specific category with `exito_marketplace_list_categories` (or check one with `exito_marketplace_get_category`) and read its specifications with `exito_marketplace_get_category_features`: required ones must be sent, and a spec with a list of values only accepts those.\n2. Create the products with `exito_marketplace_create_products` (up to 400 EANs per call; images are public URLs in `ImageUrl1` to `ImageUrl5`, 1000x1000 px, 733x1000 px for Clothing). The brand must already exist at Éxito (in capitals); a missing brand is created by your Éxito account manager. `Ean` \"0\" asks Éxito to assign a barcode.\n3. Follow the batch with `exito_marketplace_get_bulk_upload_status`: status 4 starting, 1 processing, 2 completed, 3 finished with errors (`ProductNotify` lists the reasons). No new batch is accepted while it is 4 or 1.\n4. Every product is **moderated by Éxito's content team**: `exito_marketplace_get_products_waiting` lists those in review, `exito_marketplace_get_products_rejected` those rejected with `Reason` and `Comment`, `exito_marketplace_get_products_pending_seller_approval` those that differ from the same product already in the marketplace. Éxito also e-mails the result. After approval a product needs up to 1 hour of indexing before it can get an offer.\n5. Give approved products their price and stock with `exito_marketplace_upsert_offers` (several EANs, all fields on the first offer) or `exito_marketplace_update_offer_price_stock` (one EAN). `exito_marketplace_load_products_and_offers` sends products and their offers in one request. Offers reach the sites within about 4 hours (site cache) and are shared by every Éxito site where you sell.\n6. Read the result with `exito_marketplace_get_products` (price, salePrice, inventoryQuantity, bestOffer, availableToOffer).\n\n**Prices and stock**: prices are whole Colombian pesos above 8000 without separators (`45000`); a sale price (`DiscountPrice`) must be lower than `Price`. Every update carries EAN, Stock and Price; stock is only applied with `IsUpdatedStock` 1, so to change only the price send the current stock with `IsUpdatedStock` 0. A price change of more than 30% comes back with code `PEX` and is applied only when sent again with price approval: ask the user before doing that. `PromiseDelivery` is \"N a M\" (business days, or hours with `Periodicity` 2). At most one of `IsFreeShipping`, `IsEnviosExito` and `IsFreightCalculator` is 1. To stop selling a product, set its stock to 0: the API has no delete.\n\n**Orders and money**: `exito_marketplace_get_orders` (status 35 assigned, 170 sent; dates as yyyy/MM/dd) and `exito_marketplace_get_bills` (payout statements). Lists page with `paginationToken`: send `{}` first, then the token of the previous answer, until it comes back as `{}`.\n\n**Switched off at install**: `exito_marketplace_set_order_tracking` (mark products shipped) and `exito_marketplace_upload_order_invoice` (attach the invoice). Turn them on in the connector's tools when the AI should handle orders, and confirm each call.\n\n**Answers and errors**: answers are JSON with `data`, `errors` and `message` (lists use `viewModel`, `count`, `paginationToken`). Batch writes answer HTTP 200 with `totalProcess`, `error` and `successful` and one message per refused EAN: always read them, a 200 does not mean every product or offer was accepted. A non-empty `errors` list is reported as a failed call. `401 Unauthorized` means no valid token; `403 Forbidden` usually means the `x-api-key` is missing or wrong. Requests and answers are in Spanish (`culture=es-CO`).\n\n**Not covered**: shipping labels (Éxito documents them only on a development stage), the moderation and offer notifications (`notifyproduct`, `notifyoffer`: Éxito calls a service on the seller's side) and anything the Seller Center web app does that the API does not offer.",
+  "prerequisites": "A seller account on the Grupo Éxito marketplace with API access granted by Éxito: its authentication instructions give you the username, password, x-api-key and the token address. There is no documented sandbox: the connector works on your live store.",
+  "requiredEnvVars": [
+    "EXITO_USERNAME",
+    "EXITO_PASSWORD",
+    "EXITO_API_KEY",
+    "EXITO_LOGIN_URL",
+    "EXITO_SELLER_ID"
+  ],
+  "envVarMeta": {
+    "EXITO_USERNAME": {
+      "label": "Usuario API (API username)",
+      "kind": "credential",
+      "help": "The API username from the authentication instructions Éxito sent with your API access."
+    },
+    "EXITO_PASSWORD": {
+      "label": "Contraseña API (API password)",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API password from the same instructions. It is only sent to the token address."
+    },
+    "EXITO_API_KEY": {
+      "label": "API key (x-api-key)",
+      "kind": "credential",
+      "secret": true,
+      "help": "The x-api-key from Éxito's instructions. It goes in the x-api-key header of the token request and of every API call.",
+      "pattern": "^\\S{8,256}$",
+      "patternMessage": "Paste the API key alone, without spaces or quotes."
+    },
+    "EXITO_LOGIN_URL": {
+      "label": "URL del token (token URL)",
+      "kind": "address",
+      "help": "The full address of the token request in Éxito's authentication instructions (the step that takes the username, password and x-api-key). It is not published on developers.exito.com.",
+      "link": "https://developers.exito.com/",
+      "pattern": "^https://[^\\s/]+\\.[^\\s]+$",
+      "patternMessage": "Paste the full https:// address from Éxito's instructions."
+    },
+    "EXITO_SELLER_ID": {
+      "label": "ID de vendedor (seller ID)",
+      "kind": "setting",
+      "help": "Your numeric seller id at Éxito (idSeller), e.g. 11795. The bulk upload status tool also shows it as data.idSeller.",
+      "pattern": "^\\d{1,12}$",
+      "patternMessage": "The seller id is a number, e.g. 11795."
+    }
+  },
+  "verifyHints": {
+    "auth_failed": "Éxito did not issue a token. Check EXITO_USERNAME, EXITO_PASSWORD and EXITO_API_KEY against the authentication instructions Éxito sent, and that EXITO_LOGIN_URL is the token address from that document.",
+    "401": "Éxito answered Unauthorized: the token was refused. Check EXITO_USERNAME and EXITO_PASSWORD, and that EXITO_LOGIN_URL is the token address from Éxito's instructions.",
+    "403": "Éxito answered Forbidden: the x-api-key is missing or wrong, or this API is not enabled for your user. Check EXITO_API_KEY and ask Éxito which APIs your access covers."
+  },
+  "probe": {
+    "tool": "exito_marketplace_get_products",
+    "params": {
+      "limit": 1,
+      "page": 1
+    }
+  },
+  "connector": {
+    "name": "Grupo Éxito Marketplace API",
+    "type": "REST",
+    "baseUrl": "https://rbrefxe0d8.execute-api.us-east-1.amazonaws.com/External-pdn",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{EXITO_LOGIN_URL}}",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "x-api-key": "{{EXITO_API_KEY}}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "username": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{EXITO_USERNAME}}",
+      "password": "{{EXITO_PASSWORD}}",
+      "tokenJsonPath": [
+        "AuthenticationResult.IdToken",
+        "IdToken",
+        "idToken",
+        "id_token",
+        "data.AuthenticationResult.IdToken",
+        "data.IdToken",
+        "data.idToken",
+        "Data.IdToken",
+        "token",
+        "Token",
+        "data.token",
+        "Data.Token",
+        "AuthenticationResult.AccessToken",
+        "AccessToken",
+        "accessToken",
+        "access_token",
+        "data.accessToken",
+        "data.access_token",
+        "."
+      ],
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "${token}",
+      "extraHeaders": {
+        "x-api-key": "{{EXITO_API_KEY}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "errors[0]",
+          "messagePath": "errors[0].message",
+          "status": 400
+        },
+        {
+          "path": "Errors[0]",
+          "messagePath": "Errors[0].Message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "exito_marketplace_get_products",
+      "description": "List the seller's products in the Éxito marketplace with name, EAN, VTEX PLU, image, created and updated dates, price, sale price, stock (inventoryQuantity), bestOffer and availableToOffer. Answer: data.list plus data.total (all matches). Filter by EAN, seller SKU, name, parent reference, PLU, category or dates; page with page and limit. Products still in moderation or rejected are listed by exito_marketplace_get_products_waiting and exito_marketplace_get_products_rejected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, e.g. 20. Default 20.",
+            "minimum": 1,
+            "default": 20
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. Default 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "my_products": {
+            "type": "boolean",
+            "description": "true (default) returns only your own products.",
+            "default": true
+          },
+          "ean": {
+            "type": "string",
+            "description": "Only this EAN."
+          },
+          "seller_sku": {
+            "type": "string",
+            "description": "Only this seller SKU (your own product id)."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Filter by product name."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Filter by parent reference (variations of one clothing product)."
+          },
+          "plu_vtex": {
+            "type": "string",
+            "description": "Filter by the VTEX PLU identifier, e.g. 100286013."
+          },
+          "categories": {
+            "type": "string",
+            "description": "Filter by category id, e.g. 27193."
+          },
+          "creation_date": {
+            "type": "string",
+            "description": "Only products created on this day, YYYY-MM-DD."
+          },
+          "initial_date": {
+            "type": "string",
+            "description": "Start of a date range, YYYY-MM-DD."
+          },
+          "final_date": {
+            "type": "string",
+            "description": "End of a date range, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "limit",
+          "page"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://rbrefxe0d8.execute-api.us-east-1.amazonaws.com/External-pdn/products/",
+        "queryParams": {
+          "culture": "es-CO",
+          "limit": "$limit",
+          "page": "$page",
+          "myProducts": "$my_products",
+          "ean": "$ean",
+          "sellerSku": "$seller_sku",
+          "productName": "$product_name",
+          "reference": "$reference",
+          "pluVtex": "$plu_vtex",
+          "categories": "$categories",
+          "creationDate": "$creation_date",
+          "initialDate": "$initial_date",
+          "finalDate": "$final_date"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_get_products_waiting",
+      "description": "Products waiting for approval by Éxito's content team (moderation), with EAN, name, image, processing date and parent reference. Answer: viewModel, count and paginationToken. Use it after exito_marketplace_create_products to see what is still in review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 20.",
+            "minimum": 1,
+            "default": 20
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "Pagination token. Send {} (the default) on the first request; for the next page send the paginationToken the previous answer returned. An answer whose paginationToken is {} has no further page.",
+            "default": "{}"
+          },
+          "current_page": {
+            "type": "integer",
+            "description": "Current page number.",
+            "minimum": 1
+          },
+          "new_limit": {
+            "type": "integer",
+            "description": "New page size when changing limit between pages.",
+            "minimum": 1
+          },
+          "ean": {
+            "type": "string",
+            "description": "Only this EAN."
+          },
+          "name": {
+            "type": "string",
+            "description": "Filter by product name."
+          }
+        },
+        "required": [
+          "limit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://rbrefxe0d8.execute-api.us-east-1.amazonaws.com/External-pdn/productswaiting/productswaiting",
+        "queryParams": {
+          "culture": "es-CO",
+          "limit": "$limit",
+          "paginationToken": "$pagination_token",
+          "idSeller": "{{EXITO_SELLER_ID}}",
+          "currentPage": "$current_page",
+          "newLimit": "$new_limit",
+          "ean": "$ean",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_get_products_rejected",
+      "description": "Products Éxito's content team rejected and that must be corrected, with EAN, name, image, Reason and Comment of the rejection. Answer: viewModel, count and paginationToken. Correct the product and send it again with exito_marketplace_create_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 20.",
+            "minimum": 1,
+            "default": 20
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "Pagination token. Send {} (the default) on the first request; for the next page send the paginationToken the previous answer returned. An answer whose paginationToken is {} has no further page.",
+            "default": "{}"
+          },
+          "current_page": {
+            "type": "integer",
+            "description": "Current page number.",
+            "minimum": 1
+          },
+          "new_limit": {
+            "type": "integer",
+            "description": "New page size when changing limit between pages.",
+            "minimum": 1
+          },
+          "ean": {
+            "type": "string",
+            "description": "Only this EAN."
+          },
+          "name": {
+            "type": "string",
+            "description": "Filter by product name."
+          }
+        },
+        "required": [
+          "limit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://rbrefxe0d8.execute-api.us-east-1.amazonaws.com/External-pdn/productswaiting/productsrejected",
+        "queryParams": {
+          "culture": "es-CO",
+          "limit": "$limit",
+          "paginationToken": "$pagination_token",
+          "idSeller": "{{EXITO_SELLER_ID}}",
+          "currentPage": "$current_page",
+          "newLimit": "$new_limit",
+          "ean": "$ean",
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_get_products_pending_seller_approval",
+      "description": "Products that need your decision because they differ from the same product already in the marketplace: each row has oldProduct and currentProduct (JSON text with the differing fields), status, EAN, PLU and name. Answer: viewModel, count and paginationToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 20.",
+            "minimum": 1,
+            "default": 20
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "Pagination token. Send {} (the default) on the first request; for the next page send the paginationToken the previous answer returned. An answer whose paginationToken is {} has no further page.",
+            "default": "{}"
+          },
+          "current_page": {
+            "type": "integer",
+            "description": "Current page number.",
+            "minimum": 1
+          },
+          "new_limit": {
+            "type": "integer",
+            "description": "New page size when changing limit between pages.",
+            "minimum": 1
+          },
+          "ean": {
+            "type": "string",
+            "description": "Only this EAN."
+          },
+          "name": {
+            "type": "string",
+            "description": "Filter by product name."
+          },
+          "plu": {
+            "type": "string",
+            "description": "Filter by the VTEX PLU identifier."
+          }
+        },
+        "required": [
+          "limit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://rbrefxe0d8.execute-api.us-east-1.amazonaws.com/External-pdn/products/productspendingtoapprovebyseller",
+        "queryParams": {
+          "culture": "es-CO",
+          "limit": "$limit",
+          "paginationToken": "$pagination_token",
+          "currentPage": "$current_page",
+          "newLimit": "$new_limit",
+          "ean": "$ean",
+          "name": "$name",
+          "plu": "$plu"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_get_bulk_upload_status",
+      "description": "Status of your last product creation batch (exito_marketplace_create_products). data.status: 4 starting, 1 processing, 2 completed correctly, 3 finished with errors. While it is 4 or 1 no new batch is accepted. data.response is JSON text with TotalProcess, Error, Successful and ProductNotify (EAN, Message, ProductName per rejected product). data.idSeller is your seller id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://akaxxado2l.execute-api.us-east-1.amazonaws.com/products-massive-pdn/status",
+        "queryParams": {
+          "culture": "es-CO"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_list_categories",
+      "description": "All Éxito marketplace categories with Id, IdParent, Name and ProductType (Technology or Clothing). Answer: data.categories. Use the most specific category that fits as Category when creating a product, then read its specifications with exito_marketplace_get_category_features. The list is long: search it for the product type rather than reading it all out.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://n8pu9xx2ba.execute-api.us-east-1.amazonaws.com/products-massive-pdn/categories"
+      }
+    },
+    {
+      "name": "exito_marketplace_get_category",
+      "description": "One category by id: Id, IdParent, Name and ProductType. An unknown id answers 400 \"Category does not exist or invalid id\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Category id, e.g. 50249."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://n8pu9xx2ba.execute-api.us-east-1.amazonaws.com/products-massive-pdn/categories/{category_id}"
+      }
+    },
+    {
+      "name": "exito_marketplace_get_category_features",
+      "description": "Specification groups of a category: for each spec its specName, label, whether it is required and its allowed values (values[].label; an empty list means free text). These are the features (key/value) a product of that category takes in exito_marketplace_create_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Category id, e.g. 28086."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://9ddwtrb7mc.execute-api.us-east-1.amazonaws.com/specs-external-pdn/getbycategoryid/{category_id}",
+        "queryParams": {
+          "culture": "es-CO"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_get_orders",
+      "description": "Orders received through Éxito's sites (exito.com, carulla.com and others) with order number, channel, dates, status, totals, commission, delivery type, the customer's name, id, address and phone, and the products of each order (id, EAN, SKU, quantity, status, tracking, carrier). Answer: viewModel, count and paginationToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "current_page": {
+            "type": "integer",
+            "description": "Page number; send it when you change limit between pages.",
+            "minimum": 1
+          },
+          "date_order_initial": {
+            "type": "string",
+            "description": "Earliest order date, yyyy/MM/dd, e.g. 2026/11/01."
+          },
+          "date_order_final": {
+            "type": "string",
+            "description": "Latest order date, yyyy/MM/dd."
+          },
+          "id_status_order": {
+            "type": "integer",
+            "description": "Order status: 35 assigned (to ship), 170 sent.",
+            "enum": [
+              35,
+              170
+            ]
+          },
+          "order_number": {
+            "type": "integer",
+            "description": "One order number."
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "Pagination token: leave empty on the first request, then send the paginationToken of the previous answer. {} means there is no further page."
+          }
+        },
+        "required": [
+          "limit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://cl9k3h7xr4.execute-api.us-east-1.amazonaws.com/orders-pdn/api/orders",
+        "queryParams": {
+          "culture": "es-CO",
+          "limit": "$limit",
+          "currentPage": "$current_page",
+          "dateOrderInitial": "$date_order_initial",
+          "dateOrderFinal": "$date_order_final",
+          "idStatusOrder": "$id_status_order",
+          "orderNumber": "$order_number",
+          "paginationToken": "$pagination_token"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_get_bills",
+      "description": "Payout statements (billing) of the seller: billing number, order number, payment order, concept, payment date, commission, total, IVA and the detail per product. Answer: viewModel, count and paginationToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "pagination_token": {
+            "type": "string",
+            "description": "Pagination token. Send {} (the default) on the first request; for the next page send the paginationToken the previous answer returned. An answer whose paginationToken is {} has no further page.",
+            "default": "{}"
+          },
+          "billing_number": {
+            "type": "string",
+            "description": "One billing number."
+          },
+          "order_number": {
+            "type": "integer",
+            "description": "One order number."
+          },
+          "payment_date_initial": {
+            "type": "string",
+            "description": "Earliest payment date, yyyy/MM/dd."
+          },
+          "payment_date_final": {
+            "type": "string",
+            "description": "Latest payment date, yyyy/MM/dd."
+          }
+        },
+        "required": [
+          "limit"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://rtox6c92tc.execute-api.us-east-1.amazonaws.com/financial-pdn/api/",
+        "queryParams": {
+          "culture": "es-CO",
+          "idSeller": "{{EXITO_SELLER_ID}}",
+          "limit": "$limit",
+          "paginationToken": "$pagination_token",
+          "billingNumber": "$billing_number",
+          "orderNumber": "$order_number",
+          "paymentDateInitial": "$payment_date_initial",
+          "paymentDateFinal": "$payment_date_final"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_create_products",
+      "description": "Create products (or change existing ones: send the same EAN again; ModifyImage \"1\" replaces the images) with title, HTML description, brand, category, dimensions, up to 5 image URLs and the category's features. At most 400 EANs per call. Every product goes to Éxito's content team for approval (moderation); it cannot be sold until approved, and it gets its offer (price and stock) through exito_marketplace_upsert_offers or exito_marketplace_update_offer_price_stock afterwards. The answer reports totalProcess, error, successful and per-EAN messages (productNotifyViewModel); then follow the batch with exito_marketplace_get_bulk_upload_status and the moderation with exito_marketplace_get_products_waiting and exito_marketplace_get_products_rejected. No new batch is accepted while the previous one is still processing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "description": "The products, 1 to 400. Clothing variations each have their own EAN and share ParentReference.",
+            "minItems": 1,
+            "maxItems": 400,
+            "items": {
+              "type": "object",
+              "description": "One product (one EAN). Field names are case-sensitive as written.",
+              "properties": {
+                "Ean": {
+                  "type": "string",
+                  "description": "Barcode (EAN) of the product. Send \"0\" when the product has no barcode: Éxito assigns one and communicates it after approval."
+                },
+                "Name": {
+                  "type": "string",
+                  "description": "Product title, at most 60 characters: product type + brand + reference + main feature. No special characters other than accented vowels, + and -."
+                },
+                "Category": {
+                  "type": "string",
+                  "description": "Id of the most specific category (from exito_marketplace_list_categories), e.g. \"27193\"."
+                },
+                "Brand": {
+                  "type": "string",
+                  "description": "Brand in capitals, at most 200 characters. It must already exist at Éxito; ask your Éxito account manager to create a missing brand first."
+                },
+                "Description": {
+                  "type": "string",
+                  "description": "HTML description. No scripts."
+                },
+                "KeyWords": {
+                  "type": "string",
+                  "description": "Search keywords separated by commas, at most 200 characters in total."
+                },
+                "Model": {
+                  "type": "string",
+                  "description": "Optional model, at most 29 characters."
+                },
+                "Details": {
+                  "type": "string",
+                  "description": "Optional internal seller reference, at most 29 characters."
+                },
+                "PackageHeight": {
+                  "type": "string",
+                  "description": "Height of the package in cm. Decimals with a comma, e.g. \"14,7\"."
+                },
+                "PackageLength": {
+                  "type": "string",
+                  "description": "Length of the package in cm."
+                },
+                "PackageWidth": {
+                  "type": "string",
+                  "description": "Width of the package in cm."
+                },
+                "PackageWeight": {
+                  "type": "string",
+                  "description": "Weight of the package in kg."
+                },
+                "SkuShippingSize": {
+                  "type": "string",
+                  "description": "Relative size from \"1\" (very small) to \"5\" (extra large)."
+                },
+                "ProductHeight": {
+                  "type": "string",
+                  "description": "Height of the product without packaging, in cm."
+                },
+                "ProductLength": {
+                  "type": "string",
+                  "description": "Length of the product without packaging, in cm."
+                },
+                "ProductWidth": {
+                  "type": "string",
+                  "description": "Width of the product without packaging, in cm."
+                },
+                "ProductWeight": {
+                  "type": "string",
+                  "description": "Weight of the product without packaging, in kg."
+                },
+                "Seller": {
+                  "type": "string",
+                  "description": "Always \"Marketplace\"."
+                },
+                "ProductType": {
+                  "type": "string",
+                  "description": "\"Technology\" for products without size variations, \"Clothing\" for products with size and colour variations (fashion and accessories).",
+                  "enum": [
+                    "Technology",
+                    "Clothing"
+                  ]
+                },
+                "ImageUrl1": {
+                  "type": "string",
+                  "description": "Public URL of the main image (.jpg recommended): 1000x1000 px, 733x1000 px for Clothing."
+                },
+                "ImageUrl2": {
+                  "type": "string",
+                  "description": "Optional second image URL, same format."
+                },
+                "ImageUrl3": {
+                  "type": "string",
+                  "description": "Optional third image URL."
+                },
+                "ImageUrl4": {
+                  "type": "string",
+                  "description": "Optional fourth image URL."
+                },
+                "ImageUrl5": {
+                  "type": "string",
+                  "description": "Optional fifth image URL."
+                },
+                "ModifyImage": {
+                  "type": "string",
+                  "description": "\"1\" when this request replaces the images of an existing product, otherwise \"0\" or null."
+                },
+                "IsLogisticsExito": {
+                  "type": "string",
+                  "description": "\"1\" when the product is fulfilled by Éxito (Fulfillment), otherwise \"0\"."
+                },
+                "MeasurementUnit": {
+                  "type": "string",
+                  "description": "Unit for the price per unit: Gramo, Mililitro, Metro or Unidad.",
+                  "enum": [
+                    "Gramo",
+                    "Mililitro",
+                    "Metro",
+                    "Unidad"
+                  ]
+                },
+                "ConversionFactor": {
+                  "type": "string",
+                  "description": "Amount of MeasurementUnit in the product, a positive number with at most 2 decimals (e.g. \"300\" for a 300 ml perfume, \"2\" for a set of two units)."
+                },
+                "DrainedFactor": {
+                  "type": "string",
+                  "description": "Optional drained factor; null when it does not apply."
+                },
+                "EanCombo": {
+                  "type": "string",
+                  "description": "Only for a combo: the EANs of the combined products, separated by commas. Otherwise null."
+                },
+                "MetaTitle": {
+                  "type": "string",
+                  "description": "Optional SEO title."
+                },
+                "MetaDescription": {
+                  "type": "string",
+                  "description": "Optional SEO description."
+                },
+                "SellerSku": {
+                  "type": "string",
+                  "description": "Optional: your own product id. Éxito's moderation notifications refer to it."
+                },
+                "features": {
+                  "type": "array",
+                  "description": "Specifications of the category, from exito_marketplace_get_category_features: [{\"key\": \"<specName>\", \"value\": \"<allowed value>\"}]. Mandatory ones must be present; a list of allowed values means the value must be one of them.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "value"
+                    ]
+                  }
+                },
+                "ParentReference": {
+                  "type": "string",
+                  "description": "Clothing only: the same parent reference for every size and colour of one product, e.g. \"BlusaPolo\"."
+                },
+                "SonReference": {
+                  "type": "string",
+                  "description": "Clothing only: the reference of this variation."
+                },
+                "Size": {
+                  "type": "string",
+                  "description": "Clothing only: size, from Éxito's size list (e.g. S, M, L)."
+                },
+                "Color": {
+                  "type": "string",
+                  "description": "Clothing only: Beige, Negro, Blanco, Azul, Amarillo, Cafe, Gris, Verde, Naranja, Rosa, Morado, Rojo, Plata, Dorado or MultiColor."
+                },
+                "HexColourName": {
+                  "type": "string",
+                  "description": "Clothing only: specific colour name, e.g. \"Verde Menta\"."
+                }
+              },
+              "required": [
+                "Ean",
+                "Name",
+                "Category",
+                "Brand",
+                "Description",
+                "KeyWords",
+                "PackageHeight",
+                "PackageLength",
+                "PackageWidth",
+                "PackageWeight",
+                "SkuShippingSize",
+                "ProductHeight",
+                "ProductLength",
+                "ProductWidth",
+                "ProductWeight",
+                "Seller",
+                "ProductType",
+                "ImageUrl1",
+                "IsLogisticsExito",
+                "MeasurementUnit",
+                "ConversionFactor"
+              ]
+            }
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://akaxxado2l.execute-api.us-east-1.amazonaws.com/products-massive-pdn/",
+        "queryParams": {
+          "culture": "es-CO"
+        },
+        "bodyMapping": {
+          "__raw": "$products"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_load_products_and_offers",
+      "description": "Send products together with their offers in one request: each item has a Product (the fields of exito_marketplace_create_products) and an Offer (the fields of exito_marketplace_upsert_offers). Éxito routes the product to moderation and the offer to the offer flow; the answer only says the batch is being processed. Follow up with exito_marketplace_get_products_waiting, exito_marketplace_get_products_rejected and exito_marketplace_get_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "price_approval": {
+            "type": "boolean",
+            "description": "true confirms price changes of more than 30% (see exito_marketplace_upsert_offers). Default false.",
+            "default": false
+          },
+          "items": {
+            "type": "array",
+            "description": "Pairs of product and offer.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "Product": {
+                  "type": "object",
+                  "description": "One product (one EAN). Field names are case-sensitive as written.",
+                  "properties": {
+                    "Ean": {
+                      "type": "string",
+                      "description": "Barcode (EAN) of the product. Send \"0\" when the product has no barcode: Éxito assigns one and communicates it after approval."
+                    },
+                    "Name": {
+                      "type": "string",
+                      "description": "Product title, at most 60 characters: product type + brand + reference + main feature. No special characters other than accented vowels, + and -."
+                    },
+                    "Category": {
+                      "type": "string",
+                      "description": "Id of the most specific category (from exito_marketplace_list_categories), e.g. \"27193\"."
+                    },
+                    "Brand": {
+                      "type": "string",
+                      "description": "Brand in capitals, at most 200 characters. It must already exist at Éxito; ask your Éxito account manager to create a missing brand first."
+                    },
+                    "Description": {
+                      "type": "string",
+                      "description": "HTML description. No scripts."
+                    },
+                    "KeyWords": {
+                      "type": "string",
+                      "description": "Search keywords separated by commas, at most 200 characters in total."
+                    },
+                    "Model": {
+                      "type": "string",
+                      "description": "Optional model, at most 29 characters."
+                    },
+                    "Details": {
+                      "type": "string",
+                      "description": "Optional internal seller reference, at most 29 characters."
+                    },
+                    "PackageHeight": {
+                      "type": "string",
+                      "description": "Height of the package in cm. Decimals with a comma, e.g. \"14,7\"."
+                    },
+                    "PackageLength": {
+                      "type": "string",
+                      "description": "Length of the package in cm."
+                    },
+                    "PackageWidth": {
+                      "type": "string",
+                      "description": "Width of the package in cm."
+                    },
+                    "PackageWeight": {
+                      "type": "string",
+                      "description": "Weight of the package in kg."
+                    },
+                    "SkuShippingSize": {
+                      "type": "string",
+                      "description": "Relative size from \"1\" (very small) to \"5\" (extra large)."
+                    },
+                    "ProductHeight": {
+                      "type": "string",
+                      "description": "Height of the product without packaging, in cm."
+                    },
+                    "ProductLength": {
+                      "type": "string",
+                      "description": "Length of the product without packaging, in cm."
+                    },
+                    "ProductWidth": {
+                      "type": "string",
+                      "description": "Width of the product without packaging, in cm."
+                    },
+                    "ProductWeight": {
+                      "type": "string",
+                      "description": "Weight of the product without packaging, in kg."
+                    },
+                    "Seller": {
+                      "type": "string",
+                      "description": "Always \"Marketplace\"."
+                    },
+                    "ProductType": {
+                      "type": "string",
+                      "description": "\"Technology\" for products without size variations, \"Clothing\" for products with size and colour variations (fashion and accessories).",
+                      "enum": [
+                        "Technology",
+                        "Clothing"
+                      ]
+                    },
+                    "ImageUrl1": {
+                      "type": "string",
+                      "description": "Public URL of the main image (.jpg recommended): 1000x1000 px, 733x1000 px for Clothing."
+                    },
+                    "ImageUrl2": {
+                      "type": "string",
+                      "description": "Optional second image URL, same format."
+                    },
+                    "ImageUrl3": {
+                      "type": "string",
+                      "description": "Optional third image URL."
+                    },
+                    "ImageUrl4": {
+                      "type": "string",
+                      "description": "Optional fourth image URL."
+                    },
+                    "ImageUrl5": {
+                      "type": "string",
+                      "description": "Optional fifth image URL."
+                    },
+                    "ModifyImage": {
+                      "type": "string",
+                      "description": "\"1\" when this request replaces the images of an existing product, otherwise \"0\" or null."
+                    },
+                    "IsLogisticsExito": {
+                      "type": "string",
+                      "description": "\"1\" when the product is fulfilled by Éxito (Fulfillment), otherwise \"0\"."
+                    },
+                    "MeasurementUnit": {
+                      "type": "string",
+                      "description": "Unit for the price per unit: Gramo, Mililitro, Metro or Unidad.",
+                      "enum": [
+                        "Gramo",
+                        "Mililitro",
+                        "Metro",
+                        "Unidad"
+                      ]
+                    },
+                    "ConversionFactor": {
+                      "type": "string",
+                      "description": "Amount of MeasurementUnit in the product, a positive number with at most 2 decimals (e.g. \"300\" for a 300 ml perfume, \"2\" for a set of two units)."
+                    },
+                    "DrainedFactor": {
+                      "type": "string",
+                      "description": "Optional drained factor; null when it does not apply."
+                    },
+                    "EanCombo": {
+                      "type": "string",
+                      "description": "Only for a combo: the EANs of the combined products, separated by commas. Otherwise null."
+                    },
+                    "MetaTitle": {
+                      "type": "string",
+                      "description": "Optional SEO title."
+                    },
+                    "MetaDescription": {
+                      "type": "string",
+                      "description": "Optional SEO description."
+                    },
+                    "SellerSku": {
+                      "type": "string",
+                      "description": "Optional: your own product id. Éxito's moderation notifications refer to it."
+                    },
+                    "features": {
+                      "type": "array",
+                      "description": "Specifications of the category, from exito_marketplace_get_category_features: [{\"key\": \"<specName>\", \"value\": \"<allowed value>\"}]. Mandatory ones must be present; a list of allowed values means the value must be one of them.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "value"
+                        ]
+                      }
+                    },
+                    "ParentReference": {
+                      "type": "string",
+                      "description": "Clothing only: the same parent reference for every size and colour of one product, e.g. \"BlusaPolo\"."
+                    },
+                    "SonReference": {
+                      "type": "string",
+                      "description": "Clothing only: the reference of this variation."
+                    },
+                    "Size": {
+                      "type": "string",
+                      "description": "Clothing only: size, from Éxito's size list (e.g. S, M, L)."
+                    },
+                    "Color": {
+                      "type": "string",
+                      "description": "Clothing only: Beige, Negro, Blanco, Azul, Amarillo, Cafe, Gris, Verde, Naranja, Rosa, Morado, Rojo, Plata, Dorado or MultiColor."
+                    },
+                    "HexColourName": {
+                      "type": "string",
+                      "description": "Clothing only: specific colour name, e.g. \"Verde Menta\"."
+                    }
+                  },
+                  "required": [
+                    "Ean",
+                    "Name",
+                    "Category",
+                    "Brand",
+                    "Description",
+                    "KeyWords",
+                    "PackageHeight",
+                    "PackageLength",
+                    "PackageWidth",
+                    "PackageWeight",
+                    "SkuShippingSize",
+                    "ProductHeight",
+                    "ProductLength",
+                    "ProductWidth",
+                    "ProductWeight",
+                    "Seller",
+                    "ProductType",
+                    "ImageUrl1",
+                    "IsLogisticsExito",
+                    "MeasurementUnit",
+                    "ConversionFactor"
+                  ]
+                },
+                "Offer": {
+                  "type": "object",
+                  "description": "One offer (price and stock) for an EAN that already exists at Éxito.",
+                  "properties": {
+                    "EAN": {
+                      "type": "string",
+                      "description": "EAN of an approved product."
+                    },
+                    "Stock": {
+                      "type": "string",
+                      "description": "Units available, a whole number, e.g. \"20\". Applied only when IsUpdatedStock is 1."
+                    },
+                    "Price": {
+                      "type": "string",
+                      "description": "Full price in Colombian pesos, whole number above 8000, no separators, e.g. \"45000\"."
+                    },
+                    "DiscountPrice": {
+                      "type": "string",
+                      "description": "Optional sale price, above 8000 and lower than Price."
+                    },
+                    "AverageFreightCost": {
+                      "type": "string",
+                      "description": "Average shipping cost in pesos. Required the first time an EAN is offered."
+                    },
+                    "PromiseDelivery": {
+                      "type": "string",
+                      "description": "Delivery promise as \"N a M\" with N < M, e.g. \"2 a 5\". Required the first time."
+                    },
+                    "Periodicity": {
+                      "type": "integer",
+                      "description": "Unit of PromiseDelivery: 1 business days (default), 2 hours.",
+                      "enum": [
+                        1,
+                        2
+                      ]
+                    },
+                    "Warranty": {
+                      "type": "integer",
+                      "description": "Warranty in months. Required the first time."
+                    },
+                    "IsFreeShipping": {
+                      "type": "integer",
+                      "description": "1 free shipping, 0 not. At most one of IsFreeShipping, IsEnviosExito and IsFreightCalculator may be 1.",
+                      "enum": [
+                        0,
+                        1
+                      ]
+                    },
+                    "IsEnviosExito": {
+                      "type": "integer",
+                      "description": "1 when shipping is quoted through Envíos Éxito, else 0.",
+                      "enum": [
+                        0,
+                        1
+                      ]
+                    },
+                    "IsFreightCalculator": {
+                      "type": "integer",
+                      "description": "1 when shipping is quoted by Éxito's freight calculator, else 0.",
+                      "enum": [
+                        0,
+                        1
+                      ]
+                    },
+                    "IsLogisticsExito": {
+                      "type": "integer",
+                      "description": "1 when fulfilled by Éxito, else 0.",
+                      "enum": [
+                        0,
+                        1
+                      ]
+                    },
+                    "IsUpdatedStock": {
+                      "type": "integer",
+                      "description": "1 to apply Stock, 0 to leave the current stock unchanged.",
+                      "enum": [
+                        0,
+                        1
+                      ]
+                    },
+                    "Currency": {
+                      "type": "string",
+                      "description": "\"COP\"."
+                    },
+                    "SellerSku": {
+                      "type": "string",
+                      "description": "Optional: your own product id."
+                    },
+                    "DaneCode": {
+                      "type": "string",
+                      "description": "Optional DANE code of the dispatch city, e.g. \"08001000\"."
+                    },
+                    "Address": {
+                      "type": "string",
+                      "description": "Optional dispatch address."
+                    },
+                    "EanCombo": {
+                      "type": "string",
+                      "description": "Combo component lines only: the EAN of the combo this line belongs to."
+                    },
+                    "ComboQuantity": {
+                      "type": "string",
+                      "description": "Combo component lines only: units of this EAN in the combo."
+                    }
+                  },
+                  "required": [
+                    "EAN",
+                    "Stock",
+                    "Price"
+                  ]
+                }
+              },
+              "required": [
+                "Product",
+                "Offer"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://rbrefxe0d8.execute-api.us-east-1.amazonaws.com/External-pdn/productsandoffers",
+        "queryParams": {
+          "culture": "es-CO"
+        },
+        "bodyMapping": {
+          "PriceApproval": "$price_approval",
+          "ProductsAndOffers": "$items"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_upsert_offers",
+      "description": "Create or update offers (price, sale price, stock, shipping and delivery promise) for EANs that Éxito already approved, in all Éxito sites where you sell. When creating an offer every field is needed; when updating, EAN, Stock and Price are enough, and stock changes only with IsUpdatedStock 1. A price change of more than 30% is refused with code PEX unless price_approval is 1: confirm with the user first. The answer reports totalProcess, error, successful and per-EAN messages (offerNotifyViewModels); successful offers reach the sites within about 4 hours (site cache).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "price_approval": {
+            "type": "integer",
+            "description": "1 confirms price changes of more than 30%. Default 0.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          },
+          "offers": {
+            "type": "array",
+            "description": "The offers, one per EAN.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "description": "One offer (price and stock) for an EAN that already exists at Éxito.",
+              "properties": {
+                "EAN": {
+                  "type": "string",
+                  "description": "EAN of an approved product."
+                },
+                "Stock": {
+                  "type": "string",
+                  "description": "Units available, a whole number, e.g. \"20\". Applied only when IsUpdatedStock is 1."
+                },
+                "Price": {
+                  "type": "string",
+                  "description": "Full price in Colombian pesos, whole number above 8000, no separators, e.g. \"45000\"."
+                },
+                "DiscountPrice": {
+                  "type": "string",
+                  "description": "Optional sale price, above 8000 and lower than Price."
+                },
+                "AverageFreightCost": {
+                  "type": "string",
+                  "description": "Average shipping cost in pesos. Required the first time an EAN is offered."
+                },
+                "PromiseDelivery": {
+                  "type": "string",
+                  "description": "Delivery promise as \"N a M\" with N < M, e.g. \"2 a 5\". Required the first time."
+                },
+                "Periodicity": {
+                  "type": "integer",
+                  "description": "Unit of PromiseDelivery: 1 business days (default), 2 hours.",
+                  "enum": [
+                    1,
+                    2
+                  ]
+                },
+                "Warranty": {
+                  "type": "integer",
+                  "description": "Warranty in months. Required the first time."
+                },
+                "IsFreeShipping": {
+                  "type": "integer",
+                  "description": "1 free shipping, 0 not. At most one of IsFreeShipping, IsEnviosExito and IsFreightCalculator may be 1.",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                },
+                "IsEnviosExito": {
+                  "type": "integer",
+                  "description": "1 when shipping is quoted through Envíos Éxito, else 0.",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                },
+                "IsFreightCalculator": {
+                  "type": "integer",
+                  "description": "1 when shipping is quoted by Éxito's freight calculator, else 0.",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                },
+                "IsLogisticsExito": {
+                  "type": "integer",
+                  "description": "1 when fulfilled by Éxito, else 0.",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                },
+                "IsUpdatedStock": {
+                  "type": "integer",
+                  "description": "1 to apply Stock, 0 to leave the current stock unchanged.",
+                  "enum": [
+                    0,
+                    1
+                  ]
+                },
+                "Currency": {
+                  "type": "string",
+                  "description": "\"COP\"."
+                },
+                "SellerSku": {
+                  "type": "string",
+                  "description": "Optional: your own product id."
+                },
+                "DaneCode": {
+                  "type": "string",
+                  "description": "Optional DANE code of the dispatch city, e.g. \"08001000\"."
+                },
+                "Address": {
+                  "type": "string",
+                  "description": "Optional dispatch address."
+                },
+                "EanCombo": {
+                  "type": "string",
+                  "description": "Combo component lines only: the EAN of the combo this line belongs to."
+                },
+                "ComboQuantity": {
+                  "type": "string",
+                  "description": "Combo component lines only: units of this EAN in the combo."
+                }
+              },
+              "required": [
+                "EAN",
+                "Stock",
+                "Price"
+              ]
+            }
+          }
+        },
+        "required": [
+          "offers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://af2jnwlpmg.execute-api.us-east-1.amazonaws.com/OfferExternal-pdn",
+        "queryParams": {
+          "culture": "es-CO"
+        },
+        "bodyMapping": {
+          "PriceApproval": "$price_approval",
+          "ListOffers": "$offers"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_update_offer_price_stock",
+      "description": "Change the price and/or stock of one existing offer (one EAN). Éxito needs EAN, Stock and Price on every update: to change only the price, pass the current stock (inventoryQuantity from exito_marketplace_get_products) with update_stock 0; to change only the stock, pass the current price. A price change of more than 30% is refused with code PEX unless price_approval is 1: confirm with the user first. Check offerNotifyViewModels in the answer for a per-EAN error.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ean": {
+            "type": "string",
+            "description": "EAN of the offer."
+          },
+          "price": {
+            "type": "string",
+            "description": "Full price in Colombian pesos, whole number above 8000, no separators, e.g. \"45000\"."
+          },
+          "stock": {
+            "type": "integer",
+            "description": "Units available. Applied only when update_stock is 1.",
+            "minimum": 0
+          },
+          "discount_price": {
+            "type": "string",
+            "description": "Optional sale price, above 8000 and lower than price."
+          },
+          "update_stock": {
+            "type": "integer",
+            "description": "1 (default) applies stock, 0 leaves the current stock unchanged.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1
+          },
+          "price_approval": {
+            "type": "integer",
+            "description": "1 confirms a price change of more than 30%. Default 0.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          },
+          "seller_sku": {
+            "type": "string",
+            "description": "Optional: your own product id."
+          }
+        },
+        "required": [
+          "ean",
+          "price",
+          "stock"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://af2jnwlpmg.execute-api.us-east-1.amazonaws.com/OfferExternal-pdn",
+        "queryParams": {
+          "culture": "es-CO"
+        },
+        "bodyMapping": {
+          "PriceApproval": "$price_approval",
+          "ListOffers": [
+            {
+              "EAN": "$ean",
+              "Stock": "$stock",
+              "Price": "$price",
+              "DiscountPrice": "$discount_price",
+              "IsUpdatedStock": "$update_stock",
+              "SellerSku": "$seller_sku"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_set_order_tracking",
+      "description": "Mark products of an order as shipped with the carrier and tracking number (orders with standard delivery). The products must be in status 35 (assigned); take their ids from products[].id in exito_marketplace_get_orders. Answer: status, products (per product result), errors, updates and total. Switched off at install: turn it on when the AI should ship orders, and confirm each call.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (the id field of the order, not orderNumber), e.g. 637040012650663267."
+          },
+          "tracking": {
+            "type": "string",
+            "description": "Tracking number from the carrier."
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Shipping company."
+          },
+          "products": {
+            "type": "array",
+            "description": "Product ids (products[].id) of this order to mark as sent.",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking",
+          "carrier",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://cl9k3h7xr4.execute-api.us-east-1.amazonaws.com/orders-pdn/api/orders/{order_id}/tracking",
+        "encodePathParams": true,
+        "queryParams": {
+          "culture": "es-CO"
+        },
+        "bodyMapping": {
+          "tracking": "$tracking",
+          "carrier": "$carrier",
+          "products": "$products"
+        }
+      }
+    },
+    {
+      "name": "exito_marketplace_upload_order_invoice",
+      "description": "Attach the invoice of an order as a base64 PDF or ZIP. An order takes one invoice; a second one is refused (\"This order already has an attached invoice\"). Switched off at install: turn it on when the AI should upload invoices, and confirm each call.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (the id field of the order)."
+          },
+          "base64_file": {
+            "type": "string",
+            "description": "The file content in base64."
+          },
+          "file_type": {
+            "type": "integer",
+            "description": "1 PDF, 2 ZIP.",
+            "enum": [
+              1,
+              2
+            ]
+          }
+        },
+        "required": [
+          "order_id",
+          "base64_file",
+          "file_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://cl9k3h7xr4.execute-api.us-east-1.amazonaws.com/orders-pdn/api/orders/bill",
+        "queryParams": {
+          "culture": "es-CO"
+        },
+        "bodyMapping": {
+          "IdOrder": "$order_id",
+          "Base64File": "$base64_file",
+          "FileType": "$file_type"
+        }
+      }
+    }
+  ]
+}
