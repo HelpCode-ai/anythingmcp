@@ -298,6 +298,28 @@ export class DynamicMcpTools {
   }
 
   /**
+   * Cloud: what an ended trial tells the user before any tool call (the
+   * anythingmcp_list_connectors notice), with the same reactivation link a
+   * blocked call gives; null when the licence is active, on self-hosted, or
+   * when the licence cannot be read (the tools then answer for themselves).
+   */
+  async trialEndedNotice(
+    organizationId: string | undefined,
+    userId?: string,
+  ): Promise<{ message: string; reactivateUrl: string } | null> {
+    if (!organizationId) return null;
+    try {
+      await this.licenseGuard.checkLicenseActive(organizationId);
+      return null;
+    } catch (err) {
+      if (!(err instanceof TrialEndedException)) return null;
+      const link = trialReactivationLink(organizationId, userId);
+      const result = trialEndedToolResult(err.trialEndedAt, link.url);
+      return { message: result.error, reactivateUrl: result.reactivateUrl };
+    }
+  }
+
+  /**
    * Execute a tool by name with the given parameters.
    * Handles caching, audit logging, env interpolation, and engine dispatch.
    */

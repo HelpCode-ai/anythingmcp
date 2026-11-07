@@ -606,6 +606,9 @@ export class McpEndpointController {
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
       connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
+      // The workspace this connection mainly reaches: an ended trial is said
+      // up front in anythingmcp_list_connectors, with the reactivation link.
+      trialEnded: () => this.toolExecutor.trialEndedNotice(setupOrg || organizationId || undefined, user.sub),
       ...(this.sharedCalls && (setupOrg || organizationId) && variant === 'shared'
         ? {
             called: ({ tool, setupTool }) => {
