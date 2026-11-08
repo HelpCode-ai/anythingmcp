@@ -215,6 +215,32 @@ describe('ProductEventService.log — server-written metadata', () => {
     expect(stored[3]).toEqual({ variant: 'trust' });
     expect(stored[4]).toBeNull();
   });
+
+  it('keeps a paywall_action from either pay screen, with only known actions, plans and periods', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    expect(service.isKnown('paywall_action')).toBe(true);
+    await service.log({
+      event: 'paywall_action',
+      organizationId: 'org-1',
+      metadata: { source: 'trial_ended_wall', variant: 'trust', action: 'subscribe_clicked', plan: 'team', period: 'yearly', device: 'mobile' },
+    });
+    await service.log({
+      event: 'paywall_action',
+      organizationId: 'org-1',
+      metadata: { source: 'mcp_reactivate', action: 'pwned', plan: 'business', period: 'weekly', email: 'a@b.c' },
+    });
+    const stored = create.mock.calls.map((c) => c[0].data.metadata);
+    expect(stored[0]).toEqual({
+      source: 'trial_ended_wall',
+      device: 'mobile',
+      variant: 'trust',
+      action: 'subscribe_clicked',
+      plan: 'team',
+      period: 'yearly',
+    });
+    expect(stored[1]).toEqual({ source: 'mcp_reactivate' });
+  });
 });
 
 describe('ProductEventService — the Claude setup discoverability events', () => {

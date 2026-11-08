@@ -1,7 +1,7 @@
 import { BadGatewayException, ConflictException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { ReactivationCheckoutDto, ReactivationController } from './reactivation.controller';
+import { ReactivationCheckoutDto, ReactivationController, ReactivationEventDto } from './reactivation.controller';
 import { createReactivationToken } from './reactivation-token';
 
 const KEY = 'reactivation-controller-spec-key-0123456789';
@@ -295,6 +295,48 @@ describe('ReactivationController', () => {
       await expect(selfHosted.controller.checkout(token(), dto)).rejects.toThrow(NotFoundException);
       expect(selfHosted.licenseService.createCheckoutIntent).not.toHaveBeenCalled();
     });
+  });
+
+  describe('POST /api/license/reactivate/:token/event', () => {
+    it("records a click as the page's paywall_action, for the token's workspace and user", async () => {
+      const { controller, productEvents } = make();
+      await controller.event(token(), { action: 'plan_selected', plan: 'team', period: 'yearly', device: 'mobile' });
+      expect(productEvents.log).toHaveBeenCalledWith({
+        event: 'paywall_action',
+        userId: 'user-1',
+        organizationId: 'org-1',
+        metadata: {
+          source: 'mcp_reactivate',
+          variant: 'page',
+          action: 'plan_selected',
+          plan: 'team',
+          period: 'yearly',
+          device: 'mobile',
+        },
+      });
+    });
+
+    it('records nothing for an invalid token or on self-hosted', async () => {
+      const bad = make();
+      await expect(bad.controller.event('x'.repeat(40), { action: 'shown' })).rejects.toThrow(NotFoundException);
+      const selfHosted = make({ cloud: false });
+      await expect(selfHosted.controller.event(token(), { action: 'shown' })).rejects.toThrow(NotFoundException);
+      expect(bad.productEvents.log).not.toHaveBeenCalled();
+      expect(selfHosted.productEvents.log).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('ReactivationEventDto', () => {
+  const errors = (body: unknown) => validateSync(plainToInstance(ReactivationEventDto, body)).length;
+
+  it('accepts the known actions, plans, periods and devices only', () => {
+    expect(errors({ action: 'subscribe_clicked', plan: 'starter', period: 'monthly', device: 'desktop' })).toBe(0);
+    expect(errors({ action: 'left_without_subscribe' })).toBe(0);
+    expect(errors({ action: 'clicked_everything' })).toBeGreaterThan(0);
+    expect(errors({ action: 'shown', plan: 'business' })).toBeGreaterThan(0);
+    expect(errors({ action: 'shown', device: 'fridge' })).toBeGreaterThan(0);
+    expect(errors({})).toBeGreaterThan(0);
   });
 });
 
