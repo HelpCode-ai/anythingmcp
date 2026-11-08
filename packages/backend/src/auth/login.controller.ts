@@ -51,6 +51,7 @@ import {
 import { maskEmail } from './mcp-email-verification';
 import { hasDashboardHeader, setRecentSignInCookie } from './recent-sign-in.util';
 import { RecentSignInService } from './recent-sign-in.service';
+import { EmailVerificationService, MAX_CODES_PER_HOUR, VERIFICATION_CODE_TTL_MS } from './email-verification.service';
 import { SharedSetupRegistry, type SetupContext, type SharedSetupProvider } from '../mcp-server/shared-setup';
 import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
@@ -69,6 +70,24 @@ const PENDING_GRANT_COOKIE = 'pending_grant';
  * against the enabled providers when read.
  */
 const PENDING_SOCIAL_COOKIE = 'pending_grant_social';
+
+/**
+ * Cloud: the account that signed in with its password on this page but has
+ * not verified its email address yet, while the page asks for the code.
+ * Signed and httpOnly: the code step trusts it as "this browser proved the
+ * password of this account", for as long as a code is valid.
+ */
+const PENDING_VERIFY_COOKIE = 'pending_verify';
+
+/** CSRF token of the code step's form (double submit, like `login_csrf`). */
+const VERIFY_CSRF_COOKIE = 'verify_csrf';
+
+/** At most one code per minute from the code step (the dashboard sign-in waits as long). */
+const CODE_RESEND_INTERVAL_MS = 60 * 1000;
+
+/** The notice when the hourly cap of codes is reached. */
+const TOO_MANY_CODES =
+  'You asked for many codes in the last hour: use the newest email you received, or try again later.';
 
 /**
  * Context describing the OAuth client that initiated the current authorize
@@ -196,6 +215,7 @@ export class LoginController {
     @Optional() private readonly social?: SocialAuthService,
     @Optional() private readonly moduleRef?: ModuleRef,
     @Optional() private readonly recentSignIn?: RecentSignInService,
+    @Optional() private readonly emailVerification?: EmailVerificationService,
   ) {}
 
   /**
@@ -440,24 +460,7 @@ export class LoginController {
     // "Continue with Google / Microsoft / GitHub" (Cloud). Also a submit button
     // on this form, so it too has passed the CSRF check.
     if (body.action?.startsWith('social:')) {
-      if (!this.social || this.socialProviders().length === 0) {
-        return res.redirect(`/auth/login?error=${encodeURIComponent('This sign-in option is not available.')}`);
-      }
-      try {
-        const { authorizationUrl, bindingToken } = await this.social.start({
-          provider: body.action.slice('social:'.length),
-          surface: 'MCP',
-          oauthSessionId: req.cookies?.oauth_session,
-        });
-        setSocialBindCookie(req, res, bindingToken);
-        res.clearCookie('login_csrf');
-        return res.redirect(authorizationUrl);
-      } catch (error: any) {
-        this.logger.warn(`MCP social sign-in start failed: ${error?.reason ?? error}`);
-        const message =
-          error instanceof SocialAuthError ? error.userMessage : 'This sign-in option is not available right now.';
-        return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
-      }
+      return this.startSocialSignIn(req, res, body.action.slice('social:'.length));
     }
 
     // "Approve as <signed-in user>". Nothing from the form is trusted: the
@@ -528,9 +531,251 @@ export class LoginController {
       );
     }
 
+    // Cloud: an address nobody verified gets no access token. The client
+    // would hold a token that /mcp refuses on every call (EmailVerifiedGuard)
+    // and retry it for weeks: 36 accounts did between 28 Sep and 6 Nov 2026.
+    // Ask for the code here instead, then go on to "Approve".
+    if (this.deployment.isCloud() && !user.emailVerified) {
+      if (!this.emailVerification) {
+        return res.redirect(
+          `/auth/login?error=${encodeURIComponent('Verify your email address first: open the link in the email we sent you.')}`,
+        );
+      }
+      this.logger.log(`Authorization held for email verification: ${maskEmail(email)}`);
+      return this.askForEmailCode(req, res, user, { sendCode: true });
+    }
+
     this.logger.log(`Successful login for user: ${maskEmail(email)}`);
 
     return this.completeSignIn(req, res, user);
+  }
+
+  /** "Continue with Google / Microsoft / GitHub" from a CSRF-checked form of this flow. */
+  private async startSocialSignIn(req: Request, res: Response, provider: string): Promise<void> {
+    if (!this.social || this.socialProviders().length === 0) {
+      return res.redirect(`/auth/login?error=${encodeURIComponent('This sign-in option is not available.')}`);
+    }
+    try {
+      const { authorizationUrl, bindingToken } = await this.social.start({
+        provider,
+        surface: 'MCP',
+        oauthSessionId: req.cookies?.oauth_session,
+      });
+      setSocialBindCookie(req, res, bindingToken);
+      res.clearCookie('login_csrf');
+      return res.redirect(authorizationUrl);
+    } catch (error: any) {
+      this.logger.warn(`MCP social sign-in start failed: ${error?.reason ?? error}`);
+      const message =
+        error instanceof SocialAuthError ? error.userMessage : 'This sign-in option is not available right now.';
+      return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+    }
+  }
+
+  /**
+   * Cloud: the code step for an account whose address is not verified yet.
+   *
+   * The password was right, but the authorization is not finished: no
+   * `login_user` cookie, so /callback cannot issue a code. The account id is
+   * held in a signed cookie while the person types the code from the email,
+   * asks for a new one, or continues with Google, Microsoft or GitHub (which
+   * verifies the address). A right code goes on to completeSignIn, exactly as
+   * a verified account would have from the password form.
+   */
+  private async askForEmailCode(
+    req: Request,
+    res: Response,
+    user: { id: string; email: string },
+    opts: { sendCode?: boolean; error?: string; notice?: string } = {},
+  ): Promise<void> {
+    let notice = opts.notice;
+    if (opts.sendCode && this.emailVerification) {
+      // The same rule as the dashboard sign-in: no second code within a
+      // minute (it would void the first one, which may be on its way).
+      const justSent = await this.emailVerification.codesSentWithin(user.id, CODE_RESEND_INTERVAL_MS);
+      if (justSent === 0) {
+        const lastHour = await this.emailVerification.codesSentWithin(user.id, 60 * 60 * 1000);
+        if (lastHour < MAX_CODES_PER_HOUR) {
+          await this.emailVerification.sendCode(user.id, user.email, { sendInBackground: true });
+        } else {
+          notice = TOO_MANY_CODES;
+        }
+      }
+    }
+
+    const isSecure = this.isSecureRequest(req);
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: VERIFICATION_CODE_TTL_MS,
+      sameSite: isSecure ? ('none' as const) : ('lax' as const),
+      signed: true,
+    };
+    const csrfToken = randomBytes(32).toString('base64url');
+    res.cookie(PENDING_VERIFY_COOKIE, user.id, cookieOptions);
+    res.cookie(VERIFY_CSRF_COOKIE, csrfToken, cookieOptions);
+    // The password form is done with: its single-use token goes.
+    res.clearCookie('login_csrf');
+
+    const consent = await this.loadConsentContext(req);
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+    res.send(
+      this.renderEmailCodePage({
+        consent,
+        maskedEmail: maskEmail(user.email) ?? 'your address',
+        csrfToken,
+        // The round trip is bound to the pending authorization, as on the sign-in page.
+        socialProviders: consent ? this.socialProviders() : [],
+        error: opts.error,
+        notice,
+      }),
+    );
+  }
+
+  /** Ends the code step: its cookies go. */
+  private clearEmailCodeStep(res: Response): void {
+    res.clearCookie(PENDING_VERIFY_COOKIE);
+    res.clearCookie(VERIFY_CSRF_COOKIE);
+  }
+
+  /**
+   * What every route of the code step checks first (Cloud only): the step's
+   * CSRF token, then the pending sign-in cookie, then the account itself.
+   * Answers the request and returns null when one of them fails.
+   */
+  private async pendingCodeStep(
+    req: Request,
+    res: Response,
+    csrf: unknown,
+  ): Promise<{ id: string; email: string; name: string | null; emailVerified: boolean } | null> {
+    if (!this.deployment.isCloud() || !this.emailVerification) {
+      res.status(404).send('Not found');
+      return null;
+    }
+    const restart = (message: string) => {
+      this.clearEmailCodeStep(res);
+      res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+      return null;
+    };
+    if (!this.verifySignedToken(req, VERIFY_CSRF_COOKIE, csrf)) {
+      this.logger.warn('Rejected email code step with missing/invalid CSRF token');
+      return restart('Your session expired. Please sign in again.');
+    }
+    const userId = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[
+      PENDING_VERIFY_COOKIE
+    ];
+    if (typeof userId !== 'string' || !userId) {
+      return restart('Your session expired. Please sign in again.');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, emailVerified: true, passwordLoginDisabled: true },
+    });
+    // Gone, or made SSO-only meanwhile: the password that opened this step
+    // no longer counts.
+    if (!user || user.passwordLoginDisabled) {
+      return restart('Please sign in again.');
+    }
+    return { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified };
+  }
+
+  /**
+   * Verified meanwhile (the link in the email, in another tab): nothing left
+   * to check, the password was proven when the step began. Returns true when
+   * it has completed the sign-in.
+   */
+  private async continueIfVerified(
+    req: Request,
+    res: Response,
+    user: { id: string; email: string; name: string | null; emailVerified: boolean },
+  ): Promise<boolean> {
+    if (!user.emailVerified) return false;
+    this.clearEmailCodeStep(res);
+    this.logger.log(`Authorization continues after email verification: ${maskEmail(user.email)}`);
+    await this.completeSignIn(req, res, user);
+    return true;
+  }
+
+  /**
+   * The code step's form (Cloud): checks the code. Its other buttons post to
+   * their own routes below (`formaction`), so no form field picks what runs.
+   */
+  @Post('verify-email')
+  // A code is 6 digits and lives 15 minutes: 10 tries a minute leaves no
+  // realistic guess, and a person never needs more.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async handleEmailCode(
+    @Req() req: Request,
+    @Body() body: { csrf?: string; code?: string },
+    @Res() res: Response,
+  ) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user || (await this.continueIfVerified(req, res, user))) return;
+
+    // Spaces from a pasted code go; anything else simply matches no code.
+    const code = typeof body?.code === 'string' ? body.code.replace(/\s+/g, '').slice(0, 16) : '';
+    const verified = await this.emailVerification!.verifyCode(user.id, code);
+    if (!verified) {
+      return this.askForEmailCode(req, res, user, {
+        error: 'That code is wrong or has expired. Use the newest email, or send a new code.',
+      });
+    }
+
+    this.clearEmailCodeStep(res);
+    this.logger.log(`Email verified on the authorization page: ${maskEmail(user.email)}`);
+    return this.completeSignIn(req, res, user);
+  }
+
+  /** "Send a new code" of the code step: at most one a minute, five an hour. */
+  @Post('verify-email/resend')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async resendEmailCode(@Req() req: Request, @Body() body: { csrf?: string }, @Res() res: Response) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user || (await this.continueIfVerified(req, res, user))) return;
+    const verification = this.emailVerification!;
+    if ((await verification.codesSentWithin(user.id, CODE_RESEND_INTERVAL_MS)) > 0) {
+      return this.askForEmailCode(req, res, user, {
+        notice: 'A code was sent less than a minute ago. Check your inbox and spam folder, or ask again in a minute.',
+      });
+    }
+    if ((await verification.codesSentWithin(user.id, 60 * 60 * 1000)) >= MAX_CODES_PER_HOUR) {
+      return this.askForEmailCode(req, res, user, { notice: TOO_MANY_CODES });
+    }
+    await verification.sendCode(user.id, user.email, { sendInBackground: true });
+    return this.askForEmailCode(req, res, user, {
+      notice: 'A new code is on its way. Codes sent before it no longer work.',
+    });
+  }
+
+  /** "I opened the link in the email": continues once the link verified the address. */
+  @Post('verify-email/continue')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async continueAfterEmailLink(@Req() req: Request, @Body() body: { csrf?: string }, @Res() res: Response) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user || (await this.continueIfVerified(req, res, user))) return;
+    return this.askForEmailCode(req, res, user, {
+      error: 'Your address is not verified yet. Enter the code from the email, or open its link first.',
+    });
+  }
+
+  /** "Continue with <provider>" of the code step: the provider verifies the address. */
+  @Post('verify-email/social/:provider')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async socialFromEmailCode(
+    @Param('provider') provider: string,
+    @Req() req: Request,
+    @Body() body: { csrf?: string },
+    @Res() res: Response,
+  ) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user) return;
+    this.clearEmailCodeStep(res);
+    return this.startSocialSignIn(req, res, provider);
   }
 
   /**
@@ -1872,6 +2117,70 @@ export class LoginController {
       title: `${sessionUser ? 'Authorize' : 'Sign In'} — ${serverName}`,
       card,
       trust: this.trust(),
+    });
+  }
+
+  /** Cloud: the code step of the authorization (see askForEmailCode). */
+  private renderEmailCodePage(params: {
+    consent: ConsentContext | null;
+    maskedEmail: string;
+    csrfToken: string;
+    socialProviders: { id: string; name: string }[];
+    error?: string;
+    notice?: string;
+  }): string {
+    const { consent, maskedEmail, csrfToken, socialProviders, error, notice } = params;
+    const serverName = this.configService.get<string>('MCP_SERVER_NAME') || 'AnythingMCP';
+    const client = consent ? this.escapeHtml(consent.clientName) : '';
+    const top = consent
+      ? clientTilePair(consent.clientName, consent.redirectHost)
+      : `<div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK}</div></div>`;
+    const errorHtml = error ? `<div class="error" role="alert">${this.escapeHtml(error)}</div>` : '';
+    const noticeHtml = notice ? `<p class="note" role="status">${this.escapeHtml(notice)}</p>` : '';
+    const purpose = consent ? `to finish connecting <strong>${client}</strong>` : 'to finish signing in';
+
+    // Same buttons as on the sign-in page; here they verify the address at once.
+    const socialHtml = socialProviders.length
+      ? '<div class="divider"><span>or</span></div>' +
+        socialProviders
+          .map(
+            (p) =>
+              `<button type="submit" formaction="/auth/verify-email/social/${this.escapeHtml(encodeURIComponent(p.id))}" formnovalidate class="sso">` +
+              providerMarkSvg(p.id) +
+              `<span>Continue with ${this.escapeHtml(p.name)}</span>` +
+              `</button>`,
+          )
+          .join('') +
+        `<p class="links">If this address is a ${socialProviders.map((p) => this.escapeHtml(p.name)).join(' or ')} account, continuing with it verifies the address without a code. You then sign in that way instead of with your password.</p>`
+      : '';
+
+    // The code field and "Verify and continue" come first in the form, so
+    // Enter in the field verifies (the first submit button). Every other
+    // button posts the same CSRF field to its own route (`formaction`).
+    const card = `
+    ${top}
+    <h1>Check your email</h1>
+    <p class="sub">We sent a 6-digit code to <strong>${this.escapeHtml(maskedEmail)}</strong>. Enter it ${purpose}.</p>
+    ${errorHtml}${noticeHtml}
+    <form method="POST" action="/auth/verify-email">
+      <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">
+      <label for="code">Verification code</label>
+      <input type="text" id="code" name="code" required autofocus inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456">
+      <button type="submit">Verify and continue</button>
+      <button type="submit" formaction="/auth/verify-email/resend" formnovalidate class="secondary">Send a new code</button>
+      <button type="submit" formaction="/auth/verify-email/continue" formnovalidate class="secondary">I opened the link in the email</button>
+      ${socialHtml}
+    </form>
+    <p class="links">No email? Check the spam folder. <a href="/auth/login?switch=1">Use a different account</a></p>`;
+
+    return renderAuthPage({
+      title: `Verify your email — ${serverName}`,
+      card,
+      trust: this.trust(),
+      extraStyles: `
+  .sub strong { color: var(--text); font-weight: 600; }
+  form button.secondary { margin-top: 8px; }
+  #code { letter-spacing: .3em; font-variant-numeric: tabular-nums; }`,
     });
   }
 

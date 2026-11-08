@@ -21,6 +21,7 @@ const EXCLUDED_ROUTES = [
   '/settings/license',
   '/welcome',
   '/start-trial',
+  '/reactivate',
 ];
 
 function isExcluded(pathname: string | null): boolean {

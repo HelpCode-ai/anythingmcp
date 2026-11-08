@@ -194,6 +194,27 @@ describe('ProductEventService.log — server-written metadata', () => {
     });
     expect(create.mock.calls[0][0].data.metadata).toEqual({ client: 'Claude', cardTrialOffered: true });
   });
+
+  it('keeps the reactivation-link arm on a blocked call and the state on a page view', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    for (const variant of ['page', 'pricing']) {
+      await service.log({
+        event: 'trial_expired_call_blocked',
+        organizationId: 'org-1',
+        metadata: { toolName: 't', adapterSlug: 'odoo', client: 'claude-ai', variant },
+      });
+    }
+    await service.log({ event: 'reactivate_page_viewed', organizationId: 'org-1', metadata: { state: 'trial-ended' } });
+    await service.log({ event: 'license_wall_viewed', organizationId: 'org-1', metadata: { variant: 'trust' } });
+    await service.log({ event: 'reactivate_page_viewed', organizationId: 'org-1', metadata: { state: 'x', variant: 'y' } });
+    const stored = create.mock.calls.map((c) => c[0].data.metadata);
+    expect(stored[0]).toEqual({ toolName: 't', adapterSlug: 'odoo', client: 'claude-ai', variant: 'page' });
+    expect(stored[1].variant).toBe('pricing');
+    expect(stored[2]).toEqual({ state: 'trial-ended' });
+    expect(stored[3]).toEqual({ variant: 'trust' });
+    expect(stored[4]).toBeNull();
+  });
 });
 
 describe('ProductEventService — the Claude setup discoverability events', () => {

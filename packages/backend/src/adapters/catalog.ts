@@ -234,6 +234,7 @@ import * as eventbrite from './intl/eventbrite.json';
 import * as everhour from './intl/everhour.json';
 import * as exa from './intl/exa.json';
 import * as exerciseCom from './intl/exercise-com.json';
+import * as exitoMarketplace from './intl/exito-marketplace.json';
 import * as facebookPages from './intl/facebook-pages.json';
 import * as factorialHr from './intl/factorial-hr.json';
 import * as faire from './intl/faire.json';
@@ -1264,6 +1265,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   everhour as unknown as AdapterDefinition,
   exa as unknown as AdapterDefinition,
   exerciseCom as unknown as AdapterDefinition,
+  exitoMarketplace as unknown as AdapterDefinition,
   facebookPages as unknown as AdapterDefinition,
   factorialHr as unknown as AdapterDefinition,
   faire as unknown as AdapterDefinition,

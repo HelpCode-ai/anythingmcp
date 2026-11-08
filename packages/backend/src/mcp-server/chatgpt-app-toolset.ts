@@ -6,6 +6,7 @@ import {
   ConnectorSummary,
   SharedToolsetDeps,
   excludedOnSharedEndpoint,
+  trialEndedBlock,
 } from './shared-toolset';
 
 /**
@@ -80,7 +81,7 @@ export interface ConnectorActivity {
 
 export type ChatgptAppDeps = Pick<
   SharedToolsetDeps,
-  'execute' | 'connectors' | 'guide' | 'connectorUrl' | 'configuration'
+  'execute' | 'connectors' | 'guide' | 'connectorUrl' | 'configuration' | 'trialEnded'
 > & {
   /** Calls and failures per connector over the last `days` days. */
   activity(connectorIds: string[], days: number): Promise<ConnectorActivity[]>;
@@ -307,6 +308,7 @@ export function registerChatgptAppToolset(
       // the user reaches them through the workspace's own server URL.
       const otherConnectors = connectors.filter((c) => !databases.has(c.id)).map((c) => c.name);
       return json({
+        ...(await trialEndedBlock(deps)),
         connectors,
         ...(needsSetup.length ? { needsSetup } : {}),
         ...(connectors.length === 0 && needsSetup.length === 0

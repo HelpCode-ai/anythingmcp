@@ -84,7 +84,7 @@ export class LicenseWallService {
     const successfulCalls = total._sum.repeatCount ?? 0;
     if (successfulCalls <= 0) return null;
 
-    const [byConnector, connected, blocked] = await Promise.all([
+    const [byConnector, client, blocked] = await Promise.all([
       this.prisma.toolInvocation.groupBy({
         by: ['connectorId'],
         where: { ...success, connectorId: { not: null } },
@@ -92,12 +92,7 @@ export class LicenseWallService {
         orderBy: { _sum: { repeatCount: 'desc' } },
         take: 10,
       }),
-      this.prisma.productEvent.findMany({
-        where: { organizationId, event: ProductEvents.AI_CLIENT_CONNECTED },
-        select: { metadata: true },
-        orderBy: { createdAt: 'asc' },
-        take: 20,
-      }),
+      this.connectedClient(organizationId),
       this.prisma.productEvent.findFirst({
         where: {
           organizationId,
@@ -116,13 +111,26 @@ export class LicenseWallService {
     const names = new Map(rows.map((c) => [c.id, c.name]));
     const connectors = ids.map((id) => names.get(id)).filter((n): n is string => !!n).slice(0, 3);
 
-    let client: string | null = null;
-    for (const e of connected) {
-      client = knownClientName((e.metadata as Record<string, unknown> | null)?.client);
-      if (client) break;
-    }
-
     return { successfulCalls, connectors, client, blockedSinceEnd: !!blocked };
+  }
+
+  /**
+   * The first AI client the workspace connected that we can name
+   * (knownClientName), from its `ai_client_connected` events; null otherwise.
+   * Also used by the no-login reactivation page (reactivation.controller.ts).
+   */
+  async connectedClient(organizationId: string): Promise<string | null> {
+    const connected = await this.prisma.productEvent.findMany({
+      where: { organizationId, event: ProductEvents.AI_CLIENT_CONNECTED },
+      select: { metadata: true },
+      orderBy: { createdAt: 'asc' },
+      take: 20,
+    });
+    for (const e of connected) {
+      const client = knownClientName((e.metadata as Record<string, unknown> | null)?.client);
+      if (client) return client;
+    }
+    return null;
   }
 
   private async recordView(

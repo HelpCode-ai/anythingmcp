@@ -389,6 +389,10 @@ describe('adapter catalog', () => {
         // optional.
         if (cfg.tokenSource === 'cookie') {
           if (cfg.cookieMode !== 'all') expect(typeof cfg.cookieName).toBe('string');
+        } else if (Array.isArray(cfg.tokenJsonPath)) {
+          // Several candidate paths, tried in order (tokenJsonPaths()).
+          expect(cfg.tokenJsonPath.length).toBeGreaterThan(0);
+          for (const p of cfg.tokenJsonPath) expect(typeof p === 'string' && p.length > 0).toBe(true);
         } else {
           expect(typeof cfg.tokenJsonPath).toBe('string');
         }
