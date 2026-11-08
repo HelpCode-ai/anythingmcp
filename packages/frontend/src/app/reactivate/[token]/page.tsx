@@ -122,7 +122,12 @@ function ReactivateContent() {
   }, [backFromStripe, view, pollsLeft, token]);
 
   const track = (action: PaywallAction, detail: PaywallActionDetail = {}) =>
-    reactivation.track(token, { action, ...detail, device: deviceKind() });
+    reactivation.track(token, {
+      action,
+      ...detail,
+      device: deviceKind(),
+      ...(view?.offerArm && { offer: view.offerArm }),
+    });
 
   const pickPlan = (next: PlanSelection) => {
     picked.current = true;
@@ -259,6 +264,7 @@ function ReactivateContent() {
                   onChange={pickPlan}
                   disabled={opening}
                   usage={view.usage}
+                  offer={view.offer ?? null}
                   onEnterprise={() => track('enterprise_clicked')}
                 />
                 <button
@@ -406,6 +412,7 @@ function PlanChooser({
   onChange,
   disabled,
   usage,
+  offer,
   onEnterprise,
 }: {
   copy: ReactivateCopy;
@@ -413,6 +420,8 @@ function PlanChooser({
   onChange: (next: PlanSelection) => void;
   disabled: boolean;
   usage: ReactivationView['usage'];
+  /** The Telegram price test's offer on Starter monthly, when this workspace has it. */
+  offer: NonNullable<ReactivationView['offer']> | null;
   onEnterprise: () => void;
 }) {
   const p = copy.plans;
@@ -462,6 +471,7 @@ function PlanChooser({
           const selected = value.plan === plan.id;
           const outgrown = limitsExceeded(plan, usage).length > 0;
           const yearly = value.period === 'yearly';
+          const offered = !!offer && plan.id === offer.plan && value.period === offer.billingPeriod;
           return (
             <button
               key={plan.id}
@@ -495,9 +505,26 @@ function PlanChooser({
               <span className="col-span-2 mt-1.5 block text-xs text-[var(--text-2)] sm:mt-2">{plan.id === 'starter' ? p.starter : p.team}</span>
               {outgrown && <span className="col-span-2 mt-1 block text-xs text-[var(--warning-text)]">{p.outgrown}</span>}
               <span className="col-start-2 row-start-1 block whitespace-nowrap text-right sm:mt-3 sm:text-left">
-                <span className="text-[17px] font-semibold">{formatEur(yearly ? plan.yearly : plan.monthly)}</span>
+                {offered && (
+                  <s className="mr-1.5 text-sm text-[var(--text-3)]" data-testid="list-price">
+                    {formatEur(plan.monthly)}
+                  </s>
+                )}
+                <span className="text-[17px] font-semibold">
+                  {formatEur(offered ? offer.monthlyEur : yearly ? plan.yearly : plan.monthly)}
+                </span>
                 <span className="text-sm text-[var(--text-2)]">{yearly ? p.perYear : p.perMonth}</span>
               </span>
+              {offered && (
+                <span data-testid="offer-terms" className="col-span-2 mt-1.5 block text-xs font-medium text-[var(--success)]">
+                  {p.offerLabel}:{' '}
+                  {fmt(p.offerTerms, {
+                    price: formatEur(offer.monthlyEur),
+                    months: offer.months,
+                    list: formatEur(plan.monthly),
+                  })}
+                </span>
+              )}
               {yearly && (
                 <span className="col-span-2 mt-0.5 block text-xs text-[var(--text-3)]">
                   {fmt(p.yearlyEquiv, { price: formatEur(yearlyPerMonth(plan)) })}

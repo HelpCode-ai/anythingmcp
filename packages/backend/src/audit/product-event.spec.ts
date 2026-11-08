@@ -241,6 +241,16 @@ describe('ProductEventService.log — server-written metadata', () => {
     });
     expect(stored[1]).toEqual({ source: 'mcp_reactivate' });
   });
+
+  it('keeps the Telegram price test arm, and only its two values', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    await service.log({ event: 'reactivate_page_viewed', organizationId: 'org-1', metadata: { state: 'trial-ended', offer: 'personal' } });
+    await service.log({ event: 'paywall_action', organizationId: 'org-1', metadata: { action: 'shown', offer: 'free-forever' } });
+    const stored = create.mock.calls.map((c) => c[0].data.metadata);
+    expect(stored[0]).toEqual({ state: 'trial-ended', offer: 'personal' });
+    expect(stored[1]).toEqual({ action: 'shown' });
+  });
 });
 
 describe('ProductEventService — the Claude setup discoverability events', () => {

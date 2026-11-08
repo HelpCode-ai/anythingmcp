@@ -495,13 +495,15 @@ export class ProductEventService {
 // /mcp set, the tool set's profile, the setup tool a run tool ran); the last
 // two only from a fixed set.
 // `action`, `plan`, `period`: paywall_action, each from a fixed set.
+// `offer`: the reactivation page's Telegram price test arm, on
+// reactivate_page_viewed, paywall_action and checkout_link_created.
 // `protocol`, `preset`, `files`: the File Search wizard (FILE_SEARCH_*):
 // a known protocol, a known product preset and a file count bucket; any
 // other value is dropped, so no host, path or exact count can be stored.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
-  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period',
+  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
@@ -532,6 +534,8 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   action: new Set<string>(PAYWALL_ACTIONS),
   plan: new Set(['starter', 'team']),
   period: new Set(['monthly', 'yearly']),
+  // The reactivation page's Telegram price test (reactivationOfferArm).
+  offer: new Set(['personal', 'list']),
 };
 const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
