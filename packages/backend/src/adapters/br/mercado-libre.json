@@ -1115,13 +1115,13 @@
     },
     {
       "name": "mercado_libre_get_item_visits",
-      "description": "Get the total visits of one or more listings between two dates. Returns, per listing, total_visits and the date range. For a day-by-day series of one listing use mercado_libre_get_item_visits_by_day.",
+      "description": "Get the total visits of one listing between two dates. Mercado Libre accepts one listing id per call: for several listings, call once per id. Returns total_visits and the date range. For a day-by-day series of one listing use mercado_libre_get_item_visits_by_day.",
       "parameters": {
         "type": "object",
         "properties": {
           "ids": {
             "type": "string",
-            "description": "Comma-separated listing ids, e.g. 'MLB1234567890,MLB2345678901'."
+            "description": "One listing id, e.g. 'MLB1234567890'. Mercado Libre refuses more than one id here (\"maximum amount of items to query is 1\")."
           },
           "date_from": {
             "type": "string",
