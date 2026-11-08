@@ -21,6 +21,7 @@ import {
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { deviceKind, usePaywallLifecycle, type PaywallAction, type PaywallActionDetail } from '@/lib/paywall-tracking';
 import { COPY, DATE_LOCALE, fmt, pickPageLang, splitTag, type PageLang, type ReactivateCopy } from './copy';
 
 /** How often the page asks whether the payment reached the workspace, and for how long. */
@@ -120,12 +121,22 @@ function ReactivateContent() {
     return () => clearTimeout(timer);
   }, [backFromStripe, view, pollsLeft, token]);
 
+  const track = (action: PaywallAction, detail: PaywallActionDetail = {}) =>
+    reactivation.track(token, { action, ...detail, device: deviceKind() });
+
   const pickPlan = (next: PlanSelection) => {
     picked.current = true;
+    if (next.plan !== selection.plan) track('plan_selected', next);
+    else if (next.period !== selection.period) track('period_selected', next);
     setSelection(next);
   };
 
+  const selling = !!view && (view.state === 'trial-ended' || view.state === 'no-license') && !backFromStripe;
+  const subscribed = usePaywallLifecycle(selling, (action) => track(action, selection));
+
   const subscribe = async () => {
+    subscribed();
+    track('subscribe_clicked', selection);
     setOpening(true);
     setCheckoutError(null);
     try {
@@ -148,7 +159,6 @@ function ReactivateContent() {
   // Each assistant's users see its own directory listing; anyone else both.
   const showClaude = client !== 'ChatGPT';
   const showChatgpt = client !== 'Claude';
-  const selling = !!view && (view.state === 'trial-ended' || view.state === 'no-license') && !backFromStripe;
 
   return (
     <div lang={lang} className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
@@ -165,6 +175,7 @@ function ReactivateContent() {
             </span>
             <Link
               href={session ? '/' : '/login?redirect=%2F'}
+              onClick={() => track(session ? 'open_workspace_clicked' : 'sign_in_clicked')}
               className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'whitespace-nowrap')}
             >
               {session ? c.nav.openWorkspace : c.nav.signIn}
@@ -242,7 +253,14 @@ function ReactivateContent() {
               </p>
 
               <div className="mt-6 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
-                <PlanChooser copy={c} value={selection} onChange={pickPlan} disabled={opening} usage={view.usage} />
+                <PlanChooser
+                  copy={c}
+                  value={selection}
+                  onChange={pickPlan}
+                  disabled={opening}
+                  usage={view.usage}
+                  onEnterprise={() => track('enterprise_clicked')}
+                />
                 <button
                   type="button"
                   onClick={subscribe}
@@ -345,7 +363,12 @@ function ReactivateContent() {
                   <TrustRow>{c.why.kept}</TrustRow>
                   <TrustRow>{c.why.cancel}</TrustRow>
                   <TrustRow>
-                    <Tagged text={c.why.support} tag="mail" href="mailto:support@anythingmcp.com" />
+                    <Tagged
+                      text={c.why.support}
+                      tag="mail"
+                      href="mailto:support@anythingmcp.com"
+                      onClick={() => track('support_clicked')}
+                    />
                   </TrustRow>
                 </ul>
               </div>
@@ -383,12 +406,14 @@ function PlanChooser({
   onChange,
   disabled,
   usage,
+  onEnterprise,
 }: {
   copy: ReactivateCopy;
   value: PlanSelection;
   onChange: (next: PlanSelection) => void;
   disabled: boolean;
   usage: ReactivationView['usage'];
+  onEnterprise: () => void;
 }) {
   const p = copy.plans;
   const pricing = useLocalPricing(true);
@@ -491,6 +516,7 @@ function PlanChooser({
               href={buildEnterpriseContactUrl()}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={onEnterprise}
               className="text-[var(--brand)] hover:underline"
             >
               {enterprise[1]}
@@ -512,13 +538,13 @@ function StatTile({ n, label }: { n: string; label: string }) {
   );
 }
 
-function Tagged({ text, tag, href }: { text: string; tag: string; href: string }) {
+function Tagged({ text, tag, href, onClick }: { text: string; tag: string; href: string; onClick?: () => void }) {
   const parts = splitTag(text, tag);
   if (!parts) return <>{text}</>;
   return (
     <>
       {parts[0]}
-      <a href={href} className="text-[var(--brand)] hover:underline">
+      <a href={href} onClick={onClick} className="text-[var(--brand)] hover:underline">
         {parts[1]}
       </a>
       {parts[2]}
