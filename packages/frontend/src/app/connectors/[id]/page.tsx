@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
+import { WebhookCard } from '@/components/webhook-card';
 import { FilesPanel } from '@/components/file-search/files-panel';
 import Link from 'next/link';
 import {
@@ -1920,6 +1921,14 @@ export default function ConnectorDetailPage() {
             </Button>
           </Card>
         )}
+
+        {/* Inbound webhook ingestion (#1393) */}
+        <WebhookCard
+          connectorId={connector.id}
+          webhookEnabled={!!connector.webhookEnabled}
+          canManage={user?.role === 'ADMIN' || (user?.role !== 'VIEWER' && user?.id === connector.userId)}
+          onChanged={fetchConnector}
+        />
 
         {/* Environment Variables */}
         {connector.type !== 'FILE_SEARCH' && (

@@ -1587,6 +1587,27 @@
       "switch": "Switch"
     }
   },
+  "webhook": {
+    "title": "Inbound webhooks",
+    "body": "Receive events from the provider (Stripe) and read them back from the connector's own URL.",
+    "enable": "Enabled",
+    "urlLabel": "Delivery URL",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Could not copy",
+    "secretLabel": "Signing secret",
+    "secretPlaceholder": "Paste the provider's signing secret",
+    "secretSaved": "Secret saved",
+    "secretError": "Could not save the secret.",
+    "save": "Save",
+    "saving": "Saving…",
+    "toggleError": "Could not change this setting.",
+    "eventsLabel": "Last deliveries",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "noEvents": "No deliveries yet.",
+    "unknownType": "Unknown event"
+  },
   "connectorTools": {
     "title": "MCP Tools ({count})",
     "cancelImport": "Cancel Import",

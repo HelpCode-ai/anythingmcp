@@ -362,6 +362,16 @@ export interface MyConnectorCredential {
 
 export type OAuthGrant = 'authorization_code' | 'client_credentials' | 'password';
 
+/** Mirrors backend WebhookEventsService.RecentWebhookEvent; payload is the raw provider body. */
+export interface RecentWebhookEvent {
+  id: string;
+  provider: string;
+  eventType: string | null;
+  externalId: string | null;
+  payload: unknown;
+  receivedAt: string;
+}
+
 /** True for the grants that need no sign-in at the provider. */
 export function isMachineGrant(grant: string | undefined): boolean {
   return grant === 'client_credentials' || grant === 'password';
@@ -468,6 +478,8 @@ export interface Connector {
   tokenExpiresAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  webhookEnabled?: boolean;
+  webhookProvider?: string | null;
   [key: string]: unknown;
 }
 
@@ -670,6 +682,19 @@ export const connectors = {
       `/api/connectors/${id}/discover-tools`,
       { method: 'POST', token },
     ),
+  /** The URL to paste into the provider's webhook settings; built server-side from SERVER_URL. */
+  webhookUrl: (id: string, token: string) =>
+    request<{ url: string }>(`/api/connectors/${encodeURIComponent(id)}/webhook/url`, { token }),
+  webhookEvents: (id: string, token: string, opts?: { limit?: number; since?: string }) => {
+    const query = new URLSearchParams();
+    if (opts?.limit) query.set('limit', String(opts.limit));
+    if (opts?.since) query.set('since', opts.since);
+    const qs = query.toString();
+    return request<{ events: RecentWebhookEvent[] }>(
+      `/api/connectors/${encodeURIComponent(id)}/webhook/events${qs ? `?${qs}` : ''}`,
+      { token },
+    );
+  },
 };
 
 /** One-time links an AI client hands out to finish a connector's setup. */

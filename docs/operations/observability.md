@@ -222,6 +222,8 @@ Stored payloads are returned to the model exactly as received by the connector's
 
 The same data is available outside an AI client: `GET /api/connectors/:id/webhook/events` (`limit`, `since`) returns the identical rows, and `GET /api/connectors/:id/webhook/url` returns the delivery URL to paste into the provider, built from `SERVER_URL` the same way `GET /api/connectors/oauth/redirect-uri` builds the OAuth callback. Both are gated like any other connector setting — the connector owner or an admin, since the events can carry the same personal data noted above.
 
+The connector page's "Inbound webhooks" card (`webhook-card.tsx`) is this feature's UI: the owner or an admin flips `webhookEnabled` there, pastes the provider's signing secret (write-only, never read back), copies the delivery URL, and sees the last ten deliveries. It calls the same endpoints above, so it carries no logic of its own about retention or the per-connector cap.
+
 | Env | Default | |
 |---|---|---|
 | `WEBHOOK_EVENT_RETENTION_DAYS` | `7` | A periodic sweep (hourly, like the connector-auth-status sweep) deletes received events older than this. |

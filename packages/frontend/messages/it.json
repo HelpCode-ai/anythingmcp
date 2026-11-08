@@ -1587,6 +1587,27 @@
       "switch": "Cambia"
     }
   },
+  "webhook": {
+    "title": "Webhook in entrata",
+    "body": "Ricevi eventi dal provider (Stripe) e rileggili dall'URL del connettore.",
+    "enable": "Attivato",
+    "urlLabel": "URL di consegna",
+    "copy": "Copia",
+    "copied": "Copiato",
+    "copyFailed": "Impossibile copiare",
+    "secretLabel": "Secret di firma",
+    "secretPlaceholder": "Incolla il secret di firma del provider",
+    "secretSaved": "Secret salvato",
+    "secretError": "Impossibile salvare il secret.",
+    "save": "Salva",
+    "saving": "Salvataggio…",
+    "toggleError": "Impossibile modificare questa impostazione.",
+    "eventsLabel": "Ultime consegne",
+    "refresh": "Aggiorna",
+    "loading": "Caricamento…",
+    "noEvents": "Nessuna consegna ancora.",
+    "unknownType": "Evento sconosciuto"
+  },
   "connectorTools": {
     "title": "Strumenti MCP ({count})",
     "cancelImport": "Annulla importazione",
