@@ -13,10 +13,10 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { IsIn } from 'class-validator';
+import { IsIn, IsOptional } from 'class-validator';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
-import { ProductEventService, ProductEvents } from '../audit/product-event.service';
+import { PAYWALL_ACTIONS, type PaywallAction, ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { LicenseService } from './license.service';
 import { LicenseGuardService } from './license-guard.service';
 import { LicenseWallService, knownClientName } from './license-wall.service';
@@ -56,6 +56,24 @@ export class ReactivationCheckoutDto {
 
   @IsIn(CHECKOUT_BILLING_PERIODS as unknown as string[])
   billingPeriod: CheckoutBillingPeriod;
+}
+
+/** A click on the page (paywall_action); plan and period as the page has them. */
+export class ReactivationEventDto {
+  @IsIn(PAYWALL_ACTIONS as unknown as string[])
+  action: PaywallAction;
+
+  @IsOptional()
+  @IsIn(CHECKOUT_PLANS as unknown as string[])
+  plan?: CheckoutPlan;
+
+  @IsOptional()
+  @IsIn(CHECKOUT_BILLING_PERIODS as unknown as string[])
+  period?: CheckoutBillingPeriod;
+
+  @IsOptional()
+  @IsIn(['mobile', 'desktop'])
+  device?: 'mobile' | 'desktop';
 }
 
 /** The checkout source of every checkout opened from the page. */
@@ -189,6 +207,31 @@ export class ReactivationController {
         'The checkout could not be opened right now. Please try again in a moment.',
       );
     }
+  }
+
+  @Post(':token/event')
+  @HttpCode(204)
+  // A page load reports 'shown', a few clicks and at most one leave.
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiParam({ name: 'token', description: 'The reactivation link token' })
+  @ApiOperation({
+    summary: 'Cloud, no sign-in: record a click on the reactivation page (404 for an invalid or expired link)',
+  })
+  async event(@Param('token') token: string, @Body() dto: ReactivationEventDto): Promise<void> {
+    const { organizationId, userId } = this.check(token);
+    await this.productEvents.log({
+      event: ProductEvents.PAYWALL_ACTION,
+      userId: userId ?? null,
+      organizationId,
+      metadata: {
+        source: REACTIVATE_CHECKOUT_SOURCE,
+        variant: 'page',
+        action: dto.action,
+        plan: dto.plan,
+        period: dto.period,
+        device: dto.device,
+      },
+    });
   }
 
   /** The token's workspace and user; 404 off Cloud and for anything invalid. */

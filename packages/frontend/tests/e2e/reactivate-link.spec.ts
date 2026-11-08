@@ -26,6 +26,7 @@ const CHECKOUT = 'https://checkout.example.test/pay/cs_1';
 
 async function publicPage(page: Page, views: View[] | 404, opts: { signedIn?: boolean } = {}) {
   const posted: unknown[] = [];
+  const events: Array<Record<string, unknown>> = [];
   let gets = 0;
   await page.route(/\/(api|health)\//, async (route) => {
     const req = route.request();
@@ -36,6 +37,10 @@ async function publicPage(page: Page, views: View[] | 404, opts: { signedIn?: bo
       return json({ deploymentMode: 'cloud', mcpAuthMode: 'oauth2', hasUsers: true, registrationEnabled: true, ssoProviders: [] });
     }
     if (p.endsWith('/public/stats')) return json({ workspaces: 1250, dockerPulls: 250_000, toolCalls30d: 2_000_000 });
+    if (p.startsWith('/api/license/reactivate/') && p.endsWith('/event') && req.method() === 'POST') {
+      events.push(req.postDataJSON());
+      return route.fulfill({ status: 204 });
+    }
     if (p.startsWith('/api/license/reactivate/') && req.method() === 'POST') {
       posted.push(req.postDataJSON());
       return json({ url: CHECKOUT });
@@ -55,7 +60,7 @@ async function publicPage(page: Page, views: View[] | 404, opts: { signedIn?: bo
   await page.context().route('https://checkout.example.test/**', (route) =>
     route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Stripe stub</h1>' }),
   );
-  return { posted };
+  return { posted, events };
 }
 
 test.describe('reactivation link (cloud, signed out)', () => {
@@ -145,6 +150,37 @@ test.describe('reactivation link (cloud, signed out)', () => {
     const banner = page.getByRole('banner');
     await expect(banner.getByRole('link', { name: 'Open your workspace' })).toHaveAttribute('href', '/');
     await expect(banner.getByRole('link', { name: 'Sign in' })).toHaveCount(0);
+  });
+
+  test('reports its clicks as paywall_action, and a close without subscribing', async ({ page }) => {
+    const { events } = await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    await expect(page.getByRole('button', { name: 'Subscribe to Starter' })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('radio', { name: /Team/ }).click();
+    await page.getByRole('radio', { name: /Yearly/ }).click();
+    await expect.poll(() => events.length).toBe(3);
+    // The page is closed without a subscribe click (Playwright cannot route
+    // the request a real unload sends, so the event is dispatched here), twice.
+    await page.evaluate(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide'));
+      window.dispatchEvent(new PageTransitionEvent('pagehide'));
+    });
+    await expect.poll(() => events.length).toBe(4);
+    expect(events).toEqual([
+      { action: 'shown', plan: 'starter', period: 'monthly', device: 'desktop' },
+      { action: 'plan_selected', plan: 'team', period: 'monthly', device: 'desktop' },
+      { action: 'period_selected', plan: 'team', period: 'yearly', device: 'desktop' },
+      { action: 'left_without_subscribe', plan: 'team', period: 'yearly', device: 'desktop' },
+    ]);
+  });
+
+  test('a subscribe click is reported, and no leave after it', async ({ page }) => {
+    const { events } = await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    await page.getByRole('banner').getByRole('link', { name: 'Sign in' }).waitFor({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
+    await expect(page).toHaveURL(CHECKOUT);
+    expect(events.map((e) => e.action)).toEqual(['shown', 'subscribe_clicked']);
   });
 
   test('a ChatGPT chat gets ChatGPT wording and its own directory', async ({ page }) => {
