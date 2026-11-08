@@ -24,7 +24,7 @@ const ENDED: View = {
 
 const CHECKOUT = 'https://checkout.example.test/pay/cs_1';
 
-async function publicPage(page: Page, views: View[] | 404) {
+async function publicPage(page: Page, views: View[] | 404, opts: { signedIn?: boolean } = {}) {
   const posted: unknown[] = [];
   let gets = 0;
   await page.route(/\/(api|health)\//, async (route) => {
@@ -46,8 +46,10 @@ async function publicPage(page: Page, views: View[] | 404) {
       gets += 1;
       return json(v);
     }
-    // Nobody is signed in on this page.
-    if (p.endsWith('/users/me')) return json({ message: 'Unauthorized' }, 401);
+    if (p.endsWith('/users/me')) {
+      if (opts.signedIn) return json({ id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'ADMIN' });
+      return json({ message: 'Unauthorized' }, 401);
+    }
     return json({});
   });
   await page.context().route('https://checkout.example.test/**', (route) =>
@@ -95,6 +97,54 @@ test.describe('reactivation link (cloud, signed out)', () => {
     await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
     await expect(page).toHaveURL(CHECKOUT);
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'yearly' }]);
+  });
+
+  test('on a phone the subscribe button is on the first screen, the explanation below it', async ({ page }) => {
+    // 390×664: an iPhone's visible area in Safari, toolbars included.
+    await page.setViewportSize({ width: 390, height: 664 });
+    await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    const cta = page.getByRole('button', { name: 'Subscribe to Starter' });
+    await expect(cta).toBeInViewport({ ratio: 1, timeout: 15_000 });
+    const lead = page.getByTestId('reactivate-lead');
+    await expect(lead).toContainText('Your free trial ended on 4 November.');
+    const [ctaBox, leadBox] = [await cta.boundingBox(), await lead.boundingBox()];
+    expect(leadBox!.y).toBeGreaterThan(ctaBox!.y);
+    if (process.env.REACTIVATE_SHOT) {
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-390-fold.png` });
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-390-full.png`, fullPage: true });
+      await page.setViewportSize({ width: 375, height: 667 });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-375-fold.png` });
+      await page.getByRole('radio', { name: /Yearly/ }).click();
+      await page.setViewportSize({ width: 390, height: 664 });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-390-yearly.png` });
+    }
+  });
+
+  test('on a desktop the explanation stays above the plans', async ({ page }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    const cta = page.getByRole('button', { name: 'Subscribe to Starter' });
+    await expect(cta).toBeInViewport({ ratio: 1, timeout: 15_000 });
+    const [ctaBox, leadBox] = [await cta.boundingBox(), await page.getByTestId('reactivate-lead').boundingBox()];
+    expect(leadBox!.y).toBeLessThan(ctaBox!.y);
+  });
+
+  test('someone already signed in is offered their workspace, not a sign-in', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('amcp_token', 'test-token');
+      localStorage.setItem('amcp_user', JSON.stringify({ id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'ADMIN' }));
+    });
+    await publicPage(page, [ENDED], { signedIn: true });
+    await page.goto('/reactivate/tok_abc');
+    await expect(page.getByRole('heading', { name: 'Pick up where Claude left off' })).toBeVisible({ timeout: 15_000 });
+    const banner = page.getByRole('banner');
+    await expect(banner.getByRole('link', { name: 'Open your workspace' })).toHaveAttribute('href', '/');
+    await expect(banner.getByRole('link', { name: 'Sign in' })).toHaveCount(0);
   });
 
   test('a ChatGPT chat gets ChatGPT wording and its own directory', async ({ page }) => {
