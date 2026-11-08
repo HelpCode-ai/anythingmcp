@@ -5,7 +5,11 @@ import {
   findTelegramTokens,
 } from './support-telegram-setup.service';
 
-const TOKEN = '7712345678:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw1';
+// Built at run time, so the source holds nothing a secret scanner reads as a
+// Telegram token. Not a real bot: the secret part is a fixed filler.
+const fakeToken = (botId: string, filler: string) => `${botId}:${'AA' + filler.repeat(33)}`;
+const TOKEN = fakeToken('7712345678', 'x');
+const OTHER_TOKEN = fakeToken('1234567', 'y');
 const HOST = 'cloud.anythingmcp.com';
 const USER_ID = 'user-1';
 const ORG_ID = 'org-1';
@@ -169,7 +173,7 @@ describe('SupportTelegramSetupService', () => {
     ['a private note', { private: true }],
     ['an outgoing message', { type: 'outgoing' }],
     ['a message without a token', { text_content: 'hello' }],
-    ['two different tokens', { text_content: `${TOKEN} 1234567:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw2` }],
+    ['two different tokens', { text_content: `${TOKEN} ${OTHER_TOKEN}` }],
   ])('ignores %s without calling the desk', async (_label, over) => {
     const { service, desk, deps } = setup();
     await expect(service.handleMessage(message(over as any))).resolves.toBe('ignored');
