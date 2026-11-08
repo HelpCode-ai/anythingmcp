@@ -49,7 +49,13 @@ function signed(body: object, secret = 'whsec') {
 function build() {
   const identity = { widgetSession: jest.fn().mockResolvedValue({ baseUrl: 'b', inboxId: 'i', userJwt: 'j' }) };
   const triage = { triage: jest.fn().mockResolvedValue(null) };
-  return { controller: new SupportController(identity as any, triage as any), identity, triage };
+  const telegramSetup = { handleMessage: jest.fn().mockResolvedValue('ignored') };
+  return {
+    controller: new SupportController(identity as any, triage as any, telegramSetup as any),
+    identity,
+    triage,
+    telegramSetup,
+  };
 }
 
 describe('verifyLibredeskSignature', () => {
@@ -129,9 +135,9 @@ describe('SupportController', () => {
     });
   });
 
-  it('webhook hands conversation.created to the triage and ignores other events', () => {
+  it('webhook hands conversation.created to the triage and message.created to the Telegram setup', () => {
     withEnv(TRIAGE_ENV, () => {
-      const { controller, triage } = build();
+      const { controller, triage, telegramSetup } = build();
       const created = signed({ event: 'conversation.created', timestamp: new Date().toISOString(), payload: { uuid: 'c1' } });
       expect(controller.webhook(created.req, created.sig)).toEqual({ ok: true });
       expect(triage.triage).toHaveBeenCalledWith({ uuid: 'c1' });
@@ -139,6 +145,12 @@ describe('SupportController', () => {
       const msg = signed({ event: 'message.created', timestamp: new Date().toISOString(), payload: { uuid: 'm1' } });
       expect(controller.webhook(msg.req, msg.sig)).toEqual({ ok: true });
       expect(triage.triage).toHaveBeenCalledTimes(1);
+      expect(telegramSetup.handleMessage).toHaveBeenCalledWith({ uuid: 'm1' });
+
+      const other = signed({ event: 'conversation.assigned', timestamp: new Date().toISOString(), payload: { uuid: 'c1' } });
+      expect(controller.webhook(other.req, other.sig)).toEqual({ ok: true });
+      expect(triage.triage).toHaveBeenCalledTimes(1);
+      expect(telegramSetup.handleMessage).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -18,5 +18,6 @@ import { SettingsModule } from '../settings/settings.module';
   imports: [McpServerModule, LicenseModule, McpServersModule, ConnectorsModule, SettingsModule],
   controllers: [AdaptersPublicController, AdaptersController, SetupLinksController, TikTokShopInstallController],
   providers: [AdaptersService, ConnectorSetupService, AppApprovalWatcherService],
+  exports: [AdaptersService],
 })
 export class AdaptersModule {}

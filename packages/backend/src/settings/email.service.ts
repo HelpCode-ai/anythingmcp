@@ -19,6 +19,7 @@ import {
   appApprovedEmail,
   cloudPageUrl,
   connectorAuthEmail,
+  connectorAddedFromSupportEmail,
   existingAccountEmail,
   invitationEmail,
   licenseKeyEmail,
@@ -949,6 +950,50 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(`Failed to send app-approved email to ${maskEmail(to)}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * A connector was added from the support chat (SupportTelegramSetupService).
+   * Transactional, to the user who posted the credential and to the
+   * workspace admins. False when no SMTP is configured or the send failed.
+   */
+  async sendConnectorAddedFromSupportEmail(
+    to: string,
+    input: {
+      name: string | null;
+      connectorName: string;
+      account: string;
+      workspaceName: string;
+      addedBy: string;
+      connectorPath: string;
+    },
+    organizationId?: string,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter(organizationId);
+    if (!transport) {
+      this.logger.warn(`Skipping connector-added email to ${maskEmail(to)}: no SMTP configured`);
+      return false;
+    }
+    const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '') || this.cloudUrl();
+    const email = connectorAddedFromSupportEmail(
+      {
+        name: input.name,
+        connectorName: input.connectorName,
+        account: input.account,
+        workspaceName: input.workspaceName,
+        addedBy: input.addedBy,
+        connectorUrl: cloudPageUrl(base, input.connectorPath, await this.signInProvider(to)),
+      },
+      await this.brand(),
+    );
+    try {
+      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email) });
+      this.logger.log(`Connector-added email sent to ${maskEmail(to)}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send connector-added email to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }

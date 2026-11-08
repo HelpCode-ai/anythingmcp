@@ -16,6 +16,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { supportChatConfig, supportChatDisabledFor, supportTriageConfig } from './support-config';
 import { SupportIdentityService } from './support-identity.service';
 import { DeskConversation, SupportTriageService } from './support-triage.service';
+import { DeskMessage, SupportTelegramSetupService } from './support-telegram-setup.service';
 
 /** Webhook deliveries older than this are refused (replay protection). */
 const MAX_WEBHOOK_AGE_MS = 10 * 60_000;
@@ -28,6 +29,7 @@ export class SupportController {
   constructor(
     private readonly identity: SupportIdentityService,
     private readonly triage: SupportTriageService,
+    private readonly telegramSetup: SupportTelegramSetupService,
   ) {}
 
   /**
@@ -47,7 +49,8 @@ export class SupportController {
   }
 
   /**
-   * POST /api/support/webhook: Libredesk `conversation.created` deliveries,
+   * POST /api/support/webhook: Libredesk `conversation.created` and
+   * `message.created` deliveries,
    * signed with `X-Libredesk-Signature: sha256=<hex HMAC of the raw body>`.
    * Answers at once; the triage runs in the background (Libredesk does not
    * retry and times out after 15 s).
@@ -70,6 +73,12 @@ export class SupportController {
       throw new UnauthorizedException('Stale delivery');
     }
 
+    if (body.event === 'message.created' && body.payload?.uuid) {
+      const msg = body.payload as DeskMessage;
+      void this.telegramSetup.handleMessage(msg).catch((err) =>
+        this.logger.warn(`Support message handling failed for ${msg.conversation_uuid}: ${(err as Error).message}`),
+      );
+    }
     if (body.event === 'conversation.created' && body.payload?.uuid) {
       const conv = body.payload as DeskConversation;
       void this.triage.triage(conv).catch((err) =>
