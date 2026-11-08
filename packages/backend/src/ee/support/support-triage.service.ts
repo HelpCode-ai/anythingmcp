@@ -81,7 +81,7 @@ Facts to get right:
 - When the catalog line names a connector, we have it: never write that we do not; point to its setup page. Only when it names none and the workspace has none may you say a person will check whether we support the app.
 - Connectors installed but last_tool_call "never" means no AI assistant is connected yet: the next step is adding the MCP server URL (MCP Servers page) to the assistant, e.g. in Claude Customize → Connectors → Add custom connector.
 - The redirect URI <instance URL>/api/mcp-oauth/callback is only for connectors that sign in with OAuth, entered in the provider's developer console. It is never used to connect an AI assistant, for API-key or bot-token connectors (Telegram, for example), or for webhooks.
-- If the customer pasted a password, token or key, say once that it is now visible in the chat and should be revoked or regenerated, and that new ones go only into the connector page.`;
+- If the customer pasted a password, token or key, say once that it is now visible in the chat and should be revoked or regenerated, and that new ones go only into the connector page. Exception: a Telegram bot token (digits, a colon, then about 35 letters, digits, _ or -) is connected automatically from the chat and a confirmation is posted there; do not ask to revoke it.`;
 
 /**
  * Tags, prioritises and annotates every new support conversation. Runs only

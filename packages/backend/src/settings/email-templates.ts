@@ -193,6 +193,47 @@ export function connectorAuthEmail(
 }
 
 /**
+ * A connector was added to the workspace from the support chat, with a
+ * credential the user posted there (Cloud). Sent to the user who posted it
+ * and to the workspace admins, so an install nobody asked for is noticed at
+ * once and can be removed.
+ */
+export function connectorAddedFromSupportEmail(
+  input: {
+    name: string | null;
+    connectorName: string;
+    /** What the credential connects, e.g. "@acme_bot". */
+    account: string;
+    workspaceName: string;
+    /** Email address of the user who posted the credential. */
+    addedBy: string;
+    connectorUrl: string;
+  },
+  ctx: EmailBrandContext,
+): RenderedEmail {
+  const hi = greeting(input.name);
+  const connector = input.connectorName.trim() || 'A connector';
+  const workspace = input.workspaceName.trim() || 'your workspace';
+  return build({
+    subject: `${connector} was added to ${workspace} from the support chat`,
+    preheader: `${input.addedBy} posted its credential in the support chat.`,
+    bodyHtml:
+      h1(`${esc(connector)} was added from the support chat.`, `Workspace: ${esc(workspace)}`) +
+      p(
+        `${esc(hi)} ${esc(input.addedBy)} posted the credential for <strong style="font-weight:600;">${esc(input.account)}</strong> in the AnythingMCP support chat, ` +
+          `so we added it to <strong style="font-weight:600;">${esc(workspace)}</strong> as the connector ${esc(connector)}. Its tools are ready for your AI client.`,
+      ) +
+      button(input.connectorUrl, 'Open the connector') +
+      small('If nobody in your team asked for this, delete the connector on that page and tell us by replying in the support chat.'),
+    bodyText:
+      `${hi}\n\n${input.addedBy} posted the credential for ${input.account} in the AnythingMCP support chat, so we added it to "${workspace}" as the connector "${connector}". Its tools are ready for your AI client.\n\n` +
+      `Open the connector: ${input.connectorUrl}\n\n` +
+      'If nobody in your team asked for this, delete the connector on that page and tell us by replying in the support chat.',
+    ctx,
+  });
+}
+
+/**
  * The provider approved the app the user created for a connector (Etsy: an
  * app leaves Pending), so the sign-in that was refused works now. Sent once
  * per connector (AppApprovalWatcherService). Transactional: the user asked to
