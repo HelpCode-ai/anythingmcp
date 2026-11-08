@@ -325,7 +325,39 @@ export const ProductEvents = {
    * and Stripe's checkouts of checkout_source 'mcp_reactivate'.
    */
   REACTIVATE_PAGE_VIEWED: 'reactivate_page_viewed',
+  /**
+   * Cloud: what someone did on a pay screen of an ended trial: the licence
+   * wall in the dashboard (metadata.source = 'trial_ended_wall', reported
+   * through POST /api/product-events) or the no-login reactivation page
+   * ('mcp_reactivate', reported through POST /api/license/reactivate/<token>/event).
+   * metadata.action = one of PAYWALL_ACTIONS ('shown' once per page load,
+   * then the clicks, 'left_without_subscribe' when the page is closed without
+   * a subscribe click); metadata.plan / metadata.period on plan, period and
+   * subscribe actions; metadata.device = 'mobile' or 'desktop';
+   * metadata.variant = the wall's variant ('trust' / 'control') or 'page'.
+   * Answers where people stop between seeing the plans and paying, per
+   * screen and device; read with checkout_link_created and Stripe.
+   */
+  PAYWALL_ACTION: 'paywall_action',
 } as const;
+
+/** The values of `action` on paywall_action (see PAYWALL_ACTION). */
+export const PAYWALL_ACTIONS = [
+  'shown',
+  'plan_selected',
+  'period_selected',
+  'subscribe_clicked',
+  'compare_plans_clicked',
+  'sign_in_clicked',
+  'open_workspace_clicked',
+  'switch_workspace_clicked',
+  'license_key_clicked',
+  'enterprise_clicked',
+  'support_clicked',
+  'delete_account_clicked',
+  'left_without_subscribe',
+] as const;
+export type PaywallAction = (typeof PAYWALL_ACTIONS)[number];
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
 
@@ -462,13 +494,16 @@ export class ProductEventService {
 // `tool`, `profile`, `setupTool`: shared_tool_called (a tool of the shared
 // /mcp set, the tool set's profile, the setup tool a run tool ran); the last
 // two only from a fixed set.
+// `action`, `plan`, `period`: paywall_action, each from a fixed set.
+// `offer`: the reactivation page's Telegram price test arm, on
+// reactivate_page_viewed, paywall_action and checkout_link_created.
 // `protocol`, `preset`, `files`: the File Search wizard (FILE_SEARCH_*):
 // a known protocol, a known product preset and a file count bucket; any
 // other value is dropped, so no host, path or exact count can be stored.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
-  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state',
+  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
@@ -495,6 +530,12 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   variant: new Set(['trust', 'control', 'page', 'pricing']),
   // reactivate_page_viewed (reactivation.controller.ts).
   state: new Set(['trial-ended', 'active', 'payment-failed', 'no-license']),
+  // paywall_action.
+  action: new Set<string>(PAYWALL_ACTIONS),
+  plan: new Set(['starter', 'team']),
+  period: new Set(['monthly', 'yearly']),
+  // The reactivation page's Telegram price test (reactivationOfferArm).
+  offer: new Set(['personal', 'list']),
 };
 const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;

@@ -21,6 +21,7 @@ import {
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { deviceKind, usePaywallLifecycle, type PaywallAction, type PaywallActionDetail } from '@/lib/paywall-tracking';
 import { COPY, DATE_LOCALE, fmt, pickPageLang, splitTag, type PageLang, type ReactivateCopy } from './copy';
 
 /** How often the page asks whether the payment reached the workspace, and for how long. */
@@ -120,12 +121,27 @@ function ReactivateContent() {
     return () => clearTimeout(timer);
   }, [backFromStripe, view, pollsLeft, token]);
 
+  const track = (action: PaywallAction, detail: PaywallActionDetail = {}) =>
+    reactivation.track(token, {
+      action,
+      ...detail,
+      device: deviceKind(),
+      ...(view?.offerArm && { offer: view.offerArm }),
+    });
+
   const pickPlan = (next: PlanSelection) => {
     picked.current = true;
+    if (next.plan !== selection.plan) track('plan_selected', next);
+    else if (next.period !== selection.period) track('period_selected', next);
     setSelection(next);
   };
 
+  const selling = !!view && (view.state === 'trial-ended' || view.state === 'no-license') && !backFromStripe;
+  const subscribed = usePaywallLifecycle(selling, (action) => track(action, selection));
+
   const subscribe = async () => {
+    subscribed();
+    track('subscribe_clicked', selection);
     setOpening(true);
     setCheckoutError(null);
     try {
@@ -148,7 +164,6 @@ function ReactivateContent() {
   // Each assistant's users see its own directory listing; anyone else both.
   const showClaude = client !== 'ChatGPT';
   const showChatgpt = client !== 'Claude';
-  const selling = !!view && (view.state === 'trial-ended' || view.state === 'no-license') && !backFromStripe;
 
   return (
     <div lang={lang} className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
@@ -165,6 +180,7 @@ function ReactivateContent() {
             </span>
             <Link
               href={session ? '/' : '/login?redirect=%2F'}
+              onClick={() => track(session ? 'open_workspace_clicked' : 'sign_in_clicked')}
               className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'whitespace-nowrap')}
             >
               {session ? c.nav.openWorkspace : c.nav.signIn}
@@ -173,7 +189,7 @@ function ReactivateContent() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
+      <main className="mx-auto max-w-5xl px-4 py-6 sm:py-12">
         {!view && !notFound && !loadError && (
           <p className="py-24 text-center text-sm text-[var(--text-3)]">{c.loading}</p>
         )}
@@ -209,7 +225,9 @@ function ReactivateContent() {
 
         {selling && view && (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-10">
-            <section aria-labelledby="reactivate-title">
+            {/* On a phone the explanation goes below the plan card, so the
+                subscribe button is on the first screen without scrolling. */}
+            <section aria-labelledby="reactivate-title" className="flex flex-col">
               <div className="mb-3 flex flex-wrap gap-2">
                 <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-2)]">
                   <span className="truncate">
@@ -219,7 +237,7 @@ function ReactivateContent() {
                 {client && (
                   <span
                     data-testid="client-paused"
-                    className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-2)]"
+                    className="hidden items-center sm:inline-flex gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-2)]"
                   >
                     {CLIENT_LOGOS[client] && (
                       <img src={`/logos/clients/${CLIENT_LOGOS[client]}.svg`} width={14} height={14} alt="" />
@@ -232,12 +250,23 @@ function ReactivateContent() {
               <h1 id="reactivate-title" className="text-[28px] font-bold leading-tight tracking-tight sm:text-[34px]">
                 {fmt(c.title, { client: clientName })}
               </h1>
-              <p className="mt-3 text-[15px] leading-relaxed text-[var(--text-2)]">
+              <p
+                data-testid="reactivate-lead"
+                className="order-last mt-5 text-[15px] leading-relaxed text-[var(--text-2)] sm:order-none sm:mt-3"
+              >
                 {endedOn ? fmt(c.bodyEnded, { date: endedOn, client: clientName }) : fmt(c.body, { client: clientName })}
               </p>
 
               <div className="mt-6 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
-                <PlanChooser copy={c} value={selection} onChange={pickPlan} disabled={opening} usage={view.usage} />
+                <PlanChooser
+                  copy={c}
+                  value={selection}
+                  onChange={pickPlan}
+                  disabled={opening}
+                  usage={view.usage}
+                  offer={view.offer ?? null}
+                  onEnterprise={() => track('enterprise_clicked')}
+                />
                 <button
                   type="button"
                   onClick={subscribe}
@@ -340,7 +369,12 @@ function ReactivateContent() {
                   <TrustRow>{c.why.kept}</TrustRow>
                   <TrustRow>{c.why.cancel}</TrustRow>
                   <TrustRow>
-                    <Tagged text={c.why.support} tag="mail" href="mailto:support@anythingmcp.com" />
+                    <Tagged
+                      text={c.why.support}
+                      tag="mail"
+                      href="mailto:support@anythingmcp.com"
+                      onClick={() => track('support_clicked')}
+                    />
                   </TrustRow>
                 </ul>
               </div>
@@ -378,12 +412,17 @@ function PlanChooser({
   onChange,
   disabled,
   usage,
+  offer,
+  onEnterprise,
 }: {
   copy: ReactivateCopy;
   value: PlanSelection;
   onChange: (next: PlanSelection) => void;
   disabled: boolean;
   usage: ReactivationView['usage'];
+  /** The Telegram price test's offer on Starter monthly, when this workspace has it. */
+  offer: NonNullable<ReactivationView['offer']> | null;
+  onEnterprise: () => void;
 }) {
   const p = copy.plans;
   const pricing = useLocalPricing(true);
@@ -432,6 +471,7 @@ function PlanChooser({
           const selected = value.plan === plan.id;
           const outgrown = limitsExceeded(plan, usage).length > 0;
           const yearly = value.period === 'yearly';
+          const offered = !!offer && plan.id === offer.plan && value.period === offer.billingPeriod;
           return (
             <button
               key={plan.id}
@@ -441,13 +481,15 @@ function PlanChooser({
               disabled={disabled}
               onClick={() => onChange({ ...value, plan: plan.id })}
               className={cn(
-                'rounded-[12px] border p-4 text-left transition-colors',
+                // A phone gets name and price on one row, so the subscribe
+                // button stays on the first screen.
+                'grid grid-cols-[1fr_auto] items-center gap-x-3 rounded-[12px] border p-4 text-left transition-colors sm:block',
                 selected
                   ? 'border-[var(--brand)] bg-[var(--brand-tint)] ring-1 ring-[var(--brand)]'
                   : 'border-[var(--border)] bg-[var(--surface)] hover:border-[var(--text-3)]',
               )}
             >
-              <span className="flex items-center gap-2">
+              <span className="col-start-1 row-start-1 flex items-center gap-2">
                 <span
                   aria-hidden
                   className={cn(
@@ -460,14 +502,31 @@ function PlanChooser({
                 <span className="font-semibold">{plan.name}</span>
                 {plan.popular && <span className="text-[11px] font-semibold text-[var(--brand)]">{p.mostPopular}</span>}
               </span>
-              <span className="mt-2 block text-xs text-[var(--text-2)]">{plan.id === 'starter' ? p.starter : p.team}</span>
-              {outgrown && <span className="mt-1 block text-xs text-[var(--warning-text)]">{p.outgrown}</span>}
-              <span className="mt-3 block">
-                <span className="text-[17px] font-semibold">{formatEur(yearly ? plan.yearly : plan.monthly)}</span>
+              <span className="col-span-2 mt-1.5 block text-xs text-[var(--text-2)] sm:mt-2">{plan.id === 'starter' ? p.starter : p.team}</span>
+              {outgrown && <span className="col-span-2 mt-1 block text-xs text-[var(--warning-text)]">{p.outgrown}</span>}
+              <span className="col-start-2 row-start-1 block whitespace-nowrap text-right sm:mt-3 sm:text-left">
+                {offered && (
+                  <s className="mr-1.5 text-sm text-[var(--text-3)]" data-testid="list-price">
+                    {formatEur(plan.monthly)}
+                  </s>
+                )}
+                <span className="text-[17px] font-semibold">
+                  {formatEur(offered ? offer.monthlyEur : yearly ? plan.yearly : plan.monthly)}
+                </span>
                 <span className="text-sm text-[var(--text-2)]">{yearly ? p.perYear : p.perMonth}</span>
               </span>
+              {offered && (
+                <span data-testid="offer-terms" className="col-span-2 mt-1.5 block text-xs font-medium text-[var(--success)]">
+                  {p.offerLabel}:{' '}
+                  {fmt(p.offerTerms, {
+                    price: formatEur(offer.monthlyEur),
+                    months: offer.months,
+                    list: formatEur(plan.monthly),
+                  })}
+                </span>
+              )}
               {yearly && (
-                <span className="mt-0.5 block text-xs text-[var(--text-3)]">
+                <span className="col-span-2 mt-0.5 block text-xs text-[var(--text-3)]">
                   {fmt(p.yearlyEquiv, { price: formatEur(yearlyPerMonth(plan)) })}
                 </span>
               )}
@@ -484,6 +543,7 @@ function PlanChooser({
               href={buildEnterpriseContactUrl()}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={onEnterprise}
               className="text-[var(--brand)] hover:underline"
             >
               {enterprise[1]}
@@ -505,13 +565,13 @@ function StatTile({ n, label }: { n: string; label: string }) {
   );
 }
 
-function Tagged({ text, tag, href }: { text: string; tag: string; href: string }) {
+function Tagged({ text, tag, href, onClick }: { text: string; tag: string; href: string; onClick?: () => void }) {
   const parts = splitTag(text, tag);
   if (!parts) return <>{text}</>;
   return (
     <>
       {parts[0]}
-      <a href={href} className="text-[var(--brand)] hover:underline">
+      <a href={href} onClick={onClick} className="text-[var(--brand)] hover:underline">
         {parts[1]}
       </a>
       {parts[2]}

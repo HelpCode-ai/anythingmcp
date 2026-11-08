@@ -12,6 +12,8 @@ type View = {
   trialEndedAt: string | null;
   client: 'Claude' | 'ChatGPT' | 'Cursor' | 'Copilot' | null;
   usage: { connectors: number; mcpServers: number; users: number };
+  offerArm?: 'personal' | 'list' | null;
+  offer?: { plan: 'starter'; billingPeriod: 'monthly'; monthlyEur: number; months: number } | null;
 };
 
 const ENDED: View = {
@@ -24,8 +26,9 @@ const ENDED: View = {
 
 const CHECKOUT = 'https://checkout.example.test/pay/cs_1';
 
-async function publicPage(page: Page, views: View[] | 404) {
+async function publicPage(page: Page, views: View[] | 404, opts: { signedIn?: boolean } = {}) {
   const posted: unknown[] = [];
+  const events: Array<Record<string, unknown>> = [];
   let gets = 0;
   await page.route(/\/(api|health)\//, async (route) => {
     const req = route.request();
@@ -36,6 +39,10 @@ async function publicPage(page: Page, views: View[] | 404) {
       return json({ deploymentMode: 'cloud', mcpAuthMode: 'oauth2', hasUsers: true, registrationEnabled: true, ssoProviders: [] });
     }
     if (p.endsWith('/public/stats')) return json({ workspaces: 1250, dockerPulls: 250_000, toolCalls30d: 2_000_000 });
+    if (p.startsWith('/api/license/reactivate/') && p.endsWith('/event') && req.method() === 'POST') {
+      events.push(req.postDataJSON());
+      return route.fulfill({ status: 204 });
+    }
     if (p.startsWith('/api/license/reactivate/') && req.method() === 'POST') {
       posted.push(req.postDataJSON());
       return json({ url: CHECKOUT });
@@ -46,14 +53,16 @@ async function publicPage(page: Page, views: View[] | 404) {
       gets += 1;
       return json(v);
     }
-    // Nobody is signed in on this page.
-    if (p.endsWith('/users/me')) return json({ message: 'Unauthorized' }, 401);
+    if (p.endsWith('/users/me')) {
+      if (opts.signedIn) return json({ id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'ADMIN' });
+      return json({ message: 'Unauthorized' }, 401);
+    }
     return json({});
   });
   await page.context().route('https://checkout.example.test/**', (route) =>
     route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Stripe stub</h1>' }),
   );
-  return { posted };
+  return { posted, events };
 }
 
 test.describe('reactivation link (cloud, signed out)', () => {
@@ -95,6 +104,124 @@ test.describe('reactivation link (cloud, signed out)', () => {
     await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
     await expect(page).toHaveURL(CHECKOUT);
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'yearly' }]);
+  });
+
+  test('on a phone the subscribe button is on the first screen, the explanation below it', async ({ page }) => {
+    // 390×664: an iPhone's visible area in Safari, toolbars included.
+    await page.setViewportSize({ width: 390, height: 664 });
+    await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    const cta = page.getByRole('button', { name: 'Subscribe to Starter' });
+    await expect(cta).toBeInViewport({ ratio: 1, timeout: 15_000 });
+    const lead = page.getByTestId('reactivate-lead');
+    await expect(lead).toContainText('Your free trial ended on 4 November.');
+    const [ctaBox, leadBox] = [await cta.boundingBox(), await lead.boundingBox()];
+    expect(leadBox!.y).toBeGreaterThan(ctaBox!.y);
+    if (process.env.REACTIVATE_SHOT) {
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-390-fold.png` });
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-390-full.png`, fullPage: true });
+      await page.setViewportSize({ width: 375, height: 667 });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-375-fold.png` });
+      await page.getByRole('radio', { name: /Yearly/ }).click();
+      await page.setViewportSize({ width: 390, height: 664 });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-390-yearly.png` });
+    }
+  });
+
+  test('on a desktop the explanation stays above the plans', async ({ page }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    const cta = page.getByRole('button', { name: 'Subscribe to Starter' });
+    await expect(cta).toBeInViewport({ ratio: 1, timeout: 15_000 });
+    const [ctaBox, leadBox] = [await cta.boundingBox(), await page.getByTestId('reactivate-lead').boundingBox()];
+    expect(leadBox!.y).toBeLessThan(ctaBox!.y);
+  });
+
+  test('someone already signed in is offered their workspace, not a sign-in', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('amcp_token', 'test-token');
+      localStorage.setItem('amcp_user', JSON.stringify({ id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'ADMIN' }));
+    });
+    await publicPage(page, [ENDED], { signedIn: true });
+    await page.goto('/reactivate/tok_abc');
+    await expect(page.getByRole('heading', { name: 'Pick up where Claude left off' })).toBeVisible({ timeout: 15_000 });
+    const banner = page.getByRole('banner');
+    await expect(banner.getByRole('link', { name: 'Open your workspace' })).toHaveAttribute('href', '/');
+    await expect(banner.getByRole('link', { name: 'Sign in' })).toHaveCount(0);
+  });
+
+  test('reports its clicks as paywall_action, and a close without subscribing', async ({ page }) => {
+    const { events } = await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    await expect(page.getByRole('button', { name: 'Subscribe to Starter' })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('radio', { name: /Team/ }).click();
+    await page.getByRole('radio', { name: /Yearly/ }).click();
+    await expect.poll(() => events.length).toBe(3);
+    // The page is closed without a subscribe click (Playwright cannot route
+    // the request a real unload sends, so the event is dispatched here), twice.
+    await page.evaluate(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide'));
+      window.dispatchEvent(new PageTransitionEvent('pagehide'));
+    });
+    await expect.poll(() => events.length).toBe(4);
+    expect(events).toEqual([
+      { action: 'shown', plan: 'starter', period: 'monthly', device: 'desktop' },
+      { action: 'plan_selected', plan: 'team', period: 'monthly', device: 'desktop' },
+      { action: 'period_selected', plan: 'team', period: 'yearly', device: 'desktop' },
+      { action: 'left_without_subscribe', plan: 'team', period: 'yearly', device: 'desktop' },
+    ]);
+  });
+
+  test('a subscribe click is reported, and no leave after it', async ({ page }) => {
+    const { events } = await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    await page.getByRole('banner').getByRole('link', { name: 'Sign in' }).waitFor({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
+    await expect(page).toHaveURL(CHECKOUT);
+    expect(events.map((e) => e.action)).toEqual(['shown', 'subscribe_clicked']);
+  });
+
+  test('a Telegram-only workspace in the personal arm sees Starter at 6 € for 12 months', async ({ page }) => {
+    const { posted, events } = await publicPage(page, [
+      { ...ENDED, offerArm: 'personal', offer: { plan: 'starter', billingPeriod: 'monthly', monthlyEur: 6, months: 12 } },
+    ]);
+    await page.goto('/reactivate/tok_abc');
+    const starter = page.getByRole('radio', { name: /Starter/ });
+    await expect(starter).toContainText('6 €', { timeout: 15_000 });
+    await expect(page.getByTestId('list-price')).toHaveText('19 €');
+    await expect(page.getByTestId('offer-terms')).toHaveText(
+      'Offer for you: 6 €/month for your first 12 months, then 19 €/month.',
+    );
+    if (process.env.REACTIVATE_SHOT) {
+      await page.setViewportSize({ width: 390, height: 664 });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-offer-390.png` });
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-offer-1366.png` });
+    }
+    // Yearly is sold at the list price.
+    await page.getByRole('radio', { name: /Yearly/ }).click();
+    await expect(page.getByTestId('offer-terms')).toHaveCount(0);
+    await expect(starter).toContainText('190 €');
+    await page.getByRole('radio', { name: /Monthly/ }).click();
+    await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
+    await expect(page).toHaveURL(CHECKOUT);
+    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly' }]);
+    expect(events.every((e) => e.offer === 'personal')).toBe(true);
+  });
+
+  test('the list arm sees list prices and reports its arm', async ({ page }) => {
+    const { events } = await publicPage(page, [{ ...ENDED, offerArm: 'list', offer: null }]);
+    await page.goto('/reactivate/tok_abc');
+    await expect(page.getByRole('radio', { name: /Starter/ })).toContainText('19 €', { timeout: 15_000 });
+    await expect(page.getByTestId('offer-terms')).toHaveCount(0);
+    await expect.poll(() => events.length).toBe(1);
+    expect(events[0]).toMatchObject({ action: 'shown', offer: 'list' });
   });
 
   test('a ChatGPT chat gets ChatGPT wording and its own directory', async ({ page }) => {

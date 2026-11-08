@@ -13,21 +13,25 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { IsIn } from 'class-validator';
+import { IsIn, IsOptional } from 'class-validator';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
-import { ProductEventService, ProductEvents } from '../audit/product-event.service';
+import { PAYWALL_ACTIONS, type PaywallAction, ProductEventService, ProductEvents } from '../audit/product-event.service';
 import { LicenseService } from './license.service';
 import { LicenseGuardService } from './license-guard.service';
 import { LicenseWallService, knownClientName } from './license-wall.service';
 import { readReactivationToken, type ReactivationTokenPayload } from './reactivation-token';
+import { RetentionLicenceClient } from './retention-licence.client';
 import {
   CHECKOUT_BILLING_PERIODS,
   CHECKOUT_PLANS,
   type CheckoutBillingPeriod,
   type CheckoutPlan,
   type CheckoutSource,
+  PERSONAL_OFFER,
+  type ReactivationOfferArm,
   cloudFrontendOrigin,
+  reactivationOfferArm,
 } from './license-checkout';
 
 /** What the page shows, as the app's licence wall would (license-wall.tsx `reasonFor`). */
@@ -48,7 +52,17 @@ export interface ReactivationView {
   client: ReactivationClient | null;
   /** The workspace's current counts (GET /api/license/usage, without the caps). */
   usage: { connectors: number; mcpServers: number; users: number };
+  /**
+   * The Telegram price test (reactivationOfferArm): its arm for a workspace
+   * that can buy and whose only connectors are Telegram bots, else null.
+   */
+  offerArm: ReactivationOfferArm | null;
+  /** The discounted price shown in the 'personal' arm (Cloud Starter monthly); null otherwise. */
+  offer: { plan: 'starter'; billingPeriod: 'monthly'; monthlyEur: number; months: number } | null;
 }
+
+/** The catalog adapter of the Telegram bot connector. */
+const TELEGRAM_ADAPTER = 'telegram-bot';
 
 export class ReactivationCheckoutDto {
   @IsIn(CHECKOUT_PLANS as unknown as string[])
@@ -56,6 +70,29 @@ export class ReactivationCheckoutDto {
 
   @IsIn(CHECKOUT_BILLING_PERIODS as unknown as string[])
   billingPeriod: CheckoutBillingPeriod;
+}
+
+/** A click on the page (paywall_action); plan and period as the page has them. */
+export class ReactivationEventDto {
+  @IsIn(PAYWALL_ACTIONS as unknown as string[])
+  action: PaywallAction;
+
+  @IsOptional()
+  @IsIn(CHECKOUT_PLANS as unknown as string[])
+  plan?: CheckoutPlan;
+
+  @IsOptional()
+  @IsIn(CHECKOUT_BILLING_PERIODS as unknown as string[])
+  period?: CheckoutBillingPeriod;
+
+  @IsOptional()
+  @IsIn(['mobile', 'desktop'])
+  device?: 'mobile' | 'desktop';
+
+  /** The page's arm of the Telegram price test, as GET gave it. */
+  @IsOptional()
+  @IsIn(['personal', 'list'])
+  offer?: ReactivationOfferArm;
 }
 
 /** The checkout source of every checkout opened from the page. */
@@ -93,6 +130,7 @@ export class ReactivationController {
     private readonly licenseGuard: LicenseGuardService,
     private readonly productEvents: ProductEventService,
     @Optional() private readonly licenseWall?: LicenseWallService,
+    @Optional() private readonly retention?: RetentionLicenceClient,
   ) {}
 
   @Get(':token')
@@ -115,8 +153,19 @@ export class ReactivationController {
       this.licenseGuard.getUsage(undefined, organizationId),
       this.clientOf(organizationId).catch(() => null),
     ]);
-    await this.recordView(organizationId, state);
+    const offerArm = await this.offerArmOf(organizationId, state).catch(() => null);
+    await this.recordView(organizationId, state, offerArm);
     return {
+      offerArm,
+      offer:
+        offerArm === 'personal'
+          ? {
+              plan: PERSONAL_OFFER.plan,
+              billingPeriod: PERSONAL_OFFER.billingPeriod,
+              monthlyEur: PERSONAL_OFFER.monthlyEur,
+              months: PERSONAL_OFFER.months,
+            }
+          : null,
       state,
       workspaceName: org.name,
       trialEndedAt: trialEndedAt ? trialEndedAt.toISOString() : null,
@@ -166,6 +215,24 @@ export class ReactivationController {
       );
     }
 
+    // The Telegram price test: the 'personal' arm buys Cloud Starter monthly
+    // with its single-use code. Without a code the checkout is not opened at
+    // the list price the page did not show; the visitor tries again.
+    let promoCode: string | undefined;
+    const offerArm =
+      dto.plan === PERSONAL_OFFER.plan && dto.billingPeriod === PERSONAL_OFFER.billingPeriod
+        ? // It can buy: the refusals above passed.
+          await this.offerArmOf(organizationId, 'trial-ended').catch(() => null)
+        : null;
+    if (offerArm === 'personal') {
+      const code = await this.retention?.winbackCode(organizationId, 'telegram', 'personal-monthly');
+      if (!code) {
+        this.logger.warn(`Reactivation checkout for org ${organizationId}: no Personal code from the licence site.`);
+        throw new BadGatewayException('The checkout could not be opened right now. Please try again in a moment.');
+      }
+      promoCode = code.code;
+    }
+
     try {
       // Never a card trial: the free trial is over, so this is a purchase.
       const { url } = await this.licenseService.createCheckoutIntent({
@@ -175,12 +242,13 @@ export class ReactivationController {
         returnUrl: `${cloudFrontendOrigin()}/reactivate/${token}?paid=1`,
         organizationId,
         source: REACTIVATE_CHECKOUT_SOURCE,
+        ...(promoCode && { promoCode }),
       });
       void this.productEvents.log({
         event: ProductEvents.CHECKOUT_LINK_CREATED,
         userId: admin.userId,
         organizationId,
-        metadata: { via: REACTIVATE_CHECKOUT_SOURCE, kind: 'pay' },
+        metadata: { via: REACTIVATE_CHECKOUT_SOURCE, kind: 'pay', ...(offerArm && { offer: offerArm }) },
       });
       return { url };
     } catch (err: any) {
@@ -189,6 +257,32 @@ export class ReactivationController {
         'The checkout could not be opened right now. Please try again in a moment.',
       );
     }
+  }
+
+  @Post(':token/event')
+  @HttpCode(204)
+  // A page load reports 'shown', a few clicks and at most one leave.
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiParam({ name: 'token', description: 'The reactivation link token' })
+  @ApiOperation({
+    summary: 'Cloud, no sign-in: record a click on the reactivation page (404 for an invalid or expired link)',
+  })
+  async event(@Param('token') token: string, @Body() dto: ReactivationEventDto): Promise<void> {
+    const { organizationId, userId } = this.check(token);
+    await this.productEvents.log({
+      event: ProductEvents.PAYWALL_ACTION,
+      userId: userId ?? null,
+      organizationId,
+      metadata: {
+        source: REACTIVATE_CHECKOUT_SOURCE,
+        variant: 'page',
+        action: dto.action,
+        plan: dto.plan,
+        period: dto.period,
+        device: dto.device,
+        offer: dto.offer,
+      },
+    });
   }
 
   /** The token's workspace and user; 404 off Cloud and for anything invalid. */
@@ -272,8 +366,31 @@ export class ReactivationController {
     return admin?.user?.email ? { userId: admin.userId, email: admin.user.email } : null;
   }
 
+  /**
+   * The workspace's arm of the Telegram price test: only a workspace that can
+   * buy (an ended trial or no licence), with at least one connector and only
+   * Telegram bot connectors from the catalog. Null for everyone else.
+   */
+  private async offerArmOf(organizationId: string, state: ReactivationState): Promise<ReactivationOfferArm | null> {
+    if (state !== 'trial-ended' && state !== 'no-license') return null;
+    const connectors = await this.prisma.connector.findMany({
+      where: { organizationId },
+      select: { config: true },
+      take: 50,
+    });
+    if (connectors.length === 0) return null;
+    const telegramOnly = connectors.every(
+      (c) => (c.config as Record<string, unknown> | null)?.adapterSlug === TELEGRAM_ADAPTER,
+    );
+    return telegramOnly ? reactivationOfferArm(organizationId) : null;
+  }
+
   /** One `reactivate_page_viewed` per workspace a UTC day; never throws. */
-  private async recordView(organizationId: string, state: ReactivationState): Promise<void> {
+  private async recordView(
+    organizationId: string,
+    state: ReactivationState,
+    offerArm: ReactivationOfferArm | null = null,
+  ): Promise<void> {
     try {
       const startOfDay = new Date();
       startOfDay.setUTCHours(0, 0, 0, 0);
@@ -286,7 +403,7 @@ export class ReactivationController {
         event: ProductEvents.REACTIVATE_PAGE_VIEWED,
         organizationId,
         userId: null,
-        metadata: { state },
+        metadata: { state, ...(offerArm && { offer: offerArm }) },
       });
     } catch (err: any) {
       this.logger.warn(`reactivate_page_viewed not recorded: ${err?.message ?? err}`);

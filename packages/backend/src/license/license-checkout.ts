@@ -203,6 +203,28 @@ export function reactivationLinkVariant(organizationId: string): ReactivationLin
 }
 
 /**
+ * The reactivation page's price test for workspaces whose only connectors
+ * are Telegram bots (2026-11-08): 'personal' is offered Cloud Starter monthly
+ * at the win-back Personal price (PERSONAL_OFFER, a single-use
+ * 'personal-monthly' code minted by the licence site and applied at checkout),
+ * 'list' sees the list prices. Half and half, fixed per workspace and
+ * independent of the link test above.
+ */
+export type ReactivationOfferArm = 'personal' | 'list';
+
+export function reactivationOfferArm(organizationId: string): ReactivationOfferArm {
+  const bucket = createHash('sha256').update(`reactivate-offer-v1:${organizationId}`).digest().readUInt16BE(0) % 100;
+  return bucket < 50 ? 'personal' : 'list';
+}
+
+/**
+ * The Personal price: Cloud Starter monthly, €13 off (€6 instead of €19) for
+ * the first 12 months (Stripe coupon `personal-starter-monthly`, the same as
+ * the win-back emails').
+ */
+export const PERSONAL_OFFER = { plan: 'starter', billingPeriod: 'monthly', monthlyEur: 6, months: 12 } as const;
+
+/**
  * The reactivation link for a workspace's blocked call, and the arm it really
  * is: a 'page' workspace gets the pricing link when no token can be made
  * (ENCRYPTION_KEY unusable), and is then counted as 'pricing'. Neither link

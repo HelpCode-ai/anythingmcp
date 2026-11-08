@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { license, type LicenseWallView } from '@/lib/api';
+import { license, productEvents, type LicenseWallView } from '@/lib/api';
+import { deviceKind, usePaywallLifecycle, type PaywallAction, type PaywallActionDetail } from '@/lib/paywall-tracking';
 import { useTrustStats } from '@/lib/trust-stats';
 import { directoryListingsFor } from '@/lib/marketing';
 import { useAuth } from '@/lib/auth-context';
@@ -116,8 +117,24 @@ export function LicenseWall() {
     };
   }, [buyInPlace, token]);
 
+  // Clicks on the ended trial's buy-in-place wall (paywall_action), read
+  // beside those of the no-login reactivation page.
+  const trackWall = (action: PaywallAction, detail: PaywallActionDetail = {}) => {
+    if (!buyInPlace || !token) return;
+    const metadata: Record<string, string> = {
+      source: 'trial_ended_wall',
+      variant: wall?.variant === 'control' ? 'control' : 'trust',
+      action,
+      device: deviceKind(),
+    };
+    if (detail.plan) metadata.plan = detail.plan;
+    if (detail.period) metadata.period = detail.period;
+    productEvents.track('paywall_action', token, metadata);
+  };
   const pickPlan = (next: PlanSelection) => {
     picked.current = true;
+    if (next.plan !== selection.plan) trackWall('plan_selected', next);
+    else if (next.period !== selection.period) trackWall('period_selected', next);
     setSelection(next);
   };
 
@@ -254,6 +271,11 @@ export function LicenseWall() {
     pathname === '/settings/license' ||
     pathname.startsWith('/settings/license/');
 
+  const wallSubscribed = usePaywallLifecycle(
+    buyInPlace && wall !== undefined && !!reason && !isExemptRoute,
+    (action) => trackWall(action, selection),
+  );
+
   // Don't block when logged out, when there's no active block, or on an
   // exempt route.
   if (!token || !reason || isExemptRoute) return null;
@@ -362,7 +384,11 @@ export function LicenseWall() {
                 />
               </div>
               <button
-                onClick={() => checkout.start(selection, false, 'trial_ended_wall')}
+                onClick={() => {
+                  wallSubscribed();
+                  trackWall('subscribe_clicked', selection);
+                  checkout.start(selection, false, 'trial_ended_wall');
+                }}
                 disabled={checkout.loading}
                 className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
               >
@@ -399,6 +425,7 @@ export function LicenseWall() {
                 href={pricingUrl}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => trackWall('compare_plans_clicked')}
                 className="block text-xs text-[var(--brand)] hover:underline"
               >
                 Compare plans
@@ -454,7 +481,10 @@ export function LicenseWall() {
                   <button
                     key={org.id}
                     type="button"
-                    onClick={() => openWorkspace(org.id)}
+                    onClick={() => {
+                      trackWall('switch_workspace_clicked');
+                      openWorkspace(org.id);
+                    }}
                     disabled={switchingTo !== null}
                     className="flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-1.5 text-left hover:bg-[var(--surface-2)] disabled:opacity-60"
                   >
@@ -476,6 +506,7 @@ export function LicenseWall() {
               Already purchased?{' '}
               <Link
                 href="/settings/license"
+                onClick={() => trackWall('license_key_clicked')}
                 className="text-[var(--brand)] hover:underline"
               >
                 Enter your license key
@@ -486,6 +517,7 @@ export function LicenseWall() {
             Not continuing?{' '}
             <Link
               href="/settings"
+              onClick={() => trackWall('delete_account_clicked')}
               className={trustWall ? 'underline hover:text-[var(--text-2)]' : 'text-[var(--brand)] hover:underline'}
             >
               Delete your account
