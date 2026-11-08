@@ -1628,6 +1628,10 @@ export interface ReactivationView {
   /** The AI client whose chat showed the link (else the first one connected). */
   client: 'Claude' | 'ChatGPT' | 'Cursor' | 'Copilot' | null;
   usage: { connectors: number; mcpServers: number; users: number };
+  /** The Telegram price test's arm, for a Telegram-only workspace that can buy; else null. */
+  offerArm?: 'personal' | 'list' | null;
+  /** The 'personal' arm's discounted Starter monthly price; null otherwise. */
+  offer?: { plan: 'starter'; billingPeriod: 'monthly'; monthlyEur: number; months: number } | null;
 }
 
 export const reactivation = {
@@ -1641,7 +1645,13 @@ export const reactivation = {
   /** A click on the page (paywall_action). Fire and forget; survives the page closing. */
   track: (
     linkToken: string,
-    body: { action: string; plan?: 'starter' | 'team'; period?: 'monthly' | 'yearly'; device?: 'mobile' | 'desktop' },
+    body: {
+      action: string;
+      plan?: 'starter' | 'team';
+      period?: 'monthly' | 'yearly';
+      device?: 'mobile' | 'desktop';
+      offer?: 'personal' | 'list';
+    },
   ) => {
     try {
       void fetch(`${API_BASE}/api/license/reactivate/${encodeURIComponent(linkToken)}/event`, {

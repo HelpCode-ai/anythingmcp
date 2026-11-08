@@ -32,6 +32,10 @@ interface MakeOpts {
   tokenMember?: any;
   firstAdmin?: any;
   checkout?: () => Promise<any>;
+  /** Adapter slugs of the workspace's connectors (null: a hand-made one). */
+  connectors?: Array<string | null>;
+  /** What the licence site answers for a win-back code. */
+  winbackCode?: { code: string; expiresAt: Date } | null;
 }
 
 function make(opts: MakeOpts = {}) {
@@ -44,6 +48,11 @@ function make(opts: MakeOpts = {}) {
       findFirst: jest.fn().mockResolvedValue(
         opts.firstAdmin === undefined ? { userId: 'admin-1', user: { email: 'first-admin@example.com' } } : opts.firstAdmin,
       ),
+    },
+    connector: {
+      findMany: jest
+        .fn()
+        .mockResolvedValue((opts.connectors ?? []).map((slug) => ({ config: slug ? { adapterSlug: slug } : {} }))),
     },
     productEvent: {
       findFirst: jest.fn().mockImplementation(async (args: any) => {
@@ -73,6 +82,13 @@ function make(opts: MakeOpts = {}) {
   };
   const productEvents = { log: jest.fn().mockResolvedValue(undefined) };
   const licenseWall = { connectedClient: jest.fn().mockResolvedValue(opts.client ?? null) };
+  const retention = {
+    winbackCode: jest
+      .fn()
+      .mockResolvedValue(
+        opts.winbackCode === undefined ? { code: 'KEEP-ABC234', expiresAt: new Date(Date.now() + 14 * DAY) } : opts.winbackCode,
+      ),
+  };
   const controller = new ReactivationController(
     prisma as any,
     { isCloud: () => opts.cloud ?? true } as any,
@@ -80,8 +96,9 @@ function make(opts: MakeOpts = {}) {
     licenseGuard as any,
     productEvents as any,
     licenseWall as any,
+    retention as any,
   );
-  return { controller, prisma, licenseService, licenseGuard, productEvents, licenseWall };
+  return { controller, prisma, licenseService, licenseGuard, productEvents, licenseWall, retention };
 }
 
 describe('ReactivationController', () => {
@@ -110,6 +127,8 @@ describe('ReactivationController', () => {
         trialEndedAt: ended.toISOString(),
         client: 'Claude',
         usage: { connectors: 3, mcpServers: 1, users: 2 },
+        offerArm: null,
+        offer: null,
       });
       expect(licenseGuard.getUsage).toHaveBeenCalledWith(undefined, 'org-1');
       expect(JSON.stringify(view)).not.toMatch(/org-1|user-1|AMCP-|@/);
@@ -294,6 +313,74 @@ describe('ReactivationController', () => {
       const selfHosted = make({ cloud: false });
       await expect(selfHosted.controller.checkout(token(), dto)).rejects.toThrow(NotFoundException);
       expect(selfHosted.licenseService.createCheckoutIntent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the Telegram price test', () => {
+    // reactivationOfferArm: org-2 is in 'personal', org-1 in 'list'.
+    const tokenFor = (organizationId: string) => createReactivationToken({ organizationId, userId: 'user-1' })!;
+    const admin = { userId: 'user-1', role: 'ADMIN', deactivatedAt: null, user: { email: 'owner@example.com' } };
+    const ended = () => license('trial', { expiresAt: new Date(Date.now() - 2 * DAY) });
+
+    it('offers Starter monthly at €6 for 12 months to a Telegram-only workspace in the personal arm', async () => {
+      const { controller, productEvents } = make({ current: ended(), connectors: ['telegram-bot', 'telegram-bot'] });
+      const view = await controller.view(tokenFor('org-2'));
+      expect(view.offerArm).toBe('personal');
+      expect(view.offer).toEqual({ plan: 'starter', billingPeriod: 'monthly', monthlyEur: 6, months: 12 });
+      expect(productEvents.log).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'reactivate_page_viewed', metadata: { state: 'trial-ended', offer: 'personal' } }),
+      );
+    });
+
+    it('shows list prices to the list arm, and no test to other workspaces', async () => {
+      const list = await make({ current: ended(), connectors: ['telegram-bot'] }).controller.view(tokenFor('org-1'));
+      expect(list).toMatchObject({ offerArm: 'list', offer: null });
+      for (const connectors of [[], ['telegram-bot', 'odoo'], ['telegram-bot', null]]) {
+        const v = await make({ current: ended(), connectors }).controller.view(tokenFor('org-2'));
+        expect(v).toMatchObject({ offerArm: null, offer: null });
+      }
+      const paying = await make({ current: license('starter'), connectors: ['telegram-bot'] }).controller.view(tokenFor('org-2'));
+      expect(paying).toMatchObject({ state: 'active', offerArm: null, offer: null });
+    });
+
+    it('checks out the personal arm with its single-use code, on Starter monthly only', async () => {
+      const { controller, licenseService, retention, productEvents } = make({
+        current: ended(),
+        connectors: ['telegram-bot'],
+        tokenMember: admin,
+      });
+      await controller.checkout(tokenFor('org-2'), { plan: 'starter', billingPeriod: 'monthly' });
+      expect(retention.winbackCode).toHaveBeenCalledWith('org-2', 'telegram', 'personal-monthly');
+      expect(licenseService.createCheckoutIntent.mock.calls[0][0]).toMatchObject({ promoCode: 'KEEP-ABC234' });
+      expect(productEvents.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { via: 'mcp_reactivate', kind: 'pay', offer: 'personal' } }),
+      );
+
+      await controller.checkout(tokenFor('org-2'), { plan: 'starter', billingPeriod: 'yearly' });
+      await controller.checkout(tokenFor('org-2'), { plan: 'team', billingPeriod: 'monthly' });
+      expect(retention.winbackCode).toHaveBeenCalledTimes(1);
+      expect(licenseService.createCheckoutIntent.mock.calls[1][0].promoCode).toBeUndefined();
+      expect(licenseService.createCheckoutIntent.mock.calls[2][0].promoCode).toBeUndefined();
+    });
+
+    it('never mints a code for the list arm', async () => {
+      const { controller, licenseService, retention } = make({ current: ended(), connectors: ['telegram-bot'], tokenMember: admin });
+      await controller.checkout(tokenFor('org-1'), { plan: 'starter', billingPeriod: 'monthly' });
+      expect(retention.winbackCode).not.toHaveBeenCalled();
+      expect(licenseService.createCheckoutIntent.mock.calls[0][0].promoCode).toBeUndefined();
+    });
+
+    it('answers 502 rather than charge the list price when no code can be had', async () => {
+      const { controller, licenseService } = make({
+        current: ended(),
+        connectors: ['telegram-bot'],
+        tokenMember: admin,
+        winbackCode: null,
+      });
+      await expect(controller.checkout(tokenFor('org-2'), { plan: 'starter', billingPeriod: 'monthly' })).rejects.toThrow(
+        BadGatewayException,
+      );
+      expect(licenseService.createCheckoutIntent).not.toHaveBeenCalled();
     });
   });
 

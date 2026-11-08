@@ -35,6 +35,9 @@ export interface ReactivateCopy {
     pricesNoVat: string;
     pricesLocal: string;
     enterprise: string;
+    /** The Telegram price test's Starter monthly offer (offer: {price}, {months}, {list}). */
+    offerLabel: string;
+    offerTerms: string;
   };
   cta: string;
   opening: string;
@@ -98,6 +101,8 @@ const en: ReactivateCopy = {
     pricesNoVat: 'Prices in EUR.',
     pricesLocal: 'Prices in EUR, paid in {currency} at checkout.',
     enterprise: 'More users, single sign-on or SCIM? <link>Ask about Enterprise</link>',
+    offerLabel: 'Offer for you',
+    offerTerms: '{price}/month for your first {months} months, then {list}/month.',
   },
   cta: 'Subscribe to {plan}',
   opening: 'Opening secure checkout…',
@@ -174,6 +179,8 @@ const de: ReactivateCopy = {
     pricesNoVat: 'Preise in EUR.',
     pricesLocal: 'Preise in EUR, Zahlung im Checkout in {currency}.',
     enterprise: 'Mehr Nutzer, Single Sign-on oder SCIM? <link>Enterprise anfragen</link>',
+    offerLabel: 'Angebot für Sie',
+    offerTerms: '{price}/Monat für die ersten {months} Monate, danach {list}/Monat.',
   },
   cta: '{plan} abonnieren',
   opening: 'Sicherer Checkout wird geöffnet…',
@@ -250,6 +257,8 @@ const it: ReactivateCopy = {
     pricesNoVat: 'Prezzi in EUR.',
     pricesLocal: 'Prezzi in EUR, pagamento in {currency} al checkout.',
     enterprise: 'Più utenti, single sign-on o SCIM? <link>Chiedi di Enterprise</link>',
+    offerLabel: 'Offerta per te',
+    offerTerms: '{price}/mese per i primi {months} mesi, poi {list}/mese.',
   },
   cta: 'Abbonati a {plan}',
   opening: 'Apertura del checkout sicuro…',
@@ -326,6 +335,8 @@ const es: ReactivateCopy = {
     pricesNoVat: 'Precios en EUR.',
     pricesLocal: 'Precios en EUR; pagas en {currency} en el checkout.',
     enterprise: '¿Más usuarios, inicio de sesión único o SCIM? <link>Consulta Enterprise</link>',
+    offerLabel: 'Oferta para ti',
+    offerTerms: '{price}/mes durante los primeros {months} meses, después {list}/mes.',
   },
   cta: 'Suscribirse a {plan}',
   opening: 'Abriendo el pago seguro…',
@@ -401,6 +412,8 @@ const zh: ReactivateCopy = {
     pricesNoVat: '价格以欧元计。',
     pricesLocal: '价格以欧元计，结账时以 {currency} 支付。',
     enterprise: '需要更多用户、单点登录或 SCIM？<link>咨询企业版</link>',
+    offerLabel: '专属优惠',
+    offerTerms: '前 {months} 个月每月 {price}，之后每月 {list}。',
   },
   cta: '订阅 {plan}',
   opening: '正在打开安全结账…',
@@ -476,6 +489,8 @@ const ja: ReactivateCopy = {
     pricesNoVat: '価格はユーロ建てです。',
     pricesLocal: '価格はユーロ建てで、決済時に {currency} でお支払いいただきます。',
     enterprise: 'ユーザー追加、シングルサインオン、SCIM が必要ですか？<link>Enterprise について問い合わせる</link>',
+    offerLabel: 'あなたへの特別価格',
+    offerTerms: '最初の {months} か月は月額 {price}、その後は月額 {list}。',
   },
   cta: '{plan} に登録する',
   opening: '安全な決済ページを開いています…',
@@ -552,6 +567,8 @@ const ru: ReactivateCopy = {
     pricesNoVat: 'Цены в евро.',
     pricesLocal: 'Цены в евро, оплата при оформлении в {currency}.',
     enterprise: 'Нужно больше пользователей, единый вход или SCIM? <link>Узнать об Enterprise</link>',
+    offerLabel: 'Предложение для вас',
+    offerTerms: '{price}/мес. первые {months} месяцев, затем {list}/мес.',
   },
   cta: 'Подписаться на {plan}',
   opening: 'Открываем безопасную оплату…',

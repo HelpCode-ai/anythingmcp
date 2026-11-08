@@ -12,6 +12,8 @@ type View = {
   trialEndedAt: string | null;
   client: 'Claude' | 'ChatGPT' | 'Cursor' | 'Copilot' | null;
   usage: { connectors: number; mcpServers: number; users: number };
+  offerArm?: 'personal' | 'list' | null;
+  offer?: { plan: 'starter'; billingPeriod: 'monthly'; monthlyEur: number; months: number } | null;
 };
 
 const ENDED: View = {
@@ -181,6 +183,45 @@ test.describe('reactivation link (cloud, signed out)', () => {
     await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
     await expect(page).toHaveURL(CHECKOUT);
     expect(events.map((e) => e.action)).toEqual(['shown', 'subscribe_clicked']);
+  });
+
+  test('a Telegram-only workspace in the personal arm sees Starter at 6 € for 12 months', async ({ page }) => {
+    const { posted, events } = await publicPage(page, [
+      { ...ENDED, offerArm: 'personal', offer: { plan: 'starter', billingPeriod: 'monthly', monthlyEur: 6, months: 12 } },
+    ]);
+    await page.goto('/reactivate/tok_abc');
+    const starter = page.getByRole('radio', { name: /Starter/ });
+    await expect(starter).toContainText('6 €', { timeout: 15_000 });
+    await expect(page.getByTestId('list-price')).toHaveText('19 €');
+    await expect(page.getByTestId('offer-terms')).toHaveText(
+      'Offer for you: 6 €/month for your first 12 months, then 19 €/month.',
+    );
+    if (process.env.REACTIVATE_SHOT) {
+      await page.setViewportSize({ width: 390, height: 664 });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-offer-390.png` });
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-offer-1366.png` });
+    }
+    // Yearly is sold at the list price.
+    await page.getByRole('radio', { name: /Yearly/ }).click();
+    await expect(page.getByTestId('offer-terms')).toHaveCount(0);
+    await expect(starter).toContainText('190 €');
+    await page.getByRole('radio', { name: /Monthly/ }).click();
+    await page.getByRole('button', { name: 'Subscribe to Starter' }).click();
+    await expect(page).toHaveURL(CHECKOUT);
+    expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly' }]);
+    expect(events.every((e) => e.offer === 'personal')).toBe(true);
+  });
+
+  test('the list arm sees list prices and reports its arm', async ({ page }) => {
+    const { events } = await publicPage(page, [{ ...ENDED, offerArm: 'list', offer: null }]);
+    await page.goto('/reactivate/tok_abc');
+    await expect(page.getByRole('radio', { name: /Starter/ })).toContainText('19 €', { timeout: 15_000 });
+    await expect(page.getByTestId('offer-terms')).toHaveCount(0);
+    await expect.poll(() => events.length).toBe(1);
+    expect(events[0]).toMatchObject({ action: 'shown', offer: 'list' });
   });
 
   test('a ChatGPT chat gets ChatGPT wording and its own directory', async ({ page }) => {
