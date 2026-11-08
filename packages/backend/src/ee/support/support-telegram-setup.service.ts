@@ -112,7 +112,9 @@ export class SupportTelegramSetupService {
   async handleMessage(msg: DeskMessage): Promise<Outcome> {
     if (!msg?.uuid || !msg.conversation_uuid) return 'ignored';
     if (msg.private || msg.sender_type !== 'contact' || msg.type !== 'incoming') return 'ignored';
-    const tokens = findTelegramTokens(msg.text_content || stripTags(msg.content));
+    // Libredesk's text_content is the plain text; the HTML content works too:
+    // tag characters are outside the token pattern.
+    const tokens = findTelegramTokens(msg.text_content || msg.content);
     // None, or several bots at once: nothing to decide for the customer.
     if (tokens.length !== 1) return 'ignored';
     if (this.seen.has(msg.uuid) || this.busy.has(msg.conversation_uuid)) return 'ignored';
@@ -347,10 +349,6 @@ export class SupportTelegramSetupService {
     }
     this.seen.add(uuid);
   }
-}
-
-function stripTags(html: string | null | undefined): string {
-  return (html || '').replace(/<[^>]*>/g, ' ');
 }
 
 function esc(text: string): string {

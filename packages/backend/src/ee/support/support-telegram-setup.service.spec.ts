@@ -133,6 +133,7 @@ describe('findTelegramTokens', () => {
     expect(findTelegramTokens('at 10:30 we met')).toEqual([]);
     expect(findTelegramTokens(`x${TOKEN}`)).toEqual([]);
     expect(findTelegramTokens(`${TOKEN}EXTRA_CHARS_THAT_MAKE_IT_TOO_LONG_FOR_A_TOKEN_1234567890`)).toEqual([]);
+    expect(findTelegramTokens(`<p>${TOKEN}</p>`)).toEqual([TOKEN]);
     expect(findTelegramTokens(null)).toEqual([]);
   });
 });
@@ -173,6 +174,7 @@ describe('SupportTelegramSetupService', () => {
     ['a private note', { private: true }],
     ['an outgoing message', { type: 'outgoing' }],
     ['a message without a token', { text_content: 'hello' }],
+    ['many angle brackets and no token', { text_content: '', content: '<'.repeat(50_000) }],
     ['two different tokens', { text_content: `${TOKEN} ${OTHER_TOKEN}` }],
   ])('ignores %s without calling the desk', async (_label, over) => {
     const { service, desk, deps } = setup();
