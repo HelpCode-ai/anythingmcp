@@ -883,11 +883,12 @@ export const adapters = {
   describe: (slug: string, token: string) =>
     request<AdapterSetupInfo>(`/api/adapters/${slug}`, { token }),
   /** Try credentials before saving: nothing is stored. */
-  verify: (slug: string, token: string, credentials: Record<string, string>, connectorId?: string) =>
+  /** `source`: where the setup was opened from (setup page `?source=`), kept on a failed check's event. */
+  verify: (slug: string, token: string, credentials: Record<string, string>, connectorId?: string, source?: string) =>
     request<VerifyResult>(`/api/adapters/${slug}/verify`, {
       method: 'POST',
       token,
-      body: { credentials, ...(connectorId ? { connectorId } : {}) },
+      body: { credentials, ...(connectorId ? { connectorId } : {}), ...(source ? { source } : {}) },
     }),
   /** Catalog connectors for the API at a base URL, best first. */
   matchUrl: (url: string, token: string) =>
