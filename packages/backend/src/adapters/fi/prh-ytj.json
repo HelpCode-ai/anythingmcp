@@ -1,0 +1,561 @@
+{
+  "slug": "prh-ytj",
+  "name": "PRH Finland Company Register",
+  "aliases": [
+    "YTJ",
+    "Yritys- ja yhteisötietojärjestelmä",
+    "Patentti- ja rekisterihallitus",
+    "Finnish Trade Register",
+    "Kaupparekisteri",
+    "Finnish company register"
+  ],
+  "description": "Finnish company register open data from PRH, no API key: search companies in the YTJ Business Information System by name, town or business line, read a company by Business ID, its Trade Register notices, and its digital XBRL financial statements.",
+  "instructions": "## PRH open data, Finland (YTJ, Trade Register, financial statements)\nThis connector reads the open data APIs of the Finnish Patent and Registration Office (PRH): the **YTJ Business Information System** (shared with the Tax Administration: every Finnish company, association and sole trader with a Business ID), the **Trade Register notices** (kaupparekisteri: what was registered and when) and **digital financial statements** (XBRL). No account or API key; everything is read-only.\n\n**Setup**: nothing to configure. Try `prh_ytj_get_company` with 0112038-9 (Nokia Oyj).\n\n**Identifiers**: the Business ID (Y-tunnus) is 7 digits, a hyphen and a check digit, e.g. 0112038-9. The EU VAT number is FI plus the digits without the hyphen (FI01120389). A Trade Register record number (diaarinumero) looks like 2026/534020.\n\n**Workflow**\n- Find a company: `prh_ytj_search_companies` by name, town, postcode, company form or line of business; `prh_ytj_get_company` with a Business ID.\n- Trade Register history: `prh_ytj_get_trade_register_notices` lists every registered notice of a company; `prh_ytj_search_trade_register_notices` searches notices across companies (e.g. new liquidations in a period); `prh_ytj_get_public_notice` reads one by record number.\n- Financials: `prh_ytj_list_financial_statements` then `prh_ytj_get_financial_statement` (XBRL). `prh_ytj_list_financials_by_period_end` and `prh_ytj_list_financials_by_registration_date` list filers.\n- Decode codes: `prh_ytj_get_code_descriptions` (YTJ codes) and `prh_ytj_get_notice_code_descriptions` (notice codes).\n\n**Reading the data** (field names are English, many values are codes)\n- `names[].type`: 1 company name, 2 parallel name, 3 auxiliary name, 4 translation of an auxiliary name; an entry with `endDate` is a former name. `version` 1 is the current one.\n- `companyForms[].type` and `mainBusinessLine.type` carry codes with `descriptions` in Finnish (languageCode 1), Swedish (2) and English (3).\n- `registeredEntries`: `register` 1 Trade Register, 2 Foundation register, 3 Register of Associations, 4 Tax Administration, 5 Prepayment register, 6 VAT register, 7 Employer register, 8 insurance premium taxpayers; `authority` 1 Tax Administration, 2 PRH; `type` the status in that register (decode `<register>_<type>` with code set REK_KDI, e.g. 1_1 registered, 1_4 ceased, 6_80 VAT-liable for business activity).\n- `companySituations`: liquidation, bankruptcy or restructuring with dates (code sets SELTILA, KONK, SANE). `status` is the Business ID status (STATUS3: 1 pending, 2 valid, 5 invalidated) and `tradeRegisterStatus` the Trade Register status (REK_KDI with prefix 1_, e.g. 1 registered).\n- `addresses[].type`: 1 visiting address, 2 postal address; `source` 0 common, 1 PRH, 2 Tax Administration, 3 Business Information System.\n- Notices: `typeOfRegistration` (U start-up notification, M amendment, TA financial statements, L termination notification, FUU merger, DIF demerger, JH public summons) and `entryCodes` (what was registered, e.g. HAL board of directors, TOIM managing director, KOTI registered office, NIMO authorisation to sign, KOROI capital increase, TASE financial statements, SELAS liquidation).\n\n**Paging and limits**: company searches return 100 per page, notice searches 50, financial lists 100; `page` starts at 1 and a page past the end silently returns page 1, so compare with `totalResults`. Broad notice searches by date only can time out (504): add a name, Business ID or town, or shorten the range. Digital financial statements cover only companies that filed electronically. The descriptions endpoints answer tab-separated text, not JSON.\n\n**Licence**: PRH open data is published under Creative Commons Attribution 4.0 (CC BY 4.0). Credit the Finnish Patent and Registration Office (PRH) as the source when you republish the data.",
+  "region": "fi",
+  "category": "government",
+  "icon": "prh-ytj",
+  "docsUrl": "https://avoindata.prh.fi/en/ytj/swagger-ui",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "prh_ytj_get_company",
+    "params": {
+      "business_id": "0112038-9"
+    }
+  },
+  "connector": {
+    "name": "PRH open data",
+    "type": "REST",
+    "baseUrl": "https://avoindata.prh.fi",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "prh_ytj_search_companies",
+      "description": "Search the Finnish Business Information System (YTJ, run by PRH and the Tax Administration) for companies by name, town, postcode, company form, main line of business, or registration date range. Returns totalResults and companies: Business ID, names (current, previous, parallel, auxiliary), main business line, company form, website, addresses, register entries (trade register, VAT, prepayment, employer registers), situation (liquidation, bankruptcy, restructuring) and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Company name; also matches previous, parallel and auxiliary trade names."
+          },
+          "location": {
+            "type": "string",
+            "description": "Town of the postal or visiting address (postitoimipaikka), e.g. Helsinki or Espoo."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "Exact Business ID (Y-tunnus), e.g. 0112038-9."
+          },
+          "company_form": {
+            "type": "string",
+            "description": "Company form code, e.g. OY limited company, OYJ public limited company, KY limited partnership, AY general partnership, OK co-operative, SE European company, KOY housing/property company, AOY housing company, TYH sole trader. prh_ytj_get_code_descriptions with YRMU decodes them.",
+            "enum": [
+              "AOY",
+              "ASH",
+              "ASY",
+              "AY",
+              "AYH",
+              "ETS",
+              "ETY",
+              "SCE",
+              "SCP",
+              "HY",
+              "KOY",
+              "KVJ",
+              "KVY",
+              "KY",
+              "OK",
+              "OP",
+              "OY",
+              "OYJ",
+              "SE",
+              "SL",
+              "SP",
+              "S",
+              "TYH",
+              "VOJ",
+              "VOY",
+              "VY",
+              "VALTLL"
+            ]
+          },
+          "main_business_line": {
+            "type": "string",
+            "description": "Main line of business as a TOL 2008/2025 code or its beginning, e.g. 62010 or 62 (Statistics Finland industry classification)."
+          },
+          "registration_date_start": {
+            "type": "string",
+            "description": "Company registered on or after this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "registration_date_end": {
+            "type": "string",
+            "description": "Company registered on or before this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "post_code": {
+            "type": "string",
+            "description": "5-digit postcode of the visiting or postal address, e.g. 02610."
+          },
+          "business_id_registration_start": {
+            "type": "string",
+            "description": "Business ID granted on or after this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "business_id_registration_end": {
+            "type": "string",
+            "description": "Business ID granted on or before this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, from 1. A search returns at most 100 companies per page; a page past the end returns page 1.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-ytj-api/v3/companies",
+        "queryParams": {
+          "name": "$name",
+          "location": "$location",
+          "businessId": "$business_id",
+          "companyForm": "$company_form",
+          "mainBusinessLine": "$main_business_line",
+          "registrationDateStart": "$registration_date_start",
+          "registrationDateEnd": "$registration_date_end",
+          "postCode": "$post_code",
+          "businessIdRegistrationStart": "$business_id_registration_start",
+          "businessIdRegistrationEnd": "$business_id_registration_end",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "prh_ytj_get_company",
+      "description": "Get one Finnish company by Business ID (Y-tunnus) from YTJ: names and their history, EUID, company form, main line of business, website, visiting and postal addresses, register entries (Trade Register, Tax Administration, VAT, prepayment and employer registers), company situations (liquidation, bankruptcy, restructuring), trade register status and last modification date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": {
+            "type": "string",
+            "pattern": "^[0-9]{7}-[0-9]$",
+            "description": "Finnish Business ID (Y-tunnus): 7 digits, hyphen, check digit, e.g. 0112038-9."
+          }
+        },
+        "required": [
+          "business_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-ytj-api/v3/companies",
+        "queryParams": {
+          "businessId": "$business_id"
+        }
+      }
+    },
+    {
+      "name": "prh_ytj_get_code_descriptions",
+      "description": "Decode YTJ codes into text, as tab-separated lines of code, id and description. Code sets: YRMU company forms, TOIMI/TOIMI2/TOIMI3 lines of business, REK registers, REK_KDI trade register status, TLAJI name types, SELTILA company situations, SANE restructuring, KONK bankruptcy, STATUS3 Business ID status, VIRANOM authorities, TLAHDE data sources, KIELI languages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Code set to decode.",
+            "enum": [
+              "YRMU",
+              "REK_KDI",
+              "TLAJI",
+              "SELTILA",
+              "REK",
+              "VIRANOM",
+              "TLAHDE",
+              "KIELI",
+              "TOIMI",
+              "TOIMI2",
+              "TOIMI3",
+              "KONK",
+              "SANE",
+              "STATUS3"
+            ]
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language of the descriptions.",
+            "enum": [
+              "en",
+              "fi",
+              "sv"
+            ],
+            "default": "en"
+          }
+        },
+        "required": [
+          "code",
+          "lang"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-ytj-api/v3/description",
+        "queryParams": {
+          "code": "$code",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "prh_ytj_get_trade_register_notices",
+      "description": "Get a company and the list of its registered notices in the Finnish Trade Register (kaupparekisteri) by Business ID: publicNotices with registrationDate, recordNumber, typeOfRegistration (e.g. M amendment, TA financial statements) and entryCodes (what changed, e.g. HAL board of directors, TOIM managing director), plus tradeRegisterStatus.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": {
+            "type": "string",
+            "pattern": "^[0-9]{7}-[0-9]$",
+            "description": "Finnish Business ID (Y-tunnus): 7 digits, hyphen, check digit, e.g. 0112038-9."
+          }
+        },
+        "required": [
+          "business_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-registerednotices-api/v3/{business_id}"
+      }
+    },
+    {
+      "name": "prh_ytj_search_trade_register_notices",
+      "description": "Search the Finnish Trade Register notices by company (name, Business ID, town, form) and by notice (record number, entry code, notice type, notice registration date range). Returns companies with their matching publicNotices. Always combine a date range with another filter; a wide date-only search can time out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Company name; also matches previous, parallel and auxiliary trade names."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "Business ID (Y-tunnus)."
+          },
+          "location": {
+            "type": "string",
+            "description": "Town of the company address."
+          },
+          "company_form": {
+            "type": "string",
+            "description": "Company form code, e.g. OY limited company, OYJ public limited company, KY limited partnership, AY general partnership, OK co-operative, SE European company, KOY housing/property company, AOY housing company, TYH sole trader. prh_ytj_get_code_descriptions with YRMU decodes them.",
+            "enum": [
+              "AOY",
+              "ASH",
+              "ASY",
+              "AY",
+              "AYH",
+              "ETS",
+              "ETY",
+              "SCE",
+              "SCP",
+              "HY",
+              "KOY",
+              "KVJ",
+              "KVY",
+              "KY",
+              "OK",
+              "OP",
+              "OY",
+              "OYJ",
+              "SE",
+              "SL",
+              "SP",
+              "S",
+              "TYH",
+              "VOJ",
+              "VOY",
+              "VY",
+              "VALTLL"
+            ]
+          },
+          "registration_date_start": {
+            "type": "string",
+            "description": "Company registered on or after this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "registration_date_end": {
+            "type": "string",
+            "description": "Company registered on or before this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "record_number": {
+            "type": "string",
+            "description": "Record number (diaarinumero) of a notice, e.g. 2026/534020."
+          },
+          "entry_code": {
+            "type": "string",
+            "description": "Code of a register entry heading, e.g. TASE financial statements, HAL board of directors, TOIM managing director, KOTI registered office, KOROI capital increase, PERUS formation, SELAS liquidation, KONALK bankruptcy, POISTO removal from the register. prh_ytj_get_notice_code_descriptions with EC lists all."
+          },
+          "notice_registration_date_start": {
+            "type": "string",
+            "description": "Notice registered on or after this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "notice_registration_date_end": {
+            "type": "string",
+            "description": "Notice registered on or before this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "notice_registration_type": {
+            "type": "string",
+            "description": "Type of notice: U start-up, M amendment, TA financial statements, L termination, DIF demerger application, FUU merger application, JH public summons to creditors, OI rectification, VA supervision, KM municipal change, T notice, H application. prh_ytj_get_notice_code_descriptions with NRT lists all.",
+            "enum": [
+              "DIF",
+              "E",
+              "FUU",
+              "H",
+              "HAKI",
+              "I",
+              "JH",
+              "K",
+              "KI",
+              "KKI",
+              "KM",
+              "L",
+              "LKI",
+              "M",
+              "MK",
+              "OI",
+              "PR",
+              "T",
+              "TA",
+              "U",
+              "UL",
+              "VA",
+              "YKI"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, from 1 (50 companies per page).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-registerednotices-api/v3/",
+        "queryParams": {
+          "name": "$name",
+          "businessId": "$business_id",
+          "location": "$location",
+          "companyForm": "$company_form",
+          "registrationDateStart": "$registration_date_start",
+          "registrationDateEnd": "$registration_date_end",
+          "recordNumber": "$record_number",
+          "entryCode": "$entry_code",
+          "noticeRegistrationDateStart": "$notice_registration_date_start",
+          "noticeRegistrationDateEnd": "$notice_registration_date_end",
+          "noticeRegistrationType": "$notice_registration_type",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "prh_ytj_get_public_notice",
+      "description": "Get one registered Trade Register notice by its record number (diaarinumero), given as year and number: the company Business ID, registration date, type of registration and entry codes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "record_year": {
+            "type": "integer",
+            "description": "Year part of the record number, e.g. 2026 for 2026/534020."
+          },
+          "record_number": {
+            "type": "string",
+            "description": "Number part of the record number, e.g. 534020 for 2026/534020."
+          }
+        },
+        "required": [
+          "record_year",
+          "record_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-registerednotices-api/v3/publicnotices/{record_year}/{record_number}"
+      }
+    },
+    {
+      "name": "prh_ytj_get_notice_code_descriptions",
+      "description": "Decode Trade Register notice codes into text (tab-separated): CF company forms, EC register entry headings (entryCodes), NRT notice types (typeOfRegistration).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Code set: CF company forms, EC entry codes, NRT notice types.",
+            "enum": [
+              "CF",
+              "EC",
+              "NRT"
+            ]
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language of the descriptions.",
+            "enum": [
+              "EN",
+              "FI",
+              "SV"
+            ],
+            "default": "EN"
+          }
+        },
+        "required": [
+          "code",
+          "lang"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-registerednotices-api/v3/description",
+        "queryParams": {
+          "code": "$code",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "prh_ytj_list_financial_statements",
+      "description": "List the financial periods for which PRH holds a digital (XBRL) financial statement of a company, by Business ID: one entry per period end date (financialDate). Digital statements exist only for companies that filed them electronically, mostly from 2020 on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": {
+            "type": "string",
+            "pattern": "^[0-9]{7}-[0-9]$",
+            "description": "Finnish Business ID (Y-tunnus): 7 digits, hyphen, check digit, e.g. 0112038-9."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, from 1 (100 per page).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "business_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-xbrl-api/v3/financials",
+        "queryParams": {
+          "businessId": "$business_id",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "prh_ytj_get_financial_statement",
+      "description": "Get one digital financial statement as XBRL (returned as structured data): balance sheet, income statement and key items of the period ending on financial_date, tagged with the Finnish XBRL taxonomy (fi_met, fi_dim) and periods in context elements.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": {
+            "type": "string",
+            "pattern": "^[0-9]{7}-[0-9]$",
+            "description": "Finnish Business ID (Y-tunnus): 7 digits, hyphen, check digit, e.g. 0112038-9."
+          },
+          "financial_date": {
+            "type": "string",
+            "description": "End date of the financial period, from prh_ytj_list_financial_statements, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
+        },
+        "required": [
+          "business_id",
+          "financial_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-xbrl-api/v3/financial",
+        "queryParams": {
+          "businessId": "$business_id",
+          "financialDate": "$financial_date"
+        },
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "name": "prh_ytj_list_financials_by_period_end",
+      "description": "List the companies that filed a digital financial statement for a period ending on a given date (e.g. every company with a 2024-12-31 year end): businessId, financialDate and registrationDate. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "financial_date": {
+            "type": "string",
+            "description": "Period end date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, from 1.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "financial_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-xbrl-api/v3/all_financials",
+        "queryParams": {
+          "financialDate": "$financial_date",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "prh_ytj_list_financials_by_registration_date",
+      "description": "List the companies whose digital financial statement was registered in a date range (from 2023-07-01 on): businessId, financialDate and registrationDate. Use for a feed of newly filed accounts. 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "registered_date_start": {
+            "type": "string",
+            "description": "Registered on or after this date (2023-07-01 or later), YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "registered_date_end": {
+            "type": "string",
+            "description": "Registered on or before this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, from 1.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/opendata-xbrl-api/v3/all_financial_statements",
+        "queryParams": {
+          "registeredDateStart": "$registered_date_start",
+          "registeredDateEnd": "$registered_date_end",
+          "page": "$page"
+        }
+      }
+    }
+  ]
+}

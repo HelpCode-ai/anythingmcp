@@ -1,0 +1,698 @@
+{
+  "slug": "brreg",
+  "name": "Brreg Norway Company Register",
+  "aliases": [
+    "Brønnøysundregistrene",
+    "Bronnoysund Register Centre",
+    "Enhetsregisteret",
+    "Regnskapsregisteret",
+    "Norwegian company register",
+    "Foretaksregisteret"
+  ],
+  "description": "Norwegian company register open data from the Brønnøysund Register Centre, no API key: search and read legal entities and their establishments, roles (CEO, board, auditor), corporate group structure, change feeds, and filed annual accounts with key figures and PDF copies.",
+  "instructions": "## Brønnøysund Register Centre (Brreg), Norway\nThis connector reads the open data APIs of the Brønnøysund Register Centre: the **Central Coordinating Register for Legal Entities** (Enhetsregisteret: every Norwegian company, sole proprietorship, association and public body, with roles and group structure) and the **Register of Company Accounts** (Regnskapsregisteret: key figures and copies of filed annual accounts). No account or API key; everything is read-only.\n\n**Setup**: nothing to configure. Try `brreg_get_entity` with 923609016 (Equinor ASA).\n\n**Identifiers**: the organisation number (organisasjonsnummer) has 9 digits, e.g. 923609016; the VAT number is the same digits with MVA appended (NO 923 609 016 MVA). A main entity (enhet) is the legal person; a sub-entity (underenhet) is an establishment with its own 9-digit number that belongs to a main entity.\n\n**Workflow**\n- Find a company: `brreg_search_entities` by `name` (add `name_search_method` FORTLOEPENDE for an exact phrase) or by filters (organisation form, NACE code, municipality, employees, bankruptcy). Then `brreg_get_entity` for the full record.\n- People and control: `brreg_get_entity_roles` (CEO, board, auditor), `brreg_get_group_structure` (parent and subsidiaries), `brreg_get_roles_in_other_entities` (board seats and stakes the company holds elsewhere).\n- Establishments: `brreg_search_sub_entities` with `parent_organisation_number`, or `brreg_get_sub_entity`.\n- Finances: `brreg_get_annual_accounts` for the key figures of the last three filed years, `brreg_list_annual_report_copy_years` and `brreg_get_annual_report_copy` for the full PDF.\n- Monitoring: `brreg_list_entity_updates`, `brreg_list_sub_entity_updates` and `brreg_list_role_updates` return change feeds since a timestamp or update id.\n- Code lists: `brreg_list_organisation_forms`, `brreg_list_municipalities`.\n\n**Reading the Norwegian field names**\n- Entity: `navn` name, `organisasjonsform` legal form (kode + beskrivelse), `forretningsadresse` business address, `postadresse` postal address, `beliggenhetsadresse` location address (sub-entities), `kommune`/`kommunenummer` municipality, `postnummer`/`poststed` postcode/town, `naeringskode1..3` NACE industry codes, `antallAnsatte` employees, `stiftelsesdato` foundation date, `registreringsdatoEnhetsregisteret` registration date, `hjemmeside` website, `kapital` share capital (belop amount, valuta currency, antallAksjer shares), `konkurs` bankrupt, `underAvvikling` in liquidation, `underTvangsavviklingEllerTvangsopplosning` in compulsory dissolution, `registrertIMvaregisteret` VAT registered, `registrertIForetaksregisteret` in the business register, `sisteInnsendteAarsregnskap` last accounts year, `historiskeNavn` former names, `overordnetEnhet` parent entity, `institusjonellSektorkode` sector, `erIKonsern` part of a group, `slettedato` deletion date.\n- Roles: `rollegrupper` role groups, `type.kode` role code (DAGL CEO, LEDE chair, NEST deputy chair, MEDL board member, VARA deputy board member, REVI auditor, REGN accountant, KONT contact person, DTPR/DTSO partners, INNH owner), `person.navn` (fornavn first name, etternavn last name), `fodselsdato` birth date, `avregistrert` deregistered, `fratraadt` resigned.\n- Accounts: `regnskapsperiode` period (fraDato, tilDato), `valuta` currency, `regnskapstype` SELSKAP company or KONSERN group, `resultatregnskapResultat` income statement (driftsinntekter operating revenue, salgsinntekter sales, driftskostnad operating costs, driftsresultat operating result, finansresultat net financial items, ordinaertResultatFoerSkattekostnad result before tax, aarsresultat net result), `eiendeler` assets (anleggsmidler fixed, omloepsmidler current, sumBankinnskuddOgKontanter cash), `egenkapitalGjeld` equity and liabilities (egenkapital equity, gjeldOversikt debt: kortsiktigGjeld short-term, langsiktigGjeld long-term), `revisjon` audit, `regnkapsprinsipper` accounting rules.\n- Updates: `endringstype` Ny (new), Endring (change), Sletting (deleted), Fjernet (removed).\n\n**Paging and limits**: searches return `_embedded` plus `page` (size, totalElements, totalPages, number). `page` starts at 0 and page x size must stay under 10,000; narrow the filters to go deeper. The open accounts service holds the last three years of key figures (older years answer 404); older reports exist as PDF copies. Annual report PDFs over 10 MB are not attached. Brreg publishes no fixed rate limit but blocks abusive traffic; for whole-register analysis use its bulk downloads instead of paging.\n\n**Personal data**: roles name private persons with birth dates. Use them for business purposes such as due diligence or KYC only.\n\n**Licence**: Norwegian Licence for Open Government Data (NLOD) 2.0. Credit the source as Brønnøysund Register Centre (Brønnøysundregistrene) when you republish the data.",
+  "region": "no",
+  "category": "government",
+  "icon": "brreg",
+  "docsUrl": "https://data.brreg.no/enhetsregisteret/api/dokumentasjon/en/index.html",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "brreg_get_entity",
+    "params": {
+      "organisation_number": "923609016"
+    }
+  },
+  "connector": {
+    "name": "Brreg open data",
+    "type": "REST",
+    "baseUrl": "https://data.brreg.no",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "brreg_search_entities",
+      "description": "Search the Norwegian Central Coordinating Register for Legal Entities (Enhetsregisteret) for main entities: companies, sole proprietorships, associations, public bodies. Filter by name, organisation form, NACE code, municipality, postcode, employees, bankruptcy or liquidation status, register memberships and dates. Results are in _embedded.enheter, paging in page (size, totalElements, totalPages, number).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name or part of a name (1-180 characters). By default any of the words may match, ranked by relevance."
+          },
+          "name_search_method": {
+            "type": "string",
+            "description": "Set to FORTLOEPENDE to require the words as one continuous phrase in the name (much narrower).",
+            "enum": [
+              "FORTLOEPENDE"
+            ]
+          },
+          "organisation_numbers": {
+            "type": "string",
+            "description": "Comma-separated list of 9-digit organisation numbers."
+          },
+          "organisation_form": {
+            "type": "string",
+            "description": "Comma-separated organisation form codes, e.g. AS (private limited company), ASA (public limited company), ENK (sole proprietorship), NUF (Norwegian branch of a foreign company), DA, ANS, SA, STI, FLI. brreg_list_organisation_forms lists all."
+          },
+          "industry_code": {
+            "type": "string",
+            "description": "Comma-separated NACE industry codes (naeringskode), e.g. 62.010 or 62 for a whole division."
+          },
+          "municipality_number": {
+            "type": "string",
+            "description": "Comma-separated 4-digit municipality numbers (kommunenummer), business or postal address, e.g. 0301 for Oslo."
+          },
+          "business_postcode": {
+            "type": "string",
+            "description": "Comma-separated 4-digit postcodes of the business address (forretningsadresse.postnummer)."
+          },
+          "business_city": {
+            "type": "string",
+            "description": "Postal area of the business address (forretningsadresse.poststed), e.g. OSLO."
+          },
+          "parent_entity": {
+            "type": "string",
+            "description": "Organisation number of the superior entity in the public sector (overordnetEnhet)."
+          },
+          "min_employees": {
+            "type": "string",
+            "description": "Minimum number of employees (fraAntallAnsatte): 0, 1 or a number greater than 4."
+          },
+          "max_employees": {
+            "type": "string",
+            "description": "Maximum number of employees (tilAntallAnsatte): 0, 4 or a number greater than 4."
+          },
+          "bankrupt": {
+            "type": "boolean",
+            "description": "true: only entities that are bankrupt (konkurs); false: exclude them."
+          },
+          "under_liquidation": {
+            "type": "boolean",
+            "description": "true: only entities under voluntary liquidation (underAvvikling)."
+          },
+          "under_compulsory_dissolution": {
+            "type": "boolean",
+            "description": "true: only entities under compulsory liquidation or dissolution (underTvangsavviklingEllerTvangsopplosning)."
+          },
+          "in_vat_register": {
+            "type": "boolean",
+            "description": "true: only entities registered in the VAT register (Merverdiavgiftsregisteret)."
+          },
+          "in_business_register": {
+            "type": "boolean",
+            "description": "true: only entities registered in the Register of Business Enterprises (Foretaksregisteret)."
+          },
+          "in_nonprofit_register": {
+            "type": "boolean",
+            "description": "true: only entities in the Register of Non-Profit Organisations (Frivillighetsregisteret)."
+          },
+          "registered_from": {
+            "type": "string",
+            "description": "Earliest registration date in the Central Coordinating Register, YYYY-MM-DD."
+          },
+          "registered_to": {
+            "type": "string",
+            "description": "Latest registration date in the Central Coordinating Register, YYYY-MM-DD."
+          },
+          "founded_from": {
+            "type": "string",
+            "description": "Earliest foundation date (stiftelsesdato), YYYY-MM-DD."
+          },
+          "founded_to": {
+            "type": "string",
+            "description": "Latest foundation date (stiftelsesdato), YYYY-MM-DD."
+          },
+          "last_accounts_year": {
+            "type": "string",
+            "description": "Comma-separated years of the last submitted annual accounts (sisteInnsendteAarsregnskap), e.g. 2024."
+          },
+          "sector_code": {
+            "type": "string",
+            "description": "Comma-separated 4-digit institutional sector codes (institusjonellSektorkode), e.g. 2100 for private enterprises."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website (hjemmeside) to match, e.g. www.equinor.com."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. page x size must stay below 10,000; narrow the filters for deeper results.",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Results per page (default 20).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field and order, e.g. \"navn,ASC\" or \"registreringsdatoEnhetsregisteret,DESC\". Default: relevance."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/enheter",
+        "queryParams": {
+          "navn": "$name",
+          "navnMetodeForSoek": "$name_search_method",
+          "organisasjonsnummer": "$organisation_numbers",
+          "organisasjonsform": "$organisation_form",
+          "naeringskode": "$industry_code",
+          "kommunenummer": "$municipality_number",
+          "forretningsadresse.postnummer": "$business_postcode",
+          "forretningsadresse.poststed": "$business_city",
+          "overordnetEnhet": "$parent_entity",
+          "fraAntallAnsatte": "$min_employees",
+          "tilAntallAnsatte": "$max_employees",
+          "konkurs": "$bankrupt",
+          "underAvvikling": "$under_liquidation",
+          "underTvangsavviklingEllerTvangsopplosning": "$under_compulsory_dissolution",
+          "registrertIMvaregisteret": "$in_vat_register",
+          "registrertIForetaksregisteret": "$in_business_register",
+          "registrertIFrivillighetsregisteret": "$in_nonprofit_register",
+          "fraRegistreringsdatoEnhetsregisteret": "$registered_from",
+          "tilRegistreringsdatoEnhetsregisteret": "$registered_to",
+          "fraStiftelsesdato": "$founded_from",
+          "tilStiftelsesdato": "$founded_to",
+          "sisteInnsendteAarsregnskap": "$last_accounts_year",
+          "institusjonellSektorkode": "$sector_code",
+          "hjemmeside": "$website",
+          "page": "$page",
+          "size": "$size",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "brreg_get_entity",
+      "description": "Get one main entity from Enhetsregisteret by organisation number: name, organisation form, business and postal address, NACE codes, employees, share capital, VAT and business-register status, bankruptcy and liquidation flags, foundation and registration dates, last submitted accounts year, historic names. Answers 404 for sub-entities (use brreg_get_sub_entity) and 410 for deleted entities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organisation_number": {
+            "type": "string",
+            "pattern": "^[0-9]{9}$",
+            "description": "9-digit Norwegian organisation number (organisasjonsnummer) without spaces, e.g. 923609016."
+          }
+        },
+        "required": [
+          "organisation_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/enheter/{organisation_number}"
+      }
+    },
+    {
+      "name": "brreg_get_entity_roles",
+      "description": "Get the roles registered for an entity: CEO (DAGL), chair (LEDE), board members (MEDL), deputies (VARA), auditor (REVI), accountant (REGN), contact person (KONT), partners and others, grouped in rollegrupper. Persons come with name and birth date, organisations with their organisation number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organisation_number": {
+            "type": "string",
+            "pattern": "^[0-9]{9}$",
+            "description": "9-digit Norwegian organisation number (organisasjonsnummer) without spaces, e.g. 923609016."
+          }
+        },
+        "required": [
+          "organisation_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/enheter/{organisation_number}/roller"
+      }
+    },
+    {
+      "name": "brreg_get_group_structure",
+      "description": "Get the corporate group structure (konsernstruktur) around an entity: parent and subsidiaries as a tree in children, each with organisation number, name, organisation form, level (nivaa), relation type (knytningsform, e.g. KDAT subsidiary) and ownership basis (grunnlag).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organisation_number": {
+            "type": "string",
+            "pattern": "^[0-9]{9}$",
+            "description": "9-digit Norwegian organisation number (organisasjonsnummer) without spaces, e.g. 923609016."
+          }
+        },
+        "required": [
+          "organisation_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/konsernstruktur/{organisation_number}"
+      }
+    },
+    {
+      "name": "brreg_get_roles_in_other_entities",
+      "description": "List the roles an organisation itself holds in other entities (juridiske roller): board seats, partner roles with liability share, auditor or accountant mandates. Page with searchAfter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organisation_number": {
+            "type": "string",
+            "pattern": "^[0-9]{9}$",
+            "description": "9-digit Norwegian organisation number (organisasjonsnummer) without spaces, e.g. 923609016."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Number of entities per block.",
+            "minimum": 1
+          },
+          "search_after": {
+            "type": "string",
+            "description": "Continue after this value: the last organisation number of the previous block."
+          }
+        },
+        "required": [
+          "organisation_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/roller/enheter/{organisation_number}/juridiskeroller",
+        "queryParams": {
+          "size": "$size",
+          "searchAfter": "$search_after"
+        }
+      }
+    },
+    {
+      "name": "brreg_search_sub_entities",
+      "description": "Search sub-entities (underenheter): the establishments or branches through which a main entity runs its business. Pass parent_organisation_number to list all establishments of a company. Results are in _embedded.underenheter with location address (beliggenhetsadresse), NACE codes, employees, start and closure dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name or part of a name of the sub-entity (1-180 characters)."
+          },
+          "parent_organisation_number": {
+            "type": "string",
+            "description": "Organisation number of the main entity the sub-entities belong to (overordnetEnhet). The usual way to list all establishments of a company."
+          },
+          "organisation_numbers": {
+            "type": "string",
+            "description": "Comma-separated list of 9-digit sub-entity organisation numbers."
+          },
+          "industry_code": {
+            "type": "string",
+            "description": "Comma-separated NACE industry codes (naeringskode)."
+          },
+          "municipality_number": {
+            "type": "string",
+            "description": "Comma-separated 4-digit municipality numbers, location or postal address."
+          },
+          "location_postcode": {
+            "type": "string",
+            "description": "Comma-separated 4-digit postcodes of the location address (beliggenhetsadresse.postnummer)."
+          },
+          "location_city": {
+            "type": "string",
+            "description": "Postal area of the location address (beliggenhetsadresse.poststed)."
+          },
+          "min_employees": {
+            "type": "string",
+            "description": "Minimum number of employees: 0, 1 or a number greater than 4."
+          },
+          "max_employees": {
+            "type": "string",
+            "description": "Maximum number of employees: 0, 4 or a number greater than 4."
+          },
+          "started_from": {
+            "type": "string",
+            "description": "Earliest start date of the establishment (oppstartsdato), YYYY-MM-DD."
+          },
+          "started_to": {
+            "type": "string",
+            "description": "Latest start date (oppstartsdato), YYYY-MM-DD."
+          },
+          "closed_from": {
+            "type": "string",
+            "description": "Earliest closure date (nedleggelsesdato), YYYY-MM-DD."
+          },
+          "closed_to": {
+            "type": "string",
+            "description": "Latest closure date (nedleggelsesdato), YYYY-MM-DD."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. page x size must stay below 10,000; narrow the filters for deeper results.",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Results per page (default 20).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field and order, e.g. \"navn,ASC\" or \"registreringsdatoEnhetsregisteret,DESC\". Default: relevance."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/underenheter",
+        "queryParams": {
+          "navn": "$name",
+          "overordnetEnhet": "$parent_organisation_number",
+          "organisasjonsnummer": "$organisation_numbers",
+          "naeringskode": "$industry_code",
+          "kommunenummer": "$municipality_number",
+          "beliggenhetsadresse.postnummer": "$location_postcode",
+          "beliggenhetsadresse.poststed": "$location_city",
+          "fraAntallAnsatte": "$min_employees",
+          "tilAntallAnsatte": "$max_employees",
+          "fraOppstartsdato": "$started_from",
+          "tilOppstartsdato": "$started_to",
+          "fraNedleggelsesdato": "$closed_from",
+          "tilNedleggelsesdato": "$closed_to",
+          "page": "$page",
+          "size": "$size",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "brreg_get_sub_entity",
+      "description": "Get one sub-entity (establishment) by its own organisation number: name, location address, NACE codes, employees, start date, ownership change and closure dates, and the parent main entity (overordnetEnhet).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organisation_number": {
+            "type": "string",
+            "pattern": "^[0-9]{9}$",
+            "description": "9-digit Norwegian organisation number (organisasjonsnummer) without spaces, e.g. 923609016."
+          }
+        },
+        "required": [
+          "organisation_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/underenheter/{organisation_number}"
+      }
+    },
+    {
+      "name": "brreg_list_entity_updates",
+      "description": "List the update feed for main entities: one event per published change with oppdateringsid, organisation number, timestamp (dato) and endringstype (Ny new, Endring change, Sletting deleted, Fjernet removed). Use to monitor companies or sync changes since a date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string",
+            "description": "Updates published from and including this timestamp, ISO 8601, e.g. 2026-11-01T00:00:00.000Z (dato)."
+          },
+          "until": {
+            "type": "string",
+            "description": "Updates published up to and including this timestamp, ISO 8601 (updatedBefore)."
+          },
+          "from_update_id": {
+            "type": "string",
+            "description": "Only updates from and including this update id (oppdateringsid); continue a feed from the last id you read plus one."
+          },
+          "organisation_numbers": {
+            "type": "string",
+            "description": "Comma-separated organisation numbers to follow."
+          },
+          "include_changes": {
+            "type": "boolean",
+            "description": "true: include the changed fields that caused each update (endringer)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Updates per page, 1 to 10,000 (default 20).",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/oppdateringer/enheter",
+        "queryParams": {
+          "dato": "$since",
+          "updatedBefore": "$until",
+          "oppdateringsid": "$from_update_id",
+          "organisasjonsnummer": "$organisation_numbers",
+          "includeChanges": "$include_changes",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "brreg_list_sub_entity_updates",
+      "description": "List the update feed for sub-entities (establishments): oppdateringsid, organisation number, timestamp and endringstype, optionally with the changed fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string",
+            "description": "Updates published from and including this timestamp, ISO 8601, e.g. 2026-11-01T00:00:00.000Z (dato)."
+          },
+          "until": {
+            "type": "string",
+            "description": "Updates published up to and including this timestamp, ISO 8601 (updatedBefore)."
+          },
+          "from_update_id": {
+            "type": "string",
+            "description": "Only updates from and including this update id (oppdateringsid); continue a feed from the last id you read plus one."
+          },
+          "organisation_numbers": {
+            "type": "string",
+            "description": "Comma-separated organisation numbers to follow."
+          },
+          "include_changes": {
+            "type": "boolean",
+            "description": "true: include the changed fields that caused each update (endringer)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Updates per page, 1 to 10,000 (default 20).",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/oppdateringer/underenheter",
+        "queryParams": {
+          "dato": "$since",
+          "updatedBefore": "$until",
+          "oppdateringsid": "$from_update_id",
+          "organisasjonsnummer": "$organisation_numbers",
+          "includeChanges": "$include_changes",
+          "page": "$page",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "brreg_list_role_updates",
+      "description": "List the feed of role updates as CloudEvents: id, time, and data.organisasjonsnummer of the entity whose roles changed. Read the new roles with brreg_get_entity_roles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after_time": {
+            "type": "string",
+            "description": "Events after this timestamp, ISO 8601 with milliseconds, e.g. 2026-11-01T00:00:00.000Z."
+          },
+          "after_id": {
+            "type": "integer",
+            "description": "Events after this event id (1 or more).",
+            "minimum": 1
+          },
+          "organisation_numbers": {
+            "type": "string",
+            "description": "Comma-separated organisation numbers to follow."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Number of events, 1 to 10,000 (default 100).",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/oppdateringer/roller",
+        "queryParams": {
+          "afterTime": "$after_time",
+          "afterId": "$after_id",
+          "organisasjonsnummer": "$organisation_numbers",
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "brreg_list_organisation_forms",
+      "description": "List the organisation form codes used in the register (organisasjonsform), each with its Norwegian description, e.g. AS Aksjeselskap (private limited company), ENK Enkeltpersonforetak (sole proprietorship). Use to decode or filter by organisation form.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "integer",
+            "description": "Results per page (default 20; 100 returns them all).",
+            "minimum": 1,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/organisasjonsformer",
+        "queryParams": {
+          "size": "$size"
+        }
+      }
+    },
+    {
+      "name": "brreg_list_municipalities",
+      "description": "List Norwegian municipalities with their 4-digit municipality numbers (kommunenummer), for the municipality filters of the searches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "integer",
+            "description": "Results per page (default 20; 400 returns them all).",
+            "minimum": 1,
+            "default": 400
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/enhetsregisteret/api/kommuner",
+        "queryParams": {
+          "size": "$size",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "brreg_get_annual_accounts",
+      "description": "Get the key figures of the annual accounts submitted to the Register of Company Accounts (Regnskapsregisteret) for the last three years available: accounting period, currency, accounting rules, audit, income statement (resultatregnskapResultat), assets (eiendeler) and equity and liabilities (egenkapitalGjeld). Returns a list with one entry per year and type: company accounts (SELSKAP) and group accounts (KONSERN) when filed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organisation_number": {
+            "type": "string",
+            "pattern": "^[0-9]{9}$",
+            "description": "9-digit Norwegian organisation number (organisasjonsnummer) without spaces, e.g. 923609016."
+          },
+          "year": {
+            "type": "integer",
+            "description": "Accounting year (år). Only the last three years are in this open service; an older year answers 404. Omit for all three."
+          },
+          "accounts_type": {
+            "type": "string",
+            "description": "SELSKAP for the company accounts, KONSERN for the group accounts. Omit for both.",
+            "enum": [
+              "SELSKAP",
+              "KONSERN"
+            ]
+          }
+        },
+        "required": [
+          "organisation_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/regnskapsregisteret/regnskap/{organisation_number}",
+        "queryParams": {
+          "år": "$year",
+          "regnskapstype": "$accounts_type"
+        }
+      }
+    },
+    {
+      "name": "brreg_list_annual_report_copy_years",
+      "description": "List the years for which a copy of the filed annual report (årsregnskap, the full PDF with notes, board report and auditor report) can be downloaded for a company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organisation_number": {
+            "type": "string",
+            "pattern": "^[0-9]{9}$",
+            "description": "9-digit Norwegian organisation number (organisasjonsnummer) without spaces, e.g. 923609016."
+          }
+        },
+        "required": [
+          "organisation_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/regnskapsregisteret/regnskap/aarsregnskap/kopi/{organisation_number}/aar"
+      }
+    },
+    {
+      "name": "brreg_get_annual_report_copy",
+      "description": "Download the copy of a filed annual report as a PDF file attached to the result (full accounts with notes, board report and auditor report). Files over 10 MB, common for large groups, are not attached; then point the user to the Brreg website.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organisation_number": {
+            "type": "string",
+            "pattern": "^[0-9]{9}$",
+            "description": "9-digit Norwegian organisation number (organisasjonsnummer) without spaces, e.g. 923609016."
+          },
+          "year": {
+            "type": "integer",
+            "description": "Accounting year from brreg_list_annual_report_copy_years, e.g. 2024."
+          }
+        },
+        "required": [
+          "organisation_number",
+          "year"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/regnskapsregisteret/regnskap/aarsregnskap/kopi/{organisation_number}/{year}",
+        "headers": {
+          "Accept": "application/pdf"
+        },
+        "timeoutMs": 90000
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    }
+  ]
+}
