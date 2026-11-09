@@ -155,8 +155,14 @@ describe('scrubProviderMessage', () => {
     expect(scrubProviderMessage('GET https://x.example/api?appid=abc failed', [])).toBe('GET https://x.example/api failed');
     expect(scrubProviderMessage('bad key s3cr3t-value', ['s3cr3t-value'])).toBe('bad key ***');
     expect(scrubProviderMessage(`token ${'a1'.repeat(20)} expired`)).toBe('token *** expired');
-    expect(scrubProviderMessage('x'.repeat(30) + ' ' + 'word '.repeat(60))!.length).toBe(160);
+    expect(scrubProviderMessage('x'.repeat(30) + ' ' + 'word '.repeat(100))!.length).toBe(400);
     expect(scrubProviderMessage('   ')).toBeNull();
+  });
+
+  it("keeps the provider's words that follow our hint", () => {
+    const hint = 'The target API returned a server error (500). This is on their side, not your configuration.';
+    const odoo = `${hint} (Request failed with status code 500: {"name":"builtins.ValueError","message":"Invalid field 'customer_rank' on 'res.partner'"})`;
+    expect(scrubProviderMessage(odoo)).toContain("Invalid field 'customer_rank' on 'res.partner'");
   });
 
   it('cuts a URL at its first ? or #, wherever it sits in the text', () => {
@@ -177,7 +183,7 @@ describe('scrubProviderMessage', () => {
       const started = Date.now();
       const out = scrubProviderMessage(input);
       expect(Date.now() - started).toBeLessThan(200);
-      expect(out!.length).toBeLessThanOrEqual(160);
+      expect(out!.length).toBeLessThanOrEqual(400);
     }
   });
 });
