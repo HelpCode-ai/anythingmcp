@@ -204,7 +204,9 @@ describe('bol-com adapter: static contract', () => {
     const off = a.tools.filter((entry) => entry.enabled === false).map((entry) => entry.name);
     expect(off.sort()).toEqual(['bol_com_cancel_order_item', 'bol_com_delete_offer']);
     for (const entry of a.tools) {
-      expect(entry.endpointMapping.path).not.toMatch(/shipping-labels|invoices\/|commissions$/);
+      expect(entry.endpointMapping.path).not.toContain('shipping-labels');
+      expect(entry.endpointMapping.path).not.toContain('invoices/');
+      expect(entry.endpointMapping.path.endsWith('commissions')).toBe(false);
       if (entry.endpointMapping.path.startsWith('/retailer/returns')) expect(entry.endpointMapping.method).toBe('GET');
       if (entry.endpointMapping.path.startsWith('/retailer/invoices')) expect(entry.endpointMapping.method).toBe('GET');
     }
