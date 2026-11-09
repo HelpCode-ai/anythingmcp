@@ -56,16 +56,38 @@ export async function odooDatabaseHint(
   baseUrl: string | undefined,
   enteredDatabase: string | undefined,
 ): Promise<string | undefined> {
+  return (await odooDatabaseFix(adapterSlug, failure, baseUrl, enteredDatabase))?.sentence;
+}
+
+/** The sentence for a wrong database name, and the one database to use when there is only one. */
+interface DatabaseFix {
+  sentence: string;
+  database?: string;
+}
+
+async function odooDatabaseFix(
+  adapterSlug: string,
+  failure: string,
+  baseUrl: string | undefined,
+  enteredDatabase: string | undefined,
+): Promise<DatabaseFix | undefined> {
   if (!ODOO_ADAPTERS.has(adapterSlug) || !baseUrl || !WRONG_DATABASE.test(failure)) {
     return undefined;
   }
-  return databaseListSentence(odooOrigin(baseUrl), enteredDatabase);
+  return databaseList(odooOrigin(baseUrl), enteredDatabase);
 }
 
 async function databaseListSentence(
   origin: string,
   enteredDatabase: string | undefined,
 ): Promise<string | undefined> {
+  return (await databaseList(origin, enteredDatabase))?.sentence;
+}
+
+async function databaseList(
+  origin: string,
+  enteredDatabase: string | undefined,
+): Promise<DatabaseFix | undefined> {
   let databases: unknown;
   try {
     const response = await outboundRequest({
@@ -80,17 +102,22 @@ async function databaseListSentence(
     return undefined;
   }
   if (!Array.isArray(databases)) return undefined;
-  const names = databases.filter(
-    (name): name is string => typeof name === 'string' && name !== enteredDatabase,
-  );
+  const served = databases.filter((name): name is string => typeof name === 'string' && name !== '');
+  const names = served.filter((name) => name !== enteredDatabase);
   if (names.length === 0) return undefined;
   if (names.length === 1) {
-    return `This Odoo's database is called "${names[0]}": enter that as the database name.`;
+    return {
+      sentence: `This Odoo's database is called "${names[0]}": enter that as the database name.`,
+      // Tried in place of the one entered only when it is the address's only database.
+      ...(served.length === 1 ? { database: names[0] } : {}),
+    };
   }
-  return `This Odoo serves these databases: ${names
-    .slice(0, 5)
-    .map((name) => `"${name}"`)
-    .join(', ')}. Enter the one you use as the database name.`;
+  return {
+    sentence: `This Odoo serves these databases: ${names
+      .slice(0, 5)
+      .map((name) => `"${name}"`)
+      .join(', ')}. Enter the one you use as the database name.`,
+  };
 }
 
 /**
@@ -126,6 +153,11 @@ export interface OdooCheckAdvice {
   message: string;
   /** Another catalog adapter to offer, e.g. the JSON-RPC one for Odoo 18. */
   suggest?: string;
+  /**
+   * The database name is wrong and this address serves exactly one other
+   * database: its name, for the check to try instead of only naming it.
+   */
+  database?: string;
 }
 
 /**
@@ -193,15 +225,16 @@ export async function diagnoseOdooJson2NotFound(
       suggest: JSONRPC_ADAPTER,
     };
   }
-  const list = await databaseListSentence(origin, enteredDatabase);
+  const list = await databaseList(origin, enteredDatabase);
   return {
     message:
       `This Odoo is version ${version} and has the JSON-2 API, so the database name` +
       (enteredDatabase ? ` "${enteredDatabase}"` : '') +
       ' is wrong. ' +
-      (list ??
+      (list?.sentence ??
         'On Odoo Online and Odoo.sh it is often not the subdomain: it is the name on ' +
           '/web/database/selector, or after ?db= in the address bar.'),
+    ...(list?.database ? { database: list.database } : {}),
   };
 }
 
@@ -246,11 +279,13 @@ export async function odooCheckAdvice(input: {
     }
   }
 
-  const database = await odooDatabaseHint(
+  const fix = await odooDatabaseFix(
     input.adapterSlug,
     input.message,
     input.baseUrl,
     input.enteredDatabase,
   );
-  return database ? { message: `${database} ${input.message}` } : undefined;
+  return fix
+    ? { message: `${fix.sentence} ${input.message}`, ...(fix.database ? { database: fix.database } : {}) }
+    : undefined;
 }

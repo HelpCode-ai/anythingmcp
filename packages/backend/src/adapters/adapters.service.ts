@@ -455,6 +455,34 @@ export class AdaptersService {
     /** Finishing an existing connector: a field left empty uses what it stores (masked secrets come back empty). */
     existingConnectorId?: string,
   ): Promise<VerifyResult> {
+    const first = await this.checkCredentials(slug, organizationId, credentials, existingConnectorId);
+    if (first.ok !== false || !first.odooDatabase) return withoutRetryHint(first);
+    // Odoo: the database name is wrong and the address serves one database.
+    // 19 of the Odoo setups stuck on 9 Nov 2026 had been told its name and
+    // never typed it in, so the check tries it. When Odoo accepts it, or only
+    // the key is refused now, the page puts the name in the field and saves it.
+    const database = first.odooDatabase;
+    const retry = await this.checkCredentials(
+      slug,
+      organizationId,
+      { ...(credentials ?? {}), ODOO_DB: database },
+      existingConnectorId,
+    );
+    const note = `Your Odoo's database is called "${database}": it is filled in for you.`;
+    if (retry.ok === true) return { ...retry, corrected: { ODOO_DB: database }, note };
+    if (retry.ok === false && retry.kind === 'auth_failed' && !retry.odooDatabase) {
+      return { ...retry, corrected: { ODOO_DB: database }, message: `${note} ${retry.message}` };
+    }
+    return withoutRetryHint(first);
+  }
+
+  /** One setup check, as described on verifyCredentials. */
+  private async checkCredentials(
+    slug: string,
+    organizationId: string,
+    credentials?: Record<string, string>,
+    existingConnectorId?: string,
+  ): Promise<CheckResult> {
     const adapter = this.getBySlug(slug);
     if (existingConnectorId) {
       const stored = await this.prisma.connector.findFirst({
@@ -651,6 +679,7 @@ export class AdaptersService {
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
         message: odoo ? odoo.message : message,
+        ...(odoo?.database ? { odooDatabase: odoo.database } : {}),
         ...(field ? { fields: { [field]: message } } : {}),
         ...(suggest ? { suggest, suggestName: target?.name ?? suggest } : {}),
         ...(target
@@ -1277,11 +1306,25 @@ export interface StarterPackItem {
 }
 
 export type VerifyResult =
-  | { ok: true; toolName: string; durationMs: number; sample: string }
+  | {
+      ok: true;
+      toolName: string;
+      durationMs: number;
+      sample: string;
+      /**
+       * Values the check changed to get through (an Odoo database name the
+       * address names itself): the page fills them in and saves them.
+       */
+      corrected?: Record<string, string>;
+      /** What was changed, in a sentence for the page. */
+      note?: string;
+    }
   | {
       ok: false;
       kind: string;
       message: string;
+      /** As on success: values to fill in although the check still failed (an Odoo database name, then a refused key). */
+      corrected?: Record<string, string>;
       missing?: string[];
       /** Values refused field by field (a placeholder, a pattern miss, a key pasted twice). */
       fields?: Record<string, string>;
@@ -1304,6 +1347,15 @@ export type VerifyResult =
       appPending?: boolean;
     }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
+
+/** A single check: a failure may carry the one Odoo database to try instead (never sent to the page). */
+type CheckResult = VerifyResult & { odooDatabase?: string };
+
+function withoutRetryHint(result: CheckResult): VerifyResult {
+  if (!('odooDatabase' in result)) return result;
+  const { odooDatabase: _unused, ...rest } = result;
+  return rest as VerifyResult;
+}
 
 export type ExerciseResult =
   | { tool: string; outcome: 'ok'; durationMs: number; shape: string }

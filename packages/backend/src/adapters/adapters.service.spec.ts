@@ -1215,6 +1215,65 @@ describe('AdaptersService.verifyCredentials: Odoo JSON-2 answering 404', () => {
     expect(out.message).toMatch(/Check the address you open Odoo at/);
   });
 
+  /** The probe answers 404 unless ODOO_DB is `accepted`; there it answers `then` (ok, or a refused key). */
+  function buildAccepting(accepted: string, then: 'ok' | 'auth') {
+    const execute = jest.fn(async (connector: any) => {
+      if (connector.envVars.ODOO_DB !== accepted) {
+        throw Object.assign(new Error('404 NOT FOUND: Request failed with status code 404'), { status: 404 });
+      }
+      if (then === 'auth') {
+        throw Object.assign(new Error('401 UNAUTHORIZED: Invalid apikey'), { status: 401 });
+      }
+      return [{ id: 1, name: 'My Company' }];
+    });
+    const svc = new AdaptersService(
+      { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { svc, execute };
+  }
+
+  it('tries the one database the address serves and returns it to fill in when Odoo accepts it', async () => {
+    // 9 Nov 2026: 19 Odoo setups were stuck on a database name the check had
+    // already named; none had typed it in.
+    odooAnswers({ version: ['saas~19', 3, 0, 'final', 0, 'e'], serie: 'saas~19.3', databases: ['binikit-main-12245208'] });
+    const { svc, execute } = buildAccepting('binikit-main-12245208', 'ok');
+    const out: any = await svc.verifyCredentials('odoo', 'org1', creds);
+    expect(out).toMatchObject({ ok: true, corrected: { ODOO_DB: 'binikit-main-12245208' } });
+    expect(out.note).toContain('"binikit-main-12245208"');
+    expect(out).not.toHaveProperty('odooDatabase');
+    expect(execute.mock.calls.map(([c]: any) => c.envVars.ODOO_DB)).toEqual(['binikit', 'binikit-main-12245208']);
+  });
+
+  it('still fills in the database when only the key is refused with it', async () => {
+    odooAnswers({ version: ['saas~19', 3, 0, 'final', 0, 'e'], serie: 'saas~19.3', databases: ['binikit-main-12245208'] });
+    const { svc } = buildAccepting('binikit-main-12245208', 'auth');
+    const out: any = await svc.verifyCredentials('odoo', 'org1', creds);
+    expect(out).toMatchObject({ ok: false, kind: 'auth_failed', corrected: { ODOO_DB: 'binikit-main-12245208' } });
+    expect(out.message).toMatch(/^Your Odoo's database is called "binikit-main-12245208": it is filled in for you\./);
+  });
+
+  it('does not guess between several databases, and keeps the first answer when the other fails the same way', async () => {
+    odooAnswers({ version: [19, 0, 0, 'final', 0, ''], serie: '19.0', databases: ['prod', 'staging'] });
+    const several = buildAccepting('prod', 'ok');
+    const out: any = await several.svc.verifyCredentials('odoo', 'org1', creds);
+    expect(out.ok).toBe(false);
+    expect(out.corrected).toBeUndefined();
+    expect(out).not.toHaveProperty('odooDatabase');
+    expect(several.execute).toHaveBeenCalledTimes(1);
+
+    odooAnswers({ version: [19, 0, 0, 'final', 0, ''], serie: '19.0', databases: ['other'] });
+    const none = buildAccepting('nothing-matches', 'ok');
+    const again: any = await none.svc.verifyCredentials('odoo', 'org1', creds);
+    expect(again.ok).toBe(false);
+    expect(again.corrected).toBeUndefined();
+    expect(again.message).toContain('"other"');
+    expect(again).not.toHaveProperty('odooDatabase');
+    expect(none.execute).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the old hint and suggestion when Odoo does not tell its version', async () => {
     outbound.mockReset();
     outbound.mockRejectedValue(new Error('ECONNREFUSED'));
