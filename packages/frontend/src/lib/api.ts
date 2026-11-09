@@ -812,11 +812,25 @@ export interface SetupGuide extends SetupEffort {
 }
 
 export type VerifyResult =
-  | { ok: true; toolName: string; durationMs: number; sample: string }
+  | {
+      ok: true;
+      toolName: string;
+      durationMs: number;
+      sample: string;
+      /**
+       * Values the check changed to get through (an Odoo database name the
+       * address names itself): filled into the form and saved.
+       */
+      corrected?: Record<string, string>;
+      /** What was changed, in a sentence. */
+      note?: string;
+    }
   | {
       ok: false;
       kind: string;
       message: string;
+      /** As on success: values to fill in although the check still failed (then a refused key). */
+      corrected?: Record<string, string>;
       missing?: string[];
       fields?: Record<string, string>;
       status?: number | null;
