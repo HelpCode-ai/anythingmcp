@@ -43,7 +43,7 @@
     "@nestjs/throttler": "^6.7.1",
     "@opentelemetry/auto-instrumentations-node": "^0.82.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.300.0",
-    "@opentelemetry/resources": "^3.0.0",
+    "@opentelemetry/resources": "^3.1.0",
     "@opentelemetry/sdk-node": "^0.300.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@prisma/adapter-pg": "^7.10.1",
