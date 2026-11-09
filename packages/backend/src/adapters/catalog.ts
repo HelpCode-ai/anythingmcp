@@ -242,6 +242,7 @@ import * as falabellaSellerCenter from './intl/falabella-seller-center.json';
 import * as fathom from './intl/fathom.json';
 import * as fhir from './intl/fhir.json';
 import * as figma from './intl/figma.json';
+import * as filemaker from './intl/filemaker.json';
 import * as fillout from './intl/fillout.json';
 import * as finnhub from './intl/finnhub.json';
 import * as firebase from './intl/firebase.json';
@@ -1273,6 +1274,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fathom as unknown as AdapterDefinition,
   fhir as unknown as AdapterDefinition,
   figma as unknown as AdapterDefinition,
+  filemaker as unknown as AdapterDefinition,
   fillout as unknown as AdapterDefinition,
   finnhub as unknown as AdapterDefinition,
   firebase as unknown as AdapterDefinition,
