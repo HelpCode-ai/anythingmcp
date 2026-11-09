@@ -24,6 +24,8 @@ export const FLAGS: readonly FlagSpec[] = [
   { name: 'list', description: 'List the management API operations amcp api can call' },
   { name: 'browser', description: 'Log in through the browser and mint a management key' },
   { name: 'scope', value: 'read|admin', description: 'Scope for a browser-minted management key' },
+  { name: 'to', value: 'email address', description: 'Send each invoice to this address (amcp invoices email)' },
+  { name: 'billing-contact', description: 'Send invoices to the billing contact again (amcp invoices email)' },
   { name: 'json', description: 'Machine-readable output' },
   { name: 'help', short: 'h', description: 'Show usage' },
   { name: 'version', short: 'v', description: 'Show the CLI version' },
@@ -43,6 +45,11 @@ export const COMMANDS: readonly CommandSpec[] = [
     ],
   },
   { name: 'api', description: 'Call the management API (/api/*) with a management key', flags: ['url', 'data', 'key-stdin', 'yes', 'list', 'profile'] },
+  {
+    name: 'invoices', description: 'Invoices of your AnythingMCP Cloud workspace', subcommands: [
+      { name: 'email', description: 'Show or change emailing each paid invoice as a PDF', flags: ['to', 'billing-contact', 'yes', 'url', 'key-stdin', 'profile'] },
+    ],
+  },
   {
     name: 'completion', description: 'Print a shell completion script',
     values: SHELLS.map((shell) => ({ name: shell, description: `${shell} completion script` })),

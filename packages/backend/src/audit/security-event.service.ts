@@ -112,6 +112,8 @@ export const SecurityEvents = {
   // ── Licence plane ───────────────────────────────────────────────────────
   /** Cloud: the workspace's trial was extended by 7 days from the email link. */
   TRIAL_EXTENDED: 'TRIAL_EXTENDED',
+  /** Cloud: an admin switched invoices by email on or off, or changed their address (recipient domain only). */
+  INVOICE_EMAIL_CHANGED: 'INVOICE_EMAIL_CHANGED',
 } as const;
 
 export type SecurityEventName =
