@@ -296,6 +296,19 @@ $ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
 
 `GET /api/audit/breakdowns?days=30` liefert Nutzung und Kosten nach Connector, MCP-Server und Benutzer aufgeschlüsselt. Das passt gut für einen Monatsbericht.
 
+### Rechnungen per E-Mail erhalten
+
+In AnythingMCP Cloud kann ein Admin jede bezahlte Rechnung als PDF per E-Mail verschicken lassen, zum Beispiel an die Buchhaltung:
+
+```bash
+amcp invoices email on --to buchhaltung@acme.de --yes
+amcp invoices email
+# Invoices by email: on
+# Recipient: buchhaltung@acme.de (another address)
+```
+
+Mit `--billing-contact` gehen sie wieder an die Rechnungs-E-Mail des Abonnements, mit `off` werden sie nicht mehr verschickt. Details: [Invoices on AnythingMCP Cloud](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/cloud-invoices.md).
+
 ### Die ganze API offline entdecken
 
 Sie brauchen die Doku nicht geöffnet zu haben. Der Katalog der Management-Operationen wird mit der CLI ausgeliefert:
