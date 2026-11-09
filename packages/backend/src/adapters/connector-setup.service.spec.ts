@@ -1,10 +1,15 @@
 import { ConnectorSetupService, SETUP_LINK_RETENTION_MS } from './connector-setup.service';
 import { AdaptersService } from './adapters.service';
 import { encrypt } from '../common/crypto/encryption.util';
+import { outboundRequest } from '../common/outbound-http';
+
+// The chat install asks an Odoo address about itself: no real request here.
+jest.mock('../common/outbound-http', () => ({ outboundRequest: jest.fn().mockRejectedValue(new Error('offline')) }));
+const outbound = outboundRequest as jest.MockedFunction<typeof outboundRequest>;
 
 const KEY = 'k'.repeat(32);
 
-function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any; cloud?: boolean } = {}) {
+function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any; cloud?: boolean; lastCalls?: Record<string, any>; verify?: any } = {}) {
   process.env.ENCRYPTION_KEY = KEY;
   const links: any[] = [];
   const serverConnectors: any[] = [];
@@ -24,6 +29,7 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
     },
     mcpServerConfig: { findMany: jest.fn(async ({ where }: any) => where.id.in.map((id: string) => ({ id }))) },
     mcpServerConnector: { create: jest.fn(async ({ data }: any) => serverConnectors.push(data)) },
+    toolInvocation: { findFirst: jest.fn(async ({ where }: any) => opts.lastCalls?.[where.connectorId] ?? null) },
   };
   const realAdapters = new AdaptersService(
     { connector: {}, mcpTool: {} } as any,
@@ -36,6 +42,7 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
   const adapters: any = {
     listAll: () => realAdapters.listAll(),
     describe: (slug: string) => realAdapters.describe(slug),
+    verifyCredentials: jest.fn().mockResolvedValue(opts.verify ?? { ok: null, skipped: 'no_probe' }),
     importAdapter: jest.fn(async (slug: string, _u: string, orgId: string, settings: Record<string, string>) => {
       const def = realAdapters.getBySlug(slug);
       const id = `c-${slug}`;
@@ -469,6 +476,139 @@ describe('ConnectorSetupService — status', () => {
     const found: any = (await service.find(ctx, { query: 'etsy' })).body;
     const installed: any = (await service.install(ctx, { adapter: 'openplz' })).body;
     expect(JSON.stringify([found, installed])).not.toMatch(/start-trial|choosePlanUrl|daysLeft/);
+  });
+});
+
+describe('ConnectorSetupService — an Odoo address asked before a chat install', () => {
+  /** Answers like an Odoo: `version` on /jsonrpc, `databases` on /web/database/list. */
+  function odoo(opts: { major?: number | string; serie?: string; databases?: string[]; typo?: boolean }) {
+    outbound.mockImplementation(async (config: any) => {
+      if (opts.typo) {
+        return { status: 404, data: '<script>window.location = `https://www.odoo.com/typo?domain=x.odoo.com`;</script>' } as any;
+      }
+      if (config.url.endsWith('/jsonrpc')) {
+        return { status: 200, data: { result: { server_version_info: [opts.major, 0, 0, 'final', 0, ''], server_serie: opts.serie } } } as any;
+      }
+      if (config.url.endsWith('/web/database/list')) return { status: 200, data: { result: opts.databases ?? [] } } as any;
+      throw new Error(`unexpected ${config.url}`);
+    });
+  }
+  afterEach(() => outbound.mockReset().mockRejectedValue(new Error('offline')));
+
+  it('installs the JSON-RPC connector for an Odoo below 19, and the one database it serves', async () => {
+    odoo({ major: 17, serie: '17.0', databases: ['acme-main-123'] });
+    const { service, ctx, adapters } = build();
+    const out: any = await service.install(ctx, {
+      adapter: 'odoo',
+      settings: { ODOO_URL: 'https://acme.odoo.com', ODOO_DB: 'acme' },
+    });
+    expect(out.isError).toBeUndefined();
+    expect(adapters.importAdapter).toHaveBeenCalledWith(
+      'odoo-jsonrpc',
+      'u1',
+      'org-1',
+      { ODOO_URL: 'https://acme.odoo.com', ODOO_DB: 'acme-main-123' },
+      expect.anything(),
+    );
+    expect(out.body.installed).toBe('Odoo 14-18 (JSON-RPC)');
+    expect(out.body.checkedTheAddress).toMatch(/version 17\.0, older than 19/);
+    expect(out.body.checkedTheAddress).toMatch(/called "acme-main-123", not "acme"/);
+    expect(out.body.finishSetupUrl).toMatch(/\/s\//);
+  });
+
+  it('keeps the JSON-2 connector on Odoo 19 and fills in a database the assistant left out', async () => {
+    odoo({ major: 'saas~19', serie: 'saas~19.3', databases: ['acme-main-123'] });
+    const { service, ctx, adapters } = build();
+    const out: any = await service.install(ctx, { adapter: 'odoo', settings: { ODOO_URL: 'https://acme.odoo.com' } });
+    expect(adapters.importAdapter.mock.calls[0][0]).toBe('odoo');
+    expect(adapters.importAdapter.mock.calls[0][3].ODOO_DB).toBe('acme-main-123');
+    expect(out.body.checkedTheAddress).toBe('The database is called "acme-main-123": that name was used.');
+  });
+
+  it('drops a database the address does not serve when it serves several, and names them', async () => {
+    odoo({ major: 19, serie: '19.0', databases: ['prod', 'staging'] });
+    const { service, ctx, adapters } = build();
+    const out: any = await service.install(ctx, {
+      adapter: 'odoo',
+      settings: { ODOO_URL: 'https://erp.example.com', ODOO_DB: 'erp' },
+    });
+    expect(adapters.importAdapter.mock.calls[0][3]).toEqual({ ODOO_URL: 'https://erp.example.com' });
+    expect(out.body.checkedTheAddress).toMatch(/no database "erp"; it serves "prod", "staging"/);
+  });
+
+  it('installs nothing when there is no Odoo database at the address', async () => {
+    odoo({ typo: true });
+    const { service, ctx, adapters } = build();
+    const out: any = await service.install(ctx, { adapter: 'odoo', settings: { ODOO_URL: 'https://acme.odoo.com' } });
+    expect(out.isError).toBe(true);
+    expect(out.body.error).toMatch(/no Odoo database at https:\/\/acme\.odoo\.com/);
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
+  });
+
+  it('installs as asked when the address says nothing, or the right values were passed', async () => {
+    const { service, ctx, adapters } = build();
+    const quiet: any = await service.install(ctx, {
+      adapter: 'odoo',
+      settings: { ODOO_URL: 'https://erp.example.com', ODOO_DB: 'prod' },
+    });
+    expect(quiet.body.checkedTheAddress).toBeUndefined();
+    expect(adapters.importAdapter.mock.calls[0].slice(0, 4)).toEqual([
+      'odoo', 'u1', 'org-1', { ODOO_URL: 'https://erp.example.com', ODOO_DB: 'prod' },
+    ]);
+
+    odoo({ major: 19, serie: '19.0', databases: ['prod'] });
+    const right: any = await build().service.install(ctx, {
+      adapter: 'odoo',
+      settings: { ODOO_URL: 'https://erp.example.com', ODOO_DB: 'prod' },
+    });
+    expect(right.body.checkedTheAddress).toBeUndefined();
+  });
+});
+
+describe('ConnectorSetupService — status of ready connectors', () => {
+  /** A ready (keyless) connector row as status() reads it. */
+  async function readyRow(updatedAt: Date) {
+    const { service, ctx, prisma } = build();
+    await service.install(ctx, { adapter: 'openplz' });
+    const row = await prisma.connector.findUnique({ where: { id: 'c-openplz' } });
+    return { ...row, name: 'OpenPLZ', createdAt: updatedAt, updatedAt };
+  }
+
+  it('says how the last call of a ready connector went', async () => {
+    const row = await readyRow(new Date(Date.now() - 5 * 86_400_000));
+    const at = new Date();
+    const { service, ctx, adapters } = build({
+      connectors: [row],
+      lastCalls: { 'c-openplz': { status: 'ERROR', error: '401 Unauthorized: key revoked', createdAt: at } },
+    });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.connectors[0]).toMatchObject({
+      status: 'ready',
+      lastCall: { ok: false, at: at.toISOString(), error: '401 Unauthorized: key revoked' },
+    });
+    expect(adapters.verifyCredentials).not.toHaveBeenCalled();
+  });
+
+  it('runs the setup check on one finished today and never used, and gives a link to fix it when it fails', async () => {
+    const row = await readyRow(new Date());
+    const { service, ctx, adapters } = build({
+      connectors: [row],
+      verify: { ok: false, kind: 'auth_failed', message: 'The provider refused the key.' },
+    });
+    const out: any = (await service.status(ctx)).body;
+    expect(adapters.verifyCredentials).toHaveBeenCalledWith('openplz', 'org-1', {}, 'c-openplz');
+    expect(out.connectors[0]).toMatchObject({ check: { ok: false, message: 'The provider refused the key.' } });
+    expect(out.connectors[0].fixUrl).toMatch(/\/s\//);
+    expect(out.checkHint).toMatch(/fixUrl/);
+  });
+
+  it('leaves an old unused connector unchecked', async () => {
+    const row = await readyRow(new Date(Date.now() - 3 * 86_400_000));
+    const { service, ctx, adapters } = build({ connectors: [row] });
+    const out: any = (await service.status(ctx)).body;
+    expect(adapters.verifyCredentials).not.toHaveBeenCalled();
+    expect(out.connectors[0].check).toBeUndefined();
+    expect(out.checkHint).toBeUndefined();
   });
 });
 
