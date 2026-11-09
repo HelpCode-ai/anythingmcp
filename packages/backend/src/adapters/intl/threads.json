@@ -1,0 +1,1083 @@
+{
+  "slug": "threads",
+  "name": "Threads",
+  "aliases": [
+    "Meta Threads",
+    "Threads by Instagram",
+    "Threads API"
+  ],
+  "description": "Run a Threads profile from your AI: read posts, replies, whole conversations and mentions, post and account insights, keyword search and public profiles, publish text, image, video and carousel posts and replies, and hide or approve replies. One long-lived Threads user token.",
+  "instructions": "## Threads\nThis connector calls the **Threads API** of Meta (`https://graph.threads.net/v1.0`) for one Threads profile: its profile and posts, replies and whole conversations, mentions, post and account insights, keyword search, public profile lookup, and publishing (text, image, video and carousel posts and replies), plus hiding replies and approving pending ones. It works with any Threads profile (personal accounts too) that authorized your Meta app.\n\n**Setup (about 15 minutes)**\n1. Create a Meta app at https://developers.facebook.com/apps/creation/ with the use case **Access the Threads API**. In the use case's **Customize** page add the permissions you need: `threads_basic` (always), `threads_content_publish`, `threads_read_replies`, `threads_manage_replies`, `threads_manage_insights`, and if used `threads_manage_mentions`, `threads_keyword_search`, `threads_profile_discovery`, `threads_location_tagging`, `threads_delete`.\n2. While the app is in development only its own people can authorize it: **App roles, Roles, Add People, Threads Tester**, then accept the invitation in Threads (Settings, Account, Website permissions, Invites).\n3. Get a user token for the profile: in the Graph API Explorer (https://developers.facebook.com/tools/explorer/) pick your app, switch the host to `threads.net`, choose the permissions and **Generate Threads Access Token** (the use case settings page may also offer a User Token Generator for testers). That token lasts one hour.\n4. Exchange it for a **long-lived token** (60 days): open `https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=<Threads app secret>&access_token=<short-lived token>` (the Threads app secret is under App settings, Basic) and copy `access_token` from the answer.\n5. Paste it into `THREADS_ACCESS_TOKEN` (without the word Bearer) and run `threads_get_profile`.\n\n**Token lifetime**: Threads issues no refresh tokens to this kind of connector. A long-lived token works 60 days. Refresh it before then (at least 24 hours after it was issued) by opening `https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=<current token>`, and paste the new token into the connector; a token not refreshed within 60 days cannot be renewed and must be obtained again (steps 3 and 4). The Access Token Debugger (https://developers.facebook.com/tools/debug/accesstoken) shows when it expires. Error 190 means the token expired or was revoked (the user removed the app or changed the password).\n\n**Where to start**: `threads_get_profile` (user id, handle), then `threads_list_posts` for the profile's posts. Tools that act on the connected profile use `me`, so you never pass a user id. Ids are strings of digits; pass them unchanged.\n\n**Reading**\n- Own content: `threads_list_posts`, `threads_get_post`, `threads_list_my_replies`, `threads_list_mentions`.\n- Replies: `threads_list_replies` (top level only) or `threads_get_conversation` (everything under a post, flat, with replied_to to rebuild the tree).\n- Insights: `threads_get_post_insights` (views, likes, replies, reposts, quotes, shares of one post) and `threads_get_account_insights` (profile totals over a period; views per day; follower_demographics with a breakdown, at least 100 followers). Insights only exist for the connected profile's own posts.\n- Discovery: `threads_search_posts` (keywords or topic tags; without the approved `threads_keyword_search` permission only the profile's own posts are searched; 2200 searches per 24 hours), `threads_lookup_profile` and `threads_list_profile_posts` for public profiles by exact username, `threads_search_locations` for location ids.\n- Quotas: `threads_get_publishing_limit` (250 posts, 1000 replies, 100 deletions per rolling 24 hours).\n\n**Publishing: confirm first.** Everything published is public at once. Show the user the exact text and media and wait for a yes.\n- A text post or text reply: `threads_post_text` (one call; `reply_to_id` makes it a reply). Text is at most 500 characters.\n- Image or video: `threads_create_container` with `media_type` IMAGE or VIDEO and a public media URL (Meta downloads it; a private or redirecting URL fails), then for video poll `threads_get_container_status` until FINISHED (about 30 seconds on average), then `threads_publish` with the container id.\n- Carousel: 2 to 20 containers with `is_carousel_item` true, then a CAROUSEL container with `children` (comma-separated ids) and the text, then `threads_publish`.\n- Reposting someone's post: `threads_repost`.\n\n**Moderation**: `threads_hide_reply` hides or unhides a top-level reply on the profile's posts; for posts created with `enable_reply_approvals`, `threads_list_pending_replies` and `threads_manage_pending_reply` approve or ignore held replies.\n\n**Deleting**: `threads_delete_post` is installed switched off (irreversible; needs `threads_delete`). Switch it on in the connector's tools only if deletions are wanted.\n\n**Pagination and fields**: list tools return `data` and `paging.cursors`; pass `paging.cursors.after` as `after` for the next page until it is missing. `limit` is at most 100. Only the requested `fields` are returned; each tool asks for useful defaults. `since` and `until` take Unix seconds or dates.\n\n**Errors**: 190 expired or invalid token; 10 or 200 a missing permission (add it in the use case and generate the token again); 4, 17, 32 or 613 rate limiting (wait); a container ERROR usually means the media URL was not reachable or the format is not supported.",
+  "region": "intl",
+  "category": "social",
+  "icon": "threads",
+  "docsUrl": "https://developers.facebook.com/docs/threads",
+  "prerequisites": "A Meta app with the Access the Threads API use case and a long-lived Threads user token (60 days) for the profile, created through the Graph API Explorer and exchanged with the app's Threads app secret.",
+  "requiredEnvVars": [
+    "THREADS_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "THREADS_ACCESS_TOKEN": {
+      "label": "Long-lived Threads access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "A Threads user token (it starts with TH) for the profile, exchanged for a long-lived one (60 days) with grant_type=th_exchange_token. Refresh it before 60 days with grant_type=th_refresh_token and paste the new one here.",
+      "link": "https://developers.facebook.com/docs/threads/get-started/long-lived-tokens",
+      "pattern": "^TH[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "A Threads access token starts with TH and has only letters and digits. Paste the token without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "400": "Threads refused the request. Error 190 means the token is invalid or expired: get a new one and exchange it for a long-lived token. Otherwise check the ids passed to the tool.",
+    "401": "Threads refused the access token (error 190): it expired, was revoked, or is a Facebook or Instagram token rather than a Threads token. Create a new Threads user token and exchange it for a long-lived one.",
+    "403": "The token lacks a permission for this call (error 10 or 200). Add it in the app's Threads use case and generate the token again.",
+    "rate_limited": "Threads is rate limiting this profile or app (error 4, 17, 32 or 613). Wait a few minutes and check threads_get_publishing_limit."
+  },
+  "probe": {
+    "tool": "threads_get_profile"
+  },
+  "connector": {
+    "name": "Threads API",
+    "type": "REST",
+    "baseUrl": "https://graph.threads.net/v1.0",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{THREADS_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/me?fields=id,username"
+  },
+  "tools": [
+    {
+      "name": "threads_get_profile",
+      "description": "The connected Threads profile: id, username, display name, biography, profile picture URL and is_verified. Start here: it checks the token and gives the user id and handle. Needs threads_basic.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,username,name,threads_profile_picture_url,threads_biography,is_verified. recently_searched_keywords is also available.",
+            "default": "id,username,name,threads_profile_picture_url,threads_biography,is_verified"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_get_publishing_limit",
+      "description": "How much of the rolling 24-hour quotas the profile has used: posts (quota_usage of 250, carousels count once), replies (reply_quota_usage of 1000), deletions (100) and location searches. Check before publishing many posts. Each config gives quota_total and quota_duration in seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: quota_usage,config,reply_quota_usage,reply_config,delete_quota_usage,delete_config. location_search_quota_usage and location_search_config are also available.",
+            "default": "quota_usage,config,reply_quota_usage,reply_config,delete_quota_usage,delete_config"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/threads_publishing_limit",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_list_posts",
+      "description": "List the posts the connected profile published, newest first: id, text, media type and URL, permalink, timestamp, quote and repost links, has_replies. Reposts appear with media_type REPOST_FACADE. Page with after; filter by date with since and until. Engagement numbers are not here: use threads_get_post_insights.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,media_product_type,media_type,media_url,permalink,username,text,timestamp,shortcode,thumbnail_url,children,is_quote_post,quoted_post,reposted_post,has_replies,link_attachment_url,topic_tag,alt_text.",
+            "default": "id,media_product_type,media_type,media_url,permalink,username,text,timestamp,shortcode,thumbnail_url,children,is_quote_post,quoted_post,reposted_post,has_replies,link_attachment_url,topic_tag,alt_text"
+          },
+          "since": {
+            "type": "string",
+            "description": "Only items from this moment on: a Unix timestamp in seconds (1767225600) or a date (2026-01-01). Not earlier than 1688540400 (5 July 2023)."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only items before this moment: a Unix timestamp in seconds or a date (2026-01-31). Not in the future."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, at most 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.before of the previous answer, for the previous page. Do not combine with after."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/threads",
+        "queryParams": {
+          "fields": "$fields",
+          "since": "$since",
+          "until": "$until",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_get_post",
+      "description": "One Threads post or reply by media id: text, media type and URL, permalink, owner, timestamp, children of a carousel, quoted or reposted post, whether it is a reply and to what (replied_to, root_post), hide_status and reply_audience. Also reads posts of other profiles that the token can see.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "description": "Threads media id (a post or reply), a string of digits from threads_list_posts, threads_list_replies or a permalink lookup. Pass it unchanged.",
+            "pattern": "^[0-9]+$"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,media_product_type,media_type,media_url,permalink,username,text,timestamp,shortcode,thumbnail_url,children,is_quote_post,quoted_post,reposted_post,has_replies,link_attachment_url,topic_tag,alt_text,owner,is_reply,replied_to,root_post,hide_status,reply_audience.",
+            "default": "id,media_product_type,media_type,media_url,permalink,username,text,timestamp,shortcode,thumbnail_url,children,is_quote_post,quoted_post,reposted_post,has_replies,link_attachment_url,topic_tag,alt_text,owner,is_reply,replied_to,root_post,hide_status,reply_audience"
+          }
+        },
+        "required": [
+          "media_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{media_id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_list_my_replies",
+      "description": "List the replies the connected profile wrote on any post, newest first, with the post each one answers (replied_to, root_post). Needs threads_read_replies. Page with after; filter by date with since and until.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,hide_status,reply_audience.",
+            "default": "id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,hide_status,reply_audience"
+          },
+          "since": {
+            "type": "string",
+            "description": "Only items from this moment on: a Unix timestamp in seconds (1767225600) or a date (2026-01-01). Not earlier than 1688540400 (5 July 2023)."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only items before this moment: a Unix timestamp in seconds or a date (2026-01-31). Not in the future."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, at most 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.before of the previous answer, for the previous page. Do not combine with after."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/replies",
+        "queryParams": {
+          "fields": "$fields",
+          "since": "$since",
+          "until": "$until",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_list_mentions",
+      "description": "List public posts by other profiles that mention the connected profile (@username), newest first. Needs threads_manage_mentions; until Meta grants advanced access for it, only mentions by the app's Threads testers are returned. Page with after; filter by date with since and until.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply.",
+            "default": "id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply"
+          },
+          "since": {
+            "type": "string",
+            "description": "Only items from this moment on: a Unix timestamp in seconds (1767225600) or a date (2026-01-01). Not earlier than 1688540400 (5 July 2023)."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only items before this moment: a Unix timestamp in seconds or a date (2026-01-31). Not in the future."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, at most 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.before of the previous answer, for the previous page. Do not combine with after."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/mentions",
+        "queryParams": {
+          "fields": "$fields",
+          "since": "$since",
+          "until": "$until",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_list_replies",
+      "description": "List the top-level replies to a post (not replies to replies), newest first by default, with username, text, timestamp, hide_status and has_replies. Needs threads_read_replies. Use threads_get_conversation for the whole thread, nested replies included. Page with after.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "description": "Threads media id (a post or reply), a string of digits from threads_list_posts, threads_list_replies or a permalink lookup. Pass it unchanged.",
+            "pattern": "^[0-9]+$"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,hide_status,reply_audience.",
+            "default": "id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,hide_status,reply_audience"
+          },
+          "reverse": {
+            "type": "boolean",
+            "description": "true (default) lists replies newest first; false oldest first."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.before of the previous answer, for the previous page. Do not combine with after."
+          }
+        },
+        "required": [
+          "media_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{media_id}/replies",
+        "queryParams": {
+          "fields": "$fields",
+          "reverse": "$reverse",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_get_conversation",
+      "description": "The whole conversation under a post as one flat list: top-level and nested replies, each with replied_to and root_post so the tree can be rebuilt. Needs threads_read_replies. Page with after.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "description": "Threads media id (a post or reply), a string of digits from threads_list_posts, threads_list_replies or a permalink lookup. Pass it unchanged.",
+            "pattern": "^[0-9]+$"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,hide_status,reply_audience.",
+            "default": "id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,hide_status,reply_audience"
+          },
+          "reverse": {
+            "type": "boolean",
+            "description": "true (default) lists replies newest first; false oldest first."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.before of the previous answer, for the previous page. Do not combine with after."
+          }
+        },
+        "required": [
+          "media_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{media_id}/conversation",
+        "queryParams": {
+          "fields": "$fields",
+          "reverse": "$reverse",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_list_pending_replies",
+      "description": "List replies waiting for approval on a post that was published with reply approvals switched on (enable_reply_approvals). reply_approval_status is pending or ignored. Needs threads_read_replies and threads_manage_replies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "description": "Threads media id (a post or reply), a string of digits from threads_list_posts, threads_list_replies or a permalink lookup. Pass it unchanged.",
+            "pattern": "^[0-9]+$"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,hide_status,reply_audience,reply_approval_status.",
+            "default": "id,text,username,permalink,timestamp,media_type,media_url,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,hide_status,reply_audience,reply_approval_status"
+          },
+          "reverse": {
+            "type": "boolean",
+            "description": "true (default) lists replies newest first; false oldest first."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.before of the previous answer, for the previous page. Do not combine with after."
+          }
+        },
+        "required": [
+          "media_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{media_id}/pending_replies",
+        "queryParams": {
+          "fields": "$fields",
+          "reverse": "$reverse",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_hide_reply",
+      "description": "Hide or unhide a top-level reply on one of the connected profile's posts. A hidden reply stays visible to its author and behind a 'hidden replies' link for others; unhide reverses it. Needs threads_manage_replies. Confirm the reply with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reply_id": {
+            "type": "string",
+            "description": "Media id of the reply, from threads_list_replies, threads_get_conversation or threads_list_pending_replies.",
+            "pattern": "^[0-9]+$"
+          },
+          "hide": {
+            "type": "boolean",
+            "description": "true hides the reply, false unhides it."
+          }
+        },
+        "required": [
+          "reply_id",
+          "hide"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{reply_id}/manage_reply",
+        "queryParams": {
+          "hide": "$hide"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "threads_manage_pending_reply",
+      "description": "Approve or ignore a pending reply (from threads_list_pending_replies). Approving publishes the reply under the post for everyone. Needs threads_manage_replies. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reply_id": {
+            "type": "string",
+            "description": "Media id of the reply, from threads_list_replies, threads_get_conversation or threads_list_pending_replies.",
+            "pattern": "^[0-9]+$"
+          },
+          "approve": {
+            "type": "boolean",
+            "description": "true approves and publishes the reply, false ignores it."
+          }
+        },
+        "required": [
+          "reply_id",
+          "approve"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{reply_id}/manage_pending_reply",
+        "queryParams": {
+          "approve": "$approve"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "threads_get_post_insights",
+      "description": "Lifetime engagement of one of the connected profile's posts: views, likes, replies, reposts, quotes and shares. Each metric comes back as {name, values: [{value}]}. Nested replies are not counted; a repost (REPOST_FACADE) returns an empty list. Needs threads_manage_insights.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "description": "Threads media id (a post or reply), a string of digits from threads_list_posts, threads_list_replies or a permalink lookup. Pass it unchanged.",
+            "pattern": "^[0-9]+$"
+          },
+          "metric": {
+            "type": "string",
+            "description": "Comma-separated metrics: views, likes, replies, reposts, quotes, shares. Default all of them.",
+            "default": "views,likes,replies,reposts,quotes,shares"
+          }
+        },
+        "required": [
+          "media_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{media_id}/insights",
+        "queryParams": {
+          "metric": "$metric"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_get_account_insights",
+      "description": "Profile-level insights of the connected account over a period: views (per day), likes, replies, reposts, quotes, link clicks and followers_count, or follower_demographics with a breakdown. Without since and until the period is yesterday and today. Dates before 13 April 2024 are not available. Needs threads_manage_insights.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "description": "Comma-separated metrics: views, likes, replies, reposts, quotes, clicks, followers_count, follower_demographics. Ask for follower_demographics alone, with breakdown and without since or until; it needs at least 100 followers.",
+            "default": "views,likes,replies,reposts,quotes,clicks,followers_count"
+          },
+          "since": {
+            "type": "string",
+            "description": "Start of the period: Unix timestamp in seconds or a date (2026-10-01). Use together with until."
+          },
+          "until": {
+            "type": "string",
+            "description": "End of the period: Unix timestamp in seconds or a date (2026-10-31). Use together with since."
+          },
+          "breakdown": {
+            "type": "string",
+            "description": "Only with follower_demographics: one of country, city, age, gender.",
+            "enum": [
+              "country",
+              "city",
+              "age",
+              "gender"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/threads_insights",
+        "queryParams": {
+          "metric": "$metric",
+          "since": "$since",
+          "until": "$until",
+          "breakdown": "$breakdown"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_search_posts",
+      "description": "Search public Threads posts by keyword or topic tag, most popular (TOP) or most recent (RECENT), optionally only text, image or video posts or one author. Needs threads_keyword_search; until Meta approves that permission for the app, only the connected profile's own posts are searched. At most 2200 searches per 24 hours per profile (searches with no results are free).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Keyword(s), or a topic tag when search_mode is TAG."
+          },
+          "search_type": {
+            "type": "string",
+            "description": "TOP (default) for the most popular posts, RECENT for the newest.",
+            "enum": [
+              "TOP",
+              "RECENT"
+            ]
+          },
+          "search_mode": {
+            "type": "string",
+            "description": "KEYWORD (default) or TAG to search a topic tag.",
+            "enum": [
+              "KEYWORD",
+              "TAG"
+            ]
+          },
+          "media_type": {
+            "type": "string",
+            "description": "Only posts of this type.",
+            "enum": [
+              "TEXT",
+              "IMAGE",
+              "VIDEO"
+            ]
+          },
+          "author_username": {
+            "type": "string",
+            "description": "Only posts by this exact username, without @."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only items from this moment on: a Unix timestamp in seconds (1767225600) or a date (2026-01-01). Not earlier than 1688540400 (5 July 2023)."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only items before this moment: a Unix timestamp in seconds or a date (2026-01-31). Not in the future."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, at most 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,media_product_type,media_type,media_url,permalink,username,text,timestamp,shortcode,thumbnail_url,is_quote_post,has_replies,link_attachment_url,topic_tag.",
+            "default": "id,media_product_type,media_type,media_url,permalink,username,text,timestamp,shortcode,thumbnail_url,is_quote_post,has_replies,link_attachment_url,topic_tag"
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/keyword_search",
+        "queryParams": {
+          "q": "$q",
+          "search_type": "$search_type",
+          "search_mode": "$search_mode",
+          "media_type": "$media_type",
+          "author_username": "$author_username",
+          "since": "$since",
+          "until": "$until",
+          "limit": "$limit",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_lookup_profile",
+      "description": "Public profile of another Threads user by exact username: name, biography, profile picture, is_verified, follower_count and the likes, replies, reposts and quotes of their posts in the past 7 days. Only public profiles with at least 100 followers; 1000 lookups per 24 hours. Needs threads_profile_discovery; with standard access only official Meta accounts (meta, threads, instagram, facebook) can be looked up.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Exact Threads username without @, e.g. zuck."
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/profile_lookup",
+        "queryParams": {
+          "username": "$username"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_list_profile_posts",
+      "description": "Recent public posts of another Threads profile by exact username, newest first. Needs threads_profile_discovery. Page with after; filter with since and until.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Exact Threads username without @."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,media_product_type,media_type,media_url,permalink,username,text,timestamp,shortcode,thumbnail_url,is_quote_post,has_replies,link_attachment_url.",
+            "default": "id,media_product_type,media_type,media_url,permalink,username,text,timestamp,shortcode,thumbnail_url,is_quote_post,has_replies,link_attachment_url"
+          },
+          "since": {
+            "type": "string",
+            "description": "Only items from this moment on: a Unix timestamp in seconds (1767225600) or a date (2026-01-01). Not earlier than 1688540400 (5 July 2023)."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only items before this moment: a Unix timestamp in seconds or a date (2026-01-31). Not in the future."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, default 25, at most 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.after of the previous answer, for the next page. Do not combine with before."
+          },
+          "before": {
+            "type": "string",
+            "description": "Cursor from paging.cursors.before of the previous answer, for the previous page. Do not combine with after."
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/profile_posts",
+        "queryParams": {
+          "username": "$username",
+          "fields": "$fields",
+          "since": "$since",
+          "until": "$until",
+          "limit": "$limit",
+          "after": "$after",
+          "before": "$before"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_search_locations",
+      "description": "Find places to tag in a post, by name or by coordinates; returns location ids with name, address, city, country and coordinates. Pass an id as location_id to threads_create_container. Needs threads_location_tagging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Place name to search for, e.g. Colosseum."
+          },
+          "latitude": {
+            "type": "number",
+            "description": "Latitude, together with longitude."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude, together with latitude."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,name,address,city,country,latitude,longitude,postal_code.",
+            "default": "id,name,address,city,country,latitude,longitude,postal_code"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/location_search",
+        "queryParams": {
+          "query": "$query",
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_post_text",
+      "description": "Publish a text post, or a text reply, in one step (auto_publish_text): it goes live on the connected profile at once. At most 500 characters; one link in the text, or link_attachment, shows a preview card. Show the user the exact text and wait for a yes. Needs threads_content_publish (and threads_manage_replies for replies). Returns the id of the new post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The post text, up to 500 characters. Emojis count by their UTF-8 bytes.",
+            "maxLength": 500
+          },
+          "reply_to_id": {
+            "type": "string",
+            "description": "To reply: the media id of the post or reply to answer.",
+            "pattern": "^[0-9]+$"
+          },
+          "link_attachment": {
+            "type": "string",
+            "description": "A URL to show as a link preview card.",
+            "format": "uri"
+          },
+          "quote_post_id": {
+            "type": "string",
+            "description": "Media id of a post to quote.",
+            "pattern": "^[0-9]+$"
+          },
+          "reply_control": {
+            "type": "string",
+            "description": "Who may reply: everyone (default), accounts_you_follow, mentioned_only, parent_post_author_only, followers_only.",
+            "enum": [
+              "everyone",
+              "accounts_you_follow",
+              "mentioned_only",
+              "parent_post_author_only",
+              "followers_only"
+            ]
+          },
+          "topic_tag": {
+            "type": "string",
+            "description": "A topic to tag the post with, without # (no periods or ampersands)."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/threads",
+        "queryParams": {
+          "media_type": "TEXT",
+          "auto_publish_text": "true",
+          "text": "$text",
+          "reply_to_id": "$reply_to_id",
+          "link_attachment": "$link_attachment",
+          "quote_post_id": "$quote_post_id",
+          "reply_control": "$reply_control",
+          "topic_tag": "$topic_tag"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "threads_create_container",
+      "description": "Step 1 of publishing an image, video or carousel post (or reply): create a media container from a public URL. Nothing is visible yet. Returns the container id; for a video wait until threads_get_container_status says FINISHED (about 30 seconds on average), then call threads_publish. Carousel: create 2 to 20 items with is_carousel_item true, then a CAROUSEL container with children. Containers expire after 24 hours. Needs threads_content_publish.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_type": {
+            "type": "string",
+            "description": "TEXT, IMAGE, VIDEO or CAROUSEL.",
+            "enum": [
+              "TEXT",
+              "IMAGE",
+              "VIDEO",
+              "CAROUSEL"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "Post text, up to 500 characters. Required for TEXT; for a carousel set it on the CAROUSEL container, not on the items.",
+            "maxLength": 500
+          },
+          "image_url": {
+            "type": "string",
+            "description": "Public URL of a JPEG or PNG image (up to 8 MB). Required for IMAGE.",
+            "format": "uri"
+          },
+          "video_url": {
+            "type": "string",
+            "description": "Public URL of an MP4 or MOV video (up to 5 minutes, 1 GB). Required for VIDEO.",
+            "format": "uri"
+          },
+          "is_carousel_item": {
+            "type": "boolean",
+            "description": "true for an item that will go into a carousel."
+          },
+          "children": {
+            "type": "string",
+            "description": "For CAROUSEL: comma-separated container ids of the 2 to 20 items, in order."
+          },
+          "reply_to_id": {
+            "type": "string",
+            "description": "To publish this as a reply: the media id of the post or reply to answer.",
+            "pattern": "^[0-9]+$"
+          },
+          "quote_post_id": {
+            "type": "string",
+            "description": "Media id of a post to quote.",
+            "pattern": "^[0-9]+$"
+          },
+          "reply_control": {
+            "type": "string",
+            "description": "Who may reply: everyone (default), accounts_you_follow, mentioned_only, parent_post_author_only, followers_only.",
+            "enum": [
+              "everyone",
+              "accounts_you_follow",
+              "mentioned_only",
+              "parent_post_author_only",
+              "followers_only"
+            ]
+          },
+          "alt_text": {
+            "type": "string",
+            "description": "Alternative text for the image or video, up to 1000 characters.",
+            "maxLength": 1000
+          },
+          "link_attachment": {
+            "type": "string",
+            "description": "For TEXT: a URL to show as a link preview card.",
+            "format": "uri"
+          },
+          "topic_tag": {
+            "type": "string",
+            "description": "A topic to tag the post with, without #."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Location id from threads_search_locations.",
+            "pattern": "^[0-9]+$"
+          },
+          "allowlisted_country_codes": {
+            "type": "string",
+            "description": "Show the post only in these countries: comma-separated ISO 3166-1 alpha-2 codes, e.g. US,CA. Needs geo-gating access."
+          },
+          "is_spoiler_media": {
+            "type": "boolean",
+            "description": "true to blur the image or video as a spoiler."
+          },
+          "enable_reply_approvals": {
+            "type": "boolean",
+            "description": "true to hold replies for approval (see threads_list_pending_replies)."
+          }
+        },
+        "required": [
+          "media_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/threads",
+        "queryParams": {
+          "media_type": "$media_type",
+          "text": "$text",
+          "image_url": "$image_url",
+          "video_url": "$video_url",
+          "is_carousel_item": "$is_carousel_item",
+          "children": "$children",
+          "reply_to_id": "$reply_to_id",
+          "quote_post_id": "$quote_post_id",
+          "reply_control": "$reply_control",
+          "alt_text": "$alt_text",
+          "link_attachment": "$link_attachment",
+          "topic_tag": "$topic_tag",
+          "location_id": "$location_id",
+          "allowlisted_country_codes": "$allowlisted_country_codes",
+          "is_spoiler_media": "$is_spoiler_media",
+          "enable_reply_approvals": "$enable_reply_approvals"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "threads_get_container_status",
+      "description": "Status of a media container before publishing: IN_PROGRESS (still processing, check again in a few seconds), FINISHED (ready for threads_publish), PUBLISHED, ERROR (error_message says why, e.g. the media URL could not be fetched) or EXPIRED (older than 24 hours).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "container_id": {
+            "type": "string",
+            "description": "Container id returned by threads_create_container.",
+            "pattern": "^[0-9]+$"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return. Default: id,status,error_message.",
+            "default": "id,status,error_message"
+          }
+        },
+        "required": [
+          "container_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{container_id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "threads_publish",
+      "description": "Step 2 of publishing: publish a FINISHED media container on the connected profile. It goes live at once and counts against the 250 posts per 24 hours. Show the user what will be posted and wait for a yes. Returns the id of the published post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "creation_id": {
+            "type": "string",
+            "description": "Container id from threads_create_container.",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": [
+          "creation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/me/threads_publish",
+        "queryParams": {
+          "creation_id": "$creation_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "threads_repost",
+      "description": "Repost a published Threads post on the connected profile (like the repost button). Confirm with the user first. Returns the id of the repost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "description": "Threads media id (a post or reply), a string of digits from threads_list_posts, threads_list_replies or a permalink lookup. Pass it unchanged.",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": [
+          "media_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{media_id}/repost"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "threads_delete_post",
+      "description": "Delete one of the connected profile's posts, replies or reposts for good. It cannot be undone and counts against 100 deletions per 24 hours. Installed switched off. Needs threads_delete. Show the post and get an explicit yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "description": "Threads media id (a post or reply), a string of digits from threads_list_posts, threads_list_replies or a permalink lookup. Pass it unchanged.",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": [
+          "media_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/{media_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

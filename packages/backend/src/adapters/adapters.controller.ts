@@ -383,7 +383,7 @@ export class AdaptersController {
   async verify(
     @Req() req: any,
     @Param('slug') slug: string,
-    @Body() body: { credentials?: Record<string, string>; connectorId?: string },
+    @Body() body: { credentials?: Record<string, string>; connectorId?: string; source?: string },
   ) {
     if (req.user.role === 'VIEWER') {
       throw new ForbiddenException('Viewers cannot modify connectors');
@@ -409,6 +409,8 @@ export class AdaptersController {
         metadata: {
           adapterSlug: slug,
           kind: result.kind,
+          // Where the setup was opened from (the Odoo module: odoo_module), a short slug only.
+          ...(typeof body?.source === 'string' && /^[a-z0-9_]{1,32}$/.test(body.source) ? { source: body.source } : {}),
           ...(result.status != null ? { status: result.status } : {}),
           ...(result.toolName ? { toolName: result.toolName } : {}),
           ...(result.kind !== 'invalid_input'

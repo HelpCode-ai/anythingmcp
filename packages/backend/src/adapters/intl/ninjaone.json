@@ -1,0 +1,1551 @@
+{
+  "slug": "ninjaone",
+  "name": "NinjaOne",
+  "aliases": [
+    "NinjaRMM",
+    "Ninja RMM",
+    "NinjaOne RMM"
+  ],
+  "description": "NinjaOne RMM from any AI agent: organizations, locations and devices with hardware, software, patches and disk space, active alerts and the activity log, fleet health, patch, antivirus and inventory reports, policies, groups, technicians and end users, ticket boards, tickets and their history. Device reboot and OS patching are included but switched off.",
+  "instructions": "## NinjaOne\nThis connector calls the **NinjaOne Public API v2** (`https://<your instance>/v2`) of NinjaOne (formerly NinjaRMM), the remote monitoring and management (RMM) and ticketing platform for IT teams and managed service providers: organizations and locations, devices and their hardware, software and patches, alerts and the activity log, fleet reports (queries), policies, groups, technicians and end users, ticket boards and tickets.\n\n**Setup (about 5 minutes, NinjaOne administrator)**\n1. Open the NinjaOne console and go to **Administration > Apps > API**, tab **Client App IDs**, and click **Add client app**.\n2. Application platform **API Services (machine-to-machine)**. Give it a name (e.g. AnythingMCP), tick the scopes **Monitoring** and **Management** (leave Control off: it is only for remote access sessions), and allowed grant type **Client Credentials**. Save.\n3. Copy the **Client ID** into `NINJAONE_CLIENT_ID` and the **Client Secret** into `NINJAONE_CLIENT_SECRET`. The secret is shown only once; generate a new one if it was lost.\n4. Set `NINJAONE_HOST` to the host you log in at: `app.ninjarmm.com` (US), `us2.ninjarmm.com` (US West), `eu.ninjarmm.com` (Europe), `ca.ninjarmm.com` (Canada), `oc.ninjarmm.com` (Oceania / Asia-Pacific), `jp.ninjarmm.com` (Japan) or `fed.ninjarmm.com` (FedRAMP). The API and the token endpoint live on that same host; a client app only works on its own instance (a wrong host answers 401).\n\n**Authentication**: OAuth 2.0 client credentials. The connector posts the client ID and secret to `https://<host>/ws/oauth/token` with scope `monitoring management`, receives a bearer token (valid about an hour) and renews it on its own. The app acts as the whole account: it sees every organization and device, whatever technician permissions say. Without the Management scope the list and query tools still work, but the two device actions answer 403.\n\n**Where to start**\n- `ninjaone_list_organizations` gives organization ids; `ninjaone_get_organization` and `ninjaone_list_organization_locations` show locations and policy mappings.\n- Find a computer: `ninjaone_search_devices` (name, user, IP, serial) or `ninjaone_list_devices` / `ninjaone_list_organization_devices`; then `ninjaone_get_device`. `ninjaone_list_devices_detailed` returns hardware and OS for many devices at once but is large: filter it and keep page_size small.\n- Health first: `ninjaone_query_device_health` (one row per device with alerts, threats, pending and failed patches), then `ninjaone_list_alerts` for the active alerts and `ninjaone_list_activities` for what happened.\n- One device in depth: `ninjaone_list_device_alerts`, `ninjaone_list_device_activities`, `ninjaone_list_device_software`, `ninjaone_list_device_os_patches`.\n- Fleet reports (queries): `ninjaone_query_os_patches` (missing patches), `ninjaone_query_os_patch_installs` (install history), `ninjaone_query_software`, `ninjaone_query_antivirus_status`, `ninjaone_query_antivirus_threats`, `ninjaone_query_volumes` (disk space, BitLocker), `ninjaone_query_operating_systems`, `ninjaone_query_computer_systems` (models and serial numbers). Each row carries `deviceId`; join with `ninjaone_list_devices` for names.\n- Setup and people: `ninjaone_list_policies`, `ninjaone_list_groups`, `ninjaone_list_technicians`, `ninjaone_list_end_users`.\n- Related items (documents, checklists and attachments linked to devices or organizations): `ninjaone_list_entity_related_items`, or `ninjaone_list_related_items` for the whole account.\n\n**Tickets**: `ninjaone_list_ticket_boards` lists the boards (saved views); `ninjaone_run_ticket_board` returns the tickets of one board, with search text, filters and paging (`metadata.lastCursorId` into `last_cursor_id`). Then `ninjaone_get_ticket` and `ninjaone_list_ticket_log_entries` (the comments and history); `ninjaone_list_ticket_statuses` names the status ids. NinjaOne refuses ticket creation, updates and comments for client-credentials apps (it answers 405 and only accepts them from a signed-in technician), so this connector reads tickets and does not write them.\n\n**Device filter (`df`)**, accepted by device lists, alerts, activities and every query: `org=12`, `org in (12,15)`, `org!=12`, `loc=3`, `role=4`, `id=101`, `id in (101,102)`, `class=WINDOWS_SERVER`, `class in (WINDOWS_WORKSTATION,MAC)`, `group 7` (a saved search from `ninjaone_list_groups`), `online`, `offline`, `status=PENDING` (awaiting approval; the default is approved devices), `created after 2026-01-01`, `created before 2026-06-30`. Combine with `AND`: `org=12 AND class=WINDOWS_SERVER AND offline`. There is no OR.\n\n**Paging**\n- Organization and device lists: `page_size` plus `after` = the last id of the previous page; a page shorter than `page_size` is the last.\n- Queries: the answer is `{ cursor: { name, offset, count, expires }, results: [...] }`. Pass `cursor.name` back as `cursor` for the next page, until `results` is empty. A cursor expires after a few minutes.\n- Activities: newest first; pass the smallest `id` you have as `older_than`.\n- Ticket boards: `last_cursor_id` from `metadata.lastCursorId`.\n\n**Reading the data**: times such as `lastContact`, `createTime` and `activityTime` are Unix epoch **seconds** (with decimals), not milliseconds. Sizes (capacity, freeSpace, memory) are bytes. `nodeClass` tells the device kind (WINDOWS_SERVER, WINDOWS_WORKSTATION, MAC, LINUX_SERVER, VMWARE_VM_HOST, NMS_* for network devices). `offline: true` means the agent is not connected now.\n\n**Device actions are switched off**: `ninjaone_reboot_device` and `ninjaone_apply_os_patches` act on real machines at once (a restart can lose a user's unsaved work; patching may restart too). They install switched off; an administrator can enable them per connector. Even then, name the device and wait for the user's explicit confirmation. Scripts, maintenance mode, decommissioning, approvals and deletes are not part of this connector.\n\n**Limits and errors**: NinjaOne throttles API clients and answers `429` when calls come too fast; wait a minute and retry, and prefer one query with a `df` over a call per device. `401` means a wrong client ID or secret, a deleted client app, or the wrong instance host. `403` means the app lacks the scope (Monitoring for reads, Management for device actions). `404` on a device or ticket means the id does not exist on this instance.\n",
+  "region": "intl",
+  "category": "itsm",
+  "icon": "ninjaone",
+  "docsUrl": "https://app.ninjarmm.com/apidocs/",
+  "prerequisites": "A NinjaOne account with administrator access to create an API client app (Administration, Apps, API, Client App IDs) of type API Services (machine-to-machine) with the Client Credentials grant and the Monitoring and Management scopes.",
+  "requiredEnvVars": [
+    "NINJAONE_HOST",
+    "NINJAONE_CLIENT_ID",
+    "NINJAONE_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "NINJAONE_HOST": {
+      "label": "Instance host",
+      "kind": "address",
+      "help": "The host you log in to NinjaOne at: app.ninjarmm.com (US), us2.ninjarmm.com (US West), eu.ninjarmm.com (Europe), ca.ninjarmm.com (Canada), oc.ninjarmm.com (Oceania), jp.ninjarmm.com (Japan) or fed.ninjarmm.com (FedRAMP).",
+      "example": "eu.ninjarmm.com",
+      "pattern": "^(app|us2|eu|ca|oc|jp|fed)\\.ninjarmm\\.com$",
+      "patternMessage": "Write only the host of your NinjaOne instance, without https:// or a path: app, us2, eu, ca, oc, jp or fed followed by .ninjarmm.com."
+    },
+    "NINJAONE_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Administration > Apps > API > Client App IDs > Add client app: platform API Services (machine-to-machine), scopes Monitoring and Management, grant type Client Credentials. Copy the Client ID.",
+      "link": "https://www.ninjaone.com/docs/application-programming-interface-api/oauth-token-configuration/",
+      "pattern": "^[A-Za-z0-9_-]{16,}$",
+      "patternMessage": "Paste the Client ID of the client app, without spaces."
+    },
+    "NINJAONE_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the client app is saved. If it was lost, open the client app and generate a new secret.",
+      "link": "https://www.ninjaone.com/docs/application-programming-interface-api/oauth-token-configuration/",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "NinjaOne did not issue a token. Check the Client ID and secret, that the client app allows the Client Credentials grant, and that NINJAONE_HOST is the instance the app was created on (e.g. eu.ninjarmm.com for Europe).",
+    "403": "The client app lacks a scope for this call. Edit it under Administration > Apps > API and tick Monitoring (reads) and Management (device actions).",
+    "404": "Nothing answers at this path on the instance. Check NINJAONE_HOST (app, us2, eu, ca, oc, jp or fed .ninjarmm.com) and the id you asked for.",
+    "rate_limited": "NinjaOne is throttling this client app. Wait a minute and try again, and use queries with a device filter instead of one call per device."
+  },
+  "probe": {
+    "tool": "ninjaone_list_organizations",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "connector": {
+    "name": "NinjaOne Public API v2",
+    "type": "REST",
+    "baseUrl": "https://{{NINJAONE_HOST}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{NINJAONE_CLIENT_ID}}",
+      "clientSecret": "{{NINJAONE_CLIENT_SECRET}}",
+      "tokenUrl": "https://{{NINJAONE_HOST}}/ws/oauth/token",
+      "tokenAuthMethod": "client_secret_post",
+      "scope": "monitoring management"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v2/organizations?pageSize=1"
+  },
+  "tools": [
+    {
+      "name": "ninjaone_list_organizations",
+      "description": "List the organizations (clients) in NinjaOne: id, name, description, node approval mode and tags. Start here to get organization ids for device filters (df \"org=<id>\") and tickets. Pages with page_size and after (the last organization id of the previous page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Organizations per page. Default 100."
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Last organization id of the previous page; omit for the first page."
+          },
+          "org_filter": {
+            "type": "string",
+            "description": "Organization filter (of), e.g. \"name=Acme\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organizations",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "after": "$after",
+          "of": "$org_filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_get_organization",
+      "description": "Get one organization with its locations, policy mappings per device role, node approval mode, custom fields summary and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Organization id from ninjaone_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organization/{organization_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_organization_locations",
+      "description": "List the locations (sites) of an organization: id, name, address, description. Location ids filter devices with df \"loc=<id>\" and are used on tickets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Organization id from ninjaone_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organization/{organization_id}/locations"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_organization_devices",
+      "description": "List the devices of one organization (basic information: id, system name, display name, node class, location, policy, online state, last contact). Pages with page_size and after (last device id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Organization id from ninjaone_list_organizations."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Devices per page. Default 100."
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Last device id of the previous page; omit for the first page."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/organization/{organization_id}/devices",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_devices",
+      "description": "List devices with basic information (id, organizationId, locationId, nodeClass, systemName, displayName, offline, lastContact, approvalStatus). Filter with a device filter (df), for example \"org=12 AND offline\". Pages with page_size and after (the last device id of the previous page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Devices per page. Default 100."
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Last device id of the previous page; omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/devices",
+        "queryParams": {
+          "df": "$df",
+          "pageSize": "$page_size",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_devices_detailed",
+      "description": "List devices with detailed information: everything in ninjaone_list_devices plus OS, system (manufacturer, model, serial number), memory, processors, IP and MAC addresses, last logged-in user, references to organization, location, role and policy. Responses are large: always narrow with df and a small page_size (10 to 50). Pages with after (last device id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 25,
+            "description": "Devices per page. Default 25; keep it small, each device is several kilobytes."
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Last device id of the previous page; omit for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/devices-detailed",
+        "queryParams": {
+          "df": "$df",
+          "pageSize": "$page_size",
+          "after": "$after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 100000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_search_devices",
+      "description": "Find devices by a search term: device or DNS name, logged-on user name, IP or MAC address, serial number. Returns matching devices with id, organization and match details. Use it when the user names a computer or a person instead of an id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Search term, e.g. \"LAPTOP-042\", \"jsmith\" or \"10.0.0.15\"."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 25,
+            "description": "Maximum number of devices. Default 25."
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/devices/search",
+        "queryParams": {
+          "q": "$q",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_get_device",
+      "description": "Get one device in full: node class, organization and location, policy and role, online state, last contact and last update, OS, system and hardware details, IP addresses, maintenance mode and custom references.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Device id (the `id` from ninjaone_list_devices, ninjaone_search_devices or a query result's `deviceId`)."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/device/{device_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_device_alerts",
+      "description": "List the active alerts (triggered conditions) of one device: uid, message, source type, severity, priority and create time (epoch seconds).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Device id (the `id` from ninjaone_list_devices, ninjaone_search_devices or a query result's `deviceId`)."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language tag for messages, e.g. \"en\" or \"de\"."
+          },
+          "tz": {
+            "type": "string",
+            "description": "Time zone for formatted times, e.g. \"Europe/Berlin\"."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/device/{device_id}/alerts",
+        "queryParams": {
+          "lang": "$lang",
+          "tz": "$tz"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_device_activities",
+      "description": "Read the activity log of one device, newest first: scripts and actions run, patches, alerts raised and reset, logins, system events. Filter by type, status or time range; page backwards with older_than (the smallest activity id you already have).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Device id (the `id` from ninjaone_list_devices, ninjaone_search_devices or a query result's `deviceId`)."
+          },
+          "activity_type": {
+            "type": "string",
+            "description": "Activity type, e.g. ACTION, CONDITION, PATCH_MANAGEMENT, ANTIVIRUS, MONITOR, SYSTEM, SCRIPTING."
+          },
+          "status": {
+            "type": "string",
+            "description": "Activity status, e.g. COMPLETED, FAILED, TRIGGERED, RESET."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Only activities at or after this time (ISO 8601, e.g. 2026-11-01T00:00:00Z)."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Only activities before this time (ISO 8601)."
+          },
+          "older_than": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only activities with an id below this one (next page)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Activities per page. Default 50."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language tag for messages, e.g. \"en\" or \"de\"."
+          },
+          "tz": {
+            "type": "string",
+            "description": "Time zone for formatted times, e.g. \"Europe/Berlin\"."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/device/{device_id}/activities",
+        "queryParams": {
+          "activityType": "$activity_type",
+          "status": "$status",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "olderThan": "$older_than",
+          "pageSize": "$page_size",
+          "lang": "$lang",
+          "tz": "$tz"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_device_software",
+      "description": "List the software installed on one device: name, publisher, version, install date, size and location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Device id (the `id` from ninjaone_list_devices, ninjaone_search_devices or a query result's `deviceId`)."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/device/{device_id}/software"
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_device_os_patches",
+      "description": "List the OS patches of one device that are pending, approved, failed or rejected (not yet installed): name, KB number, severity, status and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Device id (the `id` from ninjaone_list_devices, ninjaone_search_devices or a query result's `deviceId`)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Patch status filter, e.g. MANUAL, APPROVED, FAILED, REJECTED."
+          },
+          "type": {
+            "type": "string",
+            "description": "Patch type filter, e.g. SECURITY_UPDATES, CRITICAL_UPDATES, UPDATE_ROLLUPS, FEATURE_PACKS, DRIVERS."
+          },
+          "severity": {
+            "type": "string",
+            "description": "Patch severity filter, e.g. CRITICAL, IMPORTANT, MODERATE, LOW, OPTIONAL."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/device/{device_id}/os-patches",
+        "queryParams": {
+          "status": "$status",
+          "type": "$type",
+          "severity": "$severity"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_alerts",
+      "description": "List all active alerts (triggered conditions) across devices: uid, deviceId, message, sourceType (e.g. AGENT_OFFLINE, CONDITION_AGENT_CPU, CONDITION_AGENT_DISK_FREE_SPACE), severity, priority, create and update time (epoch seconds). Narrow with df, e.g. \"org=12\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "source_type": {
+            "type": "string",
+            "description": "Only alerts of this origin, e.g. AGENT_OFFLINE, CONDITION_AGENT_CPU, CONDITION_AGENT_MEMORY, CONDITION_AGENT_DISK_FREE_SPACE, CONDITION_PING."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language tag for messages, e.g. \"en\" or \"de\"."
+          },
+          "tz": {
+            "type": "string",
+            "description": "Time zone for formatted times, e.g. \"Europe/Berlin\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/alerts",
+        "queryParams": {
+          "df": "$df",
+          "sourceType": "$source_type",
+          "lang": "$lang",
+          "tz": "$tz"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_activities",
+      "description": "Read the account-wide activity log, newest first: device events (scripts, patches, alerts, antivirus), user actions and system events. Filter by class, type, status, user, device filter or time; page backwards with older_than (the smallest activity id you already have). The answer carries lastActivityId and activities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "activity_class": {
+            "type": "string",
+            "enum": [
+              "SYSTEM",
+              "DEVICE",
+              "USER",
+              "ALL"
+            ],
+            "description": "Activity class. Default ALL."
+          },
+          "type": {
+            "type": "string",
+            "description": "Activity type, e.g. ACTION, CONDITION, PATCH_MANAGEMENT, ANTIVIRUS, SCRIPTING, SYSTEM."
+          },
+          "status": {
+            "type": "string",
+            "description": "Activity status, e.g. COMPLETED, FAILED, TRIGGERED, RESET."
+          },
+          "user": {
+            "type": "string",
+            "description": "Only activities of this user."
+          },
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Only activities at or after this time (ISO 8601, e.g. 2026-11-01T00:00:00Z)."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Only activities before this time (ISO 8601)."
+          },
+          "older_than": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only activities with an id below this one (next page)."
+          },
+          "series_uid": {
+            "type": "string",
+            "description": "Only activities of one alert or job series (the alert uid)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Activities per page. Default 50."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language tag for messages, e.g. \"en\" or \"de\"."
+          },
+          "tz": {
+            "type": "string",
+            "description": "Time zone for formatted times, e.g. \"Europe/Berlin\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/activities",
+        "queryParams": {
+          "class": "$activity_class",
+          "type": "$type",
+          "status": "$status",
+          "user": "$user",
+          "df": "$df",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "olderThan": "$older_than",
+          "seriesUid": "$series_uid",
+          "pageSize": "$page_size",
+          "lang": "$lang",
+          "tz": "$tz"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_query_device_health",
+      "description": "Fleet health report, one row per device: healthStatus (HEALTHY, NEEDS_ATTENTION, UNHEALTHY, UNKNOWN), offline flag, alert count, active and quarantined antivirus threats, pending and failed OS and software patches, active jobs, product install status. The quickest overview of what needs attention.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "HEALTHY",
+              "NEEDS_ATTENTION",
+              "UNHEALTHY",
+              "UNKNOWN"
+            ],
+            "description": "Only devices with this health status."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor name from the previous page's `cursor.name`. Leave empty for the first page; the last page returns an empty `results` list."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page. Default 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/queries/device-health",
+        "queryParams": {
+          "df": "$df",
+          "health": "$health",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_query_os_patches",
+      "description": "Report of OS patches not yet installed across devices (pending, approved, failed or rejected): deviceId, name, KB number, severity, status, type, timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "ts": {
+            "type": "string",
+            "description": "Only records whose monitoring timestamp is newer than this (epoch seconds or ISO date), for incremental syncs."
+          },
+          "status": {
+            "type": "string",
+            "description": "Patch status, e.g. MANUAL, APPROVED, FAILED, REJECTED."
+          },
+          "type": {
+            "type": "string",
+            "description": "Patch type, e.g. SECURITY_UPDATES, CRITICAL_UPDATES."
+          },
+          "severity": {
+            "type": "string",
+            "description": "Patch severity, e.g. CRITICAL, IMPORTANT."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor name from the previous page's `cursor.name`. Leave empty for the first page; the last page returns an empty `results` list."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page. Default 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/queries/os-patches",
+        "queryParams": {
+          "df": "$df",
+          "ts": "$ts",
+          "status": "$status",
+          "type": "$type",
+          "severity": "$severity",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_query_os_patch_installs",
+      "description": "History of OS patch installations across devices, successful and failed: deviceId, name, KB number, status (INSTALLED or FAILED), installedAt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "INSTALLED",
+              "FAILED"
+            ],
+            "description": "Only installed or only failed attempts."
+          },
+          "installed_after": {
+            "type": "string",
+            "description": "Only patches installed after this date (YYYY-MM-DD)."
+          },
+          "installed_before": {
+            "type": "string",
+            "description": "Only patches installed before this date (YYYY-MM-DD)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor name from the previous page's `cursor.name`. Leave empty for the first page; the last page returns an empty `results` list."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page. Default 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/queries/os-patch-installs",
+        "queryParams": {
+          "df": "$df",
+          "status": "$status",
+          "installedAfter": "$installed_after",
+          "installedBefore": "$installed_before",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_query_software",
+      "description": "Software inventory across devices: deviceId, name, publisher, version, install date. Use df to limit it to devices, an organization or a group, and filter the names yourself (there is no name filter).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "installed_after": {
+            "type": "string",
+            "description": "Only software installed after this date (YYYY-MM-DD)."
+          },
+          "installed_before": {
+            "type": "string",
+            "description": "Only software installed before this date (YYYY-MM-DD)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor name from the previous page's `cursor.name`. Leave empty for the first page; the last page returns an empty `results` list."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page. Default 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/queries/software",
+        "queryParams": {
+          "df": "$df",
+          "installedAfter": "$installed_after",
+          "installedBefore": "$installed_before",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_query_antivirus_status",
+      "description": "Antivirus status across devices: deviceId, productName, productState (e.g. ON, OFF, SNOOZED, EXPIRED), definitionStatus (UP_TO_DATE, OUT_OF_DATE), version, timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "ts": {
+            "type": "string",
+            "description": "Only records whose monitoring timestamp is newer than this (epoch seconds or ISO date), for incremental syncs."
+          },
+          "product_state": {
+            "type": "string",
+            "description": "Only this product state, e.g. ON, OFF, SNOOZED, EXPIRED."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Only this antivirus product name."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor name from the previous page's `cursor.name`. Leave empty for the first page; the last page returns an empty `results` list."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page. Default 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/queries/antivirus-status",
+        "queryParams": {
+          "df": "$df",
+          "ts": "$ts",
+          "productState": "$product_state",
+          "productName": "$product_name",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_query_antivirus_threats",
+      "description": "Antivirus threats found on devices: deviceId, threat name, status, category, level, type, detection source, quarantine id and timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "ts": {
+            "type": "string",
+            "description": "Only records whose monitoring timestamp is newer than this (epoch seconds or ISO date), for incremental syncs."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor name from the previous page's `cursor.name`. Leave empty for the first page; the last page returns an empty `results` list."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page. Default 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/queries/antivirus-threats",
+        "queryParams": {
+          "df": "$df",
+          "ts": "$ts",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_query_volumes",
+      "description": "Disk volumes across devices: deviceId, name, label, drive letter, file system, capacity and free space (bytes). Set include to \"bl\" for the BitLocker status (protection, encryption method, lock status). Use it to find devices low on disk space or unencrypted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "ts": {
+            "type": "string",
+            "description": "Only records whose monitoring timestamp is newer than this (epoch seconds or ISO date), for incremental syncs."
+          },
+          "include": {
+            "type": "string",
+            "enum": [
+              "bl"
+            ],
+            "description": "\"bl\" adds the BitLocker status of each volume."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor name from the previous page's `cursor.name`. Leave empty for the first page; the last page returns an empty `results` list."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page. Default 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/queries/volumes",
+        "queryParams": {
+          "df": "$df",
+          "ts": "$ts",
+          "include": "$include",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_query_operating_systems",
+      "description": "Operating systems across devices: deviceId, name, manufacturer, architecture, build number, release id, service pack, last boot time, locale, language, whether a reboot is needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "ts": {
+            "type": "string",
+            "description": "Only records whose monitoring timestamp is newer than this (epoch seconds or ISO date), for incremental syncs."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor name from the previous page's `cursor.name`. Leave empty for the first page; the last page returns an empty `results` list."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page. Default 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/queries/operating-systems",
+        "queryParams": {
+          "df": "$df",
+          "ts": "$ts",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_query_computer_systems",
+      "description": "Computer systems across devices: deviceId, manufacturer, model, serial number, BIOS and asset serial, chassis type, domain and domain role, processors, total physical memory, virtual machine flag. Useful for hardware inventory and warranty lookups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "df": {
+            "type": "string",
+            "description": "Device filter (df). Examples: \"org=12\", \"org in (12,15)\", \"loc=3\", \"id in (101,102)\", \"class in (WINDOWS_SERVER,LINUX_SERVER)\", \"role=4\", \"group 7\", \"online\", \"offline\", \"status=PENDING\", \"created after 2026-01-01\". Combine with AND: \"org=12 AND class=WINDOWS_WORKSTATION AND offline\". Leave empty for all approved devices."
+          },
+          "ts": {
+            "type": "string",
+            "description": "Only records whose monitoring timestamp is newer than this (epoch seconds or ISO date), for incremental syncs."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor name from the previous page's `cursor.name`. Leave empty for the first page; the last page returns an empty `results` list."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page. Default 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/queries/computer-systems",
+        "queryParams": {
+          "df": "$df",
+          "ts": "$ts",
+          "cursor": "$cursor",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_policies",
+      "description": "List the monitoring and management policies: id, name, description, node class and parent policy. Organizations map a policy to each device role (see ninjaone_get_organization).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/policies"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_groups",
+      "description": "List the device groups (saved searches): id, name, description and device count. A group id filters devices and queries with df \"group <id>\".",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/groups"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_technicians",
+      "description": "List the technicians (NinjaOne users who work in the console): id, uid, first and last name, email, phone, enabled, administrator flag, MFA, roles. Ticket assignees (assignedAppUserId) are technician ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/user/technicians"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_end_users",
+      "description": "List the end users (people at client organizations who can log in to the end-user portal or are requesters): id, uid, name, email, phone, organizationId, assigned devices, invitation status.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/user/end-users"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_ticket_boards",
+      "description": "List the ticketing boards (saved ticket views such as All tickets, Unassigned, My tickets): id, name, description, conditions, columns and ticket count. Run a board with ninjaone_run_ticket_board to get its tickets.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/ticketing/trigger/boards"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_run_ticket_board",
+      "description": "List the tickets of a board (from ninjaone_list_ticket_boards), with optional search text, filters and sort. Read-only even though it is a POST. The answer has data (one object per ticket: id, summary, status, organization, requester, assignee, priority, severity, createTime, lastUpdated) and metadata.lastCursorId: pass that back as last_cursor_id for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Board id from ninjaone_list_ticket_boards."
+          },
+          "search": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Free text search over the tickets (subject, description, requester ...)."
+          },
+          "filters": {
+            "type": "array",
+            "description": "Extra filters, each {\"field\": ..., \"operator\": ..., \"value\": ...}. Operators: is, is_not, in, not_in, contains, not_contains, contains_any, contains_none (comma-separated values), greater_than, less_than, between, present, not_present. Field names are the board's columns (metadata.allColumns of a first run). Example: [{\"field\": \"priority\", \"operator\": \"is\", \"value\": \"HIGH\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "operator": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "operator"
+              ]
+            }
+          },
+          "sort_by": {
+            "type": "array",
+            "description": "Sort rules, e.g. [{\"field\": \"lastUpdated\", \"direction\": \"DESC\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "ASC",
+                    "DESC"
+                  ]
+                }
+              },
+              "required": [
+                "field"
+              ]
+            }
+          },
+          "include_columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra columns to return (names from metadata.allColumns)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Tickets per page. Default 50."
+          },
+          "last_cursor_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "metadata.lastCursorId of the previous page; omit for the first page."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/ticketing/trigger/board/{board_id}/run",
+        "bodyMapping": {
+          "searchCriteria": "$search",
+          "filters": "$filters",
+          "sortBy": "$sort_by",
+          "includeColumns": "$include_columns",
+          "pageSize": "$page_size",
+          "lastCursorId": "$last_cursor_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ninjaone_get_ticket",
+      "description": "Get one ticket: subject, status (name, displayName, statusId), type, priority, severity, organization (clientId), location, device (nodeId), requester, assigned technician, CC list, tags, ticket form, attribute values, version and create time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Ticket id (the number shown on the ticket, or `id` from ninjaone_run_ticket_board)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/ticketing/ticket/{ticket_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_ticket_log_entries",
+      "description": "Read the history of a ticket: description, public and internal comments, field changes, condition and automation entries, with author, body, time tracked and create time (epoch seconds). This is where the conversation of a ticket is.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Ticket id."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "DESCRIPTION",
+              "COMMENT",
+              "CONDITION",
+              "SAVE",
+              "DELETE",
+              "PRODUCT",
+              "INFO"
+            ],
+            "description": "Only entries of this type, e.g. COMMENT for the conversation."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Entries per page. Default 100."
+          },
+          "anchor_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Entry id to continue from (next page)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/ticketing/ticket/{ticket_id}/log-entry",
+        "queryParams": {
+          "type": "$type",
+          "pageSize": "$page_size",
+          "anchorId": "$anchor_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_ticket_statuses",
+      "description": "List the ticket statuses of the account: statusId, name, displayName and parentId (custom statuses hang under a system status; 1000 is New). Use it to name the status of a ticket and to build board filters on status.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/ticketing/statuses"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_related_items",
+      "description": "List every related item of the account: links between entities (organization, location, device, end user, document, checklist, knowledge base article, software license) and attachments, with ids, types and the entity on each side. Can be long; prefer ninjaone_list_entity_related_items for one entity.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/related-items"
+      },
+      "responseMapping": {
+        "transform": {
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_list_entity_related_items",
+      "description": "List the items related to one entity, e.g. the documents, checklists, end users and attachments linked to a device or an organization.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "ORGANIZATION",
+              "DOCUMENT",
+              "LOCATION",
+              "NODE",
+              "CHECKLIST",
+              "KB_DOCUMENT",
+              "END_USER",
+              "SOFTWARE_LICENSE"
+            ],
+            "description": "Type of the entity. NODE is a device."
+          },
+          "entity_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the entity (for NODE the device id)."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "HOSTING",
+              "HOSTED_BY"
+            ],
+            "description": "HOSTING: items this entity holds; HOSTED_BY: entities that hold this one; ALL (default): both."
+          }
+        },
+        "required": [
+          "entity_type",
+          "entity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/related-items/with-entity/{entity_type}/{entity_id}",
+        "queryParams": {
+          "scope": "$scope"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ninjaone_reboot_device",
+      "description": "Restart a device now. NORMAL lets the operating system close programs; FORCED restarts without waiting and can lose unsaved work. Installed switched off. Show the user the device name and mode and wait for an explicit yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Device id (the `id` from ninjaone_list_devices, ninjaone_search_devices or a query result's `deviceId`)."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "NORMAL",
+              "FORCED"
+            ],
+            "description": "NORMAL (graceful) or FORCED."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason recorded in the activity log."
+          }
+        },
+        "required": [
+          "device_id",
+          "mode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/device/{device_id}/reboot/{mode}",
+        "bodyMapping": {
+          "reason": "$reason"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "ninjaone_apply_os_patches",
+      "description": "Start an OS patch installation job on a device, which installs the approved patches of its policy and may restart it. Installed switched off. Show the user the device and the pending patches (ninjaone_list_device_os_patches) and wait for an explicit yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Device id (the `id` from ninjaone_list_devices, ninjaone_search_devices or a query result's `deviceId`)."
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/device/{device_id}/patch/os/apply"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

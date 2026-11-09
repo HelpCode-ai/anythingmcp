@@ -1,0 +1,2291 @@
+{
+  "slug": "housecall-pro",
+  "name": "Housecall Pro",
+  "aliases": [
+    "Housecall",
+    "HCP",
+    "HousecallPro"
+  ],
+  "description": "Housecall Pro field service software from any AI agent: customers and addresses, jobs with line items, appointments and schedules, invoices, estimates and their options, leads, employees, booking windows and the price book. Creates customers, jobs, estimates and leads and schedules work. Needs the MAX plan.",
+  "instructions": "## Housecall Pro\nThis connector calls the **Housecall Pro public API** (`https://api.housecallpro.com`), the field service software for home service businesses: customers and their addresses, jobs with line items and appointments, invoices, estimates, leads, employees, schedule availability and the price book.\n\n**Requirements**: API access is available **only on the Housecall Pro MAX plan**, and only an **Admin** user can create an API key. Without the MAX plan the API Key Management app does not appear.\n\n**Setup (about 3 minutes)**\n1. Sign in to Housecall Pro as an Admin and open **My Apps > All Apps** (App Store).\n2. Find **API Key Management**, open it and click **Generate API Key**.\n3. Name the key and choose **Full access** (needed for the create and update tools) or **Read-only**, then **Generate key**.\n4. Paste the key into `HOUSECALL_PRO_API_KEY` (the key only, without the word Token). It reaches all data of the account, so store it like a password; delete it in the same app to revoke it.\n\n**Authentication**: every call sends `Authorization: Token <API key>`. A `401` means the key is wrong, was deleted, or the account is no longer on the MAX plan. A read-only key answers `403` on writes.\n\n**Where to start**: `housecall_pro_get_company` checks the connection and returns the company, its time zone and its locations. Then `housecall_pro_list_customers` (search with `q`), `housecall_pro_list_jobs` and `housecall_pro_list_invoices`.\n\n**Ids**: Housecall Pro ids are strings with a prefix: customers `cus_...`, jobs `job_...`, employees `pro_...`; invoices are uuids. Pass them unchanged.\n\n**Money is in cents**: `total_amount`, `subtotal`, `outstanding_balance`, `amount`, `due_amount`, `unit_price` and `unit_cost` are integers in cents (`12500` = 125.00 in the company currency). Send prices in cents too.\n\n**Pagination**: list tools take `page` (from 1) and `page_size` (10 when left out; up to 100 works well). The answer carries `page`, `page_size`, `total_pages` and `total_items`; call again with the next `page` until it equals `total_pages`. The price book answers with `total_pages_count`. `housecall_pro_list_job_line_items`, `housecall_pro_list_job_appointments` and `housecall_pro_list_job_invoices` return the whole list at once.\n\n**Filters and dates**: date filters take ISO 8601 date-times (`2026-11-01T00:00:00Z`). The jobs filter `work_status` takes `unscheduled`, `scheduled`, `in_progress`, `completed`, `canceled`, while a job object shows its status as text (`needs scheduling`, `scheduled`, `in progress`, `complete rated`, `complete unrated`, `user canceled`, `pro canceled`). Multi-location accounts can narrow lists with `location_ids` (from `housecall_pro_get_company`).\n\n**Workflows**\n- Customer lookup: `housecall_pro_list_customers`, `housecall_pro_get_customer`, `housecall_pro_list_customer_addresses`; add or change customers with `housecall_pro_create_customer` and `housecall_pro_update_customer`.\n- Jobs: `housecall_pro_list_jobs` (by schedule, customer, employees, status), `housecall_pro_get_job`, `housecall_pro_list_job_line_items`, `housecall_pro_list_job_appointments`, `housecall_pro_list_job_invoices`.\n- Book work: `housecall_pro_create_job` needs a customer id and one of its address ids; set the job type (`job_fields.job_type_id`) from `housecall_pro_list_job_types` and employees from `housecall_pro_list_employees`. Then `housecall_pro_update_job_schedule` (single-visit jobs) or `housecall_pro_create_job_appointment` (extra visits), `housecall_pro_add_job_line_item` and `housecall_pro_add_job_note`. To find a free slot first: `housecall_pro_get_schedule_windows` and `housecall_pro_get_booking_windows`.\n- Invoices and money owed: `housecall_pro_list_invoices` (status `open`, due dates, amount due) and `housecall_pro_get_invoice`. The connector reads invoices only; it never takes, refunds or records payments.\n- Sales: `housecall_pro_list_estimates`, `housecall_pro_get_estimate`, `housecall_pro_list_estimate_option_line_items`, `housecall_pro_create_estimate`; leads with `housecall_pro_list_leads`, `housecall_pro_get_lead`, `housecall_pro_create_lead` and `housecall_pro_list_lead_sources`.\n- Price book and setup: `housecall_pro_list_price_book_services`, `housecall_pro_list_material_categories` then `housecall_pro_list_materials`, `housecall_pro_list_tags`, `housecall_pro_list_events` (non-job calendar events).\n\n**Writes act at once**: creating or rescheduling a job with `notify` true can text or email the customer. Show the user what will be created or changed and wait for a yes. `housecall_pro_delete_job_line_item` is installed switched off because a deleted line item cannot be restored; turn it on in the connector settings only if needed.\n\n**Limits and gotchas**\n- Housecall Pro rate limits API calls; a `429` carries a `RateLimit-Reset` header (Unix time). Adding line items one by one is limited per job, so add a few at a time.\n- `housecall_pro_update_job_schedule` refuses jobs with several appointments; change those visits through the appointments.\n- `tags` on `housecall_pro_update_customer` replaces the whole tag list.\n- Invoice ids for `housecall_pro_get_invoice` come from the `id` field of `housecall_pro_list_invoices` or `housecall_pro_list_job_invoices`.\n",
+  "region": "intl",
+  "category": "field-service",
+  "icon": "housecall-pro",
+  "docsUrl": "https://docs.housecallpro.com/",
+  "prerequisites": "A Housecall Pro account on the MAX plan (the only plan with API access) and an Admin user who creates an API key in My Apps > All Apps > API Key Management.",
+  "requiredEnvVars": [
+    "HOUSECALL_PRO_API_KEY"
+  ],
+  "envVarMeta": {
+    "HOUSECALL_PRO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "As an Admin in Housecall Pro: My Apps > All Apps > API Key Management > Generate API Key. Choose Full access for the create and update tools. Paste the key only, without the word Token. Needs the MAX plan.",
+      "link": "https://help.housecallpro.com/en/articles/8505035-api-overview",
+      "pattern": "^[A-Za-z0-9_-]{20,128}$",
+      "patternMessage": "Paste only the key: letters and digits, without 'Token' or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Housecall Pro refused the API key. Generate a new one in My Apps > All Apps > API Key Management (Admin only) and paste it without the word Token. API access also stops when the account leaves the MAX plan.",
+    "403": "The key works but may not do this. A Read-only key cannot create or update; generate a Full access key for writes.",
+    "rate_limited": "Housecall Pro is rate limiting this key. Wait until the time in the RateLimit-Reset header and try again."
+  },
+  "probe": {
+    "tool": "housecall_pro_list_customers",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "connector": {
+    "name": "Housecall Pro Public API",
+    "type": "REST",
+    "baseUrl": "https://api.housecallpro.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Token {{HOUSECALL_PRO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/company"
+  },
+  "tools": [
+    {
+      "name": "housecall_pro_get_company",
+      "description": "Get the Housecall Pro company: name, support email, phone, address, time zone, default arrival window, service areas and its locations (ids for the location_ids filters). Start here to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_employees",
+      "description": "List the active employees (pros, technicians, office staff) with id, name, email, mobile number, role and color. Employee ids are used to filter jobs, estimates and leads, to assign jobs and to dispatch appointments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Employee field to sort by, for example created_at (default) or first_name."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these locations (multi-location accounts). Location ids are listed in housecall_pro_get_company under locations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/employees",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "location_ids[]": "$location_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_customers",
+      "description": "List or search customers. q searches name, email, mobile number and address. Each customer carries id, names, company, email, phone numbers, tags, lead source, notification setting and addresses (with address ids for jobs and estimates).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search text: name, email, mobile number or address."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Customer field to sort by, for example created_at or updated_at."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these locations (multi-location accounts). Location ids are listed in housecall_pro_get_company under locations."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attachments",
+                "do_not_service"
+              ]
+            },
+            "description": "Extra data to include: attachments, do_not_service."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "q": "$q",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "location_ids[]": "$location_ids",
+          "expand[]": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_get_customer",
+      "description": "Get one customer by id with contact details, tags, lead source, notes and addresses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Customer id from housecall_pro_list_customers (cus_...)."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attachments",
+                "do_not_service"
+              ]
+            },
+            "description": "Extra data to include: attachments, do_not_service."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}",
+        "queryParams": {
+          "expand[]": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_customer_addresses",
+      "description": "List the addresses of a customer (service and billing) with id, street, city, state, zip and country. The address id is needed to create a job or an estimate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Customer id from housecall_pro_list_customers."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by.",
+            "enum": [
+              "created_at",
+              "updated_at"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}/addresses",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_create_customer",
+      "description": "Create a customer. At least one of first_name, last_name, email, mobile_number, home_number or work_number is required. Addresses can be created in the same call. Check with housecall_pro_list_customers first to avoid duplicates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name, for a business customer."
+          },
+          "mobile_number": {
+            "type": "string",
+            "description": "Mobile number, for example 5551234567."
+          },
+          "home_number": {
+            "type": "string",
+            "description": "Home phone number."
+          },
+          "work_number": {
+            "type": "string",
+            "description": "Work phone number."
+          },
+          "notifications_enabled": {
+            "type": "boolean",
+            "description": "Whether the customer receives Housecall Pro notifications (texts and emails about jobs)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names."
+          },
+          "lead_source": {
+            "type": "string",
+            "description": "Lead source name, see housecall_pro_list_lead_sources."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes about the customer."
+          },
+          "addresses": {
+            "type": "array",
+            "description": "Addresses to create with the customer. Each needs street, city, state, zip and country (for example US); street_line_2 is optional.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "street": {
+                  "type": "string"
+                },
+                "street_line_2": {
+                  "type": "string"
+                },
+                "city": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "zip": {
+                  "type": "string"
+                },
+                "country": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "street",
+                "city",
+                "state",
+                "zip",
+                "country"
+              ]
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email": "$email",
+          "company": "$company",
+          "mobile_number": "$mobile_number",
+          "home_number": "$home_number",
+          "work_number": "$work_number",
+          "notifications_enabled": "$notifications_enabled",
+          "tags": "$tags",
+          "lead_source": "$lead_source",
+          "notes": "$notes",
+          "addresses": "$addresses"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "housecall_pro_update_customer",
+      "description": "Update a customer: names, company, email, phone numbers, notification setting, tags, lead source or notes. Send only the fields to change; tags replaces the whole tag list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Customer id from housecall_pro_list_customers."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name, for a business customer."
+          },
+          "mobile_number": {
+            "type": "string",
+            "description": "Mobile number, for example 5551234567."
+          },
+          "home_number": {
+            "type": "string",
+            "description": "Home phone number."
+          },
+          "work_number": {
+            "type": "string",
+            "description": "Work phone number."
+          },
+          "notifications_enabled": {
+            "type": "boolean",
+            "description": "Whether the customer receives Housecall Pro notifications (texts and emails about jobs)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names."
+          },
+          "lead_source": {
+            "type": "string",
+            "description": "Lead source name, see housecall_pro_list_lead_sources."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes about the customer."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/customers/{customer_id}",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email": "$email",
+          "company": "$company",
+          "mobile_number": "$mobile_number",
+          "home_number": "$home_number",
+          "work_number": "$work_number",
+          "notifications_enabled": "$notifications_enabled",
+          "tags": "$tags",
+          "lead_source": "$lead_source",
+          "notes": "$notes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "housecall_pro_list_jobs",
+      "description": "List jobs with filters on scheduled start and end, customer, assigned employees and work status. Each job has id, invoice number, description, customer, address, work_status, schedule, assigned employees, tags, lead source, job fields and amounts in cents (total_amount, subtotal, outstanding_balance).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scheduled_start_min": {
+            "type": "string",
+            "description": "Only jobs starting at or after this time, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "scheduled_start_max": {
+            "type": "string",
+            "description": "Only jobs starting at or before this time, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "scheduled_end_min": {
+            "type": "string",
+            "description": "Only jobs ending at or after this time, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "scheduled_end_max": {
+            "type": "string",
+            "description": "Only jobs ending at or before this time, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only jobs of this customer id."
+          },
+          "employee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only jobs assigned to these employee ids."
+          },
+          "work_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "unscheduled",
+                "scheduled",
+                "in_progress",
+                "completed",
+                "canceled"
+              ]
+            },
+            "description": "Only these work statuses. All statuses when left out."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by.",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "invoice_number",
+              "id",
+              "description",
+              "work_status"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these locations (multi-location accounts). Location ids are listed in housecall_pro_get_company under locations."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attachments",
+                "appointments"
+              ]
+            },
+            "description": "Extra data to include: attachments, appointments."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs",
+        "queryParams": {
+          "scheduled_start_min": "$scheduled_start_min",
+          "scheduled_start_max": "$scheduled_start_max",
+          "scheduled_end_min": "$scheduled_end_min",
+          "scheduled_end_max": "$scheduled_end_max",
+          "customer_id": "$customer_id",
+          "employee_ids[]": "$employee_ids",
+          "work_status[]": "$work_status",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "location_ids[]": "$location_ids",
+          "expand[]": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_get_job",
+      "description": "Get one job by id: customer, address, notes, work_status, work timestamps (on my way, started, completed), schedule, assigned employees, tags, job fields, amounts in cents and the estimate it came from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job id from housecall_pro_list_jobs (job_...)."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attachments",
+                "appointments"
+              ]
+            },
+            "description": "Extra data to include: attachments, appointments."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/{job_id}",
+        "queryParams": {
+          "expand[]": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_job_line_items",
+      "description": "List the line items of a job (services, materials, discounts): id, name, description, quantity, unit_price and unit_cost in cents, amount, kind, taxable and order. The whole list comes in one answer under data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job id from housecall_pro_list_jobs."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/{job_id}/line_items"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_job_appointments",
+      "description": "List the appointments (visits) of a job: id, start and end time, anytime flag, arrival window and dispatched employee ids. Multi-day jobs have several.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job id from housecall_pro_list_jobs."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/{job_id}/appointments"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_job_invoices",
+      "description": "List the invoices of one job with invoice number, status, amounts in cents, due and paid dates and the invoice id (uuid) for housecall_pro_get_invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job id from housecall_pro_list_jobs."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/jobs/{job_id}/invoices"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_create_job",
+      "description": "Create a job for an existing customer and address, optionally scheduled and assigned, with line items, tags, notes, lead source and job type. Money in cents. Scheduling with notifications on can text or email the customer; confirm the details with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Customer id from housecall_pro_list_customers."
+          },
+          "address_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Address id from housecall_pro_list_customer_addresses or the customer's addresses."
+          },
+          "invoice_number": {
+            "type": "integer",
+            "description": "Job (invoice) number, unique in the company. Left out: Housecall Pro assigns the next one."
+          },
+          "schedule": {
+            "type": "object",
+            "description": "Schedule the job now; leave out for an unscheduled job. scheduled_start and scheduled_end as YYYY-MM-DDTHH:MM:SS (2026-11-23T15:30:00), arrival_window in minutes, or anytime true with anytime_start_date YYYY-MM-DD.",
+            "properties": {
+              "scheduled_start": {
+                "type": "string"
+              },
+              "scheduled_end": {
+                "type": "string"
+              },
+              "arrival_window": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "anytime": {
+                "type": "boolean"
+              },
+              "anytime_start_date": {
+                "type": "string"
+              }
+            }
+          },
+          "assigned_employee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Employee ids to assign, from housecall_pro_list_employees."
+          },
+          "line_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Line item name."
+                },
+                "description": {
+                  "type": "string"
+                },
+                "unit_price": {
+                  "type": "integer",
+                  "description": "Selling price of one unit in cents."
+                },
+                "unit_cost": {
+                  "type": "integer",
+                  "description": "Cost of one unit in cents (job costing)."
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity, up to two decimals."
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "description": "Line items, each with name and optionally description, unit_price and unit_cost in cents and quantity."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names."
+          },
+          "lead_source": {
+            "type": "string",
+            "description": "Lead source name."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Job notes."
+          },
+          "job_fields": {
+            "type": "object",
+            "description": "Job type and business unit, as {\"job_type_id\": \"...\"}; ids from housecall_pro_list_job_types.",
+            "properties": {
+              "job_type_id": {
+                "type": "string"
+              },
+              "business_unit_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "customer_id",
+          "address_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobs",
+        "bodyMapping": {
+          "customer_id": "$customer_id",
+          "address_id": "$address_id",
+          "invoice_number": "$invoice_number",
+          "schedule": "$schedule",
+          "assigned_employee_ids": "$assigned_employee_ids",
+          "line_items": "$line_items",
+          "tags": "$tags",
+          "lead_source": "$lead_source",
+          "notes": "$notes",
+          "job_fields": "$job_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "housecall_pro_update_job_schedule",
+      "description": "Schedule or reschedule a job: start and end time, arrival window and dispatched employees, optionally notifying the customer and the employees. Jobs with several appointments (multi-day) cannot be changed here. Confirm with the user before notifying the customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job id from housecall_pro_list_jobs."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start time, ISO 8601, for example 2026-11-23T15:30:00-07:00."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End time, ISO 8601."
+          },
+          "arrival_window_in_minutes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Arrival window in minutes."
+          },
+          "dispatched_employees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "employee_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "employee_id"
+              ]
+            },
+            "description": "Employees to dispatch, as [{\"employee_id\": \"pro_...\"}]."
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "Notify the customer of the new schedule."
+          },
+          "notify_pro": {
+            "type": "boolean",
+            "description": "Notify the dispatched employees."
+          }
+        },
+        "required": [
+          "job_id",
+          "start_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/jobs/{job_id}/schedule",
+        "bodyMapping": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "arrival_window_in_minutes": "$arrival_window_in_minutes",
+          "dispatched_employees": "$dispatched_employees",
+          "notify": "$notify",
+          "notify_pro": "$notify_pro"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "housecall_pro_add_job_line_item",
+      "description": "Add one line item to a job: name, description, quantity, unit price and unit cost in cents, kind and taxable flag. Rate limited per job; add a few at a time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job id from housecall_pro_list_jobs."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Line item name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description shown on the invoice."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity, up to two decimals."
+          },
+          "unit_price": {
+            "type": "integer",
+            "description": "Selling price of one unit in cents: 12500 = 125.00."
+          },
+          "unit_cost": {
+            "type": "integer",
+            "description": "Cost of one unit (job costing) in cents: 12500 = 125.00."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "labor",
+              "materials",
+              "fixed gratuity",
+              "fixed discount",
+              "percent discount"
+            ],
+            "description": "Kind of line item."
+          },
+          "taxable": {
+            "type": "boolean",
+            "description": "Whether tax applies."
+          },
+          "service_item_id": {
+            "type": "string",
+            "description": "Price book item id the line is based on, if any."
+          },
+          "service_item_type": {
+            "type": "string",
+            "enum": [
+              "market_place",
+              "organizational",
+              "pricebook_material"
+            ],
+            "description": "Type of service_item_id."
+          }
+        },
+        "required": [
+          "job_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobs/{job_id}/line_items",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "quantity": "$quantity",
+          "unit_price": "$unit_price",
+          "unit_cost": "$unit_cost",
+          "kind": "$kind",
+          "taxable": "$taxable",
+          "service_item_id": "$service_item_id",
+          "service_item_type": "$service_item_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "housecall_pro_delete_job_line_item",
+      "description": "Delete one line item from a job. It cannot be restored. Installed switched off; show the user the line item and ask before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job id from housecall_pro_list_jobs."
+          },
+          "line_item_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Line item id from housecall_pro_list_job_line_items."
+          }
+        },
+        "required": [
+          "job_id",
+          "line_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/jobs/{job_id}/line_items/{line_item_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "housecall_pro_create_job_appointment",
+      "description": "Add an appointment (visit) to a job, for multi-day work: start and end time, arrival window and the employees dispatched to it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job id from housecall_pro_list_jobs."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start, ISO 8601, for example 2026-11-24T08:00:00."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End, ISO 8601."
+          },
+          "arrival_window_minutes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Arrival window in minutes."
+          },
+          "dispatched_employees_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Employee ids to dispatch, from housecall_pro_list_employees."
+          }
+        },
+        "required": [
+          "job_id",
+          "start_time",
+          "end_time",
+          "dispatched_employees_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobs/{job_id}/appointments",
+        "bodyMapping": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "arrival_window_minutes": "$arrival_window_minutes",
+          "dispatched_employees_ids": "$dispatched_employees_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "housecall_pro_add_job_note",
+      "description": "Add an internal note to a job, visible to the team in Housecall Pro.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job id from housecall_pro_list_jobs."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Note text."
+          }
+        },
+        "required": [
+          "job_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/jobs/{job_id}/notes",
+        "bodyMapping": {
+          "content": "$content"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "housecall_pro_list_invoices",
+      "description": "List invoices across all jobs, filtered by status, customer, created, due and paid dates, amount due and payment method. Each has id (uuid), job_id, invoice number, status, amounts in cents (amount, due_amount), due and paid dates. Read only: this connector does not take or refund payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "open",
+                "pending_payment",
+                "paid",
+                "voided",
+                "uncollectible",
+                "canceled"
+              ]
+            },
+            "description": "Only these statuses."
+          },
+          "customer_uuid": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only invoices of these customer ids."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Created at or after, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Created at or before, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "due_at_min": {
+            "type": "string",
+            "description": "Due at or after, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "due_at_max": {
+            "type": "string",
+            "description": "Due at or before, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "paid_at_min": {
+            "type": "string",
+            "description": "Paid at or after, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "paid_at_max": {
+            "type": "string",
+            "description": "Paid at or before, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "amount_due_min": {
+            "type": "integer",
+            "description": "Minimum amount due in cents: 12500 = 125.00."
+          },
+          "amount_due_max": {
+            "type": "integer",
+            "description": "Maximum amount due in cents: 12500 = 125.00."
+          },
+          "payment_method": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "consumer_financing",
+                "credit_card",
+                "ach",
+                "external",
+                "mobile_check_deposit"
+              ]
+            },
+            "description": "Only invoices paid with these methods."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by.",
+            "enum": [
+              "amount",
+              "created_at",
+              "due_amount",
+              "due_at",
+              "invoice_number",
+              "paid_at",
+              "sent_at",
+              "status",
+              "updated_at"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these locations (multi-location accounts). Location ids are listed in housecall_pro_get_company under locations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "status[]": "$status",
+          "customer_uuid[]": "$customer_uuid",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "due_at_min": "$due_at_min",
+          "due_at_max": "$due_at_max",
+          "paid_at_min": "$paid_at_min",
+          "paid_at_max": "$paid_at_max",
+          "amount_due_min": "$amount_due_min",
+          "amount_due_max": "$amount_due_max",
+          "payment_method[]": "$payment_method",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "location_ids[]": "$location_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_get_invoice",
+      "description": "Get one invoice by its id (uuid) with line items, taxes, discounts, payments and amounts in cents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Invoice id from housecall_pro_list_invoices or housecall_pro_list_job_invoices (the id field)."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/invoices/{invoice_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_estimates",
+      "description": "List estimates with filters on schedule, customer, assigned employees and work status. Each estimate has id, estimate number, customer, address, schedule, assigned employees and its options (each option with status, approval status and total in cents).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scheduled_start_min": {
+            "type": "string",
+            "description": "Only estimates starting at or after this time, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "scheduled_start_max": {
+            "type": "string",
+            "description": "Only estimates starting at or before this time, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "scheduled_end_min": {
+            "type": "string",
+            "description": "Only estimates ending at or after this time, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "scheduled_end_max": {
+            "type": "string",
+            "description": "Only estimates ending at or before this time, ISO 8601 date-time such as 2026-11-01T00:00:00Z."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only estimates of this customer id."
+          },
+          "employee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only estimates assigned to these employee ids."
+          },
+          "work_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "unscheduled",
+                "scheduled",
+                "in_progress",
+                "completed",
+                "canceled"
+              ]
+            },
+            "description": "Only these work statuses. All statuses when left out."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by.",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "id"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these locations (multi-location accounts). Location ids are listed in housecall_pro_get_company under locations."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attachments"
+              ]
+            },
+            "description": "Extra data to include: attachments."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimates",
+        "queryParams": {
+          "scheduled_start_min": "$scheduled_start_min",
+          "scheduled_start_max": "$scheduled_start_max",
+          "scheduled_end_min": "$scheduled_end_min",
+          "scheduled_end_max": "$scheduled_end_max",
+          "customer_id": "$customer_id",
+          "employee_ids[]": "$employee_ids",
+          "work_status[]": "$work_status",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "location_ids[]": "$location_ids",
+          "expand[]": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_get_estimate",
+      "description": "Get one estimate by id with customer, address, schedule, assigned employees, estimate fields and every option (name, status, approval status, total in cents).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "estimate_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Estimate id from housecall_pro_list_estimates."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "attachments"
+              ]
+            },
+            "description": "Extra data to include: attachments."
+          }
+        },
+        "required": [
+          "estimate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimates/{estimate_id}",
+        "queryParams": {
+          "expand[]": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_estimate_option_line_items",
+      "description": "List the line items of one estimate option: name, description, quantity, unit price and cost in cents, kind and taxable flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "estimate_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Estimate id from housecall_pro_list_estimates."
+          },
+          "option_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Option id from the options of housecall_pro_get_estimate."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          }
+        },
+        "required": [
+          "estimate_id",
+          "option_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimates/{estimate_id}/options/{option_id}/line_items",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_create_estimate",
+      "description": "Create an estimate for an existing customer, with one or more options (each with a name and line items in cents), an address (address_id or a new address), assigned employees, a note, a message to the customer, tax and job type. Creating it does not send it to the customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Customer id from housecall_pro_list_customers."
+          },
+          "address_id": {
+            "type": "string",
+            "description": "Existing address id of the customer. Or give address instead."
+          },
+          "address": {
+            "type": "object",
+            "properties": {
+              "street": {
+                "type": "string"
+              },
+              "street_line_2": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "zip": {
+                "type": "string"
+              }
+            },
+            "description": "A new address for the estimate, when there is no address_id."
+          },
+          "options": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Estimate options, for example Good / Better / Best. Each has a name, optional tags and line_items (name, description, unit_price and unit_cost in cents, quantity).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "line_items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "Line item name."
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "unit_price": {
+                        "type": "integer",
+                        "description": "Selling price of one unit in cents."
+                      },
+                      "unit_cost": {
+                        "type": "integer",
+                        "description": "Cost of one unit in cents (job costing)."
+                      },
+                      "quantity": {
+                        "type": "number",
+                        "description": "Quantity, up to two decimals."
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "assigned_employee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Employee ids to assign."
+          },
+          "estimate_number": {
+            "type": "integer",
+            "description": "Estimate number, unique in the company. Left out: assigned automatically."
+          },
+          "note": {
+            "type": "string",
+            "description": "Internal note."
+          },
+          "message": {
+            "type": "string",
+            "description": "Message to the customer shown on the estimate."
+          },
+          "lead_source": {
+            "type": "string",
+            "description": "Lead source name."
+          },
+          "estimate_fields": {
+            "type": "object",
+            "description": "Job type and business unit, as {\"job_type_id\": \"...\"}; ids from housecall_pro_list_job_types.",
+            "properties": {
+              "job_type_id": {
+                "type": "string"
+              },
+              "business_unit_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "customer_id",
+          "options"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/estimates",
+        "bodyMapping": {
+          "customer_id": "$customer_id",
+          "address_id": "$address_id",
+          "address": "$address",
+          "options": "$options",
+          "assigned_employee_ids": "$assigned_employee_ids",
+          "estimate_number": "$estimate_number",
+          "note": "$note",
+          "message": "$message",
+          "lead_source": "$lead_source",
+          "estimate_fields": "$estimate_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "housecall_pro_list_leads",
+      "description": "List leads (potential work not yet an estimate or job) filtered by status, customer, employees, tags and lead source. Each has id, number, customer, address, lead source, tags, assigned employee, status (open, won, lost) and pipeline status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "won",
+              "lost"
+            ],
+            "description": "Only leads in this status."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only leads of this customer id."
+          },
+          "employee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only leads assigned to these employee ids."
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only leads with these tag ids."
+          },
+          "lead_source": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only leads from these lead sources."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by.",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "id",
+              "status"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these locations (multi-location accounts). Location ids are listed in housecall_pro_get_company under locations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads",
+        "queryParams": {
+          "status": "$status",
+          "customer_id": "$customer_id",
+          "employee_ids[]": "$employee_ids",
+          "tag_ids[]": "$tag_ids",
+          "lead_source[]": "$lead_source",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "location_ids[]": "$location_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_get_lead",
+      "description": "Get one lead by id with customer, address, lead source, tags, assigned employee, status and pipeline status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lead_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Lead id from housecall_pro_list_leads."
+          }
+        },
+        "required": [
+          "lead_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/leads/{lead_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_create_lead",
+      "description": "Create a lead for an existing customer (customer_id) or a new one (customer with name, email or phone), with address, lead source, tags, assigned employee, note and line items in cents. Search customers first to avoid duplicates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Existing customer id. Either this or customer is required."
+          },
+          "customer": {
+            "type": "object",
+            "description": "A new customer, when there is no customer_id: first_name, last_name, email, mobile_number, company and other customer fields.",
+            "properties": {
+              "first_name": {
+                "type": "string"
+              },
+              "last_name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "mobile_number": {
+                "type": "string"
+              },
+              "company": {
+                "type": "string"
+              },
+              "notifications_enabled": {
+                "type": "boolean"
+              }
+            }
+          },
+          "address_id": {
+            "type": "string",
+            "description": "Existing address id of the customer."
+          },
+          "address": {
+            "type": "object",
+            "properties": {
+              "street": {
+                "type": "string"
+              },
+              "street_line_2": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "zip": {
+                "type": "string"
+              }
+            },
+            "description": "A new address, when there is no address_id."
+          },
+          "assigned_employee_id": {
+            "type": "string",
+            "description": "Employee id to assign."
+          },
+          "lead_source": {
+            "type": "string",
+            "description": "Lead source name."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note about the request."
+          },
+          "line_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Line item name."
+                },
+                "description": {
+                  "type": "string"
+                },
+                "unit_price": {
+                  "type": "integer",
+                  "description": "Selling price of one unit in cents."
+                },
+                "unit_cost": {
+                  "type": "integer",
+                  "description": "Cost of one unit in cents (job costing)."
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity, up to two decimals."
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "description": "Requested services or materials, with prices in cents."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/leads",
+        "bodyMapping": {
+          "customer_id": "$customer_id",
+          "customer": "$customer",
+          "address_id": "$address_id",
+          "address": "$address",
+          "assigned_employee_id": "$assigned_employee_id",
+          "lead_source": "$lead_source",
+          "tags": "$tags",
+          "note": "$note",
+          "line_items": "$line_items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "housecall_pro_list_lead_sources",
+      "description": "List the lead sources defined in the account (where customers and jobs come from, for example Google or Referral), searchable by name. Use the names for lead_source fields and filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search by name."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lead_sources",
+        "queryParams": {
+          "q": "$q",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_direction": "$sort_direction"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_get_schedule_windows",
+      "description": "Get the business hours and bookable windows the company configured: availability buffer in days and, per weekday, the time windows when work can be booked.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/schedule_availability"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_get_booking_windows",
+      "description": "Get open booking windows for the coming days (7 by default) from the Online Booking settings and the employees' free time. Filter by service, price form or employees, or set the window length in minutes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DDTHH:MM:SS. Default: the next day with an open window."
+          },
+          "show_for_days": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of days to show. Default 7."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Price book service id: only employees assigned to it, with its configured duration."
+          },
+          "service_duration": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Window length in minutes; overrides the service duration."
+          },
+          "price_form_id": {
+            "type": "string",
+            "description": "Only employees assigned to this price form."
+          },
+          "employee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these employees."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/schedule_availability/booking_windows",
+        "queryParams": {
+          "start_date": "$start_date",
+          "show_for_days": "$show_for_days",
+          "service_id": "$service_id",
+          "service_duration": "$service_duration",
+          "price_form_id": "$price_form_id",
+          "employee_ids[]": "$employee_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_price_book_services",
+      "description": "List or search the price book services (name, description, task number, price and cost in cents, duration, category, online booking and taxable flags). q searches name, description and task number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by, for example created_at (default) or name."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/price_book/services",
+        "queryParams": {
+          "q": "$q",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_material_categories",
+      "description": "List price book material categories: the root categories, or the subcategories of parent_uuid. Category uuids are needed to list materials.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_uuid": {
+            "type": "string",
+            "description": "Parent category uuid. Left out: root categories."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by.",
+            "enum": [
+              "name",
+              "updated_at",
+              "created_at"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/price_book/material_categories",
+        "queryParams": {
+          "parent_uuid": "$parent_uuid",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_materials",
+      "description": "List the price book materials in one material category: name, part number, description, price and cost in cents, unit of measure and taxable flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "material_category_uuid": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Material category uuid id from housecall_pro_list_material_categories."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by.",
+            "enum": [
+              "name",
+              "updated_at",
+              "created_at"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          }
+        },
+        "required": [
+          "material_category_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/price_book/materials",
+        "queryParams": {
+          "material_category_uuid": "$material_category_uuid",
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_job_types",
+      "description": "List the job types defined in the account (for example Install, Repair, Maintenance), optionally filtered by name. The id goes into job_fields.job_type_id (jobs) or estimate_fields.job_type_id (estimates).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Filter by name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/job_fields/job_types",
+        "queryParams": {
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_tags",
+      "description": "List the tags of the account (id and name), used on customers, jobs, estimates and leads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by.",
+            "enum": [
+              "created_at",
+              "name"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "housecall_pro_list_events",
+      "description": "List calendar events (blocked time that is not a job, such as meetings or time off) with name, schedule and assigned employees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer carries total_pages; stop when page equals total_pages."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page. Housecall Pro returns 10 when left out; up to 100 keeps the number of calls low."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Field to sort by, for example created_at."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc or desc."
+          },
+          "location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these locations (multi-location accounts). Location ids are listed in housecall_pro_get_company under locations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "location_ids[]": "$location_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
