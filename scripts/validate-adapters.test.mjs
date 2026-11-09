@@ -254,7 +254,7 @@ test('EMAIL adapters (IMAP/SMTP) are a supported connector type', () => {
 
 test('the per-country region directories are scanned', () => {
   const root = mkdtempSync(join(tmpdir(), 'adapter-validator-regions-'));
-  const regions = ['it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk'];
+  const regions = ['it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk', 'eg'];
   for (const region of regions) {
     mkdirSync(join(root, region));
     writeFileSync(join(root, region, `${region}-one.json`), '{}');
