@@ -4,6 +4,7 @@ import { LicenseService } from './license.service';
 import { DeploymentService } from '../common/deployment.service';
 import { cardTrialEnd } from './license-checkout';
 import { codeToolCapForPlan, inlineCodeAllowedForPlan, effectiveCodeModePlan } from './code-mode-quotas';
+import { codeRunQuotaPlan } from './code-run-quotas';
 import type { LicenseInfo } from './license.service';
 
 export interface UsageCap {
@@ -181,25 +182,34 @@ export class LicenseGuardService {
   }
 
   /**
-   * The plan this workspace is treated as for code mode. A card-backed Cloud
-   * trial (licence `plan='trial'` with a live `billing.status='trialing'`, i.e.
-   * a card on file) is promoted to the Team experience for the length of the
-   * trial — inline code and the Team code-tool cap — to let a high-intent user
-   * try everything. A free trial (no billing) and every other plan are their
-   * own plan. Self-hosted trials carry no Stripe billing, so they never match.
+   * The plan this workspace is treated as for code mode. Every Cloud trial is
+   * promoted to the Team experience (inline code and the Team code-tool cap)
+   * so a new workspace can try everything. Self-hosted trials carry no Stripe
+   * billing and are not promoted.
    */
   private codeModePlan(license: LicenseInfo | null): string {
-    const cardTrial =
-      license?.plan === 'trial' && license?.billing?.status === 'trialing';
-    return effectiveCodeModePlan(license?.plan, cardTrial);
+    return effectiveCodeModePlan(license?.plan, this.isCardTrial(license), this.deployment.isCloud());
+  }
+
+  /** A Cloud trial with a card on file (`billing.status='trialing'`). */
+  private isCardTrial(license: LicenseInfo | null): boolean {
+    return license?.plan === 'trial' && license?.billing?.status === 'trialing';
   }
 
   /**
-   * The effective code-mode plan for a workspace (a card-backed trial resolves
-   * to `team`), so the run-quota enforcement in the MCP code path can look up
-   * this workspace's monthly and concurrency caps. Plan resolution stays here,
-   * next to the other code-mode gating. Returns `community` when there is no
-   * resolvable licence.
+   * The plan whose code-run quotas apply to a workspace: Team for a card-backed
+   * trial, `trial` (a small budget) for a trial without a card, otherwise the
+   * licence plan. `community` when there is no resolvable licence.
+   */
+  async codeRunPlanForOrg(organizationId?: string): Promise<string> {
+    const license = await this.licenseService.getCurrentLicense(organizationId);
+    return codeRunQuotaPlan(license?.plan, this.isCardTrial(license));
+  }
+
+  /**
+   * The effective code-mode plan for a workspace (a Cloud trial resolves to
+   * `team`). Plan resolution stays here, next to the other code-mode gating.
+   * Returns `community` when there is no resolvable licence.
    */
   async codeModePlanForOrg(organizationId?: string): Promise<string> {
     const license = await this.licenseService.getCurrentLicense(organizationId);

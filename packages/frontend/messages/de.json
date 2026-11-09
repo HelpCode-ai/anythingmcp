@@ -2445,6 +2445,25 @@
       "manage": "Abonnement & Abrechnung verwalten",
       "cancel": "Abonnement kündigen"
     },
+    "invoiceEmail": {
+      "title": "Rechnungen per E-Mail",
+      "body": "Erhalte jede Rechnung als PDF per E-Mail, sobald sie bezahlt ist. Alle Rechnungen findest du außerdem jederzeit im Abrechnungsportal.",
+      "recipientLabel": "Rechnungen senden an",
+      "billingContact": "Rechnungskontakt",
+      "otherAddress": "Andere Adresse",
+      "otherAddressHint": "Zum Beispiel deine Buchhaltung. Die bisherige Adresse bekommt bei einer Änderung einen kurzen Hinweis.",
+      "addressPlaceholder": "buchhaltung@firma.de",
+      "saveRecipient": "Adresse speichern",
+      "saving": "Wird gespeichert…",
+      "savedOn": "Ab der nächsten Zahlung kommen die Rechnungen per E-Mail.",
+      "savedOff": "Rechnungen werden nicht mehr per E-Mail verschickt.",
+      "savedRecipient": "Adresse gespeichert.",
+      "invalidAddress": "Gib eine gültige E-Mail-Adresse ein.",
+      "saveError": "Speichern fehlgeschlagen. Bitte versuch es noch einmal.",
+      "loadError": "Die Einstellungen für Rechnungen per E-Mail konnten nicht geladen werden. Lade die Seite neu, um es noch einmal zu versuchen.",
+      "lastSent": "Zuletzt gesendet: {number} am {date} an {to}",
+      "allInvoices": "Alle Rechnungen: oben unter Abonnement & Abrechnung verwalten."
+    },
     "features": {
       "title": "Funktionen",
       "yes": "Ja",

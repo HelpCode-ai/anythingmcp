@@ -167,14 +167,15 @@ AI clients, and search keeps working on the last index during a sync.
 
 | | Trial (Cloud) | Starter | Team | Enterprise |
 |---|---|---|---|---|
-| File Search connectors | 1 | 1 | 3 | by contract (self-hosted: unlimited) |
-| Indexed files, all connectors together | 500 | 500 | 2,000 | by contract (self-hosted: unlimited) |
-| Largest file (Cloud) | 10 MB | 25 MB | 50 MB | 200 MB |
+| File Search connectors | 3 | 1 | 3 | by contract (self-hosted: unlimited) |
+| Indexed files, all connectors together | 2,000 | 500 | 2,000 | by contract (self-hosted: unlimited) |
+| Largest file (Cloud) | 50 MB | 25 MB | 50 MB | 200 MB |
 | Automatic sync | daily | daily | daily | down to every 15 minutes (self-hosted: 5) |
-| Manual syncs per day | 1 | 1 | 3 | unlimited |
+| Manual syncs per day | 3 | 1 | 3 | unlimited |
 | OCR, folder permissions, workspace policy | – | – | – | ✓ |
 
-Self-hosted: the self-hosted 30-day trial has the Team limits; file size is
+The Cloud trial has the Team limits, so you can try everything before you
+pick a plan. Self-hosted: the self-hosted 30-day trial has the Team limits too; file size is
 set by `FILES_MAX_FILE_BYTES` (default 100 MB). Self-hosted Starter and Team
 are no longer sold; existing Starter and Team keys keep the limits above, and
 more comes with [Enterprise](https://anythingmcp.com/contact?plan=enterprise).
@@ -204,7 +205,7 @@ lets AI clients publish files they write.
   deleted by the worker.
 - Limits: Starter links last at most 24 hours, with 100 MB for the files of
   all active links together and 10 MB per file; Team 7 days, 2 GB, 50 MB. The
-  Cloud trial has no File Share. On the Cloud, program files (`.exe`, `.msi`,
+  Cloud trial has the Team limits. On the Cloud, program files (`.exe`, `.msi`,
   `.js`, …) cannot be shared.
 
 ## Permissions and governance

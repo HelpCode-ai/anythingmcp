@@ -595,6 +595,12 @@ export function sanitizeSearchQuery(value: unknown): string | null {
  * `http://` of `http://http://…` (CodeQL js/polynomial-redos).
  */
 const SCRUB_INPUT_LIMIT = 2000;
+/**
+ * Long enough to keep the provider's own words after our hint: a 500 from
+ * Odoo starts with the classifier's sentence, and its "Invalid field 'x'"
+ * came after the old 160-character cut.
+ */
+const PROVIDER_MESSAGE_MAX = 400;
 
 export function scrubProviderMessage(message: unknown, secrets: unknown[] = []): string | null {
   if (typeof message !== 'string' || !message.trim()) return null;
@@ -611,7 +617,7 @@ export function scrubProviderMessage(message: unknown, secrets: unknown[] = []):
   });
   out = out.replace(/[A-Za-z0-9_\-.+/=]{32,}/g, '***');
   out = out.replace(/\s+/g, ' ').trim();
-  return out.length > 160 ? `${out.slice(0, 159)}…` : out;
+  return out.length > PROVIDER_MESSAGE_MAX ? `${out.slice(0, PROVIDER_MESSAGE_MAX - 1)}…` : out;
 }
 
 /** The attribution pair, re-sanitized here so no caller can store anything else. */

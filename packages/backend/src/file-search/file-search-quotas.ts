@@ -41,20 +41,6 @@ const CLOUD_SHARE_ENTERPRISE: FileShareQuota = {
 };
 
 const CLOUD: Record<string, FileSearchQuota> = {
-  trial: {
-    plan: 'trial',
-    maxConnectors: 1,
-    maxFiles: 500,
-    maxSourceBytes: 500 * MB,
-    maxTextChars: 25_000_000,
-    maxFileBytes: 10 * MB,
-    minIntervalMinutes: DAY_MIN,
-    manualSyncsPerDay: 1,
-    share: null,
-    ocr: false,
-    folderRules: false,
-    policy: false,
-  },
   starter: {
     plan: 'starter',
     maxConnectors: 1,
@@ -99,6 +85,10 @@ const CLOUD: Record<string, FileSearchQuota> = {
   },
 };
 CLOUD.business = { ...CLOUD.team, plan: 'business' };
+// The Cloud trial has the Team limits, so a new workspace can try everything
+// before it picks a plan (decided 2026-11-09). Before checkout, the paywall
+// tells a workspace above Starter what Starter would not include.
+CLOUD.trial = { ...CLOUD.team, share: { ...CLOUD_SHARE_TEAM }, plan: 'trial' };
 
 function selfHosted(maxFileBytes: number): Record<string, FileSearchQuota> {
   const share = (ttl: number | null, internalWithoutExpiry = false): FileShareQuota => ({
@@ -189,8 +179,8 @@ function applyOverrides(base: FileSearchQuota, overrides: unknown): FileSearchQu
 /**
  * The plan to suggest when a limit is reached (wizard and pause banner): the
  * first plan after the current one that really includes more connectors or
- * files. A Cloud trial (Starter limits) is pointed at Team, a self-hosted
- * evaluation (Team limits) at Enterprise.
+ * files. A Cloud trial and a self-hosted evaluation (both with Team limits)
+ * are pointed at Enterprise.
  */
 export function nextPlan(plan: string, cloud: boolean): { plan: string; quota: FileSearchQuota } | null {
   const order = ['trial', 'starter', 'team', 'enterprise'];

@@ -1396,14 +1396,15 @@ AI clients, and search keeps working on the last index during a sync.
 
 | | Trial (Cloud) | Starter | Team | Enterprise |
 |---|---|---|---|---|
-| File Search connectors | 1 | 1 | 3 | by contract (self-hosted: unlimited) |
-| Indexed files, all connectors together | 500 | 500 | 2,000 | by contract (self-hosted: unlimited) |
-| Largest file (Cloud) | 10 MB | 25 MB | 50 MB | 200 MB |
+| File Search connectors | 3 | 1 | 3 | by contract (self-hosted: unlimited) |
+| Indexed files, all connectors together | 2,000 | 500 | 2,000 | by contract (self-hosted: unlimited) |
+| Largest file (Cloud) | 50 MB | 25 MB | 50 MB | 200 MB |
 | Automatic sync | daily | daily | daily | down to every 15 minutes (self-hosted: 5) |
-| Manual syncs per day | 1 | 1 | 3 | unlimited |
+| Manual syncs per day | 3 | 1 | 3 | unlimited |
 | OCR, folder permissions, workspace policy | – | – | – | ✓ |
 
-Self-hosted: the self-hosted 30-day trial has the Team limits; file size is
+The Cloud trial has the Team limits, so you can try everything before you
+pick a plan. Self-hosted: the self-hosted 30-day trial has the Team limits too; file size is
 set by `FILES_MAX_FILE_BYTES` (default 100 MB). Self-hosted Starter and Team
 are no longer sold; existing Starter and Team keys keep the limits above, and
 more comes with [Enterprise](<https://anythingmcp.com/contact?plan=enterprise>).
@@ -1433,7 +1434,7 @@ lets AI clients publish files they write.
   deleted by the worker.
 - Limits: Starter links last at most 24 hours, with 100 MB for the files of
   all active links together and 10 MB per file; Team 7 days, 2 GB, 50 MB. The
-  Cloud trial has no File Share. On the Cloud, program files (`.exe`, `.msi`,
+  Cloud trial has the Team limits. On the Cloud, program files (`.exe`, `.msi`,
   `.js`, …) cannot be shared.
 
 ## Permissions and governance
@@ -6964,11 +6965,11 @@ where Enterprise and admin gating apply again.
 - **Per plan:** saved code tools are capped per plan — Community 3, Starter 5,
   Team 20, Enterprise unlimited (same on Cloud and self-hosted; an Enterprise
   contract can override the cap with the licence feature `maxCodeTools`). Inline
-  code (`code_execute` / `code_propose_tool`) is Team and above. A Cloud trial
-  with a card on file is treated as Team for code mode for the length of the
-  trial (inline code and the Team cap of 20), so a high-intent user can try
-  everything; a free, card-less trial stays tools-only with the cap of 3. A
-  self-hosted trial carries no billing and so is never promoted.
+  code (`code_execute` / `code_propose_tool`) is Team and above. Every Cloud trial
+  is treated as Team for code mode for the length of the trial (inline code and
+  the Team cap of 20), so a new workspace can try everything; only the run
+  quotas below differ for a trial without a card. A self-hosted trial is not
+  promoted.
 - **Writes** happen only in an admin-approved code tool with *Allow write
   tools* on; inline code and read-only tools can never write.
 - **Audit:** every run is recorded (a `code_runs` row), and each tool call the
@@ -7002,12 +7003,13 @@ tool calls it may make, and limits on output size. A program that exceeds a
 limit fails with a clear error; it never affects other runs or the backend.
 
 On Cloud, where the runner is shared between tenants, two per-workspace quotas
-apply on top of the per-run limits: a **monthly run cap** (trial 100, Starter
-500, Team 5,000, Enterprise unlimited; an Enterprise contract can override it
-with the licence feature `maxCodeRunsPerMonth`) and a **concurrency cap** on
-simultaneous runs (trial/Starter 1, Team 3, Enterprise 10). Over a quota, a run
-is refused with a clear message and nothing is executed. A card-backed trial
-gets the Team quotas. Self-hosted is single-tenant and not metered by runs, so
+apply on top of the per-run limits: a **monthly run cap** (trial without a card 500,
+Starter 500, Team 5,000, Enterprise unlimited; an Enterprise contract can
+override it with the licence feature `maxCodeRunsPerMonth`) and a **concurrency
+cap** on simultaneous runs (trial without a card and Starter 1, Team 3,
+Enterprise 10). Over a quota, a run is refused with a clear message and nothing
+is executed. A trial with a card on file gets the Team quotas. Every Cloud trial
+has the Team code-mode features: inline code and up to 20 saved code tools. Self-hosted is single-tenant and not metered by runs, so
 neither quota applies there.
 
 ---
@@ -7117,6 +7119,63 @@ You do not need one to use AnythingMCP at work: Community is free for commercial
 ---
 
 [Back to README](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md>) | [Full License Text](<https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE>)
+
+---
+
+## docs/cloud-invoices.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/cloud-invoices.md
+
+# Invoices on AnythingMCP Cloud
+
+This page is about the invoices for your AnythingMCP Cloud subscription. It does
+not apply to self-hosted installations: self-hosted licences are managed on
+anythingmcp.com/account.
+
+## Where to find your invoices
+
+Open **Settings → License** and select **Manage subscription & billing**. The
+billing portal lists every invoice of the workspace, each with a PDF download.
+You can update your company name, address and VAT ID there too; changes apply
+to the next invoice.
+
+Only workspace admins see this page.
+
+## Invoices by email
+
+On **Settings → License**, switch on **Invoices by email** to get every paid
+invoice as a PDF attachment. It is off until an admin switches it on.
+
+- **When:** right after each payment that has an amount. The €0 invoice that
+  opens a card trial is not sent.
+- **To whom:** the billing contact (the email address of the subscription in
+  the billing portal), or another address you enter, for example your
+  accounting team.
+- **Changing the address:** the new address applies to the next invoice. The
+  previous address gets a short notice saying invoices now go elsewhere.
+- **What the email contains:** the invoice number, amount, period and the PDF.
+  The link in the email opens Settings → License, which needs a sign-in.
+
+Each invoice goes only to the address set for the workspace it belongs to.
+When a licence key moves to another workspace, invoices by email are off for it
+until an admin of the new workspace switches them on.
+
+## From the command line
+
+With a management key of a workspace admin (`amcp login --browser --scope admin`):
+
+```bash
+amcp invoices email                                   # show the setting
+amcp invoices email on --yes                          # to the billing contact
+amcp invoices email on --to accounting@example.com --yes
+amcp invoices email --billing-contact --yes           # back to the billing contact
+amcp invoices email off --yes
+```
+
+The same through the API: `GET /api/license/invoice-email` and
+`PUT /api/license/invoice-email` with `{"enabled": true, "to": "accounting@example.com"}`
+(`"to": null` for the billing contact; leave `to` out to keep the current address).
+Both need an admin; a read-only management key can only read.
 
 ---
 

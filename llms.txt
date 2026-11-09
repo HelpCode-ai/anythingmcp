@@ -44,6 +44,7 @@
 - [SCIM provisioning with Microsoft Entra ID — step by step](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/scim-entra-setup.md): Click-by-click setup for automatic user and group provisioning from Entra ID into AnythingMCP.
 - [Code mode](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/code-mode.md): Run isolated JavaScript that orchestrates several MCP tools in one step: saved code tools, inline code_execute, governance and deployment.
 - [License FAQ](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/license-faq.md): Understand the AGPL license, the commercial EE boundary, and contributor licensing.
+- [Invoices on AnythingMCP Cloud](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/cloud-invoices.md): Find your AnythingMCP Cloud invoices and have each paid invoice emailed as a PDF, from the dashboard or the CLI.
 
 ## Reference
 

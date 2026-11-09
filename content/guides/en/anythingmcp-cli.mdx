@@ -296,6 +296,19 @@ $ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
 
 `GET /api/audit/breakdowns?days=30` returns usage and cost broken down by connector, MCP server and user. It's a good fit for a monthly report.
 
+### Get your invoices by email
+
+On AnythingMCP Cloud, an admin can have every paid invoice emailed as a PDF, for example to the accounting team:
+
+```bash
+amcp invoices email on --to accounting@acme.io --yes
+amcp invoices email
+# Invoices by email: on
+# Recipient: accounting@acme.io (another address)
+```
+
+`--billing-contact` sends them to the subscription's billing email again; `off` stops them. Details: [Invoices on AnythingMCP Cloud](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/cloud-invoices.md).
+
 ### Discover the whole API offline
 
 You don't need the docs open. The catalogue of management operations ships with the CLI:

@@ -194,6 +194,7 @@ export const OPTIONS = {
   args: { type: 'string' }, yes: { type: 'boolean' }, json: { type: 'boolean' },
   timeout: { type: 'string' }, data: { type: 'string' }, management: { type: 'boolean' },
   list: { type: 'boolean' }, browser: { type: 'boolean' }, scope: { type: 'string' },
+  to: { type: 'string' }, 'billing-contact': { type: 'boolean' },
   version: { type: 'boolean', short: 'v' },
 } as const;
 
@@ -234,12 +235,122 @@ function usage(): string {
   amcp tools call <name> [--args '<json>' | --args @file.json | --args -] [--yes] [--timeout <seconds>]
   amcp api <GET|POST|PUT|PATCH|DELETE> <path> [--data '<json>' | --data @file.json | --data -] [--yes] [--url <instance-url>]
   amcp api --list [<resource>]
+  amcp invoices email [on|off] [--to <address> | --billing-contact] [--yes]
   amcp completion <bash|zsh|fish>
   amcp --version
 
 Use --json for machine-readable output. For CI, set AMCP_URL, AMCP_SERVER and AMCP_API_KEY.
 The key is never accepted as a command argument. 'amcp api' calls the management
-API (/api/*) with a management-scoped key from AMCP_API_KEY or --key-stdin.`;
+API (/api/*) with a management-scoped key from AMCP_API_KEY or --key-stdin.
+'amcp invoices email' (AnythingMCP Cloud, workspace admins) shows whether each paid
+invoice is emailed as a PDF; 'on'/'off' switch it, --to sends invoices to another
+address, --billing-contact back to the subscription's billing email.`;
+}
+
+type ParsedValues = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>['values'];
+
+/**
+ * The instance and management key for the management API. The key never
+ * comes from argv: env or stdin only, or a management key saved by
+ * `amcp login --management` for the same instance. A stored MCP key is not
+ * used for the management API.
+ */
+async function managementCredentials(values: ParsedValues, stored: Profile | undefined): Promise<{ url: string; key: string }> {
+  const url = values.url || process.env.AMCP_URL || stored?.url;
+  if (!url) throw new CliError('Set --url or AMCP_URL, or log in first', 2);
+  const key = process.env.AMCP_API_KEY ||
+    (values['key-stdin'] ? await readKey(process.stdin, process.stderr, true) : '') ||
+    (stored?.managementKey && stored.url && sameOrigin(url, stored.url) ? stored.managementKey : '');
+  if (!key) throw new CliError('Set AMCP_API_KEY, pass --key-stdin, or log in with: amcp login --management', 2);
+  return { url, key };
+}
+
+interface InvoiceEmailView {
+  available: boolean;
+  enabled: boolean;
+  billingContact: string | null;
+  recipient: { kind: 'billing' | 'custom'; address: string | null };
+  lastSent: { number: string; at: string; to: string } | null;
+}
+
+function printInvoiceEmail(view: InvoiceEmailView): void {
+  if (!view.available) {
+    process.stdout.write('Invoices by email: not available (this workspace has no subscription)\n');
+    return;
+  }
+  const recipient = view.recipient.address ? singleLine(view.recipient.address) : 'none';
+  const kind = view.recipient.kind === 'custom' ? 'another address' : 'billing contact';
+  process.stdout.write(`Invoices by email: ${view.enabled ? 'on' : 'off'}\n`);
+  process.stdout.write(`Recipient: ${recipient} (${kind})\n`);
+  if (view.recipient.kind === 'custom' && view.billingContact) {
+    process.stdout.write(`Billing contact: ${singleLine(view.billingContact)}\n`);
+  }
+  if (view.lastSent) {
+    process.stdout.write(`Last invoice sent: ${singleLine(view.lastSent.number)} on ${singleLine(view.lastSent.at.slice(0, 10))} to ${singleLine(view.lastSent.to)}\n`);
+  }
+}
+
+/**
+ * amcp invoices email [on|off] [--to <address> | --billing-contact]
+ *
+ * Reads or changes, for the key owner's workspace, whether each paid invoice
+ * is emailed as a PDF (AnythingMCP Cloud, workspace admins). The workspace is
+ * the key's own: nothing here names another one.
+ */
+async function invoicesCommand(positionals: string[], values: ParsedValues, stored: Profile | undefined, json: boolean): Promise<number> {
+  const [, subcommand, state] = positionals;
+  const usageText = 'Usage: amcp invoices email [on|off] [--to <address> | --billing-contact]';
+  if (subcommand !== 'email' || positionals.length > 3 || (state !== undefined && state !== 'on' && state !== 'off')) {
+    throw new CliError(usageText, 2);
+  }
+  if (values.to !== undefined && values['billing-contact']) {
+    throw new CliError('Use either --to or --billing-contact, not both', 2);
+  }
+  if (values.to !== undefined && (!values.to.includes('@') || /[\s,;<>]/.test(values.to))) {
+    throw new CliError('--to must be one email address', 2);
+  }
+  if (state === 'off' && (values.to !== undefined || values['billing-contact'])) {
+    throw new CliError('--to and --billing-contact go with "on", or alone to change the address', 2);
+  }
+  const { url, key } = await managementCredentials(values, stored);
+  const call = async (method: ApiMethod, body?: unknown) => {
+    let result;
+    try {
+      result = await apiRequest({ url, key, method, path: '/api/license/invoice-email', body });
+    } catch (error) {
+      throw classifyConnectionError(error, 'management');
+    }
+    if (!result.ok) {
+      const reason = serverMessage(result.data);
+      if (result.status === 401 || result.status === 403) {
+        const label = result.status === 401 ? 'Authentication failed' : 'Forbidden';
+        throw new CliError(`${label} (${result.status})${reason ? `: ${reason}` : ''}`, 3);
+      }
+      if (result.status === 404) throw new CliError(reason || 'Invoices by email apply to AnythingMCP Cloud only', 1);
+      throw new CliError(`Request failed (${result.status})${reason ? `: ${reason}` : ''}`, result.status >= 500 ? 4 : 1);
+    }
+    return result.data as InvoiceEmailView;
+  };
+
+  const changesAddress = values.to !== undefined || values['billing-contact'] === true;
+  if (!state && !changesAddress) {
+    const view = await call('GET');
+    print(view, json, () => printInvoiceEmail(view));
+    return 0;
+  }
+  // Changing only the address keeps the switch as it is.
+  const enabled = state ? state === 'on' : (await call('GET')).enabled;
+  const body: { enabled: boolean; to?: string | null } = { enabled };
+  if (values.to !== undefined) body.to = values.to.trim();
+  else if (values['billing-contact']) body.to = null;
+  if (!values.yes) {
+    if (!process.stdin.isTTY) throw new CliError('This changes where invoices are sent; pass --yes in non-interactive mode', 2);
+    const what = `${enabled ? 'Email' : 'Stop emailing'} each paid invoice${enabled && body.to ? ` to ${singleLine(body.to)}` : enabled && body.to === null ? ' to the billing contact' : ''}`;
+    if (!await confirmApi('PUT', `/api/license/invoice-email (${what})`)) throw new CliError('Cancelled', 2);
+  }
+  const view = await call('PUT', body);
+  print(view, json, () => printInvoiceEmail(view));
+  return 0;
 }
 
 export async function run(args = process.argv.slice(2)): Promise<number> {
@@ -412,14 +523,7 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
         throw new CliError(`Unsupported method: ${singleLine(method)}`, 2);
       }
       if (!path.startsWith('/')) throw new CliError('Path must start with /', 2);
-      const url = values.url || process.env.AMCP_URL || stored?.url;
-      if (!url) throw new CliError('Set --url or AMCP_URL, or log in first', 2);
-      // The management key never comes from argv: env or stdin only. A stored
-      // profile key is an MCP key and is not used for the management API.
-      const key = process.env.AMCP_API_KEY ||
-        (values['key-stdin'] ? await readKey(process.stdin, process.stderr, true) : '') ||
-        (stored?.managementKey && stored.url && sameOrigin(url, stored.url) ? stored.managementKey : '');
-      if (!key) throw new CliError('Set AMCP_API_KEY, pass --key-stdin, or log in with: amcp login --management', 2);
+      const { url, key } = await managementCredentials(values, stored);
       const safe = method === 'GET' || method === 'HEAD';
       if (safe && values.data !== undefined) {
         throw new CliError(`--data is not allowed with ${method}; put parameters in the path query string`, 2);
@@ -447,6 +551,9 @@ export async function run(args = process.argv.slice(2)): Promise<number> {
       print({ status: result.status, data: result.data }, json,
         () => process.stdout.write(`${JSON.stringify(result.data, null, 2)}\n`));
       return result.ok ? 0 : result.status >= 500 ? 4 : 1;
+    }
+    if (command === 'invoices') {
+      return await invoicesCommand(positionals, values, stored, json);
     }
     if (toolCommand && (subcommand === 'ls' ? positionals.length === 2 : positionals.length === 3)) {
       const urlOverridden = !!(values.url || process.env.AMCP_URL);

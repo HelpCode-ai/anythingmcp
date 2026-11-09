@@ -9,7 +9,7 @@
 #   KEEP_MAIL=1 bash deploy/cloud/stuck-users-report.test.sh   # print the mail
 #
 # Scenarios:
-#   1. --print renders all five sections, marks every org NEW on a first run,
+#   1. --print renders all six sections, marks every org NEW on a first run,
 #      groups stuck orgs by cause and lists only "other" and company-address
 #      orgs, counts the funnel of this week's and last week's cohorts and the
 #      Etsy apps waiting for approval, scrubs error texts, and touches neither
@@ -179,7 +179,13 @@ from t0, (values
   ('etsy_app_approved_notified', 'org_etsy_ok', '{"connectorId":"c_k_etsy"}', interval '1 day'),
   -- not the pending answer: another status, another adapter
   ('setup_verify_failed', 'org_happy',   '{"adapterSlug":"etsy","kind":"invalid_input","status":400}', interval '1 day'),
-  ('setup_verify_failed', 'org_happy',   '{"adapterSlug":"shopify","kind":"auth_failed","status":403}', interval '1 day')
+  ('setup_verify_failed', 'org_happy',   '{"adapterSlug":"shopify","kind":"auth_failed","status":403}', interval '1 day'),
+  -- setup checks (section 6): an adapter-side 500 not through, a 400 fixed by a
+  -- verified setup after it, a 404 on a connector that has called since
+  ('setup_verify_failed', 'org_stuck_e', '{"adapterSlug":"odoo","kind":"upstream_error","status":500,"error":"The target API returned a server error (500). (Invalid field customer_rank on res.partner, see https://odoo.example/web?db=SEEKRIT-DB)"}', interval '2 days'),
+  ('setup_verify_failed', 'org_stuck_e', '{"adapterSlug":"odoo","kind":"upstream_error","status":500,"error":"The target API returned a server error (500). (Invalid field customer_rank on res.partner, see https://odoo.example/web?db=SEEKRIT-DB)"}', interval '1 day'),
+  ('setup_verify_failed', 'org_stuck_a', '{"adapterSlug":"reddit","kind":"bad_request","status":400,"error":"Bad body"}', interval '4 days'),
+  ('setup_verify_failed', 'org_happy',   '{"adapterSlug":"github","kind":"not_found","status":404,"error":"Not Found"}', interval '6 days')
 ) v(event, org, meta, age);
 SQL
 
@@ -191,7 +197,18 @@ echo "1. --print on a first run"
 printf 'DOMAIN=cloud.example.test\n' > "$ENVF"
 run --print > "$WORK/r1.txt" 2>/dev/null
 R="$WORK/r1.txt"
-has   "$R" "SUMMARY: 6 new stuck orgs (0 still stuck), 1 connector failing for everyone (+1 under 20 %), 1 of 3 signups without a connector." "summary line"
+has   "$R" "SUMMARY: 6 new stuck orgs (0 still stuck), 1 connector failing for everyone (+1 under 20 %), 1 of 3 signups without a connector, 2 workspaces stuck at a setup check (1 possibly the adapter)." "summary line"
+# Section 6: setup checks. odoo (500, judy) not through and listed; reddit
+# fixed by the verified setup after it; github fixed by a successful call; shopify 403
+# counted, not listed; etsy left to section 5.
+has   "$R" "6. SETUP CHECKS THAT FAIL" "setup checks section"
+has   "$R" "2 of 4 workspace(s) with a failed check are not through; 1 of them with an error that may be ours." "setup checks totals"
+has   "$R" "odoo: 1 workspace(s) failed the check, 1 not through since; 2 failed checks: upstream_error 500 ×2" "adapter-side failure per adapter"
+has   "$R" "2× The target API returned a server error (500). (Invalid field customer_rank on res.partner, see https://odoo.example/web?…" "provider words kept, query string scrubbed"
+has   "$R" "judy@gmail.com — 2 failed, last" "workspace listed even on free mail when the error may be ours"
+has   "$R" "shopify: 1 workspace(s) failed the check, 1 not through since; 1 failed checks: auth_failed 403 ×1" "credential failure counted"
+if sed -n '/^6\. /,/^--$/p' "$R" | grep -q "carol@example.net"; then bad "credential failure not listed by workspace"; else ok "credential failure not listed by workspace"; fi
+if sed -n '/^6\. /,/^--$/p' "$R" | grep -qE "^  (reddit|github|etsy):"; then bad "fixed setups and Etsy not in section 6"; else ok "fixed setups and Etsy not in section 6"; fi
 has   "$R" "[NEW] alice@example.com [opt-out]" "stuck org A, NEW, opt-out flagged"
 has   "$R" "[NEW] bob@example.org" "stuck org B, NEW"
 has   "$R" "Active this week: 6 (6 new, 0 still stuck). Active in the last 30 days: 7. All time: 7." "30-day and all-time context"
