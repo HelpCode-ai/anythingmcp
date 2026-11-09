@@ -17,7 +17,7 @@ import { deriveToolAnnotations } from '../../mcp-server/tool-annotations';
  *
  *   1. Static: always runs. Every tool goes through the real RestEngine and
  *      LoginTokenService with axios mocked: the token request (x-api-key
- *      header, username and password in the body), the token sent bare as
+ *      header, Email and Password in the body, as Éxito's instructions name them), the token sent bare as
  *      `Authorization` (the docs write COGNITO_TOKEN) with `x-api-key` on every
  *      call, a new login after a 401, each documented API Gateway address and
  *      query, and the request bodies. Éxito does not publish the token
@@ -208,7 +208,7 @@ describe('exito-marketplace adapter: static spec conformance', () => {
       loginUrl: '{{EXITO_LOGIN_URL}}',
       loginMethod: 'POST',
       loginHeaders: { 'x-api-key': '{{EXITO_API_KEY}}' },
-      loginBody: { username: '${username}', password: '${password}' },
+      loginBody: { Email: '${username}', Password: '${password}' },
       username: '{{EXITO_USERNAME}}',
       password: '{{EXITO_PASSWORD}}',
       refreshOn401: true,
@@ -225,7 +225,7 @@ describe('exito-marketplace adapter: static spec conformance', () => {
     const login = loginCalls[0];
     expect(login.method).toBe('POST');
     expect(header(login, 'x-api-key')).toBe(API_KEY);
-    expect(login.data).toEqual({ username: 'integraciones@tienda.example', password: PASSWORD });
+    expect(login.data).toEqual({ Email: 'integraciones@tienda.example', Password: PASSWORD });
 
     const call = sent();
     expect(header(call, 'Authorization')).toBe('id-token-1');
@@ -436,7 +436,7 @@ live('exito-marketplace adapter: live (read-only)', () => {
     const res = await fetch(env.EXITO_LOGIN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'x-api-key': env.EXITO_API_KEY },
-      body: JSON.stringify({ username: env.EXITO_USERNAME, password: env.EXITO_PASSWORD }),
+      body: JSON.stringify({ Email: env.EXITO_USERNAME, Password: env.EXITO_PASSWORD }),
     });
     const text = await res.text();
     let body: unknown = text;
