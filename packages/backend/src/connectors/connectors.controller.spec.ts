@@ -2046,14 +2046,46 @@ describe('GET :id/webhook/url and :id/webhook/events', () => {
 
   describe('webhookEventsList', () => {
     it('reads through to the service, scoped by connector and organization', async () => {
-      const recentEvents = jest.fn().mockResolvedValue([{ id: 'evt_1' }]);
+      const receivedAt = new Date('2026-01-01T00:00:00Z');
+      const recentEvents = jest.fn().mockResolvedValue([
+        {
+          id: 'evt_1',
+          provider: 'stripe',
+          eventType: 'payment_intent.succeeded',
+          externalId: 'evt_ext_1',
+          payload: { customer: { name: 'Jane Doe', email: 'jane@example.com' } },
+          receivedAt,
+        },
+      ]);
       const { controller } = buildController({
         connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
         webhookEvents: { recentEvents },
       });
       const result = await controller.webhookEventsList(req('ADMIN'), 'c1', '10', '2026-01-01T00:00:00Z');
       expect(recentEvents).toHaveBeenCalledWith('c1', 'org1', { limit: 10, since: '2026-01-01T00:00:00Z' });
-      expect(result).toEqual({ events: [{ id: 'evt_1' }] });
+      expect(result).toEqual({
+        events: [{ id: 'evt_1', provider: 'stripe', eventType: 'payment_intent.succeeded', externalId: 'evt_ext_1', receivedAt }],
+      });
+    });
+
+    it('never returns payload, unlike the MCP tool reading the same table', async () => {
+      const recentEvents = jest.fn().mockResolvedValue([
+        {
+          id: 'evt_1',
+          provider: 'stripe',
+          eventType: 'payment_intent.succeeded',
+          externalId: 'evt_ext_1',
+          payload: { customer: { name: 'Jane Doe', email: 'jane@example.com' } },
+          receivedAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ]);
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+        webhookEvents: { recentEvents },
+      });
+      const result = await controller.webhookEventsList(req('ADMIN'), 'c1');
+      expect(result.events[0]).not.toHaveProperty('payload');
+      expect(JSON.stringify(result)).not.toContain('Jane Doe');
     });
 
     it('passes limit/since through as undefined when not given, leaving the service default', async () => {

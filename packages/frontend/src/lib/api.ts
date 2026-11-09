@@ -362,13 +362,12 @@ export interface MyConnectorCredential {
 
 export type OAuthGrant = 'authorization_code' | 'client_credentials' | 'password';
 
-/** Mirrors backend WebhookEventsService.RecentWebhookEvent; payload is the raw provider body. */
+/** GET :id/webhook/events' shape — metadata only; the controller leaves `payload` out. */
 export interface RecentWebhookEvent {
   id: string;
   provider: string;
   eventType: string | null;
   externalId: string | null;
-  payload: unknown;
   receivedAt: string;
 }
 

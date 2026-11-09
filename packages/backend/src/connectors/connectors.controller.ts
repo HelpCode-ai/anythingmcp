@@ -1404,12 +1404,12 @@ export class ConnectorsController {
 
   @Get(':id/webhook/events')
   @ApiOperation({
-    summary: 'Recent webhook deliveries for this connector',
+    summary: 'Recent webhook deliveries for this connector, for the dashboard',
     description:
-      'The same events the `<prefix>_recent_events` MCP tool reads, for the dashboard. Each event was verified ' +
-      '(signature checked) before being stored. Gated like any other connector setting: the connector owner or an ' +
-      'admin, since a stored payload can carry whatever personal data the provider sent (e.g. a Stripe customer\'s ' +
-      'name, e-mail and address).',
+      'Metadata only, unlike the `<prefix>_recent_events` MCP tool: `payload` is left out, since it can carry ' +
+      'whatever personal data the provider sent (e.g. a Stripe customer\'s name, e-mail and address) and the ' +
+      'dashboard only ever shows type, id and time. Each event was verified (signature checked) before being ' +
+      'stored. Gated like any other connector setting: the connector owner or an admin.',
   })
   @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer' }, description: 'At most this many events (default 20, max 50).' })
   @ApiQuery({ name: 'since', required: false, schema: { type: 'string' }, description: 'ISO 8601 timestamp; only events received at or after this time.' })
@@ -1425,7 +1425,15 @@ export class ConnectorsController {
       limit: limit !== undefined ? Number(limit) : undefined,
       since,
     });
-    return { events };
+    return {
+      events: events.map(({ id: eventId, provider, eventType, externalId, receivedAt }) => ({
+        id: eventId,
+        provider,
+        eventType,
+        externalId,
+        receivedAt,
+      })),
+    };
   }
 
   /** Shared with oauthCallbackUrl(); both compute from SERVER_URL so a dashboard link always matches the live route. */

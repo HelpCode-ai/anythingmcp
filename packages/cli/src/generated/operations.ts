@@ -662,7 +662,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "action": "webhookEventsList",
     "method": "GET",
     "path": "/api/connectors/:id/webhook/events",
-    "summary": "Recent webhook deliveries for this connector",
+    "summary": "Recent webhook deliveries for this connector, for the dashboard",
     "admin": false,
     "pathParams": [
       "id"

@@ -1922,13 +1922,16 @@ export default function ConnectorDetailPage() {
           </Card>
         )}
 
-        {/* Inbound webhook ingestion (#1393) */}
-        <WebhookCard
-          connectorId={connector.id}
-          webhookEnabled={!!connector.webhookEnabled}
-          canManage={user?.role === 'ADMIN' || (user?.role !== 'VIEWER' && user?.id === connector.userId)}
-          onChanged={fetchConnector}
-        />
+        {/* Inbound webhook ingestion (#1393): only where it applies — a Stripe
+            connector, or any connector someone already turned it on for via the API. */}
+        {((connector.config as any)?.adapterSlug === 'stripe' || connector.webhookEnabled) && (
+          <WebhookCard
+            connectorId={connector.id}
+            webhookEnabled={!!connector.webhookEnabled}
+            canManage={user?.role === 'ADMIN' || (user?.role !== 'VIEWER' && user?.id === connector.userId)}
+            onChanged={fetchConnector}
+          />
+        )}
 
         {/* Environment Variables */}
         {connector.type !== 'FILE_SEARCH' && (
