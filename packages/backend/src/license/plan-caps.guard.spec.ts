@@ -1,0 +1,105 @@
+import { LicenseGuardService } from './license-guard.service';
+import { PlanLimitException, PAUSED_BY_PLAN_KEY } from './plan-caps';
+
+function make(license: any, counts: { connectors?: number; servers?: number; members?: number; fsActive?: number } = {}, cloud = true) {
+  const prisma = {
+    connector: {
+      count: jest.fn().mockResolvedValue(counts.connectors ?? 0),
+      findMany: jest.fn(async ({ where }: any) =>
+        where.type === 'FILE_SEARCH'
+          ? Array.from({ length: counts.fsActive ?? 0 }, () => ({ config: {} }))
+          : (where.id?.in ?? []).map((id: string) => ({ id, name: `Name ${id}` })),
+      ),
+    },
+    mcpServerConfig: {
+      count: jest.fn().mockResolvedValue(counts.servers ?? 0),
+      findMany: jest.fn(async ({ where }: any) => (where.id?.in ?? []).map((id: string) => ({ id }))),
+    },
+    organizationMember: { count: jest.fn().mockResolvedValue(counts.members ?? 1) },
+    orgSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+  };
+  const licenseService = {
+    getCurrentLicense: jest.fn().mockResolvedValue(license),
+    getLatestInactiveLicense: jest.fn().mockResolvedValue(null),
+  };
+  return { guard: new LicenseGuardService(prisma as any, licenseService as any, { isCloud: () => cloud } as any), prisma };
+}
+
+const starter = { plan: 'starter', status: 'active', features: { maxConnectors: 5, maxMcpServers: 3, maxUsers: 1 } };
+const trial = { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() + 86_400_000), features: { maxConnectors: 15, maxMcpServers: 10, maxUsers: 3 } };
+
+describe('LicenseGuardService — plan caps', () => {
+  const saved = process.env.PLAN_CAPS_ENFORCE;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.PLAN_CAPS_ENFORCE;
+    else process.env.PLAN_CAPS_ENFORCE = saved;
+  });
+
+  it('keeps the trial cap on creation hard, with the PLAN_LIMIT code', async () => {
+    delete process.env.PLAN_CAPS_ENFORCE;
+    const { guard, prisma } = make(trial, { connectors: 15 });
+    const err = await guard.checkCanCreateConnector('u1', 'org-1').catch((e) => e);
+    expect(err).toBeInstanceOf(PlanLimitException);
+    expect(err.getResponse()).toMatchObject({ code: 'PLAN_LIMIT', axis: 'connectors', max: 15, current: 15 });
+    expect(err.message).toMatch(/Trial limit reached \(15 connectors\)/);
+    expect(prisma.connector.count).toHaveBeenCalledWith({ where: { organizationId: 'org-1', isActive: true, type: { not: 'FILE_SEARCH' } } });
+  });
+
+  it('a paid plan at its cap only logs in dry-run and refuses when on', async () => {
+    delete process.env.PLAN_CAPS_ENFORCE;
+    await expect(make(starter, { connectors: 5 }).guard.checkCanCreateConnector('u1', 'org-1')).resolves.toBeUndefined();
+    await expect(make(starter, { servers: 3 }).guard.checkCanCreateMcpServer('u1', 'org-1')).resolves.toBeUndefined();
+    process.env.PLAN_CAPS_ENFORCE = 'on';
+    await expect(make(starter, { connectors: 5 }).guard.checkCanCreateConnector('u1', 'org-1')).rejects.toThrow(/includes 5 active connectors/);
+    await expect(make(starter, { servers: 3 }).guard.checkCanCreateMcpServer('u1', 'org-1')).rejects.toThrow(PlanLimitException);
+    await expect(make(starter, { connectors: 4 }).guard.checkCanCreateConnector('u1', 'org-1')).resolves.toBeUndefined();
+  });
+
+  it('never caps an unlimited plan or self-hosted', async () => {
+    process.env.PLAN_CAPS_ENFORCE = 'on';
+    const enterprise = { plan: 'enterprise', status: 'active', features: { maxConnectors: null } };
+    await expect(make(enterprise, { connectors: 500 }).guard.checkCanCreateConnector('u1', 'org-1')).resolves.toBeUndefined();
+    await expect(make(starter, { connectors: 50 }, false).guard.checkCanCreateConnector('u1', 'org-1')).resolves.toBeUndefined();
+    await expect(make(starter, { connectors: 50 }, false).guard.checkCanActivateConnector('org-1', 'REST')).resolves.toBeUndefined();
+  });
+
+  it('refuses switching a paused connector or server back on at the cap', async () => {
+    process.env.PLAN_CAPS_ENFORCE = 'on';
+    const err = await make(starter, { connectors: 5 }).guard.checkCanActivateConnector('org-1', 'REST').catch((e) => e);
+    expect(err.getResponse()).toMatchObject({ code: 'PLAN_LIMIT', axis: 'connectors', max: 5 });
+    await expect(make(starter, { connectors: 4 }).guard.checkCanActivateConnector('org-1', 'REST')).resolves.toBeUndefined();
+    await expect(make(starter, { servers: 3 }).guard.checkCanActivateMcpServer('org-1')).rejects.toThrow(/Pause one/);
+    // The trial is hard in every mode.
+    delete process.env.PLAN_CAPS_ENFORCE;
+    await expect(make(trial, { connectors: 15 }).guard.checkCanActivateConnector('org-1', 'REST')).rejects.toThrow(PlanLimitException);
+  });
+
+  it('counts a File Search folder against the File Search folders of the plan', async () => {
+    process.env.PLAN_CAPS_ENFORCE = 'on';
+    const err = await make(starter, { fsActive: 1 }).guard.checkCanActivateConnector('org-1', 'FILE_SEARCH').catch((e) => e);
+    expect(err.getResponse()).toMatchObject({ axis: 'fileSearchConnectors', max: 1 });
+    await expect(make(starter, { fsActive: 0 }).guard.checkCanActivateConnector('org-1', 'FILE_SEARCH')).resolves.toBeUndefined();
+  });
+
+  it('refuses a new member above the user cap when on', async () => {
+    process.env.PLAN_CAPS_ENFORCE = 'on';
+    await expect(make(starter, { members: 1 }).guard.checkCanAddMember('org-1')).rejects.toThrow(/includes 1 user/);
+    await expect(make(trial, { members: 2 }).guard.checkCanAddMember('org-1')).resolves.toBeUndefined();
+    delete process.env.PLAN_CAPS_ENFORCE;
+    await expect(make(starter, { members: 1 }).guard.checkCanAddMember('org-1')).resolves.toBeUndefined();
+  });
+
+  it('reports what a downgrade paused and is still paused', async () => {
+    const { guard, prisma } = make(starter, { connectors: 5 });
+    prisma.orgSettings.findUnique.mockResolvedValue({
+      value: JSON.stringify({ plan: 'starter', at: '', connectors: ['c1'], mcpServers: ['s1'], fileSearch: ['f1'] }),
+    });
+    const usage = await guard.getUsage('u1', 'org-1');
+    expect(usage.pausedByPlan).toEqual({ connectors: ['c1', 'f1'], mcpServers: ['s1'] });
+    expect(prisma.orgSettings.findUnique).toHaveBeenCalledWith({
+      where: { organizationId_key: { organizationId: 'org-1', key: PAUSED_BY_PLAN_KEY } },
+      select: { value: true },
+    });
+    await expect(guard.pausedByPlanConnectorNames('org-1')).resolves.toEqual(['Name c1', 'Name f1']);
+  });
+});

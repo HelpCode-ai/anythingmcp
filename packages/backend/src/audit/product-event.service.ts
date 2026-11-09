@@ -339,6 +339,13 @@ export const ProductEvents = {
    * screen and device; read with checkout_link_created and Stripe.
    */
   PAYWALL_ACTION: 'paywall_action',
+  /**
+   * Cloud: a plan change paused items above the new plan's caps
+   * (metadata.kind 'downgrade') or brought them back ('restore');
+   * metadata.plan = the new plan, metadata.calls = how many items,
+   * metadata.status = 'dry-run' or 'on' (PLAN_CAPS_ENFORCE). PlanCapsService.
+   */
+  PLAN_CAPS_APPLIED: 'plan_caps_applied',
 } as const;
 
 /** The values of `action` on paywall_action (see PAYWALL_ACTION). */
@@ -371,6 +378,7 @@ export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents
  */
 const SERVER_ONLY = new Set<string>([
   ProductEvents.SIGNUP_ATTRIBUTED,
+  ProductEvents.PLAN_CAPS_APPLIED,
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.DIRECTORY_SIGNUP,

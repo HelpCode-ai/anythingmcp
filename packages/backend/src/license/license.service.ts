@@ -24,6 +24,15 @@ import { collectUsageReport, usageReportEnabled, type UsageReport } from './usag
 // any self-hosted operator point verification at a server of their own and
 // unlock paid features. LICENSE_API_URL applies outside production only (local
 // end-to-end runs against a local licence site).
+
+/** A Cloud workspace's current plan changed (null = no active licence). */
+export interface PlanChange {
+  organizationId: string;
+  from: string | null;
+  to: string | null;
+}
+export type PlanChangeListener = (change: PlanChange) => Promise<void> | void;
+
 export const LICENSE_API_URL =
   process.env.NODE_ENV === 'production'
     ? 'https://anythingmcp.com'
@@ -1017,6 +1026,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
 
     // Self-hosted adds its usage counts (see usage-report.ts); Cloud never.
     const usage = await this.usageReport();
+    const planBefore = await this.cloudPlanOf(organizationId);
 
     try {
       const { data } = await axios.get<RemoteVerifyResponse>(
@@ -1069,6 +1079,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         .catch(() => {
           // License may not exist locally yet
         });
+      await this.announcePlanChange(organizationId, planBefore);
 
       return data;
     } catch (err: any) {
@@ -1150,6 +1161,8 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    const planBefore = await this.cloudPlanOf(organizationId);
+
     // Verify remotely first. On Cloud the workspace goes along, so the site
     // can refuse a self-hosted licence and say why.
     const verification = await this.verifyLicense(licenseKey, organizationId);
@@ -1203,6 +1216,8 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     if (!this.deployment.isCloud()) {
       await this.siteSettings.set('license_key', licenseKey);
     }
+
+    await this.announcePlanChange(organizationId, planBefore);
 
     // Activate in background
     this.activateLicense(licenseKey, organizationId).catch((err) =>
@@ -1376,6 +1391,39 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     if (!latest || latest.status === 'active') return null;
     const info = this.toLicenseInfo(latest);
     return isPaymentFailedBilling(info.billing) ? info : null;
+  }
+
+  // ── Plan changes (Cloud) ──────────────────────────────────────────────────
+
+  private readonly planChangeListeners: PlanChangeListener[] = [];
+
+  /**
+   * Called when a Cloud workspace's current plan changes (checkout, a
+   * card-trial conversion, a change in the billing portal reported by the
+   * licence site, a key entered by hand). PlanCapsService listens to pause or
+   * restore connectors; LicenseService itself knows nothing about them.
+   */
+  onPlanChange(listener: PlanChangeListener): void {
+    this.planChangeListeners.push(listener);
+  }
+
+  /** The plan of the workspace's current licence (Cloud only; undefined elsewhere). */
+  private async cloudPlanOf(organizationId?: string): Promise<string | null | undefined> {
+    if (!this.deployment.isCloud() || !organizationId || this.planChangeListeners.length === 0) return undefined;
+    return (await this.getCurrentLicense(organizationId).catch(() => null))?.plan ?? null;
+  }
+
+  /** Tell the listeners when the current plan is not the one read before a write. */
+  private async announcePlanChange(organizationId: string | undefined, before: string | null | undefined): Promise<void> {
+    if (before === undefined || !organizationId || this.planChangeListeners.length === 0) return;
+    const after = await this.cloudPlanOf(organizationId);
+    if (after === undefined || after === before) return;
+    for (const listener of this.planChangeListeners) {
+      // Never let a listener fail or slow down the licence write.
+      Promise.resolve()
+        .then(() => listener({ organizationId, from: before, to: after }))
+        .catch((err) => this.logger.warn(`Plan change listener failed for ${organizationId}: ${err?.message ?? err}`));
+    }
   }
 
   async getCurrentLicense(organizationId?: string): Promise<LicenseInfo | null> {

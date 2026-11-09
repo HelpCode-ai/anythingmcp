@@ -1450,6 +1450,10 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
+    // Switching a paused connector back on counts against the plan's cap (Cloud).
+    if (dto.isActive === true && !connector.isActive) {
+      await this.licenseGuard.checkCanActivateConnector(connector.organizationId, connector.type as string);
+    }
     if ((connector.type as string) === 'FILE_SEARCH' && (dto.config !== undefined || dto.baseUrl !== undefined || dto.authConfig !== undefined)) {
       throw new BadRequestException('Change the source of a File Search connector on its Files tab.');
     }

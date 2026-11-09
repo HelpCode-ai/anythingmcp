@@ -303,6 +303,13 @@ pause: Etsy (3 calls in 30 days)
 pause: Airtable (0 calls in 30 days)
 ```
 
+To choose yourself which connectors stay active, pause one and switch on another. At the plan's limit, switching one on without pausing another first answers `403` with `"code": "PLAN_LIMIT"`:
+
+```bash
+amcp api PUT /api/connectors/$OLD --yes --data '{"isActive":false}'
+amcp api PUT /api/connectors/$NEW --yes --data '{"isActive":true}'
+```
+
 Without `?plan=`, it answers for Starter and Team. The connectors and MCP servers used most in the last 30 days stay active. Paused ones are never deleted. The answer also covers users, File Search (folders, files, storage) and code mode (saved code tools, inline code, runs this month). Self-hosted instances have none of these limits and answer 404.
 
 ### Limit how often a role may call a tool
