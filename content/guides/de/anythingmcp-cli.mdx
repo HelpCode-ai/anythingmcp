@@ -16,10 +16,13 @@ featured: true
 1. **MCP-Tools aufrufen** — dieselben Tools, die Ihre KI-Clients nutzen (Shopify, HubSpot, SAP, Ihre SQL-Datenbank, ein Dateishare…). Von Hand, in Shell-Skripten, per cron und CI oder als **Code-Mode-Programm**, das Dutzende Aufrufe in einem Schritt verkettet.
 2. **Die Management-API steuern** (`/api/*`) mit einem **Management-Schlüssel**. Alles, was das Dashboard kann — Connectors, MCP-Server, Benutzer, Rollen, SSO, Memory, Skills, Audit — wird zum Befehl, für Sie oder einen verbundenen Agenten.
 
-Die CLI ist Open Source (AGPL-3.0), funktioniert mit **AnythingMCP Cloud** und **selbst gehosteten** Instanzen, braucht Node 22+ und wird über npm installiert:
+Die CLI ist Open Source (AGPL-3.0), funktioniert mit **AnythingMCP Cloud** und **selbst gehosteten** Instanzen, braucht Node 22+ und wird über npm oder Homebrew installiert:
 
 ```bash
 npm i -g @anythingmcp/cli
+# oder unter macOS und Linux (mit Node und Shell-Vervollständigung):
+brew install helpcode-ai/tap/amcp
+
 amcp --help
 ```
 
@@ -293,6 +296,19 @@ $ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
 
 `GET /api/audit/breakdowns?days=30` liefert Nutzung und Kosten nach Connector, MCP-Server und Benutzer aufgeschlüsselt. Das passt gut für einen Monatsbericht.
 
+### Rechnungen per E-Mail erhalten
+
+In AnythingMCP Cloud kann ein Admin jede bezahlte Rechnung als PDF per E-Mail verschicken lassen, zum Beispiel an die Buchhaltung:
+
+```bash
+amcp invoices email on --to buchhaltung@acme.de --yes
+amcp invoices email
+# Invoices by email: on
+# Recipient: buchhaltung@acme.de (another address)
+```
+
+Mit `--billing-contact` gehen sie wieder an die Rechnungs-E-Mail des Abonnements, mit `off` werden sie nicht mehr verschickt. Details: [Invoices on AnythingMCP Cloud](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/cloud-invoices.md).
+
 ### Die ganze API offline entdecken
 
 Sie brauchen die Doku nicht geöffnet zu haben. Der Katalog der Management-Operationen wird mit der CLI ausgeliefert:
@@ -325,7 +341,7 @@ Der Umfang des Schlüssels ist das Sicherheitsnetz. Ein Management-Schlüssel tr
 
 ## Loslegen
 
-- **Installieren:** `npm i -g @anythingmcp/cli`, dazu Shell-Vervollständigung mit `amcp completion zsh` (auch bash und fish)
+- **Installieren:** `npm i -g @anythingmcp/cli` oder `brew install helpcode-ai/tap/amcp`, dazu Shell-Vervollständigung mit `amcp completion zsh` (auch bash und fish)
 - **Überblick:** [anythingmcp.com/developers/cli](/de/developers/cli)
 - **Vollständige Befehlsreferenz:** das [CLI-README auf GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme)
 - **Quellcode:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp)

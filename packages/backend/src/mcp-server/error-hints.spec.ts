@@ -73,6 +73,28 @@ describe('deriveErrorHint', () => {
     ).toMatch(/fields_get/);
   });
 
+  it('names is_company when Odoo saas-19.3+ refuses the dropped company_type field on contacts', () => {
+    // Nov 2026: 5 workspaces on saas-19.3, saas-19.4 and 20.0 (read, create, write).
+    const read = deriveErrorHint({
+      host: 'acme.odoo.com',
+      status: 500,
+      body: { name: 'builtins.ValueError', message: "Invalid field 'company_type' on 'res.partner'" },
+    });
+    expect(read).toMatch(/`is_company`/);
+    expect(
+      deriveErrorHint({ status: 500, body: { name: 'builtins.ValueError', message: "Invalid field 'company_type' in 'res.partner'" } }),
+    ).toMatch(/`is_company`/);
+    expect(
+      deriveErrorHint({ status: 500, body: { name: 'builtins.KeyError', message: 'company_type', arguments: ['company_type'] } }),
+    ).toMatch(/`is_company`/);
+  });
+
+  it('gives the field-list hint for the "in" wording of create and write', () => {
+    expect(
+      deriveErrorHint({ status: 500, body: { name: 'builtins.ValueError', message: "Invalid field 'x_foo' in 'sale.order'" } }),
+    ).toMatch(/fields_get/);
+  });
+
   describe('SAP S/4HANA Cloud client credentials', () => {
     it('lists the four causes when the token request is refused', () => {
       const hint = deriveErrorHint({
@@ -376,6 +398,20 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
       });
       expect(hint).toBe(
         'tag "gifts!" has 6 characters; Etsy allows at most 5 characters per tag on English listings. ' +
+          'Shorten or replace it and call again with the other tags unchanged.',
+      );
+    });
+
+    it('reads the limit from the array-shaped refusal of a new draft listing', () => {
+      // etsy_create_listing_draft, Nov 2026.
+      const hint = deriveErrorHint({
+        host: 'openapi.etsy.com',
+        status: 400,
+        body: [{ path: '/tags', type: 'too_long', message: 'cannot be more than 20 characters', transformed: false }],
+        args: { tags: ['mug', 'handmade ceramic coffee mug'] },
+      });
+      expect(hint).toBe(
+        'tag "handmade ceramic coffee mug" has 27 characters; Etsy allows at most 20 characters per tag on English listings. ' +
           'Shorten or replace it and call again with the other tags unchanged.',
       );
     });

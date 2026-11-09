@@ -185,6 +185,7 @@ async function cloudSession(
   const user = opts.user ?? ADMIN;
   const posted: unknown[] = [];
   const switched: unknown[] = [];
+  const events: Array<{ event: string; metadata?: Record<string, unknown> }> = [];
   const origin = test.info().project.use.baseURL ?? 'http://localhost:3100';
   if (!opts.signedOut) await page.context().addCookies([{ name: 'amcp_token', value: 't', url: origin }]);
   await page.addInitScript(
@@ -206,6 +207,10 @@ async function cloudSession(
       return json({ deploymentMode: 'cloud', mcpAuthMode: 'oauth2', hasUsers: true, registrationEnabled: true, ssoProviders: [] });
     }
     if (p === '/api/price-estimate') return json(opts.priceEstimate ?? { currency: null, vat: true });
+    if (p.endsWith('/product-events') && req.method() === 'POST') {
+      events.push(req.postDataJSON());
+      return route.fulfill({ status: 204 });
+    }
     if (p.endsWith('/auth/login') && req.method() === 'POST') return json({ accessToken: 't', user });
     if (p.endsWith('/license/checkout-link') && req.method() === 'POST') {
       const body = req.postDataJSON();
@@ -247,7 +252,7 @@ async function cloudSession(
   await page.route('https://checkout.example.test/**', (route) =>
     route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Stripe Checkout stub</h1>' }),
   );
-  return { posted, switched };
+  return { posted, switched, events };
 }
 
 test.describe('local currency helpers', () => {
@@ -435,7 +440,7 @@ test.describe('card-trial entry points (cloud)', () => {
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
   });
 
-  test('the ended-trial wall shows what the workspace really did, the trust line, and sells in place', async ({ page }) => {
+  test('the ended-trial wall shows the trust line without usage numbers, and sells in place', async ({ page }) => {
     const { posted } = await cloudSession(page, {
       seed: SHOWN,
       license: ENDED,
@@ -446,9 +451,11 @@ test.describe('card-trial entry points (cloud)', () => {
     });
     await page.goto('/connectors');
     await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
-    const recap = page.getByTestId('wall-recap');
-    await expect(recap).toContainText('Claude made 214 successful calls in this workspace, with Etsy and Telegram.');
-    await expect(recap).toContainText('Since your trial ended, Claude has tried to use them again.');
+    await expect(page.getByText('Subscribe and Claude keeps working with your connectors.', { exact: false })).toBeVisible();
+    // No usage recap: no call count, no connector names.
+    await expect(page.getByTestId('wall-recap')).toHaveCount(0);
+    await expect(page.getByText(/successful call/)).toHaveCount(0);
+    await expect(page.getByText(/Etsy and Telegram/)).toHaveCount(0);
     const trust = page.getByTestId('wall-trust');
     await expect(trust).toContainText('Cancel any time');
     await expect(trust).toContainText('Secure payment by Stripe');
@@ -469,6 +476,28 @@ test.describe('card-trial entry points (cloud)', () => {
     expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
   });
 
+  test('the ended-trial wall reports its clicks as paywall_action', async ({ page }) => {
+    const { events } = await cloudSession(page, {
+      seed: SHOWN,
+      license: ENDED,
+      wall: { variant: 'trust', recap: null },
+    });
+    await page.goto('/connectors');
+    await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('radio', { name: /Team/ }).click();
+    await page.getByRole('radio', { name: /Yearly/ }).click();
+    await page.getByRole('button', { name: 'Subscribe to Team' }).click();
+    await expect(page).toHaveURL(/checkout\.example\.test/);
+    const actions = events.filter((e) => e.event === 'paywall_action').map((e) => e.metadata);
+    const base = { source: 'trial_ended_wall', variant: 'trust', device: 'desktop' };
+    expect(actions).toEqual([
+      { ...base, action: 'shown', plan: 'starter', period: 'monthly' },
+      { ...base, action: 'plan_selected', plan: 'team', period: 'monthly' },
+      { ...base, action: 'period_selected', plan: 'team', period: 'yearly' },
+      { ...base, action: 'subscribe_clicked', plan: 'team', period: 'yearly' },
+    ]);
+  });
+
   test('a ChatGPT workspace sees the ChatGPT Plugin Directory on the wall, not the Claude Directory', async ({ page }) => {
     await cloudSession(page, {
       seed: SHOWN,
@@ -484,7 +513,7 @@ test.describe('card-trial entry points (cloud)', () => {
     await expect(trust).not.toContainText('Claude Directory');
   });
 
-  test('a workspace that never made a successful call sees no numbers on the wall', async ({ page }) => {
+  test('a workspace with no known AI client gets the generic wording and both listings', async ({ page }) => {
     await cloudSession(page, { seed: SHOWN, license: ENDED, wall: { variant: 'trust', recap: null } });
     await page.goto('/connectors');
     await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });

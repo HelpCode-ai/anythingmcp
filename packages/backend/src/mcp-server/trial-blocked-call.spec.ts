@@ -8,7 +8,8 @@ import {
   trialEndedToolResult,
 } from './trial-blocked-call';
 import { TrialEndedException } from '../license/license-guard.service';
-import { trialReactivationUrl } from '../license/license-checkout';
+import { reactivationLinkVariant, trialReactivationUrl } from '../license/license-checkout';
+import { readReactivationToken } from '../license/reactivation-token';
 
 const ENDED = new Date('2026-10-28T09:00:00Z');
 
@@ -121,6 +122,19 @@ describe('TrialBlockedCallRecorder', () => {
     });
   });
 
+  it('records which reactivation link the AI was given', async () => {
+    const prisma = makePrisma();
+    const events = { log: jest.fn().mockResolvedValue(undefined) };
+    await new TrialBlockedCallRecorder(prisma as any, events as any).record({
+      organizationId: 'org-1',
+      toolName: 't',
+      variant: 'page',
+    });
+    expect(events.log).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { toolName: 't', variant: 'page' } }),
+    );
+  });
+
   it('leaves out what it does not know', async () => {
     const prisma = makePrisma();
     const events = { log: jest.fn().mockResolvedValue(undefined) };
@@ -187,17 +201,31 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
     );
     return { executor, restEngine, events, prisma };
   }
+  // org-1 is in the 'pricing' arm of the reactivation-link test, org-2 in 'page'.
   const ctx = { organizationId: 'org-1', userId: 'u1', oauthClientId: 'cl-1' };
+  const pageCtx = { ...ctx, organizationId: 'org-2' };
   const flush = () => new Promise((r) => setImmediate(r));
+  const savedKey = process.env.ENCRYPTION_KEY;
+  beforeEach(() => {
+    process.env.ENCRYPTION_KEY = 'trial-blocked-call-spec-key-0123456789';
+  });
+  afterAll(() => {
+    process.env.ENCRYPTION_KEY = savedKey;
+  });
 
-  it('gives an ended trial the reactivation link and records the blocked call', async () => {
+  it('puts the two test workspaces in different arms', () => {
+    expect(reactivationLinkVariant(ctx.organizationId)).toBe('pricing');
+    expect(reactivationLinkVariant(pageCtx.organizationId)).toBe('page');
+  });
+
+  it("gives a 'pricing' workspace the pricing link and records the blocked call with its variant", async () => {
     const { executor, restEngine, events } = build(new TrialEndedException(ENDED));
     const res = await executor.executeTool('etsy_list_listings', {}, ctx);
     expect(res.isError).toBe(true);
     const body = JSON.parse(res.content[0].text);
     expect(body.error).toContain('trial ended on 28 October 2026');
     expect(body.error).toContain('Show this link to the user: ');
-    expect(body.reactivateUrl).toContain('/pricing?');
+    expect(body.reactivateUrl).toBe(trialReactivationUrl());
     expect(body.reactivateUrl).toContain('source=mcp_blocked');
     expect(body.reactivateUrl).toContain(encodeURIComponent('/settings/license/activate'));
     expect(restEngine.execute).not.toHaveBeenCalled();
@@ -206,8 +234,25 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
       event: 'trial_expired_call_blocked',
       organizationId: 'org-1',
       userId: 'u1',
-      metadata: { toolName: 'etsy_list_listings', adapterSlug: 'etsy', client: 'Claude' },
+      metadata: { toolName: 'etsy_list_listings', adapterSlug: 'etsy', client: 'Claude', variant: 'pricing' },
     });
+  });
+
+  it("gives a 'page' workspace the no-login page with the same text, and records variant 'page'", async () => {
+    const pricing = build(new TrialEndedException(ENDED));
+    const pricingBody = JSON.parse((await pricing.executor.executeTool('etsy_list_listings', {}, ctx)).content[0].text);
+    const { executor, events } = build(new TrialEndedException(ENDED));
+    const res = await executor.executeTool('etsy_list_listings', {}, pageCtx);
+    const body = JSON.parse(res.content[0].text);
+    const m = body.reactivateUrl.match(/\/reactivate\/([A-Za-z0-9_-]+)$/);
+    expect(m).not.toBeNull();
+    expect(readReactivationToken(m[1])).toEqual({ organizationId: 'org-2', userId: 'u1' });
+    // Only the URL differs between the arms.
+    expect(body.error.replace(body.reactivateUrl, 'URL')).toBe(pricingBody.error.replace(pricingBody.reactivateUrl, 'URL'));
+    await flush();
+    expect(events.log).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org-2', metadata: expect.objectContaining({ variant: 'page' }) }),
+    );
   });
 
   it('answers without waiting for the event, and a failing event changes nothing', async () => {
@@ -243,4 +288,21 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
     await flush();
     expect(events.log).not.toHaveBeenCalled();
   });
+
+  it('tells the user anyone can reactivate with the link, no sign-in, and names no administrator', async () => {
+    const { executor } = build(new TrialEndedException(ENDED));
+    const body = JSON.parse((await executor.executeTool('etsy_list_listings', {}, ctx)).content[0].text);
+    expect(body.error).toContain('no sign-in is needed');
+    expect(body.error).not.toMatch(/administrator/i);
+  });
+
+  it('gives the list notice of an ended trial with the same link, and nothing for any other licence refusal', async () => {
+    const ended = build(new TrialEndedException(ENDED)).executor;
+    const notice = await ended.trialEndedNotice('org-1', 'u1');
+    expect(notice?.message).toContain('trial ended on 28 October 2026');
+    expect(notice?.message.endsWith(notice!.reactivateUrl)).toBe(true);
+    expect(await ended.trialEndedNotice(undefined)).toBeNull();
+    expect(await build(new ForbiddenException('no licence')).executor.trialEndedNotice('org-1')).toBeNull();
+  });
 });
+

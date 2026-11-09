@@ -1624,6 +1624,26 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "license",
+    "action": "getInvoiceEmail",
+    "method": "GET",
+    "path": "/api/license/invoice-email",
+    "summary": "Whether each paid invoice is emailed as a PDF, and to which address (cloud, ADMIN)",
+    "admin": true,
+    "pathParams": [],
+    "hasBody": false
+  },
+  {
+    "resource": "license",
+    "action": "setInvoiceEmail",
+    "method": "PUT",
+    "path": "/api/license/invoice-email",
+    "summary": "Switch emailing each paid invoice as a PDF on or off, and set the address (cloud, ADMIN)",
+    "admin": true,
+    "pathParams": [],
+    "hasBody": true
+  },
+  {
+    "resource": "license",
     "action": "setLicenseKey",
     "method": "PUT",
     "path": "/api/license/key",

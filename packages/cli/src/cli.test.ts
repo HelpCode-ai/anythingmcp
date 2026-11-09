@@ -526,7 +526,7 @@ test('bash completion suggests commands, subcommands, flags and shells', async (
       'bash', file, 'amcp', ...words]);
     return stdout.split('\n').filter(Boolean).sort();
   };
-  assert.deepEqual(await complete(''), ['api', 'completion', 'login', 'logout', 'tools', 'whoami']);
+  assert.deepEqual(await complete(''), ['api', 'completion', 'invoices', 'login', 'logout', 'tools', 'whoami']);
   assert.deepEqual(await complete('tools', 'c'), ['call']);
   assert.deepEqual(await complete('--profile', 'work', 'tools', ''), ['call', 'describe', 'ls']);
   assert.deepEqual(await complete('tools', 'call', 'my_tool', '--t'), ['--timeout']);
@@ -543,7 +543,7 @@ test('fish completion suggests commands, subcommands, flags and shells', async (
     const { stdout } = await execFileAsync('fish', ['--no-config', '-c', 'source $argv[1]; complete -C $argv[2]', file, line]);
     return stdout.split('\n').filter(Boolean).map((entry) => entry.split('\t')[0]).sort();
   };
-  assert.deepEqual(await complete('amcp '), ['api', 'completion', 'login', 'logout', 'tools', 'whoami']);
+  assert.deepEqual(await complete('amcp '), ['api', 'completion', 'invoices', 'login', 'logout', 'tools', 'whoami']);
   assert.deepEqual(await complete('amcp tools c'), ['call']);
   assert.deepEqual(await complete('amcp --profile work tools '), ['call', 'describe', 'ls']);
   assert.deepEqual(await complete('amcp tools call my_tool --t'), ['--timeout']);
@@ -790,4 +790,64 @@ test('browserCommand passes the login URL to Windows as one argument, not throug
   assert.notEqual(cmd, 'cmd');
   assert.deepEqual(browserCommand('darwin', url), ['open', [url]]);
   assert.deepEqual(browserCommand('linux', url), ['xdg-open', [url]]);
+});
+
+test('invoices email shows and changes the workspace setting with the management key', async () => {
+  const seen: { method?: string; path: string; body: string }[] = [];
+  let state = { available: true, enabled: false, billingContact: 'billing@acme-gmbh.de', recipient: { kind: 'billing', address: 'billing@acme-gmbh.de' }, lastSent: null as unknown };
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk.toString();
+    seen.push({ method: req.method, path: req.url || '', body });
+    if (req.headers['authorization'] !== 'Bearer mcp_mgmtsecret') { res.writeHead(401); res.end('{}'); return; }
+    if (req.url !== '/api/license/invoice-email') { res.writeHead(404); res.end('{}'); return; }
+    if (req.method === 'PUT') {
+      const change = JSON.parse(body);
+      const to = change.to === undefined ? state.recipient.address : change.to ?? state.billingContact;
+      state = { ...state, enabled: change.enabled, recipient: { kind: to === state.billingContact ? 'billing' : 'custom', address: to } };
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(state));
+  });
+  server.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    const cli = join(__dirname, 'index.js');
+    const env = { ...process.env, AMCP_URL: `http://127.0.0.1:${address.port}`, AMCP_API_KEY: 'mcp_mgmtsecret' };
+    const shown = await execFileAsync(process.execPath, [cli, 'invoices', 'email'], { env });
+    assert.match(shown.stdout, /^Invoices by email: off$/m);
+    assert.match(shown.stdout, /^Recipient: billing@acme-gmbh\.de \(billing contact\)$/m);
+
+    const on = await execFileAsync(process.execPath, [cli, 'invoices', 'email', 'on', '--to', 'accounting@acme-gmbh.de', '--yes'], { env });
+    assert.match(on.stdout, /^Invoices by email: on$/m);
+    assert.match(on.stdout, /^Recipient: accounting@acme-gmbh\.de \(another address\)$/m);
+    assert.deepEqual(JSON.parse(seen.at(-1)!.body), { enabled: true, to: 'accounting@acme-gmbh.de' });
+
+    // Only the address: the switch stays as it is (read first).
+    await execFileAsync(process.execPath, [cli, 'invoices', 'email', '--billing-contact', '--yes', '--json'], { env });
+    assert.deepEqual(JSON.parse(seen.at(-1)!.body), { enabled: true, to: null });
+    assert.equal(seen.at(-2)!.method, 'GET');
+
+    await execFileAsync(process.execPath, [cli, 'invoices', 'email', 'off', '--yes'], { env });
+    assert.deepEqual(JSON.parse(seen.at(-1)!.body), { enabled: false });
+
+    // Changes need --yes without a terminal; bad combinations fail before any request.
+    const before = seen.length;
+    for (const args of [
+      ['invoices', 'email', 'on'],
+      ['invoices', 'email', 'off', '--to', 'a@b.de', '--yes'],
+      ['invoices', 'email', 'on', '--to', 'a@b.de', '--billing-contact', '--yes'],
+      ['invoices', 'email', 'on', '--to', 'a@b.de,c@d.de', '--yes'],
+      ['invoices', 'email', 'maybe'],
+      ['invoices', 'list'],
+    ]) {
+      const failure = await execFileAsync(process.execPath, [cli, ...args], { env })
+        .then(() => { throw new Error(`should have failed: ${args.join(' ')}`); }, (error: { code?: number }) => error);
+      assert.equal(failure.code, 2, args.join(' '));
+    }
+    assert.equal(seen.length, before);
+  } finally {
+    server.close();
+  }
 });

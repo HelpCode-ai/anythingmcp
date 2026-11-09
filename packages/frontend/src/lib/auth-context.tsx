@@ -157,6 +157,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       !publicPaths.includes(pathname) &&
       !pathname.startsWith('/f/') &&
       !pathname.startsWith('/s/') &&
+      // /reactivate/<token>: the no-login page an AI client links to once the
+      // trial ended; the token stands in for a session.
+      !pathname.startsWith('/reactivate/') &&
       pathname !== '/setup/file-search'
     ) {
       const currentUrl = typeof window !== 'undefined' ? window.location.pathname + window.location.search : pathname;

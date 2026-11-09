@@ -155,8 +155,14 @@ describe('scrubProviderMessage', () => {
     expect(scrubProviderMessage('GET https://x.example/api?appid=abc failed', [])).toBe('GET https://x.example/api failed');
     expect(scrubProviderMessage('bad key s3cr3t-value', ['s3cr3t-value'])).toBe('bad key ***');
     expect(scrubProviderMessage(`token ${'a1'.repeat(20)} expired`)).toBe('token *** expired');
-    expect(scrubProviderMessage('x'.repeat(30) + ' ' + 'word '.repeat(60))!.length).toBe(160);
+    expect(scrubProviderMessage('x'.repeat(30) + ' ' + 'word '.repeat(100))!.length).toBe(400);
     expect(scrubProviderMessage('   ')).toBeNull();
+  });
+
+  it("keeps the provider's words that follow our hint", () => {
+    const hint = 'The target API returned a server error (500). This is on their side, not your configuration.';
+    const odoo = `${hint} (Request failed with status code 500: {"name":"builtins.ValueError","message":"Invalid field 'customer_rank' on 'res.partner'"})`;
+    expect(scrubProviderMessage(odoo)).toContain("Invalid field 'customer_rank' on 'res.partner'");
   });
 
   it('cuts a URL at its first ? or #, wherever it sits in the text', () => {
@@ -177,7 +183,7 @@ describe('scrubProviderMessage', () => {
       const started = Date.now();
       const out = scrubProviderMessage(input);
       expect(Date.now() - started).toBeLessThan(200);
-      expect(out!.length).toBeLessThanOrEqual(160);
+      expect(out!.length).toBeLessThanOrEqual(400);
     }
   });
 });
@@ -193,6 +199,63 @@ describe('ProductEventService.log — server-written metadata', () => {
       metadata: { client: 'Claude', cardTrialOffered: true },
     });
     expect(create.mock.calls[0][0].data.metadata).toEqual({ client: 'Claude', cardTrialOffered: true });
+  });
+
+  it('keeps the reactivation-link arm on a blocked call and the state on a page view', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    for (const variant of ['page', 'pricing']) {
+      await service.log({
+        event: 'trial_expired_call_blocked',
+        organizationId: 'org-1',
+        metadata: { toolName: 't', adapterSlug: 'odoo', client: 'claude-ai', variant },
+      });
+    }
+    await service.log({ event: 'reactivate_page_viewed', organizationId: 'org-1', metadata: { state: 'trial-ended' } });
+    await service.log({ event: 'license_wall_viewed', organizationId: 'org-1', metadata: { variant: 'trust' } });
+    await service.log({ event: 'reactivate_page_viewed', organizationId: 'org-1', metadata: { state: 'x', variant: 'y' } });
+    const stored = create.mock.calls.map((c) => c[0].data.metadata);
+    expect(stored[0]).toEqual({ toolName: 't', adapterSlug: 'odoo', client: 'claude-ai', variant: 'page' });
+    expect(stored[1].variant).toBe('pricing');
+    expect(stored[2]).toEqual({ state: 'trial-ended' });
+    expect(stored[3]).toEqual({ variant: 'trust' });
+    expect(stored[4]).toBeNull();
+  });
+
+  it('keeps a paywall_action from either pay screen, with only known actions, plans and periods', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    expect(service.isKnown('paywall_action')).toBe(true);
+    await service.log({
+      event: 'paywall_action',
+      organizationId: 'org-1',
+      metadata: { source: 'trial_ended_wall', variant: 'trust', action: 'subscribe_clicked', plan: 'team', period: 'yearly', device: 'mobile' },
+    });
+    await service.log({
+      event: 'paywall_action',
+      organizationId: 'org-1',
+      metadata: { source: 'mcp_reactivate', action: 'pwned', plan: 'business', period: 'weekly', email: 'a@b.c' },
+    });
+    const stored = create.mock.calls.map((c) => c[0].data.metadata);
+    expect(stored[0]).toEqual({
+      source: 'trial_ended_wall',
+      device: 'mobile',
+      variant: 'trust',
+      action: 'subscribe_clicked',
+      plan: 'team',
+      period: 'yearly',
+    });
+    expect(stored[1]).toEqual({ source: 'mcp_reactivate' });
+  });
+
+  it('keeps the Telegram price test arm, and only its two values', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    await service.log({ event: 'reactivate_page_viewed', organizationId: 'org-1', metadata: { state: 'trial-ended', offer: 'personal' } });
+    await service.log({ event: 'paywall_action', organizationId: 'org-1', metadata: { action: 'shown', offer: 'free-forever' } });
+    const stored = create.mock.calls.map((c) => c[0].data.metadata);
+    expect(stored[0]).toEqual({ state: 'trial-ended', offer: 'personal' });
+    expect(stored[1]).toEqual({ action: 'shown' });
   });
 });
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP verbindet Claude, ChatGPT, Copilot und Gemini mit ERP-, E-Commerce-, REST-, SOAP- und SQL-Systemen und mit deinen Fileservern: 713 Connectors, dazu Firmengedächtnis, Skills und Dateisuche." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP verbindet Claude, ChatGPT, Copilot und Gemini mit ERP-, E-Commerce-, REST-, SOAP- und SQL-Systemen und mit deinen Fileservern: 715 Connectors, dazu Firmengedächtnis, Skills und Dateisuche." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: das Open-Source-MCP-Gateway, das zum Gehirn deines Unternehmens wird</h1>
@@ -54,7 +54,7 @@ Ein Gateway reicht Aufrufe weiter. Ein Firmengehirn weiß außerdem, wo deine Do
 
 | | Was es macht | Edition |
 |---|---|---|
-| **Jedes System, ein Endpunkt** | 713 Connectors aus dem Katalog oder deine eigene REST-/OpenAPI-, SOAP-, GraphQL-, OData-, SQL-, IMAP/SMTP- oder MCP-Quelle. Tools werden zur Laufzeit registriert. [Connectors](#connect-any-api-soap-service-or-database) | Alle |
+| **Jedes System, ein Endpunkt** | 715 Connectors aus dem Katalog oder deine eigene REST-/OpenAPI-, SOAP-, GraphQL-, OData-, SQL-, IMAP/SMTP- oder MCP-Quelle. Tools werden zur Laufzeit registriert. [Connectors](#connect-any-api-soap-service-or-database) | Alle |
 | **File Search** | Indexiert SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 oder eine Netzwerkfreigabe: jede PDF-Seite, Excel-Zeilen mit ihren Spaltennamen, Word, PowerPoint, Outlook-Mails mit Anhängen. Die KI antwortet mit Datei, Seite und Datum. [File Search](docs/connectors/file-search.md) | Cloud; selbst gehostet Enterprise |
 | **File Share** | Befristete Download-Links für Dateien aus deinen Ordnern oder für Dateien, die die KI erstellt (einen CSV-Export, einen Bericht), intern oder öffentlich, mit Ablaufdatum und Widerruf. [File Share](docs/connectors/file-search.md) | Cloud; selbst gehostet Enterprise |
 | **Firmengedächtnis** | Fakten und Vorlieben, in einem KI-Client gespeichert und in jedem anderen wiedergefunden: einmal in Claude gesagt, von Copilot genutzt. Persönlicher und firmenweiter Bereich, mit Ordnern und Rollengrenzen. [Gedächtnis](docs/memory.md) | Enterprise |
@@ -139,7 +139,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 ## Connector-Katalog
 
-713 Adapter mit über 12.000 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
+715 Adapter mit über 12.000 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|

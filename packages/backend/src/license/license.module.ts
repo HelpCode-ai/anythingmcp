@@ -6,13 +6,15 @@ import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 import { CardTrialOfferService } from './card-trial-offer.service';
 import { LicenseWallService } from './license-wall.service';
 import { RetentionLicenceClient } from './retention-licence.client';
+import { InvoiceEmailService } from './invoice-email.service';
 import { TrialExtensionController } from './trial-extension.controller';
+import { ReactivationController } from './reactivation.controller';
 import { SettingsModule } from '../settings/settings.module';
 import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [SettingsModule, UsersModule],
-  controllers: [LicenseController, TrialExtensionController],
+  controllers: [LicenseController, TrialExtensionController, ReactivationController],
   providers: [
     LicenseService,
     LicenseGuardService,
@@ -20,6 +22,7 @@ import { UsersModule } from '../users/users.module';
     CardTrialOfferService,
     LicenseWallService,
     RetentionLicenceClient,
+    InvoiceEmailService,
   ],
   exports: [
     LicenseService,

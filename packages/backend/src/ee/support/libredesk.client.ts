@@ -11,6 +11,18 @@ export interface LibredeskMessage {
   created_at?: string;
 }
 
+/** The fields of GET /api/v1/conversations/{uuid} the support services read. */
+export interface LibredeskConversation {
+  uuid: string;
+  inbox_channel?: string;
+  tags?: string[] | null;
+  contact?: {
+    id: number;
+    type?: string;
+    external_user_id?: string | null;
+  } | null;
+}
+
 export interface LibredeskMention {
   type: 'agent' | 'team';
   id: number;
@@ -47,6 +59,19 @@ export class LibredeskClient {
       `/api/v1/conversations/${encodeURIComponent(uuid)}/messages?page=1&page_size=30&type=incoming`,
     );
     return page?.results ?? [];
+  }
+
+  conversation(uuid: string): Promise<LibredeskConversation | undefined> {
+    return this.call<LibredeskConversation>('GET', `/api/v1/conversations/${encodeURIComponent(uuid)}`);
+  }
+
+  /** A reply the customer sees, posted as the API user. */
+  reply(uuid: string, html: string) {
+    return this.call('POST', `/api/v1/conversations/${encodeURIComponent(uuid)}/messages`, {
+      message: html,
+      private: false,
+      sender_type: 'agent',
+    });
   }
 
   addTags(uuid: string, tags: string[]) {

@@ -16,10 +16,13 @@ featured: true
 1. **Chiama i tool MCP** — gli stessi tool che usano i tuoi client AI (Shopify, HubSpot, SAP, il tuo database SQL, una cartella condivisa…). Puoi eseguirli a mano, negli script di shell, da cron e CI, oppure come **programma in code mode** che concatena decine di chiamate in un solo passo.
 2. **Guida l'API di gestione** (`/api/*`) con una **chiave di gestione**. Tutto ciò che fa la dashboard — connettori, server MCP, utenti, ruoli, SSO, memory, skill, audit — diventa un comando, per te o per un agente connesso.
 
-È open source (AGPL-3.0), funziona con **AnythingMCP Cloud** e con le istanze **self-hosted**, richiede Node 22+ e si installa da npm:
+È open source (AGPL-3.0), funziona con **AnythingMCP Cloud** e con le istanze **self-hosted**, richiede Node 22+ e si installa da npm o da Homebrew:
 
 ```bash
 npm i -g @anythingmcp/cli
+# oppure su macOS e Linux (con Node e completamento della shell):
+brew install helpcode-ai/tap/amcp
+
 amcp --help
 ```
 
@@ -293,6 +296,19 @@ $ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
 
 `GET /api/audit/breakdowns?days=30` restituisce utilizzo e costi suddivisi per connettore, server MCP e utente. È adatto per un report mensile.
 
+### Ricevi le fatture via email
+
+Su AnythingMCP Cloud un admin può farsi inviare ogni fattura pagata in PDF via email, per esempio alla contabilità:
+
+```bash
+amcp invoices email on --to contabilita@acme.it --yes
+amcp invoices email
+# Invoices by email: on
+# Recipient: contabilita@acme.it (another address)
+```
+
+Con `--billing-contact` tornano all'email di fatturazione dell'abbonamento, con `off` non vengono più inviate. Dettagli: [Invoices on AnythingMCP Cloud](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/cloud-invoices.md).
+
 ### Scopri tutta l'API offline
 
 Non serve avere la documentazione aperta. Il catalogo delle operazioni di gestione è incluso nella CLI:
@@ -325,7 +341,7 @@ L'ambito della chiave è la rete di sicurezza. Una chiave di gestione porta iden
 
 ## Dove prenderla
 
-- **Installa:** `npm i -g @anythingmcp/cli`, più il completamento della shell con `amcp completion zsh` (anche bash e fish)
+- **Installa:** `npm i -g @anythingmcp/cli` oppure `brew install helpcode-ai/tap/amcp`, più il completamento della shell con `amcp completion zsh` (anche bash e fish)
 - **Panoramica:** [anythingmcp.com/developers/cli](/it/developers/cli)
 - **Riferimento completo dei comandi:** il [README della CLI su GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme)
 - **Sorgente:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp)

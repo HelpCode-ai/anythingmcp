@@ -254,8 +254,10 @@ export const ProductEvents = {
   /**
    * Cloud: an AI client called a tool of a workspace whose free trial had
    * ended, and was refused with the reactivation link (dynamic-mcp-tools.ts).
-   * metadata.toolName, adapterSlug (catalog connectors only) and client (the
-   * OAuth client's name, when the call came through one). At most one row per
+   * metadata.toolName, adapterSlug (catalog connectors only), client (the
+   * OAuth client's name, when the call came through one) and variant (the
+   * reactivation link given: 'page' or 'pricing', reactivationLinkVariant;
+   * absent on rows from before 7 Nov 2026). At most one row per
    * workspace and tool an hour, so a looping agent cannot flood the table.
    * Server-only. Answers how many workspaces come back after their trial, and
    * with which app.
@@ -313,7 +315,49 @@ export const ProductEvents = {
    * checkout_source 'trial_ended_wall' by organizationId, per variant.
    */
   LICENSE_WALL_VIEWED: 'license_wall_viewed',
+  /**
+   * Cloud: the no-login reactivation page (/reactivate/<token>, the link an
+   * AI client gets in the 'page' arm when an ended trial blocks a tool call)
+   * was opened with a valid token (reactivation.controller.ts).
+   * metadata.state = what the page showed ('trial-ended', 'active',
+   * 'payment-failed', 'no-license'). At most once per workspace a UTC day.
+   * Server-only. Read with `trial_expired_call_blocked` (metadata.variant)
+   * and Stripe's checkouts of checkout_source 'mcp_reactivate'.
+   */
+  REACTIVATE_PAGE_VIEWED: 'reactivate_page_viewed',
+  /**
+   * Cloud: what someone did on a pay screen of an ended trial: the licence
+   * wall in the dashboard (metadata.source = 'trial_ended_wall', reported
+   * through POST /api/product-events) or the no-login reactivation page
+   * ('mcp_reactivate', reported through POST /api/license/reactivate/<token>/event).
+   * metadata.action = one of PAYWALL_ACTIONS ('shown' once per page load,
+   * then the clicks, 'left_without_subscribe' when the page is closed without
+   * a subscribe click); metadata.plan / metadata.period on plan, period and
+   * subscribe actions; metadata.device = 'mobile' or 'desktop';
+   * metadata.variant = the wall's variant ('trust' / 'control') or 'page'.
+   * Answers where people stop between seeing the plans and paying, per
+   * screen and device; read with checkout_link_created and Stripe.
+   */
+  PAYWALL_ACTION: 'paywall_action',
 } as const;
+
+/** The values of `action` on paywall_action (see PAYWALL_ACTION). */
+export const PAYWALL_ACTIONS = [
+  'shown',
+  'plan_selected',
+  'period_selected',
+  'subscribe_clicked',
+  'compare_plans_clicked',
+  'sign_in_clicked',
+  'open_workspace_clicked',
+  'switch_workspace_clicked',
+  'license_key_clicked',
+  'enterprise_clicked',
+  'support_clicked',
+  'delete_account_clicked',
+  'left_without_subscribe',
+] as const;
+export type PaywallAction = (typeof PAYWALL_ACTIONS)[number];
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
 
@@ -342,6 +386,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.ONBOARDING_REMINDER_SENT,
   ProductEvents.ONBOARDING_REMINDER_HOLDOUT,
   ProductEvents.LICENSE_WALL_VIEWED,
+  ProductEvents.REACTIVATE_PAGE_VIEWED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
@@ -449,13 +494,16 @@ export class ProductEventService {
 // `tool`, `profile`, `setupTool`: shared_tool_called (a tool of the shared
 // /mcp set, the tool set's profile, the setup tool a run tool ran); the last
 // two only from a fixed set.
+// `action`, `plan`, `period`: paywall_action, each from a fixed set.
+// `offer`: the reactivation page's Telegram price test arm, on
+// reactivate_page_viewed, paywall_action and checkout_link_created.
 // `protocol`, `preset`, `files`: the File Search wizard (FILE_SEARCH_*):
 // a known protocol, a known product preset and a file count bucket; any
 // other value is dropped, so no host, path or exact count can be stored.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
-  'tool', 'profile', 'setupTool', 'variant', 'calls',
+  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
@@ -477,8 +525,17 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   protocol: KNOWN_PROTOCOLS,
   preset: KNOWN_PRESETS,
   files: KNOWN_FILE_BUCKETS,
-  // license_wall_viewed (license-wall.service.ts).
-  variant: new Set(['trust', 'control']),
+  // license_wall_viewed (license-wall.service.ts): trust / control;
+  // trial_expired_call_blocked (the reactivation-link test, license-checkout.ts): page / pricing.
+  variant: new Set(['trust', 'control', 'page', 'pricing']),
+  // reactivate_page_viewed (reactivation.controller.ts).
+  state: new Set(['trial-ended', 'active', 'payment-failed', 'no-license']),
+  // paywall_action.
+  action: new Set<string>(PAYWALL_ACTIONS),
+  plan: new Set(['starter', 'team']),
+  period: new Set(['monthly', 'yearly']),
+  // The reactivation page's Telegram price test (reactivationOfferArm).
+  offer: new Set(['personal', 'list']),
 };
 const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
@@ -538,6 +595,12 @@ export function sanitizeSearchQuery(value: unknown): string | null {
  * `http://` of `http://http://…` (CodeQL js/polynomial-redos).
  */
 const SCRUB_INPUT_LIMIT = 2000;
+/**
+ * Long enough to keep the provider's own words after our hint: a 500 from
+ * Odoo starts with the classifier's sentence, and its "Invalid field 'x'"
+ * came after the old 160-character cut.
+ */
+const PROVIDER_MESSAGE_MAX = 400;
 
 export function scrubProviderMessage(message: unknown, secrets: unknown[] = []): string | null {
   if (typeof message !== 'string' || !message.trim()) return null;
@@ -554,7 +617,7 @@ export function scrubProviderMessage(message: unknown, secrets: unknown[] = []):
   });
   out = out.replace(/[A-Za-z0-9_\-.+/=]{32,}/g, '***');
   out = out.replace(/\s+/g, ' ').trim();
-  return out.length > 160 ? `${out.slice(0, 159)}…` : out;
+  return out.length > PROVIDER_MESSAGE_MAX ? `${out.slice(0, PROVIDER_MESSAGE_MAX - 1)}…` : out;
 }
 
 /** The attribution pair, re-sanitized here so no caller can store anything else. */

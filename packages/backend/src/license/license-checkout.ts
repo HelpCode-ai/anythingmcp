@@ -1,5 +1,7 @@
+import { createHash } from 'crypto';
 import type { LicenseInfo } from './license.service';
 import { CLICK_ID_KEYS, type AttributionClickId } from '../audit/signup-attribution';
+import { createReactivationToken } from './reactivation-token';
 
 /**
  * Checkout links for AnythingMCP Cloud (DEPLOYMENT_MODE=cloud only).
@@ -48,6 +50,8 @@ export const CHECKOUT_BILLING_PERIODS = ['monthly', 'yearly'] as const;
  * - file_quota_setup / file_quota / file_search_licence: File Search's Upgrade
  *   buttons (setup scan over the plan, a sync paused at the limit, the
  *   feature locked).
+ * - mcp_reactivate: the no-login reactivation page (/reactivate/<token>) an
+ *   AI client links to when an ended trial blocks a tool call.
  * - app: a caller that did not say (DEFAULT_CHECKOUT_SOURCE).
  */
 export const CHECKOUT_SOURCES = [
@@ -67,6 +71,7 @@ export const CHECKOUT_SOURCES = [
   'file_quota_setup',
   'file_quota',
   'file_search_licence',
+  'mcp_reactivate',
   'app',
 ] as const;
 export type CheckoutSource = (typeof CHECKOUT_SOURCES)[number];
@@ -180,6 +185,71 @@ export function marketingOrigin(env: NodeJS.ProcessEnv = process.env): string {
 export function trialReactivationUrl(env: NodeJS.ProcessEnv = process.env): string {
   const returnUrl = encodeURIComponent(`${cloudFrontendOrigin(env)}/settings/license/activate`);
   return withSourceParam(`${marketingOrigin(env)}/pricing?return_url=${returnUrl}`, 'mcp_blocked');
+}
+
+/**
+ * Which reactivation link an ended trial's AI client gets: 'page', the
+ * no-login reactivation page of the Cloud (/reactivate/<token>), or
+ * 'pricing', the public pricing page (trialReactivationUrl). Half of the
+ * workspaces each, fixed per workspace so every blocked call of one gets the
+ * same link. Read with `trial_expired_call_blocked` (metadata.variant) and
+ * Stripe's checkouts of source 'mcp_reactivate' / 'mcp_blocked'.
+ */
+export type ReactivationLinkVariant = 'page' | 'pricing';
+
+export function reactivationLinkVariant(organizationId: string): ReactivationLinkVariant {
+  const bucket = createHash('sha256').update(`reactivate-link-v1:${organizationId}`).digest().readUInt16BE(0) % 100;
+  return bucket < 50 ? 'page' : 'pricing';
+}
+
+/**
+ * The reactivation page's price test for workspaces whose only connectors
+ * are Telegram bots (2026-11-08): 'personal' is offered Cloud Starter monthly
+ * at the win-back Personal price (PERSONAL_OFFER, a single-use
+ * 'personal-monthly' code minted by the licence site and applied at checkout),
+ * 'list' sees the list prices. Half and half, fixed per workspace and
+ * independent of the link test above.
+ */
+export type ReactivationOfferArm = 'personal' | 'list';
+
+export function reactivationOfferArm(organizationId: string): ReactivationOfferArm {
+  const bucket = createHash('sha256').update(`reactivate-offer-v1:${organizationId}`).digest().readUInt16BE(0) % 100;
+  return bucket < 50 ? 'personal' : 'list';
+}
+
+/**
+ * The Personal price: Cloud Starter monthly, €13 off (€6 instead of €19) for
+ * the first 12 months (Stripe coupon `personal-starter-monthly`, the same as
+ * the win-back emails').
+ */
+export const PERSONAL_OFFER = { plan: 'starter', billingPeriod: 'monthly', monthlyEur: 6, months: 12 } as const;
+
+/**
+ * The reactivation link for a workspace's blocked call, and the arm it really
+ * is: a 'page' workspace gets the pricing link when no token can be made
+ * (ENCRYPTION_KEY unusable), and is then counted as 'pricing'. Neither link
+ * carries an address: the page's token holds the encrypted ids only.
+ */
+export function trialReactivationLink(
+  organizationId: string,
+  userId?: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date(),
+): { url: string; variant: ReactivationLinkVariant } {
+  if (reactivationLinkVariant(organizationId) === 'page') {
+    const token = createReactivationToken({ organizationId, userId }, now, env);
+    if (token) return { url: `${cloudFrontendOrigin(env)}/reactivate/${token}`, variant: 'page' };
+  }
+  return { url: trialReactivationUrl(env), variant: 'pricing' };
+}
+
+/** The URL of trialReactivationLink. */
+export function trialReactivationUrlFor(
+  organizationId: string,
+  userId?: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return trialReactivationLink(organizationId, userId, env).url;
 }
 
 /** Raised when the licence site cannot give us a checkout URL. */

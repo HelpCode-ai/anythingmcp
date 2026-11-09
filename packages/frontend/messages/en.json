@@ -2466,6 +2466,25 @@
       "manage": "Manage subscription & billing",
       "cancel": "Cancel subscription"
     },
+    "invoiceEmail": {
+      "title": "Invoices by email",
+      "body": "Get every invoice as a PDF by email as soon as it is paid. All invoices are always in the billing portal too.",
+      "recipientLabel": "Send invoices to",
+      "billingContact": "Billing contact",
+      "otherAddress": "Another address",
+      "otherAddressHint": "For example your accounting team. The previous address gets a short notice when you change it.",
+      "addressPlaceholder": "accounting@company.com",
+      "saveRecipient": "Save address",
+      "saving": "Saving…",
+      "savedOn": "Invoices will be emailed from the next payment on.",
+      "savedOff": "Invoices are no longer emailed.",
+      "savedRecipient": "Address saved.",
+      "invalidAddress": "Enter one valid email address.",
+      "saveError": "Could not save. Please try again.",
+      "loadError": "The invoice email settings could not be loaded. Reload the page to try again.",
+      "lastSent": "Last invoice sent: {number} on {date} to {to}",
+      "allInvoices": "All invoices: Manage subscription & billing, above."
+    },
     "features": {
       "title": "Features",
       "yes": "Yes",
@@ -3615,9 +3634,6 @@
     "title": "Keep your AI connected to your apps",
     "body": "Your 7-day trial has ended. Subscribe and {client} keeps working with your connectors. Everything you set up is kept.",
     "yourAi": "your AI",
-    "recapCalls": "{client} made {count, plural, one {# successful call} other {# successful calls}} in this workspace.",
-    "recapCallsWith": "{client} made {count, plural, one {# successful call} other {# successful calls}} in this workspace, with {connectors}.",
-    "recapBlocked": "Since your trial ended, {client} has tried to use them again. Those calls are paused until you subscribe.",
     "loading": "Loading your plans…",
     "trust": {
       "cancel": "Cancel any time",

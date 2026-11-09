@@ -261,6 +261,37 @@ const MEMORY_FORGET_TOOL = 'memory_forget';
 const SKILL_INSTRUCTION_MAX = 1800;
 
 /**
+ * Decrements `mcpRequestsInFlight` when the response's socket closes (the
+ * caller has already incremented it) and counts aborted requests.
+ *
+ * Auth, tenant checks and tool planning run before the response is served, so
+ * a client can hang up first. Its 'close' has then already fired and a
+ * listener added now never runs: the gauge used to drift by ~540 a day on
+ * Cloud (bursts of 70-150 requests a node client aborted within 1 s). A
+ * response that is already closed is settled right away instead.
+ *
+ * `res.once` is guarded because unit tests hand the controller bare mocks.
+ */
+export function trackMcpRequestClose(res: Response, startedAt = Date.now()): void {
+  const onClose = () => {
+    processGauges.dec('mcpRequestsInFlight');
+    if (!res.writableFinished) {
+      processGauges.inc('mcpAbortedTotal');
+      if (Date.now() - startedAt > 60_000) processGauges.inc('mcpAbortedLongTotal');
+    }
+  };
+  if (typeof (res as { once?: unknown }).once !== 'function') {
+    processGauges.dec('mcpRequestsInFlight');
+    return;
+  }
+  if ((res as { closed?: boolean }).closed || res.destroyed) {
+    onClose();
+    return;
+  }
+  res.once('close', onClose);
+}
+
+/**
  * Per-server MCP endpoint controller.
  *
  * Handles POST/GET/DELETE at /mcp/:serverId, creating a fresh MCP server
@@ -606,6 +637,9 @@ export class McpEndpointController {
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
       connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
+      // The workspace this connection mainly reaches: an ended trial is said
+      // up front in anythingmcp_list_connectors, with the reactivation link.
+      trialEnded: () => this.toolExecutor.trialEndedNotice(setupOrg || organizationId || undefined, user.sub),
       ...(this.sharedCalls && (setupOrg || organizationId) && variant === 'shared'
         ? {
             called: ({ tool, setupTool }) => {
@@ -1549,18 +1583,7 @@ export class McpEndpointController {
     // `res.once` is guarded because unit tests hand this method bare mocks.
     processGauges.inc('mcpRequestsInFlight');
     processGauges.inc('mcpHandlersUnclosed');
-    const startedAt = Date.now();
-    if (typeof (res as { once?: unknown }).once === 'function') {
-      res.once('close', () => {
-        processGauges.dec('mcpRequestsInFlight');
-        if (!res.writableFinished) {
-          processGauges.inc('mcpAbortedTotal');
-          if (Date.now() - startedAt > 60_000) processGauges.inc('mcpAbortedLongTotal');
-        }
-      });
-    } else {
-      processGauges.dec('mcpRequestsInFlight');
-    }
+    trackMcpRequestClose(res);
 
     // The handler's stateless fallback for 2025-era requests builds its own
     // transport and never receives `responseMode`, so with JSON enabled those

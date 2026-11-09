@@ -836,11 +836,25 @@ export interface SetupGuide extends SetupEffort {
 }
 
 export type VerifyResult =
-  | { ok: true; toolName: string; durationMs: number; sample: string }
+  | {
+      ok: true;
+      toolName: string;
+      durationMs: number;
+      sample: string;
+      /**
+       * Values the check changed to get through (an Odoo database name the
+       * address names itself): filled into the form and saved.
+       */
+      corrected?: Record<string, string>;
+      /** What was changed, in a sentence. */
+      note?: string;
+    }
   | {
       ok: false;
       kind: string;
       message: string;
+      /** As on success: values to fill in although the check still failed (then a refused key). */
+      corrected?: Record<string, string>;
       missing?: string[];
       fields?: Record<string, string>;
       status?: number | null;
@@ -915,6 +929,18 @@ export const adapters = {
       server: { id: string; name: string } | null;
     }>('/api/adapters/starter-pack/install', { method: 'POST', token, body: { slugs } }),
 };
+
+/** Invoices by email for the workspace's subscription (Cloud). */
+export interface InvoiceEmailSettings {
+  /** False when there is no subscription to send invoices for. */
+  available: boolean;
+  enabled: boolean;
+  /** The Stripe customer's email: where invoices go unless another address is set. */
+  billingContact: string | null;
+  recipient: { kind: 'billing' | 'custom'; address: string | null };
+  /** The last invoice emailed; `to` is masked. */
+  lastSent: { number: string; at: string; to: string } | null;
+}
 
 /** A paid Cloud licence's Stripe subscription, as the server last saw it. */
 export interface LicenseBilling {
@@ -1640,6 +1666,54 @@ export interface PublicStats {
   updatedAt: string | null;
 }
 
+/**
+ * The no-login reactivation page (/reactivate/<token>): the link an AI client
+ * shows when a tool call is refused because the workspace's trial ended. The
+ * token is the credential; no session is sent.
+ */
+export interface ReactivationView {
+  state: 'trial-ended' | 'active' | 'payment-failed' | 'no-license';
+  workspaceName: string;
+  trialEndedAt: string | null;
+  /** The AI client whose chat showed the link (else the first one connected). */
+  client: 'Claude' | 'ChatGPT' | 'Cursor' | 'Copilot' | null;
+  usage: { connectors: number; mcpServers: number; users: number };
+  /** The Telegram price test's arm, for a Telegram-only workspace that can buy; else null. */
+  offerArm?: 'personal' | 'list' | null;
+  /** The 'personal' arm's discounted Starter monthly price; null otherwise. */
+  offer?: { plan: 'starter'; billingPeriod: 'monthly'; monthlyEur: number; months: number } | null;
+}
+
+export const reactivation = {
+  get: (linkToken: string) =>
+    request<ReactivationView>(`/api/license/reactivate/${encodeURIComponent(linkToken)}`),
+  checkout: (linkToken: string, body: { plan: 'starter' | 'team'; billingPeriod: 'monthly' | 'yearly' }) =>
+    request<{ url: string }>(`/api/license/reactivate/${encodeURIComponent(linkToken)}/checkout`, {
+      method: 'POST',
+      body,
+    }),
+  /** A click on the page (paywall_action). Fire and forget; survives the page closing. */
+  track: (
+    linkToken: string,
+    body: {
+      action: string;
+      plan?: 'starter' | 'team';
+      period?: 'monthly' | 'yearly';
+      device?: 'mobile' | 'desktop';
+      offer?: 'personal' | 'list';
+    },
+  ) => {
+    try {
+      void fetch(`${API_BASE}/api/license/reactivate/${encodeURIComponent(linkToken)}/event`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  },
+};
+
 export const publicStats = {
   get: () => request<PublicStats>('/api/public/stats'),
 };
@@ -2122,6 +2196,14 @@ export const license = {
       body: { ...(locale && { locale }) },
       token,
     }),
+  /** Cloud only (ADMIN): whether each paid invoice is emailed as a PDF, and to which address. */
+  invoiceEmail: (token: string) => request<InvoiceEmailSettings>('/api/license/invoice-email', { token }),
+  /**
+   * Cloud only (ADMIN): switch invoices by email on or off. `to`: an address,
+   * null for the billing contact, or leave it out to keep the current one.
+   */
+  setInvoiceEmail: (token: string, change: { enabled: boolean; to?: string | null }) =>
+    request<InvoiceEmailSettings>('/api/license/invoice-email', { method: 'PUT', body: change, token }),
   /** 'cancel' opens Stripe's cancellation page, 'payment_method_update' the page to add a card. */
   billingPortal: (token: string, returnUrl?: string, flow?: 'cancel' | 'payment_method_update') =>
     request<{ url: string }>('/api/license/billing-portal', {

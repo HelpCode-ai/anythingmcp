@@ -431,6 +431,28 @@ export interface ConnectorSummary {
   hasGuide: boolean;
 }
 
+/** An ended trial, as anythingmcp_list_connectors reports it. */
+export interface TrialEndedNotice {
+  message: string;
+  reactivateUrl: string;
+}
+
+/**
+ * The `trialEnded` block of anythingmcp_list_connectors: the connectors are
+ * still listed, but their tools answer with the reactivation link, so the
+ * user hears about the ended trial before the first call fails.
+ */
+export async function trialEndedBlock(deps: Pick<SharedToolsetDeps, 'trialEnded'>): Promise<Record<string, unknown>> {
+  const notice = await deps.trialEnded?.().catch(() => null);
+  if (!notice) return {};
+  return {
+    trialEnded: {
+      ...notice,
+      hint: "This workspace's free trial has ended, so its tools are paused. Before anything else, tell the user and show them the reactivateUrl as a clickable link: they choose a plan there and the tools work again, with everything kept.",
+    },
+  };
+}
+
 export interface SharedToolsetDeps {
   /** Runs one tool, resolved in exactly its own connector. */
   execute(tool: RegisteredTool, args: Record<string, unknown>): Promise<TextResult>;
@@ -461,6 +483,12 @@ export interface SharedToolsetDeps {
    * throw (see shared-tool-calls.ts).
    */
   called?(call: { tool: string; setupTool?: SetupToolName }): void;
+  /**
+   * Cloud: when the workspace's trial has ended, what to tell the user and
+   * the reactivation link (the one a blocked tool call gives); null when the
+   * licence is active or on self-hosted. Optional, best-effort.
+   */
+  trialEnded?(): Promise<TrialEndedNotice | null>;
   /** Where the user configures connectors, plus their servers' direct URLs. */
   configuration(): Promise<{
     dashboardUrl: string;
@@ -860,6 +888,7 @@ export function registerSharedToolset(
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
       return json({
+        ...(await trialEndedBlock(deps)),
         connectors,
         ...(needsSetup.length
           ? {

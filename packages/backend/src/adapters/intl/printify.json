@@ -126,7 +126,7 @@
         "type": "object",
         "properties": {
           "shop_id": { "type": "integer", "description": "Shop id from printify_list_shops." },
-          "limit": { "type": "integer", "description": "Products per page, 1-50. Default 10." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Products per page, 1-50. Default 10." },
           "page": { "type": "integer", "description": "Page number, starting at 1." }
         },
         "required": ["shop_id"]

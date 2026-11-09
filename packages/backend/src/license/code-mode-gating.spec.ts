@@ -4,6 +4,7 @@ import {
   monthlyCodeRunCapForPlan,
   concurrentCodeRunCapForPlan,
   startOfUtcMonth,
+  codeRunQuotaPlan,
 } from './code-run-quotas';
 
 function guard({ cloud, license, codeToolCount }: { cloud: boolean; license: any; codeToolCount: number }) {
@@ -60,6 +61,10 @@ describe('code-mode-quotas', () => {
     expect(effectiveCodeModePlan('trial', false)).toBe('trial');
     expect(codeToolCapForPlan(effectiveCodeModePlan('trial', false))).toBe(3);
     expect(inlineCodeAllowedForPlan(effectiveCodeModePlan('trial', false))).toBe(false);
+    // On Cloud every trial is Team for code mode, with or without a card.
+    expect(effectiveCodeModePlan('trial', false, true)).toBe('team');
+    expect(inlineCodeAllowedForPlan(effectiveCodeModePlan('trial', false, true))).toBe(true);
+    expect(effectiveCodeModePlan('starter', false, true)).toBe('starter');
     // The card flag only lifts a trial, nothing else.
     expect(effectiveCodeModePlan('starter', true)).toBe('starter');
     expect(effectiveCodeModePlan('community', true)).toBe('community');
@@ -69,7 +74,7 @@ describe('code-mode-quotas', () => {
 
 describe('code-run-quotas', () => {
   it('caps monthly code runs per plan (null = unlimited)', () => {
-    expect(monthlyCodeRunCapForPlan('trial')).toBe(100);
+    expect(monthlyCodeRunCapForPlan('trial')).toBe(500);
     expect(monthlyCodeRunCapForPlan('starter')).toBe(500);
     expect(monthlyCodeRunCapForPlan('team')).toBe(5000);
     expect(monthlyCodeRunCapForPlan('business')).toBe(5000);
@@ -93,19 +98,44 @@ describe('code-run-quotas', () => {
     expect(concurrentCodeRunCapForPlan('mystery')).toBeNull();
   });
 
+  it('runs a card trial on Team quotas and a trial without a card on the trial quotas', () => {
+    expect(codeRunQuotaPlan('trial', true)).toBe('team');
+    expect(codeRunQuotaPlan('trial', false)).toBe('trial');
+    expect(codeRunQuotaPlan('starter', true)).toBe('starter');
+    expect(codeRunQuotaPlan(null, false)).toBe('community');
+    expect(monthlyCodeRunCapForPlan(codeRunQuotaPlan('trial', false))).toBe(500);
+    expect(concurrentCodeRunCapForPlan(codeRunQuotaPlan('trial', false))).toBe(1);
+    expect(monthlyCodeRunCapForPlan(codeRunQuotaPlan('trial', true))).toBe(5000);
+  });
+
   it('startOfUtcMonth is the first of the month at UTC midnight', () => {
     const d = startOfUtcMonth(new Date('2026-11-17T09:30:00Z'));
     expect(d.toISOString()).toBe('2026-11-01T00:00:00.000Z');
   });
 });
 
-describe('LicenseGuardService.codeModePlanForOrg', () => {
-  it('resolves a card-backed trial to team, a free trial to trial', async () => {
+describe('LicenseGuardService.codeModePlanForOrg / codeRunPlanForOrg', () => {
+  it('resolves every Cloud trial to team for features, a self-hosted trial to trial', async () => {
     const cardTrial = { plan: 'trial', status: 'active', billing: { status: 'trialing' } };
     await expect(guard({ cloud: true, license: cardTrial, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('team');
-    await expect(guard({ cloud: true, license: { plan: 'trial', status: 'active' }, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('trial');
+    await expect(guard({ cloud: true, license: { plan: 'trial', status: 'active' }, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('team');
+    await expect(guard({ cloud: false, license: { plan: 'trial', status: 'active' }, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('trial');
     await expect(guard({ cloud: true, license: { plan: 'team' }, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('team');
     await expect(guard({ cloud: false, license: null, codeToolCount: 0 }).codeModePlanForOrg('org1')).resolves.toBe('community');
+  });
+
+  it('keeps the small run budget for a trial without a card', async () => {
+    const cardTrial = { plan: 'trial', status: 'active', billing: { status: 'trialing' } };
+    await expect(guard({ cloud: true, license: cardTrial, codeToolCount: 0 }).codeRunPlanForOrg('org1')).resolves.toBe('team');
+    await expect(guard({ cloud: true, license: { plan: 'trial', status: 'active' }, codeToolCount: 0 }).codeRunPlanForOrg('org1')).resolves.toBe('trial');
+    await expect(guard({ cloud: true, license: { plan: 'starter' }, codeToolCount: 0 }).codeRunPlanForOrg('org1')).resolves.toBe('starter');
+  });
+
+  it('gives a Cloud trial without a card inline code and the Team tool cap', async () => {
+    const free = { plan: 'trial', status: 'active', features: {} };
+    await expect(guard({ cloud: true, license: free, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(true);
+    await expect(guard({ cloud: true, license: free, codeToolCount: 19 }).checkCanCreateCodeTool('org1')).resolves.toBeUndefined();
+    await expect(guard({ cloud: true, license: free, codeToolCount: 20 }).checkCanCreateCodeTool('org1')).rejects.toThrow(/20 code tools on the team plan/);
   });
 });
 
@@ -158,15 +188,14 @@ describe('LicenseGuardService.canUseInlineCode', () => {
     await expect(guard({ cloud: false, license: null, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(false);
   });
 
-  it('is true for a card-backed trial (billing.status trialing), false for a free trial', async () => {
+  it('is true for every Cloud trial, with or without a card, and false for a self-hosted trial', async () => {
     const cardTrial = { plan: 'trial', status: 'active', billing: { status: 'trialing' } };
     await expect(guard({ cloud: true, license: cardTrial, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(true);
-    // A free trial has no Stripe billing.
-    await expect(guard({ cloud: true, license: { plan: 'trial', status: 'active' }, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(false);
-    // A trial whose subscription is not trialing (e.g. past_due) is not a live card trial.
+    await expect(guard({ cloud: true, license: { plan: 'trial', status: 'active' }, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(true);
     await expect(
       guard({ cloud: true, license: { plan: 'trial', status: 'active', billing: { status: 'past_due' } }, codeToolCount: 0 }).canUseInlineCode('org1'),
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
+    await expect(guard({ cloud: false, license: { plan: 'trial', status: 'active' }, codeToolCount: 0 }).canUseInlineCode('org1')).resolves.toBe(false);
   });
 });
 
@@ -181,10 +210,10 @@ describe('LicenseGuardService.checkCanCreateCodeTool — card-backed trial cap',
     ).rejects.toThrow(/20 code tools on the team plan/);
   });
 
-  it('a free trial still caps at 3', async () => {
+  it('a self-hosted trial still caps at 3', async () => {
     const freeTrial = { plan: 'trial', status: 'active', features: {} };
     await expect(
-      guard({ cloud: true, license: freeTrial, codeToolCount: 3 }).checkCanCreateCodeTool('org1'),
+      guard({ cloud: false, license: freeTrial, codeToolCount: 3 }).checkCanCreateCodeTool('org1'),
     ).rejects.toThrow(/3 code tools on the trial plan/);
   });
 });

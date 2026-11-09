@@ -496,6 +496,24 @@ describe('connectors that are not set up yet', () => {
     expect(deps.execute).not.toHaveBeenCalled();
   });
 
+  it('say up front that the trial ended, with the reactivation link, and still list the connectors', async () => {
+    const notice = {
+      message: "This workspace's AnythingMCP trial ended on 9 October 2026. … Show this link to the user: https://cloud.example.com/reactivate/tok",
+      reactivateUrl: 'https://cloud.example.com/reactivate/tok',
+    };
+    const ended = await connect([CRM_READ], makeDeps({ trialEnded: jest.fn(async () => notice) }));
+    const list = await call(ended.client, 'anythingmcp_list_connectors');
+    expect(Object.keys(list.body)[0]).toBe('trialEnded');
+    expect(list.body.trialEnded).toMatchObject(notice);
+    expect(list.body.trialEnded.hint).toContain('reactivateUrl');
+    expect(list.body.connectors.map((c: any) => c.id)).toEqual(['c-crm']);
+
+    const active = await connect([CRM_READ], makeDeps({ trialEnded: jest.fn(async () => null) }));
+    expect((await call(active.client, 'anythingmcp_list_connectors')).body.trialEnded).toBeUndefined();
+    const failing = await connect([CRM_READ], makeDeps({ trialEnded: jest.fn(async () => { throw new Error('db'); }) }));
+    expect((await call(failing.client, 'anythingmcp_list_connectors')).body.trialEnded).toBeUndefined();
+  });
+
   it('drop the empty-workspace hint when the only connector is waiting for setup', async () => {
     const { client } = await connect([ETSY_PENDING]);
     const list = await call(client, 'anythingmcp_list_connectors');

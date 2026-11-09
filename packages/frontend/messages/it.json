@@ -2466,6 +2466,25 @@
       "manage": "Gestisci abbonamento e fatturazione",
       "cancel": "Annulla l'abbonamento"
     },
+    "invoiceEmail": {
+      "title": "Fatture via email",
+      "body": "Ricevi ogni fattura in PDF via email appena viene pagata. Tutte le fatture restano comunque nel portale di fatturazione.",
+      "recipientLabel": "Invia le fatture a",
+      "billingContact": "Contatto di fatturazione",
+      "otherAddress": "Un altro indirizzo",
+      "otherAddressHint": "Per esempio la tua contabilità. Quando cambi indirizzo, quello precedente riceve un breve avviso.",
+      "addressPlaceholder": "contabilita@azienda.it",
+      "saveRecipient": "Salva indirizzo",
+      "saving": "Salvataggio…",
+      "savedOn": "Dal prossimo pagamento le fatture arriveranno via email.",
+      "savedOff": "Le fatture non vengono più inviate via email.",
+      "savedRecipient": "Indirizzo salvato.",
+      "invalidAddress": "Inserisci un indirizzo email valido.",
+      "saveError": "Salvataggio non riuscito. Riprova.",
+      "loadError": "Non è stato possibile caricare le impostazioni delle fatture via email. Ricarica la pagina per riprovare.",
+      "lastSent": "Ultima fattura inviata: {number} il {date} a {to}",
+      "allInvoices": "Tutte le fatture: in alto, Gestisci abbonamento e fatturazione."
+    },
     "features": {
       "title": "Funzionalità",
       "yes": "Sì",
@@ -3615,9 +3634,6 @@
     "title": "Tieni la tua AI collegata alle tue app",
     "body": "La tua prova di 7 giorni è terminata. Con l'abbonamento {client} continua a lavorare con i tuoi connettori. Tutto ciò che hai configurato resta.",
     "yourAi": "la tua AI",
-    "recapCalls": "{client} ha fatto {count, plural, one {# chiamata riuscita} other {# chiamate riuscite}} in questo workspace.",
-    "recapCallsWith": "{client} ha fatto {count, plural, one {# chiamata riuscita} other {# chiamate riuscite}} in questo workspace, con {connectors}.",
-    "recapBlocked": "Da quando la prova è terminata, {client} ha provato di nuovo a usarli. Quelle chiamate sono in pausa finché non ti abboni.",
     "loading": "Caricamento dei piani…",
     "trust": {
       "cancel": "Disdici quando vuoi",
