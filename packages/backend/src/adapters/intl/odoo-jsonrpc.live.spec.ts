@@ -39,4 +39,10 @@ describe('odoo-jsonrpc adapter: static spec conformance', () => {
   it('checks the connection on a path every Odoo version serves', () => {
     expect(a.connector.healthcheckPath).toBe('/web/health');
   });
+
+  it('reads partners with fields every Odoo has, since the setup check calls this tool', () => {
+    const partners = a.tools.find((t) => t.name === 'odoo_list_partners');
+    // customer_rank / supplier_rank come with the Invoicing app only.
+    expect(partners?.endpointMapping.bodyTemplate).not.toMatch(/customer_rank|supplier_rank/);
+  });
 });

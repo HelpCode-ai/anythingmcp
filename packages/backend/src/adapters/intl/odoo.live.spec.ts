@@ -54,6 +54,9 @@ describe('odoo adapter — static spec conformance', () => {
     // The partner wrapper's fixed field list must work on Odoo 19 as shipped.
     const partners = tools.find((t) => t.name === 'odoo_list_partners');
     expect(JSON.stringify(partners?.endpointMapping)).not.toContain('"mobile"');
+    // customer_rank / supplier_rank come with the Invoicing app: an Odoo
+    // without it answers the setup check (this tool) with Invalid field.
+    expect(JSON.stringify(partners?.endpointMapping)).not.toMatch(/customer_rank|supplier_rank/);
   });
 
   it("tells call_method to pass required arguments by name and one id for singleton actions", () => {
