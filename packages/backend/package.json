@@ -75,7 +75,7 @@
     "mysql2": "^3.24.4",
     "nestjs-pino": "^4.6.1",
     "nodemailer": "^10.1.4",
-    "openid-client": "^6.8.8",
+    "openid-client": "^6.8.9",
     "oracledb": "^6.10.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
