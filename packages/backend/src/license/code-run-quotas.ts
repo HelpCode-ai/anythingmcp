@@ -14,14 +14,15 @@
  * reissue. An Enterprise contract can override the monthly cap per key with the
  * licence feature `maxCodeRunsPerMonth` (a number caps, `null` = unlimited).
  *
- * A card-backed trial is resolved to `team` upstream (see
- * `effectiveCodeModePlan`), so it gets the Team quotas during the trial.
+ * A card-backed trial gets the Team quotas during the trial; a trial without
+ * a card keeps the `trial` entry, a small budget that protects the shared
+ * runner from throwaway sign-ups (see `codeRunQuotaPlan`).
  */
 
 /** Code runs allowed per calendar month per plan. `null` = unlimited. */
 export const MONTHLY_CODE_RUN_CAPS: Record<string, number | null> = {
   community: null, // self-hosted default; Cloud-only enforcement, so never hit
-  trial: 100,
+  trial: 500,
   starter: 500,
   team: 5000,
   business: 5000,
@@ -64,4 +65,14 @@ export function concurrentCodeRunCapForPlan(plan: string | null | undefined): nu
 /** Start of the current calendar month in UTC — the window the monthly cap counts over. */
 export function startOfUtcMonth(now: Date = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+/**
+ * The plan whose run quotas apply. A trial with a card on file runs on the
+ * Team quotas; a trial without one keeps the `trial` quotas even though its
+ * code-mode features are Team's; every other plan is its own.
+ */
+export function codeRunQuotaPlan(plan: string | null | undefined, cardTrial: boolean): string {
+  if (plan === 'trial') return cardTrial ? 'team' : 'trial';
+  return plan ?? 'community';
 }

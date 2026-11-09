@@ -110,6 +110,7 @@ function build(
   const license = {
     checkLicenseActive: jest.fn().mockResolvedValue(undefined),
     codeModePlanForOrg: jest.fn().mockResolvedValue(opts.plan ?? 'team'),
+    codeRunPlanForOrg: jest.fn().mockResolvedValue(opts.plan ?? 'team'),
   };
   const kg = { scheduleObservationalIngest: jest.fn() };
   const reject = { execute: jest.fn().mockRejectedValue(new Error('unexpected engine call')) };
@@ -318,6 +319,19 @@ describe('DynamicMcpTools — Cloud run quotas', () => {
     const where = prisma.codeRun.count.mock.calls[0][0].where;
     expect(where.organizationId).toBe('org1');
     expect(where.createdAt.gte).toBeInstanceOf(Date);
+  });
+
+  it('tells a trial without a card how to raise its run budget', async () => {
+    const { executor, prisma } = build([codeTool(), innerRead], (b) => b.run('inner_read', {}), {
+      cloud: true,
+      plan: 'trial',
+      codeRunCount: 500, // at the trial monthly cap
+    });
+    const res = await executor.executeTool('summary', {}, { organizationId: 'org1', allowedToolIds: ['code-1', 'read-1'] });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('500 runs during a trial without a card');
+    expect(res.content[0].text).toContain('Add a payment card');
+    expect(prisma.codeRun.create).not.toHaveBeenCalled();
   });
 
   it('runs and records when under the monthly cap', async () => {
