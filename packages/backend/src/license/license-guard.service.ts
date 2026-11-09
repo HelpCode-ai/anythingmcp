@@ -51,6 +51,15 @@ export interface TrialState {
   cardTrialAvailable: boolean;
 }
 
+/**
+ * The connectors and MCP servers that count against a plan's limits: active
+ * ones only (a paused one can be swapped back in), and File Search folders
+ * apart, since File Search has its own limits per plan. `PlanFitService`
+ * counts the same way.
+ */
+const PLAN_COUNTED_CONNECTOR = { isActive: true, type: { not: 'FILE_SEARCH' as const } };
+const PLAN_COUNTED_SERVER = { isActive: true };
+
 @Injectable()
 export class LicenseGuardService {
   constructor(
@@ -114,7 +123,7 @@ export class LicenseGuardService {
     if (maxConnectors == null) return;
 
     const count = await this.prisma.connector.count({
-      where: organizationId ? { organizationId } : { userId },
+      where: { ...(organizationId ? { organizationId } : { userId }), ...PLAN_COUNTED_CONNECTOR },
     });
     if (count >= maxConnectors) {
       throw new ForbiddenException(
@@ -134,7 +143,7 @@ export class LicenseGuardService {
     if (maxMcpServers == null) return;
 
     const count = await this.prisma.mcpServerConfig.count({
-      where: organizationId ? { organizationId } : { userId },
+      where: { ...(organizationId ? { organizationId } : { userId }), ...PLAN_COUNTED_SERVER },
     });
     if (count >= maxMcpServers) {
       throw new ForbiddenException(
@@ -237,8 +246,8 @@ export class LicenseGuardService {
     const where = organizationId ? { organizationId } : userId ? { userId } : undefined;
 
     const [connectorCount, mcpCount, userCount] = await Promise.all([
-      where ? this.prisma.connector.count({ where }) : Promise.resolve(0),
-      where ? this.prisma.mcpServerConfig.count({ where }) : Promise.resolve(0),
+      where ? this.prisma.connector.count({ where: { ...where, ...PLAN_COUNTED_CONNECTOR } }) : Promise.resolve(0),
+      where ? this.prisma.mcpServerConfig.count({ where: { ...where, ...PLAN_COUNTED_SERVER } }) : Promise.resolve(0),
       // Active members of the workspace, not users whose primary workspace it
       // is: someone invited into a second workspace keeps their first one as
       // User.organizationId, and a deactivated member holds no seat.
