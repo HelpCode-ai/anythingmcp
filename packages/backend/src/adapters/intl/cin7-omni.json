@@ -1,0 +1,1555 @@
+{
+  "slug": "cin7-omni",
+  "name": "Cin7 Omni",
+  "description": "Cin7 Omni (go.cin7.com) inventory and order management through API v1: sales orders, quotes, purchase orders, credit notes, contacts, products, stock per branch, branches, payments (read only), stock adjustments, branch transfers and users. Create orders, purchase orders, contacts and transfers. API username and key.",
+  "instructions": "## Cin7 Omni\nThis connector works with **Cin7 Omni**, the original Cin7 inventory and order management system (signs in at `go.cin7.com`), through its REST API v1 at `https://api.cin7.com/api/v1`: sales orders, quotes, purchase orders, credit notes, contacts, products and options, stock per branch, branches, payments (read only), stock adjustments, branch transfers and users.\n\n**Omni or Core?** Cin7 sells two different products. **Cin7 Omni** (this connector) signs in at go.cin7.com and has API v1 with an API username and key. **Cin7 Core** (formerly DEAR Inventory) signs in at inventory.dearsystems.com and has its own API with an Account ID and Application Key: use the `cin7-core` connector for it. The two APIs and their credentials are not interchangeable.\n\n**Setup (about 3 minutes, administrator)**\n1. In Cin7 Omni open the user menu, **Settings, Integrations & API, API v1**.\n2. Copy the **API Username** shown there into `CIN7_OMNI_API_USERNAME`.\n3. Click **Add New API Connection**, give it a name and copy its **API key** into `CIN7_OMNI_API_KEY`.\n4. Under **Permissions** tick Read for every resource the AI should see (and Create or Update for the write tools), then **Save**. A resource without permission answers 403.\n\nThe connector sends both as HTTP Basic authentication.\n\n**Where to start**: `cin7_omni_list_branches` for branch ids, `cin7_omni_list_sales_orders` for recent orders, `cin7_omni_list_stock` for stock per branch, `cin7_omni_list_contacts` to find a customer or supplier.\n\n**Reading**: sales `cin7_omni_list_sales_orders`, `cin7_omni_get_sales_order`, `cin7_omni_list_quotes`, `cin7_omni_list_credit_notes`, `cin7_omni_get_credit_note`, `cin7_omni_list_payments`; purchasing `cin7_omni_list_purchase_orders`, `cin7_omni_get_purchase_order`; catalogue `cin7_omni_list_products`, `cin7_omni_get_product`, `cin7_omni_list_product_options`, `cin7_omni_list_product_categories`; stock `cin7_omni_list_stock`, `cin7_omni_list_adjustments`, `cin7_omni_list_branch_transfers`; people `cin7_omni_list_contacts`, `cin7_omni_get_contact`, `cin7_omni_list_users`.\n\n**Writing**: `cin7_omni_create_sales_order`, `cin7_omni_update_sales_order` (header fields only), `cin7_omni_create_purchase_order`, `cin7_omni_create_contact`, `cin7_omni_update_contact`, `cin7_omni_create_branch_transfer`. `cin7_omni_create_adjustment` is installed switched off because an approved adjustment changes stock value at once. Writes answer HTTP 200 with a list of `{index, success, id, code, errors}`: always check `success` and `errors`, a refused record still returns 200. Payments are read only: the connector never records, changes or deletes a payment, and it does not dispatch, invoice or void orders.\n\n**Filtering (`where`)**: SQL style on fields of the record, not of line items. Strings and dates in single quotes, numbers bare: `modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3`, `reference LIKE 'SO-10%'`, `id IN (21,24)`. Dates are UTC, `yyyy-MM-ddTHH:mm:ssZ`. `fields` trims the answer (`id,reference,total,lineItems(code,qty)`); use it on order lists, which are large. `order` sorts, highest first unless you add `ASC`.\n\n**Paging**: `page` starts at 1, `rows` is at most 250 (default 50 here, 25 on order lists). Ask for the next page until one comes back empty. For a sync, filter on modifiedDate and sort `modifiedDate ASC`.\n\n**Rate limits**: Cin7 Omni allows **3 calls per second, 60 per minute and 5000 per day** per account; beyond that it answers 429 with Retry-After. Prefer large `rows` with narrow `where` filters over many small calls.\n\n**Values**: order `status` is DRAFT, APPROVED or VOID; `stage` is a free text workflow stage (New, Awaiting Payment, Processing, On Hold, Dispatched). Stock `available` is stock on hand minus open sales. Contact `type` is Customer, Supplier or Internal. Write amounts in the order currency; reads return base currency values with the exchange rate.",
+  "aliases": [
+    "Cin7",
+    "Cin7 Omni API"
+  ],
+  "region": "intl",
+  "category": "erp",
+  "icon": "cin7-omni",
+  "docsUrl": "https://api.cin7.com/api",
+  "requiredEnvVars": [
+    "CIN7_OMNI_API_USERNAME",
+    "CIN7_OMNI_API_KEY"
+  ],
+  "envVarMeta": {
+    "CIN7_OMNI_API_USERNAME": {
+      "label": "API username",
+      "kind": "credential",
+      "help": "Cin7 Omni, Settings, Integrations & API, API v1: the API Username shown at the top of the page.",
+      "link": "https://help.omni.cin7.com/hc/en-us/articles/10015165519503",
+      "pattern": "^\\S{2,100}$",
+      "patternMessage": "Paste the API username only, without spaces."
+    },
+    "CIN7_OMNI_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Settings, Integrations & API, API v1, Add New API Connection: copy the API key, then set the connection's permissions and save. Regenerate Key replaces a lost key.",
+      "link": "https://help.omni.cin7.com/hc/en-us/articles/10015165519503",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the API key without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Cin7 Omni refused the API username or key. Copy both again from Settings, Integrations & API, API v1. A Cin7 Core (DEAR) Account ID and Application Key do not work here; use the Cin7 Core connector for those.",
+    "403": "The API connection has no permission for this resource. In Settings, Integrations & API, API v1 open the connection and tick Read (or Create, Update) for it.",
+    "404": "Cin7 Omni found no record with that id.",
+    "rate_limited": "Cin7 Omni allows 3 calls per second, 60 per minute and 5000 per day. Wait for the Retry-After seconds and try again."
+  },
+  "probe": {
+    "tool": "cin7_omni_list_sales_orders",
+    "params": {
+      "rows": 1,
+      "fields": "id"
+    }
+  },
+  "prerequisites": "A Cin7 Omni account (go.cin7.com) and an administrator who can add an API v1 connection under Settings, Integrations & API. About 3 minutes.",
+  "connector": {
+    "name": "Cin7 Omni API v1",
+    "type": "REST",
+    "baseUrl": "https://api.cin7.com/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{CIN7_OMNI_API_USERNAME}}",
+      "password": "{{CIN7_OMNI_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "cin7_omni_list_sales_orders",
+      "description": "List sales orders, newest first: id, reference, status (DRAFT, APPROVED, VOID), stage, customer (memberId, company, email), branchId, dates (createdDate, modifiedDate, invoiceDate, dispatchedDate), totals, currency, tracking code and line items. Filter with where, e.g. modifiedDate>='2026-01-01T00:00:00Z' or reference='SO-1001'. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25,
+            "description": "Records per page (default 25, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/SalesOrders",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_get_sales_order",
+      "description": "Read one sales order with its line items, addresses, totals, stage, status, invoice and dispatch dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Record id (the id field of a list result)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,lineItems(code,qty)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/SalesOrders/{id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_quotes",
+      "description": "List sales quotes with customer, branch, totals, stage and line items. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25,
+            "description": "Records per page (default 25, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Quotes",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_purchase_orders",
+      "description": "List purchase orders, newest first: id, reference, supplier (memberId, company), branchId, status, stage, estimatedArrivalDate, fullyReceivedDate, supplierInvoiceReference, totals and line items. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25,
+            "description": "Records per page (default 25, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/PurchaseOrders",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_get_purchase_order",
+      "description": "Read one purchase order with its line items, supplier, dates and totals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Record id (the id field of a list result)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,lineItems(code,qty)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/PurchaseOrders/{id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_credit_notes",
+      "description": "List credit notes: id, reference, salesReference (the sales order it credits), customer, totals, status and line items (negative quantities). Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25,
+            "description": "Records per page (default 25, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/CreditNotes",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_get_credit_note",
+      "description": "Read one credit note with its line items and totals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Record id (the id field of a list result)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,lineItems(code,qty)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/CreditNotes/{id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_payments",
+      "description": "List payments recorded against orders: id, orderId, orderRef, paymentDate, amount, method, direction (1 received, -1 paid out or refunded), isAuthorized, transactionRef, branchId. Read-only: this connector never records or changes payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3, or orderId=123. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Records per page (default 50, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Payments",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_contacts",
+      "description": "List contacts (customers, suppliers, internal): id, type, company, first and last name, email, phone, addresses, accountNumber, priceColumn, paymentTerms, creditLimit, balanceOwing, onHold, group, isActive. Find one with where, e.g. email='jane@example.com' or company LIKE 'Acme%'. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Records per page (default 50, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Contacts",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_get_contact",
+      "description": "Read one contact with addresses, secondary contacts, pricing and account details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Record id (the id field of a list result)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,lineItems(code,qty)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Contacts/{id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_products",
+      "description": "List products (styles): id, name, styleCode, status, brand, category ids, description, stockControl and their productOptions (variants with code, barcode, prices). Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25,
+            "description": "Records per page (default 25, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Products",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_get_product",
+      "description": "Read one product with all its options, prices and dimensions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Record id (the id field of a list result)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,reference,lineItems(code,qty)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Products/{id}",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_product_options",
+      "description": "List product options (the sellable variants, SKUs): id, productId, code, barcode, option1-3, retail, wholesale and special prices, price columns, stockAvailable and stockOnHand. Find a SKU with where, e.g. code='SKU-1'. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Records per page (default 50, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/ProductOptions",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_product_categories",
+      "description": "List product categories: id, name, parentId (0 = top level), sort. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 250,
+            "description": "Records per page (default 250, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/ProductCategories",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_stock",
+      "description": "Stock per product option and branch: productId, productOptionId, code, barcode, branchId, branchName, available (stock on hand minus open sales), stockOnHand, openSales, incoming, virtual, holding. Filter with where, e.g. branchId=3 or code='SKU-1'. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 100,
+            "description": "Records per page (default 100, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Stock",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_branches",
+      "description": "List branches (warehouses, stores): id, company, branchType, isActive, address and bin locations. Branch ids are used by orders, stock, adjustments and transfers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 100,
+            "description": "Records per page (default 100, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Branches",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_adjustments",
+      "description": "List stock adjustments: id, reference, branchId, isApproved, completedDate, adjustmentReason and line items (code, qty, unitCost). Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25,
+            "description": "Records per page (default 25, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Adjustments",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_branch_transfers",
+      "description": "List stock transfers between branches: id, reference, sourceBranchId, destinationBranchId, stage, isApproved, dispatchedDate, receivedDate and line items (qty, qtyTransferred). Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string",
+            "description": "Filter on fields of the record (not line items), SQL style: strings and dates in single quotes, numbers bare, AND between conditions. Operators = <> > < >= <= LIKE, NOT LIKE, IN, IS, IS NOT. Example: modifiedDate>='2026-01-01T00:00:00Z' AND branchId=3. % is the LIKE wildcard."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return (case-insensitive), with line item fields in brackets, e.g. id,reference,total,lineItems(code,qty). Keeps answers small."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort fields, comma-separated; highest first by default, add ASC for ascending, e.g. modifiedDate ASC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Keep going until a page comes back empty."
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 25,
+            "description": "Records per page (default 25, at most 250)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/BranchTransfers",
+        "queryParams": {
+          "where": "$where",
+          "fields": "$fields",
+          "order": "$order",
+          "page": "$page",
+          "rows": "$rows"
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_list_users",
+      "description": "List the users of the Cin7 Omni account: id, firstName, lastName, jobTitle, email, isActive. Use the id as sales_person_id on orders. New users can take up to 2 hours to appear. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/Users"
+      }
+    },
+    {
+      "name": "cin7_omni_create_sales_order",
+      "description": "Create one sales order. Identify the customer with member_id or member_email (from cin7_omni_list_contacts). The order is approved unless is_approved is false (draft). Cin7 answers HTTP 200 with [{index, success, id, code, errors}]: check success and errors, a refused order still returns 200. Takes no payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "integer",
+            "description": "Customer contact id."
+          },
+          "member_email": {
+            "type": "string",
+            "description": "Customer email, instead of member_id."
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Branch id (cin7_omni_list_branches); defaults to the main branch."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Order reference; leave empty for the next automatic number."
+          },
+          "customer_order_no": {
+            "type": "string",
+            "description": "The customer's own order number (PO number)."
+          },
+          "is_approved": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) approves the order; false saves it as a draft."
+          },
+          "stage": {
+            "type": "string",
+            "description": "Workflow stage, e.g. New, Awaiting Payment, Processing, On Hold. Default New."
+          },
+          "estimated_delivery_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Estimated delivery, ISO 8601 UTC, e.g. 2026-12-01T00:00:00Z."
+          },
+          "delivery_instructions": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Delivery instructions."
+          },
+          "internal_comments": {
+            "type": "string",
+            "description": "Internal comments, not shown to the customer."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "ISO currency code, e.g. NZD; default the account currency."
+          },
+          "tax_status": {
+            "type": "string",
+            "enum": [
+              "Incl",
+              "Excl",
+              "Exempt"
+            ],
+            "description": "Prices including or excluding tax, or exempt. Default the account setting."
+          },
+          "delivery_company": {
+            "type": "string",
+            "description": "Delivery company name."
+          },
+          "delivery_first_name": {
+            "type": "string",
+            "description": "Delivery first name."
+          },
+          "delivery_last_name": {
+            "type": "string",
+            "description": "Delivery last name."
+          },
+          "delivery_address1": {
+            "type": "string",
+            "description": "Delivery address line 1."
+          },
+          "delivery_address2": {
+            "type": "string",
+            "description": "Delivery address line 2."
+          },
+          "delivery_city": {
+            "type": "string",
+            "description": "Delivery city."
+          },
+          "delivery_state": {
+            "type": "string",
+            "description": "Delivery state or region."
+          },
+          "delivery_postal_code": {
+            "type": "string",
+            "description": "Delivery postal code."
+          },
+          "delivery_country": {
+            "type": "string",
+            "description": "Delivery country."
+          },
+          "freight_total": {
+            "type": "number",
+            "description": "Freight charge."
+          },
+          "line_items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Product option code (SKU)."
+                },
+                "productOptionId": {
+                  "type": "integer",
+                  "description": "Product option id, instead of code."
+                },
+                "qty": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode, instead of code."
+                },
+                "unitPrice": {
+                  "type": "number",
+                  "description": "Unit price; without it the customer's price column applies."
+                },
+                "discount": {
+                  "type": "number",
+                  "description": "Discount amount per unit."
+                },
+                "lineComments": {
+                  "type": "string",
+                  "description": "Comment on the line."
+                }
+              },
+              "required": [
+                "qty"
+              ]
+            },
+            "description": "Lines: [{\"code\": \"SKU-1\", \"qty\": 2, \"unitPrice\": 9.5}]. Identify the product by code, productOptionId or barcode."
+          }
+        },
+        "required": [
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/SalesOrders",
+        "bodyMapping": {
+          "__raw": [
+            {
+              "memberId": "$member_id",
+              "memberEmail": "$member_email",
+              "branchId": "$branch_id",
+              "reference": "$reference",
+              "customerOrderNo": "$customer_order_no",
+              "isApproved": "$is_approved",
+              "stage": "$stage",
+              "estimatedDeliveryDate": "$estimated_delivery_date",
+              "deliveryInstructions": "$delivery_instructions",
+              "internalComments": "$internal_comments",
+              "currencyCode": "$currency_code",
+              "taxStatus": "$tax_status",
+              "deliveryCompany": "$delivery_company",
+              "deliveryFirstName": "$delivery_first_name",
+              "deliveryLastName": "$delivery_last_name",
+              "deliveryAddress1": "$delivery_address1",
+              "deliveryAddress2": "$delivery_address2",
+              "deliveryCity": "$delivery_city",
+              "deliveryState": "$delivery_state",
+              "deliveryPostalCode": "$delivery_postal_code",
+              "deliveryCountry": "$delivery_country",
+              "freightTotal": "$freight_total",
+              "lineItems": "$line_items"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_update_sales_order",
+      "description": "Update header fields of one sales order: stage, tracking code, customer order number, estimated delivery date, delivery instructions, internal comments, sales person. Fields left out stay unchanged. It does not dispatch, invoice or void the order (do that in Cin7). Check success and errors in the [{index, success, id, errors}] answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sales order id."
+          },
+          "stage": {
+            "type": "string",
+            "description": "Workflow stage, e.g. New, Awaiting Payment, Processing, On Hold, Dispatched."
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "Carrier tracking code."
+          },
+          "customer_order_no": {
+            "type": "string",
+            "description": "The customer's own order number."
+          },
+          "estimated_delivery_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Estimated delivery, ISO 8601 UTC."
+          },
+          "delivery_instructions": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Delivery instructions."
+          },
+          "internal_comments": {
+            "type": "string",
+            "description": "Internal comments."
+          },
+          "sales_person_id": {
+            "type": "integer",
+            "description": "User id from cin7_omni_list_users."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/SalesOrders",
+        "bodyMapping": {
+          "__raw": [
+            {
+              "id": "$id",
+              "stage": "$stage",
+              "trackingCode": "$tracking_code",
+              "customerOrderNo": "$customer_order_no",
+              "estimatedDeliveryDate": "$estimated_delivery_date",
+              "deliveryInstructions": "$delivery_instructions",
+              "internalComments": "$internal_comments",
+              "salesPersonId": "$sales_person_id"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_create_purchase_order",
+      "description": "Create one purchase order to a supplier (member_id of a Supplier contact). Saved as a draft unless is_approved is true. Check success and errors in the [{index, success, id, errors}] answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "integer",
+            "description": "Supplier contact id."
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Receiving branch id; defaults to the main branch."
+          },
+          "reference": {
+            "type": "string",
+            "description": "PO reference; leave empty for the next automatic number."
+          },
+          "is_approved": {
+            "type": "boolean",
+            "default": false,
+            "description": "false (default) saves a draft; true approves it."
+          },
+          "estimated_arrival_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Expected arrival, ISO 8601 UTC."
+          },
+          "supplier_invoice_reference": {
+            "type": "string",
+            "description": "Supplier invoice reference."
+          },
+          "internal_comments": {
+            "type": "string",
+            "description": "Internal comments."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "ISO currency code of the supplier."
+          },
+          "line_items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Product option code (SKU)."
+                },
+                "productOptionId": {
+                  "type": "integer",
+                  "description": "Product option id, instead of code."
+                },
+                "qty": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "unitPrice": {
+                  "type": "number",
+                  "description": "Unit cost from the supplier."
+                }
+              },
+              "required": [
+                "qty"
+              ]
+            },
+            "description": "Lines: [{\"code\": \"SKU-1\", \"qty\": 24, \"unitPrice\": 3.2}]."
+          }
+        },
+        "required": [
+          "member_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/PurchaseOrders",
+        "bodyMapping": {
+          "__raw": [
+            {
+              "memberId": "$member_id",
+              "branchId": "$branch_id",
+              "reference": "$reference",
+              "isApproved": "$is_approved",
+              "estimatedArrivalDate": "$estimated_arrival_date",
+              "supplierInvoiceReference": "$supplier_invoice_reference",
+              "internalComments": "$internal_comments",
+              "currencyCode": "$currency_code",
+              "lineItems": "$line_items"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_create_contact",
+      "description": "Create one contact (customer or supplier). Email must be unique. Check success and errors in the [{index, success, id, errors}] answer; id is the new contact id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Customer",
+              "Supplier"
+            ],
+            "description": "Customer or Supplier."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email; unique per contact."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Address line 1."
+          },
+          "address2": {
+            "type": "string",
+            "description": "Address line 2."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "post_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "account_number": {
+            "type": "string",
+            "maxLength": 10,
+            "description": "Account number, at most 10 characters."
+          },
+          "price_column": {
+            "type": "string",
+            "description": "Price column used for this contact, e.g. RetailPrice, WholesalePrice."
+          },
+          "payment_terms": {
+            "type": "string",
+            "description": "Payment terms."
+          },
+          "tax_number": {
+            "type": "string",
+            "description": "Tax or VAT number."
+          },
+          "group": {
+            "type": "string",
+            "description": "Contact group."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/Contacts",
+        "bodyMapping": {
+          "__raw": [
+            {
+              "type": "$type",
+              "company": "$company",
+              "firstName": "$first_name",
+              "lastName": "$last_name",
+              "email": "$email",
+              "phone": "$phone",
+              "mobile": "$mobile",
+              "address1": "$address1",
+              "address2": "$address2",
+              "city": "$city",
+              "state": "$state",
+              "postCode": "$post_code",
+              "country": "$country",
+              "accountNumber": "$account_number",
+              "priceColumn": "$price_column",
+              "paymentTerms": "$payment_terms",
+              "taxNumber": "$tax_number",
+              "group": "$group",
+              "notes": "$notes"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_update_contact",
+      "description": "Update one contact; only the fields given change. Check success and errors in the [{index, success, id, errors}] answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Contact id."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email; unique per contact."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile."
+          },
+          "address1": {
+            "type": "string",
+            "description": "Address line 1."
+          },
+          "address2": {
+            "type": "string",
+            "description": "Address line 2."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "post_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "account_number": {
+            "type": "string",
+            "maxLength": 10,
+            "description": "Account number, at most 10 characters."
+          },
+          "price_column": {
+            "type": "string",
+            "description": "Price column used for this contact, e.g. RetailPrice, WholesalePrice."
+          },
+          "payment_terms": {
+            "type": "string",
+            "description": "Payment terms."
+          },
+          "tax_number": {
+            "type": "string",
+            "description": "Tax or VAT number."
+          },
+          "group": {
+            "type": "string",
+            "description": "Contact group."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "false deactivates the contact."
+          },
+          "on_hold": {
+            "type": "boolean",
+            "description": "true puts the account on hold."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/Contacts",
+        "bodyMapping": {
+          "__raw": [
+            {
+              "id": "$id",
+              "company": "$company",
+              "firstName": "$first_name",
+              "lastName": "$last_name",
+              "email": "$email",
+              "phone": "$phone",
+              "mobile": "$mobile",
+              "address1": "$address1",
+              "address2": "$address2",
+              "city": "$city",
+              "state": "$state",
+              "postCode": "$post_code",
+              "country": "$country",
+              "accountNumber": "$account_number",
+              "priceColumn": "$price_column",
+              "paymentTerms": "$payment_terms",
+              "taxNumber": "$tax_number",
+              "group": "$group",
+              "notes": "$notes",
+              "isActive": "$is_active",
+              "onHold": "$on_hold"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_create_branch_transfer",
+      "description": "Create a stock transfer between two branches. Saved as a draft unless is_approved is true; dispatch and receipt are done in Cin7. Check success and errors in the [{index, success, id, errors}] answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_branch_id": {
+            "type": "integer",
+            "description": "Branch the stock leaves."
+          },
+          "destination_branch_id": {
+            "type": "integer",
+            "description": "Branch the stock goes to."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Reference; empty for automatic."
+          },
+          "is_approved": {
+            "type": "boolean",
+            "default": false,
+            "description": "false (default) saves a draft; true approves it."
+          },
+          "internal_comments": {
+            "type": "string",
+            "description": "Internal comments."
+          },
+          "line_items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Product option code (SKU)."
+                },
+                "productOptionId": {
+                  "type": "integer",
+                  "description": "Product option id, instead of code."
+                },
+                "qty": {
+                  "type": "number",
+                  "description": "Quantity."
+                }
+              },
+              "required": [
+                "qty"
+              ]
+            },
+            "description": "Lines: [{\"code\": \"SKU-1\", \"qty\": 5}]."
+          }
+        },
+        "required": [
+          "source_branch_id",
+          "destination_branch_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/BranchTransfers",
+        "bodyMapping": {
+          "__raw": [
+            {
+              "sourceBranchId": "$source_branch_id",
+              "destinationBranchId": "$destination_branch_id",
+              "reference": "$reference",
+              "isApproved": "$is_approved",
+              "internalComments": "$internal_comments",
+              "lineItems": "$line_items"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cin7_omni_create_adjustment",
+      "description": "Create a stock adjustment in one branch (positive qty adds stock, negative removes it). Saved as a draft unless is_approved is true; an approved adjustment changes stock on hand and stock value at once. Installed switched off. Check success and errors in the [{index, success, id, errors}] answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "integer",
+            "description": "Branch id."
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Reference, at most 20 characters."
+          },
+          "adjustment_reason": {
+            "type": "string",
+            "description": "Reason, e.g. Damaged, Stocktake."
+          },
+          "is_approved": {
+            "type": "boolean",
+            "default": false,
+            "description": "false (default) saves a draft; true approves and applies it."
+          },
+          "line_items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Product option code (SKU)."
+                },
+                "productOptionId": {
+                  "type": "integer",
+                  "description": "Product option id, instead of code."
+                },
+                "qty": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "unitCost": {
+                  "type": "number",
+                  "description": "Unit cost for added stock."
+                }
+              },
+              "required": [
+                "qty"
+              ]
+            },
+            "description": "Lines: [{\"code\": \"SKU-1\", \"qty\": -2}]. qty is the change, negative to remove."
+          }
+        },
+        "required": [
+          "branch_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/Adjustments",
+        "bodyMapping": {
+          "__raw": [
+            {
+              "branchId": "$branch_id",
+              "reference": "$reference",
+              "adjustmentReason": "$adjustment_reason",
+              "isApproved": "$is_approved",
+              "lineItems": "$line_items"
+            }
+          ]
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

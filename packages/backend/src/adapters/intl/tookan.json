@@ -1,0 +1,1417 @@
+{
+  "slug": "tookan",
+  "name": "Tookan",
+  "description": "Tookan (Jungleworks) delivery and field workforce management: create, edit, assign and track pickup, delivery, appointment and field tasks, update their status, see agents with their location and status, teams and customers. One API key.",
+  "instructions": "## Tookan\nThis connector works with **Tookan** by Jungleworks, the delivery and field workforce management platform, through its API v2 at `https://api.tookanapp.com/v2`: tasks (pickups, deliveries, appointments, field work), agents, teams and customers.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://app.tookanapp.com and open **Settings, API Keys**.\n2. On the **V2** tab copy the API key (click **Generate Key** if the list is empty) into `TOOKAN_API_KEY`.\n\nEvery Tookan call is a POST with a JSON body; the connector adds `api_key` to each body. The key gives full access to the account, so treat it like a password.\n\n**Where to start**: `tookan_list_teams` for team ids, `tookan_list_agents` for agents and their status, `tookan_list_tasks` for the tasks of a day (it needs job_type, start_date and end_date), `tookan_get_task_details` for one task.\n\n**Tasks**: `tookan_list_tasks` (one task type at a time, at most 31 days, paged with requested_page), `tookan_get_task_details` (up to 100 ids, with history), `tookan_get_tasks_by_order_id` (your own order ids), `tookan_get_related_tasks` (the pickup and delivery of one order). Write: `tookan_create_task`, `tookan_edit_task`, `tookan_update_task_status`, `tookan_assign_task`. `tookan_delete_task` is installed switched off; cancel with status 9 instead.\n\n**Task kinds** for `tookan_create_task` (layout_type, has_pickup, has_delivery): pickup 0,1,0; delivery 0,0,1; pickup and delivery 0,1,1; appointment 1,0,0; field workforce 2,0,0. Statuses: 0 assigned, 1 started, 2 successful, 3 failed, 4 in progress or arrived, 6 unassigned, 7 accepted, 8 declined, 9 cancelled, 10 deleted. Task types in lists: 0 pickup, 1 delivery, 2 appointment, 3 field workforce.\n\n**Times**: task times are local `YYYY-MM-DD HH:MM:SS`; list filters take `YYYY-MM-DD`. `timezone` is the UTC offset in minutes with the sign inverted: India -330, Central Europe -60 (winter) or -120 (summer), New York 300 (winter). Answers mix formats and use `0000-00-00 00:00:00` for empty times.\n\n**Agents and teams**: `tookan_list_agents`, `tookan_get_agent_profile`, `tookan_get_agent_location`, `tookan_find_agents_nearby`, `tookan_list_teams`. Agent status: 0 available, 1 offline, 2 busy.\n\n**Customers**: `tookan_list_customers`, `tookan_find_customer_by_phone`, `tookan_get_customer`, `tookan_add_customer`, `tookan_edit_customer`; `tookan_delete_customer` is installed switched off. Login tokens and password hashes that Tookan includes in agent and customer answers are removed before they reach the AI.\n\n**Errors**: Tookan reports the result in the body: `status` 200 is success, 100 a missing parameter, 101 an invalid API key, 201 a refused action with the reason in `message`, 404 an execution error. The connector turns these into failed calls with the message.\n\n**Not included**: agent wallet transactions, payouts and fare estimates (no money movement), merchant administration, geofences and webhooks. Tookan publishes no rate limits; avoid tight loops and prefer the date and id filters.",
+  "aliases": [
+    "Jungleworks Tookan",
+    "Tookan API"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "tookan",
+  "docsUrl": "https://tookanapi.docs.apiary.io/",
+  "requiredEnvVars": [
+    "TOOKAN_API_KEY"
+  ],
+  "envVarMeta": {
+    "TOOKAN_API_KEY": {
+      "label": "API key (V2)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Tookan, Settings, API Keys, V2 tab: copy the key, or click Generate Key if there is none.",
+      "link": "https://app.tookanapp.com/#/app/settings/apikey",
+      "pattern": "^[A-Za-z0-9]{20,200}$",
+      "patternMessage": "Paste the V2 API key only, letters and digits without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Tookan refused the API key. Copy the key from Settings, API Keys, V2 tab again (a V1 key does not work), or generate a new one.",
+    "400": "Tookan refused the request; its message names the missing or wrong field.",
+    "rate_limited": "Tookan is throttling requests. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "tookan_list_teams",
+    "params": {}
+  },
+  "prerequisites": "A Tookan account (app.tookanapp.com) with access to Settings, API Keys to copy the V2 key. About 2 minutes.",
+  "connector": {
+    "name": "Tookan API v2",
+    "type": "REST",
+    "baseUrl": "https://api.tookanapp.com/v2",
+    "authType": "NONE",
+    "authConfig": {},
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "equals": 101,
+          "messagePath": "message",
+          "status": 401
+        },
+        {
+          "path": "status",
+          "in": [
+            100,
+            201
+          ],
+          "messagePath": "message",
+          "status": 400
+        },
+        {
+          "path": "status",
+          "equals": 404,
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "tookan_list_tasks",
+      "description": "List tasks of one type in a date range (at most 31 days): job_id, order_id, job_status (0 assigned, 1 started, 2 successful, 3 failed, 4 in progress or arrived, 6 unassigned, 7 accepted, 8 declined, 9 cancelled, 10 deleted), job_type, agent (fleet_id, fleet_name), team, customer, addresses, scheduled and completed times, tracking link. Paginated with requested_page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_type": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Task type: 0 pickup, 1 delivery, 2 appointment, 3 field workforce."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First task date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last task date, YYYY-MM-DD, at most 31 days after start_date."
+          },
+          "job_status": {
+            "type": "string",
+            "description": "Only tasks in this status, as a string: 0 assigned, 1 started, 2 successful, 3 failed, 4 in progress or arrived, 6 unassigned, 7 accepted, 8 declined, 9 cancelled, 10 deleted."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Only tasks of this team."
+          },
+          "fleet_id": {
+            "type": "integer",
+            "description": "Only tasks of this agent."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Only tasks of this customer."
+          },
+          "order_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only tasks with these order ids."
+          },
+          "job_id": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these task ids."
+          },
+          "custom_fields": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 includes custom field values."
+          },
+          "is_pagination": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1,
+            "description": "1 (default) pages the result."
+          },
+          "requested_page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "job_type",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_all_tasks",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "job_type": "$job_type",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "job_status": "$job_status",
+          "team_id": "$team_id",
+          "fleet_id": "$fleet_id",
+          "customer_id": "$customer_id",
+          "order_id": "$order_id",
+          "job_id": "$job_id",
+          "custom_fields": "$custom_fields",
+          "is_pagination": "$is_pagination",
+          "requested_page": "$requested_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_get_task_details",
+      "description": "Read up to 100 tasks by id: status, type, agent, team, customer, addresses and coordinates, scheduled, started, arrived and completed times (UTC and local), pickup and delivery relationship, distance travelled, tracking link, and optionally the task history and custom fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "integer"
+            },
+            "description": "Task ids, at most 100."
+          },
+          "include_task_history": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0,
+            "description": "1 adds the status history (assigned, started, notes, images)."
+          },
+          "job_additional_info": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 adds custom fields and extra details."
+          }
+        },
+        "required": [
+          "job_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_job_details",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "job_ids": "$job_ids",
+          "include_task_history": "$include_task_history",
+          "job_additional_info": "$job_additional_info"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_get_tasks_by_order_id",
+      "description": "Read the tasks created with your own order ids (order_id field of create): the same details as tookan_get_task_details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            },
+            "description": "Your order ids."
+          },
+          "include_task_history": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0,
+            "description": "1 adds the status history."
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_job_details_by_order_id",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "order_ids": "$order_ids",
+          "include_task_history": "$include_task_history"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_get_related_tasks",
+      "description": "Read the pickup and delivery tasks that belong together, by the pickup_delivery_relationship value of a task. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_delivery_relationship": {
+            "type": "string",
+            "description": "The pickup_delivery_relationship value from a task's details."
+          }
+        },
+        "required": [
+          "pickup_delivery_relationship"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_related_tasks",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "pickup_delivery_relationship": "$pickup_delivery_relationship"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_list_agents",
+      "description": "List agents (drivers, field staff, called fleets in the API): fleet_id, name, username, email, phone, status (0 available, 1 offline, 2 busy), is_available, is_active, last location and time, battery level, transport type, tags, team, fleet_type (1 captive, 2 freelancer). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only agents with this name."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Comma-separated tags."
+          },
+          "include_any_tag": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 matches agents with any of the tags, 0 with all of them."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "0 free, 1 busy."
+          },
+          "fleet_type": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 captive, 2 freelancer."
+          },
+          "fleet_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these agent ids."
+          },
+          "include_team_id": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 adds the agent's team ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_all_fleets",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "name": "$name",
+          "tags": "$tags",
+          "include_any_tag": "$include_any_tag",
+          "status": "$status",
+          "fleet_type": "$fleet_type",
+          "fleet_ids": "$fleet_ids",
+          "include_team_id": "$include_team_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].access_token",
+            "data[*].password",
+            "data[*].device_token",
+            "data[*].app_access_token",
+            "data[*].otp"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_get_agent_profile",
+      "description": "Read one agent's profile and current tasks: name, contact, tags, transport, team, status, location, and the jobs assigned to them. Login tokens and password hashes are removed from the answer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fleet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Agent id from tookan_list_agents."
+          }
+        },
+        "required": [
+          "fleet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/view_fleet_profile",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "fleet_id": "$fleet_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.fleet_details[*].access_token",
+            "data.fleet_details[*].password",
+            "data.fleet_details[*].device_token",
+            "data.fleet_details[*].app_access_token",
+            "data.fleet_details[*].otp"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_get_agent_location",
+      "description": "Read the last known latitude and longitude of one agent. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fleet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Agent id."
+          }
+        },
+        "required": [
+          "fleet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_fleet_location",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "fleet_id": "$fleet_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_find_agents_nearby",
+      "description": "Find agents within a radius of a point (up to 100 km), with their distance and status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude of the point."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude of the point."
+          },
+          "radius_in_metres": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "description": "Search radius in metres, at most 100000."
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "radius_in_metres"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/getNearbyAgents",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "radius_in_metres": "$radius_in_metres"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].access_token",
+            "data[*].password",
+            "data[*].device_token",
+            "data[*].app_access_token",
+            "data[*].otp"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_list_teams",
+      "description": "List teams: team_id, team_name, address, coordinates, tags, battery_usage. Team ids are used when creating and assigning tasks. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/view_all_team_only",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_list_customers",
+      "description": "List customers: customer_id, name, phone, email, address and coordinates. Search by name or phone; paginated with requested_page. Login tokens and password hashes are removed from the answer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_username": {
+            "type": "string",
+            "description": "Search by customer name."
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "Search by phone."
+          },
+          "is_pagination": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1,
+            "description": "1 (default) pages the result."
+          },
+          "requested_page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/get_all_customers",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "customer_username": "$customer_username",
+          "customer_phone": "$customer_phone",
+          "is_pagination": "$is_pagination",
+          "requested_page": "$requested_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].access_token",
+            "data[*].password",
+            "data[*].device_token",
+            "data[*].app_access_token",
+            "data[*].otp",
+            "data.customers[*].access_token",
+            "data.customers[*].password",
+            "data.customers[*].device_token",
+            "data.customers[*].app_access_token",
+            "data.customers[*].otp"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_find_customer_by_phone",
+      "description": "Find customers by phone number: customer_id, name, email, phone, address and coordinates. Login tokens and password hashes are removed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_phone": {
+            "type": "string",
+            "description": "Phone number, with or without country code."
+          }
+        },
+        "required": [
+          "customer_phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/find_customer_with_phone",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "customer_phone": "$customer_phone"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].access_token",
+            "data[*].password",
+            "data[*].device_token",
+            "data[*].app_access_token",
+            "data[*].otp"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_get_customer",
+      "description": "Read one customer's profile: name, phone, email, address, coordinates and created date. Login tokens and password hashes are removed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer id."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/view_customer_profile",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "customer_id": "$customer_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.cust_details[*].access_token",
+            "data.cust_details[*].password",
+            "data.cust_details[*].device_token",
+            "data.cust_details[*].app_access_token",
+            "data.cust_details[*].otp"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tookan_create_task",
+      "description": "Create a task. Choose the kind with layout_type, has_pickup and has_delivery: pickup only (0, 1, 0), delivery only (0, 0, 1), pickup and delivery (0, 1, 1), appointment (1, 0, 0), field workforce (2, 0, 0). Pickup needs job_pickup_address and job_pickup_datetime; delivery, appointment and field workforce need customer_address and job_delivery_datetime (appointment and field workforce also job_pickup_datetime as start). timezone is required. Returns job_id, job_hash and tracking links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "integer",
+            "minimum": -840,
+            "maximum": 720,
+            "description": "UTC offset in minutes with the sign inverted, as Tookan expects: India (UTC+5:30) = -330, Central Europe winter (UTC+1) = -60, New York winter (UTC-5) = 300."
+          },
+          "layout_type": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "default": 0,
+            "description": "Workflow: 0 pickup and delivery (default), 1 appointment, 2 field workforce."
+          },
+          "has_pickup": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 when the task has a pickup (layout_type 0 only)."
+          },
+          "has_delivery": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 when the task has a delivery (layout_type 0 only)."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Your own order id, to find the task later with tookan_get_tasks_by_order_id."
+          },
+          "job_description": {
+            "type": "string",
+            "description": "Description shown to the agent."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from tookan_list_teams."
+          },
+          "fleet_id": {
+            "type": "integer",
+            "description": "Agent id from tookan_list_agents, to assign the task directly."
+          },
+          "auto_assignment": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 lets Tookan auto-assign an agent."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Comma-separated tags; auto-assignment then picks agents with these tags."
+          },
+          "tracking_link": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1,
+            "description": "1 (default) returns a customer tracking link."
+          },
+          "notify": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 sends the customer notifications configured in Tookan."
+          },
+          "geofence": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 assigns only agents inside the matching geofence."
+          },
+          "job_pickup_address": {
+            "type": "string",
+            "description": "Pickup address (required with has_pickup 1)."
+          },
+          "job_pickup_datetime": {
+            "type": "string",
+            "description": "Pickup time, or start time for appointment and field workforce tasks, local time 'YYYY-MM-DD HH:MM:SS'."
+          },
+          "job_pickup_name": {
+            "type": "string",
+            "description": "Pickup contact name."
+          },
+          "job_pickup_phone": {
+            "type": "string",
+            "description": "Pickup contact phone with country code."
+          },
+          "job_pickup_email": {
+            "type": "string",
+            "description": "Pickup contact email."
+          },
+          "job_pickup_latitude": {
+            "type": "string",
+            "description": "Pickup latitude."
+          },
+          "job_pickup_longitude": {
+            "type": "string",
+            "description": "Pickup longitude."
+          },
+          "pickup_custom_field_template": {
+            "type": "string",
+            "description": "Custom field template name for the pickup."
+          },
+          "pickup_meta_data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Custom field label as defined in the template."
+                },
+                "data": {
+                  "description": "Value."
+                }
+              },
+              "required": [
+                "label",
+                "data"
+              ]
+            },
+            "description": "Custom field values for the template: [{\"label\": \"Price\", \"data\": \"100\"}]."
+          },
+          "customer_address": {
+            "type": "string",
+            "description": "Delivery address, or the address of an appointment or field workforce task."
+          },
+          "job_delivery_datetime": {
+            "type": "string",
+            "description": "Delivery time, or end time for appointment and field workforce tasks, local time 'YYYY-MM-DD HH:MM:SS'."
+          },
+          "customer_username": {
+            "type": "string",
+            "description": "Customer name."
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer phone with country code."
+          },
+          "customer_email": {
+            "type": "string",
+            "description": "Customer email."
+          },
+          "latitude": {
+            "type": "string",
+            "description": "Delivery latitude."
+          },
+          "longitude": {
+            "type": "string",
+            "description": "Delivery longitude."
+          },
+          "custom_field_template": {
+            "type": "string",
+            "description": "Custom field template name for the delivery or appointment."
+          },
+          "meta_data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Custom field label as defined in the template."
+                },
+                "data": {
+                  "description": "Value."
+                }
+              },
+              "required": [
+                "label",
+                "data"
+              ]
+            },
+            "description": "Custom field values for the template: [{\"label\": \"Price\", \"data\": \"100\"}]."
+          }
+        },
+        "required": [
+          "timezone",
+          "layout_type",
+          "has_pickup",
+          "has_delivery"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/create_task",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "timezone": "$timezone",
+          "layout_type": "$layout_type",
+          "has_pickup": "$has_pickup",
+          "has_delivery": "$has_delivery",
+          "order_id": "$order_id",
+          "job_description": "$job_description",
+          "team_id": "$team_id",
+          "fleet_id": "$fleet_id",
+          "auto_assignment": "$auto_assignment",
+          "tags": "$tags",
+          "tracking_link": "$tracking_link",
+          "notify": "$notify",
+          "geofence": "$geofence",
+          "job_pickup_address": "$job_pickup_address",
+          "job_pickup_datetime": "$job_pickup_datetime",
+          "job_pickup_name": "$job_pickup_name",
+          "job_pickup_phone": "$job_pickup_phone",
+          "job_pickup_email": "$job_pickup_email",
+          "job_pickup_latitude": "$job_pickup_latitude",
+          "job_pickup_longitude": "$job_pickup_longitude",
+          "pickup_custom_field_template": "$pickup_custom_field_template",
+          "pickup_meta_data": "$pickup_meta_data",
+          "customer_address": "$customer_address",
+          "job_delivery_datetime": "$job_delivery_datetime",
+          "customer_username": "$customer_username",
+          "customer_phone": "$customer_phone",
+          "customer_email": "$customer_email",
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "custom_field_template": "$custom_field_template",
+          "meta_data": "$meta_data"
+        }
+      }
+    },
+    {
+      "name": "tookan_edit_task",
+      "description": "Change an existing task: addresses, times, customer, description, team, agent, tags or custom fields. Send job_id, timezone and the fields to change (the same fields as tookan_create_task).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (job_id)."
+          },
+          "timezone": {
+            "type": "integer",
+            "minimum": -840,
+            "maximum": 720,
+            "description": "UTC offset in minutes with the sign inverted, as Tookan expects: India (UTC+5:30) = -330, Central Europe winter (UTC+1) = -60, New York winter (UTC-5) = 300."
+          },
+          "layout_type": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "default": 0,
+            "description": "Workflow: 0 pickup and delivery (default), 1 appointment, 2 field workforce."
+          },
+          "has_pickup": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 when the task has a pickup (layout_type 0 only)."
+          },
+          "has_delivery": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 when the task has a delivery (layout_type 0 only)."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Your own order id, to find the task later with tookan_get_tasks_by_order_id."
+          },
+          "job_description": {
+            "type": "string",
+            "description": "Description shown to the agent."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Team id from tookan_list_teams."
+          },
+          "fleet_id": {
+            "type": "integer",
+            "description": "Agent id from tookan_list_agents, to assign the task directly."
+          },
+          "auto_assignment": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 lets Tookan auto-assign an agent."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Comma-separated tags; auto-assignment then picks agents with these tags."
+          },
+          "tracking_link": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1,
+            "description": "1 (default) returns a customer tracking link."
+          },
+          "notify": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 sends the customer notifications configured in Tookan."
+          },
+          "geofence": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 assigns only agents inside the matching geofence."
+          },
+          "job_pickup_address": {
+            "type": "string",
+            "description": "Pickup address (required with has_pickup 1)."
+          },
+          "job_pickup_datetime": {
+            "type": "string",
+            "description": "Pickup time, or start time for appointment and field workforce tasks, local time 'YYYY-MM-DD HH:MM:SS'."
+          },
+          "job_pickup_name": {
+            "type": "string",
+            "description": "Pickup contact name."
+          },
+          "job_pickup_phone": {
+            "type": "string",
+            "description": "Pickup contact phone with country code."
+          },
+          "job_pickup_email": {
+            "type": "string",
+            "description": "Pickup contact email."
+          },
+          "job_pickup_latitude": {
+            "type": "string",
+            "description": "Pickup latitude."
+          },
+          "job_pickup_longitude": {
+            "type": "string",
+            "description": "Pickup longitude."
+          },
+          "pickup_custom_field_template": {
+            "type": "string",
+            "description": "Custom field template name for the pickup."
+          },
+          "pickup_meta_data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Custom field label as defined in the template."
+                },
+                "data": {
+                  "description": "Value."
+                }
+              },
+              "required": [
+                "label",
+                "data"
+              ]
+            },
+            "description": "Custom field values for the template: [{\"label\": \"Price\", \"data\": \"100\"}]."
+          },
+          "customer_address": {
+            "type": "string",
+            "description": "Delivery address, or the address of an appointment or field workforce task."
+          },
+          "job_delivery_datetime": {
+            "type": "string",
+            "description": "Delivery time, or end time for appointment and field workforce tasks, local time 'YYYY-MM-DD HH:MM:SS'."
+          },
+          "customer_username": {
+            "type": "string",
+            "description": "Customer name."
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer phone with country code."
+          },
+          "customer_email": {
+            "type": "string",
+            "description": "Customer email."
+          },
+          "latitude": {
+            "type": "string",
+            "description": "Delivery latitude."
+          },
+          "longitude": {
+            "type": "string",
+            "description": "Delivery longitude."
+          },
+          "custom_field_template": {
+            "type": "string",
+            "description": "Custom field template name for the delivery or appointment."
+          },
+          "meta_data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Custom field label as defined in the template."
+                },
+                "data": {
+                  "description": "Value."
+                }
+              },
+              "required": [
+                "label",
+                "data"
+              ]
+            },
+            "description": "Custom field values for the template: [{\"label\": \"Price\", \"data\": \"100\"}]."
+          }
+        },
+        "required": [
+          "job_id",
+          "timezone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/edit_task",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "job_id": "$job_id",
+          "timezone": "$timezone",
+          "layout_type": "$layout_type",
+          "has_pickup": "$has_pickup",
+          "has_delivery": "$has_delivery",
+          "order_id": "$order_id",
+          "job_description": "$job_description",
+          "team_id": "$team_id",
+          "fleet_id": "$fleet_id",
+          "auto_assignment": "$auto_assignment",
+          "tags": "$tags",
+          "tracking_link": "$tracking_link",
+          "notify": "$notify",
+          "geofence": "$geofence",
+          "job_pickup_address": "$job_pickup_address",
+          "job_pickup_datetime": "$job_pickup_datetime",
+          "job_pickup_name": "$job_pickup_name",
+          "job_pickup_phone": "$job_pickup_phone",
+          "job_pickup_email": "$job_pickup_email",
+          "job_pickup_latitude": "$job_pickup_latitude",
+          "job_pickup_longitude": "$job_pickup_longitude",
+          "pickup_custom_field_template": "$pickup_custom_field_template",
+          "pickup_meta_data": "$pickup_meta_data",
+          "customer_address": "$customer_address",
+          "job_delivery_datetime": "$job_delivery_datetime",
+          "customer_username": "$customer_username",
+          "customer_phone": "$customer_phone",
+          "customer_email": "$customer_email",
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "custom_field_template": "$custom_field_template",
+          "meta_data": "$meta_data"
+        }
+      }
+    },
+    {
+      "name": "tookan_update_task_status",
+      "description": "Set the status of one or more tasks: 0 assigned, 1 started, 2 successful, 3 failed, 4 in progress or arrived, 6 unassigned, 7 accepted, 8 declined, 9 cancelled, 10 deleted. Use 9 to cancel a task, 2 to mark it successful.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Task id, or several comma-separated."
+          },
+          "job_status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              6,
+              7,
+              8,
+              9
+            ],
+            "description": "New status: 0 assigned, 1 started, 2 successful, 3 failed, 4 in progress or arrived, 6 unassigned, 7 accepted, 8 declined, 9 cancelled, 10 deleted."
+          }
+        },
+        "required": [
+          "job_id",
+          "job_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/update_task_status",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "job_id": "$job_id",
+          "job_status": "$job_status"
+        }
+      }
+    },
+    {
+      "name": "tookan_assign_task",
+      "description": "Assign a task to an agent of a team (or reassign it). notify 1 alerts the agent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (job_id)."
+          },
+          "fleet_id": {
+            "type": "integer",
+            "description": "Agent id."
+          },
+          "team_id": {
+            "type": "integer",
+            "description": "Team id of the agent."
+          },
+          "notify": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 notifies the agent."
+          },
+          "job_status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              6,
+              7,
+              8,
+              9
+            ],
+            "description": "Optional status to set at the same time."
+          }
+        },
+        "required": [
+          "job_id",
+          "fleet_id",
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/assign_fleet_to_task",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "job_id": "$job_id",
+          "fleet_id": "$fleet_id",
+          "team_id": "$team_id",
+          "notify": "$notify",
+          "job_status": "$job_status"
+        }
+      }
+    },
+    {
+      "name": "tookan_delete_task",
+      "description": "Delete a task. It cannot be restored; to stop a task but keep it, set status 9 (cancelled) with tookan_update_task_status. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (job_id)."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/delete_task",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "job_id": "$job_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "tookan_add_customer",
+      "description": "Add a customer to the Tookan customer list. Returns customer_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Customer name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone with country code."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address."
+          },
+          "latitude": {
+            "type": "string",
+            "description": "Latitude."
+          },
+          "longitude": {
+            "type": "string",
+            "description": "Longitude."
+          }
+        },
+        "required": [
+          "name",
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customer/add",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "user_type": 0,
+          "name": "$name",
+          "phone": "$phone",
+          "email": "$email",
+          "address": "$address",
+          "latitude": "$latitude",
+          "longitude": "$longitude"
+        }
+      }
+    },
+    {
+      "name": "tookan_edit_customer",
+      "description": "Change a customer's name, phone, email, address or coordinates by customer_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Customer name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone with country code."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address."
+          },
+          "latitude": {
+            "type": "string",
+            "description": "Latitude."
+          },
+          "longitude": {
+            "type": "string",
+            "description": "Longitude."
+          }
+        },
+        "required": [
+          "customer_id",
+          "name",
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customer/edit",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "user_type": 0,
+          "customer_id": "$customer_id",
+          "name": "$name",
+          "phone": "$phone",
+          "email": "$email",
+          "address": "$address",
+          "latitude": "$latitude",
+          "longitude": "$longitude"
+        }
+      }
+    },
+    {
+      "name": "tookan_delete_customer",
+      "description": "Delete a customer. It cannot be restored. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer id."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/delete_customer",
+        "bodyMapping": {
+          "api_key": "{{TOOKAN_API_KEY}}",
+          "customer_id": "$customer_id"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}
