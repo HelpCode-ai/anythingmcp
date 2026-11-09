@@ -193,6 +193,33 @@ describe('LicenseService — a licence key stays with its workspace', () => {
     expect(licenses[0].organizationId).toBe('org-new');
   });
 
+  it('stores the billing snapshot when a key is bound for the first time (cloud)', async () => {
+    const licenses: MockLicense[] = [];
+    const ctx = makeService({ isCloud: true, licenses });
+    const upsert = withUpsert(ctx, licenses);
+    (ctx.svc.verifyLicense as jest.Mock).mockResolvedValue({
+      valid: true,
+      plan: 'starter',
+      billing: { status: 'trialing', interval: 'month', trialEnd: '2026-11-16T00:00:00.000Z', cancelling: false },
+    });
+
+    await ctx.svc.setLicenseKey(KEY, 'org-new');
+    const arg = upsert.mock.calls[0][0];
+    expect(arg.create.billing).toMatchObject({ status: 'trialing', interval: 'month' });
+    expect(arg.update.billing).toMatchObject({ status: 'trialing' });
+  });
+
+  it('leaves billing alone when the site sends none', async () => {
+    const licenses: MockLicense[] = [];
+    const ctx = makeService({ isCloud: true, licenses });
+    const upsert = withUpsert(ctx, licenses);
+
+    await ctx.svc.setLicenseKey(KEY, 'org-new');
+    const arg = upsert.mock.calls[0][0];
+    expect(arg.create).not.toHaveProperty('billing');
+    expect(arg.update).not.toHaveProperty('billing');
+  });
+
   it('does not apply to self-hosted, where one admin owns every workspace', async () => {
     const licenses = [mkLicense({ licenseKey: KEY, organizationId: 'org-a' })];
     const ctx = makeService({ isCloud: false, licenses });
