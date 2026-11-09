@@ -10,6 +10,7 @@ import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { decodeResponseBody } from '../binary-response.util';
 import { buildOAuth1Header } from './oauth1-signer';
+import { hmacJwtHeader, isHmacJwtSignature } from './hmac-jwt.util';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { BearerTokenRenewalService } from './bearer-token-renewal.service';
 import { ShopeeTokenService, isShopeeAccessTokenRejected, isShopeeAuth } from './shopee-token.service';
@@ -1038,6 +1039,15 @@ export class RestEngine {
     if (config.authType !== 'HMAC' || !config.authConfig) return;
     const sig = config.authConfig.signature as Record<string, unknown> | undefined;
     if (!sig) return;
+    // A JWT signed with the shared secret instead of a digest over the
+    // request (Ghost Admin API): see hmac-jwt.util.ts. Signed per request,
+    // so a retry gets a fresh token too.
+    if (isHmacJwtSignature(sig)) {
+      const { name, value } = hmacJwtHeader(sig);
+      const extra = (sig.extraHeaders as Record<string, string> | undefined) ?? {};
+      axiosConfig.headers = { ...axiosConfig.headers, ...extra, [name]: value };
+      return;
+    }
 
     const algorithm = String(sig.algorithm ?? 'sha256');
     const encoding = String(sig.encoding ?? 'hex') === 'base64' ? 'base64' : 'hex';
