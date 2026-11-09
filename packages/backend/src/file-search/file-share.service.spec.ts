@@ -76,7 +76,12 @@ describe('FileShareService', () => {
     const signed = ok.url.split('/d/')[1];
     const file = await svc.openSigned(signed);
     expect(file.filename).toBe('a.csv');
-    await expect(svc.openSigned(signed.slice(0, -2) + 'xx')).rejects.toThrow(/Invalid/);
+    // Change the signature's first character: it carries 6 full bits. The last
+    // base64url character carries only 2, so editing the tail could leave the
+    // decoded bytes unchanged (about 1 run in 1,000).
+    const at = signed.lastIndexOf('.') + 1;
+    const tampered = signed.slice(0, at) + (signed[at] === 'A' ? 'B' : 'A') + signed.slice(at + 1);
+    await expect(svc.openSigned(tampered)).rejects.toThrow(/Invalid/);
     await expect(svc.issueDownload(token, { sub: 'u2', organizationId: 'other' })).rejects.toThrow(/another workspace/);
   });
 
