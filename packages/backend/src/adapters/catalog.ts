@@ -161,6 +161,8 @@ import * as chargebee from './intl/chargebee.json';
 import * as chatwoot from './intl/chatwoot.json';
 import * as checko from './intl/checko.json';
 import * as chitChats from './intl/chit-chats.json';
+import * as cin7Core from './intl/cin7-core.json';
+import * as cin7Omni from './intl/cin7-omni.json';
 import * as circleci from './intl/circleci.json';
 import * as claap from './intl/claap.json';
 import * as clay from './intl/clay.json';
@@ -323,6 +325,7 @@ import * as hibob from './intl/hibob.json';
 import * as higgsfield from './intl/higgsfield.json';
 import * as homeAssistant from './intl/home-assistant.json';
 import * as hostinger from './intl/hostinger.json';
+import * as housecallPro from './intl/housecall-pro.json';
 import * as hubspot from './intl/hubspot.json';
 import * as huggingface from './intl/huggingface.json';
 import * as hunter from './intl/hunter.json';
@@ -434,6 +437,7 @@ import * as newsapi from './intl/newsapi.json';
 import * as nextcloud from './intl/nextcloud.json';
 import * as nextcloudFileSearch from './intl/nextcloud-file-search.json';
 import * as nimble from './intl/nimble.json';
+import * as ninjaone from './intl/ninjaone.json';
 import * as nocodb from './intl/nocodb.json';
 import * as nominatim from './intl/nominatim.json';
 import * as noonMarketplace from './intl/noon-marketplace.json';
@@ -612,6 +616,7 @@ import * as telegramBot from './intl/telegram-bot.json';
 import * as telnyx from './intl/telnyx.json';
 import * as tezga from './intl/tezga.json';
 import * as theOddsApi from './intl/the-odds-api.json';
+import * as threads from './intl/threads.json';
 import * as ticktick from './intl/ticktick.json';
 import * as tidio from './intl/tidio.json';
 import * as tiktokAds from './intl/tiktok-ads.json';
@@ -620,6 +625,7 @@ import * as timetastic from './intl/timetastic.json';
 import * as tldv from './intl/tldv.json';
 import * as todoist from './intl/todoist.json';
 import * as togglTrack from './intl/toggl-track.json';
+import * as tookan from './intl/tookan.json';
 import * as tradingview from './intl/tradingview.json';
 import * as trello from './intl/trello.json';
 import * as trendyol from './intl/trendyol.json';
@@ -706,6 +712,7 @@ import * as fattureInCloud from './it/fatture-in-cloud.json';
 import * as openapiCompany from './it/openapi-company.json';
 import * as teamsystem from './it/teamsystem.json';
 import * as zucchetti from './it/zucchetti.json';
+import * as borme from './es/borme.json';
 import * as holded from './es/holded.json';
 import * as quipu from './es/quipu.json';
 import * as axonaut from './fr/axonaut.json';
@@ -717,6 +724,7 @@ import * as pennylane from './fr/pennylane.json';
 import * as qonto from './fr/qonto.json';
 import * as sellsy from './fr/sellsy.json';
 import * as afasProfit from './nl/afas-profit.json';
+import * as bolCom from './nl/bol-com.json';
 import * as droppery from './nl/droppery.json';
 import * as exactOnline from './nl/exact-online.json';
 import * as moneybird from './nl/moneybird.json';
@@ -727,9 +735,16 @@ import * as nbbCbso from './be/nbb-cbso.json';
 import * as teamleader from './be/teamleader.json';
 import * as tidely from './be/tidely.json';
 import * as bexio from './ch/bexio.json';
+import * as shab from './ch/shab.json';
 import * as fortnox from './se/fortnox.json';
 import * as vismaEaccounting from './se/visma-eaccounting.json';
 import * as eConomic from './dk/e-conomic.json';
+import * as brreg from './no/brreg.json';
+import * as prhYtj from './fi/prh-ytj.json';
+import * as ares from './cz/ares.json';
+import * as krs from './pl/krs.json';
+import * as anaf from './ro/anaf.json';
+import * as egyptEta from './eg/egypt-eta.json';
 // === AUTOGEN-IMPORTS-END ===
 import { buildGraphqlBuiltinTools } from '../connectors/graphql-builtins';
 import {
@@ -1192,6 +1207,8 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   chatwoot as unknown as AdapterDefinition,
   checko as unknown as AdapterDefinition,
   chitChats as unknown as AdapterDefinition,
+  cin7Core as unknown as AdapterDefinition,
+  cin7Omni as unknown as AdapterDefinition,
   circleci as unknown as AdapterDefinition,
   claap as unknown as AdapterDefinition,
   clay as unknown as AdapterDefinition,
@@ -1354,6 +1371,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   higgsfield as unknown as AdapterDefinition,
   homeAssistant as unknown as AdapterDefinition,
   hostinger as unknown as AdapterDefinition,
+  housecallPro as unknown as AdapterDefinition,
   hubspot as unknown as AdapterDefinition,
   huggingface as unknown as AdapterDefinition,
   hunter as unknown as AdapterDefinition,
@@ -1465,6 +1483,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   nextcloud as unknown as AdapterDefinition,
   nextcloudFileSearch as unknown as AdapterDefinition,
   nimble as unknown as AdapterDefinition,
+  ninjaone as unknown as AdapterDefinition,
   nocodb as unknown as AdapterDefinition,
   nominatim as unknown as AdapterDefinition,
   noonMarketplace as unknown as AdapterDefinition,
@@ -1643,6 +1662,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   telnyx as unknown as AdapterDefinition,
   tezga as unknown as AdapterDefinition,
   theOddsApi as unknown as AdapterDefinition,
+  threads as unknown as AdapterDefinition,
   ticktick as unknown as AdapterDefinition,
   tidio as unknown as AdapterDefinition,
   tiktokAds as unknown as AdapterDefinition,
@@ -1651,6 +1671,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   tldv as unknown as AdapterDefinition,
   todoist as unknown as AdapterDefinition,
   togglTrack as unknown as AdapterDefinition,
+  tookan as unknown as AdapterDefinition,
   tradingview as unknown as AdapterDefinition,
   trello as unknown as AdapterDefinition,
   trendyol as unknown as AdapterDefinition,
@@ -1737,6 +1758,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   openapiCompany as unknown as AdapterDefinition,
   teamsystem as unknown as AdapterDefinition,
   zucchetti as unknown as AdapterDefinition,
+  borme as unknown as AdapterDefinition,
   holded as unknown as AdapterDefinition,
   quipu as unknown as AdapterDefinition,
   axonaut as unknown as AdapterDefinition,
@@ -1748,6 +1770,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   qonto as unknown as AdapterDefinition,
   sellsy as unknown as AdapterDefinition,
   afasProfit as unknown as AdapterDefinition,
+  bolCom as unknown as AdapterDefinition,
   droppery as unknown as AdapterDefinition,
   exactOnline as unknown as AdapterDefinition,
   moneybird as unknown as AdapterDefinition,
@@ -1758,9 +1781,16 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   teamleader as unknown as AdapterDefinition,
   tidely as unknown as AdapterDefinition,
   bexio as unknown as AdapterDefinition,
+  shab as unknown as AdapterDefinition,
   fortnox as unknown as AdapterDefinition,
   vismaEaccounting as unknown as AdapterDefinition,
   eConomic as unknown as AdapterDefinition,
+  brreg as unknown as AdapterDefinition,
+  prhYtj as unknown as AdapterDefinition,
+  ares as unknown as AdapterDefinition,
+  krs as unknown as AdapterDefinition,
+  anaf as unknown as AdapterDefinition,
+  egyptEta as unknown as AdapterDefinition,
 ];
 // === AUTOGEN-ARRAY-END ===
 
