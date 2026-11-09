@@ -102,7 +102,7 @@ function SetupContent() {
   const [phase, setPhase] = useState<Phase>(backFromProvider ? 'working' : 'form');
   const [error, setError] = useState('');
   const [verifyFailed, setVerifyFailed] = useState<VerifyResult | null>(null);
-  const [result, setResult] = useState<{ connectorId: string; sample?: string; verified: boolean } | null>(null);
+  const [result, setResult] = useState<{ connectorId: string; sample?: string; verified: boolean; note?: string } | null>(null);
   const [redirectUri, setRedirectUri] = useState<string | null>(null);
   /** Secrets the existing connector already holds: shown as set, may stay empty. */
   const [storedSecrets, setStoredSecrets] = useState<string[]>([]);
@@ -399,9 +399,12 @@ function SetupContent() {
     }
   };
 
-  /** Create the connector, or store the values on the existing one. Returns its id. */
-  const save = async (): Promise<string> => {
-    const creds = credentials();
+  /**
+   * Create the connector, or store the values on the existing one. Returns its id.
+   * `fix`: values the check corrected (an Odoo database name), saved over what was typed.
+   */
+  const save = async (fix?: Record<string, string>): Promise<string> => {
+    const creds = { ...credentials(), ...(fix ?? {}) };
     if (connectorId) {
       await connectors.updateEnvVars(connectorId, creds, token!);
       return connectorId;
@@ -510,10 +513,14 @@ function SetupContent() {
       // provider that they never came back from.
       const check =
         info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), connectorId ?? undefined);
+      // The check found the right value itself (an Odoo database name the
+      // address names): it goes into the field and is saved with the rest.
+      const fix = check && check.ok !== null ? check.corrected : undefined;
+      if (fix) setValues((v) => ({ ...v, ...fix }));
       // Keys refused at the end of a guide with a wait step (a connector
       // finished from the chat, a step skipped): keep them and wait there.
       if (check && check.ok === false && check.kind === 'auth_failed' && waitStepAt >= 0) {
-        const id = await save();
+        const id = await save(fix);
         if (!existingId) router.replace(withConnector(id));
         lastProviderCheck.current = Date.now();
         setProviderReady(false);
@@ -554,7 +561,7 @@ function SetupContent() {
       // A Shopee shop is authorized right after the keys are saved, through
       // Shopee's own signed link.
       if (slug === 'shopee') {
-        const id = await save();
+        const id = await save(fix);
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.shopeeAuthorize(id, token, returnTo);
         if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
@@ -564,7 +571,7 @@ function SetupContent() {
       }
       // A TikTok shop likewise, through TikTok Shop's seller authorization link.
       if (slug === 'tiktok-shop') {
-        const id = await save();
+        const id = await save(fix);
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.tiktokShopAuthorize(id, token, returnTo);
         if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
@@ -573,7 +580,7 @@ function SetupContent() {
         return;
       }
       if (info.setupKind === 'oauth_browser') {
-        const id = await save();
+        const id = await save(fix);
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.oauthAuthorize(id, token, returnTo);
         if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
@@ -581,10 +588,20 @@ function SetupContent() {
         window.location.href = auth.authorizationUrl;
         return;
       }
-      const id = await save();
-      setResult({ connectorId: id, sample: check && check.ok ? check.sample : undefined, verified: check?.ok === true });
+      const id = await save(fix);
+      setResult({
+        connectorId: id,
+        sample: check && check.ok ? check.sample : undefined,
+        verified: check?.ok === true,
+        note: check && check.ok ? check.note : undefined,
+      });
       setPhase('done');
-      productEvents.track('setup_completed', token, { adapterSlug: slug, kind: info.setupKind, verified: check?.ok === true });
+      productEvents.track('setup_completed', token, {
+        adapterSlug: slug,
+        kind: info.setupKind,
+        verified: check?.ok === true,
+        ...(fix ? { corrected: Object.keys(fix).join(',') } : {}),
+      });
     } catch (e) {
       fail(e);
     }
@@ -623,6 +640,11 @@ function SetupContent() {
           <div className="mb-6">
             <GuideStepper steps={info.setupGuide.steps} current={info.setupGuide.steps.length + 1} />
           </div>
+        )}
+        {result.note && (
+          <p role="status" className="mb-4 rounded-[9px] bg-[var(--t-info-bg)] px-3 py-2 text-sm text-[var(--t-info-fg)]">
+            {result.note}
+          </p>
         )}
         <SetupSuccess
           name={info.name}
