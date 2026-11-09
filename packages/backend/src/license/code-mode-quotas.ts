@@ -52,16 +52,18 @@ export function inlineCodeAllowedForPlan(plan: string | null | undefined): boole
 }
 
 /**
- * The plan a workspace is treated as for code-mode gating. A Cloud trial that
- * has added a card (`cardTrial`) is high-intent and low-abuse — a payment method
- * is on file — so it gets the full Team experience during the trial (inline code
- * and the Team cap) to drive conversion. A free (card-less) trial, and every
- * other plan, is unchanged. Self-hosted trials have no card and so never match.
+ * The plan a workspace is treated as for code-mode gating (saved code tools and
+ * inline code). Every Cloud trial gets the Team experience, so a new workspace
+ * can try everything before it picks a plan (decided 2026-11-09). Run quotas
+ * are resolved separately (`codeRunQuotaPlan`): a trial without a card keeps a
+ * small run budget. A self-hosted trial is unchanged unless it has a card,
+ * which it never does (no Stripe billing there).
  */
 export function effectiveCodeModePlan(
   plan: string | null | undefined,
   cardTrial: boolean,
+  cloud = false,
 ): string {
-  if (cardTrial && plan === 'trial') return 'team';
+  if (plan === 'trial' && (cardTrial || cloud)) return 'team';
   return plan ?? 'community';
 }
