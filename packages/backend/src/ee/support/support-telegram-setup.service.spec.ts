@@ -12,6 +12,9 @@ const TOKEN = fakeToken('7712345678', 'x');
 const OTHER_TOKEN = fakeToken('1234567', 'y');
 const HOST = 'cloud.anythingmcp.com';
 const USER_ID = 'user-1';
+const TEMPLATE_URL = 'https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}';
+const emptyConnector = (id: string) => ({ id, baseUrl: TEMPLATE_URL, envVars: null });
+const setConnector = (id: string) => ({ id, baseUrl: TEMPLATE_URL, envVars: { TELEGRAM_BOT_TOKEN: OTHER_TOKEN } });
 const ORG_ID = 'org-1';
 
 class TestService extends SupportTelegramSetupService {
@@ -26,6 +29,8 @@ class TestService extends SupportTelegramSetupService {
       deps.email,
       deps.securityEvents,
       deps.productEvents,
+      deps.connectors,
+      deps.mcpServer,
     );
     this.desk = desk;
     this.telegram = telegram;
@@ -60,7 +65,9 @@ function message(over: Partial<DeskMessage> = {}): DeskMessage {
 function setup(opts: {
   conversation?: any;
   user?: any;
-  existing?: any;
+  /** The workspace's Telegram connectors; a list per call when it changes between reads. */
+  existing?: any[];
+  existingLater?: any[];
   telegramStatus?: number;
   telegramBody?: any;
   licenceError?: Error;
@@ -92,7 +99,12 @@ function setup(opts: {
   const deps = {
     prisma: {
       user: { findUnique: jest.fn().mockResolvedValue(user) },
-      connector: { findFirst: jest.fn().mockResolvedValue(opts.existing ?? null) },
+      connector: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce(opts.existing ?? [])
+          .mockResolvedValue(opts.existingLater ?? opts.existing ?? []),
+      },
       organizationMember: {
         findMany: jest.fn().mockResolvedValue([
           { user: { email: 'boss@example.com', name: 'Boss' } },
@@ -116,6 +128,8 @@ function setup(opts: {
     email: { sendConnectorAddedFromSupportEmail: jest.fn().mockResolvedValue(true) },
     securityEvents: { log: jest.fn().mockResolvedValue(undefined) },
     productEvents: { log: jest.fn().mockResolvedValue(undefined) },
+    connectors: { update: jest.fn().mockResolvedValue({}) },
+    mcpServer: { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) },
   };
   const status = opts.telegramStatus ?? 200;
   const body = opts.telegramBody ?? { ok: true, result: { id: 7712345678, is_bot: true, username: 'acme_bot' } };
@@ -249,11 +263,69 @@ describe('SupportTelegramSetupService', () => {
   });
 
   it('never replaces or duplicates an existing Telegram connector', async () => {
-    const { service, desk, deps, telegram } = setup({ existing: { id: 'old-1' } });
+    const { service, desk, deps, telegram } = setup({ existing: [emptyConnector('empty-1'), setConnector('old-1')] });
     await expect(service.handleMessage(message())).resolves.toBe('already_has_telegram');
     expect(telegram).not.toHaveBeenCalled();
     expect(deps.adapters.importAdapter).not.toHaveBeenCalled();
+    expect(deps.connectors.update).not.toHaveBeenCalled();
     expect(replies(desk)).toContain('connector=old-1');
+  });
+
+  it('counts a connector whose address holds the token as set up', async () => {
+    const resolved = { id: 'old-2', baseUrl: `https://api.telegram.org/bot${OTHER_TOKEN}`, envVars: null };
+    const { service, deps } = setup({ existing: [resolved] });
+    await expect(service.handleMessage(message())).resolves.toBe('already_has_telegram');
+    expect(deps.connectors.update).not.toHaveBeenCalled();
+  });
+
+  it('fills the oldest Telegram connector when all of them are still empty', async () => {
+    const { service, desk, deps } = setup({ existing: [emptyConnector('empty-1'), emptyConnector('empty-2')] });
+    await expect(service.handleMessage(message())).resolves.toBe('filled');
+
+    expect(deps.adapters.importAdapter).not.toHaveBeenCalled();
+    expect(deps.licenseGuard.checkCanCreateConnector).not.toHaveBeenCalled();
+    expect(deps.connectors.update).toHaveBeenCalledTimes(1);
+    expect(deps.connectors.update).toHaveBeenCalledWith('empty-1', { envVars: { TELEGRAM_BOT_TOKEN: TOKEN } });
+    expect(deps.mcpServer.reloadConnectorTools).toHaveBeenCalledWith('empty-1');
+    expect(deps.mcpServers.attachToDefaultServer).toHaveBeenCalledWith(USER_ID, ORG_ID, 'empty-1');
+    expect(deps.securityEvents.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ connectorId: 'empty-1', filledEmptyConnector: true }),
+      }),
+    );
+    expect(desk.addTags).toHaveBeenCalledWith('conv-1', [AUTO_SETUP_TAG]);
+    expect(replies(desk)).toContain('/connectors/empty-1');
+    expect(replies(desk)).not.toContain(TOKEN);
+    expect(deps.email.sendConnectorAddedFromSupportEmail).toHaveBeenCalled();
+  });
+
+  it('keeps other variables of the empty connector', async () => {
+    const empty = { id: 'empty-1', baseUrl: TEMPLATE_URL, envVars: { TELEGRAM_BOT_TOKEN: '  ', OTHER: 'kept' } };
+    const { service, deps } = setup({ existing: [empty] });
+    await expect(service.handleMessage(message())).resolves.toBe('filled');
+    expect(deps.connectors.update).toHaveBeenCalledWith('empty-1', {
+      envVars: { TELEGRAM_BOT_TOKEN: TOKEN, OTHER: 'kept' },
+    });
+  });
+
+  it('leaves the connector alone when a token reached it while checking', async () => {
+    const { service, desk, deps } = setup({
+      existing: [emptyConnector('empty-1')],
+      existingLater: [setConnector('empty-1')],
+    });
+    await expect(service.handleMessage(message())).resolves.toBe('already_has_telegram');
+    expect(deps.connectors.update).not.toHaveBeenCalled();
+    expect(replies(desk)).toContain('connector=empty-1');
+  });
+
+  it('does not fill an empty connector with a token Telegram refuses', async () => {
+    const { service, deps } = setup({
+      existing: [emptyConnector('empty-1')],
+      telegramStatus: 401,
+      telegramBody: { ok: false },
+    });
+    await expect(service.handleMessage(message())).resolves.toBe('invalid_token');
+    expect(deps.connectors.update).not.toHaveBeenCalled();
   });
 
   it('answers with the catalog hint when Telegram refuses the token', async () => {
