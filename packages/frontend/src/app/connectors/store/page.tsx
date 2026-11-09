@@ -41,6 +41,7 @@ const REGION_LABELS: Record<string, string> = {
   in: 'India',
   br: 'Brazil',
   ng: 'Nigeria',
+  eg: 'Egypt',
   jp: 'Japan',
   eu: 'Europe',
   us: 'United States',
@@ -72,6 +73,7 @@ const REGION_FLAGS: Record<string, string> = {
   in: '🇮🇳',
   br: '🇧🇷',
   ng: '🇳🇬',
+  eg: '🇪🇬',
   jp: '🇯🇵',
 };
 

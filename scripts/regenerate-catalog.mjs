@@ -27,7 +27,7 @@ const CATALOG_PATH = join(ADAPTERS_DIR, 'catalog.ts');
 const REGIONS = [
   'de', 'gb', 'intl', 'br', 'in', 'jp', 'ng',
   'it', 'es', 'fr', 'nl', 'be', 'ch', 'se', 'dk',
-  'no', 'fi', 'cz', 'pl', 'ro',
+  'no', 'fi', 'cz', 'pl', 'ro', 'eg',
 ];
 
 const IMPORTS_BEGIN = '// === AUTOGEN-IMPORTS-BEGIN === run scripts/regenerate-catalog.mjs ===';
