@@ -594,7 +594,8 @@ export class LicenseController {
     const organizationId: string | undefined = req.user?.organizationId;
     if (!this.planFit || !this.deployment.isCloud() || !organizationId) throw new NotFoundException();
     if (plan !== undefined && !isFitPlan(plan)) throw new BadRequestException('plan must be starter or team');
-    if (plan) return { plans: { [plan]: await this.planFit.fit(organizationId, plan) } };
+    if (plan === 'starter') return { plans: { starter: await this.planFit.fit(organizationId, 'starter') } };
+    if (plan === 'team') return { plans: { team: await this.planFit.fit(organizationId, 'team') } };
     return { plans: await this.planFit.fitAll(organizationId) };
   }
 
