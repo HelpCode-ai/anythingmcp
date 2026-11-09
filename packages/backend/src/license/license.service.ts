@@ -1160,6 +1160,13 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
 
     const instanceId = await this.getInstanceId();
 
+    // verifyLicense() stores the billing snapshot only on an existing row, so a
+    // key bound for the first time (checkout handoff, unclaimed-licence
+    // binder) got its billing only at the next re-verification, up to a day
+    // later. Keep the snapshot from this same answer.
+    const billing = parseLicenseBilling(verification.billing);
+    const billingData = billing ? { billing: billing as unknown as Prisma.InputJsonValue } : {};
+
     // Upsert local license
     const license = await this.prisma.license.upsert({
       where: { licenseKey },
@@ -1173,6 +1180,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         lastVerifiedAt: new Date(),
         instanceId,
         organizationId: organizationId || undefined,
+        ...billingData,
       },
       create: {
         licenseKey,
@@ -1185,6 +1193,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         lastVerifiedAt: new Date(),
         instanceId,
         organizationId: organizationId || undefined,
+        ...billingData,
       },
     });
 
