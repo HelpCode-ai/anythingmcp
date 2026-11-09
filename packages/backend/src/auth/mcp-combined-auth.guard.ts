@@ -5,6 +5,7 @@ import { McpApiKeysService } from '../roles/mcp-api-keys.service';
 import { PrismaService } from '../common/prisma.service';
 import { resolveUserIdFromTokenPayload } from './resolve-user-id.util';
 import { presentedMcpApiKey } from './mcp-api-key.util';
+import { mcpWwwAuthenticate } from './mcp-www-authenticate.util';
 
 /**
  * Combined auth guard for per-server MCP endpoints (/mcp/:serverId).
@@ -200,31 +201,13 @@ export class McpCombinedAuthGuard implements CanActivate {
    * pointing at the protected-resource metadata document.
    */
   private deny(req: any, res: any, reqPath: string): boolean {
-    const proto =
-      (req.headers['x-forwarded-proto'] as string) ||
-      (req.secure ? 'https' : 'http');
-    const host =
-      (req.headers['x-forwarded-host'] as string) || req.headers.host;
-    const baseUrl = host ? `${proto}://${host}` : (this.configService.get<string>('SERVER_URL') || 'http://localhost:4000');
-    // RFC 9728: the protected-resource metadata URL appends the resource path
-    // (/mcp or /mcp/<serverId>) to the well-known prefix, so each resource
-    // advertises its own metadata. Falls back to the root document.
-    const resourceMetadataUrl = reqPath.startsWith('/mcp')
-      ? `${baseUrl}/.well-known/oauth-protected-resource${reqPath}`
-      : `${baseUrl}/.well-known/oauth-protected-resource`;
-
-    // RFC 6750 §3.1: `error="invalid_token"` tells the client its token is
-    // expired or revoked and it must re-authorize, rather than retry. A request
-    // that carried no token at all gets no error code — the RFC says so, and a
-    // client's first unauthenticated probe should not be told its token is bad.
-    const presentedToken = (req.headers['authorization'] as string | undefined)
-      ?.toLowerCase()
-      .startsWith('bearer ');
-    const errorAttr = presentedToken ? 'error="invalid_token", ' : '';
-
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer realm="AnythingMCP MCP Server", ${errorAttr}resource_metadata="${resourceMetadataUrl}"`,
+      mcpWwwAuthenticate(
+        req,
+        reqPath,
+        this.configService.get<string>('SERVER_URL') || 'http://localhost:4000',
+      ),
     );
     res.status(401).json({
       jsonrpc: '2.0',
