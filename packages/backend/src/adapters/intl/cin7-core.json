@@ -1,0 +1,1927 @@
+{
+  "slug": "cin7-core",
+  "name": "Cin7 Core",
+  "description": "Cin7 Core (formerly DEAR Inventory) through External API v2: products and stock availability per location, sales with orders, fulfilments, invoices and payments (read only), purchases, customers, suppliers, stock adjustments and transfers. Create sales, purchases, customers, suppliers and transfers. Account ID and Application Key.",
+  "instructions": "## Cin7 Core\nThis connector works with **Cin7 Core**, the inventory management system formerly called **DEAR Inventory** (signs in at `inventory.dearsystems.com`), through its External API v2 at `https://inventory.dearsystems.com/ExternalApi/v2`: products and stock availability, sales with their orders, fulfilments, invoices and payments (read only), purchases, customers, suppliers, stock adjustments and stock transfers.\n\n**Core or Omni?** Cin7 sells two different products. **Cin7 Core** (this connector, ex DEAR Systems) uses an Account ID and an Application Key. **Cin7 Omni** (the original Cin7, go.cin7.com) has a separate API v1 with an API username and key: use the `cin7-omni` connector for it. The credentials of one do not work on the other.\n\n**Setup (about 2 minutes)**\n1. In Cin7 Core open the API setup page, **Integrations, API** (https://inventory.dearsystems.com/ExternalAPI).\n2. Click **+** to add an API application and give it a name.\n3. Copy the **Account ID** into `CIN7_CORE_ACCOUNT_ID` and the **Application Key** into `CIN7_CORE_APPLICATION_KEY`.\n\nThe connector sends them in the `api-auth-accountid` and `api-auth-applicationkey` headers. Deleting the API application revokes the key.\n\n**Where to start**: `cin7_core_get_me` checks the connection and shows the base currency; `cin7_core_list_locations` gives location names; `cin7_core_list_sales` and `cin7_core_get_product_availability` answer most questions.\n\n**Reading**: `cin7_core_list_products`, `cin7_core_get_product_availability`, `cin7_core_list_sales`, `cin7_core_get_sale`, `cin7_core_get_sale_order`, `cin7_core_get_sale_fulfilments`, `cin7_core_get_sale_invoices`, `cin7_core_get_sale_payments`, `cin7_core_list_purchases`, `cin7_core_get_purchase`, `cin7_core_get_purchase_order`, `cin7_core_list_customers`, `cin7_core_list_suppliers`, `cin7_core_list_tax_rules`, `cin7_core_list_payment_terms`, `cin7_core_list_stock_adjustments`, `cin7_core_get_stock_adjustment`, `cin7_core_list_stock_transfers`, `cin7_core_get_stock_transfer`.\n\n**Creating a sale takes two calls**: `cin7_core_create_sale` makes the header (customer, location) and returns its `ID`; `cin7_core_create_sale_order` adds the lines. Lines need Name, Quantity, Price, Tax and TaxRule plus SKU or ProductID. Keep the order DRAFT unless the user wants it authorised: AUTHORISED allocates stock, backorders shortfalls silently and locks the order against further API edits. Purchases work the same way: `cin7_core_create_purchase`, then `cin7_core_create_purchase_order`.\n\n**Other writes**: `cin7_core_create_customer`, `cin7_core_update_customer`, `cin7_core_create_supplier` (they need payment term and tax rule names and account codes), `cin7_core_create_stock_transfer` (DRAFT by default). `cin7_core_create_stock_adjustment` is installed switched off: a COMPLETED adjustment posts stock movements and accounting entries at once, and its quantities are the new on-hand values, not differences. The connector never records, changes or deletes payments, invoices or credit notes, and has no delete or void tools.\n\n**Identifiers**: records use GUIDs (`ID`, `SaleID`, `TaskID`). Locations, tax rules, payment terms and price tiers are referenced by name.\n\n**Paging**: lists take `page` (from 1) and `limit` (default 100, at most 1000); the answer has `Total` and the records under a list key (Products, SaleList, PurchaseList, CustomerList...). Use `updated_since` or `modified_since` for incremental reads. Dates are UTC, `yyyy-MM-ddTHH:mm:ss`.\n\n**Rate limit**: **60 calls per minute** per API application; beyond that Cin7 Core answers 429 (older accounts 503). Use large pages and filters instead of many small calls.\n\n**Errors**: a refused call answers 400 with `[{\"ErrorCode\": 400, \"Exception\": \"...\"}]` naming the problem (unknown customer, location or tax rule, a document that is already authorised). 403 means a wrong Account ID or Application Key.",
+  "aliases": [
+    "DEAR Inventory",
+    "DEAR Systems",
+    "Cin7 Core API"
+  ],
+  "region": "intl",
+  "category": "erp",
+  "icon": "cin7-core",
+  "docsUrl": "https://dearinventory.docs.apiary.io/",
+  "requiredEnvVars": [
+    "CIN7_CORE_ACCOUNT_ID",
+    "CIN7_CORE_APPLICATION_KEY"
+  ],
+  "envVarMeta": {
+    "CIN7_CORE_ACCOUNT_ID": {
+      "label": "Account ID",
+      "kind": "credential",
+      "help": "Cin7 Core, Integrations, API: the Account ID shown with your API application (a GUID).",
+      "link": "https://inventory.dearsystems.com/ExternalAPI",
+      "example": "a1b2c3d4-e5f6-4711-8a9b-0c1d2e3f4a5b",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Account ID is a GUID such as a1b2c3d4-e5f6-4711-8a9b-0c1d2e3f4a5b."
+    },
+    "CIN7_CORE_APPLICATION_KEY": {
+      "label": "Application Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Cin7 Core, Integrations, API: add an API application with + and copy its key.",
+      "link": "https://inventory.dearsystems.com/ExternalAPI",
+      "pattern": "^\\S{20,100}$",
+      "patternMessage": "Paste the Application Key without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Cin7 Core refused the Account ID or Application Key. Copy both again from Integrations, API. Cin7 Omni (go.cin7.com) credentials do not work here; use the Cin7 Omni connector for those.",
+    "403": "Cin7 Core refused the Account ID or Application Key. Copy both again from Integrations, API, or add a new API application.",
+    "404": "Cin7 Core found no record with that ID, or the endpoint is not available on this plan.",
+    "rate_limited": "Cin7 Core allows 60 calls per minute per API application. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "cin7_core_get_me",
+    "params": {}
+  },
+  "prerequisites": "A Cin7 Core (DEAR Inventory) account with access to Integrations, API to create an API application. About 2 minutes.",
+  "connector": {
+    "name": "Cin7 Core External API v2",
+    "type": "REST",
+    "baseUrl": "https://inventory.dearsystems.com/ExternalApi/v2",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "api-auth-applicationkey",
+      "apiKey": "{{CIN7_CORE_APPLICATION_KEY}}"
+    },
+    "headers": {
+      "api-auth-accountid": "{{CIN7_CORE_ACCOUNT_ID}}",
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "cin7_core_get_me",
+      "description": "Read the Cin7 Core account the keys belong to: company name, base currency, time zone, lock date, tax calculation method, default tax rules. A good first call to check the connection. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      }
+    },
+    {
+      "name": "cin7_core_list_locations",
+      "description": "List warehouses and stock locations: ID, Name, address, IsDefault, bins and whether deprecated. Location names are used by sales, purchases, availability and transfers. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only locations whose name starts with this."
+          },
+          "include_deprecated": {
+            "type": "boolean",
+            "description": "true also returns deprecated locations."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ref/location",
+        "queryParams": {
+          "Name": "$name",
+          "Deprecated": "$include_deprecated",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_list_products",
+      "description": "List products (or read one by id): ID, SKU, Name, Category, Brand, Type (Stock or Service), CostingMethod, UOM, Status, Barcode, price tiers PriceTier1-10, AverageCost, DefaultLocation, weights and dimensions, LastModifiedOn. Name and SKU match by 'contains'. Read-only, paginated (list key Products).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Only this product (ID, a GUID)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name contains this text."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU contains this text."
+          },
+          "modified_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only products changed since this UTC time, e.g. 2026-01-01T00:00:00."
+          },
+          "include_deprecated": {
+            "type": "boolean",
+            "description": "true also returns deprecated products."
+          },
+          "include_bom": {
+            "type": "boolean",
+            "description": "true adds the bill of materials."
+          },
+          "include_suppliers": {
+            "type": "boolean",
+            "description": "true adds the product's suppliers and their prices."
+          },
+          "include_reorder_levels": {
+            "type": "boolean",
+            "description": "true adds reorder levels per location."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product",
+        "queryParams": {
+          "ID": "$product_id",
+          "Name": "$name",
+          "Sku": "$sku",
+          "ModifiedSince": "$modified_since",
+          "IncludeDeprecated": "$include_deprecated",
+          "IncludeBOM": "$include_bom",
+          "IncludeSuppliers": "$include_suppliers",
+          "IncludeReorderLevels": "$include_reorder_levels",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_product_availability",
+      "description": "Stock availability per product and location (and bin or batch): SKU, Name, Location, Bin, Batch, OnHand, Allocated, Available, OnOrder, StockOnHand (value), InTransit, NextDeliveryDate. Filter by SKU (exact), name (starts with), location name or category. Read-only, paginated (list key ProductAvailabilityList).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Only this product (ID)."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Exact SKU."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name starts with this."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location name, from cin7_core_list_locations."
+          },
+          "batch": {
+            "type": "string",
+            "description": "Batch or serial number."
+          },
+          "category": {
+            "type": "string",
+            "description": "Product category."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ref/productavailability",
+        "queryParams": {
+          "ID": "$product_id",
+          "Sku": "$sku",
+          "Name": "$name",
+          "Location": "$location",
+          "Batch": "$batch",
+          "Category": "$category",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_list_sales",
+      "description": "List sales (quotes, orders and invoices share one sale record): SaleID, OrderNumber, Status, OrderDate, Customer, CustomerID, InvoiceNumber, CustomerReference, totals, currency, OrderStatus, CombinedPickingStatus, CombinedPackingStatus, CombinedShippingStatus, CombinedInvoiceStatus, CreditNoteStatus, Updated. Search matches order number, status, customer, invoice number, customer reference or credit note number. Read-only, paginated (list key SaleList).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to look for in order number, customer, invoice number, customer reference, credit note number or status."
+          },
+          "created_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only sales created since this UTC time."
+          },
+          "updated_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only sales changed since this UTC time."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ESTIMATING",
+              "ESTIMATED",
+              "ORDERING",
+              "ORDERED",
+              "BACKORDERED",
+              "PICKING",
+              "PICKED",
+              "PACKING",
+              "PACKED",
+              "SHIPPING",
+              "SHIPPED",
+              "INVOICED",
+              "CREDITED",
+              "COMPLETED",
+              "VOIDED"
+            ],
+            "description": "Only sales in this overall status."
+          },
+          "order_status": {
+            "type": "string",
+            "enum": [
+              "NOT AVAILABLE",
+              "DRAFT",
+              "AUTHORISED",
+              "VOIDED"
+            ],
+            "description": "Only sales whose order is in this status."
+          },
+          "invoice_status": {
+            "type": "string",
+            "enum": [
+              "NOT AVAILABLE",
+              "DRAFT",
+              "AUTHORISED",
+              "PAID",
+              "VOIDED"
+            ],
+            "description": "Only sales with this combined invoice status."
+          },
+          "ship_by": {
+            "type": "string",
+            "format": "date",
+            "description": "Only sales due to ship by this date."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Only the sale with this ExternalID (set by an integration)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/saleList",
+        "queryParams": {
+          "Search": "$search",
+          "CreatedSince": "$created_since",
+          "UpdatedSince": "$updated_since",
+          "Status": "$status",
+          "OrderStatus": "$order_status",
+          "CombinedInvoiceStatus": "$invoice_status",
+          "ShipBy": "$ship_by",
+          "ExternalID": "$external_id",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_sale",
+      "description": "Read one sale with its header (customer, contact, addresses, location, tax rule, terms, price tier, ship-by date, status) and the quote, order, fulfilments, invoices, credit notes and payments it contains. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "SaleID (GUID) from cin7_core_list_sales."
+          },
+          "include_transactions": {
+            "type": "boolean",
+            "description": "true adds the accounting transactions."
+          },
+          "hide_inventory_movements": {
+            "type": "boolean",
+            "description": "true leaves out inventory movements to keep the answer short."
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sale",
+        "queryParams": {
+          "ID": "$sale_id",
+          "IncludeTransactions": "$include_transactions",
+          "HideInventoryMovements": "$hide_inventory_movements"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_sale_order",
+      "description": "Read the order part of a sale: SaleOrderNumber, Status (DRAFT, AUTHORISED...), Memo, Lines (ProductID, SKU, Name, Quantity, Price, Discount, Tax, TaxRule, BackorderQuantity, Total) and additional charges. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "SaleID (GUID)."
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sale/order",
+        "queryParams": {
+          "SaleID": "$sale_id"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_sale_fulfilments",
+      "description": "Read the fulfilments of a sale: pick, pack and ship stages with their status, lines, boxes, carrier and tracking numbers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "SaleID (GUID)."
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sale/fulfilment",
+        "queryParams": {
+          "SaleID": "$sale_id"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_sale_invoices",
+      "description": "Read the invoices of a sale: TaskID, InvoiceNumber, Status, InvoiceDate, InvoiceDueDate, lines, totals and amounts paid. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "SaleID (GUID)."
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sale/invoice",
+        "queryParams": {
+          "SaleID": "$sale_id"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_sale_payments",
+      "description": "Read the payments, prepayments and refunds recorded on a sale: Type, Amount, DatePaid, Account, Reference, currency rate. Read-only: this connector never records or changes payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "SaleID (GUID)."
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sale/payment",
+        "queryParams": {
+          "SaleID": "$sale_id"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_list_purchases",
+      "description": "List purchases: ID, OrderNumber, Status, OrderDate, Supplier, SupplierID, InvoiceNumber, totals, currency, OrderStatus, StockReceivedStatus, InvoiceStatus, RequiredBy, LastUpdatedDate. Read-only, paginated (list key PurchaseList).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to look for in order number, supplier, invoice number or status."
+          },
+          "updated_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only purchases changed since this UTC time."
+          },
+          "required_by": {
+            "type": "string",
+            "format": "date",
+            "description": "Only purchases required by this date."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "AUTHORISED",
+              "ORDERING",
+              "ORDERED",
+              "RECEIVING",
+              "RECEIVED",
+              "INVOICED",
+              "CREDITED",
+              "COMPLETED",
+              "VOIDED"
+            ],
+            "description": "Only purchases in this overall status."
+          },
+          "order_status": {
+            "type": "string",
+            "enum": [
+              "NOT AVAILABLE",
+              "DRAFT",
+              "AUTHORISED",
+              "VOIDED"
+            ],
+            "description": "Only purchases whose order is in this status."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchaseList",
+        "queryParams": {
+          "Search": "$search",
+          "UpdatedSince": "$updated_since",
+          "RequiredBy": "$required_by",
+          "Status": "$status",
+          "OrderStatus": "$order_status",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_purchase",
+      "description": "Read one purchase (simple, advanced or service) with supplier, location, approach, tax rule, terms, order, stock received, invoices and status. Uses the advanced purchase endpoint, which serves every purchase type. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Purchase ID (GUID) from cin7_core_list_purchases."
+          }
+        },
+        "required": [
+          "purchase_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advanced-purchase",
+        "queryParams": {
+          "ID": "$purchase_id"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_purchase_order",
+      "description": "Read the order part of a purchase: Status, Memo, Lines (ProductID, SKU, SupplierSKU, Name, Quantity, Price, Discount, Tax, TaxRule, Total) and additional charges. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Purchase ID (GUID); the API calls it TaskID here."
+          }
+        },
+        "required": [
+          "purchase_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchase/order",
+        "queryParams": {
+          "TaskID": "$purchase_id"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_list_customers",
+      "description": "List customers (or read one by id): ID, Name, Status, Currency, PaymentTerm, TaxRule, PriceTier, Discount, CreditLimit, IsOnCreditHold, Tags, Location, SalesRepresentative, addresses and contacts. Name matches by 'starts with'; contact_filter matches a contact name start or an exact email. Read-only, paginated (list key CustomerList).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Only this customer (ID)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Customer name starts with this."
+          },
+          "contact_filter": {
+            "type": "string",
+            "description": "Contact name starts with this, or the exact contact email."
+          },
+          "modified_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only customers changed since this UTC time."
+          },
+          "include_deprecated": {
+            "type": "boolean",
+            "description": "true also returns deprecated customers."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customer",
+        "queryParams": {
+          "ID": "$customer_id",
+          "Name": "$name",
+          "ContactFilter": "$contact_filter",
+          "ModifiedSince": "$modified_since",
+          "IncludeDeprecated": "$include_deprecated",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_list_suppliers",
+      "description": "List suppliers (or read one by id): ID, Name, Status, Currency, PaymentTerm, AccountPayable, TaxRule, Discount, TaxNumber, addresses and contacts. Read-only, paginated (list key SupplierList).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supplier_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Only this supplier (ID)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Supplier name starts with this."
+          },
+          "modified_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only suppliers changed since this UTC time."
+          },
+          "include_deprecated": {
+            "type": "boolean",
+            "description": "true also returns deprecated suppliers."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/supplier",
+        "queryParams": {
+          "ID": "$supplier_id",
+          "Name": "$name",
+          "ModifiedSince": "$modified_since",
+          "IncludeDeprecated": "$include_deprecated",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_list_tax_rules",
+      "description": "List tax rules: ID, Name, Code, TaxPercent, IsTaxForSale, IsTaxForPurchase, IsActive, Account. Tax rule names are required on order lines, customers and suppliers. Read-only, paginated (list key TaxRuleList).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only tax rules with this name."
+          },
+          "is_tax_for_sale": {
+            "type": "boolean",
+            "description": "true: only rules for sales."
+          },
+          "is_tax_for_purchase": {
+            "type": "boolean",
+            "description": "true: only rules for purchases."
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "true: only active rules."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ref/tax",
+        "queryParams": {
+          "Name": "$name",
+          "IsTaxForSale": "$is_tax_for_sale",
+          "IsTaxForPurchase": "$is_tax_for_purchase",
+          "IsActive": "$is_active",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_list_payment_terms",
+      "description": "List payment terms: ID, Name, Duration, Method, IsActive, IsDefault. Names are required on customers and suppliers. Read-only, paginated (list key PaymentTermList).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only the term with this name."
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "true: only active terms."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ref/paymentterm",
+        "queryParams": {
+          "Name": "$name",
+          "IsActive": "$is_active",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_list_stock_adjustments",
+      "description": "List stock adjustments: TaskID, StocktakeNumber, EffectiveDate, Status (DRAFT, COMPLETED, VOIDED), Reference, Account. Read-only, paginated (list key StockAdjustmentList).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "COMPLETED",
+              "VOIDED"
+            ],
+            "description": "Only adjustments in this status."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockadjustmentList",
+        "queryParams": {
+          "Status": "$status",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_stock_adjustment",
+      "description": "Read one stock adjustment with its lines (ExistingStockLines, NewStockLines: SKU, location, quantity on hand, adjustment, unit cost, batch) and the transactions it posted. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "TaskID (GUID) of the adjustment."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockadjustment",
+        "queryParams": {
+          "TaskID": "$task_id"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_list_stock_transfers",
+      "description": "List stock transfers between locations: TaskID, Number, Status (DRAFT, IN TRANSIT, COMPLETED, VOIDED), From and To locations, DepartureDate, CompletionDate, Reference. Read-only, paginated (list key StockTransferList).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "IN TRANSIT",
+              "COMPLETED",
+              "VOIDED"
+            ],
+            "description": "Only transfers in this status."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in number or reference."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Total in the answer gives the number of records."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Records per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockTransferList",
+        "queryParams": {
+          "Status": "$status",
+          "Search": "$search",
+          "Page": "$page",
+          "Limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_get_stock_transfer",
+      "description": "Read one stock transfer with its lines (SKU, TransferQuantity, batch) and status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "TaskID (GUID) of the transfer."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stockTransfer",
+        "queryParams": {
+          "TaskID": "$task_id"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_create_sale",
+      "description": "Create a sale header (customer, location, terms, tax rule, addresses). It has no lines yet: add them with cin7_core_create_sale_order using the returned ID. Set skip_quote true to go straight to an order. Takes no payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": {
+            "type": "string",
+            "description": "Customer name (exact), or give customer_id."
+          },
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Customer ID (GUID) from cin7_core_list_customers."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location name to ship from (cin7_core_list_locations)."
+          },
+          "skip_quote": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) skips the quote stage."
+          },
+          "customer_reference": {
+            "type": "string",
+            "description": "The customer's reference or PO number."
+          },
+          "contact": {
+            "type": "string",
+            "description": "Customer contact name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Customer contact email."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Customer contact phone."
+          },
+          "tax_rule": {
+            "type": "string",
+            "description": "Default tax rule name; default the customer's."
+          },
+          "tax_inclusive": {
+            "type": "boolean",
+            "description": "true when prices include tax."
+          },
+          "terms": {
+            "type": "string",
+            "description": "Payment term name; default the customer's."
+          },
+          "price_tier": {
+            "type": "string",
+            "description": "Price tier name; default the customer's."
+          },
+          "ship_by": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the shipment is due."
+          },
+          "sale_order_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Order date; default today."
+          },
+          "currency_rate": {
+            "type": "number",
+            "description": "Required when the customer's currency differs from the base currency: base units per customer currency unit."
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier or shipping method name."
+          },
+          "sales_representative": {
+            "type": "string",
+            "description": "Sales representative name."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note on the sale."
+          },
+          "shipping_address": {
+            "type": "object",
+            "description": "Shipping address: {\"Line1\", \"Line2\", \"City\", \"State\", \"Postcode\", \"Country\", \"Company\", \"Contact\", \"ShipToOther\": true}.",
+            "properties": {
+              "Line1": {
+                "type": "string",
+                "description": "Address line 1."
+              },
+              "Line2": {
+                "type": "string",
+                "description": "Address line 2."
+              },
+              "City": {
+                "type": "string",
+                "description": "City."
+              },
+              "State": {
+                "type": "string",
+                "description": "State."
+              },
+              "Postcode": {
+                "type": "string",
+                "description": "Post code."
+              },
+              "Country": {
+                "type": "string",
+                "description": "Country."
+              },
+              "Company": {
+                "type": "string",
+                "description": "Company name."
+              },
+              "Contact": {
+                "type": "string",
+                "description": "Contact."
+              },
+              "ShipToOther": {
+                "type": "boolean",
+                "description": "true for an address not saved on the customer."
+              }
+            }
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for this sale, to find it again with cin7_core_list_sales."
+          }
+        },
+        "required": [
+          "location"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sale",
+        "bodyMapping": {
+          "Customer": "$customer",
+          "CustomerID": "$customer_id",
+          "Location": "$location",
+          "SkipQuote": "$skip_quote",
+          "CustomerReference": "$customer_reference",
+          "Contact": "$contact",
+          "Email": "$email",
+          "Phone": "$phone",
+          "TaxRule": "$tax_rule",
+          "TaxInclusive": "$tax_inclusive",
+          "Terms": "$terms",
+          "PriceTier": "$price_tier",
+          "ShipBy": "$ship_by",
+          "SaleOrderDate": "$sale_order_date",
+          "CurrencyRate": "$currency_rate",
+          "Carrier": "$carrier",
+          "SalesRepresentative": "$sales_representative",
+          "Note": "$note",
+          "ShippingAddress": "$shipping_address",
+          "ExternalID": "$external_id"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_create_sale_order",
+      "description": "Add the order lines to a sale created with cin7_core_create_sale. Status DRAFT (default) keeps it editable; AUTHORISED allocates stock, silently backorders what is short and locks the order against further API edits. Only works while the order is DRAFT or not yet created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "SaleID (GUID)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "AUTHORISED"
+            ],
+            "default": "DRAFT",
+            "description": "DRAFT (default) or AUTHORISED."
+          },
+          "memo": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Memo on the order."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "ProductID": {
+                  "type": "string",
+                  "description": "Product id (GUID), or give SKU."
+                },
+                "SKU": {
+                  "type": "string",
+                  "description": "Product SKU, or give ProductID."
+                },
+                "Name": {
+                  "type": "string",
+                  "description": "Product name."
+                },
+                "Quantity": {
+                  "type": "number",
+                  "minimum": 1,
+                  "description": "Quantity, at least 1."
+                },
+                "Price": {
+                  "type": "number",
+                  "description": "Price per unit in the customer's (or supplier's) currency."
+                },
+                "Discount": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Discount percentage, 0 to 100."
+                },
+                "Tax": {
+                  "type": "number",
+                  "description": "Tax amount of the line."
+                },
+                "TaxRule": {
+                  "type": "string",
+                  "description": "Tax rule name, from cin7_core_list_tax_rules."
+                },
+                "Total": {
+                  "type": "number",
+                  "description": "Line total, used for validation."
+                },
+                "Comment": {
+                  "type": "string",
+                  "description": "Comment on the line."
+                }
+              },
+              "required": [
+                "Name",
+                "Quantity",
+                "Price",
+                "Tax",
+                "TaxRule"
+              ]
+            },
+            "description": "Lines: [{\"SKU\": \"AF308\", \"Name\": \"Tide Pool\", \"Quantity\": 2, \"Price\": 8, \"Tax\": 0, \"TaxRule\": \"Tax on Sales\"}]. Give SKU or ProductID."
+          }
+        },
+        "required": [
+          "sale_id",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sale/order",
+        "bodyMapping": {
+          "SaleID": "$sale_id",
+          "Status": "$status",
+          "Memo": "$memo",
+          "Lines": "$lines"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_create_purchase",
+      "description": "Create a purchase header for a supplier (advanced purchase endpoint, which serves simple and advanced purchases). Add lines with cin7_core_create_purchase_order using the returned ID. Approach INVOICE means the invoice comes first, STOCK means stock is received first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supplier": {
+            "type": "string",
+            "description": "Supplier name, or give supplier_id."
+          },
+          "supplier_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Supplier ID (GUID) from cin7_core_list_suppliers."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location name to receive stock into."
+          },
+          "approach": {
+            "type": "string",
+            "enum": [
+              "INVOICE",
+              "STOCK"
+            ],
+            "default": "STOCK",
+            "description": "STOCK (default): stock is received before the invoice; INVOICE: invoice first."
+          },
+          "purchase_type": {
+            "type": "string",
+            "enum": [
+              "Simple",
+              "Advanced"
+            ],
+            "default": "Simple",
+            "description": "Simple (default) or Advanced (several receipts and invoices)."
+          },
+          "required_by": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the stock is due."
+          },
+          "tax_rule": {
+            "type": "string",
+            "description": "Default tax rule name; default the supplier's."
+          },
+          "terms": {
+            "type": "string",
+            "description": "Payment term name; default the supplier's."
+          },
+          "currency_rate": {
+            "type": "number",
+            "description": "Base units per supplier currency unit, when the currency differs."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note on the purchase."
+          }
+        },
+        "required": [
+          "location"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/advanced-purchase",
+        "bodyMapping": {
+          "Supplier": "$supplier",
+          "SupplierID": "$supplier_id",
+          "Location": "$location",
+          "Approach": "$approach",
+          "PurchaseType": "$purchase_type",
+          "RequiredBy": "$required_by",
+          "TaxRule": "$tax_rule",
+          "Terms": "$terms",
+          "CurrencyRate": "$currency_rate",
+          "Note": "$note"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_create_purchase_order",
+      "description": "Add the order lines to a purchase created with cin7_core_create_purchase. Status DRAFT (default) keeps it editable; AUTHORISED sends it on and locks it against further API edits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Purchase ID (GUID), sent as TaskID."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "AUTHORISED"
+            ],
+            "default": "DRAFT",
+            "description": "DRAFT (default) or AUTHORISED."
+          },
+          "memo": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Memo on the order."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "ProductID": {
+                  "type": "string",
+                  "description": "Product id (GUID), or give SKU."
+                },
+                "SKU": {
+                  "type": "string",
+                  "description": "Product SKU, or give ProductID."
+                },
+                "Name": {
+                  "type": "string",
+                  "description": "Product name."
+                },
+                "Quantity": {
+                  "type": "number",
+                  "minimum": 1,
+                  "description": "Quantity, at least 1."
+                },
+                "Price": {
+                  "type": "number",
+                  "description": "Price per unit in the customer's (or supplier's) currency."
+                },
+                "Discount": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Discount percentage, 0 to 100."
+                },
+                "Tax": {
+                  "type": "number",
+                  "description": "Tax amount of the line."
+                },
+                "TaxRule": {
+                  "type": "string",
+                  "description": "Tax rule name, from cin7_core_list_tax_rules."
+                },
+                "Total": {
+                  "type": "number",
+                  "description": "Line total, used for validation."
+                },
+                "Comment": {
+                  "type": "string",
+                  "description": "Comment on the line."
+                }
+              },
+              "required": [
+                "Name",
+                "Quantity",
+                "Price",
+                "Tax",
+                "TaxRule"
+              ]
+            },
+            "description": "Lines: [{\"SKU\": \"AF308\", \"Name\": \"Tide Pool\", \"Quantity\": 24, \"Price\": 3.2, \"Tax\": 0, \"TaxRule\": \"Tax on Purchases\", \"Total\": 76.8}]. Give SKU or ProductID; Total is checked against quantity, price and tax."
+          }
+        },
+        "required": [
+          "purchase_id",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/purchase/order",
+        "bodyMapping": {
+          "TaskID": "$purchase_id",
+          "Status": "$status",
+          "Memo": "$memo",
+          "Lines": "$lines"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_create_customer",
+      "description": "Create a customer. Cin7 Core requires name, currency, payment term, tax rule and the receivable and revenue account codes; read valid names with cin7_core_list_payment_terms and cin7_core_list_tax_rules. Returns the new record wrapped in CustomerList.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Customer name, unique."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Active",
+              "Deprecated"
+            ],
+            "default": "Active",
+            "description": "Active (default) or Deprecated."
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3,
+            "description": "Currency code, e.g. AUD."
+          },
+          "payment_term": {
+            "type": "string",
+            "description": "Payment term name, from cin7_core_list_payment_terms."
+          },
+          "tax_rule": {
+            "type": "string",
+            "description": "Tax rule name, from cin7_core_list_tax_rules."
+          },
+          "discount": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Default discount percentage."
+          },
+          "tax_number": {
+            "type": "string",
+            "description": "Tax or VAT number."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Comments."
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Addresses: [{\"Line1\", \"Line2\", \"City\", \"State\", \"Postcode\", \"Country\", \"Type\": \"Billing\" or \"Business\" or \"Shipping\", \"DefaultForType\": true}]."
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Contacts: [{\"Name\", \"JobTitle\", \"Phone\", \"MobilePhone\", \"Email\", \"Default\": true}]."
+          },
+          "account_receivable": {
+            "type": "string",
+            "description": "Accounts receivable account code, e.g. 610 (cin7_core_get_me shows defaults)."
+          },
+          "revenue_account": {
+            "type": "string",
+            "description": "Revenue (sales) account code, e.g. 200."
+          },
+          "price_tier": {
+            "type": "string",
+            "description": "Price tier name."
+          },
+          "credit_limit": {
+            "type": "number",
+            "description": "Credit limit."
+          },
+          "location": {
+            "type": "string",
+            "description": "Default location name."
+          },
+          "sales_representative": {
+            "type": "string",
+            "description": "Sales representative."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Tags, comma-separated."
+          }
+        },
+        "required": [
+          "name",
+          "currency",
+          "payment_term",
+          "tax_rule",
+          "account_receivable",
+          "revenue_account"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customer",
+        "bodyMapping": {
+          "Name": "$name",
+          "Status": "$status",
+          "Currency": "$currency",
+          "PaymentTerm": "$payment_term",
+          "TaxRule": "$tax_rule",
+          "Discount": "$discount",
+          "TaxNumber": "$tax_number",
+          "Comments": "$comments",
+          "Addresses": "$addresses",
+          "Contacts": "$contacts",
+          "AccountReceivable": "$account_receivable",
+          "RevenueAccount": "$revenue_account",
+          "PriceTier": "$price_tier",
+          "CreditLimit": "$credit_limit",
+          "Location": "$location",
+          "SalesRepresentative": "$sales_representative",
+          "Tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_update_customer",
+      "description": "Update a customer by ID; only the fields given change. Setting status Deprecated hides the customer from new sales.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Customer ID (GUID)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Customer name, unique."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Active",
+              "Deprecated"
+            ],
+            "description": "Active or Deprecated."
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3,
+            "description": "Currency code, e.g. AUD."
+          },
+          "payment_term": {
+            "type": "string",
+            "description": "Payment term name, from cin7_core_list_payment_terms."
+          },
+          "tax_rule": {
+            "type": "string",
+            "description": "Tax rule name, from cin7_core_list_tax_rules."
+          },
+          "discount": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Default discount percentage."
+          },
+          "tax_number": {
+            "type": "string",
+            "description": "Tax or VAT number."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Comments."
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Addresses: [{\"Line1\", \"Line2\", \"City\", \"State\", \"Postcode\", \"Country\", \"Type\": \"Billing\" or \"Business\" or \"Shipping\", \"DefaultForType\": true}]."
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Contacts: [{\"Name\", \"JobTitle\", \"Phone\", \"MobilePhone\", \"Email\", \"Default\": true}]."
+          },
+          "account_receivable": {
+            "type": "string",
+            "description": "Accounts receivable account code, e.g. 610 (cin7_core_get_me shows defaults)."
+          },
+          "revenue_account": {
+            "type": "string",
+            "description": "Revenue (sales) account code, e.g. 200."
+          },
+          "price_tier": {
+            "type": "string",
+            "description": "Price tier name."
+          },
+          "credit_limit": {
+            "type": "number",
+            "description": "Credit limit."
+          },
+          "location": {
+            "type": "string",
+            "description": "Default location name."
+          },
+          "sales_representative": {
+            "type": "string",
+            "description": "Sales representative."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Tags, comma-separated."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/customer",
+        "bodyMapping": {
+          "ID": "$customer_id",
+          "Name": "$name",
+          "Status": "$status",
+          "Currency": "$currency",
+          "PaymentTerm": "$payment_term",
+          "TaxRule": "$tax_rule",
+          "Discount": "$discount",
+          "TaxNumber": "$tax_number",
+          "Comments": "$comments",
+          "Addresses": "$addresses",
+          "Contacts": "$contacts",
+          "AccountReceivable": "$account_receivable",
+          "RevenueAccount": "$revenue_account",
+          "PriceTier": "$price_tier",
+          "CreditLimit": "$credit_limit",
+          "Location": "$location",
+          "SalesRepresentative": "$sales_representative",
+          "Tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_create_supplier",
+      "description": "Create a supplier. Cin7 Core requires name, currency, payment term, tax rule and the payable account code. Returns the new record wrapped in SupplierList.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Supplier name."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Active",
+              "Deprecated"
+            ],
+            "default": "Active",
+            "description": "Active (default) or Deprecated."
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3,
+            "description": "Currency code, e.g. AUD."
+          },
+          "payment_term": {
+            "type": "string",
+            "description": "Payment term name, from cin7_core_list_payment_terms."
+          },
+          "tax_rule": {
+            "type": "string",
+            "description": "Tax rule name, from cin7_core_list_tax_rules."
+          },
+          "discount": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Default discount percentage."
+          },
+          "tax_number": {
+            "type": "string",
+            "description": "Tax or VAT number."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Comments."
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Addresses: [{\"Line1\", \"Line2\", \"City\", \"State\", \"Postcode\", \"Country\", \"Type\": \"Billing\" or \"Business\" or \"Shipping\", \"DefaultForType\": true}]."
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Contacts: [{\"Name\", \"JobTitle\", \"Phone\", \"MobilePhone\", \"Email\", \"Default\": true}]."
+          },
+          "account_payable": {
+            "type": "string",
+            "description": "Accounts payable account code, e.g. 800."
+          }
+        },
+        "required": [
+          "name",
+          "currency",
+          "payment_term",
+          "tax_rule",
+          "account_payable"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/supplier",
+        "bodyMapping": {
+          "Name": "$name",
+          "Status": "$status",
+          "Currency": "$currency",
+          "PaymentTerm": "$payment_term",
+          "TaxRule": "$tax_rule",
+          "Discount": "$discount",
+          "TaxNumber": "$tax_number",
+          "Comments": "$comments",
+          "Addresses": "$addresses",
+          "Contacts": "$contacts",
+          "AccountPayable": "$account_payable"
+        }
+      }
+    },
+    {
+      "name": "cin7_core_create_stock_adjustment",
+      "description": "Create a stock adjustment. Each line's Quantity is the NEW quantity on hand at that location, not a difference. Status DRAFT (default) only saves it; COMPLETED posts the stock movements and accounting transactions at once. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "effective_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date of the adjustment, e.g. 2026-11-09T00:00:00."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "COMPLETED"
+            ],
+            "default": "DRAFT",
+            "description": "DRAFT (default) or COMPLETED (posts it)."
+          },
+          "account": {
+            "type": "string",
+            "description": "Expense account code for the adjustment."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Reference."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment."
+          },
+          "update_on_hand": {
+            "type": "boolean",
+            "description": "true adjusts on-hand quantity; default false adjusts available quantity."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "ProductID": {
+                  "type": "string",
+                  "description": "Product id, or give SKU."
+                },
+                "SKU": {
+                  "type": "string",
+                  "description": "SKU, or give ProductID."
+                },
+                "Quantity": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "New quantity on hand."
+                },
+                "UnitCost": {
+                  "type": "number",
+                  "description": "Unit cost."
+                },
+                "Location": {
+                  "type": "string",
+                  "description": "Location name, or give LocationID."
+                },
+                "LocationID": {
+                  "type": "string",
+                  "description": "Location id."
+                },
+                "BatchSN": {
+                  "type": "string",
+                  "description": "Batch or serial number; required unless costing is FIFO."
+                }
+              },
+              "required": [
+                "Quantity",
+                "UnitCost"
+              ]
+            },
+            "description": "Lines: [{\"SKU\": \"AF308\", \"Quantity\": 600, \"UnitCost\": 1, \"Location\": \"Main Warehouse\"}]."
+          }
+        },
+        "required": [
+          "effective_date",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stockadjustment",
+        "bodyMapping": {
+          "EffectiveDate": "$effective_date",
+          "Status": "$status",
+          "Account": "$account",
+          "Reference": "$reference",
+          "Comment": "$comment",
+          "UpdateOnHand": "$update_on_hand",
+          "Lines": "$lines"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "cin7_core_create_stock_transfer",
+      "description": "Create a stock transfer between two locations. Status DRAFT (default) only saves it; COMPLETED moves the stock at once (IN TRANSIT also needs the in-transit account and departure date). Lines take SKU or ProductID and TransferQuantity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_location": {
+            "type": "string",
+            "description": "Name of the location the stock leaves."
+          },
+          "to_location": {
+            "type": "string",
+            "description": "Name of the location the stock goes to."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "IN TRANSIT",
+              "COMPLETED"
+            ],
+            "default": "DRAFT",
+            "description": "DRAFT (default), IN TRANSIT or COMPLETED."
+          },
+          "completion_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date of the transfer, e.g. 2026-11-09T00:00:00."
+          },
+          "departure_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date the stock left; required for IN TRANSIT."
+          },
+          "in_transit_account": {
+            "type": "string",
+            "description": "Asset account code holding the stock while in transit; required for IN TRANSIT."
+          },
+          "required_by_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date the stock is needed at the destination."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Reference."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "ProductID": {
+                  "type": "string",
+                  "description": "Product id, or give SKU."
+                },
+                "SKU": {
+                  "type": "string",
+                  "description": "SKU, or give ProductID."
+                },
+                "TransferQuantity": {
+                  "type": "number",
+                  "description": "Quantity to move."
+                },
+                "BatchSN": {
+                  "type": "string",
+                  "description": "Batch or serial number; required unless costing is FIFO."
+                }
+              },
+              "required": [
+                "TransferQuantity"
+              ]
+            },
+            "description": "Lines: [{\"SKU\": \"AF308\", \"TransferQuantity\": 5}]."
+          }
+        },
+        "required": [
+          "from_location",
+          "to_location",
+          "completion_date",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stockTransfer",
+        "bodyMapping": {
+          "FromLocation": "$from_location",
+          "ToLocation": "$to_location",
+          "Status": "$status",
+          "CompletionDate": "$completion_date",
+          "DepartureDate": "$departure_date",
+          "InTransitAccount": "$in_transit_account",
+          "RequiredByDate": "$required_by_date",
+          "Reference": "$reference",
+          "Lines": "$lines"
+        }
+      }
+    }
+  ]
+}

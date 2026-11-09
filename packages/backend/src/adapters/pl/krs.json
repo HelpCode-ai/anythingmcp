@@ -1,0 +1,124 @@
+{
+  "slug": "krs",
+  "name": "KRS Poland Court Register",
+  "aliases": [
+    "Krajowy Rejestr Sądowy",
+    "National Court Register Poland",
+    "Polish company register",
+    "Odpis KRS",
+    "eKRS"
+  ],
+  "description": "Polish National Court Register (KRS) open API from the Ministry of Justice, no API key: current and full extracts of companies, foundations and associations by KRS number (identity, capital, management board, activities, filed accounts, liquidation and bankruptcy), and the daily list of changed entities.",
+  "instructions": "## KRS, Polish National Court Register (Krajowy Rejestr Sądowy)\nThis connector reads the open API of the Polish Ministry of Justice for the **National Court Register (KRS)**: current and full extracts of every registered company, partnership, co-operative, foundation and association, plus the daily list of changed entities. No account or API key; everything is read-only.\n\n**Setup**: nothing to configure. Try `krs_get_current_extract` with 0000019193 (PKP S.A.).\n\n**Identifiers**: the KRS number has 10 digits (0000019193); the API also accepts it without leading zeros. Section 1 carries the company's REGON (statistical number, 9 or 14 digits) and NIP (tax ID, 10 digits). The Polish EU VAT number is PL plus the NIP. The KRS API cannot search by name, NIP or REGON: get the KRS number first (from the user, an invoice, the company's website, or the government search at wyszukiwarka-krs.ms.gov.pl or the CEIDG/GUS REGON registers).\n\n**Workflow**\n1. `krs_get_current_extract` for the present state of a company.\n2. `krs_get_full_extract` when the question is about history (who was on the board in 2020, former names, capital increases).\n3. `krs_list_changed_entities` for a day's changes, then read the extracts you care about.\n\n**Reading the Polish field names**\n- Header `naglowekA`: `rejestr` RejP (entrepreneurs) or RejS (associations), `numerKRS`, `stanZDnia` state as of, `dataRejestracjiWKRS` first registration date, `numerOstatniegoWpisu`/`dataOstatniegoWpisu` last entry number and date, `oznaczenieSaduDokonujacegoOstatniegoWpisu` court of the last entry.\n- `dzial1` (identity): `danePodmiotu` (`nazwa` name, `formaPrawna` legal form, e.g. SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ = limited liability company sp. z o.o., SPÓŁKA AKCYJNA = joint-stock company S.A., `identyfikatory` regon and nip), `siedzibaIAdres` registered seat and address (`adres`: ulica street, nrDomu number, miejscowosc town, kodPocztowy postcode; `adresStronyInternetowej` website), `jednostkiTerenoweOddzialy` branches, `umowaStatut` articles, `kapital` capital (`wysokoscKapitaluZakladowego` share capital with waluta currency, `lacznaLiczbaAkcjiUdzialow` number of shares, `wartoscJednejAkcji` nominal value), `wspolnicySpzoo` shareholders of a sp. z o.o. (nazwa, krs, posiadaneUdzialy shares held, czyPosiadaCaloscUdzialow sole shareholder), `jedynyAkcjonariusz` sole shareholder of an S.A.\n- Full extract: every value is a list of versions with `nrWpisuWprow` (entry that introduced it) and `nrWpisuWykr` (entry that removed it; absent means still valid). Map entry numbers to dates with `naglowekP.wpis`.\n- `dzial2` (representation): `reprezentacja` with `nazwaOrganu` body (ZARZĄD = management board), `sposobReprezentacji` how it signs, `sklad` members (nazwisko surname and imiona first names, both masked, funkcjaWOrganie role, czyZawieszona suspended, e.g. PREZES ZARZĄDU CEO, CZŁONEK ZARZĄDU board member); `organNadzoru` supervisory board (RADA NADZORCZA); `prokurenci` proxies (rodzajProkury type).\n- `dzial3`: `przedmiotDzialalnosci` business activities as PKD codes (przedmiotPrzewazajacejDzialalnosci main, przedmiotPozostalejDzialalnosci other); `wzmiankiOZlozonychDokumentach` filings: annual financial statements (`wzmiankaOZlozeniuRocznegoSprawozdaniaFinansowego`, with the period dates), auditor opinions, approval resolutions, management reports; `sprawozdaniaGrupyKapitalowej` consolidated filings.\n- `dzial4`: arrears to tax and social insurance (zaległości), claims and enforcement. Empty means nothing registered.\n- `dzial5`: curator (kurator). `dzial6`: liquidation (likwidacja), bankruptcy (upadłość), restructuring (restrukturyzacja), mergers, divisions and transformations (polaczeniePodzialPrzeksztalcenie). An empty dzial6 means none of these is registered.\n- Personal data: the open API masks the names and PESEL numbers of natural persons (board members, proxies, shareholders show as e.g. K******* with only the first letter); legal persons are shown in full. Full names of people are only on the official extract from ekrs.ms.gov.pl. Say so instead of guessing a name.\n\n**Errors and limits**: an unknown KRS number answers 404 (problem JSON with title Not Found); a wrong `register` value too. The full extract of a large company can be several hundred kilobytes. The API publishes no rate limit; keep calls reasonable. The financial statements themselves (the documents) are only in the separate eKRS repository (Repozytorium Dokumentów Finansowych), not in this API. The extract from this API is informational; an official extract with legal force is the one downloaded from ekrs.ms.gov.pl.",
+  "region": "pl",
+  "category": "government",
+  "icon": "krs",
+  "docsUrl": "https://prs.ms.gov.pl/krs/openApi",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "krs_get_current_extract",
+    "params": {
+      "krs_number": "0000019193"
+    }
+  },
+  "connector": {
+    "name": "KRS open API",
+    "type": "REST",
+    "baseUrl": "https://api-krs.ms.gov.pl/api/krs",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "krs_get_current_extract",
+      "description": "Get the current extract (odpis aktualny) of an entity from the Polish National Court Register (KRS) by KRS number, as JSON: header (register, KRS number, state as of date, date of first registration, last entry and court), and the six sections: 1 identity (name, legal form, REGON and NIP, registered office and address, website, share capital, sole shareholder, articles), 2 representation (management board members and how they sign, supervisory board, proxies), 3 business activities (PKD codes) and filed annual accounts, 4 arrears and claims, 5 curators, 6 liquidation, bankruptcy, restructuring, mergers and transformations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "krs_number": {
+            "type": "string",
+            "pattern": "^[0-9]{1,10}$",
+            "description": "KRS number, up to 10 digits; leading zeros may be left out, e.g. 0000019193 or 19193."
+          },
+          "register": {
+            "type": "string",
+            "description": "Register: P for the register of entrepreneurs (companies, partnerships, co-operatives), S for the register of associations, foundations and other non-profit organisations. Omit to let the API pick the register the entity is in; a wrong value answers 404.",
+            "enum": [
+              "P",
+              "S"
+            ]
+          }
+        },
+        "required": [
+          "krs_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/OdpisAktualny/{krs_number}",
+        "queryParams": {
+          "rejestr": "$register",
+          "format": "json"
+        }
+      }
+    },
+    {
+      "name": "krs_get_full_extract",
+      "description": "Get the full extract (odpis pełny) of an entity from KRS by KRS number: the same six sections as the current extract but with the complete history of every entry since registration, each value tagged with the entry numbers that added (nrWpisuWprow) and removed (nrWpisuWykr) it, plus, in the header naglowekP, the list of all entries (wpis) with entry number, description, date, case number and court. Much larger than the current extract; use it for history questions (former board members, past names or addresses, capital changes).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "krs_number": {
+            "type": "string",
+            "pattern": "^[0-9]{1,10}$",
+            "description": "KRS number, up to 10 digits; leading zeros may be left out, e.g. 0000019193 or 19193."
+          },
+          "register": {
+            "type": "string",
+            "description": "Register: P for the register of entrepreneurs (companies, partnerships, co-operatives), S for the register of associations, foundations and other non-profit organisations. Omit to let the API pick the register the entity is in; a wrong value answers 404.",
+            "enum": [
+              "P",
+              "S"
+            ]
+          }
+        },
+        "required": [
+          "krs_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/OdpisPelny/{krs_number}",
+        "queryParams": {
+          "rejestr": "$register",
+          "format": "json"
+        },
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "name": "krs_list_changed_entities",
+      "description": "List the KRS numbers of entities that had an entry published in the KRS on a given day (the daily bulletin, biuletyn): a JSON array of KRS numbers without leading zeros, one item per entry, so a number can repeat. Use to monitor changes; read an entity with krs_get_current_extract.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Day of the entries, YYYY-MM-DD, e.g. 2026-11-06.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Biuletyn/{date}"
+      }
+    }
+  ]
+}

@@ -1,0 +1,134 @@
+{
+  "slug": "borme",
+  "name": "BORME Spain Commercial Register Gazette",
+  "aliases": [
+    "Boletín Oficial del Registro Mercantil",
+    "BOE",
+    "Boletín Oficial del Estado",
+    "Spanish commercial register",
+    "Registro Mercantil"
+  ],
+  "description": "Spanish official gazettes from the BOE open data API, no API key: the daily BORME summary of the Commercial Register Gazette (company formations, appointments, capital changes, mergers, dissolutions, insolvencies, legal notices) with the text of each item, and the daily BOE summary with any BOE document.",
+  "instructions": "## BORME and BOE, Spanish official gazettes (open data)\nThis connector reads the open data of the Agencia Estatal Boletín Oficial del Estado (AEBOE): the **BORME** (Boletín Oficial del Registro Mercantil, the gazette of the Spanish Commercial Register, where every company formation, appointment, capital change, merger, dissolution and insolvency is published) and the **BOE** (Boletín Oficial del Estado, laws, regulations, appointments, public notices). No account or API key; everything is read-only.\n\n**Setup**: nothing to configure. Try `borme_get_summary` with the date of the last working day as YYYYMMDD.\n\n**Workflow**\n1. `borme_get_summary` for a date. Section A has one item per province (titulo is the province, e.g. MADRID, BARCELONA); section C groups legal notices by type (apartado nombre, e.g. CONVOCATORIAS DE JUNTAS general meeting calls, FUSIONES Y ABSORCIONES DE EMPRESAS mergers, REDUCCIÓN DE CAPITAL, DISOLUCIÓN DE EMPRESAS) with one item per company (titulo is the company name).\n2. `borme_get_item` with the item identifier for its text. To find a company in section A, read the province item for that day and look for its name.\n3. For laws and official notices: `borme_get_boe_summary` then `borme_get_boe_item`.\n\nThere is no company search by name in this API: the BORME is organised by day and province. To follow a company over time, read the days in question, or ask the user for the date and province of the act.\n\n**Reading the Spanish terms**\n- Summary JSON: `data.sumario.diario[].numero` issue number, `sumario_diario` the summary PDF, `seccion[]` with `codigo` (A, B, C) and `nombre`, `item[]` (one object or a list) with `identificador`, `titulo`, `url_pdf.texto` PDF link with page range (pagina_inicial, pagina_final), `url_html`, `url_xml`; section C has `apartado[]` (codigo, nombre, item). In the BOE summary: `departamento` issuing ministry or body, `epigrafe` heading, `control` internal number.\n- Section A acts: Constitución (formation, with Comienzo de operaciones start, Objeto social purpose, Domicilio registered office, Capital), Nombramientos (appointments), Ceses/Dimisiones (removals/resignations), Reelecciones, Revocaciones, Ampliación de capital (capital increase), Reducción de capital, Cambio de domicilio social (change of registered office), Cambio de denominación social (name change), Modificaciones estatutarias (amendments to the articles), Disolución (dissolution), Extinción (extinction, the company ceases to exist), Situación concursal / Declaración de concurso (insolvency), Fusión por absorción (merger), Sociedad unipersonal (single-member company), Datos registrales (register data: T volume, F folio, S section, H sheet, I/A entry, with the entry date). Roles: Adm. Unico sole director, Adm. Solid. joint and several director, Adm. Mancom. joint director, Consejero board member, Presidente, Secretario, Apoderado attorney, Liquidador liquidator, Auditor.\n- Company forms: S.A. (sociedad anónima, public limited company), S.L. or S.R.L. (sociedad limitada, private limited company), S.L.U./S.A.U. (single-member), S.COOP. (co-operative).\n- Item XML: `documento.metadatos` (identificador, titulo, diario_numero, seccion, fecha_publicacion, url_pdf) and `documento.texto.p` paragraphs; for section A each `p` with class articulo is a company heading (entry number and name) and the following class parrafo paragraph holds its acts.\n\n**Limits and terms**: dates are YYYYMMDD; days without an issue (Sunday, most Saturdays for BORME, holidays) answer 404. A province item of a big province (Madrid, Barcelona) can be long. The AEBOE publishes no rate limit, but keep calls reasonable. Reuse is free under the AEBOE reuse conditions: cite the Agencia Estatal Boletín Oficial del Estado as the source, do not distort the meaning of the data, and mention the date of the publication used. Only the PDF of the official gazette is authentic.",
+  "region": "es",
+  "category": "government",
+  "icon": "borme",
+  "docsUrl": "https://www.boe.es/datosabiertos/api/api.php",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "borme_get_item",
+    "params": {
+      "id": "BORME-A-2026-214-01"
+    }
+  },
+  "connector": {
+    "name": "BOE open data",
+    "type": "REST",
+    "baseUrl": "https://www.boe.es",
+    "authType": "NONE",
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "borme_get_summary",
+      "description": "Get the daily summary (sumario) of the BORME, the Spanish Official Gazette of the Commercial Register, for one date: issue number, the summary PDF, and the sections with their items. Section A (Actos inscritos: registered company acts, one item per province, e.g. BORME-A-2026-214-28 for MADRID) and B (other acts) list items by province; section C (Anuncios y avisos legales: legal notices such as general meeting calls, mergers, capital changes, dissolutions) is grouped in apartados by type with one item per company. Every item has identificador, titulo and links (url_pdf, url_html, url_xml).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "Publication date as YYYYMMDD, e.g. 20261106. BORME and BOE appear Monday to Friday (BOE also on Saturdays); other days answer 404."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datosabiertos/api/borme/sumario/{date}",
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    },
+    {
+      "name": "borme_get_item",
+      "description": "Get the text of one BORME item by its identifier, as structured data: metadatos (title, issue, section, date, pages, PDF link) and texto. For a section A item (one province, one day) the text lists every registered act: each company appears as a paragraph \"<entry number> - <COMPANY NAME>.\" followed by what was registered (constitution, appointments, resignations, capital increase, change of registered office, dissolution, extinction, insolvency) and the register data. A section C item is one legal notice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "BORME item identifier from borme_get_summary, e.g. BORME-A-2026-214-28 or BORME-C-2026-5833.",
+            "pattern": "^BORME-[A-Z]-[0-9]{4}-[0-9-]+$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/diario_borme/xml.php",
+        "queryParams": {
+          "id": "$id"
+        },
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "name": "borme_get_boe_summary",
+      "description": "Get the daily summary (sumario) of the BOE, the Spanish Official State Gazette, for one date: issue number and sections (I general provisions, II authorities and staff, III other provisions, IV administration of justice, V announcements, including public procurement and notices), each with departments, headings (epigrafe) and items with identificador (BOE-A-..., BOE-B-...), titulo and PDF, HTML and XML links. The summary of a busy day can be large.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "Publication date as YYYYMMDD, e.g. 20261106. BORME and BOE appear Monday to Friday (BOE also on Saturdays); other days answer 404."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datosabiertos/api/boe/sumario/{date}",
+        "headers": {
+          "Accept": "application/json"
+        },
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "name": "borme_get_boe_item",
+      "description": "Get one BOE document by its identifier as structured data: metadatos (title, department, rank (rango, e.g. Ley, Real Decreto, Orden, Resolución), date of the provision, publication date, validity and repeal status, PDF link), analisis (subjects, notes, references to earlier and later provisions) and texto, the full text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "BOE document identifier from borme_get_boe_summary, e.g. BOE-A-2026-23341.",
+            "pattern": "^BOE-[A-Z]-[0-9]{4}-[0-9]+$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/diario_boe/xml.php",
+        "queryParams": {
+          "id": "$id"
+        },
+        "timeoutMs": 60000
+      }
+    }
+  ]
+}

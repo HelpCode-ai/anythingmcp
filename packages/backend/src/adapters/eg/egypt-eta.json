@@ -1,0 +1,984 @@
+{
+  "slug": "egypt-eta",
+  "name": "Egyptian Tax Authority e-Invoicing (ETA)",
+  "aliases": [
+    "ETA e-Invoice",
+    "Egyptian e-Invoicing",
+    "ETA e-Invoicing",
+    "مصلحة الضرائب المصرية",
+    "الفاتورة الإلكترونية"
+  ],
+  "description": "Egyptian Tax Authority e-Invoicing API for a registered ERP system: search sent and received e-invoices, credit and debit notes, read a document's details, signed original or PDF printout, follow submissions, export document packages, read document types, notifications and EGS/GS1 item codes. Cancel, reject and decline actions are included but installed switched off. No document submission.",
+  "region": "eg",
+  "category": "accounting",
+  "icon": "egypt-eta",
+  "docsUrl": "https://sdk.invoicing.eta.gov.eg/",
+  "prerequisites": "An Egyptian taxpayer registered on the ETA e-Invoicing portal (invoicing.eta.gov.eg) and an ERP system registered in the taxpayer profile, which gives a client ID and client secret. Preproduction and production have separate registrations.",
+  "requiredEnvVars": [
+    "ETA_API_HOST",
+    "ETA_ID_HOST",
+    "ETA_CLIENT_ID",
+    "ETA_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "ETA_API_HOST": {
+      "label": "API host",
+      "kind": "address",
+      "help": "api.invoicing.eta.gov.eg for production, api.preprod.invoicing.eta.gov.eg for the preproduction (test) environment. Use the same environment as ETA_ID_HOST.",
+      "link": "https://sdk.invoicing.eta.gov.eg/faq/",
+      "example": "api.invoicing.eta.gov.eg",
+      "pattern": "^api\\.(preprod\\.)?invoicing\\.eta\\.gov\\.eg$",
+      "patternMessage": "Write api.invoicing.eta.gov.eg (production) or api.preprod.invoicing.eta.gov.eg (preproduction), without https://."
+    },
+    "ETA_ID_HOST": {
+      "label": "Identity host",
+      "kind": "address",
+      "help": "id.eta.gov.eg for production, id.preprod.eta.gov.eg for preproduction. It issues the access tokens and must match the environment of ETA_API_HOST.",
+      "link": "https://sdk.invoicing.eta.gov.eg/faq/",
+      "example": "id.eta.gov.eg",
+      "pattern": "^id\\.(preprod\\.)?eta\\.gov\\.eg$",
+      "patternMessage": "Write id.eta.gov.eg (production) or id.preprod.eta.gov.eg (preproduction), without https://."
+    },
+    "ETA_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "e-Invoicing portal, taxpayer profile, ERP systems: register an ERP system (or open an existing one) and copy its client ID.",
+      "link": "https://invoicing.eta.gov.eg/",
+      "pattern": "^[A-Za-z0-9-]{8,100}$",
+      "patternMessage": "Paste only the client ID of the ERP system, without spaces."
+    },
+    "ETA_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the ERP system is registered (ETA issues two secrets; either works). Generate a new secret in the portal if it was lost.",
+      "link": "https://invoicing.eta.gov.eg/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "ETA refused the request. At the token step (invalid_client) the client ID or secret is wrong, or belongs to the other environment: preproduction credentials only work with id.preprod.eta.gov.eg and api.preprod.invoicing.eta.gov.eg.",
+    "401": "ETA did not accept the access token. Check that ETA_ID_HOST and ETA_API_HOST name the same environment (both production or both preprod) and that the ERP system's client ID and secret are current.",
+    "403": "The ERP system is authenticated but not allowed this action: the taxpayer profile may carry an ETA restriction tag (B2B Deny ERP Document Retrieval or Cancellation/Rejection), or the document was not issued to or by this taxpayer.",
+    "rate_limited": "ETA limits each ERP system per API (for example 2 searches per second and 1 PDF every 5 seconds). Wait for the Retry-After time and try again."
+  },
+  "probe": {
+    "tool": "egypt_eta_list_document_types"
+  },
+  "instructions": "## Egyptian Tax Authority e-Invoicing (ETA)\nThis connector calls the **ETA e-Invoicing API** of the Egyptian Tax Authority (`https://api.invoicing.eta.gov.eg`, preproduction `https://api.preprod.invoicing.eta.gov.eg`) as a registered taxpayer ERP system: the e-invoices, credit notes and debit notes the taxpayer issued or received, their status, printouts and exports, plus document types, notifications and item codes (EGS/GS1).\n\n**Setup**\n1. Sign in to the e-Invoicing portal (https://invoicing.eta.gov.eg, or https://preprod.invoicing.eta.gov.eg for testing) as the taxpayer's administrator.\n2. Open the taxpayer profile, **ERP systems**, and **Register ERP**. ETA shows a **client ID** and two **client secrets** (either secret works; keep one as a spare). The secrets are shown once.\n3. Set `ETA_CLIENT_ID` and `ETA_CLIENT_SECRET`, and pick the environment with two hosts that must match: production `ETA_ID_HOST=id.eta.gov.eg` and `ETA_API_HOST=api.invoicing.eta.gov.eg`, or preproduction `id.preprod.eta.gov.eg` and `api.preprod.invoicing.eta.gov.eg`. Credentials from one environment do not work in the other.\n4. Install and run `egypt_eta_list_document_types`.\n\n**Authentication**: OAuth 2 client credentials at `https://<ETA_ID_HOST>/connect/token` with scope `InvoicingAPI`. The token lasts one hour and the connector requests a new one on its own. Logging in on behalf of another taxpayer (intermediaries, the `onbehalfof` header) is not supported here; register the ERP system in the represented taxpayer's own profile instead.\n\n**Where to start**\n- `egypt_eta_search_documents` is the main list. It needs one date pair: `submission_date_from` and `submission_date_to`, or `issue_date_from` and `issue_date_to`, at most **30 days** apart. Filter with `direction` (`Sent` or `Received`), `status`, `document_type`, the receiver (only with `Sent`) or the issuer (only with `Received`), `uuid` or `internal_id`. Results are newest first, up to `page_size` (default 100) per page: call again with the same filters and `continuation_token` = `metadata.continuationToken` until it reads `EndofResultSet`.\n- `egypt_eta_list_recent_documents` is the older listing with page numbers (`page_no`), capped at 10,000 documents per query; prefer the search.\n- One document: `egypt_eta_get_document_details` (status, validation steps, cancel and reject request dates, freeze status and the full document with its lines and taxes), `egypt_eta_get_document_raw` (the document as submitted, JSON or XML, with its signatures) and `egypt_eta_get_document_pdf` (the official printout as a PDF file attached to the result).\n- A submission (one batch the ERP sent): `egypt_eta_get_submission` gives the overall status (`in progress`, `valid`, `partially valid`, `invalid`) and each document's status.\n- Bulk export: `egypt_eta_request_document_package` (type `summary` or `full`, format `JSON`, `XML` or `CSV`, CSV only for summaries) returns a package id; `egypt_eta_list_package_requests` shows its status (1 in progress, 2 complete, 3 error, 4 deleted); `egypt_eta_download_document_package` fetches the ZIP once it is complete (an empty answer, HTTP 204, means not ready yet).\n- Reference data: `egypt_eta_list_document_types`, `egypt_eta_get_document_type` (its `workflowParameters` hold the cancellation and rejection time limits in hours) and `egypt_eta_get_document_type_version` (the JSON and XML schemas, base64).\n- Notifications sent to the taxpayer: `egypt_eta_list_notifications`.\n- Item codes: `egypt_eta_search_published_codes` (EGS or GS1 catalogue), `egypt_eta_get_code_details` (one code by item code, e.g. `EG-113317713-1234`) and `egypt_eta_search_my_code_usage_requests` (the taxpayer's own EGS code requests and their approval status).\n\n**Values**\n- Document types: `i` invoice, `c` credit note, `d` debit note, `ii` import invoice, `ei` export invoice, `ec` export credit note, `ed` export debit note.\n- Status: `Valid`, `Invalid`, `Rejected`, `Cancelled`, `Submitted`. Receivers see only Valid, Rejected and Cancelled documents; issuers see all.\n- Party types: `B` business (tax registration number, 9 digits), `P` person (national ID), `F` foreigner.\n- Dates and times are UTC, ISO 8601, e.g. `2026-10-01T00:00:00Z`. Amounts are in EGP. Names, addresses and item descriptions are often in Arabic; quote them as they are.\n- Search and list answers leave out `publicUrl`: anyone with that link can read the document, so ETA asks not to share it.\n\n**Changes (installed switched off)**: `egypt_eta_cancel_document` (issuer cancels a valid document), `egypt_eta_reject_document` (receiver rejects a document it received), `egypt_eta_decline_cancellation` (receiver objects to the issuer's cancellation; the document becomes valid again) and `egypt_eta_decline_rejection` (issuer objects to the receiver's rejection). Each is legally relevant, allowed only once per document and only within the time limit of the document type (see `workflowParameters`, e.g. 72 hours for rejection); after that ETA answers `OperationPeriodOver` and a credit note is the way to correct. A document referenced by a credit or debit note answers `ActiveReferencingDocuments`. Turn them on deliberately, show the user the document and the reason, and wait for a yes before calling.\n\n**Why there is no submit tool**: ETA accepts a new invoice only with a CAdES-BES electronic signature made with the taxpayer's e-seal on a USB token or an HSM, after the document has been serialised to ETA's canonical form. That signature cannot be produced through this connector, so documents are still issued from the ERP or the signing tool, and this connector reads and follows them.\n\n**Limits**: ETA throttles each ERP system per API: search and document details 2 calls per second, recent documents 3 per second, PDF printout 1 every 5 seconds, published codes 1 every 10 seconds, own code requests 1 every 5 seconds. Over the limit ETA answers 429 with Retry-After; under general load 503 (retry after a few seconds). Use narrow date ranges and the search instead of opening many documents one by one.\n\n**Errors**: ETA errors carry `error.code` and `error.message` (and `details`). 401 means the token was refused (wrong environment pairing or revoked ERP credentials); 403 `Forbidden` comes from a restriction tag on the taxpayer profile or a document of another taxpayer; 404 for a receiver asking for a submitted or invalid document.\n\n**Not covered**: the e-Receipt (B2C point of sale) API, which needs a separate POS login with device headers, document submission, and changes to EGS codes.",
+  "connector": {
+    "name": "ETA e-Invoicing API",
+    "type": "REST",
+    "baseUrl": "https://{{ETA_API_HOST}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{ETA_CLIENT_ID}}",
+      "clientSecret": "{{ETA_CLIENT_SECRET}}",
+      "tokenUrl": "https://{{ETA_ID_HOST}}/connect/token",
+      "tokenAuthMethod": "client_secret_post",
+      "scope": "InvoicingAPI"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/v1.0/documenttypes"
+  },
+  "tools": [
+    {
+      "name": "egypt_eta_search_documents",
+      "description": "Search the e-invoices, credit notes and debit notes the taxpayer issued or received, newest first. One date pair is required (submission or issue dates, at most 30 days apart). Returns uuid, internal id, type, issuer, receiver, dates, amounts in EGP, status and cancel/reject request dates, plus metadata.continuationToken for the next page (EndofResultSet on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_date_from": {
+            "type": "string",
+            "description": "Start of the submission window, UTC, e.g. 2026-10-01T00:00:00Z. Use with submission_date_to (or use the issue dates instead)."
+          },
+          "submission_date_to": {
+            "type": "string",
+            "description": "End of the submission window, UTC, at most 30 days after submission_date_from, e.g. 2026-10-31T23:59:59Z."
+          },
+          "issue_date_from": {
+            "type": "string",
+            "description": "Start of the issue date window, e.g. 2026-10-01T00:00:00Z. Use with issue_date_to."
+          },
+          "issue_date_to": {
+            "type": "string",
+            "description": "End of the issue date window, at most 30 days after issue_date_from."
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["Sent", "Received"],
+            "description": "Sent = issued by the taxpayer, Received = issued to it. Both when left out."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["Valid", "Invalid", "Rejected", "Cancelled", "Submitted"],
+            "description": "Only documents in this status."
+          },
+          "document_type": {
+            "type": "string",
+            "enum": ["i", "c", "d", "ii", "ei", "ec", "ed"],
+            "description": "i invoice, c credit note, d debit note, ii import invoice, ei export invoice, ec export credit note, ed export debit note."
+          },
+          "receiver_type": {
+            "type": "string",
+            "enum": ["B", "F", "P"],
+            "description": "Receiver type, only with direction Sent: B business, F foreigner, P person."
+          },
+          "receiver_id": {
+            "type": "string",
+            "description": "Receiver's tax registration number, national ID or passport number, only with direction Sent."
+          },
+          "issuer_type": {
+            "type": "string",
+            "enum": ["B", "F"],
+            "description": "Issuer type, only with direction Received: B business, F foreigner."
+          },
+          "issuer_id": {
+            "type": "string",
+            "description": "Issuer's tax registration number (or foreign registration id), only with direction Received."
+          },
+          "uuid": {
+            "type": "string",
+            "description": "Only the document with this ETA uuid."
+          },
+          "internal_id": {
+            "type": "string",
+            "description": "Only documents with this internal id (the invoice number the ERP submitted)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Documents per page, default 100."
+          },
+          "continuation_token": {
+            "type": "string",
+            "description": "metadata.continuationToken of the previous page; leave out for the first page. Keep all other filters unchanged."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documents/search",
+        "queryParams": {
+          "submissionDateFrom": "$submission_date_from",
+          "submissionDateTo": "$submission_date_to",
+          "issueDateFrom": "$issue_date_from",
+          "issueDateTo": "$issue_date_to",
+          "direction": "$direction",
+          "status": "$status",
+          "documentType": "$document_type",
+          "receiverType": "$receiver_type",
+          "receiverId": "$receiver_id",
+          "issuerType": "$issuer_type",
+          "issuerId": "$issuer_id",
+          "uuid": "$uuid",
+          "internalID": "$internal_id",
+          "pageSize": "$page_size",
+          "continuationToken": "$continuation_token"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": ["result[*].publicUrl"]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_list_recent_documents",
+      "description": "List recent documents the taxpayer issued or received with page numbers (the older listing, at most 10,000 documents per query and a 30-day window). Same filters as the search; metadata gives totalPages, totalCount and whether the result set is complete. Prefer egypt_eta_search_documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Documents per page."
+          },
+          "submission_date_from": {
+            "type": "string",
+            "description": "Start of the submission window, UTC, e.g. 2026-10-01T00:00:00Z. Required with submission_date_to."
+          },
+          "submission_date_to": {
+            "type": "string",
+            "description": "End of the submission window, UTC. Required with submission_date_from."
+          },
+          "issue_date_from": {
+            "type": "string",
+            "description": "Start of the issue date window. Required with issue_date_to."
+          },
+          "issue_date_to": {
+            "type": "string",
+            "description": "End of the issue date window. Required with issue_date_from."
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["Sent", "Received"],
+            "description": "Sent = issued by the taxpayer, Received = issued to it."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["Valid", "Invalid", "Rejected", "Cancelled", "Submitted"],
+            "description": "Only documents in this status."
+          },
+          "document_type": {
+            "type": "string",
+            "enum": ["i", "c", "d", "ii", "ei", "ec", "ed"],
+            "description": "i invoice, c credit note, d debit note, ii import invoice, ei export invoice, ec export credit note, ed export debit note."
+          },
+          "receiver_type": {
+            "type": "string",
+            "enum": ["B", "F", "P"],
+            "description": "Receiver type, only with direction Sent."
+          },
+          "receiver_id": {
+            "type": "string",
+            "description": "Receiver's registration number or ID, only with direction Sent."
+          },
+          "issuer_type": {
+            "type": "string",
+            "enum": ["B", "F"],
+            "description": "Issuer type, only with direction Received."
+          },
+          "issuer_id": {
+            "type": "string",
+            "description": "Issuer's registration number, only with direction Received."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documents/recent",
+        "queryParams": {
+          "pageNo": "$page_no",
+          "pageSize": "$page_size",
+          "submissionDateFrom": "$submission_date_from",
+          "submissionDateTo": "$submission_date_to",
+          "issueDateFrom": "$issue_date_from",
+          "issueDateTo": "$issue_date_to",
+          "direction": "$direction",
+          "status": "$status",
+          "documentType": "$document_type",
+          "receiverType": "$receiver_type",
+          "receiverId": "$receiver_id",
+          "issuerType": "$issuer_type",
+          "issuerId": "$issuer_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": ["result[*].publicUrl"]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_get_document_details",
+      "description": "Get one e-invoice, credit or debit note by its ETA uuid: status, validation results step by step, submission uuid, cancel and reject request dates, freeze status, additional metadata and the full document with issuer, receiver, lines, taxes and totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "ETA uuid of the document, from egypt_eta_search_documents."
+          }
+        },
+        "required": ["uuid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documents/{uuid}/details"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_get_document_raw",
+      "description": "Get one document as it was submitted (the signed original, with its signatures) plus its summary fields, validation results and transformation status. Ask for JSON or XML; a document converted between formats is marked transformed and its signature no longer verifies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "ETA uuid of the document, from egypt_eta_search_documents."
+          },
+          "accept": {
+            "type": "string",
+            "enum": ["application/json", "application/xml"],
+            "default": "application/json",
+            "description": "Output format: application/json (default) or application/xml."
+          }
+        },
+        "required": ["uuid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documents/{uuid}/raw",
+        "headers": {
+          "Accept": "$accept"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_get_document_pdf",
+      "description": "Download the official ETA printout of one document as a PDF file, attached to the result. ETA allows one printout call every 5 seconds per ERP system.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "ETA uuid of the document, from egypt_eta_search_documents."
+          }
+        },
+        "required": ["uuid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documents/{uuid}/pdf",
+        "headers": {
+          "Accept": "application/pdf, application/octet-stream"
+        },
+        "timeoutMs": 60000
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_get_submission",
+      "description": "Get one submission (a batch of documents the ERP sent) by its submission uuid: overall status (in progress, valid, partially valid, invalid), document count, received time and each document's uuid, internal id, type, receiver, total and status, page by page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_uuid": {
+            "type": "string",
+            "description": "Submission uuid, the submissionUUID field of a document."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page of the document summaries, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Document summaries per page."
+          }
+        },
+        "required": ["submission_uuid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documentsubmissions/{submission_uuid}",
+        "queryParams": {
+          "pageNo": "$page_no",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_list_document_types",
+      "description": "List the document types of the e-Invoicing system (invoice, credit note, debit note, export and import types), active and deactivated, each with id, name, description, active dates and its versions (id, name, version number, status published or deactivated). No arguments.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documenttypes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_get_document_type",
+      "description": "Get one document type by its numeric id: name, description, versions and the workflow parameters, which hold the time limits in hours for cancellation, rejection and their declines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric document type id from egypt_eta_list_document_types."
+          }
+        },
+        "required": ["id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documenttypes/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_get_document_type_version",
+      "description": "Get one version of a document type: type name, version name and number, status, active dates and the JSON and XML schemas of the document structure (base64 encoded).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Numeric document type id from egypt_eta_list_document_types."
+          },
+          "vid": {
+            "type": "integer",
+            "description": "Numeric version id from the type's documentTypeVersions."
+          }
+        },
+        "required": ["id", "vid"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documenttypes/{id}/versions/{vid}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_request_document_package",
+      "description": "Ask ETA to prepare a bulk export (document package) of the taxpayer's documents for a date range, as summary or full documents in JSON, XML or CSV (CSV only for summary). Returns the package id; follow it with egypt_eta_list_package_requests and download it with egypt_eta_download_document_package. Changes no document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["summary", "full"],
+            "description": "summary = one row per document, full = complete documents with lines."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["JSON", "XML", "CSV"],
+            "description": "File format inside the ZIP. CSV only with type summary."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start of the period, UTC, e.g. 2026-10-01T00:00:00Z."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the period, UTC, e.g. 2026-10-31T23:59:59Z."
+          },
+          "document_type_names": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["i", "c", "d"] },
+            "description": "Only these document types: i invoice, c credit note, d debit note."
+          },
+          "statuses": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["valid", "invalid", "rejected", "cancelled"] },
+            "description": "Only documents in these statuses."
+          },
+          "products_internal_codes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Only documents containing these internal product codes (exact match)."
+          },
+          "receiver_sender_type": {
+            "type": "string",
+            "enum": ["0", "1", "2"],
+            "description": "Type of the other party: 0 business, 1 person, 2 foreign."
+          },
+          "receiver_sender_id": {
+            "type": "string",
+            "description": "Registration number, national ID or foreign ID of the other party (with receiver_sender_type)."
+          },
+          "branch_number": {
+            "type": "string",
+            "description": "Only documents of this issuer branch number."
+          },
+          "item_codes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "codeValue": { "type": "string", "description": "The item code, e.g. EG-113317713-1234." },
+                "codeType": { "type": "string", "enum": ["EGS", "GS1"], "description": "Code catalogue." }
+              },
+              "required": ["codeValue", "codeType"]
+            },
+            "description": "Only documents with these item codes."
+          },
+          "truncate_if_exceeded": {
+            "type": "boolean",
+            "default": false,
+            "description": "true cuts the package at the size limit instead of refusing a request that matches too many documents."
+          }
+        },
+        "required": ["type", "format", "date_from", "date_to"]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1.0/documentpackages/requests",
+        "bodyMapping": {
+          "type": "$type",
+          "format": "$format",
+          "queryParameters": {
+            "dateFrom": "$date_from",
+            "dateTo": "$date_to",
+            "documentTypeNames": "$document_type_names",
+            "statuses": "$statuses",
+            "productsInternalCodes": "$products_internal_codes",
+            "receiverSenderType": "$receiver_sender_type",
+            "receiverSenderId": "$receiver_sender_id",
+            "branchNumber": "$branch_number",
+            "itemCodes": "$item_codes",
+            "truncateifexceeded": "$truncate_if_exceeded"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "egypt_eta_list_package_requests",
+      "description": "List the document package requests of the taxpayer: package id, submission date, status (1 in progress, 2 complete, 3 error, 4 deleted), type (1 full, 2 summary), format (1 CSV, 2 XML, 3 JSON), deletion date, whether it expired and the filters used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Packages per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documentpackages/requests",
+        "queryParams": {
+          "pageNo": "$page_no",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_download_document_package",
+      "description": "Download a completed document package as a ZIP file (JSON, XML or CSV inside), attached to the result. An empty answer (HTTP 204) means the package is not ready yet; check egypt_eta_list_package_requests and try later. Files over 10 MB are described but not attached.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "Package id returned by egypt_eta_request_document_package or listed by egypt_eta_list_package_requests."
+          }
+        },
+        "required": ["package_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/documentpackages/{package_id}",
+        "headers": {
+          "Accept": "application/octet-stream"
+        },
+        "timeoutMs": 120000
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_list_notifications",
+      "description": "List the notifications ETA sent to the taxpayer (document received, validated, cancelled or rejected, download ready, OTP and others), newest first: type, message, channel, address, language, status and delivery attempts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Sent on or after, UTC, e.g. 2026-10-01T00:00:00Z."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Sent on or before, UTC."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+            "description": "1 delegation invite, 2 OTP, 3 profile data validation, 4 generic, 5 download ready, 6 document received, 7 document validated, 8 document cancelled, 9 document rejected."
+          },
+          "language": {
+            "type": "string",
+            "enum": ["ar", "en"],
+            "description": "Language of the notification."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "batched", "delivered", "error"],
+            "description": "Delivery status."
+          },
+          "channel": {
+            "type": "string",
+            "enum": ["sms", "email", "push", "system"],
+            "description": "Channel the notification went out on."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Notifications per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/notifications/taxpayer",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "type": "$type",
+          "language": "$language",
+          "status": "$status",
+          "channel": "$channel",
+          "pageNo": "$page_no",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_search_published_codes",
+      "description": "Search the published item codes of the EGS or GS1 catalogue by code, parent code, name, description or the taxpayer that created it: code id and value, English and Arabic names and descriptions, level, parent and active dates. ETA allows one call every 10 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code_type": {
+            "type": "string",
+            "enum": ["EGS", "GS1"],
+            "description": "Catalogue to search: EGS (codes created by taxpayers) or GS1 (barcodes)."
+          },
+          "code_lookup_value": {
+            "type": "string",
+            "description": "The item code, e.g. EG-113317713-1234 or a GS1 barcode."
+          },
+          "parent_code_lookup_value": {
+            "type": "string",
+            "description": "Parent (level 4, GPC brick) code, e.g. 10001400."
+          },
+          "code_name": {
+            "type": "string",
+            "description": "Part of the code name, e.g. water bottle."
+          },
+          "code_description": {
+            "type": "string",
+            "description": "Part of the code description."
+          },
+          "taxpayer_rin": {
+            "type": "string",
+            "description": "Tax registration number of the taxpayer that created the code."
+          },
+          "only_active": {
+            "type": "boolean",
+            "description": "true for active codes only."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Codes per page."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": ["code_type"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/codetypes/{code_type}/codes",
+        "queryParams": {
+          "CodeLookupValue": "$code_lookup_value",
+          "ParentCodeLookupValue": "$parent_code_lookup_value",
+          "CodeName": "$code_name",
+          "CodeDescription": "$code_description",
+          "TaxpayerRIN": "$taxpayer_rin",
+          "OnlyActive": "$only_active",
+          "Ps": "$page_size",
+          "Pn": "$page_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_get_code_details",
+      "description": "Get one EGS or GS1 item code by its item code: English and Arabic name and description, active dates, level and the parent code with its names and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code_type": {
+            "type": "string",
+            "enum": ["EGS", "GS1"],
+            "description": "Catalogue of the code: EGS or GS1."
+          },
+          "item_code": {
+            "type": "string",
+            "description": "The item code, e.g. EG-113317713-1234."
+          }
+        },
+        "required": ["code_type", "item_code"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/codetypes/{code_type}/codes/{item_code}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_search_my_code_usage_requests",
+      "description": "Search the taxpayer's own EGS code usage requests (new codes and reuse of existing ones) and their approval status: item code, name, description, parent, level, active dates, status (Submitted, Approved, Rejected) and owner. ETA allows one call every 5 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_code": {
+            "type": "string",
+            "description": "Item code, e.g. EG-113317713-1234."
+          },
+          "code_name": {
+            "type": "string",
+            "description": "Part of the code name."
+          },
+          "code_description": {
+            "type": "string",
+            "description": "Part of the code description."
+          },
+          "parent_item_code": {
+            "type": "string",
+            "description": "Parent (GPC brick) code, e.g. 10006358."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true for active codes only, false for inactive."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["Submitted", "Approved", "Rejected"],
+            "description": "Request status."
+          },
+          "request_type": {
+            "type": "string",
+            "enum": ["New", "Reusage"],
+            "description": "New code or reuse of a published code."
+          },
+          "order_directions": {
+            "type": "string",
+            "enum": ["Descending", "Ascending"],
+            "default": "Descending",
+            "description": "Sort by request creation time."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Requests per page."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1.0/codetypes/requests/my",
+        "queryParams": {
+          "ItemCode": "$item_code",
+          "CodeName": "$code_name",
+          "CodeDescription": "$code_description",
+          "ParentItemCode": "$parent_item_code",
+          "Active": "$active",
+          "Status": "$status",
+          "RequestType": "$request_type",
+          "OrderDirections": "$order_directions",
+          "PageSize": "$page_size",
+          "PageNumber": "$page_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "egypt_eta_cancel_document",
+      "description": "Cancel a valid document the taxpayer issued, with a reason (e.g. wrong buyer details). Legally relevant and allowed only within the document type's cancellation time limit; the receiver may decline it. Installed switched off. Show the user the document and the reason and wait for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "ETA uuid of the document to cancel."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Reason for the cancellation, e.g. Wrong buyer details."
+          }
+        },
+        "required": ["uuid", "reason"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/v1.0/documents/state/{uuid}/state",
+        "bodyMapping": {
+          "status": "cancelled",
+          "reason": "$reason"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "egypt_eta_reject_document",
+      "description": "Reject a document the taxpayer received, with a reason. Allowed once per document and only within the document type's rejection time limit; the issuer may decline the rejection. Installed switched off. Show the user the document and the reason and wait for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "ETA uuid of the received document to reject."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Reason for the rejection, e.g. Received incorrect invoice from the seller."
+          }
+        },
+        "required": ["uuid", "reason"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/v1.0/documents/state/{uuid}/state",
+        "bodyMapping": {
+          "status": "rejected",
+          "reason": "$reason"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "egypt_eta_decline_cancellation",
+      "description": "As the receiver, object to the issuer's cancellation of a document: the document becomes valid again. Allowed once per document and only within the time limit after the cancellation. Installed switched off. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "ETA uuid of the cancelled document."
+          }
+        },
+        "required": ["uuid"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/v1.0/documents/state/{uuid}/decline/cancelation"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "egypt_eta_decline_rejection",
+      "description": "As the issuer, object to the receiver's rejection of a document: the document becomes valid again. Allowed once per document and only within the time limit after the rejection. Installed switched off. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "ETA uuid of the rejected document."
+          }
+        },
+        "required": ["uuid"]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/v1.0/documents/state/{uuid}/decline/rejection"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    }
+  ]
+}
