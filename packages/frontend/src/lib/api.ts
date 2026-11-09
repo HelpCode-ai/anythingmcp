@@ -1679,6 +1679,12 @@ export interface ReactivationView {
   /** The AI client whose chat showed the link (else the first one connected). */
   client: 'Claude' | 'ChatGPT' | 'Cursor' | 'Copilot' | null;
   usage: { connectors: number; mcpServers: number; users: number };
+  /**
+   * What the workspace keeps and loses on each plan, with no connector or
+   * server names (ids like `pause-0`, empty names): the page opens without a
+   * sign-in, so it gives counts only. Null or missing when it could not be read.
+   */
+  planFit?: Record<FitPlanId, PlanFit> | null;
   /** The Telegram price test's arm, for a Telegram-only workspace that can buy; else null. */
   offerArm?: 'personal' | 'list' | null;
   /** The 'personal' arm's discounted Starter monthly price; null otherwise. */
@@ -2143,6 +2149,106 @@ export const support = {
     }),
 };
 
+// ── Plan fit (Cloud) ───────────────────────────────────────────────────────
+// Mirrors packages/backend/src/license/plan-fit.ts.
+
+export type FitPlanId = 'starter' | 'team';
+
+export interface FitAxis {
+  current: number;
+  /** null = unlimited on that plan. */
+  max: number | null;
+  over: boolean;
+}
+
+export interface FitItem {
+  id: string;
+  name: string;
+  calls30d: number;
+}
+
+export interface FitRanked extends FitAxis {
+  /** Stay active on that plan, most used first. */
+  keep: FitItem[];
+  /** Would be paused (never deleted), least used last. */
+  pause: FitItem[];
+}
+
+/** What this workspace, as it is today, keeps and loses on a plan. */
+export interface PlanFit {
+  plan: FitPlanId;
+  /** Everything the workspace uses today fits the plan. */
+  fits: boolean;
+  connectors: FitRanked;
+  mcpServers: FitRanked;
+  users: FitAxis;
+  fileSearch: {
+    connectors: FitRanked;
+    files: FitAxis;
+    bytes: FitAxis;
+    fileShare: boolean;
+  };
+  code: {
+    tools: FitAxis;
+    inlineInUse: boolean;
+    inlineIncluded: boolean;
+    runsThisMonth: FitAxis;
+  };
+}
+
+export type PlanFits = Partial<Record<FitPlanId, PlanFit>>;
+
+/**
+ * A refusal because a plan limit is used up (HTTP 403, `code: 'PLAN_LIMIT'`):
+ * active connectors, MCP servers or File Search folders (activating or
+ * creating one more needs one paused first, or a bigger plan), or users (an
+ * invitation beyond the plan).
+ */
+export type PlanLimitAxis = 'connectors' | 'mcpServers' | 'users' | 'fileSearchConnectors';
+const PLAN_LIMIT_AXES: readonly string[] = ['connectors', 'mcpServers', 'users', 'fileSearchConnectors'];
+
+export interface PlanLimitError {
+  code: 'PLAN_LIMIT';
+  axis: PlanLimitAxis;
+  max: number;
+  current: number;
+  message: string;
+}
+
+/** The PLAN_LIMIT details of a refused request, or null for any other error. */
+export function planLimitOf(err: unknown): PlanLimitError | null {
+  if (!(err instanceof ApiError) || err.status !== 403) return null;
+  const b = err.body as Partial<PlanLimitError> | null | undefined;
+  if (!b || b.code !== 'PLAN_LIMIT') return null;
+  if (typeof b.axis !== 'string' || !PLAN_LIMIT_AXES.includes(b.axis)) return null;
+  return {
+    code: 'PLAN_LIMIT',
+    axis: b.axis as PlanLimitAxis,
+    max: typeof b.max === 'number' ? b.max : 0,
+    current: typeof b.current === 'number' ? b.current : 0,
+    message: typeof b.message === 'string' && b.message ? b.message : err.message,
+  };
+}
+
+export function isPlanLimitError(err: unknown): boolean {
+  return planLimitOf(err) !== null;
+}
+
+/** GET /api/license/usage. */
+export interface LicenseUsage {
+  plan: string | null;
+  connectors: { current: number; max: number | null; isOver: boolean };
+  mcpServers: { current: number; max: number | null; isOver: boolean };
+  users: { current: number; max: number | null; isOver: boolean };
+  isOverAny: boolean;
+  /**
+   * Cloud: the connectors (File Search folders included) and MCP servers the
+   * last automatic downgrade paused, still paused. Missing on servers that do
+   * not pause by plan.
+   */
+  pausedByPlan?: { connectors: string[]; mcpServers: string[] };
+}
+
 // License
 export const license = {
   getEdition: (token: string) =>
@@ -2270,13 +2376,13 @@ export const license = {
   getInstanceId: () =>
     request<{ instanceId: string }>('/api/license/instance-id'),
   getUsage: (token?: string) =>
-    request<{
-      plan: string | null;
-      connectors: { current: number; max: number | null; isOver: boolean };
-      mcpServers: { current: number; max: number | null; isOver: boolean };
-      users: { current: number; max: number | null; isOver: boolean };
-      isOverAny: boolean;
-    }>('/api/license/usage', { token }),
+    request<LicenseUsage>('/api/license/usage', { token }),
+  /**
+   * Cloud: what this workspace keeps and loses on Starter and Team (or on
+   * `plan` only). 404 on self-hosted, where these limits do not apply.
+   */
+  getPlanFit: (token: string, plan?: FitPlanId) =>
+    request<{ plans?: PlanFits }>(`/api/license/plan-fit${plan ? `?plan=${plan}` : ''}`, { token }),
 };
 
 export interface McpServer {

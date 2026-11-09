@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { useEdition, notifyEditionChanged } from '@/lib/use-edition';
 import { EditionCard } from '@/components/edition-card';
 import { InvoiceEmailCard } from '@/components/invoice-email-card';
+import { PlanUsageMeters } from '@/components/plan-usage-meters';
 import { cardTrialDisplayEnd, cardTrialEligible, formatTrialEnd } from '@/lib/card-trial';
 import { useCardTrialKind } from '@/lib/use-card-trial-eligibility';
 import { describeBilling } from '@/lib/billing-summary';
@@ -399,6 +400,9 @@ export default function LicenseSettingsPage() {
 
       {/* Invoices by email: each paid invoice as a PDF (Cloud, paid or card-trial subscription) */}
       {hasBillableSubscription && token && <InvoiceEmailCard token={token} />}
+
+      {/* Cloud: usage against the plan's limits, from the plan fit */}
+      {isCloud && status?.plan && <PlanUsageMeters plan={status.plan} />}
 
       {/* Data Processing Agreement: paid Cloud plans accept it on the licence site */}
       {isCloud && status?.plan && status.plan !== 'trial' && status.plan !== 'community' && (

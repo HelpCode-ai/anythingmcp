@@ -8,13 +8,16 @@ import { useAuth } from '@/lib/auth-context';
 import {
   users,
   auth,
+  planLimitOf,
   roles,
   knowledgeGraph,
   memory as memoryApi,
   type LearningMode,
+  type PlanLimitError,
   type MemoryAccessLevel,
   type MemoryAccessSetting,
 } from '@/lib/api';
+import { PlanLimitNotice } from '@/components/plan-swap-dialog';
 import { AppSelect } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -57,6 +60,8 @@ export default function SettingsUsersPage() {
   const [roleList, setRoleList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
+  // An invitation refused at the plan's user limit (Cloud).
+  const [inviteLimit, setInviteLimit] = useState<PlanLimitError | null>(null);
   const { edition, reload: reloadEdition } = useEdition();
   const seatsFull =
     edition !== null && edition.seatLimit !== null && edition.seatsUsed >= edition.seatLimit;
@@ -271,6 +276,7 @@ export default function SettingsUsersPage() {
     setInviting(true);
     setInviteUrl('');
     setInviteEmailError('');
+    setInviteLimit(null);
     try {
       const result = await auth.inviteUser(
         {
@@ -288,6 +294,11 @@ export default function SettingsUsersPage() {
       // Reload invitations to show the new one
       users.invitations(token).then(setInvitationList).catch(() => {});
     } catch (err: any) {
+      const limit = planLimitOf(err);
+      if (limit) {
+        setInviteLimit(limit);
+        return;
+      }
       setMsg(t('error', { message: err.message }));
     } finally {
       setInviting(false);
@@ -374,6 +385,8 @@ export default function SettingsUsersPage() {
           {showInvite ? t('cancel') : t('inviteUser')}
         </Button>
       </div>
+
+      {inviteLimit && <PlanLimitNotice limit={inviteLimit} />}
 
       {msg && (
         <div className="p-3 rounded-[9px] text-sm flex items-center" style={{ background: 'var(--t-info-bg)', color: 'var(--t-info-fg)' }}>

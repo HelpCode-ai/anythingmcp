@@ -3645,5 +3645,83 @@
     "directory": "Gelistet im Claude Directory",
     "directoryChatgpt": "Gelistet im ChatGPT-Plugin-Verzeichnis",
     "directoryBoth": "Gelistet in den Verzeichnissen von Claude und ChatGPT"
+  },
+  "planFit": {
+    "title": "Was sich mit {plan} ändert",
+    "fits": "Alles, was Sie heute nutzen, passt in {plan}.",
+    "chooseTeam": "Stattdessen Team wählen",
+    "showDetails": "Welche genau?",
+    "hideDetails": "Liste ausblenden",
+    "keep": "Bleiben aktiv",
+    "pause": "Würden pausiert",
+    "groups": {
+      "connectors": "Connectors",
+      "mcpServers": "MCP-Server",
+      "fileSearch": "File-Search-Ordner"
+    },
+    "calls": "{count, plural, =0 {keine Aufrufe in 30 Tagen} one {# Aufruf in 30 Tagen} other {# Aufrufe in 30 Tagen}}",
+    "unnamed": "Ohne Namen",
+    "lines": {
+      "connectors": "{paused} Ihrer {total} Connectors würden pausiert: die am wenigsten genutzten. Welche, wählen Sie jederzeit selbst.",
+      "mcpServers": "{paused} Ihrer {total} MCP-Server würden pausiert: die am wenigsten genutzten.",
+      "mcpServersChoose": "{paused} Ihrer {total} MCP-Server würden pausiert: die am wenigsten genutzten. Welche, wählen Sie jederzeit selbst.",
+      "users": "{plan} enthält {max, plural, one {# Benutzer} other {# Benutzer}}; dieser Workspace hat {current}. Niemand verliert den Zugang, aber Sie können niemanden mehr einladen.",
+      "fileSearch": "File Search: {maxFolders, plural, one {# Ordner} other {# Ordner}} und {maxFiles, number} Dateien (Sie haben {folders, plural, one {# Ordner} other {# Ordner}}, {files, number} Dateien). Darüber pausiert die Synchronisierung.",
+      "fileSearchStorage": "File Search: {maxSize} Speicher (Sie nutzen {size}). Darüber pausiert die Synchronisierung.",
+      "codeTools": "Gespeicherte Code-Tools: {max} enthalten (Sie haben {current}). Bestehende funktionieren weiter; neue können Sie nicht hinzufügen.",
+      "inline": "Inline-Code (code_execute) ist nicht enthalten."
+    }
+  },
+  "planSwap": {
+    "badge": "Pausiert: Tarif-Limit",
+    "activate": "Aktivieren",
+    "title": {
+      "connectors": "Ihr Tarif enthält {max, plural, one {# aktiven Connector} other {# aktive Connectors}}",
+      "mcpServers": "Ihr Tarif enthält {max, plural, one {# aktiven MCP-Server} other {# aktive MCP-Server}}",
+      "fileSearchConnectors": "Ihr Tarif enthält {max, plural, one {# File-Search-Ordner} other {# File-Search-Ordner}}"
+    },
+    "body": "Pausieren Sie einen, um {name} zu aktivieren.",
+    "bodyCreate": "Pausieren Sie einen, um einen neuen hinzuzufügen, oder wechseln Sie den Tarif.",
+    "listLabel": "Jetzt aktiv, meistgenutzte zuerst",
+    "listLabelPlain": "Jetzt aktiv",
+    "calls": "{count, plural, =0 {keine Aufrufe in 30 Tagen} one {# Aufruf in 30 Tagen} other {# Aufrufe in 30 Tagen}}",
+    "pauseAndActivate": "Pausieren und aktivieren",
+    "pauseOnly": "Pausieren",
+    "working": "Wird umgestellt…",
+    "cancel": "Abbrechen",
+    "upgradeTeam": "Auf Team upgraden",
+    "askEnterprise": "Enterprise anfragen",
+    "loading": "Wird geladen…",
+    "empty": "Nichts Aktives zum Pausieren.",
+    "error": "Umstellen nicht möglich: {message}",
+    "pausedDone": "{name} ist pausiert. Sie können den neuen jetzt hinzufügen.",
+    "notice": {
+      "connectors": "Ihr Tarif enthält {max, plural, one {# aktiven Connector} other {# aktive Connectors}}. Pausieren Sie einen oder wechseln Sie den Tarif.",
+      "mcpServers": "Ihr Tarif enthält {max, plural, one {# aktiven MCP-Server} other {# aktive MCP-Server}}. Pausieren Sie einen oder wechseln Sie den Tarif.",
+      "fileSearchConnectors": "Ihr Tarif enthält {max, plural, one {# File-Search-Ordner} other {# File-Search-Ordner}}. Pausieren Sie einen oder wechseln Sie den Tarif.",
+      "users": "Ihr Tarif enthält {max, plural, one {# Benutzer} other {# Benutzer}}. Für weitere Einladungen wechseln Sie den Tarif."
+    },
+    "pauseOne": "Einen pausieren"
+  },
+  "planUsage": {
+    "title": "Nutzung im Tarif {plan}",
+    "titleTrial": "Nutzung in Ihrer Testphase (Team-Limits)",
+    "connectors": "Connectors",
+    "mcpServers": "MCP-Server",
+    "users": "Benutzer",
+    "fileSearchFolders": "File-Search-Ordner",
+    "fileSearchFiles": "File-Search-Dateien",
+    "fileSearchStorage": "File-Search-Speicher",
+    "codeTools": "Gespeicherte Code-Tools",
+    "codeRuns": "Code-Ausführungen diesen Monat",
+    "inlineCode": "Inline-Code",
+    "included": "Enthalten",
+    "notIncluded": "Nicht enthalten",
+    "inUseNotIncluded": "In Nutzung, nicht enthalten",
+    "unlimited": "{current} · ohne Limit",
+    "paused": "{count} durch Ihren Tarif pausiert",
+    "starterTitle": "Mit Starter",
+    "seeStarter": "Was sich mit Starter ändert",
+    "hideStarter": "Ausblenden"
   }
 }

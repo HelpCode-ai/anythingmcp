@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
+import { NextIntlClientProvider } from 'next-intl';
 import { ApiError, reactivation, type ReactivationView } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useTrustStats } from '@/lib/trust-stats';
@@ -11,18 +12,30 @@ import { CHATGPT_DIRECTORY_URL, CLAUDE_DIRECTORY_URL, buildEnterpriseContactUrl,
 import {
   CLOUD_PLANS,
   DEFAULT_SELECTION,
+  fitFor,
   formatEur,
   limitsExceeded,
   planById,
+  selectionForFit,
   selectionForUsage,
   yearlyPerMonth,
   type PlanSelection,
 } from '@/lib/card-trial';
 import { LogoIcon } from '@/components/logo-icon';
+import { PlanFitNotice } from '@/components/plan-fit-notice';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { deviceKind, usePaywallLifecycle, type PaywallAction, type PaywallActionDetail } from '@/lib/paywall-tracking';
-import { COPY, DATE_LOCALE, fmt, pickPageLang, splitTag, type PageLang, type ReactivateCopy } from './copy';
+import {
+  COPY,
+  DATE_LOCALE,
+  PLAN_FIT_COPY,
+  fmt,
+  pickPageLang,
+  splitTag,
+  type PageLang,
+  type ReactivateCopy,
+} from './copy';
 
 /** How often the page asks whether the payment reached the workspace, and for how long. */
 const PAID_POLL_MS = 4000;
@@ -95,7 +108,9 @@ function ReactivateContent() {
       .then((v) => {
         if (cancelled) return;
         setView(v);
-        if (!picked.current) setSelection(selectionForUsage(DEFAULT_SELECTION, v.usage));
+        if (!picked.current) {
+          setSelection(selectionForFit(selectionForUsage(DEFAULT_SELECTION, v.usage), v.planFit ?? null));
+        }
       })
       .catch((e) => {
         if (cancelled) return;
@@ -267,6 +282,22 @@ function ReactivateContent() {
                   offer={view.offer ?? null}
                   onEnterprise={() => track('enterprise_clicked')}
                 />
+                {/* What the chosen plan pauses or leaves out, before checkout.
+                    Counts only: the page has no sign-in, so no names. */}
+                <NextIntlClientProvider locale={lang} messages={{ planFit: PLAN_FIT_COPY[lang] }}>
+                  <PlanFitNotice
+                    fit={fitFor(view.planFit, selection.plan)}
+                    anonymized
+                    quietFit={selection.plan === 'team'}
+                    className="mt-4"
+                    onTrack={(action, plan) => track(action, { plan })}
+                    onChooseTeam={
+                      !opening && fitFor(view.planFit, 'team')?.fits
+                        ? () => pickPlan({ ...selection, plan: 'team' })
+                        : undefined
+                    }
+                  />
+                </NextIntlClientProvider>
                 <button
                   type="button"
                   onClick={subscribe}

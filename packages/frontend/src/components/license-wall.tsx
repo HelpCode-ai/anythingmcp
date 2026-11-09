@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { license, productEvents, type LicenseWallView } from '@/lib/api';
+import { license, productEvents, type LicenseWallView, type PlanFits } from '@/lib/api';
 import { deviceKind, usePaywallLifecycle, type PaywallAction, type PaywallActionDetail } from '@/lib/paywall-tracking';
 import { useTrustStats } from '@/lib/trust-stats';
 import { directoryListingsFor } from '@/lib/marketing';
@@ -16,6 +16,7 @@ import {
   DEFAULT_SELECTION,
   planById,
   readPlanIntent,
+  selectionForFit,
   selectionForUsage,
   type PlanSelection,
   type WorkspaceUsage,
@@ -49,6 +50,10 @@ export function LicenseWall() {
   // What the workspace already has, so a plan it has outgrown is not the one
   // preselected (and says so).
   const [usage, setUsage] = useState<WorkspaceUsage | null>(null);
+  // What each plan keeps and pauses for this workspace (Cloud), for the
+  // "What changes with Starter" block under the plans.
+  const [planFit, setPlanFit] = useState<PlanFits | null>(null);
+  const planFitRef = useRef<PlanFits | null>(null);
   const tw = useTranslations('licenseWall');
   const trustStats = useTrustStats(isCloud && reason === 'trial-ended' && user?.role === 'ADMIN');
   // Once the admin picks a plan, the usage answer no longer moves it.
@@ -109,7 +114,27 @@ export function LicenseWall() {
           users: u.users.current,
         };
         setUsage(current);
-        if (!picked.current) setSelection(selectionForUsage(intent, current));
+        if (!picked.current) setSelection(selectionForFit(selectionForUsage(intent, current), planFitRef.current));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [buyInPlace, token]);
+
+  useEffect(() => {
+    if (!buyInPlace || !token) return;
+    let cancelled = false;
+    license
+      .getPlanFit(token)
+      .then((r) => {
+        const plans = r?.plans && typeof r.plans === 'object' ? r.plans : null;
+        if (cancelled || !plans) return;
+        planFitRef.current = plans;
+        setPlanFit(plans);
+        // Inline code or File Search can rule Starter out with few connectors:
+        // preselect the plan that fits, unless the admin already picked one.
+        if (!picked.current) setSelection((prev) => selectionForFit(prev, plans));
       })
       .catch(() => {});
     return () => {
@@ -381,6 +406,8 @@ export function LicenseWall() {
                   compact
                   disabled={checkout.loading}
                   usage={usage}
+                  planFit={planFit}
+                  onPlanFitEvent={(event, plan) => trackWall(event, { plan })}
                 />
               </div>
               <button

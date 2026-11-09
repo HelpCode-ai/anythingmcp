@@ -3,6 +3,7 @@
 import {
   CLOUD_PLANS,
   describeUsage,
+  fitFor,
   formatEur,
   limitsExceeded,
   smallestFittingPlan,
@@ -12,7 +13,9 @@ import {
   type PlanSelection,
   type WorkspaceUsage,
 } from '@/lib/card-trial';
+import type { PlanFits } from '@/lib/api';
 import { buildEnterpriseContactUrl } from '@/lib/marketing';
+import { PlanFitNotice, type PlanFitEvent } from '@/components/plan-fit-notice';
 import { useAuth } from '@/lib/auth-context';
 import { formatLocal, useLocalPricing } from '@/lib/local-currency';
 import { cn } from '@/lib/utils';
@@ -66,6 +69,9 @@ function PeriodToggle({
  * and a line to Enterprise for anything beyond them. `compact` lays the plans
  * out as rows (for the licence wall's narrow modal). With `usage` (what the
  * workspace already has), a plan it has outgrown says so under its summary.
+ * With `planFit` (Cloud), the selected plan is followed by what it changes
+ * for this workspace ("What changes with Starter"), or by one quiet line when
+ * Team fits; Starter stays selectable either way.
  */
 export function PlanPicker({
   value,
@@ -73,12 +79,16 @@ export function PlanPicker({
   compact = false,
   disabled = false,
   usage = null,
+  planFit = null,
+  onPlanFitEvent,
 }: {
   value: PlanSelection;
   onChange: (next: PlanSelection) => void;
   compact?: boolean;
   disabled?: boolean;
   usage?: WorkspaceUsage | null;
+  planFit?: PlanFits | null;
+  onPlanFitEvent?: (event: PlanFitEvent, plan: PlanSelection['plan']) => void;
 }) {
   const { deploymentMode } = useAuth();
   // Outside the euro area Stripe charges in the visitor's currency: lead with
@@ -176,6 +186,14 @@ export function PlanPicker({
           );
         })}
       </div>
+      <PlanFitNotice
+        fit={fitFor(planFit, value.plan)}
+        quietFit={value.plan === 'team'}
+        onTrack={onPlanFitEvent}
+        onChooseTeam={
+          !disabled && fitFor(planFit, 'team')?.fits ? () => onChange({ ...value, plan: 'team' }) : undefined
+        }
+      />
       <p className="text-center text-[11px] text-[var(--text-3)]">
         {footer} {outgrewAll ? 'This workspace goes past Team.' : 'More users, single sign-on or SCIM?'}{' '}
         <a
