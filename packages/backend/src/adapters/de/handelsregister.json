@@ -1,8 +1,8 @@
 {
   "slug": "handelsregister",
   "name": "Handelsregister (handelsregister.ai)",
-  "description": "Access the German commercial register (Handelsregister) through handelsregister.ai: search and filter companies, fetch a company's register data with optional financials, management and shareholders, and download official register documents.",
-  "instructions": "This connector uses the handelsregister.ai REST API (https://handelsregister.ai/api/v1), which wraps the official Handelsregister and adds structured data.\n\n**Authentication**: the API key goes in the `x-api-key` header. Create it in the handelsregister.ai dashboard.\n\n**Typical workflow**:\n1. `hr_search_companies`: find companies by name, register number or filters. Each hit has an `entity_id`.\n2. `hr_get_company`: the full profile. Pass the `entity_id` as `company_id` (names are not unique). Add `features` only when the user needs them, because each one costs credits.\n3. `hr_get_shareholders`: the current shareholders (feature `shareholders`).\n4. `hr_fetch_document`: one official document (current or chronological excerpt, shareholder list, articles of association, structured XML).\n\n**Credits**: a search costs 1 credit. `hr_get_company` costs 5 credits plus each feature that returns data (financial_kpi 1, related_persons 2, publications 1, shareholders 5, news 10, insolvency_publications 5, annual_financial_statements 5). A document costs 15 credits and is limited to 5 per minute. Failed requests cost nothing.\n\n**Errors**: 404 on a document means the company has no document of that type. 504 means the register did not answer in time: wait at least 60 seconds before trying again. 422 means a parameter value is invalid.",
+  "description": "Access the German commercial register (Handelsregister) through handelsregister.ai: search and filter companies, fetch a company's register data with financials, management and shareholders, look up people, follow register changes (signals), download official register documents and check the account's credits.",
+  "instructions": "This connector uses the handelsregister.ai REST API (https://handelsregister.ai/api/v1), which wraps the official Handelsregister and adds structured data.\n\n**Authentication**: the API key goes in the `x-api-key` header. Create it in the handelsregister.ai dashboard.\n\n**Typical workflow**:\n1. `handelsregister_search_companies`: find companies by name, register number or filters. Each hit has an `entity_id`.\n2. `handelsregister_get_company`: the full profile. Pass the `entity_id` as `company_id` (names are not unique). Add `features` only when the user needs them, because each one costs credits.\n3. `handelsregister_get_shareholders`: the current shareholders (feature `shareholders`).\n4. `handelsregister_fetch_document`: one official document (current or chronological excerpt, shareholder list, articles of association, structured XML).\n5. `handelsregister_fetch_person`: a person profile, with a company as context to tell namesakes apart (needs a Plus, Pro or Max subscription).\n6. `handelsregister_list_signals` / `handelsregister_get_signal`: register changes (new registrations, management or capital changes, closures, insolvencies). `handelsregister_list_signal_topics` lists the topic codes for free.\n7. `handelsregister_get_account`, `handelsregister_get_credits`, `handelsregister_get_usage`, `handelsregister_get_subscription`: free, read-only.\n\n**Credits**: check `handelsregister_get_credits` (free) before expensive calls when the balance may be low. A search costs 1 credit. `handelsregister_get_company` costs 5 credits plus each feature that returns data (financial_kpi 1, related_persons 2, publications 1, balance_sheet_accounts 3, profit_and_loss_account 3, shareholders 5, insolvency_publications 5, annual_financial_statements 5, ubos 10, news 10, mergers_and_acquisitions 20, network 25, shareholders_deep 80 on Max only); realtime_mode adds 10, ai_search adds 20 (charged even when the request fails). A document costs 15 credits and is limited to 5 per minute. A person costs 15 to 20 credits. A signals call costs 20 credits when it succeeds. Failed requests cost nothing unless noted. Every answer's `meta` shows `request_credit_cost` and `credits_remaining`.\n\n**Plans**: ownership, management and insolvency filters in search, fetch-person, the INSOLVENCIES signals topic (Pro) and TRANSFORMATIONS (Max) need a paid handelsregister.ai plan; without one the API answers 403 (`subscription_required` or `PLAN_REQUIRED`) at no cost.\n\n**Errors**: 404 on a document means the company has no document of that type. 504 means the register did not answer in time: wait at least 60 seconds before trying again. 408 means the data source timed out (no credits charged). 422 means a parameter value is invalid; the signals endpoints also answer 422 to any unknown parameter.\n\n**Not covered**: monitoring and webhooks. Creating a webhook endpoint needs an admin Bearer token, which this API key connector does not have; set monitors up in the handelsregister.ai dashboard.",
   "region": "de",
   "category": "government",
   "icon": "handelsregister",
@@ -22,8 +22,8 @@
   },
   "tools": [
     {
-      "name": "hr_search_companies",
-      "description": "Search German companies in the Handelsregister by name, register number or keyword, optionally with filters (city, legal form, register court, status, industry, revenue...). Returns up to 30 hits per page, each with an entity_id to use as company_id in hr_get_company and hr_fetch_document. Costs 1 credit.",
+      "name": "handelsregister_search_companies",
+      "description": "Search German companies in the Handelsregister by name, register number or keyword, optionally with filters (city, legal form, register court, status, industry, revenue...). Returns up to 30 hits per page, each with an entity_id to use as company_id in handelsregister_get_company and handelsregister_fetch_document. Costs 1 credit.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -35,7 +35,7 @@
           },
           "filters": {
             "type": "string",
-            "description": "Optional filters as a JSON object string, e.g. {\"city\":\"München\",\"legal_form_code\":\"GmbH\",\"active\":true} or {\"registration_type\":\"HRB\",\"registration_authority_name\":\"Freiburg\"}. Other keys: postal_code, state, status (ACTIVE, INACTIVE, TERMINATED, DISSOLVED, INSOLVENT), industry_code, company_size_category (micro, small, medium, large), registration_date_from/to (YYYY-MM-DD); revenue and balance-sheet ranges nest under financial_filters, e.g. {\"financial_filters\":{\"pl_revenue\":{\"gte\":1000000}}}."
+            "description": "Optional filters as a JSON object string, e.g. {\"city\":\"München\",\"legal_form_code\":\"GmbH\",\"active\":true} or {\"registration_type\":\"HRB\",\"registration_authority_name\":\"Freiburg\"}. Other keys: postal_code, state, status (ACTIVE, INACTIVE, TERMINATED, DISSOLVED, INSOLVENT), industry_code, company_size_category (micro, small, medium, large), registration_date_from/to (YYYY-MM-DD); revenue and balance-sheet ranges nest under financial_filters, e.g. {\"financial_filters\":{\"pl_revenue\":{\"gte\":1000000}}}. Ownership, management and insolvency groups (ownership_filters, executive_filters, lifecycle_filters) need a Pro or Max plan."
           },
           "limit": {
             "type": "integer",
@@ -59,6 +59,14 @@
               "desc"
             ],
             "description": "Sort direction."
+          },
+          "match_context": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 adds _match_context to every hit: which register entries satisfied the register-derived filters."
           }
         },
         "required": []
@@ -72,23 +80,24 @@
           "limit": "$limit",
           "skip": "$skip",
           "sort": "$sort",
-          "order": "$order"
+          "order": "$order",
+          "match_context": "$match_context"
         }
       }
     },
     {
-      "name": "hr_get_company",
+      "name": "handelsregister_get_company",
       "description": "Fetch the full register profile of one German company: name, status, legal form, register court and number, address, purpose, registration date. Optional features add financials, management, publications and more, each for extra credits. Base price 5 credits.",
       "parameters": {
         "type": "object",
         "properties": {
           "company_id": {
             "type": "string",
-            "description": "The entity_id from hr_search_companies (most reliable). A company name or register number also works, but names are not unique."
+            "description": "The entity_id from handelsregister_search_companies (most reliable). A company name or register number also works, but names are not unique."
           },
           "features": {
             "type": "string",
-            "description": "Optional comma-separated extra data, only what the user needs: financial_kpi, balance_sheet_accounts, profit_and_loss_account, related_persons (management), publications, news, insolvency_publications, annual_financial_statements, shareholders, ubos, shareholdings. Example: 'financial_kpi,related_persons'."
+            "description": "Optional comma-separated extra data, only what the user needs (credits per feature that returns data): financial_kpi (1), balance_sheet_accounts (3), profit_and_loss_account (3), related_persons (2, management), publications (1), news (10), insolvency_publications (5), annual_financial_statements (5), annual_financial_statements__html (5), shareholders (5), shareholders_deep (80, Max plan only), ubos (10), shareholdings (5), mergers_and_acquisitions (20), network (25, Pro/Max), website_content (0). Example: 'financial_kpi,related_persons'."
           },
           "financial_statement_type": {
             "type": "string",
@@ -104,6 +113,20 @@
             "minimum": 1,
             "maximum": 30,
             "description": "For financial features: only the N newest fiscal years."
+          },
+          "realtime_mode": {
+            "type": "string",
+            "enum": [
+              "handelsregister-default"
+            ],
+            "description": "Live data straight from the commercial register (+10 credits, charged only when the live fetch succeeds). Omit for the stored data."
+          },
+          "ai_search": {
+            "type": "string",
+            "enum": [
+              "on-default"
+            ],
+            "description": "AI mode for vague queries (+20 credits, charged even when the request fails). Omit unless the user asks for it."
           }
         },
         "required": [
@@ -117,19 +140,21 @@
           "q": "$company_id",
           "features": "$features",
           "financial_statement_type": "$financial_statement_type",
-          "financial_years": "$financial_years"
+          "financial_years": "$financial_years",
+          "realtime_mode": "$realtime_mode",
+          "ai_search": "$ai_search"
         }
       }
     },
     {
-      "name": "hr_get_shareholders",
+      "name": "handelsregister_get_shareholders",
       "description": "The current shareholders of a German company, with the company's register profile. Costs 5 credits plus 5 for the shareholders when data is returned.",
       "parameters": {
         "type": "object",
         "properties": {
           "company_id": {
             "type": "string",
-            "description": "The entity_id from hr_search_companies (most reliable), or a company name or register number."
+            "description": "The entity_id from handelsregister_search_companies (most reliable), or a company name or register number."
           }
         },
         "required": [
@@ -146,14 +171,14 @@
       }
     },
     {
-      "name": "hr_fetch_document",
+      "name": "handelsregister_fetch_document",
       "description": "Download one official document from the commercial register: AD (current excerpt), CD (chronological excerpt), shareholders_list, articles_of_association (PDF) or SI (structured register content, XML). Costs 15 credits, at most 5 per minute. A 404 means the company has no document of that type.",
       "parameters": {
         "type": "object",
         "properties": {
           "company_id": {
             "type": "string",
-            "description": "The entity_id from hr_search_companies."
+            "description": "The entity_id from handelsregister_search_companies."
           },
           "document_type": {
             "type": "string",
@@ -179,6 +204,195 @@
           "company_id": "$company_id",
           "document_type": "$document_type"
         }
+      }
+    },
+    {
+      "name": "handelsregister_fetch_person",
+      "description": "Profile of one person from register data and public web sources: name, birth date, location, roles, bio. A company is required as context to tell people with the same name apart. Costs 15 credits (+5 for shareholdings). Needs a Plus, Pro or Max handelsregister.ai subscription, otherwise 403 subscription_required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_q": {
+            "type": "string",
+            "minLength": 2,
+            "description": "The person's name, e.g. 'Max Mustermann'."
+          },
+          "organization_q": {
+            "type": "string",
+            "minLength": 2,
+            "description": "A company the person is connected to, as context, e.g. 'Beispielwerk Analytics GmbH'."
+          },
+          "feature": {
+            "type": "string",
+            "enum": [
+              "shareholdings",
+              "network"
+            ],
+            "description": "Optional extra data: shareholdings (+5 credits, the person's holdings in companies) or network (+25 credits, Pro/Max plan)."
+          }
+        },
+        "required": [
+          "person_q",
+          "organization_q"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fetch-person",
+        "queryParams": {
+          "person_q": "$person_q",
+          "organization_q": "$organization_q",
+          "feature": "$feature"
+        }
+      }
+    },
+    {
+      "name": "handelsregister_list_signals",
+      "description": "Register changes (signals) across all companies or for up to 5 companies, newest first, up to 20 per page. Costs 20 credits per successful call. Without topics you only get the topics your plan includes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topics": {
+            "type": "string",
+            "description": "Comma-separated, case-sensitive topic codes: NEW_REGISTRATIONS, MASTER_DATA_CHANGES, CLOSURES, ROLE_HOLDER_CHANGES, CAPITAL_CHANGES, INSOLVENCIES (Pro), TRANSFORMATIONS (Max)."
+          },
+          "organization_ids": {
+            "type": "string",
+            "description": "Up to 5 comma-separated entity_ids from handelsregister_search_companies."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD (no time zone suffix)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date, YYYY-MM-DD, same as or after from."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "next_cursor from the previous page, unchanged."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signals",
+        "queryParams": {
+          "topics": "$topics",
+          "organization_ids": "$organization_ids",
+          "from": "$from",
+          "to": "$to",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "handelsregister_get_signal",
+      "description": "One register change (signal) by its id, with the full event detail. Costs 20 credits when found.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "signal_id": {
+            "type": "string",
+            "description": "The signal id from handelsregister_list_signals."
+          }
+        },
+        "required": [
+          "signal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signals/{signal_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "handelsregister_list_signal_topics",
+      "description": "The signal topic codes with German and English labels, descriptions and the plan each needs. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/signals/catalog"
+      }
+    },
+    {
+      "name": "handelsregister_get_account",
+      "description": "The handelsregister.ai account profile: name, language, current plan. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account"
+      }
+    },
+    {
+      "name": "handelsregister_get_credits",
+      "description": "The remaining credit balance, per grant, with the next expiry date. Free: use it before expensive calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/credits"
+      }
+    },
+    {
+      "name": "handelsregister_get_usage",
+      "description": "Credits used and requests made, in total, per endpoint and as a daily or monthly series. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD (default: start of the current month; range at most 366 days)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date, YYYY-MM-DD (includes the whole day)."
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "day",
+              "month"
+            ],
+            "description": "Series bucket size."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/usage",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "group_by": "$group_by"
+        }
+      }
+    },
+    {
+      "name": "handelsregister_get_subscription",
+      "description": "The current handelsregister.ai subscription: plan, status, billing period and included features. Free.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/subscription"
       }
     }
   ]
