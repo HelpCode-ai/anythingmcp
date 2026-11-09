@@ -1,102 +1,184 @@
 {
   "slug": "handelsregister",
   "name": "Handelsregister (handelsregister.ai)",
-  "description": "Access the German commercial register (Handelsregister) data via handelsregister.ai — search companies by name, retrieve official entries, current/historical addresses, shareholders, managing directors, and corporate structure.",
-  "instructions": "This connector uses the handelsregister.ai REST API which wraps the official Handelsregister portal and enriches it with structured data.\n\n**Authentication**: API key via Authorization header. Generate a key at https://handelsregister.ai/account.\n\n**Typical workflow**:\n1. `hr_search_companies` — find a company by name or keyword\n2. `hr_get_company` — fetch the full record by `company_id` returned from search\n3. `hr_get_documents` — list SHD/AD/HRA documents attached to a company\n\n**Registernummer format**: Courts + numbers like 'HRB 12345 München'. Search also accepts plain company names.\n\n**Costs**: handelsregister.ai bills per lookup, not per search. Searches are typically free; fetching full company records or documents consumes credits.",
+  "description": "Access the German commercial register (Handelsregister) through handelsregister.ai: search and filter companies, fetch a company's register data with optional financials, management and shareholders, and download official register documents.",
+  "instructions": "This connector uses the handelsregister.ai REST API (https://handelsregister.ai/api/v1), which wraps the official Handelsregister and adds structured data.\n\n**Authentication**: the API key goes in the `x-api-key` header. Create it in the handelsregister.ai dashboard.\n\n**Typical workflow**:\n1. `hr_search_companies`: find companies by name, register number or filters. Each hit has an `entity_id`.\n2. `hr_get_company`: the full profile. Pass the `entity_id` as `company_id` (names are not unique). Add `features` only when the user needs them, because each one costs credits.\n3. `hr_get_shareholders`: the current shareholders (feature `shareholders`).\n4. `hr_fetch_document`: one official document (current or chronological excerpt, shareholder list, articles of association, structured XML).\n\n**Credits**: a search costs 1 credit. `hr_get_company` costs 5 credits plus each feature that returns data (financial_kpi 1, related_persons 2, publications 1, shareholders 5, news 10, insolvency_publications 5, annual_financial_statements 5). A document costs 15 credits and is limited to 5 per minute. Failed requests cost nothing.\n\n**Errors**: 404 on a document means the company has no document of that type. 504 means the register did not answer in time: wait at least 60 seconds before trying again. 422 means a parameter value is invalid.",
   "region": "de",
   "category": "government",
   "icon": "handelsregister",
-  "docsUrl": "https://handelsregister.ai/docs",
-  "requiredEnvVars": ["HANDELSREGISTER_API_KEY"],
+  "docsUrl": "https://handelsregister.ai/en/documentation",
+  "requiredEnvVars": [
+    "HANDELSREGISTER_API_KEY"
+  ],
   "connector": {
     "name": "Handelsregister",
     "type": "REST",
     "baseUrl": "https://handelsregister.ai/api/v1",
     "authType": "API_KEY",
     "authConfig": {
-      "headerName": "Authorization",
-      "apiKey": "Bearer {{HANDELSREGISTER_API_KEY}}"
+      "headerName": "x-api-key",
+      "apiKey": "{{HANDELSREGISTER_API_KEY}}"
     }
   },
   "tools": [
     {
       "name": "hr_search_companies",
-      "description": "Search German companies in the Handelsregister by name or keyword. Returns a list of matches with company_id, legal name, registration court, Registernummer, and location. Use the returned company_id with hr_get_company for full details.",
+      "description": "Search German companies in the Handelsregister by name, register number or keyword, optionally with filters (city, legal form, register court, status, industry, revenue...). Returns up to 30 hits per page, each with an entity_id to use as company_id in hr_get_company and hr_fetch_document. Costs 1 credit.",
       "parameters": {
         "type": "object",
         "properties": {
           "q": {
             "type": "string",
-            "description": "Search query — company name, brand, or keyword (e.g. 'SAP SE', 'Koch Freiburg')."
+            "minLength": 2,
+            "maxLength": 500,
+            "description": "Search term, 2 to 500 characters: company name, register number (e.g. 'HRB 12345') or keyword. Optional when filters is set."
+          },
+          "filters": {
+            "type": "string",
+            "description": "Optional filters as a JSON object string, e.g. {\"city\":\"München\",\"legal_form_code\":\"GmbH\",\"active\":true} or {\"registration_type\":\"HRB\",\"registration_authority_name\":\"Freiburg\"}. Other keys: postal_code, state, status (ACTIVE, INACTIVE, TERMINATED, DISSOLVED, INSOLVENT), industry_code, company_size_category (micro, small, medium, large), registration_date_from/to (YYYY-MM-DD); revenue and balance-sheet ranges nest under financial_filters, e.g. {\"financial_filters\":{\"pl_revenue\":{\"gte\":1000000}}}."
           },
           "limit": {
-            "type": "number",
-            "description": "Max number of results (default: 10, max: 50)."
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Results per page (default 10, max 30)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of results to skip, for the next page (default 0)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field: relevance (default), registration_date, revenue, employees, equity, share_capital, last_activity, and others from the API docs."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
           }
         },
-        "required": ["q"]
+        "required": []
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/search",
+        "path": "/search-organizations",
         "queryParams": {
           "q": "$q",
-          "limit": "$limit"
+          "filters": "$filters",
+          "limit": "$limit",
+          "skip": "$skip",
+          "sort": "$sort",
+          "order": "$order"
         }
       }
     },
     {
       "name": "hr_get_company",
-      "description": "Retrieve the full Handelsregister record for a company by its company_id. Returns legal name, address, registration data (court + Registernummer), legal form, capital, purpose (Gegenstand), managing directors and Prokuristen, and recent changes.",
+      "description": "Fetch the full register profile of one German company: name, status, legal form, register court and number, address, purpose, registration date. Optional features add financials, management, publications and more, each for extra credits. Base price 5 credits.",
       "parameters": {
         "type": "object",
         "properties": {
           "company_id": {
             "type": "string",
-            "description": "The handelsregister.ai company_id returned by hr_search_companies."
-          }
-        },
-        "required": ["company_id"]
-      },
-      "endpointMapping": {
-        "method": "GET",
-        "path": "/companies/{company_id}"
-      }
-    },
-    {
-      "name": "hr_get_documents",
-      "description": "List the official documents (SHD = Shareholder list, AD = current printout, CD = chronological printout, HD = historical printout) attached to a company in the Handelsregister. Each document has a document_id that can be used for download links.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "company_id": {
+            "description": "The entity_id from hr_search_companies (most reliable). A company name or register number also works, but names are not unique."
+          },
+          "features": {
             "type": "string",
-            "description": "The handelsregister.ai company_id."
+            "description": "Optional comma-separated extra data, only what the user needs: financial_kpi, balance_sheet_accounts, profit_and_loss_account, related_persons (management), publications, news, insolvency_publications, annual_financial_statements, shareholders, ubos, shareholdings. Example: 'financial_kpi,related_persons'."
+          },
+          "financial_statement_type": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "annual",
+              "consolidated"
+            ],
+            "description": "For financial features: auto (default), annual (single-entity Jahresabschluss) or consolidated (group)."
+          },
+          "financial_years": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "For financial features: only the N newest fiscal years."
           }
         },
-        "required": ["company_id"]
+        "required": [
+          "company_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/companies/{company_id}/documents"
+        "path": "/fetch-organization",
+        "queryParams": {
+          "q": "$company_id",
+          "features": "$features",
+          "financial_statement_type": "$financial_statement_type",
+          "financial_years": "$financial_years"
+        }
       }
     },
     {
       "name": "hr_get_shareholders",
-      "description": "Retrieve the shareholder list (Gesellschafterliste) from the most recent SHD filing for a GmbH or UG. Returns each shareholder's name, address, share amount (Geschäftsanteil) and percentage.",
+      "description": "The current shareholders of a German company, with the company's register profile. Costs 5 credits plus 5 for the shareholders when data is returned.",
       "parameters": {
         "type": "object",
         "properties": {
           "company_id": {
             "type": "string",
-            "description": "The handelsregister.ai company_id."
+            "description": "The entity_id from hr_search_companies (most reliable), or a company name or register number."
           }
         },
-        "required": ["company_id"]
+        "required": [
+          "company_id"
+        ]
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "/companies/{company_id}/shareholders"
+        "path": "/fetch-organization",
+        "queryParams": {
+          "q": "$company_id",
+          "features": "shareholders"
+        }
+      }
+    },
+    {
+      "name": "hr_fetch_document",
+      "description": "Download one official document from the commercial register: AD (current excerpt), CD (chronological excerpt), shareholders_list, articles_of_association (PDF) or SI (structured register content, XML). Costs 15 credits, at most 5 per minute. A 404 means the company has no document of that type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "description": "The entity_id from hr_search_companies."
+          },
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "AD",
+              "CD",
+              "SI",
+              "shareholders_list",
+              "articles_of_association"
+            ],
+            "description": "AD = current register excerpt, CD = chronological excerpt, SI = structured content (XML), shareholders_list, articles_of_association."
+          }
+        },
+        "required": [
+          "company_id",
+          "document_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fetch-document",
+        "queryParams": {
+          "company_id": "$company_id",
+          "document_type": "$document_type"
+        }
       }
     }
   ]
