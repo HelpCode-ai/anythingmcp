@@ -892,6 +892,18 @@ export const adapters = {
     }>('/api/adapters/starter-pack/install', { method: 'POST', token, body: { slugs } }),
 };
 
+/** Invoices by email for the workspace's subscription (Cloud). */
+export interface InvoiceEmailSettings {
+  /** False when there is no subscription to send invoices for. */
+  available: boolean;
+  enabled: boolean;
+  /** The Stripe customer's email: where invoices go unless another address is set. */
+  billingContact: string | null;
+  recipient: { kind: 'billing' | 'custom'; address: string | null };
+  /** The last invoice emailed; `to` is masked. */
+  lastSent: { number: string; at: string; to: string } | null;
+}
+
 /** A paid Cloud licence's Stripe subscription, as the server last saw it. */
 export interface LicenseBilling {
   status: string;
@@ -2146,6 +2158,14 @@ export const license = {
       body: { ...(locale && { locale }) },
       token,
     }),
+  /** Cloud only (ADMIN): whether each paid invoice is emailed as a PDF, and to which address. */
+  invoiceEmail: (token: string) => request<InvoiceEmailSettings>('/api/license/invoice-email', { token }),
+  /**
+   * Cloud only (ADMIN): switch invoices by email on or off. `to`: an address,
+   * null for the billing contact, or leave it out to keep the current one.
+   */
+  setInvoiceEmail: (token: string, change: { enabled: boolean; to?: string | null }) =>
+    request<InvoiceEmailSettings>('/api/license/invoice-email', { method: 'PUT', body: change, token }),
   /** 'cancel' opens Stripe's cancellation page, 'payment_method_update' the page to add a card. */
   billingPortal: (token: string, returnUrl?: string, flow?: 'cancel' | 'payment_method_update') =>
     request<{ url: string }>('/api/license/billing-portal', {
