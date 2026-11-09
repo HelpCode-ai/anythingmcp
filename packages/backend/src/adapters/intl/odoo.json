@@ -226,7 +226,7 @@
           },
           "domain": {
             "type": "array",
-            "description": "Extra Odoo domain, e.g. [[\"customer_rank\",\">\",0]] for customers only.",
+            "description": "Extra Odoo domain, e.g. [[\"customer_rank\",\">\",0]] for customers only. customer_rank and supplier_rank exist only when the Invoicing app is installed; without it that domain fails with Invalid field.",
             "items": {
               "type": "array"
             }
@@ -245,8 +245,6 @@
             "phone",
             "city",
             "country_id",
-            "customer_rank",
-            "supplier_rank",
             "vat"
           ],
           "limit": "$limit",
