@@ -73,19 +73,19 @@ test.describe('plan-fit helpers', () => {
   test('turns a plan fit into short lines, most important first', () => {
     const lines = planFitLines(starterFit()).map((l) => tEn(`lines.${l.key}`, l.values));
     expect(lines).toEqual([
-      '4 of your 9 connectors would be paused: the least used. You choose which ones at any time.',
-      '1 of your 4 MCP servers would be paused: the least used.',
-      'Starter includes 1 user; this workspace has 2. Nobody loses access, but you cannot invite more.',
-      'File Search: 1 folder and 500 files (you have 2 folders, 1,200 files). Syncing pauses above that.',
-      'Saved code tools: 5 included (you have 7). Existing ones keep working; you cannot add more.',
-      'Inline code (code_execute) is not included.',
+      '4 of 9 connectors paused (least used). You choose which.',
+      '1 of 4 MCP servers paused (least used).',
+      '1 user included, you have 2. Nobody loses access.',
+      'File Search: up to 1 folder and 500 files.',
+      '5 saved code tools (you have 7).',
+      'No inline code (code_execute).',
     ]);
   });
 
   test('says "you choose" once, on the first line that pauses something', () => {
     const fit = starterFit({ connectors: ranked(['Odoo', 'Shopify'], 5) });
     const lines = planFitLines(fit).map((l) => tEn(`lines.${l.key}`, l.values));
-    expect(lines[0]).toBe('1 of your 4 MCP servers would be paused: the least used. You choose which ones at any time.');
+    expect(lines[0]).toBe('1 of 4 MCP servers paused (least used). You choose which.');
   });
 
   test('names storage when only the bytes go past the plan', () => {
@@ -102,7 +102,7 @@ test.describe('plan-fit helpers', () => {
       code: { tools: axis(1, 5), inlineInUse: false, inlineIncluded: false, runsThisMonth: axis(0, 500) },
     });
     expect(planFitLines(fit).map((l) => tEn(`lines.${l.key}`, l.values))).toEqual([
-      'File Search: 500 MB of storage (you have 1.2 GB). Syncing pauses above that.',
+      'File Search: up to 500 MB of storage.',
     ]);
   });
 
@@ -133,7 +133,7 @@ test.describe('plan-fit helpers', () => {
     }
     const tAnon = createTranslator({ locale: 'en', messages: { planFit: PLAN_FIT_COPY.en }, namespace: 'planFit' });
     expect(tAnon('lines.connectors', { paused: 4, total: 9, max: 5 })).toBe(
-      '4 of your 9 connectors would be paused (the least used). You choose which ones after signing in.',
+      '4 of 9 connectors paused (least used). You choose which after signing in.',
     );
   });
 
@@ -267,14 +267,19 @@ test.describe('plan fit on the paywall (cloud)', () => {
     await page.getByRole('radio', { name: /Starter/ }).click();
     const notice = page.getByTestId('plan-fit-notice');
     await expect(notice).toContainText('What changes with Starter');
-    await expect(notice).toContainText('4 of your 9 connectors would be paused: the least used. You choose which ones at any time.');
-    await expect(notice).toContainText('Inline code (code_execute) is not included.');
-    await expect(page.getByRole('button', { name: 'Subscribe to Starter' })).toBeEnabled();
+    await expect(notice).toContainText('4 of 9 connectors paused (least used). You choose which.');
+    await expect(notice).toContainText('No inline code (code_execute).');
+    const cta = page.getByRole('button', { name: 'Subscribe to Starter' });
+    await expect(cta).toBeEnabled();
+    // The subscribe button comes first; the notice sits under it.
+    const [ctaBox, noticeBox] = await Promise.all([cta.boundingBox(), notice.boundingBox()]);
+    expect(ctaBox!.y).toBeLessThan(noticeBox!.y);
 
     await notice.getByRole('button', { name: 'See which ones' }).click();
     const details = page.getByTestId('plan-fit-details');
     await expect(details).toContainText('Odoo');
-    await expect(details).toContainText('420 calls in 30 days');
+    await expect(details).toContainText('Paused: Etsy');
+    await expect(details).not.toContainText('calls');
     await expect(details).toContainText('Trello');
 
     if (process.env.PLAN_FIT_SHOT) {
@@ -376,7 +381,7 @@ test.describe('plan fit elsewhere (cloud)', () => {
     // The trial banner, in the last 3 days, links to the same block.
     await expect(page.getByText('Your trial includes everything in Team.')).toBeVisible();
     await page.getByRole('button', { name: 'Above Starter: see what changes' }).click();
-    await expect(page.getByRole('dialog')).toContainText('4 of your 9 connectors would be paused');
+    await expect(page.getByRole('dialog')).toContainText('4 of 9 connectors paused');
     if (process.env.PLAN_FIT_SHOT) {
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${process.env.PLAN_FIT_SHOT}/trial-banner-dialog.png` });
@@ -429,9 +434,10 @@ test.describe('plan fit elsewhere (cloud)', () => {
     await expect(page.getByTestId('plan-fit-fits')).toHaveText('Everything you use today fits Team.');
     await page.getByRole('radio', { name: /Starter/ }).click();
     const notice = page.getByTestId('plan-fit-notice');
-    await expect(notice).toContainText(
-      '4 of your 9 connectors would be paused (the least used). You choose which ones after signing in.',
-    );
+    await expect(notice).toContainText('4 of 9 connectors paused (least used). You choose which after signing in.');
+    const cta = page.getByRole('button', { name: /Subscribe to Starter/ });
+    const [ctaBox, noticeBox] = await Promise.all([cta.boundingBox(), notice.boundingBox()]);
+    expect(ctaBox!.y).toBeLessThan(noticeBox!.y);
     await expect(notice.getByRole('button', { name: 'See which ones' })).toHaveCount(0);
     if (process.env.PLAN_FIT_SHOT) {
       await page.waitForTimeout(300);

@@ -483,7 +483,11 @@
       "title": "Tool-Leistung",
       "description": "Aufrufe, Fehler und Latenz nach Tool, Connector und MCP-Server. Für diese Tabelle gilt ein eigener Zeitraum.",
       "range": "Zeitraum der Tool-Leistung",
-      "ranges": { "24": "Letzte 24 Stunden", "168": "Letzte 7 Tage", "720": "Letzte 30 Tage" },
+      "ranges": {
+        "24": "Letzte 24 Stunden",
+        "168": "Letzte 7 Tage",
+        "720": "Letzte 30 Tage"
+      },
       "connector": "Tool-Leistung nach Connector filtern",
       "server": "Tool-Leistung nach MCP-Server filtern",
       "allConnectors": "Alle Connectors",
@@ -3651,25 +3655,24 @@
     "fits": "Alles, was Sie heute nutzen, passt in {plan}.",
     "chooseTeam": "Stattdessen Team wählen",
     "showDetails": "Welche genau?",
-    "hideDetails": "Liste ausblenden",
+    "hideDetails": "Ausblenden",
     "keep": "Bleiben aktiv",
-    "pause": "Würden pausiert",
+    "pause": "Pausiert",
     "groups": {
       "connectors": "Connectors",
       "mcpServers": "MCP-Server",
       "fileSearch": "File-Search-Ordner"
     },
-    "calls": "{count, plural, =0 {keine Aufrufe in 30 Tagen} one {# Aufruf in 30 Tagen} other {# Aufrufe in 30 Tagen}}",
     "unnamed": "Ohne Namen",
     "lines": {
-      "connectors": "{paused} Ihrer {total} Connectors würden pausiert: die am wenigsten genutzten. Welche, wählen Sie jederzeit selbst.",
-      "mcpServers": "{paused} Ihrer {total} MCP-Server würden pausiert: die am wenigsten genutzten.",
-      "mcpServersChoose": "{paused} Ihrer {total} MCP-Server würden pausiert: die am wenigsten genutzten. Welche, wählen Sie jederzeit selbst.",
-      "users": "{plan} enthält {max, plural, one {# Benutzer} other {# Benutzer}}; dieser Workspace hat {current}. Niemand verliert den Zugang, aber Sie können niemanden mehr einladen.",
-      "fileSearch": "File Search: {maxFolders, plural, one {# Ordner} other {# Ordner}} und {maxFiles, number} Dateien (Sie haben {folders, plural, one {# Ordner} other {# Ordner}}, {files, number} Dateien). Darüber pausiert die Synchronisierung.",
-      "fileSearchStorage": "File Search: {maxSize} Speicher (Sie nutzen {size}). Darüber pausiert die Synchronisierung.",
-      "codeTools": "Gespeicherte Code-Tools: {max} enthalten (Sie haben {current}). Bestehende funktionieren weiter; neue können Sie nicht hinzufügen.",
-      "inline": "Inline-Code (code_execute) ist nicht enthalten."
+      "connectors": "{paused} von {total} Connectors pausiert (am wenigsten genutzt). Welche, wählen Sie selbst.",
+      "mcpServers": "{paused} von {total} MCP-Servern pausiert (am wenigsten genutzt).",
+      "mcpServersChoose": "{paused} von {total} MCP-Servern pausiert (am wenigsten genutzt). Welche, wählen Sie selbst.",
+      "users": "{max, plural, one {# Nutzer} other {# Nutzer}} enthalten, Sie haben {current}. Niemand verliert den Zugang.",
+      "fileSearch": "File Search: bis zu {maxFolders, plural, one {# Ordner} other {# Ordner}} und {maxFiles, number} Dateien.",
+      "fileSearchStorage": "File Search: bis zu {maxSize} Speicher.",
+      "codeTools": "{max} gespeicherte Code-Tools (Sie haben {current}).",
+      "inline": "Kein Inline-Code (code_execute)."
     }
   },
   "planSwap": {

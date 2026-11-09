@@ -483,7 +483,11 @@
       "title": "Prestazioni degli strumenti",
       "description": "Chiamate, errori e latenza per strumento, connettore e server MCP. Questa tabella ha un proprio intervallo di tempo.",
       "range": "Periodo delle prestazioni degli strumenti",
-      "ranges": { "24": "Ultime 24 ore", "168": "Ultimi 7 giorni", "720": "Ultimi 30 giorni" },
+      "ranges": {
+        "24": "Ultime 24 ore",
+        "168": "Ultimi 7 giorni",
+        "720": "Ultimi 30 giorni"
+      },
       "connector": "Filtra le prestazioni per connettore",
       "server": "Filtra le prestazioni per server MCP",
       "allConnectors": "Tutti i connettori",
@@ -3651,25 +3655,24 @@
     "fits": "Tutto ciò che usi oggi rientra in {plan}.",
     "chooseTeam": "Scegli Team",
     "showDetails": "Vedi quali",
-    "hideDetails": "Nascondi l'elenco",
+    "hideDetails": "Nascondi",
     "keep": "Restano attivi",
-    "pause": "Verrebbero messi in pausa",
+    "pause": "In pausa",
     "groups": {
       "connectors": "Connettori",
       "mcpServers": "Server MCP",
       "fileSearch": "Cartelle File Search"
     },
-    "calls": "{count, plural, =0 {nessuna chiamata in 30 giorni} one {# chiamata in 30 giorni} other {# chiamate in 30 giorni}}",
     "unnamed": "Senza nome",
     "lines": {
-      "connectors": "{paused} dei tuoi {total} connettori verrebbero messi in pausa: i meno usati. Scegli tu quali, quando vuoi.",
-      "mcpServers": "{paused} dei tuoi {total} server MCP verrebbero messi in pausa: i meno usati.",
-      "mcpServersChoose": "{paused} dei tuoi {total} server MCP verrebbero messi in pausa: i meno usati. Scegli tu quali, quando vuoi.",
-      "users": "{plan} include {max, plural, one {# utente} other {# utenti}}; questo workspace ne ha {current}. Nessuno perde l'accesso, ma non puoi invitarne altri.",
-      "fileSearch": "File Search: {maxFolders, plural, one {# cartella} other {# cartelle}} e {maxFiles, number} file (ne hai {folders, plural, one {# cartella} other {# cartelle}}, {files, number} file). Oltre, la sincronizzazione si ferma.",
-      "fileSearchStorage": "File Search: {maxSize} di spazio (ne usi {size}). Oltre, la sincronizzazione si ferma.",
-      "codeTools": "Code tool salvati: {max} inclusi (ne hai {current}). Quelli esistenti continuano a funzionare; non puoi aggiungerne altri.",
-      "inline": "Il codice inline (code_execute) non è incluso."
+      "connectors": "{paused} connettori su {total} in pausa (i meno usati). Scegli tu quali.",
+      "mcpServers": "{paused} server MCP su {total} in pausa (i meno usati).",
+      "mcpServersChoose": "{paused} server MCP su {total} in pausa (i meno usati). Scegli tu quali.",
+      "users": "{max, plural, one {# utente incluso} other {# utenti inclusi}}, ne hai {current}. Nessuno perde l’accesso.",
+      "fileSearch": "File Search: fino a {maxFolders, plural, one {# cartella} other {# cartelle}} e {maxFiles, number} file.",
+      "fileSearchStorage": "File Search: fino a {maxSize} di spazio.",
+      "codeTools": "{max} code tool salvati (ne hai {current}).",
+      "inline": "Niente codice inline (code_execute)."
     }
   },
   "planSwap": {

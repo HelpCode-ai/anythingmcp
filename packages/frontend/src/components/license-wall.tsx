@@ -1,5 +1,6 @@
 'use client';
 
+import { PlanFitNotice } from '@/components/plan-fit-notice';
 import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -14,6 +15,7 @@ import { useManagePlan } from '@/lib/use-manage-plan';
 import { useCardCheckout } from '@/lib/use-card-checkout';
 import {
   DEFAULT_SELECTION,
+  fitFor,
   planById,
   readPlanIntent,
   selectionForFit,
@@ -406,8 +408,6 @@ export function LicenseWall() {
                   compact
                   disabled={checkout.loading}
                   usage={usage}
-                  planFit={planFit}
-                  onPlanFitEvent={(event, plan) => trackWall(event, { plan })}
                 />
               </div>
               <button
@@ -422,6 +422,14 @@ export function LicenseWall() {
                 {checkout.loading ? 'Opening checkout…' : `Subscribe to ${planById(selection.plan).name}`}
               </button>
               {checkout.error && <p role="alert" className="text-xs text-[var(--danger)]">{checkout.error}</p>}
+              <PlanFitNotice
+                fit={fitFor(planFit, selection.plan)}
+                quietFit={selection.plan === 'team'}
+                onTrack={(event, plan) => trackWall(event, { plan })}
+                onChooseTeam={
+                  !checkout.loading && fitFor(planFit, 'team')?.fits ? () => pickPlan({ ...selection, plan: 'team' }) : undefined
+                }
+              />
               {trustWall && (
                 <div data-testid="wall-trust" className="space-y-2 pt-1">
                   <ul className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-[var(--text-2)]">

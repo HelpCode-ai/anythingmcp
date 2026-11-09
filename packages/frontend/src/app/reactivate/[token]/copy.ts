@@ -696,18 +696,14 @@ export const PLAN_FIT_COPY: Record<PageLang, PlanFitCopy> = {
     fits: 'Everything you use today fits {plan}.',
     chooseTeam: 'Choose Team instead',
     lines: {
-      connectors:
-        '{paused} of your {total} connectors would be paused (the least used). You choose which ones after signing in.',
-      mcpServers: '{paused} of your {total} MCP servers would be paused (the least used).',
-      mcpServersChoose:
-        '{paused} of your {total} MCP servers would be paused (the least used). You choose which ones after signing in.',
-      users:
-        '{plan} includes {max, plural, one {# user} other {# users}}; this workspace has {current}. Nobody loses access, but you cannot invite more.',
-      fileSearch:
-        'File Search: {maxFolders, plural, one {# folder} other {# folders}} and {maxFiles, number} files (you have {folders, plural, one {# folder} other {# folders}}, {files, number} files). Syncing pauses above that.',
-      fileSearchStorage: 'File Search: {maxSize} of storage (you have {size}). Syncing pauses above that.',
-      codeTools: 'Saved code tools: {max} included (you have {current}). Existing ones keep working; you cannot add more.',
-      inline: 'Inline code (code_execute) is not included.',
+      connectors: '{paused} of {total} connectors paused (least used). You choose which after signing in.',
+      mcpServers: '{paused} of {total} MCP servers paused (least used).',
+      mcpServersChoose: '{paused} of {total} MCP servers paused (least used). You choose which after signing in.',
+      users: '{max, plural, one {# user} other {# users}} included, you have {current}. Nobody loses access.',
+      fileSearch: 'File Search: up to {maxFolders, plural, one {# folder} other {# folders}} and {maxFiles, number} files.',
+      fileSearchStorage: 'File Search: up to {maxSize} of storage.',
+      codeTools: '{max} saved code tools (you have {current}).',
+      inline: 'No inline code (code_execute).',
     },
   },
   de: {
@@ -715,19 +711,14 @@ export const PLAN_FIT_COPY: Record<PageLang, PlanFitCopy> = {
     fits: 'Alles, was Sie heute nutzen, passt in {plan}.',
     chooseTeam: 'Stattdessen Team wählen',
     lines: {
-      connectors:
-        '{paused} Ihrer {total} Connectors würden pausiert (die am wenigsten genutzten). Welche, wählen Sie nach der Anmeldung.',
-      mcpServers: '{paused} Ihrer {total} MCP-Server würden pausiert (die am wenigsten genutzten).',
-      mcpServersChoose:
-        '{paused} Ihrer {total} MCP-Server würden pausiert (die am wenigsten genutzten). Welche, wählen Sie nach der Anmeldung.',
-      users:
-        '{plan} enthält {max} Benutzer; dieser Workspace hat {current}. Niemand verliert den Zugang, aber Sie können niemanden mehr einladen.',
-      fileSearch:
-        'File Search: {maxFolders} Ordner und {maxFiles, number} Dateien (Sie haben {folders} Ordner, {files, number} Dateien). Darüber pausiert die Synchronisierung.',
-      fileSearchStorage: 'File Search: {maxSize} Speicher (Sie nutzen {size}). Darüber pausiert die Synchronisierung.',
-      codeTools:
-        'Gespeicherte Code-Tools: {max} enthalten (Sie haben {current}). Bestehende funktionieren weiter; neue können Sie nicht hinzufügen.',
-      inline: 'Inline-Code (code_execute) ist nicht enthalten.',
+      connectors: '{paused} von {total} Connectors pausiert (am wenigsten genutzt). Welche, wählen Sie nach der Anmeldung.',
+      mcpServers: '{paused} von {total} MCP-Servern pausiert (am wenigsten genutzt).',
+      mcpServersChoose: '{paused} von {total} MCP-Servern pausiert (am wenigsten genutzt). Welche, wählen Sie nach der Anmeldung.',
+      users: '{max, plural, one {# Nutzer} other {# Nutzer}} enthalten, Sie haben {current}. Niemand verliert den Zugang.',
+      fileSearch: 'File Search: bis zu {maxFolders, plural, one {# Ordner} other {# Ordner}} und {maxFiles, number} Dateien.',
+      fileSearchStorage: 'File Search: bis zu {maxSize} Speicher.',
+      codeTools: '{max} gespeicherte Code-Tools (Sie haben {current}).',
+      inline: 'Kein Inline-Code (code_execute).',
     },
   },
   it: {
@@ -735,19 +726,14 @@ export const PLAN_FIT_COPY: Record<PageLang, PlanFitCopy> = {
     fits: 'Tutto ciò che usi oggi rientra in {plan}.',
     chooseTeam: 'Scegli Team',
     lines: {
-      connectors:
-        '{paused} dei tuoi {total} connettori verrebbero messi in pausa (i meno usati). Scegli tu quali dopo aver effettuato l’accesso.',
-      mcpServers: '{paused} dei tuoi {total} server MCP verrebbero messi in pausa (i meno usati).',
-      mcpServersChoose:
-        '{paused} dei tuoi {total} server MCP verrebbero messi in pausa (i meno usati). Scegli tu quali dopo aver effettuato l’accesso.',
-      users:
-        '{plan} include {max, plural, one {# utente} other {# utenti}}; questo workspace ne ha {current}. Nessuno perde l’accesso, ma non puoi invitarne altri.',
-      fileSearch:
-        'File Search: {maxFolders, plural, one {# cartella} other {# cartelle}} e {maxFiles, number} file (ne hai {folders, plural, one {# cartella} other {# cartelle}}, {files, number} file). Oltre, la sincronizzazione si ferma.',
-      fileSearchStorage: 'File Search: {maxSize} di spazio (ne usi {size}). Oltre, la sincronizzazione si ferma.',
-      codeTools:
-        'Code tool salvati: {max} inclusi (ne hai {current}). Quelli esistenti continuano a funzionare; non puoi aggiungerne altri.',
-      inline: 'Il codice inline (code_execute) non è incluso.',
+      connectors: '{paused} connettori su {total} in pausa (i meno usati). Scegli tu quali dopo l’accesso.',
+      mcpServers: '{paused} server MCP su {total} in pausa (i meno usati).',
+      mcpServersChoose: '{paused} server MCP su {total} in pausa (i meno usati). Scegli tu quali dopo l’accesso.',
+      users: '{max, plural, one {# utente incluso} other {# utenti inclusi}}, ne hai {current}. Nessuno perde l’accesso.',
+      fileSearch: 'File Search: fino a {maxFolders, plural, one {# cartella} other {# cartelle}} e {maxFiles, number} file.',
+      fileSearchStorage: 'File Search: fino a {maxSize} di spazio.',
+      codeTools: '{max} code tool salvati (ne hai {current}).',
+      inline: 'Niente codice inline (code_execute).',
     },
   },
   es: {
@@ -755,72 +741,59 @@ export const PLAN_FIT_COPY: Record<PageLang, PlanFitCopy> = {
     fits: 'Todo lo que usas hoy cabe en {plan}.',
     chooseTeam: 'Elegir Team',
     lines: {
-      connectors:
-        'Se pausarían {paused} de tus {total} conectores (los menos usados). Eliges cuáles después de iniciar sesión.',
-      mcpServers: 'Se pausarían {paused} de tus {total} servidores MCP (los menos usados).',
-      mcpServersChoose:
-        'Se pausarían {paused} de tus {total} servidores MCP (los menos usados). Eliges cuáles después de iniciar sesión.',
-      users:
-        '{plan} incluye {max, plural, one {# usuario} other {# usuarios}}; este workspace tiene {current}. Nadie pierde el acceso, pero no puedes invitar a más.',
-      fileSearch:
-        'File Search: {maxFolders, plural, one {# carpeta} other {# carpetas}} y {maxFiles, number} archivos (tienes {folders, plural, one {# carpeta} other {# carpetas}}, {files, number} archivos). Por encima, la sincronización se detiene.',
-      fileSearchStorage: 'File Search: {maxSize} de almacenamiento (usas {size}). Por encima, la sincronización se detiene.',
-      codeTools:
-        'Herramientas de código guardadas: {max} incluidas (tienes {current}). Las existentes siguen funcionando; no puedes añadir más.',
-      inline: 'El código inline (code_execute) no está incluido.',
+      connectors: '{paused} de {total} conectores en pausa (los menos usados). Eliges cuáles al iniciar sesión.',
+      mcpServers: '{paused} de {total} servidores MCP en pausa (los menos usados).',
+      mcpServersChoose: '{paused} de {total} servidores MCP en pausa (los menos usados). Eliges cuáles al iniciar sesión.',
+      users: '{max, plural, one {# usuario incluido} other {# usuarios incluidos}}, tienes {current}. Nadie pierde el acceso.',
+      fileSearch: 'File Search: hasta {maxFolders, plural, one {# carpeta} other {# carpetas}} y {maxFiles, number} archivos.',
+      fileSearchStorage: 'File Search: hasta {maxSize} de almacenamiento.',
+      codeTools: '{max} code tools guardados (tienes {current}).',
+      inline: 'Sin código inline (code_execute).',
     },
   },
   zh: {
-    title: '选择 {plan} 后的变化',
-    fits: '你目前使用的一切都在 {plan} 范围内。',
+    title: '{plan} 方案的变化',
+    fits: '你目前的使用量完全符合 {plan}。',
     chooseTeam: '改选 Team',
     lines: {
-      connectors: '你的 {total} 个连接器中有 {paused} 个将被暂停（使用最少的）。登录后可自行选择。',
-      mcpServers: '你的 {total} 个 MCP 服务器中有 {paused} 个将被暂停（使用最少的）。',
-      mcpServersChoose: '你的 {total} 个 MCP 服务器中有 {paused} 个将被暂停（使用最少的）。登录后可自行选择。',
-      users: '{plan} 包含 {max} 个用户；此工作区有 {current} 个。没有人会失去访问权限，但无法再邀请更多人。',
-      fileSearch:
-        'File Search：{maxFolders} 个文件夹和 {maxFiles, number} 个文件（你有 {folders} 个文件夹、{files, number} 个文件）。超出部分将暂停同步。',
-      fileSearchStorage: 'File Search：{maxSize} 存储空间（你已使用 {size}）。超出部分将暂停同步。',
-      codeTools: '已保存的代码工具：包含 {max} 个（你有 {current} 个）。现有工具继续可用，但无法再添加。',
-      inline: '不包含内联代码（code_execute）。',
+      connectors: '{total} 个连接器中有 {paused} 个暂停（使用最少的）。登录后可自行选择。',
+      mcpServers: '{total} 个 MCP 服务器中有 {paused} 个暂停（使用最少的）。',
+      mcpServersChoose: '{total} 个 MCP 服务器中有 {paused} 个暂停（使用最少的）。登录后可自行选择。',
+      users: '包含 {max} 个用户，你有 {current} 个。没有人会失去访问权限。',
+      fileSearch: 'File Search：最多 {maxFolders} 个文件夹和 {maxFiles, number} 个文件。',
+      fileSearchStorage: 'File Search：最多 {maxSize} 存储空间。',
+      codeTools: '{max} 个已保存的代码工具（你有 {current} 个）。',
+      inline: '不含内联代码（code_execute）。',
     },
   },
   ja: {
-    title: '{plan} にすると変わること',
-    fits: '現在お使いのものはすべて {plan} に収まります。',
-    chooseTeam: '代わりに Team を選ぶ',
+    title: '{plan} で変わること',
+    fits: '現在の利用内容はすべて {plan} に収まります。',
+    chooseTeam: 'Team を選ぶ',
     lines: {
-      connectors: '{total} 個のコネクタのうち {paused} 個が一時停止されます（利用の少ないもの）。どれにするかはサインイン後に選べます。',
-      mcpServers: '{total} 個の MCP サーバーのうち {paused} 個が一時停止されます（利用の少ないもの）。',
-      mcpServersChoose:
-        '{total} 個の MCP サーバーのうち {paused} 個が一時停止されます（利用の少ないもの）。どれにするかはサインイン後に選べます。',
-      users: '{plan} のユーザー数は {max} 人で、このワークスペースには {current} 人います。誰もアクセスを失いませんが、追加の招待はできません。',
-      fileSearch:
-        'File Search：フォルダ {maxFolders} 個、ファイル {maxFiles, number} 件まで（現在フォルダ {folders} 個、ファイル {files, number} 件）。超えた分は同期が止まります。',
-      fileSearchStorage: 'File Search：ストレージ {maxSize}（現在 {size}）。超えた分は同期が止まります。',
-      codeTools: '保存済みコードツール：{max} 個まで（現在 {current} 個）。既存のものは使えますが、追加はできません。',
+      connectors: '{total} 件中 {paused} 件のコネクタが一時停止（利用の少ないもの）。どれにするかはサインイン後に選べます。',
+      mcpServers: '{total} 件中 {paused} 件の MCP サーバーが一時停止（利用の少ないもの）。',
+      mcpServersChoose: '{total} 件中 {paused} 件の MCP サーバーが一時停止（利用の少ないもの）。どれにするかはサインイン後に選べます。',
+      users: 'ユーザー {max} 人まで（現在 {current} 人）。アクセスを失う人はいません。',
+      fileSearch: 'File Search：最大 {maxFolders} フォルダ、{maxFiles, number} ファイル。',
+      fileSearchStorage: 'File Search：最大 {maxSize} のストレージ。',
+      codeTools: '保存済みコードツール {max} 件（現在 {current} 件）。',
       inline: 'インラインコード（code_execute）は含まれません。',
     },
   },
   ru: {
-    title: 'Что изменится на тарифе {plan}',
-    fits: 'Всё, чем вы пользуетесь сейчас, укладывается в {plan}.',
+    title: 'Что изменится на {plan}',
+    fits: 'Всё, чем вы пользуетесь, помещается в {plan}.',
     chooseTeam: 'Выбрать Team',
     lines: {
-      connectors:
-        'Будут приостановлены {paused} из {total} коннекторов (наименее используемые). Какие именно, вы выберете после входа.',
-      mcpServers: 'Будут приостановлены {paused} из {total} MCP-серверов (наименее используемые).',
-      mcpServersChoose:
-        'Будут приостановлены {paused} из {total} MCP-серверов (наименее используемые). Какие именно, вы выберете после входа.',
-      users:
-        'Пользователей в тарифе {plan}: {max}; в этом workspace: {current}. Никто не теряет доступ, но пригласить новых нельзя.',
-      fileSearch:
-        'File Search: папок до {maxFolders}, файлов до {maxFiles, number} (у вас папок: {folders}, файлов: {files, number}). Сверх лимита синхронизация останавливается.',
-      fileSearchStorage: 'File Search: {maxSize} хранилища (у вас {size}). Сверх лимита синхронизация останавливается.',
-      codeTools:
-        'Сохранённые инструменты кода: включено {max} (у вас {current}). Существующие продолжают работать; новые добавить нельзя.',
-      inline: 'Встроенный код (code_execute) не входит в тариф.',
+      connectors: '{paused} из {total} коннекторов на паузе (наименее используемые). Какие, выберете после входа.',
+      mcpServers: '{paused} из {total} MCP-серверов на паузе (наименее используемые).',
+      mcpServersChoose: '{paused} из {total} MCP-серверов на паузе (наименее используемые). Какие, выберете после входа.',
+      users: 'Пользователей: {max} (у вас {current}). Никто не теряет доступ.',
+      fileSearch: 'File Search: до {maxFolders} папок и {maxFiles, number} файлов.',
+      fileSearchStorage: 'File Search: до {maxSize} хранилища.',
+      codeTools: 'Сохранённых code tools: {max} (у вас {current}).',
+      inline: 'Без inline-кода (code_execute).',
     },
   },
 };

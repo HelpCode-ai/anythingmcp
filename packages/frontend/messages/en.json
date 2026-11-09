@@ -483,7 +483,11 @@
       "title": "Tool performance",
       "description": "Calls, errors and latency by tool, connector and MCP server. This table has its own time range.",
       "range": "Tool performance time range",
-      "ranges": { "24": "Last 24 hours", "168": "Last 7 days", "720": "Last 30 days" },
+      "ranges": {
+        "24": "Last 24 hours",
+        "168": "Last 7 days",
+        "720": "Last 30 days"
+      },
       "connector": "Filter tool performance by connector",
       "server": "Filter tool performance by MCP server",
       "allConnectors": "All connectors",
@@ -3651,25 +3655,24 @@
     "fits": "Everything you use today fits {plan}.",
     "chooseTeam": "Choose Team instead",
     "showDetails": "See which ones",
-    "hideDetails": "Hide the list",
+    "hideDetails": "Hide",
     "keep": "Stay active",
-    "pause": "Would be paused",
+    "pause": "Paused",
     "groups": {
       "connectors": "Connectors",
       "mcpServers": "MCP servers",
       "fileSearch": "File Search folders"
     },
-    "calls": "{count, plural, =0 {no calls in 30 days} one {# call in 30 days} other {# calls in 30 days}}",
     "unnamed": "Unnamed",
     "lines": {
-      "connectors": "{paused} of your {total} connectors would be paused: the least used. You choose which ones at any time.",
-      "mcpServers": "{paused} of your {total} MCP servers would be paused: the least used.",
-      "mcpServersChoose": "{paused} of your {total} MCP servers would be paused: the least used. You choose which ones at any time.",
-      "users": "{plan} includes {max, plural, one {# user} other {# users}}; this workspace has {current}. Nobody loses access, but you cannot invite more.",
-      "fileSearch": "File Search: {maxFolders, plural, one {# folder} other {# folders}} and {maxFiles, number} files (you have {folders, plural, one {# folder} other {# folders}}, {files, number} files). Syncing pauses above that.",
-      "fileSearchStorage": "File Search: {maxSize} of storage (you have {size}). Syncing pauses above that.",
-      "codeTools": "Saved code tools: {max} included (you have {current}). Existing ones keep working; you cannot add more.",
-      "inline": "Inline code (code_execute) is not included."
+      "connectors": "{paused} of {total} connectors paused (least used). You choose which.",
+      "mcpServers": "{paused} of {total} MCP servers paused (least used).",
+      "mcpServersChoose": "{paused} of {total} MCP servers paused (least used). You choose which.",
+      "users": "{max, plural, one {# user} other {# users}} included, you have {current}. Nobody loses access.",
+      "fileSearch": "File Search: up to {maxFolders, plural, one {# folder} other {# folders}} and {maxFiles, number} files.",
+      "fileSearchStorage": "File Search: up to {maxSize} of storage.",
+      "codeTools": "{max} saved code tools (you have {current}).",
+      "inline": "No inline code (code_execute)."
     }
   },
   "planSwap": {

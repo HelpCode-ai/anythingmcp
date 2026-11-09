@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Check, ChevronDown, Info } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import type { FitItem, FitRanked, PlanFit } from '@/lib/api';
 import { planById, planFitLines } from '@/lib/card-trial';
 import { cn } from '@/lib/utils';
@@ -96,20 +96,14 @@ export function PlanFitNotice({
       data-testid="plan-fit-notice"
       aria-label={t('title', { plan: planName })}
       className={cn(
-        'rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-3.5 py-3 text-left',
+        'rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-3.5 py-2.5 text-left',
         className,
       )}
     >
-      <h3 className="flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--text)]">
-        <Info aria-hidden size={14} className="flex-shrink-0 text-[var(--text-3)]" />
-        {t('title', { plan: planName })}
-      </h3>
-      <ul className="mt-1.5 space-y-1 text-xs leading-relaxed text-[var(--text-2)]">
+      <h3 className="text-[12.5px] font-semibold text-[var(--text)]">{t('title', { plan: planName })}</h3>
+      <ul className="mt-1 space-y-0.5 text-xs leading-snug text-[var(--text-2)]">
         {lines.map((line) => (
-          <li key={line.key} className="flex gap-2">
-            <span aria-hidden className="mt-[7px] h-1 w-1 flex-shrink-0 rounded-full bg-[var(--text-3)]" />
-            <span>{t(`lines.${line.key}`, line.values)}</span>
-          </li>
+          <li key={line.key}>{t(`lines.${line.key}`, line.values)}</li>
         ))}
       </ul>
 
@@ -140,7 +134,7 @@ export function PlanFitNotice({
       )}
 
       {open && groups.length > 0 && (
-        <div id={listId} data-testid="plan-fit-details" className="mt-2.5 space-y-3 border-t border-[var(--border)] pt-2.5">
+        <div id={listId} data-testid="plan-fit-details" className="mt-2 space-y-1.5 border-t border-[var(--border)] pt-2">
           {groups.map(([key, ranked]) => (
             <FitGroup key={key} title={t(`groups.${key}`)} ranked={ranked} />
           ))}
@@ -152,42 +146,18 @@ export function PlanFitNotice({
 
 function FitGroup({ title, ranked }: { title: string; ranked: FitRanked }) {
   const t = useTranslations('planFit');
+  const names = (items: FitItem[]) => items.map((i) => i.name || t('unnamed')).join(', ');
   return (
-    <div>
-      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-3)]">{title}</div>
-      <div className="mt-1 grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
-        <FitList label={t('keep')} items={ranked.keep} tone="keep" />
-        <FitList label={t('pause')} items={ranked.pause} tone="pause" />
-      </div>
-    </div>
-  );
-}
-
-function FitList({ label, items, tone }: { label: string; items: FitItem[]; tone: 'keep' | 'pause' }) {
-  const t = useTranslations('planFit');
-  if (items.length === 0) return null;
-  return (
-    <div>
-      <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-[var(--text)]">
-        <span
-          aria-hidden
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ background: tone === 'keep' ? 'var(--ok)' : 'var(--text-3)' }}
-        />
-        {label}
-      </div>
-      <ul className="mt-0.5 space-y-0.5">
-        {items.map((item) => (
-          <li key={item.id} className="flex items-baseline justify-between gap-2 text-xs">
-            <span className={cn('min-w-0 truncate', tone === 'keep' ? 'text-[var(--text-2)]' : 'text-[var(--text-3)]')}>
-              {item.name || t('unnamed')}
-            </span>
-            <span className="flex-shrink-0 text-[11px] tabular-nums text-[var(--text-3)]">
-              {t('calls', { count: item.calls30d })}
-            </span>
-          </li>
-        ))}
-      </ul>
+    <div className="text-xs leading-relaxed">
+      <div className="font-medium text-[var(--text)]">{title}</div>
+      {ranked.keep.length > 0 && (
+        <p className="text-[var(--text-2)]">
+          <span className="text-[var(--text-3)]">{t('keep')}:</span> {names(ranked.keep)}
+        </p>
+      )}
+      <p className="text-[var(--text-2)]">
+        <span className="text-[var(--text-3)]">{t('pause')}:</span> {names(ranked.pause)}
+      </p>
     </div>
   );
 }

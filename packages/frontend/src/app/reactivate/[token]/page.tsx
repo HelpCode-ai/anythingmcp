@@ -282,22 +282,6 @@ function ReactivateContent() {
                   offer={view.offer ?? null}
                   onEnterprise={() => track('enterprise_clicked')}
                 />
-                {/* What the chosen plan pauses or leaves out, before checkout.
-                    Counts only: the page has no sign-in, so no names. */}
-                <NextIntlClientProvider locale={lang} messages={{ planFit: PLAN_FIT_COPY[lang] }}>
-                  <PlanFitNotice
-                    fit={fitFor(view.planFit, selection.plan)}
-                    anonymized
-                    quietFit={selection.plan === 'team'}
-                    className="mt-4"
-                    onTrack={(action, plan) => track(action, { plan })}
-                    onChooseTeam={
-                      !opening && fitFor(view.planFit, 'team')?.fits
-                        ? () => pickPlan({ ...selection, plan: 'team' })
-                        : undefined
-                    }
-                  />
-                </NextIntlClientProvider>
                 <button
                   type="button"
                   onClick={subscribe}
@@ -320,6 +304,22 @@ function ReactivateContent() {
                   ))}
                 </ul>
               </div>
+              {/* What the chosen plan pauses or leaves out, before checkout.
+                  Counts only: the page has no sign-in, so no names. */}
+              <NextIntlClientProvider locale={lang} messages={{ planFit: PLAN_FIT_COPY[lang] }}>
+                <PlanFitNotice
+                  className="mt-4"
+                  fit={fitFor(view.planFit, selection.plan)}
+                  anonymized
+                  quietFit={selection.plan === 'team'}
+                  onTrack={(action, plan) => track(action, { plan })}
+                  onChooseTeam={
+                    !opening && fitFor(view.planFit, 'team')?.fits
+                      ? () => pickPlan({ ...selection, plan: 'team' })
+                      : undefined
+                  }
+                />
+              </NextIntlClientProvider>
             </section>
 
             <aside className="space-y-4">

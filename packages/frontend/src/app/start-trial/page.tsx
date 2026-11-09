@@ -1,5 +1,6 @@
 'use client';
 
+import { PlanFitNotice } from '@/components/plan-fit-notice';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
@@ -16,6 +17,7 @@ import {
   formatEur,
   formatTrialEnd,
   planById,
+  fitFor,
   readAuthorizationReturn,
   readPlanIntent,
   readPromoCode,
@@ -287,12 +289,6 @@ export default function StartTrialPage() {
             value={selection}
             onChange={choosePlan}
             disabled={checkout.loading || !!checkout.chargesTodayUrl}
-            planFit={planFit}
-            onPlanFitEvent={(action, plan) => {
-              if (token) {
-                productEvents.track('paywall_action', token, { source, action, plan, device: deviceKind() });
-              }
-            }}
           />
 
           <div className="mt-6 flex flex-col items-center gap-3">
@@ -338,6 +334,18 @@ export default function StartTrialPage() {
             </p>
           </div>
         </Card>
+        {/* What the chosen plan changes for this workspace: under the card, in the same column. */}
+        <PlanFitNotice
+          className="mt-4"
+          fit={fitFor(planFit, selection.plan)}
+          quietFit={selection.plan === 'team'}
+          onTrack={(action, plan) => {
+            if (token) productEvents.track('paywall_action', token, { source, action, plan, device: deviceKind() });
+          }}
+          onChooseTeam={
+            !checkout.loading && fitFor(planFit, 'team')?.fits ? () => choosePlan({ ...selection, plan: 'team' }) : undefined
+          }
+        />
       </main>
     </div>
   );
