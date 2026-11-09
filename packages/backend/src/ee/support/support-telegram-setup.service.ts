@@ -3,6 +3,8 @@ import { PrismaService } from '../../common/prisma.service';
 import { AdaptersService } from '../../adapters/adapters.service';
 import { LicenseGuardService } from '../../license/license-guard.service';
 import { McpServersService } from '../../mcp-servers/mcp-servers.service';
+import { McpServerService } from '../../mcp-server/mcp-server.service';
+import { ConnectorsService } from '../../connectors/connectors.service';
 import { EmailService } from '../../settings/email.service';
 import { SecurityEventService, SecurityEvents } from '../../audit/security-event.service';
 import { ProductEventService, ProductEvents } from '../../audit/product-event.service';
@@ -11,6 +13,7 @@ import { instanceHost, supportTriageConfig } from './support-config';
 import { compactError } from './support-redact';
 
 export const TELEGRAM_SLUG = 'telegram-bot';
+const TOKEN_VAR = 'TELEGRAM_BOT_TOKEN';
 /** Set on a conversation once a connector was installed from it: one per conversation. */
 export const AUTO_SETUP_TAG = 'telegram-auto-setup';
 /** Installs from the support chat per workspace in a day (per instance, in memory). */
@@ -48,6 +51,7 @@ export function findTelegramTokens(text: string | null | undefined): string[] {
 type Outcome =
   | 'ignored'
   | 'installed'
+  | 'filled'
   | 'already_has_telegram'
   | 'several_workspaces'
   | 'no_workspace'
@@ -69,6 +73,10 @@ type Outcome =
  * install: the user's email is verified, they belong to exactly one
  * workspace, and their role there may create connectors.
  *
+ * A workspace whose Telegram connectors are all still empty (installed from
+ * the app picker without a token) gets the token in the oldest of them, so
+ * the link the customer already has keeps working.
+ *
  * What it never does: replace the token of an existing connector, install a
  * second Telegram connector, or act on a visitor, an agent or a private note.
  * Every install is a security event and is emailed to the user and to the
@@ -89,6 +97,8 @@ export class SupportTelegramSetupService {
     private readonly email: EmailService,
     private readonly securityEvents: SecurityEventService,
     private readonly productEvents: ProductEventService,
+    private readonly connectors: ConnectorsService,
+    private readonly mcpServer: McpServerService,
   ) {}
 
   /** Test seams. */
@@ -190,12 +200,11 @@ export class SupportTelegramSetupService {
       return 'viewer';
     }
 
-    // ── Never replace or duplicate: one Telegram connector, added by hand after ──
-    const existing = await this.prisma.connector.findFirst({
-      where: { organizationId, config: { path: ['adapterSlug'], equals: TELEGRAM_SLUG } },
-      select: { id: true },
-      orderBy: { createdAt: 'asc' },
-    });
+    // ── Never replace or duplicate: a connector with a token stays as it is ──
+    const telegramConnectors = await this.telegramConnectors(organizationId);
+    const existing = telegramConnectors.find((c) => !isEmptyTelegram(c));
+    // Only empty ones (no token yet): the oldest gets this one.
+    const empty = existing ? undefined : telegramConnectors[0];
     if (existing) {
       const link = `${setupUrl}?connector=${encodeURIComponent(existing.id)}`;
       await say(
@@ -220,11 +229,14 @@ export class SupportTelegramSetupService {
       return 'telegram_unreachable';
     }
 
-    try {
-      await this.licenseGuard.checkCanCreateConnector(user.id, organizationId);
-    } catch (err) {
-      await say(`<p>I could not add the connector: ${esc(compactError((err as Error).message, 300))}</p>`);
-      return 'plan_limit';
+    // Filling an empty connector creates none: no plan limit to check.
+    if (!empty) {
+      try {
+        await this.licenseGuard.checkCanCreateConnector(user.id, organizationId);
+      } catch (err) {
+        await say(`<p>I could not add the connector: ${esc(compactError((err as Error).message, 300))}</p>`);
+        return 'plan_limit';
+      }
     }
 
     if (!this.takeInstallSlot(organizationId)) {
@@ -232,11 +244,30 @@ export class SupportTelegramSetupService {
       return 'rate_limited';
     }
 
-    // ── Install, as the dashboard does ────────────────────────────────────
-    const imported = await this.adapters.importAdapter(TELEGRAM_SLUG, user.id, organizationId, {
-      TELEGRAM_BOT_TOKEN: token,
-    });
-    const server = await this.mcpServers.attachToDefaultServer(user.id, organizationId, imported.connectorId);
+    // ── Install, as the dashboard does, or fill the empty connector ────────
+    let connectorId: string;
+    if (empty) {
+      // Read again just before writing: the customer may have pasted a token
+      // on the connector page in the meantime, and that one stays.
+      const fresh = (await this.telegramConnectors(organizationId)).find((c) => c.id === empty.id);
+      if (!fresh || !isEmptyTelegram(fresh)) {
+        const link = `${setupUrl}?connector=${encodeURIComponent(empty.id)}`;
+        await say(
+          `<p>Your Telegram connector got a token in the meantime, so I left it as it is. To use this bot there, open <a href="${esc(link)}">${esc(link)}</a> and replace the token.</p>`,
+        );
+        return 'already_has_telegram';
+      }
+      const stored = (fresh.envVars ?? {}) as Record<string, string>;
+      await this.connectors.update(fresh.id, { envVars: { ...stored, [TOKEN_VAR]: token } });
+      await this.mcpServer.reloadConnectorTools(fresh.id);
+      connectorId = fresh.id;
+    } else {
+      const imported = await this.adapters.importAdapter(TELEGRAM_SLUG, user.id, organizationId, {
+        [TOKEN_VAR]: token,
+      });
+      connectorId = imported.connectorId;
+    }
+    const server = await this.mcpServers.attachToDefaultServer(user.id, organizationId, connectorId);
     const connectorName = this.adapters.getBySlug(TELEGRAM_SLUG).name;
     const account = bot.username ? `@${bot.username}` : `bot ${bot.id}`;
 
@@ -247,23 +278,29 @@ export class SupportTelegramSetupService {
       organizationId,
       metadata: {
         adapter: TELEGRAM_SLUG,
-        connectorId: imported.connectorId,
+        connectorId,
         bot: account,
         conversation: conversationUuid,
+        ...(empty ? { filledEmptyConnector: true } : {}),
       },
     });
     await this.productEvents.log({
       event: ProductEvents.SETUP_COMPLETED,
       userId: user.id,
       organizationId,
-      metadata: { adapterSlug: TELEGRAM_SLUG, via: 'support_chat', verified: true },
+      metadata: {
+        adapterSlug: TELEGRAM_SLUG,
+        via: 'support_chat',
+        verified: true,
+        ...(empty ? { filledEmptyConnector: true } : {}),
+      },
     });
     this.logger.log(
-      `Installed ${TELEGRAM_SLUG} (${imported.connectorId}) for org ${organizationId} from support chat ${conversationUuid}`,
+      `${empty ? 'Filled' : 'Installed'} ${TELEGRAM_SLUG} (${connectorId}) for org ${organizationId} from support chat ${conversationUuid}`,
     );
 
     await desk.addTags(conversationUuid, [AUTO_SETUP_TAG]).catch(() => undefined);
-    const connectorPath = `/connectors/${encodeURIComponent(imported.connectorId)}`;
+    const connectorPath = `/connectors/${encodeURIComponent(connectorId)}`;
     const connectorUrl = `${this.dashboardBase()}${connectorPath}`;
     await say(
       `<p>Done: I connected ${esc(account)} to ${esc(workspaceName)} as the connector "${esc(connectorName)}"` +
@@ -273,7 +310,16 @@ export class SupportTelegramSetupService {
     );
 
     await this.notify(user, organizationId, workspaceName, connectorName, account, connectorPath);
-    return 'installed';
+    return empty ? 'filled' : 'installed';
+  }
+
+  /** The workspace's Telegram connectors, oldest first. */
+  private telegramConnectors(organizationId: string) {
+    return this.prisma.connector.findMany({
+      where: { organizationId, config: { path: ['adapterSlug'], equals: TELEGRAM_SLUG } },
+      select: { id: true, baseUrl: true, envVars: true },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   private async getMe(
@@ -349,6 +395,17 @@ export class SupportTelegramSetupService {
     }
     this.seen.add(uuid);
   }
+}
+
+/**
+ * A Telegram connector still without a token: its address keeps the catalog
+ * placeholder and the variable is empty. One whose address was edited, or
+ * that holds any value, counts as set up.
+ */
+function isEmptyTelegram(c: { baseUrl: string | null; envVars: unknown }): boolean {
+  const value = (c.envVars as Record<string, unknown> | null)?.[TOKEN_VAR];
+  const hasValue = typeof value === 'string' ? value.trim() !== '' : value != null;
+  return !hasValue && (c.baseUrl ?? '').includes(`{{${TOKEN_VAR}}}`);
 }
 
 function esc(text: string): string {
