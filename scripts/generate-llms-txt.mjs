@@ -22,7 +22,7 @@ const SECTIONS = [
   ['Getting started', ['README.md', 'docs/deployment.md', 'docs/guides.md']],
   ['Connectors', ['docs/connectors/*.md', 'docs/tool-definition.md']],
   ['AI clients', ['docs/integrations/*.md']],
-  ['Operations and security', ['docs/operations/*.md', 'docs/sso.md', 'docs/scim-entra-setup.md', 'docs/code-mode.md', 'docs/license-faq.md']],
+  ['Operations and security', ['docs/operations/*.md', 'docs/sso.md', 'docs/scim-entra-setup.md', 'docs/code-mode.md', 'docs/license-faq.md', 'docs/cloud-invoices.md']],
   ['Reference', ['docs/api-reference.md', 'docs/mcp-resources.md', 'docs/knowledge-graph.md', 'docs/memory.md']],
   ['Contributing', ['.github/CONTRIBUTING.md', 'AGENTS.md']],
   ['Optional', ['docs/catalog/*.md', 'docs/guides/*.md', 'docs/ROADMAP.md', 'docs/ADOPTERS.md']],
@@ -44,6 +44,7 @@ const DESCRIPTIONS = {
   'docs/connectors/file-search.md': 'Search inside the documents of SFTP, FTP/FTPS, WebDAV, S3 and network folders from AI clients, with File Share download links, plan limits and pauses.',
   'docs/code-mode.md': 'Run isolated JavaScript that orchestrates several MCP tools in one step: saved code tools, inline code_execute, governance and deployment.',
   'docs/license-faq.md': 'Understand the AGPL license, the commercial EE boundary, and contributor licensing.',
+  'docs/cloud-invoices.md': 'Find your AnythingMCP Cloud invoices and have each paid invoice emailed as a PDF, from the dashboard or the CLI.',
   '.github/CONTRIBUTING.md': 'Set up development, test changes, and submit a contribution.',
   'AGENTS.md': 'Repository instructions, setup commands, tests, and contribution boundaries for coding agents.',
 };
