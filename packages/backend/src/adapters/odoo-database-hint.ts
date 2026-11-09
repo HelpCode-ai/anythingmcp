@@ -238,6 +238,63 @@ export async function diagnoseOdooJson2NotFound(
   };
 }
 
+/** What an Odoo address says about itself without a key. */
+export interface OdooAddressFacts {
+  /** Major version (17, 18, 19…), when Odoo tells it. */
+  major?: number;
+  /** The version as Odoo writes it (`17.0`, `saas~19.3`). */
+  version?: string;
+  /** The databases the address serves, when Odoo lists them. */
+  databases?: string[];
+  /** Odoo Online's "typo" page: there is no database at this address at all. */
+  noDatabase?: boolean;
+}
+
+/**
+ * Asks an Odoo address, without any key, which version it runs and which
+ * databases it serves (`common.version` and `/web/database/list`, both
+ * unauthenticated, in parallel). For a chat install, where only the address
+ * is known: the JSON-2 connector needs Odoo 19, and the database name the
+ * assistant passes is often the subdomain, which on Odoo Online and Odoo.sh
+ * it is not. Undefined when the address says nothing (not an Odoo,
+ * unreachable, refused by the SSRF guard).
+ */
+export async function inspectOdooAddress(baseUrl: string): Promise<OdooAddressFacts | undefined> {
+  const origin = odooOrigin(baseUrl);
+  const [versionBody, listBody] = await Promise.all([
+    outboundRequest({
+      method: 'POST',
+      url: `${origin}/jsonrpc`,
+      data: { jsonrpc: '2.0', method: 'call', params: { service: 'common', method: 'version', args: [] } },
+      headers: { 'Content-Type': 'application/json' },
+      timeout: PROBE_TIMEOUT_MS,
+      validateStatus: () => true,
+    }).then((r) => r.data as unknown, () => undefined),
+    outboundRequest({
+      method: 'POST',
+      url: `${origin}/web/database/list`,
+      data: { jsonrpc: '2.0', method: 'call', params: {} },
+      headers: { 'Content-Type': 'application/json' },
+      timeout: PROBE_TIMEOUT_MS,
+      validateStatus: () => true,
+    }).then((r) => r.data as unknown, () => undefined),
+  ]);
+
+  if (typeof versionBody === 'string' && ODOO_ONLINE_TYPO.test(versionBody)) return { noDatabase: true };
+  const result = (versionBody as { result?: { server_version_info?: unknown; server_serie?: unknown; server_version?: unknown } } | null)
+    ?.result;
+  const major = majorVersion(result?.server_version_info);
+  const listed = (listBody as { result?: unknown } | null)?.result;
+  const databases = Array.isArray(listed)
+    ? listed.filter((name): name is string => typeof name === 'string' && name !== '')
+    : undefined;
+  if (major === undefined && !databases?.length) return undefined;
+  return {
+    ...(major !== undefined ? { major, version: String(result?.server_serie ?? result?.server_version ?? major) } : {}),
+    ...(databases?.length ? { databases } : {}),
+  };
+}
+
 /**
  * `server_version_info[0]`: a number on a release (`19`), a string on Odoo
  * Online's rolling versions (`"saas~19"`, then a minor such as 3).

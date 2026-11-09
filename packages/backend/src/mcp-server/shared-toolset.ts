@@ -392,7 +392,7 @@ const SETUP_TOOL_SPECS: Array<{
     name: 'setup_get_status',
     title: 'Setup status',
     description:
-      "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. While the workspace is on its free trial, also the days left and, for an administrator, the page where a plan is chosen. Call it after the user says they completed a setup link.",
+      "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. For a ready one, whether its last call worked, or the result of a test call when it was just set up. While the workspace is on its free trial, also the days left and, for an administrator, the page where a plan is chosen. Call it after the user says they completed a setup link.",
     parameters: { type: 'object', properties: {} },
     readOnly: true,
   },
@@ -1362,7 +1362,7 @@ function registerChatgptTools(
     'anythingmcp_connection_status',
     {
       description:
-        "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. Call it after the user says they completed a setup link.",
+        "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. For a ready one, whether its last call worked, or the result of a test call when it was just set up. Call it after the user says they completed a setup link.",
       inputSchema: {},
       annotations: explicitHints({
         title: 'Setup status',
