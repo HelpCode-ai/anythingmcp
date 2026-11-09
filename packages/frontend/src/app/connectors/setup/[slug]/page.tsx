@@ -47,6 +47,8 @@ import { NetworkNote } from '@/components/connector-setup/network-note';
  *                   start a field with this value, e.g. the Odoo address and
  *                   database from the AnythingMCP module in Odoo. Addresses and
  *                   settings only: a credential is never read from a link.
+ *   source=<slug>   where the setup was opened from, kept on the setup events
+ *                   (odoo_module: the AnythingMCP module in Odoo's Settings)
  *   replaces=<id>   opened from "Switch to …" on another connector's setup
  *                   (an Odoo below 19 on the JSON-2 connector): once this one
  *                   is saved, that connector is deleted if it is still not
@@ -83,6 +85,11 @@ function SetupContent() {
   const replaces = params.get('replaces');
   const back = returnAssistant(params.get('from'));
   const backFromProvider = params.get('step') === 'done';
+  // Where the setup was opened from, for the setup events only (`source=odoo_module`:
+  // the AnythingMCP module in Odoo's Settings). A short slug, or nothing.
+  const sourceParam = params.get('source') ?? '';
+  const source = /^[a-z0-9_]{1,32}$/.test(sourceParam) ? sourceParam : undefined;
+  const fromSource = useMemo((): Record<string, string> => (source ? { source } : {}), [source]);
   // Values handed over in the link (prefill.<NAME>), applied once the fields are known.
   const handed = useMemo(
     () =>
@@ -200,7 +207,7 @@ function SetupContent() {
         } catch {}
         if (!started.current && !seen) {
           started.current = true;
-          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind });
+          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind, ...fromSource });
         }
       })
       .catch((e: Error) => setLoadError(e.message || t('notAvailable')));
@@ -217,7 +224,7 @@ function SetupContent() {
         })
         .catch(() => {});
     }
-  }, [token, slug, existingId, progressKey, backFromProvider, t, handed, router, withConnector]);
+  }, [token, slug, existingId, progressKey, backFromProvider, t, handed, router, withConnector, fromSource]);
 
   useEffect(() => {
     if (!token || !isTikTokShop) return;
@@ -244,7 +251,7 @@ function SetupContent() {
           // does not check the shared secret), so only a call to the API tells.
           // A refusal sends the user back to the keys, not to "is ready".
           if (test && test.ok === false && test.kind === 'auth_failed') {
-            productEvents.track('setup_verify_failed', token, { adapterSlug: slug, kind: 'after_authorization' });
+            productEvents.track('setup_verify_failed', token, { adapterSlug: slug, kind: 'after_authorization', ...fromSource });
             setVerifyFailed({ ok: false, kind: 'auth_failed', message: test.message } as VerifyResult);
             setError('');
             setPhase('form');
@@ -252,7 +259,7 @@ function SetupContent() {
           }
           setResult({ connectorId: existingId, verified: test?.ok === true });
           setPhase('done');
-          productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser', verified: test?.ok === true });
+          productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser', verified: test?.ok === true, ...fromSource });
         } else {
           setError(t('authIncomplete'));
           setPhase('form');
@@ -262,7 +269,7 @@ function SetupContent() {
         setError(e.message);
         setPhase('form');
       });
-  }, [backFromProvider, existingId, token, slug, t]);
+  }, [backFromProvider, existingId, token, slug, t, fromSource]);
 
   // TikTok Shop's app variables are optional in the catalog (empty means the
   // server's app). Without a server app, or with the user's own app chosen,
@@ -440,7 +447,7 @@ function SetupContent() {
     try {
       const id = await save();
       if (!existingId) router.replace(withConnector(id));
-      const check = await adapters.verify(slug, token, credentials(), id);
+      const check = await adapters.verify(slug, token, credentials(), id, source);
       if (check.ok === false && check.kind !== 'auth_failed') {
         if (check.missing?.length) {
           setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, t('field.required')])));
@@ -468,14 +475,14 @@ function SetupContent() {
     lastProviderCheck.current = Date.now();
     setProviderCheck((c) => ({ ...c, checking: true, error: '' }));
     try {
-      const check = await adapters.verify(slug, token, {}, connectorId);
+      const check = await adapters.verify(slug, token, {}, connectorId, source);
       setProviderReady(check.ok !== false);
       // Not a refusal of the keys (a value missing, the provider down): say so.
       setProviderCheck({ checking: false, at: new Date(), error: check.ok === false && check.kind !== 'auth_failed' ? check.message : '' });
     } catch (e: any) {
       setProviderCheck((c) => ({ checking: false, at: c.at, error: e?.message || t('genericError') }));
     }
-  }, [token, connectorId, slug, t]);
+  }, [token, connectorId, slug, t, source]);
 
   // On the wait step: check when it opens and whenever the user comes back
   // to the tab (from Etsy's page, or the next day), at most once a minute.
@@ -512,7 +519,7 @@ function SetupContent() {
       // shared secret) used to send the user to an error page at the
       // provider that they never came back from.
       const check =
-        info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), connectorId ?? undefined);
+        info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), connectorId ?? undefined, source);
       // The check found the right value itself (an Odoo database name the
       // address names): it goes into the field and is saved with the rest.
       const fix = check && check.ok !== null ? check.corrected : undefined;
@@ -549,7 +556,7 @@ function SetupContent() {
           // the new values on it instead of installing a second one.
           try {
             await save();
-            productEvents.track('setup_saved_draft', token, { adapterSlug: slug, kind: 'app_pending' });
+            productEvents.track('setup_saved_draft', token, { adapterSlug: slug, kind: 'app_pending', ...fromSource });
           } catch {
             // Not saved (plan limit): the provider's answer is shown as before.
           }
@@ -601,6 +608,7 @@ function SetupContent() {
         kind: info.setupKind,
         verified: check?.ok === true,
         ...(fix ? { corrected: Object.keys(fix).join(',') } : {}),
+        ...fromSource,
       });
     } catch (e) {
       fail(e);
@@ -614,7 +622,7 @@ function SetupContent() {
     setPhase('working');
     try {
       const id = await save();
-      productEvents.track(draft ? 'setup_saved_draft' : 'setup_saved_unverified', token, { adapterSlug: slug });
+      productEvents.track(draft ? 'setup_saved_draft' : 'setup_saved_unverified', token, { adapterSlug: slug, ...fromSource });
       router.push(`/connectors/${id}`);
     } catch (e) {
       fail(e);
