@@ -146,6 +146,10 @@ export const OPENAPI_TAGS: ReadonlyArray<{ name: string; description: string }> 
     description: 'Shop authorization and TikTok Shop App Store installs for TikTok Shop connectors.',
   },
   {
+    name: 'Meta',
+    description: 'Sign-in of the Instagram connectors with Meta (Unified Login, Facebook Login or Instagram Login).',
+  },
+  {
     name: 'Alerts',
     description: 'The webhook notified when a connector starts failing. Admin only.',
   },
