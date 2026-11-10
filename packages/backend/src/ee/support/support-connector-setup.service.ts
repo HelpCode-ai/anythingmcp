@@ -187,7 +187,9 @@ export class SupportConnectorSetupService {
     // ── Values: only what this customer posted here ────────────────────────
     const descriptors = new Map(describeAdapterEnvVars(definition).map((d) => [d.name, d]));
     const posted = await this.postedTexts(desk, conversationUuid, contact.id);
-    const values: Record<string, string> = {};
+    // Collected in a Map and turned into an object once: the keys are the
+    // adapter's own variable names, never a name the model wrote.
+    const accepted = new Map<string, string>();
     const rawValues = args.values && typeof args.values === 'object' ? (args.values as Record<string, unknown>) : {};
     // The model may name a value by its label ("API key") rather than its variable.
     const byLabel = new Map<string, string>();
@@ -213,8 +215,9 @@ export class SupportConnectorSetupService {
           };
         }
       }
-      values[name] = normalizeAdapterEnvValue(d, typed);
+      accepted.set(d.name, normalizeAdapterEnvValue(d, typed));
     }
+    const values: Record<string, string> = Object.fromEntries(accepted);
     const hasSecrets = Object.keys(values).some((n) => {
       const d = descriptors.get(n);
       return d?.secret || d?.kind === 'credential';
