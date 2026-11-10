@@ -27,6 +27,7 @@ function build(opts: { cloud: boolean; connectorsService?: any }) {
     { checkCanCreateConnector: jest.fn().mockResolvedValue(undefined) } as any,
     { attachToDefaultServer: jest.fn().mockResolvedValue(null) } as any,
     { isCloud: () => opts.cloud } as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any,
   );
   return { controller, connectorsService, prisma, mcpServer };
 }
