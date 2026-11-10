@@ -45,6 +45,7 @@
 - [Code mode](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/code-mode.md): Run isolated JavaScript that orchestrates several MCP tools in one step: saved code tools, inline code_execute, governance and deployment.
 - [License FAQ](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/license-faq.md): Understand the AGPL license, the commercial EE boundary, and contributor licensing.
 - [Invoices on AnythingMCP Cloud](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/cloud-invoices.md): Find your AnythingMCP Cloud invoices and have each paid invoice emailed as a PDF, from the dashboard or the CLI.
+- [Cloud plan limits](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/cloud-plans.md): What each AnythingMCP Cloud plan includes (connectors, servers, users, File Search, code mode) and what happens above a plan's limits.
 
 ## Reference
 

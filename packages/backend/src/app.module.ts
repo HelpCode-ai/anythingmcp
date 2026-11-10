@@ -1,3 +1,4 @@
+import { PlanCapsModule } from './plan-caps/plan-caps.module';
 import { Module, MiddlewareConsumer, NestModule, Logger, ClassSerializerInterceptor } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
@@ -182,6 +183,7 @@ if (useOAuth) {
     McpServersModule,
     FileSearchModule,
     LicenseModule,
+    PlanCapsModule,
     LicensingModule,
 
     // Cloud-specific modules (conditionally loaded)

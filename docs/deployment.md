@@ -391,6 +391,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `SMTP_PASS` | No | SMTP password |
 | `SMTP_FROM` | No | Sender address (default: `AnythingMCP <SMTP_USER>`) |
 | `SMTP_REPLY_TO` | No | Reply-To address, for when `SMTP_FROM` is a noreply address |
+| `PLAN_CAPS_ENFORCE` | No | Cloud only: how hard the plans' caps on connectors, MCP servers and users are (see [Cloud plan limits](cloud-plans.md)). `dry-run` (default) logs what would be refused or paused, `on` enforces them, `off` does neither. The trial's cap on creating connectors and MCP servers is enforced in every mode. Ignored on self-hosted, which has none of these caps |
 | `RETENTION_SMTP_HOST` | No | Cloud only: a second SMTP server for the trial lifecycle, win-back and blocked-call emails. Without it they go through the SMTP above, with `RETENTION_SMTP_REPLY_TO` as Reply-To when set. Self-hosted sends none of these emails |
 | `RETENTION_SMTP_PORT` | No | Its port (default: 587). 465 or 2465 use implicit TLS, any other port STARTTLS |
 | `RETENTION_SMTP_USER` | No | Its username |

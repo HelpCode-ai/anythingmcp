@@ -303,6 +303,12 @@ export class DynamicMcpTools {
    * blocked call gives; null when the licence is active, on self-hosted, or
    * when the licence cannot be read (the tools then answer for themselves).
    */
+  /** Cloud: names of the connectors a plan change paused, or null (see LicenseGuardService). */
+  async pausedByPlanConnectorNames(organizationId: string | undefined): Promise<string[] | null> {
+    if (!this.deployment.isCloud() || !organizationId) return null;
+    return this.licenseGuard.pausedByPlanConnectorNames(organizationId).catch(() => null);
+  }
+
   async trialEndedNotice(
     organizationId: string | undefined,
     userId?: string,

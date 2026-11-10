@@ -1,3 +1,4 @@
+import { LicenseGuardService } from '../license/license-guard.service';
 import {
   Controller,
   Post,
@@ -236,6 +237,7 @@ export class AuthController {
     private readonly productEvents: ProductEventService,
     private readonly edition: EditionService,
     @Optional() private readonly adsSignup?: AdsSignupService,
+    @Optional() private readonly licenseGuard?: LicenseGuardService,
   ) {
     // Built from this controller's own dependencies (it is stateless), so the
     // dashboard endpoints and the MCP authorization page share one
@@ -709,6 +711,8 @@ export class AuthController {
     // Refused here too, not only on acceptance, so the admin learns it before
     // the invitee does.
     await this.edition.assertSeatAvailable(existing?.id);
+    // Cloud: the plan's user cap (PLAN_CAPS_ENFORCE).
+    await this.licenseGuard?.checkCanAddMember(req.user.organizationId);
 
     // Reuse an existing pending invitation instead of rejecting: throwing a
     // 409 here left admins stuck with no way to get the link after a failed
@@ -882,6 +886,7 @@ export class AuthController {
         );
       }
       await this.edition.assertSeatAvailable(existing.id);
+      await this.licenseGuard?.checkCanAddMember(invite.organizationId);
       await this.organizationsService.addMember(existing.id, invite.organizationId, invite.role);
       // Switch their active org to the newly joined one
       user = await this.organizationsService.switchOrg(existing.id, invite.organizationId);
@@ -896,6 +901,7 @@ export class AuthController {
         throw new BadRequestException('A display name is required.');
       }
       await this.edition.assertSeatAvailable();
+      await this.licenseGuard?.checkCanAddMember(invite.organizationId);
       const passwordHash = await this.authService.hashPassword(dto.password);
       user = await this.usersService.create({
         email: invite.email,
