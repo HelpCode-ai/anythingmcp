@@ -797,6 +797,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     }
   }
 
+  /** Where a connector stands: ready, needs_input (with the missing variables) or needs_authorization. */
+  connectorStatus(connectorId: string): Promise<{ status: string; missing: string[] }> {
+    return this.connectorState(connectorId) as Promise<{ status: string; missing: string[] }>;
+  }
+
   private async connectorState(connectorId: string) {
     const row = await this.prisma.connector.findUnique({
       where: { id: connectorId },
