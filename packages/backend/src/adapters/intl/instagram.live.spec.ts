@@ -4,7 +4,7 @@ type Tool = {
   name: string;
   enabled?: boolean;
   parameters?: { properties?: Record<string, { description?: string }>; required?: string[] };
-  endpointMapping: { method: string; path: string; queryParams?: Record<string, unknown> };
+  endpointMapping: { method: string; path: string; queryParams?: Record<string, unknown>; bodyMapping?: Record<string, unknown> };
 };
 const a = adapter as unknown as {
   slug: string;
@@ -32,7 +32,7 @@ describe('instagram adapter: static spec conformance', () => {
   it('every tool is prefixed and every parameter reaches the request', () => {
     for (const t of a.tools) {
       expect(t.name.startsWith('instagram_')).toBe(true);
-      const sent = JSON.stringify(t.endpointMapping.queryParams ?? {});
+      const sent = JSON.stringify({ ...(t.endpointMapping.queryParams ?? {}), ...(t.endpointMapping.bodyMapping ?? {}) });
       for (const p of Object.keys(t.parameters?.properties ?? {})) {
         const reached = t.endpointMapping.path.includes(`{${p}}`) || sent.includes(`"$${p}"`) || sent.includes(`\${${p}}`);
         expect({ tool: t.name, param: p, reached }).toEqual({ tool: t.name, param: p, reached: true });
@@ -71,6 +71,26 @@ describe('instagram adapter: static spec conformance', () => {
       path: '/{media_id}',
       queryParams: { comment_enabled: '$enabled' },
     });
+  });
+
+  it('lists the accounts a Unified Login token was given', () => {
+    expect(tool('instagram_list_assigned_accounts').endpointMapping).toMatchObject({
+      method: 'GET',
+      path: '/me/assigned_instagram_accounts',
+    });
+  });
+
+  it('reads Direct Messages; sending is installed switched off', () => {
+    expect(tool('instagram_list_conversations').endpointMapping).toMatchObject({
+      method: 'GET',
+      path: '/{{INSTAGRAM_ACCOUNT_ID}}/conversations',
+      queryParams: expect.objectContaining({ platform: 'instagram' }),
+    });
+    expect(tool('instagram_get_conversation_messages').endpointMapping.path).toBe('/{conversation_id}');
+    for (const name of ['instagram_send_message', 'instagram_send_private_reply']) {
+      expect(tool(name).enabled).toBe(false);
+      expect(tool(name).endpointMapping).toMatchObject({ method: 'POST', path: '/{{INSTAGRAM_ACCOUNT_ID}}/messages' });
+    }
   });
 
   it('can be authorized with Facebook: the app variables are the renewal ones', () => {

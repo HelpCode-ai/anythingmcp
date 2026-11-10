@@ -3,22 +3,35 @@
  * needs to know, without any I/O.
  *
  * Two flavours, one per catalog adapter:
- *   - `facebook` (adapter `instagram`, Instagram API with Facebook Login):
- *     the Facebook login dialog, a Facebook User token, the Instagram
- *     professional account linked to one of the user's Facebook Pages.
+ *   - `facebook` (adapter `instagram`, graph.facebook.com), in two modes:
+ *       - Unified Login (Instagram API with Unified Login), when the app comes
+ *         with a Facebook Login for Business configuration id: the login
+ *         dialog takes `config_id` instead of `scope`, the user signs in with
+ *         Instagram or Facebook and picks the business portfolio and the
+ *         Instagram accounts to share, no Facebook Page needed. The code
+ *         gives a Business Integration System User token (configured not to
+ *         expire), and /me/assigned_instagram_accounts lists the accounts.
+ *         Meta apps created since autumn 2026 only offer this mode.
+ *       - Classic Facebook Login (older apps, no configuration id): the
+ *         `scope` dialog, a Facebook User token exchanged for a long-lived
+ *         one, the Instagram account linked to one of the user's Pages.
  *   - `instagram` (adapter `instagram-login`, Instagram API with Instagram
  *     Login): Instagram's own business login, an Instagram User token, no
- *     Facebook Page needed.
+ *     Facebook Page needed. New Meta apps no longer get this login; apps that
+ *     already have it keep it.
  *
  * Both connectors stay BEARER_TOKEN connectors: the flow writes the token it
  * obtains into INSTAGRAM_ACCESS_TOKEN (and the account id into
  * INSTAGRAM_ACCOUNT_ID), exactly where a pasted token goes, and hands the
  * expiry to the bearer token renewal. Pasting a token keeps working.
  *
- * The app: the connector's own (META_APP_ID / META_APP_SECRET, or
- * INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET), else the server's when it has one
- * (META_PLATFORM_APP_ID / _SECRET, INSTAGRAM_PLATFORM_APP_ID / _SECRET),
- * read from the process environment the same way on Cloud and self-hosted.
+ * The app: the connector's own (META_APP_ID / META_APP_SECRET, plus
+ * META_CONFIG_ID for Unified Login; or INSTAGRAM_APP_ID /
+ * INSTAGRAM_APP_SECRET), else, for the `instagram` adapter only, the
+ * server's (META_PLATFORM_APP_ID / META_PLATFORM_APP_SECRET /
+ * META_PLATFORM_CONFIG_ID), read from the process environment the same way
+ * on Cloud and self-hosted. Instagram Login has no server app: new Meta apps
+ * cannot get it, so it always takes an app of the user's own.
  */
 
 export type MetaLoginFlavour = 'facebook' | 'instagram';
@@ -26,10 +39,17 @@ export type MetaLoginFlavour = 'facebook' | 'instagram';
 export interface MetaLoginApp {
   appId: string;
   appSecret: string;
+  /**
+   * Facebook Login for Business configuration id (Unified Login). Set: the
+   * dialog takes it instead of a scope list. Not a secret.
+   */
+  configId?: string;
 }
 
 /** The Graph API version of both flows; the adapters call the same one. */
 export const META_LOGIN_GRAPH_VERSION = 'v25.0';
+/** The version Meta documents for the Unified Login code exchange and account lookup. */
+export const META_UNIFIED_GRAPH_VERSION = 'v27.0';
 
 /** The variables the flow writes on the connector. */
 export const META_LOGIN_TOKEN_VAR = 'INSTAGRAM_ACCESS_TOKEN';
@@ -39,23 +59,36 @@ interface FlavourSpec {
   /** The catalog adapter this flavour authorizes. */
   adapterSlug: string;
   /** Connector variables of the user's own app. */
-  ownAppVars: { appId: string; appSecret: string };
-  /** Server variables of the server's own app. */
-  platformAppVars: { appId: string; appSecret: string };
+  ownAppVars: AppVars;
+  /** Server variables of the server's own app; none for Instagram Login (see above). */
+  platformAppVars?: AppVars;
   /** The permissions asked for, in the login dialog's `scope`. */
   scopes: readonly string[];
   /** Who the user signs in with, for messages. */
   providerName: string;
 }
 
+interface AppVars {
+  appId: string;
+  appSecret: string;
+  /** The Unified Login configuration id (Facebook Login only). */
+  configId?: string;
+}
+
 const FLAVOURS: Record<MetaLoginFlavour, FlavourSpec> = {
   facebook: {
     adapterSlug: 'instagram',
-    ownAppVars: { appId: 'META_APP_ID', appSecret: 'META_APP_SECRET' },
-    platformAppVars: { appId: 'META_PLATFORM_APP_ID', appSecret: 'META_PLATFORM_APP_SECRET' },
-    // What the connector's tools use. Publishing and deleting are asked for
-    // too: those tools are installed switched off, and a permission granted
-    // now spares a second sign-in when someone switches them on.
+    ownAppVars: { appId: 'META_APP_ID', appSecret: 'META_APP_SECRET', configId: 'META_CONFIG_ID' },
+    platformAppVars: {
+      appId: 'META_PLATFORM_APP_ID',
+      appSecret: 'META_PLATFORM_APP_SECRET',
+      configId: 'META_PLATFORM_CONFIG_ID',
+    },
+    // Classic Facebook Login only (Unified Login takes its permissions from
+    // the configuration). What the connector's tools use. Publishing and
+    // deleting are asked for too: those tools are installed switched off,
+    // and a permission granted now spares a second sign-in when someone
+    // switches them on.
     scopes: [
       'instagram_basic',
       'instagram_manage_insights',
@@ -70,7 +103,6 @@ const FLAVOURS: Record<MetaLoginFlavour, FlavourSpec> = {
   instagram: {
     adapterSlug: 'instagram-login',
     ownAppVars: { appId: 'INSTAGRAM_APP_ID', appSecret: 'INSTAGRAM_APP_SECRET' },
-    platformAppVars: { appId: 'INSTAGRAM_PLATFORM_APP_ID', appSecret: 'INSTAGRAM_PLATFORM_APP_SECRET' },
     scopes: [
       'instagram_business_basic',
       'instagram_business_manage_insights',
@@ -101,12 +133,26 @@ export function metaLoginProviderName(flavour: MetaLoginFlavour): string {
   return FLAVOURS[flavour].providerName;
 }
 
-export function metaLoginOwnAppVars(flavour: MetaLoginFlavour): { appId: string; appSecret: string } {
+export function metaLoginOwnAppVars(flavour: MetaLoginFlavour): AppVars {
   return FLAVOURS[flavour].ownAppVars;
 }
 
-export function metaLoginPlatformAppVars(flavour: MetaLoginFlavour): { appId: string; appSecret: string } {
+export function metaLoginPlatformAppVars(flavour: MetaLoginFlavour): AppVars | undefined {
   return FLAVOURS[flavour].platformAppVars;
+}
+
+/** Whether an app signs in with Unified Login (it has a configuration id). */
+export function isUnifiedLogin(app: MetaLoginApp | undefined): boolean {
+  return !!app?.configId;
+}
+
+function appFrom(vars: AppVars, values: Record<string, unknown>): Partial<MetaLoginApp> {
+  const configId = vars.configId ? usable(values[vars.configId]) : undefined;
+  return {
+    appId: usable(values[vars.appId]),
+    appSecret: usable(values[vars.appSecret]),
+    ...(configId ? { configId } : {}),
+  };
 }
 
 /** Empty, or a `{{VARIABLE}}` nobody filled in. */
@@ -116,24 +162,24 @@ function usable(value: unknown): string | undefined {
 }
 
 /**
- * The server's app for a flavour, or undefined when either variable is
- * unset. Read from the process environment, where the config module also
- * loads the .env file.
+ * The server's app for a flavour, or undefined when its id or secret is
+ * unset, and always for Instagram Login. Read from the process environment,
+ * where the config module also loads the .env file.
  */
 export function metaLoginPlatformApp(
   flavour: MetaLoginFlavour,
   env: Record<string, string | undefined> = process.env,
 ): MetaLoginApp | undefined {
   const vars = FLAVOURS[flavour].platformAppVars;
-  const appId = usable(env[vars.appId]);
-  const appSecret = usable(env[vars.appSecret]);
-  return appId && appSecret ? { appId, appSecret } : undefined;
+  if (!vars) return undefined;
+  const { appId, appSecret, configId } = appFrom(vars, env);
+  return appId && appSecret ? { appId, appSecret, ...(configId ? { configId } : {}) } : undefined;
 }
 
 /**
  * The app a connector authorizes with: its own when it names an app id, else
- * the server's. `missing` lists the connector variables to fill in when there
- * is neither (or only half of its own).
+ * the server's (not for Instagram Login). `missing` lists the connector
+ * variables to fill in when there is neither (or only half of its own).
  */
 export function metaLoginAppOf(
   flavour: MetaLoginFlavour,
@@ -141,10 +187,10 @@ export function metaLoginAppOf(
   env: Record<string, string | undefined> = process.env,
 ): { app?: MetaLoginApp; usesPlatformApp: boolean; missing: string[] } {
   const vars = FLAVOURS[flavour].ownAppVars;
-  const own = envVars ?? {};
-  const appId = usable(own[vars.appId]);
-  const appSecret = usable(own[vars.appSecret]);
-  if (appId && appSecret) return { app: { appId, appSecret }, usesPlatformApp: false, missing: [] };
+  const { appId, appSecret, configId } = appFrom(vars, envVars ?? {});
+  if (appId && appSecret) {
+    return { app: { appId, appSecret, ...(configId ? { configId } : {}) }, usesPlatformApp: false, missing: [] };
+  }
   // An app id of its own without its secret is a half-finished own app, not
   // a request for the server's: say what is missing instead of mixing them.
   if (appId || appSecret) {
@@ -158,11 +204,26 @@ export function metaLoginAppOf(
 /** The login dialog the user is sent to. */
 export function buildMetaLoginUrl(
   flavour: MetaLoginFlavour,
-  appId: string,
+  app: Pick<MetaLoginApp, 'appId' | 'configId'>,
   redirectUri: string,
   state: string,
 ): string {
+  const appId = app.appId;
   const scope = FLAVOURS[flavour].scopes.join(',');
+  if (flavour === 'facebook' && app.configId) {
+    // Unified Login: the configuration carries the permissions and assets;
+    // `scope` must not be sent. prompt=login shows the Instagram sign-in next
+    // to Facebook's even to someone already signed in to Facebook.
+    const url = new URL('https://www.facebook.com/dialog/oauth');
+    url.searchParams.set('client_id', appId);
+    url.searchParams.set('config_id', app.configId);
+    url.searchParams.set('redirect_uri', redirectUri);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('override_default_response_type', 'true');
+    url.searchParams.set('state', state);
+    url.searchParams.set('prompt', 'login');
+    return url.toString();
+  }
   if (flavour === 'instagram') {
     const url = new URL('https://www.instagram.com/oauth/authorize');
     url.searchParams.set('client_id', appId);

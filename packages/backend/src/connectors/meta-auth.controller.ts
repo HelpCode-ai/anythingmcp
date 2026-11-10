@@ -34,6 +34,7 @@ import {
   META_LOGIN_TOKEN_VAR,
   MetaLoginFlavour,
   buildMetaLoginUrl,
+  isUnifiedLogin,
   metaLoginAppOf,
   metaLoginFlavourOf,
   metaLoginOwnAppVars,
@@ -79,11 +80,17 @@ interface ConnectorRow {
  * the token and returns the accounts; POST /api/meta/connectors/:id/account
  * stores the one the user picks.
  *
- * The app: the connector's own (META_APP_ID / META_APP_SECRET, or
- * INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET), else the server's
- * (META_PLATFORM_APP_* / INSTAGRAM_PLATFORM_APP_*) when it has one. The same
- * on Cloud and self-hosted; the redirect URI to register on the app is
- * <SERVER_URL>/api/meta/callback for both flavours.
+ * The `instagram` connector signs in with Unified Login when its app comes
+ * with a Facebook Login for Business configuration id (every Meta app
+ * created since autumn 2026), else with the classic Facebook Login; see
+ * meta-login.util.ts. A Unified Login token is a Business Integration System
+ * User token that does not expire: it is stored as it comes and never renewed.
+ *
+ * The app: the connector's own (META_APP_ID / META_APP_SECRET / META_CONFIG_ID,
+ * or INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET), else, for `instagram` only, the
+ * server's (META_PLATFORM_APP_ID / _SECRET / META_PLATFORM_CONFIG_ID) when it
+ * has one. The same on Cloud and self-hosted; the redirect URI to register on
+ * the app is <SERVER_URL>/api/meta/callback for every flavour.
  */
 @ApiTags('Meta')
 @Controller('api/meta')
@@ -131,15 +138,18 @@ export class MetaAuthController {
   @Get('platform')
   @UseGuards(AuthGuard('jwt'))
   @ApiOperation({
-    summary: 'Whether this server has its own Meta apps, and the redirect URI to set on an app of your own',
+    summary: 'Whether this server has its own Meta app, and the redirect URI to set on an app of your own',
     description:
-      '`facebook`: a server app for Instagram API with Facebook Login (connector `instagram`); `instagram`: one ' +
-      'for Instagram API with Instagram Login (`instagram-login`). With one, the setup page does not ask for an ' +
-      'app id and secret.',
+      '`facebook`: a server app for the `instagram` connector; `unified`: it signs in with Unified Login ' +
+      '(Instagram or Facebook account, no Facebook Page needed). `instagram` (Instagram Login, connector ' +
+      '`instagram-login`) is always false: that login takes an app of your own. With a server app, the setup ' +
+      'page does not ask for an app id and secret.',
   })
-  platform(): { facebook: boolean; instagram: boolean; redirectUrl: string } {
+  platform(): { facebook: boolean; unified: boolean; instagram: boolean; redirectUrl: string } {
+    const app = metaLoginPlatformApp('facebook');
     return {
-      facebook: !!metaLoginPlatformApp('facebook'),
+      facebook: !!app,
+      unified: isUnifiedLogin(app),
       instagram: !!metaLoginPlatformApp('instagram'),
       redirectUrl: this.redirectUrl(),
     };
@@ -209,7 +219,7 @@ export class MetaAuthController {
       { returnTo: body?.returnTo },
     );
     return {
-      authorizationUrl: buildMetaLoginUrl(flavour, app.appId, this.redirectUrl(), state),
+      authorizationUrl: buildMetaLoginUrl(flavour, app, this.redirectUrl(), state),
       redirectUrl: this.redirectUrl(),
     };
   }
@@ -304,8 +314,10 @@ export class MetaAuthController {
     }
     if (result.accounts.length === 0) {
       throw new BadRequestException({
-        message:
-          flavour === 'facebook'
+        message: result.systemUser
+          ? 'The sign-in worked, but no Instagram account was shared with the app. Authorize again and, in the ' +
+            'Meta dialog, select the business portfolio and the Instagram business or creator account to share.'
+          : flavour === 'facebook'
             ? 'The sign-in worked, but none of the Facebook Pages you manage has an Instagram business or creator ' +
               'account linked to it. Link the Instagram account to a Page (Instagram app: Settings, Account type ' +
               'and tools; or the Page settings, Linked accounts), then authorize again and select that Page.'
@@ -328,7 +340,8 @@ export class MetaAuthController {
     });
     await this.bearerTokens.seed(flow.connectorId, result.token, {
       expiresAt: result.expiresAt,
-      viaPlatformApp: usesPlatformApp && flavour === 'facebook',
+      viaPlatformApp: usesPlatformApp && flavour === 'facebook' && !result.systemUser,
+      systemUser: result.systemUser,
     });
     await this.reload(flow.connectorId);
     this.logger.log(
@@ -377,9 +390,12 @@ export class MetaAuthController {
     if (!token || /\{\{/.test(token)) {
       throw new BadRequestException('The connector has no token yet. Authorize with Facebook first.');
     }
+    // A Unified Login token reaches the accounts the client shared; a
+    // Facebook User token the ones linked to its Pages.
+    const unified = isUnifiedLogin(metaLoginAppOf('facebook', this.envOf(connector)).app);
     let accounts: MetaInstagramAccount[];
     try {
-      accounts = await this.metaLogin.facebookAccounts(token);
+      accounts = unified ? await this.metaLogin.unifiedAccounts(token) : await this.metaLogin.facebookAccounts(token);
     } catch (err) {
       const e = err instanceof MetaLoginError ? err : new MetaLoginError('network error');
       throw new BadGatewayException(`Facebook did not list the accounts (${e.message}). Authorize again.`);
@@ -469,5 +485,6 @@ export class MetaAuthController {
 function appWhere(flavour: MetaLoginFlavour): string {
   return flavour === 'instagram'
     ? 'Meta App Dashboard, Instagram, API setup with Instagram login, Business login settings: Instagram app ID and secret'
-    : 'Meta App Dashboard, App settings, Basic: App ID and App secret';
+    : 'Meta App Dashboard, App settings, Basic: App ID and App secret; for Unified Login also META_CONFIG_ID, the ' +
+        'configuration id under Use cases, Instagram, API setup with Unified login';
 }

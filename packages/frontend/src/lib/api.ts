@@ -706,7 +706,9 @@ export const connectors = {
     }),
   /** Whether this server has its own Meta apps, and the redirect URI for an app of your own. */
   metaPlatform: (token: string) =>
-    request<{ facebook: boolean; instagram: boolean; redirectUrl: string }>('/api/meta/platform', { token }),
+    request<{ facebook: boolean; unified?: boolean; instagram: boolean; redirectUrl: string }>('/api/meta/platform', {
+      token,
+    }),
   oauthRedirectUri: (token: string) =>
     request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>

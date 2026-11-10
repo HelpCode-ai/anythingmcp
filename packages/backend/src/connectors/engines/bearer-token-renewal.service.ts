@@ -56,6 +56,12 @@ export interface TokenRenewalSpec {
   appIdVar?: string;
   appSecretVar?: string;
   pageIdVar?: string;
+  /**
+   * The variable with the Meta Unified Login configuration id. Not used for
+   * renewal (a Unified Login token is never renewed): the "Authorize with
+   * Provider" sign-in reads it (meta-login.util.ts).
+   */
+  configIdVar?: string;
   /** Graph API version for the exchange; defaults to the base URL's, else v25.0. */
   graphVersion?: string;
   /** Renew when fewer days than this remain. Default 10. */
@@ -102,6 +108,11 @@ interface TokenState {
    * connector has no app id and secret of its own.
    */
   viaPlatformApp?: boolean;
+  /**
+   * A Business Integration System User token (Meta Unified Login): not a
+   * user token, so never exchanged or refreshed with the user-token calls.
+   */
+  systemUser?: boolean;
 }
 
 type Db = Pick<PrismaService, 'connectorAuthCache'>;
@@ -269,7 +280,7 @@ export class BearerTokenRenewalService {
   async seed(
     connectorId: string,
     token: string,
-    opts: { expiresAt: number | null; viaPlatformApp?: boolean },
+    opts: { expiresAt: number | null; viaPlatformApp?: boolean; systemUser?: boolean },
   ): Promise<void> {
     const ref = credentialRef(token);
     if (!ref) return;
@@ -279,6 +290,7 @@ export class BearerTokenRenewalService {
       expiresAt: opts.expiresAt,
       obtainedAt: Date.now(),
       ...(opts.viaPlatformApp ? { viaPlatformApp: true } : {}),
+      ...(opts.systemUser ? { systemUser: true } : {}),
     };
     await this.writeStored(connectorId, st, this.prisma);
     this.blocked.delete(connectorId);
@@ -315,6 +327,7 @@ export class BearerTokenRenewalService {
   }
 
   private shouldRenew(st: TokenState, spec: ResolvedTokenRenewal): boolean {
+    if (st.systemUser) return false;
     // A pasted Instagram Login token whose first refresh was refused (younger
     // than a day): its expiry is unknown, so try again once the wait is over;
     // a successful refresh tells the expiry. Without this it was never renewed.
@@ -523,6 +536,7 @@ export class BearerTokenRenewalService {
       obtainedAt?: unknown;
       neverExpires?: unknown;
       viaPlatformApp?: unknown;
+      systemUser?: unknown;
     } | null;
     if (!row || !meta || meta.kind !== CACHE_KIND || typeof meta.sourceRef !== 'string') return undefined;
     let token: string;
@@ -537,6 +551,7 @@ export class BearerTokenRenewalService {
       expiresAt: meta.neverExpires === true ? null : row.expiresAt.getTime(),
       obtainedAt: typeof meta.obtainedAt === 'number' ? meta.obtainedAt : undefined,
       ...(meta.viaPlatformApp === true ? { viaPlatformApp: true } : {}),
+      ...(meta.systemUser === true ? { systemUser: true } : {}),
     };
   }
 
@@ -552,6 +567,7 @@ export class BearerTokenRenewalService {
         obtainedAt: st.obtainedAt ?? Date.now(),
         neverExpires: st.expiresAt === null,
         ...(st.viaPlatformApp ? { viaPlatformApp: true } : {}),
+        ...(st.systemUser ? { systemUser: true } : {}),
       },
     };
     await db.connectorAuthCache.upsert({

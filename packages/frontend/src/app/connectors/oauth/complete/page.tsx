@@ -42,7 +42,7 @@ function CompleteContent() {
   const isTikTokShopInstall = params.get('provider') === 'tiktok-shop-install';
   // A Facebook or Instagram sign-in of an Instagram connector.
   const isMeta = params.get('provider') === 'meta';
-  // Several Instagram accounts behind one Facebook sign-in: the user picks one.
+  // Several Instagram accounts behind one Meta sign-in: the user picks one.
   const [choice, setChoice] = useState<{
     connectorId: string;
     accounts: MetaInstagramAccount[];
@@ -123,7 +123,7 @@ function CompleteContent() {
       <div className="space-y-4">
         <h1 className="text-lg font-semibold text-[var(--text)]">Choose the Instagram account</h1>
         <p className="text-sm text-[var(--text-2)]">
-          The Facebook sign-in reaches several Instagram accounts. Pick the one this connector should use; you can sign in
+          The sign-in reaches several Instagram accounts. Pick the one this connector should use; you can sign in
           again later to switch.
         </p>
         <ul className="space-y-2">

@@ -25,6 +25,61 @@ describe('MetaLoginService', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
+  describe('Unified Login', () => {
+    const UNIFIED = { ...APP, configId: '2539939149839675' };
+
+    it('exchanges the code once, never for a long-lived token, and lists the shared accounts', async () => {
+      const calls: Array<{ url: string; params: any }> = [];
+      mockedAxios.get.mockImplementation(async (url: string, opts?: any) => {
+        calls.push({ url, params: opts?.params });
+        if (url === 'https://graph.facebook.com/v27.0/oauth/access_token') {
+          expect(opts.params).toEqual({ client_id: APP.appId, client_secret: APP.appSecret, redirect_uri: REDIRECT, code: 'CODE' });
+          return { data: { access_token: 'BISU', token_type: 'bearer' } };
+        }
+        if (url === 'https://graph.facebook.com/v27.0/me/assigned_instagram_accounts') {
+          expect(opts.headers.Authorization).toBe('Bearer BISU');
+          if (!opts.params.after) {
+            return {
+              data: {
+                data: [{ id: '17841400000000001', username: 'shop' }],
+                paging: { cursors: { after: 'CUR' }, next: 'https://graph.facebook.com/v27.0/me/assigned_instagram_accounts?access_token=X&after=CUR' },
+              },
+            };
+          }
+          return { data: { data: [{ id: '17841400000000002' }, { id: 'not-an-id' }] } };
+        }
+        throw new Error(`unexpected ${url}`);
+      });
+      const out = await service.exchangeCode({ flavour: 'facebook', app: UNIFIED, code: 'CODE#_', redirectUri: REDIRECT });
+      expect(out).toEqual({
+        token: 'BISU',
+        expiresAt: null,
+        systemUser: true,
+        accounts: [{ id: '17841400000000001', username: 'shop' }, { id: '17841400000000002' }],
+      });
+      expect(calls.some((c) => c.params?.grant_type === 'fb_exchange_token')).toBe(false);
+      expect(calls[2].params).toEqual({ fields: 'id,username', limit: '100', after: 'CUR' });
+      expect(logged.join('\n')).not.toContain('BISU');
+    });
+
+    it('keeps an expiry the configuration sets, and lists accounts for a stored token', async () => {
+      mockedAxios.get.mockImplementation(async (url: string) => {
+        if (url.endsWith('/oauth/access_token')) return { data: { access_token: 'BISU', expires_in: 5_184_000 } };
+        return { data: { data: [{ id: '17841400000000009', username: 'x' }] } };
+      });
+      const out = await service.exchangeCode({ flavour: 'facebook', app: UNIFIED, code: 'C', redirectUri: REDIRECT });
+      expect(out.expiresAt).toBeGreaterThan(Date.now());
+      expect(await service.unifiedAccounts('BISU')).toEqual([{ id: '17841400000000009', username: 'x' }]);
+    });
+
+    it('fails clearly when Meta answers without a token', async () => {
+      mockedAxios.get.mockResolvedValue({ data: {} });
+      await expect(
+        service.exchangeCode({ flavour: 'facebook', app: UNIFIED, code: 'C', redirectUri: REDIRECT }),
+      ).rejects.toThrow(/without an access token/);
+    });
+  });
+
   describe('Facebook Login', () => {
     it('exchanges the code, then for a long-lived token, and lists the linked Instagram accounts', async () => {
       mockedAxios.get.mockImplementation(async (url: string, opts?: any) => {

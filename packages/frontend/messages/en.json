@@ -1054,7 +1054,7 @@
       "modePaste": "Paste an access token",
       "serverApp": "This server has its own Meta app: you only sign in and approve it. There is no app id or secret to enter.",
       "useOwn": "Use your own Meta app",
-      "ownHint": "Enter your Meta app's id and secret below, and add this address to the app's valid OAuth redirect URIs:"
+      "ownHint": "Enter your Meta app's id and secret below (and META_CONFIG_ID for Unified Login), and register this address as the redirect URL:"
     },
     "copy": "Copy",
     "noInput": "Nothing to enter: it works without an account.",
@@ -1524,11 +1524,11 @@
       "body": "Sign in to TikTok Shop Seller Center with the shop owner account and approve the app. With an app of your own, its Redirect URL in Partner Center must be your AnythingMCP address followed by /api/tiktok-shop/callback; without one, the connector uses this server's TikTok Shop app. The tokens are stored encrypted and renewed automatically; authorize again when the authorization expires or the connector asks for it."
     },
     "meta": {
-      "titleFacebook": "Sign in with Facebook",
+      "titleFacebook": "Sign in with Instagram or Facebook",
       "titleInstagram": "Sign in with Instagram",
-      "bodyFacebook": "Sign in with a Facebook user who manages the Page linked to the Instagram account and approve the app. The token and the account id are stored on this connector, encrypted, and the token is renewed before it expires. Sign in again whenever the connector asks for it. With an app of your own, set META_APP_ID and META_APP_SECRET and add your AnythingMCP address followed by /api/meta/callback to the app's valid OAuth redirect URIs.",
+      "bodyFacebook": "Sign in with the Instagram account or with Facebook and approve the app. With Unified Login (AnythingMCP Cloud, and every Meta app created since autumn 2026) you choose the business portfolio and the Instagram account to share, no Facebook Page needed, and the token does not expire. With an older app you sign in with a Facebook user who manages the Page linked to the Instagram account, and the token is renewed before it expires. The token and the account id are stored on this connector, encrypted. With an app of your own, set META_APP_ID, META_APP_SECRET and, for Unified Login, META_CONFIG_ID, and register your AnythingMCP address followed by /api/meta/callback as the redirect URL.",
       "bodyInstagram": "Sign in with the Instagram business or creator account and approve the app; no Facebook Page is needed. The token and the account id are stored on this connector, encrypted, and the token is refreshed before it expires. With an app of your own, set INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET and add your AnythingMCP address followed by /api/meta/callback to its OAuth redirect URIs.",
-      "authorizeFacebook": "Authorize with Facebook",
+      "authorizeFacebook": "Authorize with Instagram or Facebook",
       "authorizeInstagram": "Authorize with Instagram"
     },
     "env": {

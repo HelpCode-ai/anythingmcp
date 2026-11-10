@@ -150,12 +150,20 @@ function SetupContent() {
   // otherwise the user's own (its id and secret are then required).
   const metaFlavour: 'facebook' | 'instagram' | null =
     slug === 'instagram' ? 'facebook' : slug === 'instagram-login' ? 'instagram' : null;
-  const [metaPlatform, setMetaPlatform] = useState<{ facebook: boolean; instagram: boolean; redirectUrl: string } | null>(null);
+  const [metaPlatform, setMetaPlatform] = useState<{
+    facebook: boolean;
+    unified?: boolean;
+    instagram: boolean;
+    redirectUrl: string;
+  } | null>(null);
   const [metaMode, setMetaMode] = useState<'signin' | 'paste'>('signin');
   const [ownMetaApp, setOwnMetaApp] = useState(false);
   const metaSignIn = metaFlavour !== null && metaMode === 'signin';
   const serverMetaApp = metaSignIn && metaPlatform?.[metaFlavour!] === true && !ownMetaApp;
   const metaAppVars = metaFlavour === 'facebook' ? META_FACEBOOK_APP_VARS : META_INSTAGRAM_APP_VARS;
+  // The `instagram` connector signs in with Instagram or Facebook (Unified
+  // Login) or, with an older app, Facebook only; `instagram-login` with Instagram.
+  const metaProvider = metaFlavour === 'instagram' ? 'Instagram' : 'Instagram / Facebook';
 
   /** This setup's address for a saved connector, keeping the other parameters (from=…). */
   const withConnector = useCallback(
@@ -309,7 +317,7 @@ function SetupContent() {
     () =>
       (info?.envVars ?? []).map((f) =>
         (isTikTokShop && TIKTOK_SHOP_APP_VARS.includes(f.name) && !serverTikTokApp) ||
-        (metaSignIn && !serverMetaApp && metaAppVars.includes(f.name))
+        (metaSignIn && !serverMetaApp && metaAppVars.includes(f.name) && f.name !== 'META_CONFIG_ID')
           ? { ...f, required: true }
           : f,
       ),
@@ -725,7 +733,7 @@ function SetupContent() {
   // the user's asks for its client ID like any other OAuth connector.
   const selfRegisteringBridge = info.connector.type === 'MCP' && info.envVars.every((v) => !v.required);
   const primaryLabel = metaSignIn
-    ? t('metaLogin.signIn', { provider: metaFlavour === 'facebook' ? 'Facebook' : 'Instagram' })
+    ? t('metaLogin.signIn', { provider: metaProvider })
     : info.setupKind === 'none'
       ? t('actions.install', { name: info.name })
       : isOAuth
@@ -1072,7 +1080,7 @@ function SetupContent() {
                     }}
                   />
                   {mode === 'signin'
-                    ? t('metaLogin.modeSignIn', { provider: metaFlavour === 'facebook' ? 'Facebook' : 'Instagram' })
+                    ? t('metaLogin.modeSignIn', { provider: metaProvider })
                     : t('metaLogin.modePaste')}
                 </label>
               ))}
@@ -1198,7 +1206,7 @@ const TIKTOK_SHOP_APP_VARS: readonly string[] = ['TIKTOK_SHOP_APP_KEY', 'TIKTOK_
 /** What an Instagram sign-in fills in; hidden on the form while signing in. */
 const META_SIGN_IN_VARS: readonly string[] = ['INSTAGRAM_ACCESS_TOKEN', 'INSTAGRAM_ACCOUNT_ID'];
 /** The app of your own for each Instagram sign-in, as the catalog adapters name it. */
-const META_FACEBOOK_APP_VARS: readonly string[] = ['META_APP_ID', 'META_APP_SECRET'];
+const META_FACEBOOK_APP_VARS: readonly string[] = ['META_APP_ID', 'META_APP_SECRET', 'META_CONFIG_ID'];
 const META_INSTAGRAM_APP_VARS: readonly string[] = ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'];
 
 /** A setup page's draft that the "Switch to …" button may replace: old adapter → new adapter. */

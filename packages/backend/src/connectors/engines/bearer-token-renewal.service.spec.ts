@@ -353,6 +353,14 @@ describe('BearerTokenRenewalService', () => {
       for (const line of logged) expect(line).not.toContain(PLATFORM_SECRET);
     });
 
+    it('never exchanges a Unified Login system user token, even about to expire and with an app set', async () => {
+      await service.seed('conn-u', LONG, { expiresAt: Date.now() + 2 * DAY, systemUser: true });
+      expect(cacheRow.metadata.systemUser).toBe(true);
+      graph({ '/oauth/access_token': () => new Error('must not be called') });
+      expect(await service.getToken(withSecret(LONG), 'conn-u')).toBe(LONG);
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
+
     it("does not lend the server's app to a pasted token", async () => {
       process.env.META_PLATFORM_APP_ID = PLATFORM_ID;
       process.env.META_PLATFORM_APP_SECRET = PLATFORM_SECRET;

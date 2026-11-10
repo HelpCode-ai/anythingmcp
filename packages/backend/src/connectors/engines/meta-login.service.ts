@@ -1,10 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { metaGraphError } from './bearer-token-renewal.service';
-import { META_LOGIN_GRAPH_VERSION, MetaLoginApp, MetaLoginFlavour, cleanMetaCode } from './meta-login.util';
+import {
+  META_LOGIN_GRAPH_VERSION,
+  META_UNIFIED_GRAPH_VERSION,
+  MetaLoginApp,
+  MetaLoginFlavour,
+  cleanMetaCode,
+} from './meta-login.util';
 
 const HTTP_TIMEOUT_MS = 15_000;
 const FB_GRAPH = `https://graph.facebook.com/${META_LOGIN_GRAPH_VERSION}`;
+const FB_GRAPH_UNIFIED = `https://graph.facebook.com/${META_UNIFIED_GRAPH_VERSION}`;
 const IG_GRAPH = `https://graph.instagram.com/${META_LOGIN_GRAPH_VERSION}`;
 
 /** An Instagram professional account the signed-in user can use. */
@@ -23,6 +30,12 @@ export interface MetaLoginResult {
   expiresAt: number | null;
   /** The accounts the token can act for. */
   accounts: MetaInstagramAccount[];
+  /**
+   * A Business Integration System User token (Unified Login): it belongs to
+   * the client's business portfolio and is never exchanged or refreshed with
+   * the user-token calls.
+   */
+  systemUser?: boolean;
 }
 
 /**
@@ -82,9 +95,19 @@ export class MetaLoginService {
   }): Promise<MetaLoginResult> {
     const code = cleanMetaCode(input.code);
     try {
-      return input.flavour === 'instagram'
-        ? await this.instagramLogin(input.app, code, input.redirectUri)
+      if (input.flavour === 'instagram') return await this.instagramLogin(input.app, code, input.redirectUri);
+      return input.app.configId
+        ? await this.unifiedLogin(input.app, code, input.redirectUri)
         : await this.facebookLogin(input.app, code, input.redirectUri);
+    } catch (err) {
+      throw describe(err);
+    }
+  }
+
+  /** The Instagram accounts the client shared with a Unified Login token. */
+  async unifiedAccounts(token: string): Promise<MetaInstagramAccount[]> {
+    try {
+      return await this.listAssignedAccounts(token);
     } catch (err) {
       throw describe(err);
     }
@@ -97,6 +120,50 @@ export class MetaLoginService {
     } catch (err) {
       throw describe(err);
     }
+  }
+
+  // ── Unified Login ──────────────────────────────────────────────────────
+
+  private async unifiedLogin(app: MetaLoginApp, code: string, redirectUri: string): Promise<MetaLoginResult> {
+    const res = await axios.get(`${FB_GRAPH_UNIFIED}/oauth/access_token`, {
+      params: { client_id: app.appId, client_secret: app.appSecret, redirect_uri: redirectUri, code },
+      timeout: HTTP_TIMEOUT_MS,
+    });
+    const token = res.data?.access_token;
+    if (typeof token !== 'string' || !token) {
+      throw new MetaLoginError('Meta answered without an access token');
+    }
+    // The configuration sets the expiry ("never" for ours): no expires_in
+    // then. Such a token is not a user token and is never exchanged.
+    const accounts = await this.listAssignedAccounts(token);
+    return { token, expiresAt: expiryOf(res.data?.expires_in), accounts, systemUser: true };
+  }
+
+  /** /me is the business integration system user; its assigned accounts are what the client shared. */
+  private async listAssignedAccounts(token: string): Promise<MetaInstagramAccount[]> {
+    const accounts: MetaInstagramAccount[] = [];
+    let url: string | undefined = `${FB_GRAPH_UNIFIED}/me/assigned_instagram_accounts`;
+    let params: Record<string, string> = { fields: 'id,username', limit: '100' };
+    for (let page = 0; url && page < 10; page++) {
+      const res: { data?: any } = await axios.get(url, {
+        params,
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: HTTP_TIMEOUT_MS,
+      });
+      for (const row of Array.isArray(res.data?.data) ? res.data.data : []) {
+        const id = row?.id;
+        if ((typeof id === 'string' || typeof id === 'number') && /^\d{5,25}$/.test(String(id))) {
+          accounts.push({ id: String(id), ...(typeof row.username === 'string' ? { username: row.username } : {}) });
+        }
+      }
+      const after: unknown = res.data?.paging?.cursors?.after;
+      if (typeof res.data?.paging?.next === 'string' && typeof after === 'string' && after) {
+        params = { ...params, after };
+      } else {
+        url = undefined;
+      }
+    }
+    return accounts;
   }
 
   // ── Facebook Login ─────────────────────────────────────────────────────
