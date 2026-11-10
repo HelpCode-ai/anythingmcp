@@ -38,6 +38,20 @@ describe('sampleRateFor', () => {
     ).toBe(0);
   });
 
+  it('never samples cron triggers', () => {
+    expect(
+      sampleRateFor(
+        { name: 'POST', attributes: { 'http.request.method': 'POST', 'url.path': '/api/cron/onboarding-reminders' } },
+        rates,
+      ),
+    ).toBe(0);
+    expect(sampleRateFor({ name: 'POST /api/cron/kg-discovery' }, rates)).toBe(0);
+    // Only the cron prefix, not a lookalike.
+    expect(
+      sampleRateFor({ name: 'GET', attributes: { 'http.method': 'GET', 'http.target': '/api/cronjobs' } }, rates),
+    ).toBe(0.05);
+  });
+
   it('never samples root spans that are not requests', () => {
     expect(sampleRateFor({ name: 'prisma:client:operation' }, rates)).toBe(0);
     expect(sampleRateFor({ name: 'pg-pool.connect', attributes: { 'db.system': 'postgresql' } }, rates)).toBe(0);

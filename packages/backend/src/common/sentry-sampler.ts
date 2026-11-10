@@ -11,7 +11,11 @@
  *   spans.
  *
  * So: only incoming HTTP requests are traced; MCP calls at a lower rate than
- * the rest (they are many and alike); health probes never. The decision of
+ * the rest (they are many and alike); health probes and cron triggers never.
+ * A cron run loops over every organization and turns one sampled request into
+ * tens of thousands of database spans (one onboarding-reminders run sent about
+ * 68,000 spans, a third of a day's total, on 2026-11-09). Errors inside a cron
+ * run still reach Sentry: this only decides tracing. The decision of
  * an incoming trace is not inherited: MCP clients send their own sampled
  * traceparent, and that must not decide our volume.
  */
@@ -69,6 +73,7 @@ export function sampleRateFor(ctx: SamplingInput, rates: SamplerRates): number {
   if (!isHttpRequest(ctx)) return 0;
   const path = requestPath(ctx) ?? '';
   if (/^\/health(\/|$)/.test(path)) return 0;
+  if (/^\/api\/cron(\/|$)/.test(path)) return 0;
   if (/^\/mcp(\/|$)/.test(path)) return rates.mcp;
   return rates.base;
 }

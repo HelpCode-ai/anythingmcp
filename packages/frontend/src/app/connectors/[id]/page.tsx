@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
+import { WebhookCard } from '@/components/webhook-card';
 import { FilesPanel } from '@/components/file-search/files-panel';
 import Link from 'next/link';
 import {
@@ -1919,6 +1920,17 @@ export default function ConnectorDetailPage() {
               {authorizing ? t('oauthCard.redirecting') : t('oauthCard.authorizeProvider')}
             </Button>
           </Card>
+        )}
+
+        {/* Inbound webhook ingestion (#1393): only where it applies — a Stripe
+            connector, or any connector someone already turned it on for via the API. */}
+        {((connector.config as any)?.adapterSlug === 'stripe' || connector.webhookEnabled) && (
+          <WebhookCard
+            connectorId={connector.id}
+            webhookEnabled={!!connector.webhookEnabled}
+            canManage={user?.role === 'ADMIN' || (user?.role !== 'VIEWER' && user?.id === connector.userId)}
+            onChanged={fetchConnector}
+          />
         )}
 
         {/* Environment Variables */}

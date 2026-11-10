@@ -659,6 +659,30 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "connectors",
+    "action": "webhookEventsList",
+    "method": "GET",
+    "path": "/api/connectors/:id/webhook/events",
+    "summary": "Recent webhook deliveries for this connector, for the dashboard",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "connectors",
+    "action": "webhookUrl",
+    "method": "GET",
+    "path": "/api/connectors/:id/webhook/url",
+    "summary": "The inbound webhook URL for this connector",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "connectors",
     "action": "exportAll",
     "method": "GET",
     "path": "/api/connectors/export-all",
