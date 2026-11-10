@@ -24,6 +24,7 @@ import {
 } from '@modelcontextprotocol/node';
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
 import { McpPrincipalRateLimitGuard } from '../auth/mcp-principal-rate-limit.guard';
+import { mcpWwwAuthenticate } from '../auth/mcp-www-authenticate.util';
 import { mcpHttpTransport } from './mcp-strategy';
 import { createQuietMcpHandler } from './mcp-handler.util';
 import { toolVisibilityRole } from './mcp-server.service';
@@ -1317,6 +1318,28 @@ export class McpEndpointController {
           `MCP request refused: server ${serverId} belongs to org ${serverOrg ?? 'none'}, ` +
             `caller is not a member (${this.describePrincipal(user)})`,
         );
+        // A sign-in (OAuth or app token) for the wrong workspace: 401 with
+        // invalid_token, so the client runs OAuth again and the person can
+        // pick the right account. Clients do not re-authorize on a 403: one
+        // user who had signed in with the account of their other workspace
+        // was refused 510 times in 13 hours (#1609). An API key keeps the
+        // 403 below, since signing in again would not change the key.
+        if (user?.authMethod === 'jwt') {
+          res.setHeader(
+            'WWW-Authenticate',
+            mcpWwwAuthenticate(req, `/mcp/${serverId}`, process.env.SERVER_URL || 'http://localhost:4000'),
+          );
+          return res.status(401).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message:
+                'Sign in again: this sign-in belongs to a different workspace than this MCP server. ' +
+                'Sign in with an account that is a member of the workspace that owns the server.',
+            },
+            id: null,
+          });
+        }
         return res.status(403).json({
           jsonrpc: '2.0',
           error: {

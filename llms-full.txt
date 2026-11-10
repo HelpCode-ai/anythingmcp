@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 715 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 730 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -92,7 +92,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-715 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini.
+730 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini.
 
 | Category | Examples |
 |---|---|
@@ -3756,6 +3756,46 @@ recompute it.
 The body is signed exactly as it will be sent — signing a different rendering
 of the same object is the usual way an HMAC integration fails with an error
 that blames the key.
+
+#### Signed JWT per request (opt-in)
+
+Some APIs want a short-lived JWT signed with a shared secret on every request
+instead of a digest (Ghost's Admin API). A `jwt` block in `signature` switches
+to that: a fresh token is signed for each call and each retry, so the
+connector stores only the key, never a token that expires.
+
+```json
+"authType": "HMAC",
+"authConfig": {
+  "signature": {
+    "jwt": {
+      "key": "{{GHOST_ADMIN_API_KEY}}",
+      "keyFormat": "id:secret",
+      "secretEncoding": "hex",
+      "algorithm": "HS256",
+      "ttlSeconds": 300,
+      "claims": { "aud": "/admin/" }
+    },
+    "headerName": "Authorization",
+    "headerTemplate": "Ghost ${jwt}"
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `jwt.key` + `jwt.keyFormat` | One `<id>:<secret>` value: the id becomes the `kid` header, the secret signs. `id:secret` is the only format. |
+| `jwt.keyId`, `jwt.secret` | The same two parts as separate values, instead of `key`. `keyId` is optional. |
+| `jwt.secretEncoding` | How the secret turns into key bytes: `utf8` (default), `hex` or `base64`. |
+| `jwt.algorithm` | `HS256` (default), `HS384` or `HS512`. |
+| `jwt.ttlSeconds` | Token lifetime, default 300, at most 3600. |
+| `jwt.claims` | Claims added to the payload (`aud`, `iss`, …). `iat` and `exp` are always set by the engine. |
+| `headerName` | Default `Authorization`. |
+| `headerTemplate` | `${jwt}` is the token. Default `Bearer ${jwt}`. |
+
+`extraHeaders` are sent as with a digest signature. Errors name the field that
+is wrong (no colon in the key, a secret that is not hex, an unset variable) and
+never include the key.
 
 #### Query signing (opt-in)
 

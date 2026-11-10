@@ -1,21 +1,67 @@
 {
   "slug": "ghost",
   "name": "Ghost",
-  "description": "Drive Ghost (open-source publishing platform) from any AI agent: posts, pages, tags, members, newsletters. 12 tools, Admin API JWT auth.",
-  "instructions": "This connector uses the Ghost Admin API v5 (ghost.org/docs/admin-api/).\n\n**Setup**:\n1. Sign in to Ghost Admin → **Settings → Advanced → Integrations → Add custom integration**.\n2. Copy the **Admin API Key** — format is `<id>:<secret>` (e.g. `5f3a...c4:b9d8...e2`).\n3. Set:\n   - `GHOST_ADMIN_API_URL` = your Ghost site's admin API base, e.g. `https://yoursite.com/ghost/api/admin`\n   - `GHOST_ADMIN_API_KEY` = the full `id:secret` key from step 2\n\n**Authentication — JWT generation required**: Ghost's Admin API does NOT accept the raw API key. Each request needs a JWT signed with the secret half. The JWT is short-lived (5 min) and has these claims:\n```\n  alg: 'HS256', kid: <id_part>, typ: 'JWT'\n  exp: now+5min, iat: now, aud: '/admin/'\n```\nThis connector currently expects the OPERATOR or external orchestrator to **generate the JWT and pass it as `GHOST_ADMIN_JWT`** — the engine then sends `Authorization: Ghost ${GHOST_ADMIN_JWT}`. For a proper LOGIN_TOKEN-style auto-rotation see the Sorare adapter as the reference pattern; that's a future enhancement.\n\n**Workaround for testing**: use the official `@tryghost/admin-api` JS SDK to generate a JWT and copy it as `GHOST_ADMIN_JWT`. Or use the Ghost CLI: `ghost generate-jwt`.\n\n**Content API alternative**: for read-only public-published content, the simpler **Content API** uses a single key as a query parameter — no JWT. Switch baseUrl to `/ghost/api/content` and use a Content API key.\n\n**Post status**: draft, published, scheduled, sent.\n\n**Mobiledoc vs Lexical**: Ghost stores post content in either format. Modern Ghost (v5+) defaults to Lexical (`lexical` field). Set `html` on writes — Ghost converts to its internal format.\n\n**Pagination**: `?page=N&limit=M` (max 100 for posts/pages, 15 for some). Response has `meta.pagination`.\n\n**Webhooks** out of scope.\n\n**Out of scope here**: themes, settings, redirects management, oEmbed.",
+  "description": "Drive Ghost (open-source publishing platform) from any AI agent: posts, pages, tags, members, newsletters. 12 tools, Admin API key auth.",
   "region": "intl",
   "category": "publishing",
   "icon": "ghost",
   "docsUrl": "https://ghost.org/docs/admin-api/",
-  "requiredEnvVars": ["GHOST_ADMIN_API_URL", "GHOST_ADMIN_JWT"],
+  "instructions": "This connector uses the **Ghost Admin API v5** (https://ghost.org/docs/admin-api/) of one Ghost site, self-hosted or on Ghost(Pro).\n\n**Setup**\n1. In Ghost Admin open **Settings → Advanced → Integrations → Add custom integration** and give it a name (e.g. AnythingMCP).\n2. `GHOST_ADMIN_API_KEY`: copy the integration's **Admin API key**, `<id>:<secret>` (24 hex characters, a colon, 64 hex characters). The **Content API key** of the same page does not work here: it only reads published content.\n3. `GHOST_ADMIN_API_URL`: the integration's **API URL** followed by `/ghost/api/admin`, e.g. `https://yoursite.ghost.io/ghost/api/admin` or `https://yoursite.com/ghost/api/admin`.\n\n**How it signs in**: Ghost never accepts the Admin API key itself. For every request the connector signs a short-lived token (HS256 JWT, `kid` = the key id, `aud` = `/admin/`, valid 5 minutes) with the secret half of the key and sends it as `Authorization: Ghost <token>`. Nothing expires on your side: the key stays valid until you delete the integration in Ghost.\n\n**Permissions**: a custom integration acts with Admin rights on the whole site, members and newsletters included. Writes (create, update, delete) act on the live site.\n\n**Post status**: draft, published, scheduled, sent.\n\n**Mobiledoc vs Lexical**: Ghost stores post content in either format. Modern Ghost (v5+) defaults to Lexical (`lexical` field). Set `html` on writes (with `source=html`) and Ghost converts it to its internal format.\n\n**Updating a post**: Ghost requires the post's current `updated_at` in the update, to refuse edits based on a stale copy. Read the post first with ghost_get_post.\n\n**Pagination**: `?page=N&limit=M` (max 100 for posts/pages, 15 for some). The response has `meta.pagination`.\n\n**Out of scope here**: themes, settings, redirects, webhooks, oEmbed.",
+  "prerequisites": "A Ghost site (Ghost 5 or later, self-hosted or Ghost(Pro)) and an Owner or Administrator account, to add a custom integration.",
+  "requiredEnvVars": [
+    "GHOST_ADMIN_API_URL",
+    "GHOST_ADMIN_API_KEY"
+  ],
+  "envVarMeta": {
+    "GHOST_ADMIN_API_URL": {
+      "label": "Admin API URL",
+      "kind": "address",
+      "help": "Your site's address followed by /ghost/api/admin, e.g. https://yoursite.ghost.io/ghost/api/admin. The custom integration's page shows the API URL to start from.",
+      "pattern": "^https?://\\S+/ghost/api/admin/?$",
+      "patternMessage": "Paste your site's address followed by /ghost/api/admin, e.g. https://yoursite.ghost.io/ghost/api/admin."
+    },
+    "GHOST_ADMIN_API_KEY": {
+      "label": "Admin API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Ghost Admin → Settings → Advanced → Integrations → your custom integration → Admin API key: <id>:<secret>. Not the Content API key.",
+      "link": "https://ghost.org/docs/admin-api/#token-authentication",
+      "pattern": "^[0-9a-fA-F]{24}:[0-9a-fA-F]{64}$",
+      "patternMessage": "Paste the Admin API key: 24 characters, a colon, 64 characters. The Content API key (no colon) does not work here."
+    }
+  },
+  "verifyHints": {
+    "401": "Ghost refused the token. Check that GHOST_ADMIN_API_KEY is the Admin API key of a custom integration that still exists (not the Content API key).",
+    "403": "Ghost refused the request: the integration has no access. Create a custom integration as an Owner or Administrator and use its Admin API key.",
+    "404": "Ghost has no Admin API at this address. GHOST_ADMIN_API_URL must end with /ghost/api/admin, e.g. https://yoursite.ghost.io/ghost/api/admin."
+  },
+  "probe": {
+    "tool": "ghost_list_posts",
+    "params": {
+      "limit": 1,
+      "fields": "id"
+    }
+  },
   "connector": {
     "name": "Ghost Admin v5",
     "type": "REST",
     "baseUrl": "{{GHOST_ADMIN_API_URL}}",
-    "authType": "API_KEY",
+    "authType": "HMAC",
     "authConfig": {
-      "headerName": "Authorization",
-      "apiKey": "Ghost {{GHOST_ADMIN_JWT}}"
+      "signature": {
+        "jwt": {
+          "key": "{{GHOST_ADMIN_API_KEY}}",
+          "keyFormat": "id:secret",
+          "secretEncoding": "hex",
+          "algorithm": "HS256",
+          "ttlSeconds": 300,
+          "claims": {
+            "aud": "/admin/"
+          }
+        },
+        "headerName": "Authorization",
+        "headerTemplate": "Ghost ${jwt}"
+      }
     }
   },
   "tools": [

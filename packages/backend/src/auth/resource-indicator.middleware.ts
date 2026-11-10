@@ -49,10 +49,12 @@ export const MCP_DIRECTORY_COOKIE = 'mcp_directory';
  * value here is the fork-free half we can do now.
  *
  * WHAT THIS VALUE MAY BE USED FOR: choosing which identity-provider button to
- * render on the login page. Nothing else. It is unauthenticated client input —
- * it must never influence which organization a session belongs to, which role
- * a user receives, or any authorization decision. The authoritative org comes
- * from the identity provider record after authentication.
+ * render on the login page, and refusing an authorization for a server whose
+ * workspace the signed-in user is not a member of (#1609). Nothing else. It is
+ * unauthenticated client input — it may only ever narrow what is granted. It
+ * must never influence which organization a session belongs to, which role a
+ * user receives, or widen any authorization decision. The authoritative org
+ * comes from the identity provider record after authentication.
  *
  * Stored in a signed, httpOnly cookie so it survives the redirect to
  * /auth/login without a schema change, and cannot be forged by a script.

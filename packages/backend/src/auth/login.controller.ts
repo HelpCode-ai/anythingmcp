@@ -90,6 +90,15 @@ const TOO_MANY_CODES =
   'You asked for many codes in the last hour: use the newest email you received, or try again later.';
 
 /**
+ * Shown on the sign-in form when the account just used is not a member of the
+ * workspace that owns the MCP server the client asked for. The server is not
+ * named: the person may not belong to its workspace.
+ */
+export const WRONG_WORKSPACE_MESSAGE =
+  'The MCP server you are connecting belongs to another workspace, and this account is not a member of it. ' +
+  'Sign in with an account of that workspace, or ask its admin to invite you.';
+
+/**
  * Context describing the OAuth client that initiated the current authorize
  * flow. Rendered on the login page so the user can see — and thereby approve —
  * exactly which client and callback destination they are authorizing before
@@ -272,6 +281,43 @@ export class LoginController {
       return member ? server.name : null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * True when the client asked for one MCP server by URL (RFC 8707 `resource`)
+   * and the user cannot reach it: the server exists, and the user is neither
+   * in its workspace as primary organization nor an active member of it. The
+   * same membership rule as the per-server MCP endpoint, which would refuse
+   * every call of such a token.
+   *
+   * The requested id is client input. It is used here only to refuse, never
+   * to grant: a forged value can only stop this user's own authorization.
+   * An unknown server or a lookup error is left to the existing flow (the
+   * endpoint answers 404 for an unknown server).
+   */
+  private async isRequestedServerUnreachable(req: Request, userId: string): Promise<boolean> {
+    const serverId = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[MCP_RESOURCE_COOKIE];
+    if (typeof serverId !== 'string' || !serverId) return false;
+    try {
+      const server = await this.prisma.mcpServerConfig.findUnique({
+        where: { id: serverId },
+        select: { organizationId: true },
+      });
+      if (!server?.organizationId) return false;
+      const account = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { organizationId: true },
+      });
+      if (account?.organizationId === server.organizationId) return false;
+      const member = await this.prisma.organizationMember.findFirst({
+        where: { userId, organizationId: server.organizationId, deactivatedAt: null },
+        select: { userId: true },
+      });
+      return !member;
+    } catch {
+      return false;
     }
   }
 
@@ -789,6 +835,20 @@ export class LoginController {
     /** Set when the user signed in on this page with Google, Microsoft or GitHub. */
     socialProvider?: string,
   ): Promise<void> {
+    // The client asked for one server by URL, and this account cannot reach
+    // it: no token. It would be refused on every call, and clients do not
+    // sign in again after a 403, so the person could never fix it from the
+    // chat (#1609). Back to the sign-in form instead, without the dashboard
+    // session, to sign in with an account of that server's workspace.
+    if (await this.isRequestedServerUnreachable(req, user.id)) {
+      this.logger.warn(
+        `Authorization refused: the requested MCP server belongs to a workspace ${maskEmail(user.email)} is not a member of`,
+      );
+      res.clearCookie('login_csrf');
+      return res.redirect(
+        `/auth/login?switch=1&error=${encodeURIComponent(WRONG_WORKSPACE_MESSAGE)}`,
+      );
+    }
     // Remembered for the setup links the AI client will hand out, so they open
     // the dashboard without asking for this sign-in again (recent-sign-in.util).
     setRecentSignInCookie(res, user.id, this.isSecureRequest(req));
