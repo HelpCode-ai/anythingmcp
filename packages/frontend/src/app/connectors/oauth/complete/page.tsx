@@ -4,9 +4,9 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { ApiError, connectors } from '@/lib/api';
+import { ApiError, connectors, type MetaInstagramAccount } from '@/lib/api';
 import { Card } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 /**
@@ -19,6 +19,10 @@ import { cn } from '@/lib/utils';
  * with a state only: the code stays on the server. Nobody started it here,
  * so a signed-out visitor is asked to sign in or create an account first,
  * and comes back to this address to add and authorize the connector.
+ *
+ * A Facebook sign-in of an Instagram connector (`provider=meta`) can reach
+ * several Instagram accounts: the token is stored, and the user picks the
+ * account here.
  */
 function CompleteContent() {
   const params = useSearchParams();
@@ -36,6 +40,15 @@ function CompleteContent() {
   const isTikTokShop = params.get('provider') === 'tiktok-shop';
   // A TikTok Shop App Store install: no code in the address, the server keeps it.
   const isTikTokShopInstall = params.get('provider') === 'tiktok-shop-install';
+  // A Facebook or Instagram sign-in of an Instagram connector.
+  const isMeta = params.get('provider') === 'meta';
+  // Several Instagram accounts behind one Facebook sign-in: the user picks one.
+  const [choice, setChoice] = useState<{
+    connectorId: string;
+    accounts: MetaInstagramAccount[];
+    returnTo?: string;
+  } | null>(null);
+  const [choosing, setChoosing] = useState(false);
   // From the provider redirect, or from the answer when the exchange is refused.
   const [connectorId, setConnectorId] = useState<string | null>(params.get('connectorId'));
 
@@ -72,8 +85,14 @@ function CompleteContent() {
       ? connectors.shopeeComplete(state, code, shopeeShopId, token)
       : isTikTokShop
         ? connectors.tiktokShopComplete(state, code, token)
-        : connectors.oauthComplete(state, code, token))
-      .then((out) => {
+        : isMeta
+          ? connectors.metaComplete(state, code, token)
+          : connectors.oauthComplete(state, code, token))
+      .then((out: { connectorId: string; toolsImported: number; returnTo?: string; accounts?: MetaInstagramAccount[] }) => {
+        if (out.accounts && out.accounts.length > 0) {
+          setChoice({ connectorId: out.connectorId, accounts: out.accounts, returnTo: out.returnTo });
+          return;
+        }
         const fallback = `/connectors/${out.connectorId}?oauth=success&tools=${out.toolsImported}`;
         router.replace(out.returnTo || fallback);
       })
@@ -83,7 +102,48 @@ function CompleteContent() {
         }
         setError(err.message || 'The authorization could not be completed.');
       });
-  }, [error, state, code, shopeeShopId, isTikTokShop, isTikTokShopInstall, token, isLoading, router]);
+  }, [error, state, code, shopeeShopId, isTikTokShop, isTikTokShopInstall, isMeta, token, isLoading, router]);
+
+  const choose = (account: MetaInstagramAccount) => {
+    if (!choice || !token) return;
+    setChoosing(true);
+    connectors
+      .metaChooseAccount(choice.connectorId, account.id, token)
+      .then(() => router.replace(choice.returnTo || `/connectors/${choice.connectorId}?oauth=success&tools=0`))
+      .catch((err: Error) => {
+        setConnectorId(choice.connectorId);
+        setChoice(null);
+        setError(err.message || 'The Instagram account could not be saved.');
+      })
+      .finally(() => setChoosing(false));
+  };
+
+  if (!error && choice) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-lg font-semibold text-[var(--text)]">Choose the Instagram account</h1>
+        <p className="text-sm text-[var(--text-2)]">
+          The Facebook sign-in reaches several Instagram accounts. Pick the one this connector should use; you can sign in
+          again later to switch.
+        </p>
+        <ul className="space-y-2">
+          {choice.accounts.map((a) => (
+            <li key={a.id}>
+              <Button
+                variant="secondary"
+                className="w-full justify-between"
+                disabled={choosing}
+                onClick={() => choose(a)}
+              >
+                <span>{a.username ? `@${a.username}` : a.id}</span>
+                {a.pageName && <span className="text-xs text-[var(--text-3)]">{a.pageName}</span>}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
 
   if (!error && !state) {
     return <p className="text-sm text-[var(--text-2)]">Nothing to complete here.</p>;

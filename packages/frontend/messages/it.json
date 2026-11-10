@@ -1048,6 +1048,14 @@
       "useOwn": "Usa la tua app TikTok Shop",
       "ownHint": "Solo per un'app tua nel Partner Center. Imposta la sua Redirect URL su:"
     },
+    "metaLogin": {
+      "signIn": "Salva e accedi con {provider}",
+      "modeSignIn": "Accedi con {provider} (consigliato)",
+      "modePaste": "Incolla un token di accesso",
+      "serverApp": "Questo server ha la sua app Meta: devi solo accedere e approvarla. Non c'è nessun ID o secret dell'app da inserire.",
+      "useOwn": "Usa una tua app Meta",
+      "ownHint": "Inserisci qui sotto ID e secret della tua app Meta e aggiungi questo indirizzo tra gli URI di reindirizzamento OAuth validi dell'app:"
+    },
     "copy": "Copia",
     "noInput": "Niente da inserire: funziona senza account.",
     "working": "In corso…",
@@ -1514,6 +1522,14 @@
     "tiktokShop": {
       "title": "Autorizzazione del negozio TikTok Shop",
       "body": "Accedi a TikTok Shop Seller Center con l'account titolare del negozio e approva l'app. Con un'app tua, la sua Redirect URL nel Partner Center deve essere il tuo indirizzo AnythingMCP seguito da /api/tiktok-shop/callback; senza, il connettore usa l'app TikTok Shop di questo server. I token vengono salvati cifrati e rinnovati automaticamente; autorizza di nuovo quando l'autorizzazione scade o il connettore lo chiede."
+    },
+    "meta": {
+      "titleFacebook": "Accedi con Facebook",
+      "titleInstagram": "Accedi con Instagram",
+      "bodyFacebook": "Accedi con un utente Facebook che gestisce la Pagina collegata all'account Instagram e approva l'app. Il token e l'ID dell'account vengono salvati cifrati su questo connettore e il token viene rinnovato prima che scada. Accedi di nuovo quando il connettore lo chiede. Con un'app tua, imposta META_APP_ID e META_APP_SECRET e aggiungi il tuo indirizzo AnythingMCP seguito da /api/meta/callback tra gli URI di reindirizzamento OAuth validi dell'app.",
+      "bodyInstagram": "Accedi con l'account Instagram business o creator e approva l'app; non serve una Pagina Facebook. Il token e l'ID dell'account vengono salvati cifrati su questo connettore e il token viene rinnovato prima che scada. Con un'app tua, imposta INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET e aggiungi il tuo indirizzo AnythingMCP seguito da /api/meta/callback tra i suoi URI di reindirizzamento OAuth.",
+      "authorizeFacebook": "Autorizza con Facebook",
+      "authorizeInstagram": "Autorizza con Instagram"
     },
     "env": {
       "title": "Variabili d'ambiente",

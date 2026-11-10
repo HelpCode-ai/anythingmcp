@@ -401,6 +401,28 @@ dashboard completes it with `POST /api/tiktok-shop/install` once the seller is
 signed in, reusing the workspace's newest TikTok Shop connector that uses the
 server's app and has no shop authorized yet, or installing a new one.
 
+#### Meta sign-in (Instagram connectors)
+
+Meta's logins issue no refresh token, so the two Instagram adapters stay
+`BEARER_TOKEN` connectors with `authConfig.tokenRenewal` and get their token
+from a sign-in instead of a paste. The connector page and the setup page show
+**Authorize with Facebook** (`instagram`, Instagram API with Facebook Login)
+or **Authorize with Instagram** (`instagram-login`, Instagram API with
+Instagram Login). The callback for both is `<SERVER_URL>/api/meta/callback`;
+the completion exchanges the code for a long-lived token (`fb_exchange_token`
+or `ig_exchange_token`), writes it to `INSTAGRAM_ACCESS_TOKEN` and the account
+id to `INSTAGRAM_ACCOUNT_ID` (a Facebook user with several Instagram accounts
+picks one), rebuilds the stored bearer token as the variable editor does and
+hands the expiry to the bearer token renewal. Pasting a token keeps working.
+
+The app comes from the connector (`META_APP_ID` / `META_APP_SECRET`, or
+`INSTAGRAM_APP_ID` / `INSTAGRAM_APP_SECRET`), else from the server
+(`META_PLATFORM_APP_ID` / `_SECRET`, `INSTAGRAM_PLATFORM_APP_ID` / `_SECRET`),
+the same on Cloud and self-hosted. A token issued through the server's
+Facebook app is renewed with that app; a pasted token never is. The flavour is
+chosen by the connector's catalog adapter (`meta-login.util.ts`), so a new
+Meta adapter that should sign in this way is added there.
+
 ### MCP adapters (a vendor's own MCP server)
 
 When a vendor already runs an official MCP server, the adapter bridges it

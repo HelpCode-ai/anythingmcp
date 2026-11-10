@@ -20,6 +20,7 @@ import { pickProbe, probeResultFailure } from './probe.util';
 import { resolveDerivedEnvVars, withDerivedValues } from './derived-settings';
 import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
 import { tiktokShopNeedsAuthorization } from '../connectors/engines/tiktok-shop-token.service';
+import { metaLoginNeedsAuthorization } from '../connectors/engines/meta-login.util';
 import { odooCheckAdvice } from './odoo-database-hint';
 import { checkAdapterEnvValues, describeFieldProblems, normalizeAdapterEnvValues } from './env-var-checks';
 import { outboundRequest } from '../common/outbound-http';
@@ -1131,6 +1132,9 @@ export class AdaptersService {
         include: { tools: { where: { name: call.toolName } } },
       });
       envVars = (connector?.envVars as Record<string, string> | null) ?? {};
+      // An Instagram connector installed to sign in with Facebook or
+      // Instagram right after: no token yet, nothing to probe.
+      if (metaLoginNeedsAuthorization(adapter.slug, envVars)) return null;
       baseUrl = connector ? interpolateString(connector.baseUrl, envVars) : undefined;
       const tool = connector?.tools[0];
       if (!connector || !tool) return null;

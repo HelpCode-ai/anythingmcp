@@ -1045,6 +1045,24 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  // Instagram connectors sign in with Facebook or Instagram through Meta's own flow.
+  const handleMetaAuthorize = async () => {
+    if (!token) return;
+    setAuthorizing(true);
+    try {
+      const result = await connectors.metaAuthorize(id, token);
+      if (result.authorizationUrl) {
+        window.location.href = result.authorizationUrl;
+      } else if (result.error) {
+        setMsg(result.error);
+      }
+    } catch (err: any) {
+      setMsg(t('msg.authorizationFailed', { message: err.message }));
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
   const handleDiscoverTools = async () => {
     if (!token) return;
     setDiscovering(true);
@@ -1993,6 +2011,26 @@ export default function ConnectorDetailPage() {
             </Button>
           </Card>
         )}
+
+        {/* Instagram sign-in (Meta's Facebook Login or Instagram Login) */}
+        {connector.authType === 'BEARER_TOKEN' &&
+          ['instagram', 'instagram-login'].includes((connector.config as any)?.adapterSlug) && (
+            <Card className="p-[22px]">
+              <h3 className="text-sm font-semibold mb-2">
+                {(connector.config as any)?.adapterSlug === 'instagram' ? t('meta.titleFacebook') : t('meta.titleInstagram')}
+              </h3>
+              <p className="text-sm text-[var(--text-3)] mb-4">
+                {(connector.config as any)?.adapterSlug === 'instagram' ? t('meta.bodyFacebook') : t('meta.bodyInstagram')}
+              </p>
+              <Button variant="primary" size="lg" onClick={handleMetaAuthorize} disabled={authorizing}>
+                {authorizing
+                  ? t('oauthCard.redirecting')
+                  : (connector.config as any)?.adapterSlug === 'instagram'
+                    ? t('meta.authorizeFacebook')
+                    : t('meta.authorizeInstagram')}
+              </Button>
+            </Card>
+          )}
 
         {/* Inbound webhook ingestion (#1393): only where it applies — a Stripe
             connector, or any connector someone already turned it on for via the API. */}
