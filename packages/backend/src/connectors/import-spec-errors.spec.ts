@@ -43,6 +43,7 @@ describe('import-spec: an unreadable specification is a 422, not a 500', () => {
       {} as any, // licenseGuard
       {} as any, // mcpServers
       { isCloud: () => true } as any,
+      { recentEvents: jest.fn().mockResolvedValue([]) } as any, // webhookEvents
     );
   }
 

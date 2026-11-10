@@ -1587,6 +1587,27 @@
       "switch": "Umstellen"
     }
   },
+  "webhook": {
+    "title": "Eingehende Webhooks",
+    "body": "Ereignisse vom Anbieter (Stripe) empfangen und über die eigene URL des Connectors wieder auslesen.",
+    "enable": "Aktiviert",
+    "urlLabel": "Ziel-URL",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "copyFailed": "Konnte nicht kopiert werden",
+    "secretLabel": "Signatur-Secret",
+    "secretPlaceholder": "Signatur-Secret des Anbieters einfügen",
+    "secretSaved": "Secret gespeichert",
+    "secretError": "Secret konnte nicht gespeichert werden.",
+    "save": "Speichern",
+    "saving": "Speichern…",
+    "toggleError": "Einstellung konnte nicht geändert werden.",
+    "eventsLabel": "Letzte Zustellungen",
+    "refresh": "Aktualisieren",
+    "loading": "Wird geladen…",
+    "noEvents": "Noch keine Zustellungen.",
+    "unknownType": "Unbekanntes Ereignis"
+  },
   "connectorTools": {
     "title": "MCP-Tools ({count})",
     "cancelImport": "Import abbrechen",
