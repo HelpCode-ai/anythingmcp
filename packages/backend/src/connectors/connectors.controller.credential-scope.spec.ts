@@ -60,6 +60,7 @@ function build(opts: {
     {} as any,
     {} as any,
     { isCloud: () => false } as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any,
     edition as any,
     userCredentials as any,
   );
