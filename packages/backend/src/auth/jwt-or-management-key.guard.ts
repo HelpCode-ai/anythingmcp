@@ -90,7 +90,7 @@ export class JwtOrManagementKeyGuard extends AuthGuard('jwt') {
           organizationId: record.organizationId,
         },
       },
-      select: { deactivatedAt: true },
+      select: { deactivatedAt: true, role: true },
     });
     if (!membership || membership.deactivatedAt) {
       throw new UnauthorizedException('Invalid API key');
@@ -111,7 +111,9 @@ export class JwtOrManagementKeyGuard extends AuthGuard('jwt') {
     request.user = {
       sub: record.user.id,
       email: record.user.email,
-      role: record.user.role,
+      // The role in the key's workspace: `users.role` is the role in the
+      // workspace the owner last switched to, which can be another one.
+      role: membership.role,
       organizationId: record.organizationId,
     };
     (request as { mcpKeyScope?: string }).mcpKeyScope = record.scope;

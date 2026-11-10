@@ -34,6 +34,7 @@ describe('McpEndpointController — tenant isolation', () => {
     const res: any = {};
     res.status = jest.fn().mockReturnValue(res);
     res.json = jest.fn().mockReturnValue(res);
+    res.setHeader = jest.fn();
     res.headersSent = false;
     return res;
   };
@@ -77,8 +78,10 @@ describe('McpEndpointController — tenant isolation', () => {
 
   it('denies a non-member whose org differs and has no membership (cross-tenant)', async () => {
     // org-B user, NOT a member of org-A → isUserInOrganization returns false.
+    const warn = jest.spyOn((controller as any).logger, 'warn').mockImplementation(() => undefined);
     const req: any = {
       user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' },
+      headers: { host: 'cloud.anythingmcp.com', 'x-forwarded-proto': 'https', authorization: 'Bearer tok' },
     };
     const res = makeRes();
 
@@ -88,8 +91,31 @@ describe('McpEndpointController — tenant isolation', () => {
       'u-b',
       'org-A',
     );
-    expect(res.status).toHaveBeenCalledWith(403);
+    // A sign-in for the wrong workspace: 401 + invalid_token, so the client
+    // runs OAuth again instead of retrying the same token forever (#1609).
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'WWW-Authenticate',
+      'Bearer realm="AnythingMCP MCP Server", error="invalid_token", ' +
+        'resource_metadata="https://cloud.anythingmcp.com/.well-known/oauth-protected-resource/mcp/srv-A"',
+    );
+    expect(res.json.mock.calls[0][0].error.message).toMatch(/different workspace/);
+    expect(warn.mock.calls.map((c) => String(c[0])).some((m) => m.includes('caller is not a member'))).toBe(true);
     // Must short-circuit before touching the server's connectors/tools.
+    expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+  });
+
+  it('keeps the 403 for an API key of another workspace (signing in again would not help)', async () => {
+    const req: any = {
+      user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'mcp_api_key', apiKeyName: 'laptop' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.setHeader).not.toHaveBeenCalledWith('WWW-Authenticate', expect.anything());
     expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
   });
 
@@ -101,11 +127,11 @@ describe('McpEndpointController — tenant isolation', () => {
       const res = makeRes();
       await controller.handlePost(
         'srv-A',
-        { user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' } } as any,
+        { user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' }, headers: {} } as any,
         res,
         LISTEN,
       );
-      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.status).toHaveBeenCalledWith(401);
       expect((controller as any).serveStateless).not.toHaveBeenCalled();
     });
 
@@ -166,6 +192,36 @@ describe('McpEndpointController — tenant isolation', () => {
     expect((controller as any).kgService.captureIntentEnabled).toHaveBeenCalledWith('org-A', 'u-multi');
   });
 
+  // An API key belongs to the workspace it was created in: unlike a sign-in,
+  // it does not reach the servers of the owner's other workspaces.
+  it("refuses an API key on a server of the owner's other workspace, even for a member", async () => {
+    mcpServersService.isUserInOrganization.mockResolvedValue(true);
+    const req: any = {
+      user: { sub: 'u-multi', organizationId: 'org-B', authMethod: 'mcp_api_key', apiKeyName: 'laptop' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mcpServersService.isUserInOrganization).not.toHaveBeenCalled();
+    expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+  });
+
+  it("serves an API key on a server of the key's own workspace", async () => {
+    const req: any = {
+      user: { sub: 'u-multi', organizationId: 'org-A', authMethod: 'mcp_api_key', apiKeyName: 'laptop' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+  });
+
   it('logs who was refused (ids and key name, no secret) and tells the client why', async () => {
     const warn = jest.spyOn((controller as any).logger, 'warn').mockImplementation(() => undefined);
     const req: any = {
@@ -195,12 +251,13 @@ describe('McpEndpointController — tenant isolation', () => {
   });
 
   it('denies when the caller organization cannot be determined (fail closed)', async () => {
-    const req: any = { user: { authMethod: 'jwt' } }; // no organizationId
+    const req: any = { user: { authMethod: 'jwt' }, headers: {} }; // no organizationId
     const res = makeRes();
 
     await controller.handlePost('srv-A', req, res, {});
 
-    expect(res.status).toHaveBeenCalledWith(403);
+    // Still refused; as a sign-in, with the 401 that makes the client sign in again.
+    expect(res.status).toHaveBeenCalledWith(401);
     expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
   });
 

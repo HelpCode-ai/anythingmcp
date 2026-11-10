@@ -1,6 +1,6 @@
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHmac } from 'crypto';
-import { SupportController, verifyLibredeskSignature } from './support.controller';
+import { SupportController, deskToolKey, verifyDeskToolKey, verifyLibredeskSignature } from './support.controller';
 
 const ENV_KEYS = [
   'SUPPORT_CHAT_URL',
@@ -50,11 +50,21 @@ function build() {
   const identity = { widgetSession: jest.fn().mockResolvedValue({ baseUrl: 'b', inboxId: 'i', userJwt: 'j' }) };
   const triage = { triage: jest.fn().mockResolvedValue(null) };
   const telegramSetup = { handleMessage: jest.fn().mockResolvedValue('ignored') };
+  const connectorSetup = { handle: jest.fn().mockResolvedValue({ installed: 'Fudo' }) };
+  const handoffNotice = { handleMessage: jest.fn().mockResolvedValue(false) };
   return {
-    controller: new SupportController(identity as any, triage as any, telegramSetup as any),
+    controller: new SupportController(
+      identity as any,
+      triage as any,
+      telegramSetup as any,
+      connectorSetup as any,
+      handoffNotice as any,
+    ),
     identity,
     triage,
     telegramSetup,
+    connectorSetup,
+    handoffNotice,
   };
 }
 
@@ -137,7 +147,7 @@ describe('SupportController', () => {
 
   it('webhook hands conversation.created to the triage and message.created to the Telegram setup', () => {
     withEnv(TRIAGE_ENV, () => {
-      const { controller, triage, telegramSetup } = build();
+      const { controller, triage, telegramSetup, handoffNotice } = build();
       const created = signed({ event: 'conversation.created', timestamp: new Date().toISOString(), payload: { uuid: 'c1' } });
       expect(controller.webhook(created.req, created.sig)).toEqual({ ok: true });
       expect(triage.triage).toHaveBeenCalledWith({ uuid: 'c1' });
@@ -146,11 +156,60 @@ describe('SupportController', () => {
       expect(controller.webhook(msg.req, msg.sig)).toEqual({ ok: true });
       expect(triage.triage).toHaveBeenCalledTimes(1);
       expect(telegramSetup.handleMessage).toHaveBeenCalledWith({ uuid: 'm1' });
+      expect(handoffNotice.handleMessage).toHaveBeenCalledWith({ uuid: 'm1' });
 
       const other = signed({ event: 'conversation.assigned', timestamp: new Date().toISOString(), payload: { uuid: 'c1' } });
       expect(controller.webhook(other.req, other.sig)).toEqual({ ok: true });
       expect(triage.triage).toHaveBeenCalledTimes(1);
       expect(telegramSetup.handleMessage).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('desk tool needs the key derived from the webhook secret, and passes on only Libredesk\'s identity headers', async () => {
+    await withEnv(TRIAGE_ENV, async () => {
+      const { controller, connectorSetup } = build();
+      const headers = {
+        'x-libredesk-contact-external-id': 'cloud.anythingmcp.com:u1',
+        'x-libredesk-contact-type': 'contact',
+        'x-libredesk-conversation-uuid': 'c1',
+      };
+      await expect(controller.deskConnector(headers, { app: 'fudo' })).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(
+        controller.deskConnector({ ...headers, 'x-desk-tool-key': deskToolKey('other') }, { app: 'fudo' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(connectorSetup.handle).not.toHaveBeenCalled();
+
+      const answer = await controller.deskConnector({ ...headers, 'x-desk-tool-key': deskToolKey('whsec') }, { app: 'fudo' });
+      expect(answer).toEqual({ installed: 'Fudo' });
+      expect(connectorSetup.handle).toHaveBeenCalledWith(
+        { externalUserId: 'cloud.anythingmcp.com:u1', contactType: 'contact', conversationUuid: 'c1' },
+        { app: 'fudo' },
+      );
+    });
+  });
+
+  it('desk tool is 404 where the triage is not configured, and turns a crash into a plain answer', async () => {
+    await withEnv({}, async () => {
+      const { controller } = build();
+      await expect(controller.deskConnector({ 'x-desk-tool-key': deskToolKey('whsec') }, {})).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+    await withEnv(TRIAGE_ENV, async () => {
+      const { controller, connectorSetup } = build();
+      connectorSetup.handle.mockRejectedValueOnce(new Error('boom'));
+      const answer = await controller.deskConnector({ 'x-desk-tool-key': deskToolKey('whsec') }, { app: 'fudo' });
+      expect(answer).toEqual({ error: expect.stringContaining('setup page') });
+    });
+  });
+});
+
+describe('verifyDeskToolKey', () => {
+  it('accepts only the HMAC of the webhook secret', () => {
+    expect(verifyDeskToolKey(deskToolKey('s'), 's')).toBe(true);
+    expect(verifyDeskToolKey(deskToolKey('s'), 't')).toBe(false);
+    expect(verifyDeskToolKey(undefined, 's')).toBe(false);
+    expect(verifyDeskToolKey('short', 's')).toBe(false);
+    expect(verifyDeskToolKey(deskToolKey(''), '')).toBe(false);
   });
 });

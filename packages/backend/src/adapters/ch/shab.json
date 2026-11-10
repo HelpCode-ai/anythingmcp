@@ -1,0 +1,203 @@
+{
+  "slug": "shab",
+  "name": "SHAB Swiss Official Gazette of Commerce",
+  "aliases": [
+    "FOSC",
+    "FUSC",
+    "SOGC",
+    "Schweizerisches Handelsamtsblatt",
+    "Feuille officielle suisse du commerce",
+    "Amtsblattportal",
+    "Swiss commercial register notices"
+  ],
+  "description": "Swiss Official Gazette of Commerce (SHAB/FOSC/FUSC) and cantonal gazettes on amtsblattportal.ch, no API key: search commercial register entries, bankruptcies, debt enforcement, calls to creditors and other legal notices by company UID, name, rubric, canton and date, and read a publication in full or as signed PDF.",
+  "instructions": "## SHAB / FOSC, Swiss Official Gazette of Commerce\nThis connector reads the open API of the Swiss official gazettes portal (amtsblattportal.ch, run by the State Secretariat for Economic Affairs SECO): the **Swiss Official Gazette of Commerce** (SHAB in German, FOSC in French, FUSC in Italian, SOGC in English) and the cantonal official gazettes that publish there. Every commercial register entry in Switzerland, bankruptcies, debt enforcement, composition proceedings, calls to creditors and other legal notices appear here. No account or API key; only published notices, read-only.\n\n**Setup**: nothing to configure. Try `shab_search_publications` with keyword set to a company name and tenant shab.\n\n**Workflow**\n1. `shab_search_publications`: follow a company by its UID (`uids` CHE-123.456.789, the most precise) or name (`keyword`); watch a market with `rubrics`/`sub_rubrics`, `cantons` and a date range (e.g. all new bankruptcies, sub-rubric KK02, in canton ZH this week). Set `tenant` shab to stay in the federal gazette.\n2. `shab_get_publication` with `meta.id` for the full text and structured content.\n3. `shab_get_publication_pdf` for the legally binding signed document.\n\n**Rubrics (SHAB)**: HR commercial register entries (HR01 new entry, HR02 change, HR03 deletion), KK bankruptcies (KK01 prior notice, KK02 publication and call to creditors, KK03 suspension for lack of assets, KK04 schedule of claims, KK05 distribution plan, KK06 closing, KK07 revocation, KK08 property auction), SB debt enforcement (SB01 auction, SB02 payment order, SB04 seizure, SB07 bankruptcy warning), NA composition proceedings (moratoriums), LS calls to creditors after liquidation, SR other calls to creditors (mergers, capital reductions), UP notices to company members (UP04 invitation to the general meeting), ES estates, AW lost securities, FM financial market, UV court rulings and summons, BH notices under the Commercial Registry Ordinance, AB employment, BB other federal registers. Cantonal gazettes have their own rubrics with a canton suffix (e.g. BP-ZH building projects).\n\n**Reading the data**\n- Search items: `meta.id` (use it for the other tools), `publicationNumber` (e.g. HR02-1006805721), `publicationDate`, `rubric`/`subRubric`, `language` of the text (de, fr, it), `cantons`, `registrationOffice` (the cantonal commercial register or office that published it), `title` in de/fr/it/en, `primaryTenantCode` (shab or a cantonal gazette).\n- Commercial register content: `journalNumber`/`journalDate` (daily register journal), `publicationText` official text in the language of the canton, `commonsNew.company` (name, `uid`, seat, `legalForm` code: 0101 sole proprietorship, 0103 general partnership, 0104 limited partnership, 0106 company limited by shares AG/SA, 0107 limited liability company GmbH/Sàrl, 0108 co-operative, 0109 association, 0110 foundation), `purpose`, capital and the people whose signing rights changed. `commonsActual` holds the previous values on a change.\n- Texts are in German, French or Italian depending on the canton; titles also come in English.\n\n**Paging and limits**: `page` starts at 0; `size` up to 2,000 but items are large, so keep 20 to 100. Only published notices are available without an account (unpublished ones need a tenant admin login, not supported here). The API is free for anyone. The operator does not guarantee completeness or accuracy of API data; only the signed PDF of a publication is legally binding.\n\n**Not included**: the Zefix central business name index (company search by name with current register data) is a separate federal API that requires credentials requested from the Federal Office of Justice; use the cantonal register excerpts or SHAB publications here instead.",
+  "region": "ch",
+  "category": "government",
+  "icon": "shab",
+  "docsUrl": "https://www.amtsblattportal.ch/docs/api/",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "shab_search_publications",
+    "params": {
+      "tenant": "shab",
+      "rubrics": [
+        "HR"
+      ],
+      "size": 1
+    }
+  },
+  "connector": {
+    "name": "Amtsblattportal API",
+    "type": "REST",
+    "baseUrl": "https://www.amtsblattportal.ch/api/v1",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "shab_search_publications",
+      "description": "Search published notices of the Swiss Official Gazette of Commerce (SHAB/FOSC/FUSC) and the cantonal official gazettes on amtsblattportal.ch: commercial register entries (new entries, changes, deletions), bankruptcies, debt enforcement, composition proceedings, calls to creditors, estates and more. Filter by keyword, title, company UID, rubric and sub-rubric, canton, gazette (tenant) and publication date. Returns total and content: each item has meta with id, publicationNumber, publicationDate, rubric, subRubric, language, cantons, registrationOffice and a title in de/fr/it/en. The text itself is in shab_get_publication.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Words in the publication text; whole words only, * as a wildcard (e.g. Bank* also finds Bankrott). A company name works well."
+          },
+          "title": {
+            "type": "string",
+            "description": "Words in the publication title, same rules as keyword."
+          },
+          "uids": {
+            "type": "string",
+            "description": "Swiss company UID(s) in the form CHE-123.456.789, comma-separated for several. The most precise way to follow one company."
+          },
+          "publication_numbers": {
+            "type": "string",
+            "description": "Publication number(s), e.g. HR02-1006805721, comma-separated for several."
+          },
+          "rubrics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Rubric codes, e.g. [\"HR\"] commercial register, [\"KK\"] bankruptcies, [\"SB\"] debt enforcement, [\"NA\"] composition proceedings, [\"LS\"] calls to creditors after liquidation, [\"SR\"] other calls to creditors, [\"UP\"] notices to members, [\"ES\"] estates, [\"FM\"] financial market, [\"UV\"] court rulings."
+          },
+          "sub_rubrics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sub-rubric codes, e.g. [\"HR01\"] new entry, [\"HR02\"] change, [\"HR03\"] deletion, [\"KK01\"] prior notice of bankruptcy, [\"KK02\"] bankruptcy publication and call to creditors, [\"KK03\"] suspension, [\"KK06\"] closing, [\"SB02\"] payment order, [\"UP04\"] invitation to the general meeting."
+          },
+          "cantons": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z]{2}$"
+            },
+            "description": "Canton abbreviations, e.g. [\"ZH\", \"GE\"]."
+          },
+          "tenant": {
+            "type": "string",
+            "description": "Gazette to search in: shab for the Swiss Official Gazette of Commerce only, or a cantonal gazette code such as kabzh (Zurich), kabbe (Bern), kablu (Lucerne), kabge (Geneva). Omit to search all gazettes."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "First publication date, YYYY-MM-DD. Give the same day as date_end for one day.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Last publication date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "originator_names": {
+            "type": "string",
+            "description": "Name or surname of the person or office that submitted the publication."
+          },
+          "registration_office_ids": {
+            "type": "string",
+            "description": "Registration office id(s) (meta.registrationOffice.id), comma-separated."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Results per page (default 20, at most 2,000; keep it small, items are large).",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 20
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order as column:<PUBLICATION_DATE|UPDATE_DATE|PUBLICATION_NUMBER|COPY_DEADLINE>|direction:<DESC|ASC>, e.g. column:PUBLICATION_DATE|direction:DESC. Default: publication date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publications",
+        "queryParams": {
+          "publicationStates": "PUBLISHED",
+          "keyword": "$keyword",
+          "title": "$title",
+          "uids": "$uids",
+          "publicationNumbers": "$publication_numbers",
+          "rubrics": "$rubrics",
+          "subRubrics": "$sub_rubrics",
+          "cantons": "$cantons",
+          "tenant": "$tenant",
+          "publicationDate.start": "$date_start",
+          "publicationDate.end": "$date_end",
+          "originatorNames": "$originator_names",
+          "registrationOfficeIds": "$registration_office_ids",
+          "pageRequest.page": "$page",
+          "pageRequest.size": "$size",
+          "pageRequest.sortOrders": "$sort"
+        }
+      }
+    },
+    {
+      "name": "shab_get_publication",
+      "description": "Get one publication with its full content (the XML export, returned as structured data): meta (rubric, sub-rubric, publication number and date, registration office, cantons, title in four languages, legal remedy) and content, e.g. for a commercial register entry the journal number and date, publicationText (the official text), the company (name, UID, seat, legal form code, address), purpose, capital and the changes (commonsNew, commonsActual); for a bankruptcy the debtor, court, deadlines and contact office.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publication_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "description": "Publication id (UUID) from meta.id of shab_search_publications, e.g. a4e3b0e5-1e8f-45e5-8311-02e5ee1f5ed8."
+          }
+        },
+        "required": [
+          "publication_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publications/{publication_id}/xml",
+        "headers": {
+          "Accept": "application/xml"
+        }
+      }
+    },
+    {
+      "name": "shab_get_publication_pdf",
+      "description": "Download one publication as the PDF document attached to the result. Only the signed PDF is legally binding, so use it when the user needs the official document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publication_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "description": "Publication id (UUID) from meta.id of shab_search_publications, e.g. a4e3b0e5-1e8f-45e5-8311-02e5ee1f5ed8."
+          }
+        },
+        "required": [
+          "publication_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publications/{publication_id}/pdf",
+        "headers": {
+          "Accept": "application/pdf"
+        },
+        "timeoutMs": 60000
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 10485760
+        }
+      }
+    }
+  ]
+}

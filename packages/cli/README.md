@@ -56,6 +56,7 @@ With npm, it requires Node.js 22.12 or newer. The examples below use real comman
   - [Stand up a workspace in one script](#stand-up-a-workspace-in-one-script)
   - [Turn your own API into MCP tools](#turn-your-own-api-into-mcp-tools)
   - [See what your agents did](#see-what-your-agents-did)
+  - [Check what a plan change would pause (Cloud)](#check-what-a-plan-change-would-pause-cloud)
 - [Command reference](#command-reference)
 - [Management API (`amcp api`)](#management-api-amcp-api)
 - [Shell completion](#shell-completion)
@@ -289,6 +290,27 @@ $ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
 ```
 
 `GET /api/audit/breakdowns?days=30` returns usage and cost by connector, MCP server and user.
+
+### Check what a plan change would pause (Cloud)
+
+On AnythingMCP Cloud, each plan includes a number of active connectors, MCP servers and users, plus File Search and code-mode limits. Before moving to a smaller plan, ask what fits. A read-only management key is enough:
+
+```console
+$ amcp api GET "/api/license/plan-fit?plan=starter" \
+  | jq -r '.plans.starter | "fits: \(.fits)", (.connectors.pause[] | "pause: \(.name) (\(.calls30d) calls in 30 days)")'
+fits: false
+pause: Etsy (3 calls in 30 days)
+pause: Airtable (0 calls in 30 days)
+```
+
+To choose yourself which connectors stay active, pause one and switch on another. At the plan's limit, switching one on without pausing another first answers `403` with `"code": "PLAN_LIMIT"`:
+
+```bash
+amcp api PUT /api/connectors/$OLD --yes --data '{"isActive":false}'
+amcp api PUT /api/connectors/$NEW --yes --data '{"isActive":true}'
+```
+
+Without `?plan=`, it answers for Starter and Team. The connectors and MCP servers used most in the last 30 days stay active. Paused ones are never deleted. The answer also covers users, File Search (folders, files, storage) and code mode (saved code tools, inline code, runs this month). Self-hosted instances have none of these limits and answer 404.
 
 ### Limit how often a role may call a tool
 

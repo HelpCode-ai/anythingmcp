@@ -659,6 +659,30 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "connectors",
+    "action": "webhookEventsList",
+    "method": "GET",
+    "path": "/api/connectors/:id/webhook/events",
+    "summary": "Recent webhook deliveries for this connector, for the dashboard",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "connectors",
+    "action": "webhookUrl",
+    "method": "GET",
+    "path": "/api/connectors/:id/webhook/url",
+    "summary": "The inbound webhook URL for this connector",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "connectors",
     "action": "exportAll",
     "method": "GET",
     "path": "/api/connectors/export-all",
@@ -1600,6 +1624,26 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "license",
+    "action": "getInvoiceEmail",
+    "method": "GET",
+    "path": "/api/license/invoice-email",
+    "summary": "Whether each paid invoice is emailed as a PDF, and to which address (cloud, ADMIN)",
+    "admin": true,
+    "pathParams": [],
+    "hasBody": false
+  },
+  {
+    "resource": "license",
+    "action": "setInvoiceEmail",
+    "method": "PUT",
+    "path": "/api/license/invoice-email",
+    "summary": "Switch emailing each paid invoice as a PDF on or off, and set the address (cloud, ADMIN)",
+    "admin": true,
+    "pathParams": [],
+    "hasBody": true
+  },
+  {
+    "resource": "license",
     "action": "setLicenseKey",
     "method": "PUT",
     "path": "/api/license/key",
@@ -1607,6 +1651,16 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "admin": true,
     "pathParams": [],
     "hasBody": true
+  },
+  {
+    "resource": "license",
+    "action": "planFitForUser",
+    "method": "GET",
+    "path": "/api/license/plan-fit",
+    "summary": "Cloud: what this workspace keeps and loses on Starter and Team (connectors, MCP servers, users, File Search, code mode), with the connectors and servers that would stay active or be paused",
+    "admin": false,
+    "pathParams": [],
+    "hasBody": false
   },
   {
     "resource": "license",

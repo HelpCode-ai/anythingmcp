@@ -339,6 +339,13 @@ export const ProductEvents = {
    * screen and device; read with checkout_link_created and Stripe.
    */
   PAYWALL_ACTION: 'paywall_action',
+  /**
+   * Cloud: a plan change paused items above the new plan's caps
+   * (metadata.kind 'downgrade') or brought them back ('restore');
+   * metadata.plan = the new plan, metadata.calls = how many items,
+   * metadata.status = 'dry-run' or 'on' (PLAN_CAPS_ENFORCE). PlanCapsService.
+   */
+  PLAN_CAPS_APPLIED: 'plan_caps_applied',
 } as const;
 
 /** The values of `action` on paywall_action (see PAYWALL_ACTION). */
@@ -356,6 +363,10 @@ export const PAYWALL_ACTIONS = [
   'support_clicked',
   'delete_account_clicked',
   'left_without_subscribe',
+  // The "What changes with <plan>" block was shown because the workspace is
+  // above that plan (metadata.plan), and its list of items was opened.
+  'plan_fit_shown',
+  'plan_fit_details_opened',
 ] as const;
 export type PaywallAction = (typeof PAYWALL_ACTIONS)[number];
 
@@ -367,6 +378,7 @@ export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents
  */
 const SERVER_ONLY = new Set<string>([
   ProductEvents.SIGNUP_ATTRIBUTED,
+  ProductEvents.PLAN_CAPS_APPLIED,
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.DIRECTORY_SIGNUP,
@@ -595,6 +607,12 @@ export function sanitizeSearchQuery(value: unknown): string | null {
  * `http://` of `http://http://…` (CodeQL js/polynomial-redos).
  */
 const SCRUB_INPUT_LIMIT = 2000;
+/**
+ * Long enough to keep the provider's own words after our hint: a 500 from
+ * Odoo starts with the classifier's sentence, and its "Invalid field 'x'"
+ * came after the old 160-character cut.
+ */
+const PROVIDER_MESSAGE_MAX = 400;
 
 export function scrubProviderMessage(message: unknown, secrets: unknown[] = []): string | null {
   if (typeof message !== 'string' || !message.trim()) return null;
@@ -611,7 +629,7 @@ export function scrubProviderMessage(message: unknown, secrets: unknown[] = []):
   });
   out = out.replace(/[A-Za-z0-9_\-.+/=]{32,}/g, '***');
   out = out.replace(/\s+/g, ' ').trim();
-  return out.length > 160 ? `${out.slice(0, 159)}…` : out;
+  return out.length > PROVIDER_MESSAGE_MAX ? `${out.slice(0, PROVIDER_MESSAGE_MAX - 1)}…` : out;
 }
 
 /** The attribution pair, re-sanitized here so no caller can store anything else. */

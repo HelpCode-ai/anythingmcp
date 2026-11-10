@@ -303,6 +303,12 @@ export class DynamicMcpTools {
    * blocked call gives; null when the licence is active, on self-hosted, or
    * when the licence cannot be read (the tools then answer for themselves).
    */
+  /** Cloud: names of the connectors a plan change paused, or null (see LicenseGuardService). */
+  async pausedByPlanConnectorNames(organizationId: string | undefined): Promise<string[] | null> {
+    if (!this.deployment.isCloud() || !organizationId) return null;
+    return this.licenseGuard.pausedByPlanConnectorNames(organizationId).catch(() => null);
+  }
+
   async trialEndedNotice(
     organizationId: string | undefined,
     userId?: string,
@@ -1450,7 +1456,7 @@ export class DynamicMcpTools {
       return { allowed: true, release: noRelease };
     }
 
-    const plan = await this.licenseGuard.codeModePlanForOrg(organizationId);
+    const plan = await this.licenseGuard.codeRunPlanForOrg(organizationId);
 
     // 1. Monthly run cap — authoritative from the audit table, so it holds even
     //    when Redis is down. The current run has no row yet, so `used` counts
@@ -1466,7 +1472,10 @@ export class DynamicMcpTools {
       if (used >= monthly) {
         return {
           allowed: false,
-          reason: `Monthly code run limit reached (${monthly} runs on the ${plan} plan this month). It resets at the start of next month; upgrade the plan for more.`,
+          reason:
+            plan === 'trial'
+              ? `Monthly code run limit reached (${monthly} runs during a trial without a card). Add a payment card to the trial under Settings → License to raise it to ${monthlyCodeRunCapForPlan('team')?.toLocaleString('en')} runs.`
+              : `Monthly code run limit reached (${monthly} runs on the ${plan} plan this month). It resets at the start of next month; upgrade the plan for more.`,
           release: noRelease,
         };
       }

@@ -5,7 +5,8 @@ describe('File Search quotas', () => {
     expect(quotaForPlan('starter', { cloud: true })).toMatchObject({ maxConnectors: 1, maxFiles: 500, minIntervalMinutes: 1440, manualSyncsPerDay: 1 });
     expect(quotaForPlan('team', { cloud: true })).toMatchObject({ maxConnectors: 3, maxFiles: 2000, minIntervalMinutes: 1440 });
     expect(quotaForPlan('enterprise', { cloud: true })).toMatchObject({ minIntervalMinutes: 15, ocr: true, folderRules: true, policy: true });
-    expect(quotaForPlan('trial', { cloud: true })!.share).toBeNull();
+    expect(quotaForPlan('trial', { cloud: true })).toMatchObject({ plan: 'trial', maxConnectors: 3, maxFiles: 2000, maxFileBytes: 50 * 1024 * 1024, manualSyncsPerDay: 3, ocr: false });
+    expect(quotaForPlan('trial', { cloud: true })!.share).toMatchObject({ maxTtlHours: 7 * 24, maxStoredBytes: 2 * 1024 * 1024 * 1024 });
     expect(quotaForPlan('starter', { cloud: true })!.share).toMatchObject({ maxTtlHours: 24, maxStoredBytes: 100 * 1024 * 1024, maxFileBytes: 10 * 1024 * 1024, publicLinks: true });
     expect(quotaForPlan('business', { cloud: true })).toMatchObject({ maxFiles: 2000, plan: 'business' });
   });
@@ -25,7 +26,7 @@ describe('File Search quotas', () => {
 
   it('suggests the next plan and clamps the interval to the plan minimum', () => {
     expect(nextPlan('starter', true)?.plan).toBe('team');
-    expect(nextPlan('trial', true)?.plan).toBe('team');
+    expect(nextPlan('trial', true)?.plan).toBe('enterprise');
     expect(nextPlan('trial', false)?.plan).toBe('enterprise');
     expect(nextPlan('enterprise', true)).toBeNull();
     expect(clampInterval(60, quotaForPlan('team', { cloud: true })!)).toBe(1440);

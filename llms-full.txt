@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 716 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 731 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -92,7 +92,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-716 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini.
+731 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini.
 
 | Category | Examples |
 |---|---|
@@ -668,6 +668,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `SMTP_PASS` | No | SMTP password |
 | `SMTP_FROM` | No | Sender address (default: `AnythingMCP <SMTP_USER>`) |
 | `SMTP_REPLY_TO` | No | Reply-To address, for when `SMTP_FROM` is a noreply address |
+| `PLAN_CAPS_ENFORCE` | No | Cloud only: how hard the plans' caps on connectors, MCP servers and users are (see [Cloud plan limits](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/cloud-plans.md>)). `dry-run` (default) logs what would be refused or paused, `on` enforces them, `off` does neither. The trial's cap on creating connectors and MCP servers is enforced in every mode. Ignored on self-hosted, which has none of these caps |
 | `RETENTION_SMTP_HOST` | No | Cloud only: a second SMTP server for the trial lifecycle, win-back and blocked-call emails. Without it they go through the SMTP above, with `RETENTION_SMTP_REPLY_TO` as Reply-To when set. Self-hosted sends none of these emails |
 | `RETENTION_SMTP_PORT` | No | Its port (default: 587). 465 or 2465 use implicit TLS, any other port STARTTLS |
 | `RETENTION_SMTP_USER` | No | Its username |
@@ -1396,14 +1397,15 @@ AI clients, and search keeps working on the last index during a sync.
 
 | | Trial (Cloud) | Starter | Team | Enterprise |
 |---|---|---|---|---|
-| File Search connectors | 1 | 1 | 3 | by contract (self-hosted: unlimited) |
-| Indexed files, all connectors together | 500 | 500 | 2,000 | by contract (self-hosted: unlimited) |
-| Largest file (Cloud) | 10 MB | 25 MB | 50 MB | 200 MB |
+| File Search connectors | 3 | 1 | 3 | by contract (self-hosted: unlimited) |
+| Indexed files, all connectors together | 2,000 | 500 | 2,000 | by contract (self-hosted: unlimited) |
+| Largest file (Cloud) | 50 MB | 25 MB | 50 MB | 200 MB |
 | Automatic sync | daily | daily | daily | down to every 15 minutes (self-hosted: 5) |
-| Manual syncs per day | 1 | 1 | 3 | unlimited |
+| Manual syncs per day | 3 | 1 | 3 | unlimited |
 | OCR, folder permissions, workspace policy | – | – | – | ✓ |
 
-Self-hosted: the self-hosted 30-day trial has the Team limits; file size is
+The Cloud trial has the Team limits, so you can try everything before you
+pick a plan. Self-hosted: the self-hosted 30-day trial has the Team limits too; file size is
 set by `FILES_MAX_FILE_BYTES` (default 100 MB). Self-hosted Starter and Team
 are no longer sold; existing Starter and Team keys keep the limits above, and
 more comes with [Enterprise](<https://anythingmcp.com/contact?plan=enterprise>).
@@ -1433,7 +1435,7 @@ lets AI clients publish files they write.
   deleted by the worker.
 - Limits: Starter links last at most 24 hours, with 100 MB for the files of
   all active links together and 10 MB per file; Team 7 days, 2 GB, 50 MB. The
-  Cloud trial has no File Share. On the Cloud, program files (`.exe`, `.msi`,
+  Cloud trial has the Team limits. On the Cloud, program files (`.exe`, `.msi`,
   `.js`, …) cannot be shared.
 
 ## Permissions and governance
@@ -3756,6 +3758,46 @@ The body is signed exactly as it will be sent — signing a different rendering
 of the same object is the usual way an HMAC integration fails with an error
 that blames the key.
 
+#### Signed JWT per request (opt-in)
+
+Some APIs want a short-lived JWT signed with a shared secret on every request
+instead of a digest (Ghost's Admin API). A `jwt` block in `signature` switches
+to that: a fresh token is signed for each call and each retry, so the
+connector stores only the key, never a token that expires.
+
+```json
+"authType": "HMAC",
+"authConfig": {
+  "signature": {
+    "jwt": {
+      "key": "{{GHOST_ADMIN_API_KEY}}",
+      "keyFormat": "id:secret",
+      "secretEncoding": "hex",
+      "algorithm": "HS256",
+      "ttlSeconds": 300,
+      "claims": { "aud": "/admin/" }
+    },
+    "headerName": "Authorization",
+    "headerTemplate": "Ghost ${jwt}"
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `jwt.key` + `jwt.keyFormat` | One `<id>:<secret>` value: the id becomes the `kid` header, the secret signs. `id:secret` is the only format. |
+| `jwt.keyId`, `jwt.secret` | The same two parts as separate values, instead of `key`. `keyId` is optional. |
+| `jwt.secretEncoding` | How the secret turns into key bytes: `utf8` (default), `hex` or `base64`. |
+| `jwt.algorithm` | `HS256` (default), `HS384` or `HS512`. |
+| `jwt.ttlSeconds` | Token lifetime, default 300, at most 3600. |
+| `jwt.claims` | Claims added to the payload (`aud`, `iss`, …). `iat` and `exp` are always set by the engine. |
+| `headerName` | Default `Authorization`. |
+| `headerTemplate` | `${jwt}` is the token. Default `Bearer ${jwt}`. |
+
+`extraHeaders` are sent as with a digest signature. Errors name the field that
+is wrong (no colon in the key, a secret that is not hex, an unset variable) and
+never include the key.
+
 #### Query signing (opt-in)
 
 Some platforms put the digest and the timestamp in the query instead of a
@@ -6030,6 +6072,10 @@ Any connector may opt in (`webhookEnabled`, regardless of its type) to receive i
 
 Stored payloads are returned to the model exactly as received by the connector's `<prefix>_recent_events` tool — including whatever personal data the provider's event carries (a Stripe payload can include a customer's name, e-mail and address). They are kept for `WEBHOOK_EVENT_RETENTION_DAYS` (7 days by default) and a single call returns at most 50 events, regardless of the `limit` requested.
 
+The same data is available outside an AI client, trimmed for a dashboard rather than a model: `GET /api/connectors/:id/webhook/events` (`limit`, `since`) returns the same rows as metadata only — `payload` is left out, so none of that personal data reaches this endpoint — and `GET /api/connectors/:id/webhook/url` returns the delivery URL to paste into the provider, built from `SERVER_URL` the same way `GET /api/connectors/oauth/redirect-uri` builds the OAuth callback. Both are gated like any other connector setting — the connector owner or an admin.
+
+The connector page's "Inbound webhooks" card (`webhook-card.tsx`) is this feature's UI, shown for a Stripe connector or any connector that already has `webhookEnabled` on: the owner or an admin flips the switch there, pastes the provider's signing secret (write-only, never read back), copies the delivery URL, and sees the last ten deliveries (type, id, time — no payload). It calls the same endpoints above, so it carries no logic of its own about retention or the per-connector cap.
+
 | Env | Default | |
 |---|---|---|
 | `WEBHOOK_EVENT_RETENTION_DAYS` | `7` | A periodic sweep (hourly, like the connector-auth-status sweep) deletes received events older than this. |
@@ -6037,7 +6083,7 @@ Stored payloads are returned to the model exactly as received by the connector's
 
 ### Cloud vs self-hosted
 
-Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch.
+Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch. The one difference: on Cloud, the plan caps how many active connectors may have webhooks turned on (Starter 1, Team and the trial 5, Business and Enterprise no limit; see [Cloud plan limits](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/cloud-plans.md>)). The cap follows `PLAN_CAPS_ENFORCE` like the other plan caps: `dry-run` only logs. Self-hosted has no cap.
 
 ## Fatal crash reports (always on in the Docker image)
 
@@ -6964,11 +7010,11 @@ where Enterprise and admin gating apply again.
 - **Per plan:** saved code tools are capped per plan — Community 3, Starter 5,
   Team 20, Enterprise unlimited (same on Cloud and self-hosted; an Enterprise
   contract can override the cap with the licence feature `maxCodeTools`). Inline
-  code (`code_execute` / `code_propose_tool`) is Team and above. A Cloud trial
-  with a card on file is treated as Team for code mode for the length of the
-  trial (inline code and the Team cap of 20), so a high-intent user can try
-  everything; a free, card-less trial stays tools-only with the cap of 3. A
-  self-hosted trial carries no billing and so is never promoted.
+  code (`code_execute` / `code_propose_tool`) is Team and above. Every Cloud trial
+  is treated as Team for code mode for the length of the trial (inline code and
+  the Team cap of 20), so a new workspace can try everything; only the run
+  quotas below differ for a trial without a card. A self-hosted trial is not
+  promoted.
 - **Writes** happen only in an admin-approved code tool with *Allow write
   tools* on; inline code and read-only tools can never write.
 - **Audit:** every run is recorded (a `code_runs` row), and each tool call the
@@ -7002,12 +7048,13 @@ tool calls it may make, and limits on output size. A program that exceeds a
 limit fails with a clear error; it never affects other runs or the backend.
 
 On Cloud, where the runner is shared between tenants, two per-workspace quotas
-apply on top of the per-run limits: a **monthly run cap** (trial 100, Starter
-500, Team 5,000, Enterprise unlimited; an Enterprise contract can override it
-with the licence feature `maxCodeRunsPerMonth`) and a **concurrency cap** on
-simultaneous runs (trial/Starter 1, Team 3, Enterprise 10). Over a quota, a run
-is refused with a clear message and nothing is executed. A card-backed trial
-gets the Team quotas. Self-hosted is single-tenant and not metered by runs, so
+apply on top of the per-run limits: a **monthly run cap** (trial without a card 500,
+Starter 500, Team 5,000, Enterprise unlimited; an Enterprise contract can
+override it with the licence feature `maxCodeRunsPerMonth`) and a **concurrency
+cap** on simultaneous runs (trial without a card and Starter 1, Team 3,
+Enterprise 10). Over a quota, a run is refused with a clear message and nothing
+is executed. A trial with a card on file gets the Team quotas. Every Cloud trial
+has the Team code-mode features: inline code and up to 20 saved code tools. Self-hosted is single-tenant and not metered by runs, so
 neither quota applies there.
 
 ---
@@ -7117,6 +7164,135 @@ You do not need one to use AnythingMCP at work: Community is free for commercial
 ---
 
 [Back to README](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md>) | [Full License Text](<https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE>)
+
+---
+
+## docs/cloud-invoices.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/cloud-invoices.md
+
+# Invoices on AnythingMCP Cloud
+
+This page is about the invoices for your AnythingMCP Cloud subscription. It does
+not apply to self-hosted installations: self-hosted licences are managed on
+anythingmcp.com/account.
+
+## Where to find your invoices
+
+Open **Settings → License** and select **Manage subscription & billing**. The
+billing portal lists every invoice of the workspace, each with a PDF download.
+You can update your company name, address and VAT ID there too; changes apply
+to the next invoice.
+
+Only workspace admins see this page.
+
+## Invoices by email
+
+On **Settings → License**, switch on **Invoices by email** to get every paid
+invoice as a PDF attachment. It is off until an admin switches it on.
+
+- **When:** right after each payment that has an amount. The €0 invoice that
+  opens a card trial is not sent.
+- **To whom:** the billing contact (the email address of the subscription in
+  the billing portal), or another address you enter, for example your
+  accounting team.
+- **Changing the address:** the new address applies to the next invoice. The
+  previous address gets a short notice saying invoices now go elsewhere.
+- **What the email contains:** the invoice number, amount, period and the PDF.
+  The link in the email opens Settings → License, which needs a sign-in.
+
+Each invoice goes only to the address set for the workspace it belongs to.
+When a licence key moves to another workspace, invoices by email are off for it
+until an admin of the new workspace switches them on.
+
+## From the command line
+
+With a management key of a workspace admin (`amcp login --browser --scope admin`):
+
+```bash
+amcp invoices email                                   # show the setting
+amcp invoices email on --yes                          # to the billing contact
+amcp invoices email on --to accounting@example.com --yes
+amcp invoices email --billing-contact --yes           # back to the billing contact
+amcp invoices email off --yes
+```
+
+The same through the API: `GET /api/license/invoice-email` and
+`PUT /api/license/invoice-email` with `{"enabled": true, "to": "accounting@example.com"}`
+(`"to": null` for the billing contact; leave `to` out to keep the current address).
+Both need an admin; a read-only management key can only read.
+
+---
+
+## docs/cloud-plans.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/cloud-plans.md
+
+# Cloud plan limits
+
+This page applies to AnythingMCP Cloud only. A self-hosted instance has none of
+these limits: there, the Community edition counts active users, and
+Enterprise features follow the licence key (see [license FAQ](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/license-faq.md>)).
+
+## What each plan includes
+
+| | Trial (7 days) | Starter | Team | Enterprise |
+|---|---|---|---|---|
+| Active connectors | 15 | 5 | 15 | unlimited |
+| Active MCP servers | 10 | 3 | 10 | unlimited |
+| Users | 3 | 1 | 3 | by contract |
+| File Search | Team limits | 1 folder, 500 files | 3 folders, 2,000 files | by contract |
+| Code mode | Team features | 5 saved code tools, no inline code | 20 saved code tools, inline code | unlimited |
+| Connectors with inbound webhooks | 5 | 1 | 5 | unlimited |
+
+The trial includes everything in Team, so you can try every feature before you
+choose a plan. File Search and code mode have their own limits, described in
+[File Search](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#limits-and-pauses>) and
+[code mode](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md#limits>).
+
+Only **active** connectors and MCP servers count. A File Search folder counts
+against the File Search folders, not against the connectors.
+
+[Inbound webhooks](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/observability.md#7-inbound-webhook-ingestion-opt-in-per-connector>)
+count the active connectors that receive them. Turning them on above the limit
+asks you to turn them off on another connector first. Turning them off is
+always possible. The stored events (500 per connector, kept 7 days) are the
+same on every plan.
+
+## Before you choose a plan
+
+When the trial ends, the plan picker shows what changes with each plan for
+your workspace, for example "4 of your 9 connectors would be paused". Choose
+**See which ones** to see which connectors would stay active and which would
+be paused. Team is always one click away.
+
+`GET /api/license/plan-fit` returns the same answer for scripts and the
+[CLI](<https://github.com/HelpCode-ai/anythingmcp/blob/main/packages/cli/README.md#check-what-a-plan-change-would-pause-cloud>).
+
+## When a plan includes fewer active items
+
+When a workspace moves to a plan with lower limits (the trial to Starter, or
+Team to Starter):
+
+- the connectors and MCP servers used most in the last 30 days stay active;
+- the others are **paused**. Nothing is deleted: credentials, tools and settings
+  are kept. Your AI clients no longer see the tools of a paused connector, and
+  the AnythingMCP tools tell the model which connectors are paused;
+- the workspace admins get an email listing what was paused.
+
+You choose what stays active at any time. Pause a connector, then switch on
+another one. At the limit, switching one on asks you to pause another first.
+Paused connectors show **Paused: plan limit** in the dashboard.
+
+When you upgrade again, everything the downgrade paused is switched back on
+automatically, up to the new plan's limits.
+
+Members keep their access when the plan includes fewer users. New
+invitations above the limit are refused.
+
+Over a limit, the API answers `403` with `code: "PLAN_LIMIT"`, the `axis`
+(`connectors`, `mcpServers`, `users`, `fileSearchConnectors` or `webhooks`), `max` and
+`current`.
 
 ---
 

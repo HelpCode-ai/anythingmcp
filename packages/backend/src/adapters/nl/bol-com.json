@@ -1,0 +1,1374 @@
+{
+  "slug": "bol-com",
+  "name": "bol.com",
+  "description": "bol.com Retailer API for sellers on the Dutch and Belgian marketplace: orders, shipments with track and trace, returns, FBB inventory, offers with price and stock, commission, catalog content, competing offers, ratings, invoices and performance indicators. Client ID and secret.",
+  "instructions": "## bol.com\nThis connector works with the **bol.com Retailer API** (v10, offers on v11) at `https://api.bol.com`, for sellers on bol, the largest marketplace of the Netherlands and Belgium: orders, shipments, returns, FBB inventory, offers, commission, catalog content, competing offers, ratings, invoices and performance insights.\n\n**Setup (about 3 minutes)**\n1. In the bol Seller Dashboard open your account, **Instellingen, Diensten, API Instellingen** (Settings, Services, API settings). Save a technical contact if asked.\n2. Under **Client credentials voor de Retailer API** click **Aanmaken** (Create), name the key and click **Toon secret** (Show secret).\n3. Copy the **client ID** into `BOL_CLIENT_ID` and the **secret** into `BOL_CLIENT_SECRET`.\n\nThe connector exchanges them at `https://login.bol.com/token` (client credentials, HTTP Basic) for a bearer token that lasts about 5 minutes, and reuses it until it expires. Never let it request a token per call: bol blocks addresses that hammer the login service.\n\n**Where to start**: `bol_com_list_orders` (open FBR orders by default), then `bol_com_get_order` for the customer and item details. `bol_com_list_offers` lists your offers; `bol_com_list_inventory` shows FBB stock at bol.\n\n**Orders and shipping**: `bol_com_list_orders`, `bol_com_get_order`, `bol_com_list_shipments`, `bol_com_get_shipment`. Ship with `bol_com_create_shipment` (your carrier and track and trace code) and add a missing code with `bol_com_add_track_and_trace`. `bol_com_cancel_order_item` is installed switched off: a cancellation cannot be undone and hurts the seller score. Check `cancellationRequest` on the order just before shipping.\n\n**Asynchronous writes**: shipments, transports and cancellations answer 202 with a process status. Read it with `bol_com_get_process_status` (or `bol_com_find_process_statuses` by entity and event type) until it is SUCCESS or FAILURE; statuses are kept one day.\n\n**Offers (v11, synchronous)**: `bol_com_list_offers` (cursor paging: pass `page.nextCursor` as cursor until it is missing), `bol_com_get_offer`, `bol_com_get_offer_not_for_sale_reasons`, `bol_com_create_offer`, `bol_com_update_offer` (price and stock too; arrays are replaced whole; 409 means a concurrent change), and `bol_com_delete_offer` (switched off; pause with on_hold_by_retailer instead). Prices are in EUR including VAT; stock is 0 to 999.\n\n**Returns and stock**: `bol_com_list_returns`, `bol_com_get_return`, `bol_com_list_inventory` (FBB only). Handling or registering returns is not included, because accepting a return makes bol refund the customer.\n\n**Products and money insight**: `bol_com_get_commission`, `bol_com_get_catalog_product`, `bol_com_get_competing_offers` (who has the buy box), `bol_com_get_product_ratings`, `bol_com_get_offer_insights`, `bol_com_get_performance_indicator`, `bol_com_list_invoices` (read only). The connector never moves money and does not buy shipping labels.\n\n**Paging**: v10 lists take `page` from 1 with 50 rows per page; an empty answer (`{}`) means there are no more pages.\n\n**Rate limits** (per endpoint, live values at https://api.bol.com/retailer/public/ratelimits): order list 25 per minute, order detail 25 per second, shipment list 25 per minute, returns and inventory 20 per minute, invoices 24 per minute, offers 25 to 50 per second, catalog content 10 per second, process status 100 per second. A 429 carries Retry-After in seconds.\n\n**Identifiers and formats**: order ids can contain letters (`A4K8290LP0`); EANs are strings; dates are `YYYY-MM-DD` and times ISO 8601 with offset. Leave unused fields out: bol validates empty strings and answers 400. Errors are `application/problem+json` with `title`, `detail` and `violations` naming the field.",
+  "aliases": [
+    "bol",
+    "bol.com Retailer API",
+    "Bol Plaza"
+  ],
+  "region": "nl",
+  "category": "e-commerce",
+  "icon": "bol-com",
+  "docsUrl": "https://api.bol.com/retailer/public/Retailer-API/index.html",
+  "requiredEnvVars": [
+    "BOL_CLIENT_ID",
+    "BOL_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "BOL_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Seller Dashboard, Instellingen, Diensten, API Instellingen: create client credentials for the Retailer API and copy the client ID.",
+      "link": "https://api.bol.com/retailer/public/Retailer-API/authentication.html",
+      "pattern": "^[A-Za-z0-9-]{8,100}$",
+      "patternMessage": "Paste the client ID only, without spaces."
+    },
+    "BOL_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown with Toon secret next to the client ID. Create new credentials if it was lost.",
+      "link": "https://api.bol.com/retailer/public/Retailer-API/authentication.html",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "bol did not issue a token for this client ID and secret. Copy both again from Seller Dashboard, Instellingen, Diensten, API Instellingen, or create new credentials.",
+    "403": "bol refused the call: the credentials have no access to this resource, or the request had no valid token.",
+    "404": "bol found no order, shipment, return or offer with that id.",
+    "rate_limited": "bol limits each endpoint separately (the order list to 25 calls per minute). Wait for the Retry-After seconds and try again."
+  },
+  "probe": {
+    "tool": "bol_com_list_orders",
+    "params": {}
+  },
+  "prerequisites": "A bol.com seller account (Verkopen via bol) and access to the Seller Dashboard API settings to create Retailer API client credentials. About 3 minutes.",
+  "connector": {
+    "name": "bol.com Retailer API",
+    "type": "REST",
+    "baseUrl": "https://api.bol.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{BOL_CLIENT_ID}}",
+      "clientSecret": "{{BOL_CLIENT_SECRET}}",
+      "tokenUrl": "https://login.bol.com/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/vnd.retailer.v10+json",
+      "Content-Type": "application/vnd.retailer.v10+json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "bol_com_list_orders",
+      "description": "List orders, newest first: orderId, orderPlacedDateTime and per item orderItemId, ean, fulfilment method and status (OPEN, HANDLED), quantity, quantityShipped, quantityCancelled, cancellationRequest and latestChangedDateTime. By default only OPEN FBR orders. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "SHIPPED",
+              "ALL"
+            ],
+            "default": "OPEN",
+            "description": "OPEN (default, still to ship), SHIPPED (shipped or cancelled in the last 48 hours) or ALL."
+          },
+          "fulfilment_method": {
+            "type": "string",
+            "enum": [
+              "FBR",
+              "FBB",
+              "ALL"
+            ],
+            "default": "FBR",
+            "description": "FBR (default, you ship), FBB (bol ships) or ALL."
+          },
+          "change_interval_minute": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "description": "Only orders changed in the last N minutes (at most 60). Do not combine with latest_change_date."
+          },
+          "latest_change_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Only orders changed on this date (YYYY-MM-DD, at most 3 months back)."
+          },
+          "vvb_only": {
+            "type": "boolean",
+            "description": "true: only orders shipped with bol's VVB label service."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Pages hold 50 rows; an empty answer ({}) means there are no more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/orders",
+        "queryParams": {
+          "status": "$status",
+          "fulfilment-method": "$fulfilment_method",
+          "change-interval-minute": "$change_interval_minute",
+          "latest-change-date": "$latest_change_date",
+          "vvb-only": "$vvb_only",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_order",
+      "description": "Read one order: shipping and billing details of the customer (name, address, email, phone, VAT and KvK number), pickup point, and per item the offer, product EAN and title, quantity, unit and total price, commission, fulfilment (method, latest and exact delivery date) and cancellation request. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{4,40}$",
+            "description": "bol order id, e.g. 1042823870 or A4K8290LP0 (orderId of bol_com_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_list_shipments",
+      "description": "List shipments, newest first: shipmentId, shipmentDateTime, shipmentReference, the order and its items, and transport (transporter code, track and trace). Filter by order_id or by fulfilment method (not both). Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{4,40}$",
+            "description": "bol order id, e.g. 1042823870 or A4K8290LP0 (orderId of bol_com_list_orders)."
+          },
+          "fulfilment_method": {
+            "type": "string",
+            "enum": [
+              "FBR",
+              "FBB"
+            ],
+            "description": "FBR = fulfilled by the retailer, FBB = fulfilled by bol."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Pages hold 50 rows; an empty answer ({}) means there are no more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/shipments",
+        "queryParams": {
+          "order-id": "$order_id",
+          "fulfilment-method": "$fulfilment_method",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_shipment",
+      "description": "Read one shipment: items with quantity, unit price and commission, shipping and billing details, and transport (transportId, transporterCode, trackAndTrace, transport events). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Shipment id from bol_com_list_shipments."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/shipments/{shipment_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_list_returns",
+      "description": "List returns: returnId, registrationDateTime, fulfilment method and per item rmaId, orderId, ean, title, expectedQuantity, return reason with customer comments, track and trace, handled flag and processing results. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "handled": {
+            "type": "boolean",
+            "description": "true: handled returns, false: still to handle. Omit for both."
+          },
+          "fulfilment_method": {
+            "type": "string",
+            "enum": [
+              "FBR",
+              "FBB"
+            ],
+            "description": "FBR = fulfilled by the retailer, FBB = fulfilled by bol."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Pages hold 50 rows; an empty answer ({}) means there are no more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/returns",
+        "queryParams": {
+          "handled": "$handled",
+          "fulfilment-method": "$fulfilment_method",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_return",
+      "description": "Read one return with its items, reasons, customer details and processing results. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Return id from bol_com_list_returns."
+          }
+        },
+        "required": [
+          "return_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/returns/{return_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_list_inventory",
+      "description": "List the stock held in bol's warehouses for FBB offers: ean, bsku, title, regularStock and gradedStock. Filter by stock level, state or a search query on EAN or title. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "EAN or part of the product title."
+          },
+          "stock": {
+            "type": "string",
+            "enum": [
+              "SUFFICIENT",
+              "INSUFFICIENT"
+            ],
+            "description": "Only products with sufficient or insufficient stock."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "REGULAR",
+              "GRADED"
+            ],
+            "description": "REGULAR or GRADED (damaged) stock."
+          },
+          "quantity": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+-[0-9]+$"
+            },
+            "description": "Quantity ranges, e.g. [\"0-10\", \"20-30\"]."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Pages hold 50 rows; an empty answer ({}) means there are no more."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/inventory",
+        "queryParams": {
+          "query": "$query",
+          "stock": "$stock",
+          "state": "$state",
+          "quantity": "$quantity",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_list_offers",
+      "description": "List your offers (Offers API v11): offerId, ean, reference, condition, pricing (bundle prices), stock (amount, managedByRetailer, correctedStock), fulfilment, country availability with forSale, and lastModifiedDateTime. Filter by offer ids, EANs, reference, for-sale or change time. Cursor paging: pass page.nextCursor as cursor until it is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eans": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{8,14}$"
+            },
+            "description": "Only offers for these EANs."
+          },
+          "offer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these offer ids (UUIDs)."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Only offers with this reference."
+          },
+          "for_sale": {
+            "type": "boolean",
+            "description": "true: only offers for sale, false: only offers not for sale."
+          },
+          "last_modified_date_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only offers changed since this UTC time (ISO 8601)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 100,
+            "default": 50,
+            "description": "Offers per page, 25 to 100 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "page.nextCursor from the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/offers",
+        "queryParams": {
+          "eans": "$eans",
+          "offer-ids": "$offer_ids",
+          "reference": "$reference",
+          "for-sale": "$for_sale",
+          "last-modified-date-time": "$last_modified_date_time",
+          "page-size": "$page_size",
+          "cursor": "$cursor"
+        },
+        "headers": {
+          "Accept": "application/vnd.retailer.v11+json",
+          "Content-Type": "application/vnd.retailer.v11+json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_offer",
+      "description": "Read one offer (Offers API v11): ean, reference, condition, bundle prices, stock with correctedStock, fulfilment, country availability and whether it is for sale. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Offer id (offerId)."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/offers/{offer_id}",
+        "headers": {
+          "Accept": "application/vnd.retailer.v11+json",
+          "Content-Type": "application/vnd.retailer.v11+json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_offer_not_for_sale_reasons",
+      "description": "Explain why an offer is not for sale, per country: missing content attributes, pricing, stock, shop status, selling rights, on hold and other reasons. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Offer id."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/offers/{offer_id}/not-for-sale-reasons",
+        "headers": {
+          "Accept": "application/vnd.retailer.v11+json",
+          "Content-Type": "application/vnd.retailer.v11+json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_process_status",
+      "description": "Read the result of an asynchronous v10 write (shipment, transport, cancellation): status PENDING, SUCCESS, FAILURE or TIMEOUT, errorMessage, and entityId once it succeeded. Process statuses are kept for one day. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "process_status_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "processStatusId from the answer of a write."
+          }
+        },
+        "required": [
+          "process_status_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shared/process-status/{process_status_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_find_process_statuses",
+      "description": "Find the process statuses of one entity and event type, e.g. all CREATE_SHIPMENT statuses of an order item. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "Entity id, e.g. the orderItemId for CREATE_SHIPMENT or CANCEL_ORDER."
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "CREATE_SHIPMENT",
+              "CANCEL_ORDER",
+              "CHANGE_TRANSPORT",
+              "HANDLE_RETURN_ITEM",
+              "CREATE_RETURN_ITEM",
+              "CREATE_OFFER",
+              "UPDATE_OFFER",
+              "UPDATE_OFFER_STOCK",
+              "UPDATE_OFFER_PRICE",
+              "DELETE_OFFER",
+              "CREATE_OFFER_EXPORT",
+              "CREATE_PRODUCT_CONTENT",
+              "CREATE_SHIPPING_LABEL"
+            ],
+            "description": "Event type."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Pages hold 50 rows; an empty answer ({}) means there are no more."
+          }
+        },
+        "required": [
+          "entity_id",
+          "event_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shared/process-status",
+        "queryParams": {
+          "entity-id": "$entity_id",
+          "event-type": "$event_type",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_commission",
+      "description": "Calculate the bol commission for selling a product at a price: fixedAmount, percentage, totalCost and any temporary reductions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ean": {
+            "type": "string",
+            "pattern": "^[0-9]{8,14}$",
+            "description": "EAN of the product (8 to 14 digits)."
+          },
+          "unit_price": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 9999,
+            "description": "Selling price in EUR including VAT."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "NEW",
+              "AS_NEW",
+              "GOOD",
+              "REASONABLE",
+              "MODERATE"
+            ],
+            "default": "NEW",
+            "description": "Product condition (default NEW)."
+          }
+        },
+        "required": [
+          "ean",
+          "unit_price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/commission/{ean}",
+        "queryParams": {
+          "unit-price": "$unit_price",
+          "condition": "$condition"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_catalog_product",
+      "description": "Read the bol catalog content of a product by EAN: whether it is published, its category (GPC chunk), attributes (title, description, brand, dimensions and others) and the parties (brand, manufacturer). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ean": {
+            "type": "string",
+            "pattern": "^[0-9]{8,14}$",
+            "description": "EAN of the product (8 to 14 digits)."
+          },
+          "accept_language": {
+            "type": "string",
+            "enum": [
+              "nl",
+              "nl-BE",
+              "fr",
+              "fr-BE"
+            ],
+            "description": "Language of the content."
+          }
+        },
+        "required": [
+          "ean"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/content/catalog-products/{ean}",
+        "headers": {
+          "Accept-Language": "$accept_language"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_competing_offers",
+      "description": "List all offers on bol for a product (yours and competitors'): offerId, retailerId, country, bestOffer (buy box), price, fulfilment method, condition and delivery window. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ean": {
+            "type": "string",
+            "pattern": "^[0-9]{8,14}$",
+            "description": "EAN of the product (8 to 14 digits)."
+          },
+          "country_code": {
+            "type": "string",
+            "enum": [
+              "NL",
+              "BE"
+            ],
+            "description": "NL or BE."
+          },
+          "best_offer_only": {
+            "type": "boolean",
+            "description": "true: only the offer that wins the buy box."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "NEW",
+              "AS_NEW",
+              "GOOD",
+              "REASONABLE",
+              "MODERATE",
+              "BAD",
+              "REFURBISHED_A",
+              "REFURBISHED_B",
+              "REFURBISHED_C"
+            ],
+            "description": "Condition filter; bol defaults to NEW."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Pages hold 50 rows; an empty answer ({}) means there are no more."
+          }
+        },
+        "required": [
+          "ean"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/products/{ean}/offers",
+        "queryParams": {
+          "country-code": "$country_code",
+          "best-offer-only": "$best_offer_only",
+          "condition": "$condition",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_product_ratings",
+      "description": "Read the customer star ratings of a product: count per rating from 1 to 5. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ean": {
+            "type": "string",
+            "pattern": "^[0-9]{8,14}$",
+            "description": "EAN of the product (8 to 14 digits)."
+          }
+        },
+        "required": [
+          "ean"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/products/{ean}/ratings"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_list_invoices",
+      "description": "List the bol invoices of the account for a period of at most 31 days (default the last 4 weeks), with invoice ids, periods and amounts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period_start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Start of the period, YYYY-MM-DD."
+          },
+          "period_end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "End of the period, YYYY-MM-DD, at most 31 days after the start."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/invoices",
+        "queryParams": {
+          "period-start-date": "$period_start_date",
+          "period-end-date": "$period_end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_offer_insights",
+      "description": "Read the product visits or buy box percentage of an offer per day, week or month. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Offer id."
+          },
+          "name": {
+            "type": "string",
+            "enum": [
+              "PRODUCT_VISITS",
+              "BUY_BOX_PERCENTAGE"
+            ],
+            "description": "Metric."
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "DAY",
+              "WEEK",
+              "MONTH"
+            ],
+            "description": "Granularity."
+          },
+          "number_of_periods": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 730,
+            "description": "How many periods back (at most 730 days, 104 weeks or 24 months)."
+          }
+        },
+        "required": [
+          "offer_id",
+          "name",
+          "period",
+          "number_of_periods"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/insights/offer",
+        "queryParams": {
+          "offer-id": "$offer_id",
+          "name": "$name",
+          "period": "$period",
+          "number-of-periods": "$number_of_periods"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_get_performance_indicator",
+      "description": "Read a seller performance indicator for an ISO week: the score, the norm bol expects and the details (cancellations, fulfilment on time, phone availability, response time, case item ratio, track and trace, returns, reviews). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "CANCELLATIONS",
+              "FULFILMENT",
+              "PHONE_AVAILABILITY",
+              "RESPONSE_TIME",
+              "CASE_ITEM_RATIO",
+              "TRACK_AND_TRACE",
+              "RETURNS",
+              "REVIEWS"
+            ],
+            "description": "Indicator."
+          },
+          "year": {
+            "type": "string",
+            "pattern": "^[0-9]{4}$",
+            "description": "Year, e.g. 2026."
+          },
+          "week": {
+            "type": "string",
+            "pattern": "^[0-9]{1,2}$",
+            "description": "ISO week number, 1 to 53."
+          }
+        },
+        "required": [
+          "name",
+          "year",
+          "week"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/retailer/insights/performance/indicator",
+        "queryParams": {
+          "name": "$name",
+          "year": "$year",
+          "week": "$week"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bol_com_create_shipment",
+      "description": "Confirm the shipment of order items you ship yourself (FBR), with the carrier and track and trace code. Asynchronous: the answer is a process status; check it with bol_com_get_process_status. Up to 100 items of one order per call. Check cancellationRequest on the order just before shipping. This connector does not buy bol shipping labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderItemId": {
+                  "type": "string",
+                  "description": "orderItemId from the order."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Quantity shipped; default the remaining open quantity."
+                }
+              },
+              "required": [
+                "orderItemId"
+              ]
+            },
+            "description": "Items: [{\"orderItemId\": \"6107434013\", \"quantity\": 1}]."
+          },
+          "transporter_code": {
+            "type": "string",
+            "description": "Carrier code: TNT (PostNL), TNT_BRIEF, TNT-EXPRESS, DHL, DHL_DE, DHLFORYOU, DHL-GLOBAL-MAIL, DPD-NL, DPD-BE, BPOST_BE, BPOST_BRIEF, GLS, UPS, FEDEX_NL, FEDEX_BE, BUDBEE, TRUNKRS, PACKS, COURIER, OTHER and others listed by bol."
+          },
+          "track_and_trace": {
+            "type": "string",
+            "description": "Track and trace code of the parcel."
+          },
+          "shipment_reference": {
+            "type": "string",
+            "maxLength": 90,
+            "description": "Your own reference for the shipment."
+          }
+        },
+        "required": [
+          "order_items",
+          "transporter_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/retailer/shipments",
+        "bodyMapping": {
+          "orderItems": "$order_items",
+          "shipmentReference": "$shipment_reference",
+          "transport": {
+            "transporterCode": "$transporter_code",
+            "trackAndTrace": "$track_and_trace"
+          }
+        }
+      }
+    },
+    {
+      "name": "bol_com_add_track_and_trace",
+      "description": "Add a missing track and trace code to the transport of a shipment (it cannot change an existing code). Asynchronous: returns a process status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transport_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "transportId from bol_com_get_shipment."
+          },
+          "transporter_code": {
+            "type": "string",
+            "description": "Carrier code, as for bol_com_create_shipment."
+          },
+          "track_and_trace": {
+            "type": "string",
+            "description": "Track and trace code."
+          }
+        },
+        "required": [
+          "transport_id",
+          "transporter_code",
+          "track_and_trace"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/retailer/transports/{transport_id}",
+        "bodyMapping": {
+          "transporterCode": "$transporter_code",
+          "trackAndTrace": "$track_and_trace"
+        }
+      }
+    },
+    {
+      "name": "bol_com_cancel_order_item",
+      "description": "Cancel one order item you cannot deliver, with a reason. It cannot be undone and counts against your cancellation score; use REQUESTED_BY_CUSTOMER only when the customer asked. Asynchronous: returns a process status. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "description": "orderItemId to cancel."
+          },
+          "reason_code": {
+            "type": "string",
+            "enum": [
+              "OUT_OF_STOCK",
+              "REQUESTED_BY_CUSTOMER",
+              "BAD_CONDITION",
+              "HIGHER_SHIPCOST",
+              "INCORRECT_PRICE",
+              "NOT_AVAIL_IN_TIME",
+              "NO_BOL_GUARANTEE",
+              "ORDERED_TWICE",
+              "RETAIN_ITEM",
+              "TECH_ISSUE",
+              "UNFINDABLE_ITEM",
+              "OTHER"
+            ],
+            "description": "Reason for the cancellation."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "reason_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/retailer/orders/cancellation",
+        "bodyMapping": {
+          "orderItems": [
+            {
+              "orderItemId": "$order_item_id",
+              "reasonCode": "$reason_code"
+            }
+          ]
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "bol_com_create_offer",
+      "description": "Create an offer for a product (Offers API v11, synchronous): EAN, condition, bundle prices, stock and fulfilment. Answers 201 with the new offerId. Use bol_com_get_offer_not_for_sale_reasons if it does not appear for sale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ean": {
+            "type": "string",
+            "pattern": "^[0-9]{8,14}$",
+            "description": "EAN of the product (8 to 14 digits)."
+          },
+          "condition": {
+            "type": "object",
+            "properties": {
+              "category": {
+                "type": "string",
+                "enum": [
+                  "NEW",
+                  "SECONDHAND",
+                  "REFURBISHED"
+                ],
+                "description": "NEW, SECONDHAND or REFURBISHED."
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "AS_NEW",
+                  "GOOD",
+                  "REASONABLE",
+                  "MODERATE"
+                ],
+                "description": "Required for SECONDHAND."
+              },
+              "grade": {
+                "type": "string",
+                "enum": [
+                  "A",
+                  "B",
+                  "C"
+                ],
+                "description": "Required for REFURBISHED."
+              },
+              "comment": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": "Description of the condition (not for NEW)."
+              }
+            },
+            "required": [
+              "category"
+            ],
+            "description": "Condition, e.g. {\"category\": \"NEW\"} or {\"category\": \"SECONDHAND\", \"state\": \"GOOD\", \"comment\": \"Box opened\"}."
+          },
+          "pricing": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "properties": {
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 24,
+                  "description": "From this quantity on (1 for the base price)."
+                },
+                "unitPrice": {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 9999,
+                  "description": "Price per unit in EUR, including VAT."
+                }
+              },
+              "required": [
+                "quantity",
+                "unitPrice"
+              ]
+            },
+            "description": "Bundle prices: [{\"quantity\": 1, \"unitPrice\": 19.99}], optionally lower prices from higher quantities (at most 4 entries)."
+          },
+          "stock_amount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999,
+            "description": "Stock you have, 0 to 999."
+          },
+          "stock_managed_by_retailer": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): bol uses your stock amount as given; false: bol corrects it for open orders."
+          },
+          "fulfilment": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "FBR",
+                  "FBB"
+                ],
+                "description": "FBR (you ship) or FBB (bol ships from its warehouse)."
+              },
+              "schedule": {
+                "type": "string",
+                "enum": [
+                  "BOL_DELIVERY_PROMISE",
+                  "MY_DELIVERY_PROMISE",
+                  "SHIPPING_VIA_BOL"
+                ],
+                "description": "Delivery promise type for FBR offers."
+              },
+              "profileId": {
+                "type": "string",
+                "description": "Delivery promise profile id."
+              },
+              "deliveryPromise": {
+                "type": "object",
+                "description": "{\"minimumDaysToCustomer\": 1, \"maximumDaysToCustomer\": 2, \"ultimateOrderTime\": \"18:00\"} with MY_DELIVERY_PROMISE."
+              }
+            },
+            "required": [
+              "method"
+            ],
+            "description": "Fulfilment, e.g. {\"method\": \"FBR\", \"schedule\": \"BOL_DELIVERY_PROMISE\"}."
+          },
+          "country_availabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "countryCode": {
+                  "type": "string",
+                  "enum": [
+                    "NL",
+                    "BE"
+                  ],
+                  "description": "NL or BE."
+                }
+              },
+              "required": [
+                "countryCode"
+              ]
+            },
+            "description": "Countries to sell in: [{\"countryCode\": \"NL\"}, {\"countryCode\": \"BE\"}]. Default both."
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Your own reference, e.g. your SKU."
+          },
+          "on_hold_by_retailer": {
+            "type": "boolean",
+            "description": "true creates the offer on hold (not for sale)."
+          },
+          "unknown_product_title": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Title to use when bol does not know the EAN yet."
+          },
+          "economic_operator_id": {
+            "type": "string",
+            "description": "Economic operator (GPSR) id."
+          }
+        },
+        "required": [
+          "ean",
+          "condition",
+          "pricing",
+          "fulfilment",
+          "stock_amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/retailer/offers",
+        "bodyMapping": {
+          "ean": "$ean",
+          "condition": "$condition",
+          "pricing": {
+            "bundlePrices": "$pricing"
+          },
+          "stock": {
+            "amount": "$stock_amount",
+            "managedByRetailer": "$stock_managed_by_retailer"
+          },
+          "fulfilment": "$fulfilment",
+          "countryAvailabilities": "$country_availabilities",
+          "reference": "$reference",
+          "onHoldByRetailer": "$on_hold_by_retailer",
+          "unknownProductTitle": "$unknown_product_title",
+          "economicOperatorId": "$economic_operator_id"
+        },
+        "headers": {
+          "Accept": "application/vnd.retailer.v11+json",
+          "Content-Type": "application/vnd.retailer.v11+json"
+        }
+      }
+    },
+    {
+      "name": "bol_com_update_offer",
+      "description": "Update an offer (Offers API v11, synchronous): price, stock, fulfilment, countries, reference or on-hold flag. Only the fields given change; a given array (bundle prices, countries) replaces the old one. Answers 204; 409 means someone changed it at the same time, read it again and retry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Offer id."
+          },
+          "pricing": {
+            "type": "object",
+            "properties": {
+              "bundlePrices": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 24,
+                      "description": "From this quantity on (1 for the base price)."
+                    },
+                    "unitPrice": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 9999,
+                      "description": "Price per unit in EUR, including VAT."
+                    }
+                  },
+                  "required": [
+                    "quantity",
+                    "unitPrice"
+                  ]
+                },
+                "description": "Bundle prices: [{\"quantity\": 1, \"unitPrice\": 19.99}], optionally lower prices from higher quantities (at most 4 entries)."
+              }
+            },
+            "required": [
+              "bundlePrices"
+            ],
+            "description": "New prices: {\"bundlePrices\": [{\"quantity\": 1, \"unitPrice\": 17.99}]}."
+          },
+          "stock": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 999,
+                "description": "New stock amount, 0 to 999."
+              },
+              "managedByRetailer": {
+                "type": "boolean",
+                "description": "true: bol uses the amount as given."
+              }
+            },
+            "description": "New stock: {\"amount\": 12} or {\"amount\": 12, \"managedByRetailer\": true}."
+          },
+          "fulfilment": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "FBR",
+                  "FBB"
+                ],
+                "description": "FBR (you ship) or FBB (bol ships from its warehouse)."
+              },
+              "schedule": {
+                "type": "string",
+                "enum": [
+                  "BOL_DELIVERY_PROMISE",
+                  "MY_DELIVERY_PROMISE",
+                  "SHIPPING_VIA_BOL"
+                ],
+                "description": "Delivery promise type for FBR offers."
+              },
+              "profileId": {
+                "type": "string",
+                "description": "Delivery promise profile id."
+              },
+              "deliveryPromise": {
+                "type": "object",
+                "description": "{\"minimumDaysToCustomer\": 1, \"maximumDaysToCustomer\": 2, \"ultimateOrderTime\": \"18:00\"} with MY_DELIVERY_PROMISE."
+              }
+            },
+            "required": [
+              "method"
+            ],
+            "description": "Fulfilment, e.g. {\"method\": \"FBR\", \"schedule\": \"BOL_DELIVERY_PROMISE\"}."
+          },
+          "country_availabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "countryCode": {
+                  "type": "string",
+                  "enum": [
+                    "NL",
+                    "BE"
+                  ],
+                  "description": "NL or BE."
+                }
+              },
+              "required": [
+                "countryCode"
+              ]
+            },
+            "description": "Countries to sell in: [{\"countryCode\": \"NL\"}, {\"countryCode\": \"BE\"}]. Default both."
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Your own reference."
+          },
+          "on_hold_by_retailer": {
+            "type": "boolean",
+            "description": "true takes the offer off sale, false puts it back."
+          },
+          "unknown_product_title": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Title when bol does not know the EAN."
+          },
+          "economic_operator_id": {
+            "type": "string",
+            "description": "Economic operator (GPSR) id."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/retailer/offers/{offer_id}",
+        "bodyMapping": {
+          "pricing": "$pricing",
+          "stock": "$stock",
+          "fulfilment": "$fulfilment",
+          "countryAvailabilities": "$country_availabilities",
+          "reference": "$reference",
+          "onHoldByRetailer": "$on_hold_by_retailer",
+          "unknownProductTitle": "$unknown_product_title",
+          "economicOperatorId": "$economic_operator_id"
+        },
+        "headers": {
+          "Accept": "application/vnd.retailer.v11+json",
+          "Content-Type": "application/vnd.retailer.v11+json"
+        }
+      }
+    },
+    {
+      "name": "bol_com_delete_offer",
+      "description": "Delete an offer (Offers API v11). It disappears from bol at once and cannot be restored; to pause it, set on_hold_by_retailer with bol_com_update_offer instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Offer id."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/retailer/offers/{offer_id}",
+        "headers": {
+          "Accept": "application/vnd.retailer.v11+json",
+          "Content-Type": "application/vnd.retailer.v11+json"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

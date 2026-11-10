@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
-import { mcpServers } from '@/lib/api';
+import { mcpServers, planLimitOf, type PlanLimitError } from '@/lib/api';
+import { pausedByPlanSets, usePlanUsage } from '@/lib/use-plan-fit';
+import { PausedByPlanBadge, PlanLimitNotice } from '@/components/plan-swap-dialog';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,6 +31,10 @@ export default function McpServerListPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // A create refused at the plan's limit (Cloud): "Pause one or upgrade".
+  const [createLimit, setCreateLimit] = useState<PlanLimitError | null>(null);
+  const { usage, reload: reloadUsage } = usePlanUsage();
+  const pausedByPlan = pausedByPlanSets(usage).mcpServers;
 
   useEffect(() => {
     if (!token) return;
@@ -39,6 +45,7 @@ export default function McpServerListPage() {
     if (!token || !newName.trim()) return;
     setCreating(true);
     setCreateError('');
+    setCreateLimit(null);
     try {
       const server = await mcpServers.create(
         { name: newName.trim(), description: newDescription.trim() || undefined },
@@ -51,6 +58,7 @@ export default function McpServerListPage() {
       router.push(`/mcp-server/${server.id}`);
     } catch (err: any) {
       // Used to be swallowed: a failed create left the button doing nothing.
+      setCreateLimit(planLimitOf(err));
       setCreateError(err?.message || t('createError'));
     } finally {
       setCreating(false);
@@ -110,7 +118,15 @@ export default function McpServerListPage() {
                   className="w-full rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--brand)]"
                 />
               </div>
-              {createError && isTrialLimitMessage(createError) ? (
+              {createLimit ? (
+                <PlanLimitNotice
+                  limit={createLimit}
+                  onFreed={() => {
+                    mcpServers.list(token!).then(setServers).catch(() => {});
+                    reloadUsage();
+                  }}
+                />
+              ) : createError && isTrialLimitMessage(createError) ? (
                 <TrialLimitNotice message={createError} />
               ) : createError ? (
                 <div className="rounded-md border border-[var(--destructive-border)] bg-[var(--destructive-bg)] p-2.5 text-sm text-[var(--destructive-text)]">
@@ -212,13 +228,17 @@ export default function McpServerListPage() {
                         </div>
                       </div>
                     </div>
-                    <StatusPill
-                      tone={active ? 'success' : 'danger'}
-                      dot={active ? 'var(--ok)' : 'var(--danger)'}
-                      className="flex-shrink-0"
-                    >
-                      {active ? t('active') : t('inactive')}
-                    </StatusPill>
+                    {!active && pausedByPlan.has(s.id) ? (
+                      <PausedByPlanBadge className="flex-shrink-0" />
+                    ) : (
+                      <StatusPill
+                        tone={active ? 'success' : 'danger'}
+                        dot={active ? 'var(--ok)' : 'var(--danger)'}
+                        className="flex-shrink-0"
+                      >
+                        {active ? t('active') : t('inactive')}
+                      </StatusPill>
+                    )}
                   </div>
 
                   {s.description && (

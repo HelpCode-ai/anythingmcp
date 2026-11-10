@@ -5,7 +5,9 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
-import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents, server as serverApi } from '@/lib/api';
+import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents, server as serverApi, planLimitOf } from '@/lib/api';
+import { atPlanCap, pausedByPlanSets, usePlanUsage } from '@/lib/use-plan-fit';
+import { PausedByPlanBadge, PlanSwapDialog } from '@/components/plan-swap-dialog';
 import { AppShell } from '@/components/app-shell';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -33,6 +35,9 @@ export default function McpServerDetailPage() {
   const isCloud = deploymentMode === 'cloud';
   const router = useRouter();
   const t = useTranslations('mcpServer');
+  // Cloud: paused by the last automatic downgrade, and the swap at the cap.
+  const { usage: planUsage, reload: reloadPlanUsage } = usePlanUsage();
+  const [swapMax, setSwapMax] = useState<number | null | undefined>(undefined);
 
   const [server, setServer] = useState<any>(null);
   // Bumped a moment after the first request arrives, so the card-trial offer
@@ -144,10 +149,20 @@ export default function McpServerDetailPage() {
 
   const handleToggleActive = async () => {
     if (!token || !id || !server) return;
+    const activating = !server.isActive;
+    // Turning one on at the plan's cap: pause another first (swap dialog).
+    if (activating && atPlanCap(planUsage, 'mcpServers')) {
+      setSwapMax(planUsage?.mcpServers.max ?? null);
+      return;
+    }
     try {
-      const updated = await mcpServers.update(id, { isActive: !server.isActive }, token);
+      const updated = await mcpServers.update(id, { isActive: activating }, token);
       setServer((prev: any) => ({ ...prev, ...updated }));
-    } catch {}
+      reloadPlanUsage();
+    } catch (err) {
+      const limit = planLimitOf(err);
+      if (limit?.axis === 'mcpServers') setSwapMax(limit.max || null);
+    }
   };
 
   const saveAssignments = (next: Set<string>) => {
@@ -733,6 +748,22 @@ Auth: OAuth`;
         </div>
       }
     >
+      {swapMax !== undefined && (
+        <PlanSwapDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setSwapMax(undefined);
+          }}
+          axis="mcpServers"
+          target={{ id: server.id, name: server.name }}
+          max={swapMax}
+          onDone={() => {
+            setServer((prev: any) => ({ ...prev, isActive: true }));
+            reloadPlanUsage();
+          }}
+        />
+      )}
+
       {/* Server identity header */}
       <div className="mb-[18px] flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-[13px]">
@@ -745,9 +776,13 @@ Auth: OAuth`;
           <div>
             <div className="flex items-center gap-[9px]">
               <span className="text-[18px] font-semibold tracking-[-0.02em]">{server.name}</span>
-              <StatusPill tone={server.isActive ? 'success' : 'neutral'} dot={server.isActive ? 'var(--ok)' : 'var(--text-3)'}>
-                {server.isActive ? t('active') : t('inactive')}
-              </StatusPill>
+              {!server.isActive && pausedByPlanSets(planUsage).mcpServers.has(server.id) ? (
+                <PausedByPlanBadge />
+              ) : (
+                <StatusPill tone={server.isActive ? 'success' : 'neutral'} dot={server.isActive ? 'var(--ok)' : 'var(--text-3)'}>
+                  {server.isActive ? t('active') : t('inactive')}
+                </StatusPill>
+              )}
             </div>
             <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">{endpointUrl}</div>
           </div>

@@ -483,7 +483,11 @@
       "title": "Prestazioni degli strumenti",
       "description": "Chiamate, errori e latenza per strumento, connettore e server MCP. Questa tabella ha un proprio intervallo di tempo.",
       "range": "Periodo delle prestazioni degli strumenti",
-      "ranges": { "24": "Ultime 24 ore", "168": "Ultimi 7 giorni", "720": "Ultimi 30 giorni" },
+      "ranges": {
+        "24": "Ultime 24 ore",
+        "168": "Ultimi 7 giorni",
+        "720": "Ultimi 30 giorni"
+      },
       "connector": "Filtra le prestazioni per connettore",
       "server": "Filtra le prestazioni per server MCP",
       "allConnectors": "Tutti i connettori",
@@ -1587,6 +1591,27 @@
       "switch": "Cambia"
     }
   },
+  "webhook": {
+    "title": "Webhook in entrata",
+    "body": "Ricevi eventi dal provider (Stripe) e rileggili dall'URL del connettore.",
+    "enable": "Attivato",
+    "urlLabel": "URL di consegna",
+    "copy": "Copia",
+    "copied": "Copiato",
+    "copyFailed": "Impossibile copiare",
+    "secretLabel": "Secret di firma",
+    "secretPlaceholder": "Incolla il secret di firma del provider",
+    "secretSaved": "Secret salvato",
+    "secretError": "Impossibile salvare il secret.",
+    "save": "Salva",
+    "saving": "Salvataggio…",
+    "toggleError": "Impossibile modificare questa impostazione.",
+    "eventsLabel": "Ultime consegne",
+    "refresh": "Aggiorna",
+    "loading": "Caricamento…",
+    "noEvents": "Nessuna consegna ancora.",
+    "unknownType": "Evento sconosciuto"
+  },
   "connectorTools": {
     "title": "Strumenti MCP ({count})",
     "cancelImport": "Annulla importazione",
@@ -2444,6 +2469,25 @@
       "keepPlan": "Mantieni il mio piano",
       "manage": "Gestisci abbonamento e fatturazione",
       "cancel": "Annulla l'abbonamento"
+    },
+    "invoiceEmail": {
+      "title": "Fatture via email",
+      "body": "Ricevi ogni fattura in PDF via email appena viene pagata. Tutte le fatture restano comunque nel portale di fatturazione.",
+      "recipientLabel": "Invia le fatture a",
+      "billingContact": "Contatto di fatturazione",
+      "otherAddress": "Un altro indirizzo",
+      "otherAddressHint": "Per esempio la tua contabilità. Quando cambi indirizzo, quello precedente riceve un breve avviso.",
+      "addressPlaceholder": "contabilita@azienda.it",
+      "saveRecipient": "Salva indirizzo",
+      "saving": "Salvataggio…",
+      "savedOn": "Dal prossimo pagamento le fatture arriveranno via email.",
+      "savedOff": "Le fatture non vengono più inviate via email.",
+      "savedRecipient": "Indirizzo salvato.",
+      "invalidAddress": "Inserisci un indirizzo email valido.",
+      "saveError": "Salvataggio non riuscito. Riprova.",
+      "loadError": "Non è stato possibile caricare le impostazioni delle fatture via email. Ricarica la pagina per riprovare.",
+      "lastSent": "Ultima fattura inviata: {number} il {date} a {to}",
+      "allInvoices": "Tutte le fatture: in alto, Gestisci abbonamento e fatturazione."
     },
     "features": {
       "title": "Funzionalità",
@@ -3605,5 +3649,82 @@
     "directory": "Presente nella Claude Directory",
     "directoryChatgpt": "Presente nella directory dei plugin di ChatGPT",
     "directoryBoth": "Presente nelle directory di Claude e ChatGPT"
+  },
+  "planFit": {
+    "title": "Cosa cambia con {plan}",
+    "fits": "Tutto ciò che usi oggi rientra in {plan}.",
+    "chooseTeam": "Scegli Team",
+    "showDetails": "Vedi quali",
+    "hideDetails": "Nascondi",
+    "keep": "Restano attivi",
+    "pause": "In pausa",
+    "groups": {
+      "connectors": "Connettori",
+      "mcpServers": "Server MCP",
+      "fileSearch": "Cartelle File Search"
+    },
+    "unnamed": "Senza nome",
+    "lines": {
+      "connectors": "{paused} connettori su {total} in pausa (i meno usati). Scegli tu quali.",
+      "mcpServers": "{paused} server MCP su {total} in pausa (i meno usati).",
+      "mcpServersChoose": "{paused} server MCP su {total} in pausa (i meno usati). Scegli tu quali.",
+      "users": "{max, plural, one {# utente incluso} other {# utenti inclusi}}, ne hai {current}. Nessuno perde l’accesso.",
+      "fileSearch": "File Search: fino a {maxFolders, plural, one {# cartella} other {# cartelle}} e {maxFiles, number} file.",
+      "fileSearchStorage": "File Search: fino a {maxSize} di spazio.",
+      "codeTools": "{max} code tool salvati (ne hai {current}).",
+      "inline": "Niente codice inline (code_execute)."
+    }
+  },
+  "planSwap": {
+    "badge": "In pausa: limite del piano",
+    "activate": "Attiva",
+    "title": {
+      "connectors": "Il tuo piano include {max, plural, one {# connettore attivo} other {# connettori attivi}}",
+      "mcpServers": "Il tuo piano include {max, plural, one {# server MCP attivo} other {# server MCP attivi}}",
+      "fileSearchConnectors": "Il tuo piano include {max, plural, one {# cartella File Search} other {# cartelle File Search}}"
+    },
+    "body": "Mettine uno in pausa per attivare {name}.",
+    "bodyCreate": "Mettine uno in pausa per aggiungerne uno nuovo, oppure cambia piano.",
+    "listLabel": "Attivi ora, i più usati per primi",
+    "listLabelPlain": "Attivi ora",
+    "calls": "{count, plural, =0 {nessuna chiamata in 30 giorni} one {# chiamata in 30 giorni} other {# chiamate in 30 giorni}}",
+    "pauseAndActivate": "Metti in pausa e attiva",
+    "pauseOnly": "Metti in pausa",
+    "working": "Cambio in corso…",
+    "cancel": "Annulla",
+    "upgradeTeam": "Passa a Team",
+    "askEnterprise": "Chiedi di Enterprise",
+    "loading": "Caricamento…",
+    "empty": "Niente di attivo da mettere in pausa.",
+    "error": "Impossibile cambiare: {message}",
+    "pausedDone": "{name} è in pausa. Ora puoi aggiungere quello nuovo.",
+    "notice": {
+      "connectors": "Il tuo piano include {max, plural, one {# connettore attivo} other {# connettori attivi}}. Mettine uno in pausa o cambia piano.",
+      "mcpServers": "Il tuo piano include {max, plural, one {# server MCP attivo} other {# server MCP attivi}}. Mettine uno in pausa o cambia piano.",
+      "fileSearchConnectors": "Il tuo piano include {max, plural, one {# cartella File Search} other {# cartelle File Search}}. Mettine una in pausa o cambia piano.",
+      "users": "Il tuo piano include {max, plural, one {# utente} other {# utenti}}. Cambia piano per invitarne altri."
+    },
+    "pauseOne": "Mettine uno in pausa"
+  },
+  "planUsage": {
+    "title": "Utilizzo con {plan}",
+    "titleTrial": "Utilizzo nella prova (limiti di Team)",
+    "connectors": "Connettori",
+    "mcpServers": "Server MCP",
+    "users": "Utenti",
+    "fileSearchFolders": "Cartelle File Search",
+    "fileSearchFiles": "File in File Search",
+    "fileSearchStorage": "Spazio File Search",
+    "codeTools": "Code tool salvati",
+    "codeRuns": "Esecuzioni di codice questo mese",
+    "inlineCode": "Codice inline",
+    "included": "Incluso",
+    "notIncluded": "Non incluso",
+    "inUseNotIncluded": "In uso, non incluso",
+    "unlimited": "{current} · nessun limite",
+    "paused": "{count} in pausa per il piano",
+    "starterTitle": "Con Starter",
+    "seeStarter": "Cosa cambia con Starter",
+    "hideStarter": "Nascondi"
   }
 }

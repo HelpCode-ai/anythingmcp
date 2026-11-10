@@ -26,6 +26,7 @@ function buildController(overrides: {
   deployment?: any;
   mcpOAuthService?: any;
   serverUrl?: string;
+  webhookEvents?: any;
 } = {}) {
   const connectorsService = overrides.connectorsService ?? {
     create: jest.fn().mockResolvedValue({ id: 'c1', type: 'REST' }),
@@ -42,6 +43,7 @@ function buildController(overrides: {
   };
   const licenseGuard = overrides.licenseGuard ?? {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
+    checkCanEnableWebhook: jest.fn().mockResolvedValue(undefined),
   };
   const configService = {
     get: jest.fn((key: string) =>
@@ -54,6 +56,9 @@ function buildController(overrides: {
       .mockResolvedValue({ id: 's1', name: 'Default' }),
   };
   const deployment = overrides.deployment ?? { isCloud: () => true };
+  const webhookEvents = overrides.webhookEvents ?? {
+    recentEvents: jest.fn().mockResolvedValue([]),
+  };
 
   const controller = new ConnectorsController(
     connectorsService as any,
@@ -72,6 +77,7 @@ function buildController(overrides: {
     licenseGuard as any,
     mcpServers as any,
     deployment as any,
+    webhookEvents as any,
   );
 
   return {
@@ -82,6 +88,7 @@ function buildController(overrides: {
     licenseGuard,
     mcpServers,
     deployment,
+    webhookEvents,
   };
 }
 
@@ -1985,6 +1992,200 @@ describe('PUT :id — webhookEnabled toggled on update', () => {
 
     expect(prisma.mcpTool.create).not.toHaveBeenCalled();
     expect(prisma.mcpTool.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET :id/webhook/url and :id/webhook/events', () => {
+  const baseConnector = {
+    id: 'c1',
+    userId: 'u1',
+    organizationId: 'org1',
+    name: 'Stripe Billing',
+  };
+
+  describe('webhookUrl', () => {
+    it('builds the URL from SERVER_URL for the connector owner', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+        serverUrl: 'https://amcp.example.com',
+      });
+      const result = await controller.webhookUrl(req('MEMBER'), 'c1');
+      expect(result).toEqual({ url: 'https://amcp.example.com/api/webhooks/c1' });
+    });
+
+    it('falls back to localhost:4000 when SERVER_URL is unset, like oauthRedirectUri', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      const result = await controller.webhookUrl(req('ADMIN'), 'c1');
+      expect(result).toEqual({ url: 'http://localhost:4000/api/webhooks/c1' });
+    });
+
+    it('rejects a viewer, like any other connector setting', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      await expect(controller.webhookUrl(req('VIEWER'), 'c1')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a non-owner, non-admin member', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      const otherMember = { user: { sub: 'u2', organizationId: 'org1', role: 'MEMBER' } };
+      await expect(controller.webhookUrl(otherMember, 'c1')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a caller from a different organization', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      const otherOrg = { user: { sub: 'u1', organizationId: 'org2', role: 'ADMIN' } };
+      await expect(controller.webhookUrl(otherOrg, 'c1')).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('webhookEventsList', () => {
+    it('reads through to the service, scoped by connector and organization', async () => {
+      const receivedAt = new Date('2026-01-01T00:00:00Z');
+      const recentEvents = jest.fn().mockResolvedValue([
+        {
+          id: 'evt_1',
+          provider: 'stripe',
+          eventType: 'payment_intent.succeeded',
+          externalId: 'evt_ext_1',
+          payload: { customer: { name: 'Jane Doe', email: 'jane@example.com' } },
+          receivedAt,
+        },
+      ]);
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+        webhookEvents: { recentEvents },
+      });
+      const result = await controller.webhookEventsList(req('ADMIN'), 'c1', '10', '2026-01-01T00:00:00Z');
+      expect(recentEvents).toHaveBeenCalledWith('c1', 'org1', { limit: 10, since: '2026-01-01T00:00:00Z' });
+      expect(result).toEqual({
+        events: [{ id: 'evt_1', provider: 'stripe', eventType: 'payment_intent.succeeded', externalId: 'evt_ext_1', receivedAt }],
+      });
+    });
+
+    it('never returns payload, unlike the MCP tool reading the same table', async () => {
+      const recentEvents = jest.fn().mockResolvedValue([
+        {
+          id: 'evt_1',
+          provider: 'stripe',
+          eventType: 'payment_intent.succeeded',
+          externalId: 'evt_ext_1',
+          payload: { customer: { name: 'Jane Doe', email: 'jane@example.com' } },
+          receivedAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ]);
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+        webhookEvents: { recentEvents },
+      });
+      const result = await controller.webhookEventsList(req('ADMIN'), 'c1');
+      expect(result.events[0]).not.toHaveProperty('payload');
+      expect(JSON.stringify(result)).not.toContain('Jane Doe');
+    });
+
+    it('passes limit/since through as undefined when not given, leaving the service default', async () => {
+      const recentEvents = jest.fn().mockResolvedValue([]);
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+        webhookEvents: { recentEvents },
+      });
+      await controller.webhookEventsList(req('ADMIN'), 'c1');
+      expect(recentEvents).toHaveBeenCalledWith('c1', 'org1', { limit: undefined, since: undefined });
+    });
+
+    it('rejects a viewer', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      await expect(controller.webhookEventsList(req('VIEWER'), 'c1')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a non-owner, non-admin member', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      const otherMember = { user: { sub: 'u2', organizationId: 'org1', role: 'MEMBER' } };
+      await expect(controller.webhookEventsList(otherMember, 'c1')).rejects.toThrow(ForbiddenException);
+    });
+  });
+});
+
+describe('PUT :id and POST — the webhook plan cap (#1393)', () => {
+  const baseConnector = {
+    id: 'c1',
+    type: 'REST',
+    userId: 'u1',
+    organizationId: 'org1',
+    name: 'Stripe Billing',
+    baseUrl: 'https://api.example.test',
+    authType: 'NONE',
+    config: null,
+    envVars: null,
+    headers: null,
+    webhookEnabled: false,
+    isActive: true,
+    tools: [] as Array<{ id: string; endpointMapping: unknown }>,
+  };
+  const prisma = () => ({
+    connector: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+    mcpTool: { create: jest.fn(), deleteMany: jest.fn() },
+  });
+
+  it('checks the cap when webhooks go from off to on, before anything is saved', async () => {
+    const update = jest.fn().mockResolvedValue({ ...baseConnector, webhookEnabled: true });
+    const { controller, licenseGuard } = buildController({
+      connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector), update },
+      prisma: prisma(),
+    });
+    await controller.update(req('ADMIN'), 'c1', { webhookEnabled: true } as any);
+    expect(licenseGuard.checkCanEnableWebhook).toHaveBeenCalledWith('org1');
+    expect(licenseGuard.checkCanEnableWebhook.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]);
+  });
+
+  it('saves nothing when the cap refuses', async () => {
+    const update = jest.fn();
+    const refusal = new Error('Your plan includes inbound webhooks on 1 connector.');
+    const { controller } = buildController({
+      connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector), update },
+      prisma: prisma(),
+      licenseGuard: {
+        checkCanCreateConnector: jest.fn(),
+        checkCanEnableWebhook: jest.fn().mockRejectedValue(refusal),
+      },
+    });
+    await expect(controller.update(req('ADMIN'), 'c1', { webhookEnabled: true } as any)).rejects.toBe(refusal);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('never checks when webhooks stay on or are turned off', async () => {
+    const on = { ...baseConnector, webhookEnabled: true };
+    for (const dto of [{ webhookEnabled: true }, { webhookEnabled: false }, { name: 'Renamed' }]) {
+      const { controller, licenseGuard } = buildController({
+        connectorsService: {
+          findById: jest.fn().mockResolvedValue(on),
+          update: jest.fn().mockResolvedValue({ ...on, ...dto }),
+        },
+        prisma: prisma(),
+      });
+      await controller.update(req('ADMIN'), 'c1', dto as any);
+      expect(licenseGuard.checkCanEnableWebhook).not.toHaveBeenCalled();
+    }
+  });
+
+  it('checks the cap when a connector is created with webhooks on, and only then', async () => {
+    const withWebhook = buildController();
+    await withWebhook.controller.create(req('ADMIN'), { name: 'Stripe', type: 'REST', baseUrl: 'https://api.example.test', webhookEnabled: true } as any);
+    expect(withWebhook.licenseGuard.checkCanEnableWebhook).toHaveBeenCalledWith('org1');
+
+    const without = buildController();
+    await without.controller.create(req('ADMIN'), { name: 'Plain', type: 'REST', baseUrl: 'https://api.example.test' } as any);
+    expect(without.licenseGuard.checkCanEnableWebhook).not.toHaveBeenCalled();
   });
 });
 

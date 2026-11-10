@@ -19,6 +19,10 @@ const TAG = `mgmtcli-test-${Date.now()}`;
 const orgId = `${TAG}-org`;
 const adminId = `${TAG}-admin`;
 const memberId = `${TAG}-member`;
+// Active in another workspace (users.organization_id / users.role point there),
+// VIEWER in the key's workspace.
+const otherOrgId = `${TAG}-other-org`;
+const switcherId = `${TAG}-switcher`;
 
 const keys = {
   mcp: `mcp_${'a'.repeat(40)}${Date.now()}`,
@@ -29,6 +33,7 @@ const keys = {
   hashedOnly: `mcp_${'f'.repeat(40)}${Date.now()}`,
   expired: `mcp_${'1'.repeat(40)}${Date.now()}`,
   support: `mcp_${'2'.repeat(40)}${Date.now()}`,
+  switcher: `mcp_${'3'.repeat(40)}${Date.now()}`,
 };
 
 function contextFor(key: string | undefined, method: string): { ctx: ExecutionContext; req: Record<string, unknown> } {
@@ -88,13 +93,22 @@ beforeAll(async () => {
     });
   await hashedRow(keys.expired, { expiresAt: new Date(Date.now() - 60_000) });
   await hashedRow(keys.support, { expiresAt: new Date(Date.now() + 60 * 60_000), isSupport: true });
+
+  await prisma.organization.create({ data: { id: otherOrgId, name: `${TAG}-other` } });
+  await prisma.user.create({
+    data: { id: switcherId, email: `${TAG}-switcher@test.local`, role: 'ADMIN', organizationId: otherOrgId },
+  });
+  await prisma.organizationMember.create({ data: { userId: switcherId, organizationId: otherOrgId, role: 'ADMIN' } });
+  await prisma.organizationMember.create({ data: { userId: switcherId, organizationId: orgId, role: 'VIEWER' } });
+  await mk(keys.switcher, switcherId, 'MANAGEMENT_ADMIN');
 });
 
 afterAll(async () => {
   await prisma.mcpApiKey.deleteMany({ where: { organizationId: orgId } });
   await prisma.organizationMember.deleteMany({ where: { organizationId: orgId } });
-  await prisma.user.deleteMany({ where: { organizationId: orgId } });
-  await prisma.organization.deleteMany({ where: { id: orgId } });
+  await prisma.organizationMember.deleteMany({ where: { organizationId: otherOrgId } });
+  await prisma.user.deleteMany({ where: { organizationId: { in: [orgId, otherOrgId] } } });
+  await prisma.organization.deleteMany({ where: { id: { in: [orgId, otherOrgId] } } });
   await prisma.$disconnect();
 });
 
@@ -131,6 +145,15 @@ describe('JwtOrManagementKeyGuard (management-key path)', () => {
     const { ctx, req } = contextFor(keys.memberAdminScope, 'POST');
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect((req.user as { role: string }).role).toBe('VIEWER');
+  });
+
+  // users.role is the role in the workspace the owner last switched to. The
+  // key acts in ITS workspace, so it must carry the role there: an ADMIN of
+  // another workspace who is a VIEWER here stays a VIEWER here.
+  it("carries the owner's role in the key's workspace, not in the active one", async () => {
+    const { ctx, req } = contextFor(keys.switcher, 'POST');
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(req.user).toMatchObject({ sub: switcherId, role: 'VIEWER', organizationId: orgId });
   });
 
   it('accepts the key via the X-API-Key header too', async () => {

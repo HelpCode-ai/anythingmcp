@@ -27,6 +27,7 @@ import { findSecretLiterals } from '../common/secret-literals.util';
 import { searchCatalog } from './catalog-search';
 import { fileSearchSetupPath } from './file-search-setup';
 import { CHAT_SETUP_SOURCE } from '../license/license-checkout';
+import { inspectOdooAddress } from './odoo-database-hint';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
 const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
@@ -37,6 +38,16 @@ export const SETUP_LINK_TTL_MS = 30 * 60 * 1000;
 export const SETUP_LINK_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 /** Installs through a chat, per user and hour. A model does not need more. */
 const INSTALLS_PER_HOUR = 10;
+
+/** The Odoo connectors: JSON-2 needs Odoo 19 or later, JSON-RPC covers 14-18. */
+const JSON2_SLUG = 'odoo';
+const JSONRPC_SLUG = 'odoo-jsonrpc';
+const ODOO_SLUGS = new Set([JSON2_SLUG, JSONRPC_SLUG]);
+
+/** setup_get_status checks a ready connector never used if it was saved this recently. */
+const READY_CHECK_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** At most this many setup checks per setup_get_status call (each is a call to the provider). */
+const READY_CHECKS_PER_STATUS = 3;
 
 /**
  * Where providers send the browser back after sign-in: the URL a user must
@@ -267,7 +278,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     args: { adapter?: string; settings?: Record<string, unknown> },
     opts: SetupCallOptions = {},
   ): Promise<SetupCallResult> {
-    const slug = String(args.adapter ?? '').trim();
+    let slug = String(args.adapter ?? '').trim();
     let definition: ReturnType<AdaptersService['describe']>;
     try {
       if (!slug || isExcludedAdapterSlug(slug, ctx.profile ?? 'chatgpt')) throw new Error('unknown');
@@ -334,6 +345,23 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       if (text) settings[name] = text;
     }
 
+    // Odoo: the address is asked, without a key, before anything is
+    // installed. 315 Odoo connectors came from a chat in two weeks of Oct-Nov
+    // 2026, often with the subdomain as the database name and the JSON-2
+    // connector on an Odoo below 19; both were only found on the setup page.
+    let odooNotes: string[] = [];
+    if (ODOO_SLUGS.has(slug) && settings.ODOO_URL) {
+      const checked = await this.checkOdooAddress(ctx, slug, settings);
+      if ('error' in checked) return { isError: true, body: checked.error };
+      if (checked.slug !== slug) {
+        slug = checked.slug;
+        definition = this.adapters.describe(slug);
+        // Labels for what the user still enters (the JSON-RPC one adds the user id).
+        for (const d of describeAdapterEnvVars(definition)) descriptors.set(d.name, d);
+      }
+      odooNotes = checked.notes;
+    }
+
     if (!this.takeInstallSlot(ctx.userId)) {
       return { isError: true, body: { error: `At most ${INSTALLS_PER_HOUR} connectors an hour can be installed from a chat. Try again later or use the dashboard.` } };
     }
@@ -377,6 +405,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           installed: definition.name,
           status: 'ready',
           tools: definition.tools.length,
+          ...(odooNotes.length ? { checkedTheAddress: odooNotes.join(' ') } : {}),
           ...(imported.probe ? { firstCall: imported.probe.ok ? 'worked' : imported.probe.message } : {}),
           next: 'Its tools are available now: find them with anythingmcp_search_tools.',
         },
@@ -387,6 +416,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       body: {
         installed: definition.name,
         status: state.status,
+        ...(odooNotes.length ? { checkedTheAddress: odooNotes.join(' ') } : {}),
         ...(needsBrowserAuthorization(definition) && !registersItsOwnClient(definition)
           ? providerApp(definition)
           : {}),
@@ -448,6 +478,64 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     };
   }
 
+  /**
+   * What the Odoo address says about itself, applied to a chat install:
+   * - no database at the address (Odoo Online's typo page): refused, so the
+   *   assistant asks for the right address before anything is created;
+   * - below 19 on the JSON-2 connector: the JSON-RPC connector instead;
+   * - one database: its name, whatever the assistant passed;
+   * - several, and the one passed is not among them: none is passed, and the
+   *   note names them so the assistant can ask.
+   * Nothing changes when the address says nothing.
+   */
+  private async checkOdooAddress(
+    ctx: SetupContext,
+    slug: string,
+    settings: Record<string, string>,
+  ): Promise<{ slug: string; notes: string[] } | { error: Record<string, unknown> }> {
+    const facts = await inspectOdooAddress(settings.ODOO_URL);
+    if (!facts) return { slug, notes: [] };
+    if (facts.noDatabase) {
+      return {
+        error: {
+          error: `There is no Odoo database at ${settings.ODOO_URL}: Odoo answered with its "database not found" page.`,
+          hint: 'Ask the user for the address they open Odoo at (copy it from the browser after signing in, up to the host, e.g. https://mycompany.odoo.com), then install again.',
+        },
+      };
+    }
+    const notes: string[] = [];
+    let target = slug;
+    if (
+      slug === JSON2_SLUG &&
+      facts.major !== undefined &&
+      facts.major < 19 &&
+      !isExcludedAdapterSlug(JSONRPC_SLUG, ctx.profile ?? 'chatgpt')
+    ) {
+      target = JSONRPC_SLUG;
+      notes.push(
+        `This Odoo is version ${facts.version}, older than 19, which has no JSON-2 API: the Odoo 14-18 (JSON-RPC) connector was installed instead.`,
+      );
+    }
+    const databases = facts.databases ?? [];
+    if (databases.length === 1 && settings.ODOO_DB !== databases[0]) {
+      notes.push(
+        settings.ODOO_DB
+          ? `The database is called "${databases[0]}", not "${settings.ODOO_DB}": that name was used.`
+          : `The database is called "${databases[0]}": that name was used.`,
+      );
+      settings.ODOO_DB = databases[0];
+    } else if (databases.length > 1 && settings.ODOO_DB && !databases.includes(settings.ODOO_DB)) {
+      notes.push(
+        `This Odoo has no database "${settings.ODOO_DB}"; it serves ${databases
+          .slice(0, 5)
+          .map((d) => `"${d}"`)
+          .join(', ')}. The user picks the right one on the linked page.`,
+      );
+      delete settings.ODOO_DB;
+    }
+    return { slug: target, notes };
+  }
+
   // ── Status ────────────────────────────────────────────────────────────
 
   async status(ctx: SetupContext): Promise<SetupCallResult> {
@@ -465,16 +553,29 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         envVars: true,
         config: true,
         createdAt: true,
+        updatedAt: true,
         tools: { where: { isEnabled: true }, select: { endpointMapping: true } },
       },
     });
+    // "ready" only means every value is filled in: a connector saved with a
+    // wrong value ("Save anyway") is ready too. So each ready one also says
+    // how its last call went, and one finished in the last day but never
+    // used gets the setup check, with its stored values.
+    const states = rows.map((r) => ({ row: r, state: this.stateOf(r) }));
+    const checks = await this.readyChecks(
+      ctx,
+      states.filter(({ state }) => state.status === 'ready').map(({ row }) => row),
+    );
     const out = [];
-    for (const r of rows) {
-      const state = this.stateOf(r);
+    for (const { row: r, state } of states) {
+      const check = checks.get(r.id);
       out.push({
         name: r.name,
         status: state.status,
         ...(state.status !== 'ready' ? { finishSetupUrl: await this.createLink(ctx, r.id) } : {}),
+        ...(check?.lastCall ? { lastCall: check.lastCall } : {}),
+        ...(check?.check ? { check: check.check } : {}),
+        ...(check?.check?.ok === false ? { fixUrl: await this.createLink(ctx, r.id) } : {}),
       });
     }
     const trial = await this.trialAnswer(ctx);
@@ -482,9 +583,63 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       body: {
         connectors: out,
         ...(out.length === 0 ? { hint: 'No connectors yet: use setup_find_connectors.' } : {}),
+        ...([...checks.values()].some((c) => c.check?.ok === false)
+          ? { checkHint: 'check.ok false: the values saved on that connector do not work. Tell the user what check.message says and give them its fixUrl.' }
+          : {}),
         ...(trial ? { trial } : {}),
       },
     };
+  }
+
+  /**
+   * For ready connectors: the last call (worked or not, with the error), and
+   * for at most three catalog connectors finished in the last 24 hours with no
+   * call yet, the setup check run on their stored values.
+   */
+  private async readyChecks(
+    ctx: SetupContext,
+    ready: Array<{ id: string; config: unknown; updatedAt?: Date | null }>,
+  ): Promise<Map<string, { lastCall?: Record<string, unknown>; check?: { ok: boolean; message?: string } }>> {
+    const out = new Map<string, { lastCall?: Record<string, unknown>; check?: { ok: boolean; message?: string } }>();
+    const lastCalls = await Promise.all(
+      ready.map((r) =>
+        this.prisma.toolInvocation
+          .findFirst({
+            where: { connectorId: r.id, organizationId: ctx.organizationId },
+            orderBy: { createdAt: 'desc' },
+            select: { status: true, error: true, createdAt: true },
+          })
+          .catch(() => null),
+      ),
+    );
+    const unused: typeof ready = [];
+    ready.forEach((r, i) => {
+      const call = lastCalls[i];
+      if (call) {
+        out.set(r.id, {
+          lastCall:
+            call.status === 'SUCCESS'
+              ? { ok: true, at: call.createdAt.toISOString() }
+              : { ok: false, at: call.createdAt.toISOString(), error: String(call.error ?? call.status).slice(0, 240) },
+        });
+      } else if (r.updatedAt && Date.now() - r.updatedAt.getTime() < READY_CHECK_WINDOW_MS) {
+        unused.push(r);
+      }
+    });
+    const toCheck = unused
+      .filter((r) => typeof (r.config as { adapterSlug?: unknown } | null)?.adapterSlug === 'string')
+      .slice(0, READY_CHECKS_PER_STATUS);
+    await Promise.all(
+      toCheck.map(async (r) => {
+        const slug = (r.config as { adapterSlug: string }).adapterSlug;
+        const result = await Promise.resolve()
+          .then(() => this.adapters.verifyCredentials(slug, ctx.organizationId, {}, r.id))
+          .catch(() => null);
+        if (!result || result.ok === null) return;
+        out.set(r.id, { check: result.ok ? { ok: true } : { ok: false, message: result.message } });
+      }),
+    );
+    return out;
   }
 
   /**
@@ -640,6 +795,11 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         .create({ data: { mcpServerId: s.id, connectorId } })
         .catch(() => undefined); // already there
     }
+  }
+
+  /** Where a connector stands: ready, needs_input (with the missing variables) or needs_authorization. */
+  connectorStatus(connectorId: string): Promise<{ status: string; missing: string[] }> {
+    return this.connectorState(connectorId) as Promise<{ status: string; missing: string[] }>;
   }
 
   private async connectorState(connectorId: string) {

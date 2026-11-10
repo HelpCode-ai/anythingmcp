@@ -10,8 +10,10 @@ import { useAuth } from '@/lib/auth-context';
 import {
   adapters,
   connectors,
+  planLimitOf,
   productEvents,
   type AdapterSetupInfo,
+  type PlanLimitError,
   type EnvVarDescriptor,
   type SetupGuideStep,
   type VerifyResult,
@@ -21,6 +23,7 @@ import { Card } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
+import { PlanLimitNotice } from '@/components/plan-swap-dialog';
 import { cn } from '@/lib/utils';
 import { fileSearchSetupPath } from '@/lib/file-search-catalog';
 import { copyText } from '@/lib/clipboard';
@@ -47,6 +50,8 @@ import { NetworkNote } from '@/components/connector-setup/network-note';
  *                   start a field with this value, e.g. the Odoo address and
  *                   database from the AnythingMCP module in Odoo. Addresses and
  *                   settings only: a credential is never read from a link.
+ *   source=<slug>   where the setup was opened from, kept on the setup events
+ *                   (odoo_module: the AnythingMCP module in Odoo's Settings)
  *   replaces=<id>   opened from "Switch to …" on another connector's setup
  *                   (an Odoo below 19 on the JSON-2 connector): once this one
  *                   is saved, that connector is deleted if it is still not
@@ -83,6 +88,11 @@ function SetupContent() {
   const replaces = params.get('replaces');
   const back = returnAssistant(params.get('from'));
   const backFromProvider = params.get('step') === 'done';
+  // Where the setup was opened from, for the setup events only (`source=odoo_module`:
+  // the AnythingMCP module in Odoo's Settings). A short slug, or nothing.
+  const sourceParam = params.get('source') ?? '';
+  const source = /^[a-z0-9_]{1,32}$/.test(sourceParam) ? sourceParam : undefined;
+  const fromSource = useMemo((): Record<string, string> => (source ? { source } : {}), [source]);
   // Values handed over in the link (prefill.<NAME>), applied once the fields are known.
   const handed = useMemo(
     () =>
@@ -101,8 +111,10 @@ function SetupContent() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [phase, setPhase] = useState<Phase>(backFromProvider ? 'working' : 'form');
   const [error, setError] = useState('');
+  // The install refused at the plan's limit (Cloud): "Pause one or upgrade".
+  const [planLimit, setPlanLimit] = useState<PlanLimitError | null>(null);
   const [verifyFailed, setVerifyFailed] = useState<VerifyResult | null>(null);
-  const [result, setResult] = useState<{ connectorId: string; sample?: string; verified: boolean } | null>(null);
+  const [result, setResult] = useState<{ connectorId: string; sample?: string; verified: boolean; note?: string } | null>(null);
   const [redirectUri, setRedirectUri] = useState<string | null>(null);
   /** Secrets the existing connector already holds: shown as set, may stay empty. */
   const [storedSecrets, setStoredSecrets] = useState<string[]>([]);
@@ -200,7 +212,7 @@ function SetupContent() {
         } catch {}
         if (!started.current && !seen) {
           started.current = true;
-          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind });
+          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind, ...fromSource });
         }
       })
       .catch((e: Error) => setLoadError(e.message || t('notAvailable')));
@@ -217,7 +229,7 @@ function SetupContent() {
         })
         .catch(() => {});
     }
-  }, [token, slug, existingId, progressKey, backFromProvider, t, handed, router, withConnector]);
+  }, [token, slug, existingId, progressKey, backFromProvider, t, handed, router, withConnector, fromSource]);
 
   useEffect(() => {
     if (!token || !isTikTokShop) return;
@@ -244,7 +256,7 @@ function SetupContent() {
           // does not check the shared secret), so only a call to the API tells.
           // A refusal sends the user back to the keys, not to "is ready".
           if (test && test.ok === false && test.kind === 'auth_failed') {
-            productEvents.track('setup_verify_failed', token, { adapterSlug: slug, kind: 'after_authorization' });
+            productEvents.track('setup_verify_failed', token, { adapterSlug: slug, kind: 'after_authorization', ...fromSource });
             setVerifyFailed({ ok: false, kind: 'auth_failed', message: test.message } as VerifyResult);
             setError('');
             setPhase('form');
@@ -252,7 +264,7 @@ function SetupContent() {
           }
           setResult({ connectorId: existingId, verified: test?.ok === true });
           setPhase('done');
-          productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser', verified: test?.ok === true });
+          productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'oauth_browser', verified: test?.ok === true, ...fromSource });
         } else {
           setError(t('authIncomplete'));
           setPhase('form');
@@ -262,7 +274,7 @@ function SetupContent() {
         setError(e.message);
         setPhase('form');
       });
-  }, [backFromProvider, existingId, token, slug, t]);
+  }, [backFromProvider, existingId, token, slug, t, fromSource]);
 
   // TikTok Shop's app variables are optional in the catalog (empty means the
   // server's app). Without a server app, or with the user's own app chosen,
@@ -399,9 +411,12 @@ function SetupContent() {
     }
   };
 
-  /** Create the connector, or store the values on the existing one. Returns its id. */
-  const save = async (): Promise<string> => {
-    const creds = credentials();
+  /**
+   * Create the connector, or store the values on the existing one. Returns its id.
+   * `fix`: values the check corrected (an Odoo database name), saved over what was typed.
+   */
+  const save = async (fix?: Record<string, string>): Promise<string> => {
+    const creds = { ...credentials(), ...(fix ?? {}) };
     if (connectorId) {
       await connectors.updateEnvVars(connectorId, creds, token!);
       return connectorId;
@@ -437,7 +452,7 @@ function SetupContent() {
     try {
       const id = await save();
       if (!existingId) router.replace(withConnector(id));
-      const check = await adapters.verify(slug, token, credentials(), id);
+      const check = await adapters.verify(slug, token, credentials(), id, source);
       if (check.ok === false && check.kind !== 'auth_failed') {
         if (check.missing?.length) {
           setFieldErrors(Object.fromEntries(check.missing.map((m) => [m, t('field.required')])));
@@ -465,14 +480,14 @@ function SetupContent() {
     lastProviderCheck.current = Date.now();
     setProviderCheck((c) => ({ ...c, checking: true, error: '' }));
     try {
-      const check = await adapters.verify(slug, token, {}, connectorId);
+      const check = await adapters.verify(slug, token, {}, connectorId, source);
       setProviderReady(check.ok !== false);
       // Not a refusal of the keys (a value missing, the provider down): say so.
       setProviderCheck({ checking: false, at: new Date(), error: check.ok === false && check.kind !== 'auth_failed' ? check.message : '' });
     } catch (e: any) {
       setProviderCheck((c) => ({ checking: false, at: c.at, error: e?.message || t('genericError') }));
     }
-  }, [token, connectorId, slug, t]);
+  }, [token, connectorId, slug, t, source]);
 
   // On the wait step: check when it opens and whenever the user comes back
   // to the tab (from Etsy's page, or the next day), at most once a minute.
@@ -495,6 +510,7 @@ function SetupContent() {
 
   const fail = (e: any) => {
     setPhase('form');
+    setPlanLimit(planLimitOf(e));
     setError(e?.message || t('genericError'));
   };
 
@@ -509,11 +525,15 @@ function SetupContent() {
       // shared secret) used to send the user to an error page at the
       // provider that they never came back from.
       const check =
-        info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), connectorId ?? undefined);
+        info.setupKind === 'none' ? null : await adapters.verify(slug, token, credentials(), connectorId ?? undefined, source);
+      // The check found the right value itself (an Odoo database name the
+      // address names): it goes into the field and is saved with the rest.
+      const fix = check && check.ok !== null ? check.corrected : undefined;
+      if (fix) setValues((v) => ({ ...v, ...fix }));
       // Keys refused at the end of a guide with a wait step (a connector
       // finished from the chat, a step skipped): keep them and wait there.
       if (check && check.ok === false && check.kind === 'auth_failed' && waitStepAt >= 0) {
-        const id = await save();
+        const id = await save(fix);
         if (!existingId) router.replace(withConnector(id));
         lastProviderCheck.current = Date.now();
         setProviderReady(false);
@@ -542,7 +562,7 @@ function SetupContent() {
           // the new values on it instead of installing a second one.
           try {
             await save();
-            productEvents.track('setup_saved_draft', token, { adapterSlug: slug, kind: 'app_pending' });
+            productEvents.track('setup_saved_draft', token, { adapterSlug: slug, kind: 'app_pending', ...fromSource });
           } catch {
             // Not saved (plan limit): the provider's answer is shown as before.
           }
@@ -554,7 +574,7 @@ function SetupContent() {
       // A Shopee shop is authorized right after the keys are saved, through
       // Shopee's own signed link.
       if (slug === 'shopee') {
-        const id = await save();
+        const id = await save(fix);
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.shopeeAuthorize(id, token, returnTo);
         if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
@@ -564,7 +584,7 @@ function SetupContent() {
       }
       // A TikTok shop likewise, through TikTok Shop's seller authorization link.
       if (slug === 'tiktok-shop') {
-        const id = await save();
+        const id = await save(fix);
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.tiktokShopAuthorize(id, token, returnTo);
         if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
@@ -573,7 +593,7 @@ function SetupContent() {
         return;
       }
       if (info.setupKind === 'oauth_browser') {
-        const id = await save();
+        const id = await save(fix);
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.oauthAuthorize(id, token, returnTo);
         if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
@@ -581,10 +601,21 @@ function SetupContent() {
         window.location.href = auth.authorizationUrl;
         return;
       }
-      const id = await save();
-      setResult({ connectorId: id, sample: check && check.ok ? check.sample : undefined, verified: check?.ok === true });
+      const id = await save(fix);
+      setResult({
+        connectorId: id,
+        sample: check && check.ok ? check.sample : undefined,
+        verified: check?.ok === true,
+        note: check && check.ok ? check.note : undefined,
+      });
       setPhase('done');
-      productEvents.track('setup_completed', token, { adapterSlug: slug, kind: info.setupKind, verified: check?.ok === true });
+      productEvents.track('setup_completed', token, {
+        adapterSlug: slug,
+        kind: info.setupKind,
+        verified: check?.ok === true,
+        ...(fix ? { corrected: Object.keys(fix).join(',') } : {}),
+        ...fromSource,
+      });
     } catch (e) {
       fail(e);
     }
@@ -597,7 +628,7 @@ function SetupContent() {
     setPhase('working');
     try {
       const id = await save();
-      productEvents.track(draft ? 'setup_saved_draft' : 'setup_saved_unverified', token, { adapterSlug: slug });
+      productEvents.track(draft ? 'setup_saved_draft' : 'setup_saved_unverified', token, { adapterSlug: slug, ...fromSource });
       router.push(`/connectors/${id}`);
     } catch (e) {
       fail(e);
@@ -623,6 +654,11 @@ function SetupContent() {
           <div className="mb-6">
             <GuideStepper steps={info.setupGuide.steps} current={info.setupGuide.steps.length + 1} />
           </div>
+        )}
+        {result.note && (
+          <p role="status" className="mb-4 rounded-[9px] bg-[var(--t-info-bg)] px-3 py-2 text-sm text-[var(--t-info-fg)]">
+            {result.note}
+          </p>
         )}
         <SetupSuccess
           name={info.name}
@@ -709,7 +745,9 @@ function SetupContent() {
         </div>
       )}
       {error && (
-        isTrialLimitMessage(error) ? (
+        planLimit && planLimit.message === error ? (
+          <PlanLimitNotice limit={planLimit} />
+        ) : isTrialLimitMessage(error) ? (
           <TrialLimitNotice message={error} />
         ) : (
           <p role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">{error}</p>

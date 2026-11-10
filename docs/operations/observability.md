@@ -220,6 +220,10 @@ Any connector may opt in (`webhookEnabled`, regardless of its type) to receive i
 
 Stored payloads are returned to the model exactly as received by the connector's `<prefix>_recent_events` tool — including whatever personal data the provider's event carries (a Stripe payload can include a customer's name, e-mail and address). They are kept for `WEBHOOK_EVENT_RETENTION_DAYS` (7 days by default) and a single call returns at most 50 events, regardless of the `limit` requested.
 
+The same data is available outside an AI client, trimmed for a dashboard rather than a model: `GET /api/connectors/:id/webhook/events` (`limit`, `since`) returns the same rows as metadata only — `payload` is left out, so none of that personal data reaches this endpoint — and `GET /api/connectors/:id/webhook/url` returns the delivery URL to paste into the provider, built from `SERVER_URL` the same way `GET /api/connectors/oauth/redirect-uri` builds the OAuth callback. Both are gated like any other connector setting — the connector owner or an admin.
+
+The connector page's "Inbound webhooks" card (`webhook-card.tsx`) is this feature's UI, shown for a Stripe connector or any connector that already has `webhookEnabled` on: the owner or an admin flips the switch there, pastes the provider's signing secret (write-only, never read back), copies the delivery URL, and sees the last ten deliveries (type, id, time — no payload). It calls the same endpoints above, so it carries no logic of its own about retention or the per-connector cap.
+
 | Env | Default | |
 |---|---|---|
 | `WEBHOOK_EVENT_RETENTION_DAYS` | `7` | A periodic sweep (hourly, like the connector-auth-status sweep) deletes received events older than this. |
@@ -227,7 +231,7 @@ Stored payloads are returned to the model exactly as received by the connector's
 
 ### Cloud vs self-hosted
 
-Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch.
+Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch. The one difference: on Cloud, the plan caps how many active connectors may have webhooks turned on (Starter 1, Team and the trial 5, Business and Enterprise no limit; see [Cloud plan limits](../cloud-plans.md)). The cap follows `PLAN_CAPS_ENFORCE` like the other plan caps: `dry-run` only logs. Self-hosted has no cap.
 
 ## Fatal crash reports (always on in the Docker image)
 

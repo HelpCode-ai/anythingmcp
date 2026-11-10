@@ -12,14 +12,17 @@ import {
   ForbiddenException,
   NotFoundException,
   HttpCode,
+  HttpException,
+  HttpStatus,
   Logger,
   Optional,
+  Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiSecurity, ApiExcludeEndpoint } from '@nestjs/swagger';
 import { timingSafeEqual } from 'crypto';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { Throttle } from '@nestjs/throttler';
-import { IsBoolean, IsIn, IsString, IsOptional, Matches } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsString, IsOptional, Matches, MaxLength, ValidateIf } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { LicenseService, type BillingPortalFlow } from './license.service';
 import { LicenseGuardService } from './license-guard.service';
@@ -30,6 +33,10 @@ import { ProductEventService, ProductEvents } from '../audit/product-event.servi
 import { CardTrialEligibilityService } from './card-trial-eligibility.service';
 import { CardTrialOfferService } from './card-trial-offer.service';
 import { LicenseWallService, type LicenseWallView } from './license-wall.service';
+import { InvoiceEmailError, InvoiceEmailService } from './invoice-email.service';
+import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
+import { PlanFitService } from './plan-fit.service';
+import { isFitPlan, type FitPlan, type PlanFit } from './plan-fit';
 import { createEmailLinkToken } from '../common/email-link-token';
 import {
   CHECKOUT_BILLING_PERIODS,
@@ -100,6 +107,23 @@ class DpaLinkDto {
   locale?: string;
 }
 
+/**
+ * Invoices by email. `to` is the recipient: absent keeps the current one,
+ * null or '' goes back to the billing contact, an address sets that address.
+ * There is no workspace or licence field: both come from the session.
+ */
+export class InvoiceEmailDto {
+  @IsBoolean()
+  enabled: boolean;
+
+  @IsOptional()
+  @ValidateIf((o) => typeof o.to === 'string' && o.to !== '')
+  @IsString()
+  @MaxLength(254)
+  @IsEmail({}, { message: 'Invalid email address' })
+  to?: string | null;
+}
+
 @ApiTags('License')
 @Controller('api/license')
 export class LicenseController {
@@ -115,6 +139,9 @@ export class LicenseController {
     private readonly cardTrialEligibility: CardTrialEligibilityService,
     private readonly cardTrialOffer: CardTrialOfferService,
     @Optional() private readonly licenseWall?: LicenseWallService,
+    @Optional() private readonly invoiceEmail?: InvoiceEmailService,
+    @Optional() private readonly securityEvents?: SecurityEventService,
+    @Optional() private readonly planFit?: PlanFitService,
   ) {}
 
   @Get('status')
@@ -311,6 +338,76 @@ export class LicenseController {
     }
   }
 
+  // ── Invoices by email (Cloud) ──────────────────────────────────────────────
+
+  @Get('invoice-email')
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Whether each paid invoice is emailed as a PDF, and to which address (cloud, ADMIN)' })
+  async getInvoiceEmail(@Req() req: any) {
+    if (!this.deployment.isCloud() || !this.invoiceEmail) {
+      throw new NotFoundException('Invoices by email apply to AnythingMCP Cloud only.');
+    }
+    return this.invoiceEmailCall(() => this.invoiceEmail!.get(req.user.organizationId));
+  }
+
+  @Put('invoice-email')
+  @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({
+    summary: 'Switch emailing each paid invoice as a PDF on or off, and set the address (cloud, ADMIN)',
+  })
+  async setInvoiceEmail(@Req() req: any, @Body() dto: InvoiceEmailDto) {
+    if (!this.deployment.isCloud() || !this.invoiceEmail) {
+      throw new NotFoundException('Invoices by email apply to AnythingMCP Cloud only.');
+    }
+    const organizationId: string = req.user.organizationId;
+    const view = await this.invoiceEmailCall(() =>
+      this.invoiceEmail!.set(organizationId, req.user.sub, { enabled: dto.enabled, to: dto.to }),
+    );
+    const address = view.recipient.address;
+    await this.securityEvents?.log({
+      event: SecurityEvents.INVOICE_EMAIL_CHANGED,
+      actorType: 'USER',
+      organizationId,
+      actorUserId: req.user.sub,
+      // The domain only: enough to spot a redirect to an outside address.
+      metadata: {
+        enabled: view.enabled,
+        recipientKind: view.recipient.kind,
+        recipientDomain: address ? address.slice(address.lastIndexOf('@') + 1) : null,
+      },
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
+    return view;
+  }
+
+  private async invoiceEmailCall<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!(err instanceof InvoiceEmailError)) throw err;
+      switch (err.status) {
+        case 400:
+          throw new BadRequestException(err.message);
+        case 404:
+          throw new NotFoundException(err.message);
+        case 409:
+          throw new ConflictException(err.message);
+        case 429:
+          throw new HttpException(err.message, HttpStatus.TOO_MANY_REQUESTS);
+        default:
+          throw new BadGatewayException(err.message);
+      }
+    }
+  }
+
   @Post('dpa-link')
   @HttpCode(200)
   @UseGuards(JwtOrManagementKeyGuard, RolesGuard)
@@ -481,6 +578,25 @@ export class LicenseController {
       .currentOffer(req.user?.organizationId, req.user?.role, req.user?.email)
       .catch(() => null);
     return { offer };
+  }
+
+  @Get('plan-fit')
+  @UseGuards(JwtOrManagementKeyGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiSecurity('api-key')
+  @ApiOperation({
+    summary:
+      'Cloud: what this workspace keeps and loses on Starter and Team (connectors, MCP servers, users, File Search, code mode), with the connectors and servers that would stay active or be paused',
+  })
+  async planFitForUser(@Req() req: any, @Query('plan') plan?: string): Promise<{ plans: Partial<Record<FitPlan, PlanFit>> }> {
+    // Plan limits are a Cloud matter: self-hosted has none of these caps.
+    const organizationId: string | undefined = req.user?.organizationId;
+    if (!this.planFit || !this.deployment.isCloud() || !organizationId) throw new NotFoundException();
+    if (plan !== undefined && !isFitPlan(plan)) throw new BadRequestException('plan must be starter or team');
+    if (plan === 'starter') return { plans: { starter: await this.planFit.fit(organizationId, 'starter') } };
+    if (plan === 'team') return { plans: { team: await this.planFit.fit(organizationId, 'team') } };
+    return { plans: await this.planFit.fitAll(organizationId) };
   }
 
   @Get('wall')

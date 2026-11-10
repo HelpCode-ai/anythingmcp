@@ -25,7 +25,7 @@ function floorPlus(n: unknown, unit: number): string | null {
 }
 
 /** Mirrors TRUST_FLOORS in the backend's trust-stats.format.ts. */
-export const TRUST_FLOORS = { dockerPulls: 200_000, toolCalls30d: 1_000_000 } as const;
+export const TRUST_FLOORS = { dockerPulls: 200_000, toolCalls30d: 2_000_000 } as const;
 
 const atLeast = (n: unknown, floor: number) => (usable(n) && n > floor ? n : floor);
 

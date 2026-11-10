@@ -666,3 +666,134 @@ export function splitTag(text: string, tag: string): [string, string, string] | 
   const m = new RegExp(`^([\\s\\S]*)<${tag}>([\\s\\S]*)</${tag}>([\\s\\S]*)$`).exec(text);
   return m ? [m[1], m[2], m[3]] : null;
 }
+
+/**
+ * The "What changes with Starter" block on this page, in ICU message syntax
+ * (the PlanFitNotice component renders it through next-intl, under its own
+ * provider in the page's language). Same keys as `planFit` in the dashboard
+ * messages, worded for a visitor who is not signed in: counts only, and the
+ * choice of which ones is made after signing in.
+ */
+export interface PlanFitCopy {
+  title: string;
+  fits: string;
+  chooseTeam: string;
+  lines: {
+    connectors: string;
+    mcpServers: string;
+    mcpServersChoose: string;
+    users: string;
+    fileSearch: string;
+    fileSearchStorage: string;
+    codeTools: string;
+    inline: string;
+  };
+}
+
+export const PLAN_FIT_COPY: Record<PageLang, PlanFitCopy> = {
+  en: {
+    title: 'What changes with {plan}',
+    fits: 'Everything you use today fits {plan}.',
+    chooseTeam: 'Choose Team instead',
+    lines: {
+      connectors: '{paused} of {total} connectors paused (least used). You choose which after signing in.',
+      mcpServers: '{paused} of {total} MCP servers paused (least used).',
+      mcpServersChoose: '{paused} of {total} MCP servers paused (least used). You choose which after signing in.',
+      users: '{max, plural, one {# user} other {# users}} included, you have {current}. Nobody loses access.',
+      fileSearch: 'File Search: up to {maxFolders, plural, one {# folder} other {# folders}} and {maxFiles, number} files.',
+      fileSearchStorage: 'File Search: up to {maxSize} of storage.',
+      codeTools: '{max} saved code tools (you have {current}).',
+      inline: 'No inline code (code_execute).',
+    },
+  },
+  de: {
+    title: 'Was sich mit {plan} ändert',
+    fits: 'Alles, was Sie heute nutzen, passt in {plan}.',
+    chooseTeam: 'Stattdessen Team wählen',
+    lines: {
+      connectors: '{paused} von {total} Connectors pausiert (am wenigsten genutzt). Welche, wählen Sie nach der Anmeldung.',
+      mcpServers: '{paused} von {total} MCP-Servern pausiert (am wenigsten genutzt).',
+      mcpServersChoose: '{paused} von {total} MCP-Servern pausiert (am wenigsten genutzt). Welche, wählen Sie nach der Anmeldung.',
+      users: '{max, plural, one {# Nutzer} other {# Nutzer}} enthalten, Sie haben {current}. Niemand verliert den Zugang.',
+      fileSearch: 'File Search: bis zu {maxFolders, plural, one {# Ordner} other {# Ordner}} und {maxFiles, number} Dateien.',
+      fileSearchStorage: 'File Search: bis zu {maxSize} Speicher.',
+      codeTools: '{max} gespeicherte Code-Tools (Sie haben {current}).',
+      inline: 'Kein Inline-Code (code_execute).',
+    },
+  },
+  it: {
+    title: 'Cosa cambia con {plan}',
+    fits: 'Tutto ciò che usi oggi rientra in {plan}.',
+    chooseTeam: 'Scegli Team',
+    lines: {
+      connectors: '{paused} connettori su {total} in pausa (i meno usati). Scegli tu quali dopo l’accesso.',
+      mcpServers: '{paused} server MCP su {total} in pausa (i meno usati).',
+      mcpServersChoose: '{paused} server MCP su {total} in pausa (i meno usati). Scegli tu quali dopo l’accesso.',
+      users: '{max, plural, one {# utente incluso} other {# utenti inclusi}}, ne hai {current}. Nessuno perde l’accesso.',
+      fileSearch: 'File Search: fino a {maxFolders, plural, one {# cartella} other {# cartelle}} e {maxFiles, number} file.',
+      fileSearchStorage: 'File Search: fino a {maxSize} di spazio.',
+      codeTools: '{max} code tool salvati (ne hai {current}).',
+      inline: 'Niente codice inline (code_execute).',
+    },
+  },
+  es: {
+    title: 'Qué cambia con {plan}',
+    fits: 'Todo lo que usas hoy cabe en {plan}.',
+    chooseTeam: 'Elegir Team',
+    lines: {
+      connectors: '{paused} de {total} conectores en pausa (los menos usados). Eliges cuáles al iniciar sesión.',
+      mcpServers: '{paused} de {total} servidores MCP en pausa (los menos usados).',
+      mcpServersChoose: '{paused} de {total} servidores MCP en pausa (los menos usados). Eliges cuáles al iniciar sesión.',
+      users: '{max, plural, one {# usuario incluido} other {# usuarios incluidos}}, tienes {current}. Nadie pierde el acceso.',
+      fileSearch: 'File Search: hasta {maxFolders, plural, one {# carpeta} other {# carpetas}} y {maxFiles, number} archivos.',
+      fileSearchStorage: 'File Search: hasta {maxSize} de almacenamiento.',
+      codeTools: '{max} code tools guardados (tienes {current}).',
+      inline: 'Sin código inline (code_execute).',
+    },
+  },
+  zh: {
+    title: '{plan} 方案的变化',
+    fits: '你目前的使用量完全符合 {plan}。',
+    chooseTeam: '改选 Team',
+    lines: {
+      connectors: '{total} 个连接器中有 {paused} 个暂停（使用最少的）。登录后可自行选择。',
+      mcpServers: '{total} 个 MCP 服务器中有 {paused} 个暂停（使用最少的）。',
+      mcpServersChoose: '{total} 个 MCP 服务器中有 {paused} 个暂停（使用最少的）。登录后可自行选择。',
+      users: '包含 {max} 个用户，你有 {current} 个。没有人会失去访问权限。',
+      fileSearch: 'File Search：最多 {maxFolders} 个文件夹和 {maxFiles, number} 个文件。',
+      fileSearchStorage: 'File Search：最多 {maxSize} 存储空间。',
+      codeTools: '{max} 个已保存的代码工具（你有 {current} 个）。',
+      inline: '不含内联代码（code_execute）。',
+    },
+  },
+  ja: {
+    title: '{plan} で変わること',
+    fits: '現在の利用内容はすべて {plan} に収まります。',
+    chooseTeam: 'Team を選ぶ',
+    lines: {
+      connectors: '{total} 件中 {paused} 件のコネクタが一時停止（利用の少ないもの）。どれにするかはサインイン後に選べます。',
+      mcpServers: '{total} 件中 {paused} 件の MCP サーバーが一時停止（利用の少ないもの）。',
+      mcpServersChoose: '{total} 件中 {paused} 件の MCP サーバーが一時停止（利用の少ないもの）。どれにするかはサインイン後に選べます。',
+      users: 'ユーザー {max} 人まで（現在 {current} 人）。アクセスを失う人はいません。',
+      fileSearch: 'File Search：最大 {maxFolders} フォルダ、{maxFiles, number} ファイル。',
+      fileSearchStorage: 'File Search：最大 {maxSize} のストレージ。',
+      codeTools: '保存済みコードツール {max} 件（現在 {current} 件）。',
+      inline: 'インラインコード（code_execute）は含まれません。',
+    },
+  },
+  ru: {
+    title: 'Что изменится на {plan}',
+    fits: 'Всё, чем вы пользуетесь, помещается в {plan}.',
+    chooseTeam: 'Выбрать Team',
+    lines: {
+      connectors: '{paused} из {total} коннекторов на паузе (наименее используемые). Какие, выберете после входа.',
+      mcpServers: '{paused} из {total} MCP-серверов на паузе (наименее используемые).',
+      mcpServersChoose: '{paused} из {total} MCP-серверов на паузе (наименее используемые). Какие, выберете после входа.',
+      users: 'Пользователей: {max} (у вас {current}). Никто не теряет доступ.',
+      fileSearch: 'File Search: до {maxFolders} папок и {maxFiles, number} файлов.',
+      fileSearchStorage: 'File Search: до {maxSize} хранилища.',
+      codeTools: 'Сохранённых code tools: {max} (у вас {current}).',
+      inline: 'Без inline-кода (code_execute).',
+    },
+  },
+};

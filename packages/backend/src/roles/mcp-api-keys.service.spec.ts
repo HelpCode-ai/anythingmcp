@@ -124,18 +124,21 @@ describe('McpApiKeysService', () => {
       const record = {
         id: 'key-1',
         isActive: true,
+        organizationId: 'org-1',
         mcpServerId: 'srv-1',
         name: 'My Key',
-        user: { id: 'u1', email: 'a@b.com', role: 'USER', mcpRoleId: 'r1' },
+        user: { id: 'u1', email: 'a@b.com', role: 'USER', organizationId: 'org-1', mcpRoleId: 'r1' },
       };
       mockPrisma.mcpApiKey.findFirst.mockResolvedValue(record);
       mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ deactivatedAt: null, role: 'EDITOR' });
 
       const result = await service.resolveUserByKey('mcp_abc');
       expect(result).toEqual({
         id: 'u1',
         email: 'a@b.com',
-        role: 'USER',
+        role: 'EDITOR',
+        organizationId: 'org-1',
         mcpRoleId: 'r1',
         mcpServerId: 'srv-1',
         apiKeyName: 'My Key',
@@ -187,7 +190,42 @@ describe('McpApiKeysService', () => {
       expect(await service.resolveUserByKey('mcp_x')).toMatchObject({ id: 'u1' });
       expect(mockPrisma.organizationMember.findUnique).toHaveBeenCalledWith({
         where: { userId_organizationId: { userId: 'u1', organizationId: 'org-1' } },
-        select: { deactivatedAt: true },
+        select: { deactivatedAt: true, role: true },
+      });
+    });
+
+    // users.organization_id / users.role follow the workspace the owner last
+    // switched to in the dashboard. A key keeps acting in ITS workspace, with
+    // the owner's role there, whichever workspace is active.
+    it('scopes the key to its own workspace and the role there, not the active one', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({
+        ...record,
+        organizationId: 'org-A',
+        user: { id: 'u1', email: 'a@x', role: 'ADMIN', organizationId: 'org-B', mcpRoleId: null },
+      });
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ deactivatedAt: null, role: 'VIEWER' });
+      const result = await service.resolveUserByKey('mcp_x');
+      expect(result).toMatchObject({ id: 'u1', organizationId: 'org-A', role: 'VIEWER' });
+      expect(mockPrisma.organizationMember.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId_organizationId: { userId: 'u1', organizationId: 'org-A' } } }),
+      );
+    });
+
+    it('scopes a support key the same way', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({
+        ...record,
+        isSupport: true,
+        organizationId: 'org-A',
+        user: { id: 'u1', email: 'a@x', role: 'ADMIN', organizationId: 'org-B', mcpRoleId: null },
+      });
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ deactivatedAt: null, role: 'EDITOR' });
+      expect(await service.resolveUserByKey('mcp_x')).toMatchObject({
+        organizationId: 'org-A',
+        role: 'EDITOR',
+        supportKeyId: 'k1',
+        apiKeyName: undefined,
       });
     });
 
@@ -203,6 +241,21 @@ describe('McpApiKeysService', () => {
       mockPrisma.mcpApiKey.findFirst.mockResolvedValue(record);
       mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
       expect(await service.resolveUserByKey('mcp_x')).toBeNull();
+    });
+  });
+
+  describe('generate — workspace of a server key', () => {
+    it("files a server's key under the server's workspace, not the active one", async () => {
+      mockPrisma.mcpServerConfig.findUnique.mockResolvedValue({ organizationId: 'org-A' });
+      mockPrisma.mcpApiKey.create.mockImplementation((args: any) => Promise.resolve({ id: 'k', key: args.data.key }));
+      await service.generate('user-1', 'org-B', 'Key', 'srv-A');
+      expect(mockPrisma.mcpApiKey.create.mock.calls[0][0].data).toMatchObject({ organizationId: 'org-A', mcpServerId: 'srv-A' });
+    });
+
+    it('keeps the given workspace for a key without a server', async () => {
+      mockPrisma.mcpApiKey.create.mockImplementation((args: any) => Promise.resolve({ id: 'k', key: args.data.key }));
+      await service.generate('user-1', 'org-B', 'Key');
+      expect(mockPrisma.mcpApiKey.create.mock.calls[0][0].data).toMatchObject({ organizationId: 'org-B', mcpServerId: null });
     });
   });
 

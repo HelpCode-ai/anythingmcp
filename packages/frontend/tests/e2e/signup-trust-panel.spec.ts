@@ -35,7 +35,7 @@ test('cloud sign-up shows the numbers, never below their floors', async ({ page 
   await expect(page.getByRole('heading', { name: 'Create your free account' })).toBeVisible();
   const panel = page.getByRole('complementary', { name: 'Why teams build on AnythingMCP' });
   await expect(panel.getByText('200,000+')).toBeVisible();
-  await expect(panel.getByText('1M+')).toBeVisible();
+  await expect(panel.getByText('2M+')).toBeVisible();
   await expect(panel.getByText('3,800+')).toBeVisible();
   await expect(panel.getByText(/stars on GitHub/)).toHaveCount(0);
   await expect(panel.getByText('Listed in the Claude Directory')).toBeVisible();

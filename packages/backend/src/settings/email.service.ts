@@ -20,6 +20,7 @@ import {
   cloudPageUrl,
   connectorAuthEmail,
   connectorAddedFromSupportEmail,
+  planCapsAppliedEmail,
   existingAccountEmail,
   invitationEmail,
   licenseKeyEmail,
@@ -994,6 +995,47 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(`Failed to send connector-added email to ${maskEmail(to)}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * A plan change paused items above the new plan's caps (PlanCapsService).
+   * Transactional, to each workspace admin. False when no SMTP is configured
+   * or the send failed.
+   */
+  async sendPlanCapsAppliedEmail(
+    to: string,
+    input: {
+      name: string | null;
+      workspaceName: string;
+      planName: string;
+      paused: { connectors: string[]; mcpServers: string[]; fileSearch: string[] };
+      kept: { connectors: number; mcpServers: number };
+    },
+    organizationId?: string,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter(organizationId);
+    if (!transport) {
+      this.logger.warn(`Skipping plan-caps email to ${maskEmail(to)}: no SMTP configured`);
+      return false;
+    }
+    const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '') || this.cloudUrl();
+    const signIn = await this.signInProvider(to);
+    const email = planCapsAppliedEmail(
+      {
+        ...input,
+        connectorsUrl: cloudPageUrl(base, '/connectors', signIn),
+        planUrl: cloudPageUrl(base, '/settings/license', signIn),
+      },
+      await this.brand(),
+    );
+    try {
+      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email) });
+      this.logger.log(`Plan-caps email sent to ${maskEmail(to)}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send plan-caps email to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }

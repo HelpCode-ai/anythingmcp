@@ -543,7 +543,8 @@ existing keys need no reissue.
 | File Share | – | internal + public, ≤ 24 h | ≤ 7 days | no limit, internal links without expiry |
 | OCR, folder permissions, org policy | – | – | – | ✓ |
 
-The trial mirrors Starter (as it does for connectors) minus File Share.
+The trial column is the original design. Since 2026-11-09 the Cloud trial has
+the Team limits, File Share included (see `file-search-quotas.ts`).
 Self-hosted Community shows File Search in the catalog with a lock and
 **Start 30-day trial** / **Buy a licence**; the existing Business trial
 (`EditionService.startTrial`, once per instance) unlocks it with Team limits.

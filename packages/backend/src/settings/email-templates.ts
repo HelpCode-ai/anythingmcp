@@ -193,6 +193,64 @@ export function connectorAuthEmail(
 }
 
 /**
+ * A plan change paused connectors, MCP servers or File Search folders above
+ * the new plan's caps (PlanCapsService, Cloud). Sent once per downgrade to the
+ * workspace admins. Transactional: it explains a change to their service.
+ */
+export function planCapsAppliedEmail(
+  input: {
+    name: string | null;
+    workspaceName: string;
+    /** "Starter" or "Team". */
+    planName: string;
+    paused: { connectors: string[]; mcpServers: string[]; fileSearch: string[] };
+    kept: { connectors: number; mcpServers: number };
+    connectorsUrl: string;
+    planUrl: string;
+  },
+  ctx: EmailBrandContext,
+): RenderedEmail {
+  const hi = greeting(input.name);
+  const workspace = input.workspaceName.trim() || 'your workspace';
+  const plan = input.planName;
+  const groups: [string, string[]][] = [
+    ['Connectors', input.paused.connectors],
+    ['MCP servers', input.paused.mcpServers],
+    ['File Search folders', input.paused.fileSearch],
+  ];
+  const listed = groups.filter(([, names]) => names.length > 0);
+  const total = listed.reduce((n, [, names]) => n + names.length, 0);
+  const listHtml = listed
+    .map(([label, names]) => p(`<strong style="font-weight:600;">${esc(label)}:</strong> ${names.map((n) => esc(n)).join(', ')}`))
+    .join('');
+  const listText = listed.map(([label, names]) => `${label}: ${names.join(', ')}`).join('\n');
+  const intro =
+    `${esc(hi)} ${esc(workspace)} is now on the ${esc(plan)} plan. ${esc(plan)} includes fewer active items than the workspace had, ` +
+    `so we paused the ${total === 1 ? 'one' : total} you used least in the last 30 days. Nothing was deleted, and the ones you use most keep working.`;
+  return build({
+    subject: `${workspace} is on ${plan}: ${total} ${plural(total, 'item')} paused`,
+    preheader: 'Nothing was deleted. You choose which ones stay active.',
+    bodyHtml:
+      h1(`${esc(workspace)} is now on ${esc(plan)}.`, 'Nothing was deleted.') +
+      p(intro) +
+      listHtml +
+      p(
+        'You can change which ones are active at any time: pause one under Connectors or MCP Servers, then switch on another. ' +
+          'Your AI clients see only the tools of active connectors.',
+      ) +
+      button(input.connectorsUrl, 'Choose what stays active') +
+      small(`Need everything at once? Upgrade the plan and the paused ones come back by themselves: ${link(input.planUrl, 'see the plans')}.`),
+    bodyText:
+      `${hi}\n\n${workspace} is now on the ${plan} plan. ${plan} includes fewer active items than the workspace had, so we paused the ${total === 1 ? 'one' : total} you used least in the last 30 days. Nothing was deleted, and the ones you use most keep working.\n\n` +
+      `${listText}\n\n` +
+      'You can change which ones are active at any time: pause one under Connectors or MCP Servers, then switch on another. Your AI clients see only the tools of active connectors.\n\n' +
+      `Choose what stays active: ${input.connectorsUrl}\n\n` +
+      `Need everything at once? Upgrade the plan and the paused ones come back by themselves: ${input.planUrl}`,
+    ctx,
+  });
+}
+
+/**
  * A connector was added to the workspace from the support chat, with a
  * credential the user posted there (Cloud). Sent to the user who posted it
  * and to the workspace admins, so an install nobody asked for is noticed at

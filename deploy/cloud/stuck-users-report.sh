@@ -25,6 +25,10 @@
 #   5. Etsy apps waiting for Etsy's approval: orgs whose app keys Etsy
 #      refused as not active yet this week, approved this week (a successful
 #      Etsy call after that error), still pending.
+#   6. setup checks that fail ("Check and save" in the guided setup), per
+#      adapter: workspaces refused this week that have not got through since,
+#      with the workspaces and errors listed when the error may be the
+#      adapter's (400, 404, 5xx) rather than a wrong credential.
 #
 # Read-only: every query runs in a read-only transaction (PGOPTIONS below)
 # through `docker exec` into the Postgres container, as the operators do by
@@ -448,6 +452,85 @@ from res;
 SQL
 ) || fail "Etsy pending query"
 
+# ── 6. Setup checks that fail ────────────────────────────────────────────────
+# The guided setup's "Check and save" tries the values with a real call before
+# anything works; a refusal is recorded as setup_verify_failed (adapter, kind,
+# HTTP status, the provider's words). Such a refusal never becomes a tool call,
+# so sections 1 and 2 cannot see it: on 2026-11-08 a wrong login body in the
+# Éxito adapter blocked a customer for a day without a trace here. Etsy has its
+# own section above. A workspace is through when, after its first failed check
+# on that adapter, it completed the setup verified or made a successful call
+# through a connector of that adapter.
+# Kinds that point at the customer's side (auth_failed, rate_limited,
+# invalid_input, unreachable: a wrong key, a typo in the address) are counted;
+# any other kind (bad_request, not_found, upstream_error, error…) may be the
+# adapter's fault, so those workspaces are listed with their error.
+CRED_KINDS="'auth_failed', 'rate_limited', 'invalid_input', 'unreachable'"
+setup=$(q <<SQL
+with f as (
+  select pe.organization_id as org_id, pe.metadata->>'adapterSlug' as slug,
+         coalesce(nullif(pe.metadata->>'kind', ''), 'error') as kind,
+         coalesce(pe.metadata->>'status', '') as st,
+         pe.metadata->>'error' as err, pe.created_at
+  from product_events pe
+  where pe.event = 'setup_verify_failed' and pe.created_at >= $WIN
+    and pe.organization_id is not null
+    and coalesce(pe.metadata->>'adapterSlug', '') not in ('', 'etsy')
+),
+po as (
+  select org_id, slug, min(created_at) as first_at, max(created_at) as last_at, count(*) as n,
+         bool_or(kind not in ($CRED_KINDS)) as suspect
+  from f group by 1, 2
+),
+st as (
+  select po.*,
+    exists (select 1 from product_events e
+            where e.organization_id = po.org_id and e.event = 'setup_completed'
+              and e.metadata->>'adapterSlug' = po.slug and e.created_at > po.first_at
+              and coalesce(e.metadata->>'verified', 'true') <> 'false')
+    or exists (select 1 from tool_invocations ti join connectors c on c.id = ti.connector_id
+               where ti.organization_id = po.org_id and c.config->>'adapterSlug' = po.slug
+                 and ti.status = 'SUCCESS' and ti.created_at > po.first_at) as through
+  from po
+),
+kinds as (
+  select slug, string_agg(k || ' ×' || n, ', ' order by n desc, k) as kinds from (
+    select slug, kind || case when st <> '' then ' ' || st else '' end as k, count(*) as n
+    from f group by 1, 2
+  ) x group by 1
+),
+errs as (
+  select slug, string_agg(n || '× ' || e, E'\x1e' order by n desc, e) as errs from (
+    select slug, e, n, row_number() over (partition by slug order by n desc, e) as rn from (
+      select f.slug, $(clean f.err) as e, count(*) as n
+      from f join st s on s.org_id = f.org_id and s.slug = f.slug
+      where not s.through and f.kind not in ($CRED_KINDS) group by 1, 2
+    ) x
+  ) y where rn <= 3 group by slug
+),
+people as (
+  select s.org_id, s.slug,
+         coalesce((select string_agg(u.email, ', ' order by u.created_at) from users u
+                   where u.organization_id = s.org_id), '(no member)') as emails
+  from st s where not s.through and s.suspect
+),
+orgl as (
+  select s.slug, string_agg($(oneline p.emails) || ' — ' || s.n || ' failed, last ' || $(fmt_ts s.last_at),
+                            E'\x1e' order by s.last_at desc) as orgs
+  from st s join people p on p.org_id = s.org_id and p.slug = s.slug group by 1
+),
+agg as (
+  select slug, count(*) as orgs, count(*) filter (where not through) as stuck,
+         count(*) filter (where not through and suspect) as stuck_suspect, sum(n) as fails
+  from st group by 1
+)
+select a.slug, a.orgs, a.stuck, a.stuck_suspect, a.fails, coalesce(k.kinds, ''),
+       coalesce(e.errs, ''), coalesce(o.orgs, '')
+from agg a left join kinds k using (slug) left join errs e using (slug) left join orgl o using (slug)
+order by (a.stuck_suspect > 0) desc, a.stuck_suspect desc, a.stuck desc, a.slug;
+SQL
+) || fail "setup checks query"
+
 # ── Render ───────────────────────────────────────────────────────────────────
 NL=$'\n'
 CAUSES="credentials config quota unreachable other"
@@ -502,6 +585,30 @@ while IFS="$US" read -r key label calls orgs ok calls30 ok30 lastok errs; do
 done <<< "$conns"
 n_conn=$((n_dead + n_weak))
 
+s6=""; n_setup_orgs=0; n_setup_stuck=0; n_setup_suspect=0; n_setup_adapters=0
+while IFS="$US" read -r slug orgs stuck suspect fails kinds errs orgl; do
+  [ -n "$slug" ] || continue
+  n_setup_orgs=$((n_setup_orgs + orgs)); n_setup_stuck=$((n_setup_stuck + stuck)); n_setup_suspect=$((n_setup_suspect + suspect))
+  # Adapters whose workspaces all got through count in the totals only.
+  [ "$stuck" -gt 0 ] || continue
+  n_setup_adapters=$((n_setup_adapters + 1))
+  [ "$n_setup_adapters" -le "$LIST_MAX" ] || continue
+  s6+="  $slug: $orgs workspace(s) failed the check, $stuck not through since; $fails failed checks: $kinds$NL"
+  if [ -n "$errs" ]; then
+    s6+="    errors that may be the adapter's (workspaces not through):$NL"
+    while IFS= read -r line; do s6+="      $line$NL"; done <<< "$(printf '%s' "$errs" | tr "$RS" '\n')"
+  fi
+  if [ -n "$orgl" ]; then
+    i=0; more=0
+    while IFS= read -r line; do
+      i=$((i + 1)); if [ "$i" -le 5 ]; then s6+="      $line$NL"; else more=$((more + 1)); fi
+    done <<< "$(printf '%s' "$orgl" | tr "$RS" '\n')"
+    [ "$more" -gt 0 ] && s6+="      … and $more more$NL"
+  fi
+  s6+="$NL"
+done <<< "$setup"
+[ "$n_setup_adapters" -gt "$LIST_MAX" ] && s6+="  … $((n_setup_adapters - LIST_MAX)) more adapter(s), REPORT_LIST_MAX=$LIST_MAX.$NL$NL"
+
 w_total=0; m_total=0
 w1=0; w2=0; w3=0; w4=0; m1=0; m2=0; m3=0; m4=0
 list1=""; list2=""
@@ -520,6 +627,7 @@ summary="$(plural "$n_new" "new stuck org") ($n_still still stuck)"
 summary+=", $(plural "$n_dead" "connector") failing for everyone"
 [ "$n_weak" -gt 0 ] && summary+=" (+$n_weak under ${MAX_RATE} %)"
 summary+=", $w1 of $(plural "$w_total" "signup") without a connector"
+[ "$n_setup_stuck" -gt 0 ] && summary+=", $(plural "$n_setup_stuck" "workspace") stuck at a setup check ($n_setup_suspect possibly the adapter)"
 
 out="AnythingMCP Cloud — weekly stuck-users report$NL"
 out+="Window: $WIN_FROM to $WIN_TO ($REPORT_TZ), last $WINDOW_DAYS days; context: last 30 days.$NL$NL"
@@ -587,6 +695,13 @@ out+="$NL"
 out+="  ${etsy_wait:-0} still pending (error in the last 30 days, no successful Etsy call since)$NL"
 out+="  ${etsy_mailed:-0} approval e-mail(s) sent this week (etsy_app_approved_notified)$NL"
 out+="  A shared secret that does not belong to the keystring gets the same 403, so \"pending\" includes it.$NL$NL"
+
+out+="6. SETUP CHECKS THAT FAIL (\"Check and save\" in the guided setup, this week; Etsy is in section 5)$NL"
+out+="   These never become tool calls, so sections 1 and 2 do not see them. Through = a verified setup$NL"
+out+="   or a successful call on that adapter after the first failed check. Workspaces are listed only$NL"
+out+="   when an error may be the adapter's (400, 404, 5xx, other); wrong credentials or addresses are counted.$NL"
+out+="   $n_setup_stuck of $n_setup_orgs workspace(s) with a failed check are not through; $n_setup_suspect of them with an error that may be ours.$NL$NL"
+[ -n "$s6" ] && out+="$s6" || out+="  None.$NL$NL"
 
 out+="--$NL"
 out+="Generated by deploy/cloud/stuck-users-report.sh on $(hostname) for ${DOMAIN}.$NL"

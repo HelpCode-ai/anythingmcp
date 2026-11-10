@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, tools, withSecretsNotice, withImportNotice, isMachineGrant, type ToolTestResult, type CatalogDiff, type OAuthGrant } from '@/lib/api';
+import { connectors, tools, withSecretsNotice, withImportNotice, isMachineGrant, planLimitOf, type ToolTestResult, type CatalogDiff, type OAuthGrant } from '@/lib/api';
+import { atPlanCap, pausedByPlanSets, usePlanUsage } from '@/lib/use-plan-fit';
+import { PausedByPlanBadge, PlanSwapDialog, type SwapAxis } from '@/components/plan-swap-dialog';
 import { findDemoByTool } from '@/lib/demo-connectors';
 import { ToolEditor } from '@/components/tool-editor';
 import { McpAssignModal } from '@/components/mcp-assign-modal';
@@ -25,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
+import { WebhookCard } from '@/components/webhook-card';
 import { FilesPanel } from '@/components/file-search/files-panel';
 import Link from 'next/link';
 import {
@@ -186,6 +189,12 @@ export default function ConnectorDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = params.id as string;
+  // Cloud: whether the last automatic downgrade paused this connector, and the
+  // swap dialog when activating it would go past the plan.
+  const { usage: planUsage, reload: reloadPlanUsage } = usePlanUsage();
+  const pausedByPlan = pausedByPlanSets(planUsage).connectors.has(id);
+  const tSwap = useTranslations('planSwap');
+  const [swap, setSwap] = useState<{ axis: SwapAxis; max: number | null; activate?: () => Promise<void> } | null>(null);
 
   const [connector, setConnector] = useState<any>(null);
   const [toolList, setToolList] = useState<any[]>([]);
@@ -518,8 +527,39 @@ export default function ConnectorDetailPage() {
     }
   };
 
-  const handleSave = async () => {
+  /** The plan-limit axis of this connector: File Search folders have their own. */
+  const swapAxis = (): SwapAxis => (connector?.type === 'FILE_SEARCH' ? 'fileSearchConnectors' : 'connectors');
+
+  /** Activate from the header (a connector the plan paused); the swap at the cap. */
+  const handleActivateNow = async () => {
+    if (!token || !connector) return;
+    if (swapAxis() === 'connectors' && atPlanCap(planUsage, 'connectors')) {
+      setSwap({ axis: 'connectors', max: planUsage?.connectors.max ?? null });
+      return;
+    }
+    try {
+      await connectors.update(id, { isActive: true }, token);
+      fetchConnector();
+      reloadPlanUsage();
+    } catch (err: any) {
+      const limit = planLimitOf(err);
+      if (limit && limit.axis !== 'users') setSwap({ axis: limit.axis, max: limit.max || null });
+      else setMsg(t('msg.error', { message: err.message }));
+    }
+  };
+
+  /**
+   * Save the form. Turning the connector on at the plan's cap opens the swap
+   * dialog first; its "Pause and activate" then saves again (`rethrow`, so a
+   * failure puts the paused one back).
+   */
+  const handleSave = async (opts?: { rethrow?: boolean }) => {
     if (!token) return;
+    const activating = editActive && !connector.isActive;
+    if (!opts?.rethrow && activating && swapAxis() === 'connectors' && atPlanCap(planUsage, 'connectors')) {
+      setSwap({ axis: 'connectors', max: planUsage?.connectors.max ?? null, activate: () => handleSave({ rethrow: true }) });
+      return;
+    }
     try {
       if (
         editAuthType === 'OAUTH2' &&
@@ -627,7 +667,14 @@ export default function ConnectorDetailPage() {
       setMsg(withSecretsNotice(t('msg.updated'), saved));
       setEditing(false);
       fetchConnector();
+      if (activating) reloadPlanUsage();
     } catch (err: any) {
+      if (opts?.rethrow) throw err;
+      const limit = planLimitOf(err);
+      if (limit && limit.axis !== 'users') {
+        setSwap({ axis: limit.axis, max: limit.max || null, activate: () => handleSave({ rethrow: true }) });
+        return;
+      }
       setMsg(t('msg.error', { message: err.message }));
     }
   };
@@ -1108,6 +1155,23 @@ export default function ConnectorDetailPage() {
         </div>
       }
     >
+      {swap && (
+        <PlanSwapDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setSwap(null);
+          }}
+          axis={swap.axis}
+          target={{ id, name: connector.name }}
+          max={swap.max}
+          activate={swap.activate}
+          onDone={() => {
+            fetchConnector();
+            reloadPlanUsage();
+          }}
+        />
+      )}
+
       <Dialog.Root open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
@@ -1144,12 +1208,21 @@ export default function ConnectorDetailPage() {
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="text-lg font-semibold tracking-[-0.02em]">{connector.name}</span>
               <Badge tone="info">{connector.type}</Badge>
-              <StatusPill
-                tone={connector.isActive ? 'success' : 'neutral'}
-                dot={connector.isActive ? 'var(--ok)' : 'var(--text-3)'}
-              >
-                {connector.isActive ? t('active') : t('inactive')}
-              </StatusPill>
+              {!connector.isActive && pausedByPlan ? (
+                <>
+                  <PausedByPlanBadge />
+                  <Button size="sm" variant="secondary" onClick={handleActivateNow}>
+                    {tSwap('activate')}
+                  </Button>
+                </>
+              ) : (
+                <StatusPill
+                  tone={connector.isActive ? 'success' : 'neutral'}
+                  dot={connector.isActive ? 'var(--ok)' : 'var(--text-3)'}
+                >
+                  {connector.isActive ? t('active') : t('inactive')}
+                </StatusPill>
+              )}
               <SetupStatusPill status={connector.setupStatus} />
               <AuthStatusPill connector={connector} />
             </div>
@@ -1777,7 +1850,7 @@ export default function ConnectorDetailPage() {
                   {t('details.instructionsHint')}
                 </p>
               </div>
-              <Button variant="primary" size="lg" onClick={handleSave}>
+              <Button variant="primary" size="lg" onClick={() => handleSave()}>
                 {t('details.save')}
               </Button>
             </div>
@@ -1919,6 +1992,17 @@ export default function ConnectorDetailPage() {
               {authorizing ? t('oauthCard.redirecting') : t('oauthCard.authorizeProvider')}
             </Button>
           </Card>
+        )}
+
+        {/* Inbound webhook ingestion (#1393): only where it applies — a Stripe
+            connector, or any connector someone already turned it on for via the API. */}
+        {((connector.config as any)?.adapterSlug === 'stripe' || connector.webhookEnabled) && (
+          <WebhookCard
+            connectorId={connector.id}
+            webhookEnabled={!!connector.webhookEnabled}
+            canManage={user?.role === 'ADMIN' || (user?.role !== 'VIEWER' && user?.id === connector.userId)}
+            onChanged={fetchConnector}
+          />
         )}
 
         {/* Environment Variables */}

@@ -97,6 +97,7 @@ import { parseODataTools } from './parsers/odata.parser';
 import { normalizeSettings } from './engines/odata.engine';
 import { buildEmailBuiltinTools } from './email/email-builtins';
 import { buildWebhookBuiltinTools, wantsWebhookBuiltins, webhookToolPrefix } from './webhook-builtins';
+import { WebhookEventsService } from './webhook-events.service';
 import { EmailConnectorError, emailToolPrefix, resolveEmailSettings } from './email/email-settings';
 import { computeSetupState } from './connector-setup-status.util';
 import { EditionService } from '../ee/licensing/edition.service';
@@ -745,6 +746,7 @@ export class ConnectorsController {
     private readonly licenseGuard: LicenseGuardService,
     private readonly mcpServers: McpServersService,
     private readonly deployment: DeploymentService,
+    private readonly webhookEvents: WebhookEventsService,
     @Optional() private readonly edition?: EditionService,
     @Optional() private readonly userCredentials?: UserCredentialsService,
   ) {
@@ -895,6 +897,9 @@ export class ConnectorsController {
         ? { ...guarded, envVars: { ...(envVars ?? {}), ...secrets.newEnvVars } }
         : guarded;
     await this.licenseGuard.checkCanCreateConnector(req.user.sub, req.user.organizationId);
+    if (dto.webhookEnabled === true) {
+      await this.licenseGuard.checkCanEnableWebhook(req.user.organizationId);
+    }
     const connector = await this.connectorsService.create(req.user.sub, req.user.organizationId, data);
     if (secrets.changed) {
       this.logger.log(
@@ -1387,6 +1392,58 @@ export class ConnectorsController {
     return this.withSetupState(connector);
   }
 
+  @Get(':id/webhook/url')
+  @ApiOperation({
+    summary: 'The inbound webhook URL for this connector',
+    description:
+      'Computed by the server from SERVER_URL, like GET /api/connectors/oauth/redirect-uri, so it always matches ' +
+      'the path webhook-ingest.controller.ts listens on.',
+  })
+  async webhookUrl(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+    return { url: `${this.serverBaseUrl()}/api/webhooks/${connector.id}` };
+  }
+
+  @Get(':id/webhook/events')
+  @ApiOperation({
+    summary: 'Recent webhook deliveries for this connector, for the dashboard',
+    description:
+      'Metadata only, unlike the `<prefix>_recent_events` MCP tool: `payload` is left out, since it can carry ' +
+      'whatever personal data the provider sent (e.g. a Stripe customer\'s name, e-mail and address) and the ' +
+      'dashboard only ever shows type, id and time. Each event was verified (signature checked) before being ' +
+      'stored. Gated like any other connector setting: the connector owner or an admin.',
+  })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer' }, description: 'At most this many events (default 20, max 50).' })
+  @ApiQuery({ name: 'since', required: false, schema: { type: 'string' }, description: 'ISO 8601 timestamp; only events received at or after this time.' })
+  async webhookEventsList(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+    @Query('since') since?: string,
+  ) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+    const events = await this.webhookEvents.recentEvents(connector.id, connector.organizationId, {
+      limit: limit !== undefined ? Number(limit) : undefined,
+      since,
+    });
+    return {
+      events: events.map(({ id: eventId, provider, eventType, externalId, receivedAt }) => ({
+        id: eventId,
+        provider,
+        eventType,
+        externalId,
+        receivedAt,
+      })),
+    };
+  }
+
+  /** Shared with oauthCallbackUrl(); both compute from SERVER_URL so a dashboard link always matches the live route. */
+  private serverBaseUrl(): string {
+    return (this.configService.get<string>('SERVER_URL') || 'http://localhost:4000').replace(/\/+$/, '');
+  }
+
   @Put(':id')
   @ApiOperation({ summary: 'Update connector' })
   async update(
@@ -1396,6 +1453,14 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
+    // Switching a paused connector back on counts against the plan's cap (Cloud).
+    if (dto.isActive === true && !connector.isActive) {
+      await this.licenseGuard.checkCanActivateConnector(connector.organizationId, connector.type as string);
+    }
+    // So does turning inbound webhooks on (off -> on only; turning them off is free).
+    if (dto.webhookEnabled === true && !connector.webhookEnabled) {
+      await this.licenseGuard.checkCanEnableWebhook(connector.organizationId);
+    }
     if ((connector.type as string) === 'FILE_SEARCH' && (dto.config !== undefined || dto.baseUrl !== undefined || dto.authConfig !== undefined)) {
       throw new BadRequestException('Change the source of a File Search connector on its Files tab.');
     }
