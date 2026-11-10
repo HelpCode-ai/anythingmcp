@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { connectors, withSecretsNotice, withImportNotice } from '@/lib/api';
+import { connectors, planLimitOf, withSecretsNotice, withImportNotice } from '@/lib/api';
+import { atPlanCap, pausedByPlanSets, usePlanUsage } from '@/lib/use-plan-fit';
+import { PausedByPlanBadge, PlanSwapDialog, type SwapAxis } from '@/components/plan-swap-dialog';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useTranslations } from 'next-intl';
 import { AppSelect } from '@/components/ui/select';
@@ -114,11 +116,48 @@ export default function ConnectorsPage() {
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Cloud: which connectors the last automatic downgrade paused, and the swap
+  // dialog when activating one would go past the plan.
+  const { usage, reload: reloadUsage } = usePlanUsage();
+  const pausedByPlan = pausedByPlanSets(usage).connectors;
+  const tSwap = useTranslations('planSwap');
+  const [swap, setSwap] = useState<{ id: string; name: string; axis: SwapAxis; max: number | null } | null>(null);
+  const [activating, setActivating] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
     connectors.list(token).then(setList).catch(() => {}).finally(() => setLoading(false));
   }, [token]);
+
+  const refreshAfterSwap = useCallback(() => {
+    if (!token) return;
+    connectors.list(token).then(setList).catch(() => {});
+    reloadUsage();
+  }, [token, reloadUsage]);
+
+  /** Activate a connector the plan paused; at the plan's cap, offer the swap. */
+  const handleActivate = async (c: { id: string; name: string; type: string }) => {
+    if (!token) return;
+    const axis: SwapAxis = c.type === 'FILE_SEARCH' ? 'fileSearchConnectors' : 'connectors';
+    if (axis === 'connectors' && atPlanCap(usage, 'connectors')) {
+      setSwap({ id: c.id, name: c.name, axis, max: usage?.connectors.max ?? null });
+      return;
+    }
+    setActivating(c.id);
+    try {
+      await connectors.update(c.id, { isActive: true }, token);
+      refreshAfterSwap();
+    } catch (err) {
+      const limit = planLimitOf(err);
+      if (limit && limit.axis !== 'users') setSwap({ id: c.id, name: c.name, axis: limit.axis, max: limit.max || null });
+      else {
+        setMsg((err as Error)?.message || String(err));
+        setTimeout(() => setMsg(''), 5000);
+      }
+    } finally {
+      setActivating(null);
+    }
+  };
 
   const handleDelete = useCallback(async () => {
     if (!token || !deleteConfirm) return;
@@ -327,6 +366,19 @@ export default function ConnectorsPage() {
       </Dialog.Root>
 
       {/* Delete Confirmation Dialog */}
+      {swap && (
+        <PlanSwapDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setSwap(null);
+          }}
+          axis={swap.axis}
+          target={{ id: swap.id, name: swap.name }}
+          max={swap.max}
+          onDone={refreshAfterSwap}
+        />
+      )}
+
       <Dialog.Root open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
@@ -509,17 +561,26 @@ export default function ConnectorsPage() {
                         <div className="truncate text-[14px] font-semibold text-[var(--text)]">{authTypeLabel(c.authType)}</div>
                       </div>
                     </div>
-                    <StatusPill
-                      tone={c.isActive ? 'success' : 'neutral'}
-                      dot={c.isActive ? 'var(--ok)' : 'var(--text-3)'}
-                    >
-                      {c.isActive ? t('card.active') : t('card.inactive')}
-                    </StatusPill>
+                    {!c.isActive && pausedByPlan.has(c.id) ? (
+                      <PausedByPlanBadge className="flex-shrink-0" />
+                    ) : (
+                      <StatusPill
+                        tone={c.isActive ? 'success' : 'neutral'}
+                        dot={c.isActive ? 'var(--ok)' : 'var(--text-3)'}
+                      >
+                        {c.isActive ? t('card.active') : t('card.inactive')}
+                      </StatusPill>
+                    )}
                     <SetupStatusPill status={c.setupStatus} />
                     <AuthStatusPill connector={c} />
                   </div>
                   {/* Hover actions (above the full-card link) */}
                   <div className="relative z-10 mt-[14px] flex gap-2 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                    {!c.isActive && pausedByPlan.has(c.id) && (
+                      <Button size="sm" onClick={() => handleActivate(c)} disabled={activating === c.id}>
+                        {tSwap('activate')}
+                      </Button>
+                    )}
                     {(c.type === 'REST' || c.type === 'GRAPHQL' || c.type === 'SOAP') && (
                       <Button variant="secondary" size="sm" onClick={() => handleImportSpec(c.id)}>
                         {t('card.importSpec')}

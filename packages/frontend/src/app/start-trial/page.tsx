@@ -1,10 +1,11 @@
 'use client';
 
+import { PlanFitNotice } from '@/components/plan-fit-notice';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
-import { license, productEvents } from '@/lib/api';
+import { license, productEvents, type PlanFits } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
 import { PlanPicker } from '@/components/plan-picker';
 import { Button } from '@/components/ui/button';
@@ -16,9 +17,11 @@ import {
   formatEur,
   formatTrialEnd,
   planById,
+  fitFor,
   readAuthorizationReturn,
   readPlanIntent,
   readPromoCode,
+  selectionForFit,
   takeAuthorizationReturn,
   trialRunning,
   writeCardTrialPrompt,
@@ -91,6 +94,12 @@ export default function StartTrialPage() {
   // Which entry point sent the user here (?source=…), for Stripe and the events.
   const [source, setSource] = useState<CheckoutSource>('start_trial');
   const viewReported = useRef(false);
+  // What Starter and Team keep and pause for this workspace, shown under the
+  // plans before the card is added (the plan changes when the trial converts).
+  const [planFit, setPlanFit] = useState<PlanFits | null>(null);
+  // Set once the plan is chosen (pricing page intent or a click): the plan fit
+  // no longer moves the selection then.
+  const picked = useRef(false);
   // Set when the user came from "Connect" in an AI client: every way out of
   // this page goes back to that authorization.
   const [authorizationReturn, setAuthorizationReturn] = useState<string | null>(null);
@@ -132,7 +141,9 @@ export default function StartTrialPage() {
         setFreeTrialEnd(lic.expiresAt ?? null);
         setAuthorizationReturn(readAuthorizationReturn());
         setTrialEnd(cardTrialDisplayEnd(lic.expiresAt));
-        setSelection(readPlanIntent() ?? DEFAULT_SELECTION);
+        const intent = readPlanIntent();
+        picked.current = !!intent;
+        setSelection(intent ?? DEFAULT_SELECTION);
         setPromo(readPromoCode());
         const from = parseCheckoutSource(new URLSearchParams(window.location.search).get('source')) ?? 'start_trial';
         setSource(from);
@@ -149,6 +160,28 @@ export default function StartTrialPage() {
       live = false;
     };
   }, [isLoading, deploymentModeLoaded, deploymentMode, token, user, router, leave]);
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    let live = true;
+    license
+      .getPlanFit(token)
+      .then((r) => {
+        const plans = r?.plans && typeof r.plans === 'object' ? r.plans : null;
+        if (!live || !plans) return;
+        setPlanFit(plans);
+        if (!picked.current) setSelection((prev) => selectionForFit(prev, plans));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [ready, token]);
+
+  const choosePlan = (next: PlanSelection) => {
+    picked.current = true;
+    setSelection(next);
+  };
 
   // The licence site refused the trial at checkout: say so before sending anyone on.
   const paysToday = kind !== 'trial' || !!checkout.chargesTodayUrl;
@@ -254,7 +287,7 @@ export default function StartTrialPage() {
         <Card className="p-5 sm:p-6">
           <PlanPicker
             value={selection}
-            onChange={setSelection}
+            onChange={choosePlan}
             disabled={checkout.loading || !!checkout.chargesTodayUrl}
           />
 
@@ -301,6 +334,18 @@ export default function StartTrialPage() {
             </p>
           </div>
         </Card>
+        {/* What the chosen plan changes for this workspace: under the card, in the same column. */}
+        <PlanFitNotice
+          className="mt-4"
+          fit={fitFor(planFit, selection.plan)}
+          quietFit={selection.plan === 'team'}
+          onTrack={(action, plan) => {
+            if (token) productEvents.track('paywall_action', token, { source, action, plan, device: deviceKind() });
+          }}
+          onChooseTeam={
+            !checkout.loading && fitFor(planFit, 'team')?.fits ? () => choosePlan({ ...selection, plan: 'team' }) : undefined
+          }
+        />
       </main>
     </div>
   );
