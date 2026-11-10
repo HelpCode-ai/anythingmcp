@@ -1,0 +1,259 @@
+{
+  "slug": "filemaker",
+  "name": "Claris FileMaker",
+  "aliases": [
+    "filemaker data api",
+    "fmdapi",
+    "claris",
+    "filemaker server"
+  ],
+  "description": "Let your AI read a Claris FileMaker Server database through the FileMaker Data API: list layouts, read layout metadata (fields, portals, value lists), find records and fetch a record by id. Read-only: it never creates, edits, deletes or duplicates records, uploads containers, runs scripts or signs out. For FileMaker Server with a file account (Basic auth), not FileMaker Cloud.",
+  "instructions": "## Claris FileMaker\nThis connector reads a **FileMaker Server** database through the **FileMaker Data API** (`/fmi/data/vLatest`): layout names, layout metadata (fields, portals, value lists), find requests and a single record by id. It is **read-only**: every tool is a GET or a POST `_find` search. It cannot create, edit, delete or duplicate records, upload container data, set global fields, run scripts or log out.\n\n**Setup (about 5 minutes)**\n1. Set `FILEMAKER_URL` to the FileMaker Server address, normally `https://<host>` (HTTPS on 443 behind the Server web server), without a trailing slash. Not Admin Console and not WebDirect.\n2. Set `FILEMAKER_DATABASE` to the hosted file name **without** the `.fmp12` extension (e.g. `Contacts` for `Contacts.fmp12`).\n3. Create a dedicated file account for the AI with the extended privilege **fmrest** (FileMaker Data API) and only the layouts and fields it should read. Put its name and password in `FILEMAKER_USERNAME` and `FILEMAKER_PASSWORD`.\n4. Check the setup with `filemaker_list_layouts`.\n\nThe connector signs in at `/fmi/data/vLatest/databases/{database}/sessions` with that account (HTTP Basic) and an empty JSON body, then sends the returned session token as a Bearer token. FileMaker session tokens last until logout or **15 minutes of inactivity**; each authenticated call resets the timer. The connector signs in again before they expire and after an HTTP 401.\n\n**Where FileMaker Server runs**\n- **Self-hosted AnythingMCP**: FileMaker Server often runs on a private address (`https://10.0.0.5`, `https://fm.intern`). The outbound SSRF guard blocks private and local addresses by default, so an administrator must allow the host through the `SSRF_ALLOWED_HOSTS` environment variable or the allowlist in the admin settings.\n- **TLS**: a trial or local Server often uses a self-signed certificate. A self-signed certificate will fail: the connector offers no trust-anything switch. Give the Server a certificate whose name matches `FILEMAKER_URL`, put a reverse proxy with a valid certificate in front of it, or, on self-hosted, start AnythingMCP with `NODE_EXTRA_CA_CERTS` pointing to your internal CA.\n- **AnythingMCP Cloud**: Cloud can only reach a FileMaker Server exposed on the public internet over HTTPS with a publicly trusted certificate. A private IP or a local hostname is refused, and the allowlist cannot be changed on Cloud.\n\n**Privacy**: layout names, field values, record ids and portal data describe your business records. Assign this connector only to MCP servers whose users may see that.\n\n**How to work**\n1. Discover: `filemaker_list_layouts` for layout names (and folders).\n2. Fields: `filemaker_get_layout_metadata` for field names, types, portals and value lists on one layout.\n3. Search: `filemaker_find_records` with a `query` array of criterion objects (FileMaker find operators, e.g. `{\"Name\": \"=Ada\"}`). Optional `limit`, `offset` (1-based) and `sort`.\n4. One record: `filemaker_get_record` with the layout and `recordId` from a find answer.\n\n**Identifiers**: `layout` is the exact layout name from `filemaker_list_layouts` (case-sensitive as stored in the file). `recordId` is a string FileMaker assigns (e.g. `\"12\"`). Field names in `query` and in answers are the names from layout metadata.\n\n**Common errors**\n- **HTTP 401**: wrong `FILEMAKER_USERNAME` or `FILEMAKER_PASSWORD`, or a missing/expired session token. The connector signs in again on HTTP 401 and retries once.\n- **FileMaker code \"401\" in the response body (with HTTP 200 on FileMaker Server 26, or a non-2xx status such as HTTP 500 on some versions)** on `filemaker_find_records`: \"No records match the request\". That is an **empty result**, not an authentication failure and not a server crash. Treat it as zero records. Do not confuse it with HTTP 401.\n- 403: the file account lacks the fmrest privilege or access to that layout.\n- 404: wrong `FILEMAKER_URL`, database name or layout name.\n- Other FileMaker codes in a 500 (e.g. 102 field missing, 105 layout missing): fix the field or layout name from `filemaker_get_layout_metadata` / `filemaker_list_layouts`.\n- \"self-signed certificate\" or \"unable to verify the first certificate\": see TLS above.\n\n**Out of scope**: create, edit, delete or duplicate records; container uploads; global fields; scripts; logout; **FileMaker Cloud** (Claris ID / `Authorization: FMID`, not Basic sessions); the OData API; the Admin API; WebDirect; listing databases on the host (you already name the file in `FILEMAKER_DATABASE`).",
+  "region": "intl",
+  "category": "database",
+  "icon": "filemaker",
+  "docsUrl": "https://help.claris.com/en/data-api-guide/",
+  "prerequisites": "A FileMaker Server reachable from AnythingMCP with a certificate AnythingMCP trusts (on Cloud: public over HTTPS), a hosted .fmp12 file, and a file account with the fmrest (Data API) privilege and read access to the layouts you need. About 5 minutes. Not FileMaker Cloud.",
+  "requiredEnvVars": [
+    "FILEMAKER_URL",
+    "FILEMAKER_DATABASE",
+    "FILEMAKER_USERNAME",
+    "FILEMAKER_PASSWORD"
+  ],
+  "envVarMeta": {
+    "FILEMAKER_URL": {
+      "label": "FileMaker Server URL",
+      "kind": "address",
+      "help": "The FileMaker Server address without a trailing slash, normally HTTPS on 443. Not Admin Console or WebDirect. On AnythingMCP Cloud it must be public over HTTPS.",
+      "example": "https://fm.example.com",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https://, without a trailing slash, e.g. https://fm.example.com."
+    },
+    "FILEMAKER_DATABASE": {
+      "label": "Database file name",
+      "kind": "setting",
+      "help": "Name of the hosted FileMaker file without the .fmp12 extension, e.g. Contacts for Contacts.fmp12.",
+      "example": "Contacts",
+      "pattern": "^[^/\\\\]+$",
+      "patternMessage": "Enter the hosted file name without path separators and without .fmp12."
+    },
+    "FILEMAKER_USERNAME": {
+      "label": "File account username",
+      "kind": "credential",
+      "help": "A FileMaker file account with the fmrest (Data API) extended privilege and read access to the layouts the AI may use.",
+      "example": "mcp-readonly",
+      "link": "https://help.claris.com/en/data-api-guide/content/get-started.html"
+    },
+    "FILEMAKER_PASSWORD": {
+      "label": "File account password",
+      "kind": "credential",
+      "secret": true,
+      "help": "That file account's password.",
+      "link": "https://help.claris.com/en/data-api-guide/content/get-started.html"
+    }
+  },
+  "verifyHints": {
+    "401": "FileMaker refused the sign-in: FILEMAKER_USERNAME or FILEMAKER_PASSWORD is wrong, or the session token was missing or expired (the connector then signs in again).",
+    "403": "Signed in, but the file account lacks the fmrest privilege or access to that layout.",
+    "404": "No FileMaker Data API at this address, or the database or layout name is wrong. FILEMAKER_URL is the Server host without a trailing slash; FILEMAKER_DATABASE is the file name without .fmp12.",
+    "500": "FileMaker returned an error in messages[].code. On find, code \"401\" means no records matched (empty result). Other codes (102, 105, ...) mean a missing field or layout."
+  },
+  "probe": {
+    "tool": "filemaker_list_layouts"
+  },
+  "connector": {
+    "name": "FileMaker Data API",
+    "type": "REST",
+    "baseUrl": "{{FILEMAKER_URL}}/fmi/data/vLatest/databases/{{FILEMAKER_DATABASE}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{FILEMAKER_URL}}/fmi/data/vLatest/databases/{{FILEMAKER_DATABASE}}/sessions",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      "loginBasicAuth": true,
+      "loginBody": {},
+      "username": "{{FILEMAKER_USERNAME}}",
+      "password": "{{FILEMAKER_PASSWORD}}",
+      "tokenJsonPath": "response.token",
+      "tokenTTLSeconds": 900,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/layouts"
+  },
+  "tools": [
+    {
+      "name": "filemaker_list_layouts",
+      "description": "List every layout name in the FileMaker database, including folder structure (isFolder, folderLayoutNames). Use it to discover exact layout names for the other tools and to check the connection. Needs a file account with fmrest. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/layouts"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{layouts: response.layouts, messages: messages}"
+        }
+      }
+    },
+    {
+      "name": "filemaker_get_layout_metadata",
+      "description": "Get metadata for one FileMaker layout: fieldMetaData (field names and types), portalMetaData and valueLists. Use it before find or get so field names in query match the layout. Optional recordId returns dynamic value lists for that record. Needs fmrest. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "layout": {
+            "type": "string",
+            "description": "Exact layout name from filemaker_list_layouts."
+          },
+          "recordId": {
+            "type": "string",
+            "description": "Optional FileMaker record id so value lists that depend on the record are included."
+          }
+        },
+        "required": [
+          "layout"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/layouts/{layout}",
+        "encodePathParams": true,
+        "queryParams": {
+          "recordId": "$recordId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{fieldMetaData: response.fieldMetaData, portalMetaData: response.portalMetaData, valueLists: response.valueLists, messages: messages}"
+        }
+      }
+    },
+    {
+      "name": "filemaker_find_records",
+      "description": "Find records on a FileMaker layout via the Data API _find endpoint. Pass query as an array of criterion objects (FileMaker find operators, e.g. {\"Name\": \"=Ada\"}). Returns matching records (recordId, modId, fieldData). IMPORTANT: when no records match, FileMaker answers, depending on the Server version, with HTTP 200 (FileMaker Server 26) or a non-2xx status such as 500, and messages[].code \"401\" (\"No records match the request\"). That is an empty result, not an authentication failure and not a server crash - treat it as zero records. Do not confuse it with HTTP 401, which means the session token is missing or invalid (the connector re-logs in on HTTP 401). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "layout": {
+            "type": "string",
+            "description": "Exact layout name from filemaker_list_layouts."
+          },
+          "query": {
+            "type": "array",
+            "description": "Find requests. Each object maps field names to criteria (same operators as FileMaker Pro find). Use omit:\"true\" on an object to omit that request.",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "minItems": 1
+          },
+          "limit": {
+            "type": "string",
+            "description": "Max records to return (FileMaker default 100 if omitted). Prefer \"50\" or less."
+          },
+          "offset": {
+            "type": "string",
+            "description": "1-based starting record in the found set."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Optional sort: [{\"fieldName\":\"Name\",\"sortOrder\":\"ascend\"}].",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "layout",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/layouts/{layout}/_find",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "query": "$query",
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{records: response.data, dataInfo: response.dataInfo, messages: messages}"
+        }
+      }
+    },
+    {
+      "name": "filemaker_get_record",
+      "description": "Get one FileMaker record by its recordId on a layout: recordId, modId, fieldData and portalData. Use a recordId from filemaker_find_records. Needs fmrest. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "layout": {
+            "type": "string",
+            "description": "Exact layout name from filemaker_list_layouts."
+          },
+          "record_id": {
+            "type": "string",
+            "description": "FileMaker record id, e.g. \"12\" from a find answer."
+          }
+        },
+        "required": [
+          "layout",
+          "record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/layouts/{layout}/records/{record_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{record: response.data[0], dataInfo: response.dataInfo, messages: messages}"
+        }
+      }
+    }
+  ]
+}
