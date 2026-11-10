@@ -35,11 +35,11 @@ describe('trust number formatting (always rounded down)', () => {
   it('formats a whole set, never below the floors', () => {
     expect(
       formatTrustStats({ githubStars: 984, dockerPulls: 32_456, workspaces: 3_871, toolCalls30d: 654_321, updatedAt: null }),
-    ).toEqual({ downloads: '200,000+', workspaces: '3,800+', toolCalls: '1M+' });
+    ).toEqual({ downloads: '200,000+', workspaces: '3,800+', toolCalls: '2M+' });
     expect(
       formatTrustStats({ githubStars: 1_234, dockerPulls: 250_400, workspaces: null, toolCalls30d: 2_100_000, updatedAt: null }),
     ).toEqual({ downloads: '250,000+', workspaces: null, toolCalls: '2M+' });
-    expect(formatTrustStats(null)).toEqual({ downloads: '200,000+', workspaces: null, toolCalls: '1M+' });
+    expect(formatTrustStats(null)).toEqual({ downloads: '200,000+', workspaces: null, toolCalls: '2M+' });
   });
 });
 

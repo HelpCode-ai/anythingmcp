@@ -21,7 +21,11 @@ export type PaywallAction =
   | 'enterprise_clicked'
   | 'support_clicked'
   | 'delete_account_clicked'
-  | 'left_without_subscribe';
+  | 'left_without_subscribe'
+  // The "What changes with <plan>" block was shown (metadata.plan) because the
+  // workspace is above that plan, and its list of items was opened.
+  | 'plan_fit_shown'
+  | 'plan_fit_details_opened';
 
 export interface PaywallActionDetail {
   plan?: 'starter' | 'team';
