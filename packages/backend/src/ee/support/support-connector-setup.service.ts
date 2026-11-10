@@ -189,11 +189,18 @@ export class SupportConnectorSetupService {
     const posted = await this.postedTexts(desk, conversationUuid, contact.id);
     const values: Record<string, string> = {};
     const rawValues = args.values && typeof args.values === 'object' ? (args.values as Record<string, unknown>) : {};
-    for (const [name, raw] of Object.entries(rawValues)) {
+    // The model may name a value by its label ("API key") rather than its variable.
+    const byLabel = new Map<string, string>();
+    for (const d of descriptors.values()) {
+      byLabel.set(compact(d.name), d.name);
+      if (d.label) byLabel.set(compact(d.label), d.name);
+    }
+    for (const [given, raw] of Object.entries(rawValues)) {
+      const name = descriptors.has(given) ? given : (byLabel.get(compact(given)) ?? given);
       const d = descriptors.get(name);
       if (!d) {
         return {
-          error: `'${name}' is not a setting of ${definition.name}.`,
+          error: `'${given}' is not a setting of ${definition.name}.`,
           settings: [...descriptors.values()].map((x) => ({ name: x.name, label: x.label, required: x.required, secret: x.secret })),
         };
       }

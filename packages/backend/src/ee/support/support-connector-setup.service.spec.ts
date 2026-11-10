@@ -234,8 +234,20 @@ describe('SupportConnectorSetupService', () => {
 
   it('names the settings when the model uses a wrong one, and refuses an unknown app', async () => {
     const { svc } = setup();
-    const wrong = await svc.handle(identity(), { app: 'fudo', values: { API_KEY: KEY } });
+    const wrong = await svc.handle(identity(), { app: 'fudo', values: { TOKEN: KEY } });
     expect(wrong).toMatchObject({ settings: expect.arrayContaining([expect.objectContaining({ name: 'FUDO_API_KEY' })]) });
     expect(await svc.handle(identity(), { app: 'no-such-app-xyz' })).toHaveProperty('error');
+  });
+
+  it('accepts a value named by its label', async () => {
+    const { svc, deps } = setup({ states: { 'new-1': { status: 'ready', missing: [] } } });
+    await svc.handle(identity(), { app: 'fudo', values: { 'fudo api key': KEY, FUDO_API_SECRET: SECRET } });
+    expect(deps.adapters.importAdapter).toHaveBeenCalledWith(
+      'fudo',
+      USER_ID,
+      ORG_ID,
+      { FUDO_API_KEY: KEY, FUDO_API_SECRET: SECRET },
+      { addressMayWait: true },
+    );
   });
 });
