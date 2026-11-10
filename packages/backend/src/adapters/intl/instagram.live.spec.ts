@@ -46,9 +46,36 @@ describe('instagram adapter: static spec conformance', () => {
     expect(tool('instagram_search_hashtag').endpointMapping.queryParams).toMatchObject({ user_id: '{{INSTAGRAM_ACCOUNT_ID}}' });
   });
 
-  it('publishing is installed switched off', () => {
+  it('publishing and deleting are installed switched off', () => {
     expect(tool('instagram_create_media_container').enabled).toBe(false);
     expect(tool('instagram_publish_media').enabled).toBe(false);
+    expect(tool('instagram_delete_comment').enabled).toBe(false);
+    expect(tool('instagram_delete_media').enabled).toBe(false);
+    expect(tool('instagram_delete_comment').endpointMapping).toEqual({ method: 'DELETE', path: '/{comment_id}' });
+  });
+
+  it('reads an @mention through the field expansion on the account', () => {
+    const media = tool('instagram_get_mentioned_media').endpointMapping;
+    expect(media.path).toBe('/{{INSTAGRAM_ACCOUNT_ID}}');
+    expect(media.queryParams).toEqual({ fields: 'mentioned_media.media_id(${media_id}){${fields}}' });
+    const comment = tool('instagram_get_mentioned_comment').endpointMapping;
+    expect(comment.queryParams).toEqual({ fields: 'mentioned_comment.comment_id(${comment_id}){${fields}}' });
+    // The expansion needs a value for every placeholder: fields has a default.
+    expect((tool('instagram_get_mentioned_media').parameters?.properties?.fields as { default?: string }).default).toBeTruthy();
+    expect(tool('instagram_reply_to_mention').endpointMapping).toMatchObject({ method: 'POST', path: '/{{INSTAGRAM_ACCOUNT_ID}}/mentions' });
+  });
+
+  it('turns comments on or off with comment_enabled on the media', () => {
+    expect(tool('instagram_set_comments_enabled').endpointMapping).toEqual({
+      method: 'POST',
+      path: '/{media_id}',
+      queryParams: { comment_enabled: '$enabled' },
+    });
+  });
+
+  it('can be authorized with Facebook: the app variables are the renewal ones', () => {
+    const renewal = (a.connector.authConfig as unknown as { tokenRenewal: Record<string, string> }).tokenRenewal;
+    expect(renewal).toMatchObject({ provider: 'meta', appIdVar: 'META_APP_ID', appSecretVar: 'META_APP_SECRET' });
   });
 });
 
