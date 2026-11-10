@@ -138,7 +138,8 @@
         "type": "object",
         "properties": {
           "page": { "type": "integer", "description": "1-based page." },
-          "per_page": { "type": "integer", "description": "1-100." },
+          "per_page": { "type": "integer", "description": "1-100 (WooCommerce default 10). Full products carry descriptions and images: use 20-50, or pass `_fields` for a long list." },
+          "_fields": { "type": "string", "description": "Comma-separated top-level fields to return, e.g. `id,name,sku,status,price,regular_price,sale_price,stock_status,stock_quantity,permalink`. Leave empty for complete products." },
           "search": { "type": "string", "description": "Free-text search across product name/description/SKU." },
           "sku": { "type": "string", "description": "Filter by exact SKU." },
           "slug": { "type": "string", "description": "Filter by exact slug." },
@@ -161,6 +162,7 @@
         "queryParams": {
           "page": "$page",
           "per_page": "$per_page",
+          "_fields": "$_fields",
           "search": "$search",
           "sku": "$sku",
           "slug": "$slug",
@@ -569,12 +571,13 @@
     },
     {
       "name": "woocommerce_list_orders",
-      "description": "List orders with status, date, customer, and product filters. For abandoned-order triage use status=pending,on-hold,failed with a recent `after`.",
+      "description": "List orders with status, date, customer, and product filters. For abandoned-order triage use status=pending,on-hold,failed with a recent `after`. Full orders are large (line items, addresses, meta data: often 50-90 KB each), so ask for 20-50 per page and pass `_fields` when you only need a list; read one complete order with `woocommerce_get_order`.",
       "parameters": {
         "type": "object",
         "properties": {
           "page": { "type": "integer" },
-          "per_page": { "type": "integer" },
+          "per_page": { "type": "integer", "description": "1-100 (WooCommerce default 10). Use 20-50: 100 full orders can be 5-9 MB and slow or time out." },
+          "_fields": { "type": "string", "description": "Comma-separated top-level fields to return, e.g. `id,number,status,date_created,total,currency,customer_id,billing,line_items`. Leave empty for complete orders." },
           "search": { "type": "string" },
           "status": { "type": "string", "description": "Comma-separated: any | pending | processing | on-hold | completed | cancelled | refunded | failed | trash." },
           "customer": { "type": "integer", "description": "Customer user id." },
@@ -591,6 +594,7 @@
         "queryParams": {
           "page": "$page",
           "per_page": "$per_page",
+          "_fields": "$_fields",
           "search": "$search",
           "status": "$status",
           "customer": "$customer",

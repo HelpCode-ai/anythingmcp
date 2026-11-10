@@ -58,7 +58,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending (e.g. '-createdDate')"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -118,7 +118,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -158,7 +158,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-invoiceDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -198,7 +198,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -258,7 +258,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -318,7 +318,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -378,7 +378,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -456,7 +456,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         },
         "required": [
@@ -560,7 +560,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         },
         "required": [
@@ -604,7 +604,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -698,7 +698,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-postingDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -738,7 +738,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -774,7 +774,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -809,7 +809,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending"
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3309,7 +3309,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3485,7 +3485,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3525,7 +3525,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3565,7 +3565,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3626,7 +3626,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3687,7 +3687,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3727,7 +3727,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3767,7 +3767,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3807,7 +3807,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3847,7 +3847,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
@@ -3887,7 +3887,7 @@
           },
           "sort": {
             "type": "string",
-            "description": "Sort field, prefix with '-' for descending, e.g. '-createdDate'."
+            "description": "One field name to sort by, prefixed with '-' for descending, e.g. '-createdDate'. Only the bare name: 'invoiceDate:desc' or 'invoiceDate desc' fail with 400 \"unexpected sort property\", and so does a field this record does not have. createdDate and lastModifiedDate work on every record."
           }
         }
       },
