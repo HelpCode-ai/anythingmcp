@@ -169,7 +169,7 @@ describe('SupportTriageService', () => {
     expect(desk.addTags).toHaveBeenCalledTimes(1);
   });
 
-  it('hands safe live chats to the AI assistant after the team, enterprise included, never billing', async () => {
+  it('hands safe live chats to the AI assistant after the team, enterprise included, never billing problems', async () => {
     const msgs = [{ private: false, sender_type: 'contact', text_content: 'help' }];
     const chat = jest.spyOn(llm, 'chatJson');
 
@@ -188,6 +188,18 @@ describe('SupportTriageService', () => {
     const billing = fakeDesk(msgs);
     await new TestTriage(billing, undefined, 5).triage({ uuid: 'a2', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'cloud' } } });
     expect(billing.assignUser).not.toHaveBeenCalled();
+
+    chat.mockResolvedValueOnce({ json: { category: 'billing-question', priority: 'Low' } });
+    const howTo = fakeDesk(msgs);
+    await new TestTriage(howTo, undefined, 5).triage({ uuid: 'a7', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'cloud', plan: 'starter' } } });
+    expect(howTo.addTags).toHaveBeenCalledWith('a7', ['billing-question', 'cloud', 'paid', 'ai-triaged', 'ai-assistant']);
+    expect(howTo.setPriority).toHaveBeenCalledWith('a7', 'Low');
+    expect(howTo.assignUser).toHaveBeenCalledWith('a7', 5);
+
+    chat.mockResolvedValueOnce({ json: { category: 'billing-question', priority: 'Low' } });
+    const entHowTo = fakeDesk(msgs);
+    await new TestTriage(entHowTo, undefined, 5).triage({ uuid: 'a8', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'dedicated' } } });
+    expect(entHowTo.assignUser).not.toHaveBeenCalled();
 
     chat.mockResolvedValueOnce({ json: { category: 'connector-setup', priority: 'Low' } });
     const ent = fakeDesk(msgs);
