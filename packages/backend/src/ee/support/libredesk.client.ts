@@ -6,6 +6,7 @@ export interface LibredeskMessage {
   type: string;
   private: boolean;
   sender_type: string;
+  sender_id?: number;
   text_content?: string;
   content?: string;
   created_at?: string;
@@ -59,6 +60,15 @@ export class LibredeskClient {
       `/api/v1/conversations/${encodeURIComponent(uuid)}/messages?page=1&page_size=30&type=incoming`,
     );
     return page?.results ?? [];
+  }
+
+  /** Private notes of a conversation, newest first (the triage note among them). */
+  async privateNotes(uuid: string): Promise<LibredeskMessage[]> {
+    const page = await this.call<{ results?: LibredeskMessage[] }>(
+      'GET',
+      `/api/v1/conversations/${encodeURIComponent(uuid)}/messages?page=1&page_size=50`,
+    );
+    return (page?.results ?? []).filter((m) => m.private);
   }
 
   conversation(uuid: string): Promise<LibredeskConversation | undefined> {
