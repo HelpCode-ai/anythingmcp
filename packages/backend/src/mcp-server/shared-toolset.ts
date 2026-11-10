@@ -489,6 +489,11 @@ export interface SharedToolsetDeps {
    * licence is active or on self-hosted. Optional, best-effort.
    */
   trialEnded?(): Promise<TrialEndedNotice | null>;
+  /**
+   * Cloud: the connectors a plan change paused (above the plan's cap), so the
+   * model can explain why they are missing; null when none. Best-effort.
+   */
+  pausedByPlan?(): Promise<{ connectors: string[]; manageUrl: string } | null>;
   /** Where the user configures connectors, plus their servers' direct URLs. */
   configuration(): Promise<{
     dashboardUrl: string;
@@ -887,9 +892,17 @@ export function registerSharedToolset(
           finishSetupUrl: deps.connectorUrl(t.connectorId),
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
+      const paused = await deps.pausedByPlan?.().catch(() => null);
       return json({
         ...(await trialEndedBlock(deps)),
         connectors,
+        ...(paused?.connectors.length
+          ? {
+              pausedByPlan: paused.connectors,
+              pausedByPlanHint:
+                `These connectors are paused because the workspace's plan includes fewer active connectors; nothing was deleted. If the user asks for one of them, tell them they can choose which connectors are active at ${paused.manageUrl}, or upgrade the plan to use them all.`,
+            }
+          : {}),
         ...(needsSetup.length
           ? {
               needsSetup,

@@ -897,6 +897,9 @@ export class ConnectorsController {
         ? { ...guarded, envVars: { ...(envVars ?? {}), ...secrets.newEnvVars } }
         : guarded;
     await this.licenseGuard.checkCanCreateConnector(req.user.sub, req.user.organizationId);
+    if (dto.webhookEnabled === true) {
+      await this.licenseGuard.checkCanEnableWebhook(req.user.organizationId);
+    }
     const connector = await this.connectorsService.create(req.user.sub, req.user.organizationId, data);
     if (secrets.changed) {
       this.logger.log(
@@ -1450,6 +1453,14 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
+    // Switching a paused connector back on counts against the plan's cap (Cloud).
+    if (dto.isActive === true && !connector.isActive) {
+      await this.licenseGuard.checkCanActivateConnector(connector.organizationId, connector.type as string);
+    }
+    // So does turning inbound webhooks on (off -> on only; turning them off is free).
+    if (dto.webhookEnabled === true && !connector.webhookEnabled) {
+      await this.licenseGuard.checkCanEnableWebhook(connector.organizationId);
+    }
     if ((connector.type as string) === 'FILE_SEARCH' && (dto.config !== undefined || dto.baseUrl !== undefined || dto.authConfig !== undefined)) {
       throw new BadRequestException('Change the source of a File Search connector on its Files tab.');
     }

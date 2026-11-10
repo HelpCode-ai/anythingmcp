@@ -3,6 +3,7 @@
 import {
   CLOUD_PLANS,
   describeUsage,
+  fitFor,
   formatEur,
   limitsExceeded,
   smallestFittingPlan,
@@ -12,6 +13,7 @@ import {
   type PlanSelection,
   type WorkspaceUsage,
 } from '@/lib/card-trial';
+import type { PlanFits } from '@/lib/api';
 import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { useAuth } from '@/lib/auth-context';
 import { formatLocal, useLocalPricing } from '@/lib/local-currency';
@@ -66,6 +68,8 @@ function PeriodToggle({
  * and a line to Enterprise for anything beyond them. `compact` lays the plans
  * out as rows (for the licence wall's narrow modal). With `usage` (what the
  * workspace already has), a plan it has outgrown says so under its summary.
+ * What a plan changes for this workspace ("What changes with Starter") is
+ * shown by the caller under its subscribe button (PlanFitNotice).
  */
 export function PlanPicker({
   value,

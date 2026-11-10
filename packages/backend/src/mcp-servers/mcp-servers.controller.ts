@@ -252,6 +252,10 @@ export class McpServersController {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
     this.assertCanWrite(server, req);
+    // Switching a paused server back on counts against the plan's cap (Cloud).
+    if (dto.isActive === true && !server.isActive) {
+      await this.licenseGuard.checkCanActivateMcpServer(server.organizationId);
+    }
     return this.mcpServersService.update(id, dto);
   }
 

@@ -10,8 +10,10 @@ import { useAuth } from '@/lib/auth-context';
 import {
   adapters,
   connectors,
+  planLimitOf,
   productEvents,
   type AdapterSetupInfo,
+  type PlanLimitError,
   type EnvVarDescriptor,
   type SetupGuideStep,
   type VerifyResult,
@@ -21,6 +23,7 @@ import { Card } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
+import { PlanLimitNotice } from '@/components/plan-swap-dialog';
 import { cn } from '@/lib/utils';
 import { fileSearchSetupPath } from '@/lib/file-search-catalog';
 import { copyText } from '@/lib/clipboard';
@@ -108,6 +111,8 @@ function SetupContent() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [phase, setPhase] = useState<Phase>(backFromProvider ? 'working' : 'form');
   const [error, setError] = useState('');
+  // The install refused at the plan's limit (Cloud): "Pause one or upgrade".
+  const [planLimit, setPlanLimit] = useState<PlanLimitError | null>(null);
   const [verifyFailed, setVerifyFailed] = useState<VerifyResult | null>(null);
   const [result, setResult] = useState<{ connectorId: string; sample?: string; verified: boolean; note?: string } | null>(null);
   const [redirectUri, setRedirectUri] = useState<string | null>(null);
@@ -505,6 +510,7 @@ function SetupContent() {
 
   const fail = (e: any) => {
     setPhase('form');
+    setPlanLimit(planLimitOf(e));
     setError(e?.message || t('genericError'));
   };
 
@@ -739,7 +745,9 @@ function SetupContent() {
         </div>
       )}
       {error && (
-        isTrialLimitMessage(error) ? (
+        planLimit && planLimit.message === error ? (
+          <PlanLimitNotice limit={planLimit} />
+        ) : isTrialLimitMessage(error) ? (
           <TrialLimitNotice message={error} />
         ) : (
           <p role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">{error}</p>

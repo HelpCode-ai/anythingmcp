@@ -1,3 +1,4 @@
+import { evaluatePlanFit } from './plan-fit';
 import { BadGatewayException, ConflictException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
@@ -20,6 +21,7 @@ function license(plan: string, opts: { status?: string; expiresAt?: Date | null 
 }
 
 interface MakeOpts {
+  planFit?: any;
   cloud?: boolean;
   org?: { name: string } | null;
   current?: any;
@@ -97,6 +99,7 @@ function make(opts: MakeOpts = {}) {
     productEvents as any,
     licenseWall as any,
     retention as any,
+    opts.planFit as any,
   );
   return { controller, prisma, licenseService, licenseGuard, productEvents, licenseWall, retention };
 }
@@ -129,6 +132,7 @@ describe('ReactivationController', () => {
         usage: { connectors: 3, mcpServers: 1, users: 2 },
         offerArm: null,
         offer: null,
+        planFit: null,
       });
       expect(licenseGuard.getUsage).toHaveBeenCalledWith(undefined, 'org-1');
       expect(JSON.stringify(view)).not.toMatch(/org-1|user-1|AMCP-|@/);
@@ -138,6 +142,37 @@ describe('ReactivationController', () => {
         userId: null,
         metadata: { state: 'trial-ended' },
       });
+    });
+
+    it('says what changes on each plan, without connector or server names', async () => {
+      const at = new Date('2026-11-01T00:00:00Z');
+      const snap = {
+        connectors: Array.from({ length: 7 }, (_, i) => ({ id: `c${i}`, name: `Secret ERP ${i}`, calls30d: i, updatedAt: at })),
+        mcpServers: [{ id: 's1', name: 'Private server', calls30d: 1, updatedAt: at }],
+        users: 1,
+        fileSearchConnectors: [],
+        fileSearchFiles: 0,
+        fileSearchBytes: 0,
+        codeTools: 0,
+        inlineCodeInUse: false,
+        codeRunsThisMonth: 0,
+      };
+      const planFit = {
+        fitAll: jest.fn().mockResolvedValue({ starter: evaluatePlanFit(snap, 'starter'), team: evaluatePlanFit(snap, 'team') }),
+      };
+      const { controller } = make({ current: license('trial', { expiresAt: ended }), planFit });
+      const view = await controller.view(token());
+      expect(planFit.fitAll).toHaveBeenCalledWith('org-1');
+      expect(view.planFit?.starter).toMatchObject({ fits: false, connectors: { current: 7, max: 5, over: true } });
+      expect(view.planFit?.starter.connectors.pause).toHaveLength(2);
+      expect(view.planFit?.team.fits).toBe(true);
+      expect(JSON.stringify(view)).not.toMatch(/Secret ERP|Private server|"c\d"|"s1"/);
+    });
+
+    it('still answers when the plan fit cannot be read', async () => {
+      const planFit = { fitAll: jest.fn().mockRejectedValue(new Error('db down')) };
+      const { controller } = make({ current: license('trial', { expiresAt: ended }), planFit });
+      await expect(controller.view(token())).resolves.toMatchObject({ state: 'trial-ended', planFit: null });
     });
 
     it('reads an ended trial that is no longer active from the latest inactive licence', async () => {

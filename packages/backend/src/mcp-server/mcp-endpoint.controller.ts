@@ -641,6 +641,10 @@ export class McpEndpointController {
       // The workspace this connection mainly reaches: an ended trial is said
       // up front in anythingmcp_list_connectors, with the reactivation link.
       trialEnded: () => this.toolExecutor.trialEndedNotice(setupOrg || organizationId || undefined, user.sub),
+      pausedByPlan: async () => {
+        const names = await this.toolExecutor.pausedByPlanConnectorNames(setupOrg || organizationId || undefined);
+        return names ? { connectors: names, manageUrl: `${dashboardBase}/connectors` } : null;
+      },
       ...(this.sharedCalls && (setupOrg || organizationId) && variant === 'shared'
         ? {
             called: ({ tool, setupTool }) => {

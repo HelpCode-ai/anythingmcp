@@ -156,4 +156,13 @@ describe('LicenseGuardService.getUsage', () => {
     expect(usage.mcpServers).toEqual({ current: 2, max: 3, isOver: false });
     expect(usage.isOverAny).toBe(true);
   });
+
+  it('counts only active connectors and servers, File Search folders apart', async () => {
+    const { guard, prisma } = make({ maxConnectors: 5, maxMcpServers: 3, maxUsers: 1 });
+    await guard.getUsage('u1', 'org_2');
+    expect(prisma.connector.count).toHaveBeenCalledWith({
+      where: { organizationId: 'org_2', isActive: true, type: { not: 'FILE_SEARCH' } },
+    });
+    expect(prisma.mcpServerConfig.count).toHaveBeenCalledWith({ where: { organizationId: 'org_2', isActive: true } });
+  });
 });

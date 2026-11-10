@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { LicenseService, isLivePaidLicence, periodEndCheckDue } from './license.service';
 
 type MockLicense = {
@@ -1124,5 +1125,65 @@ describe('LicenseService — DPA link', () => {
     jest.spyOn(axios, 'post').mockRejectedValue({ response: { status: 404, data: { error: 'no paid plan' } } });
 
     await expect(svc.createDpaLink('org-1', 'user-1')).rejects.toThrow('no paid plan');
+  });
+});
+
+describe('LicenseService — plan changes are announced (Cloud)', () => {
+  let get: jest.SpyInstance;
+  beforeEach(() => {
+    get = jest.spyOn(axios, 'get');
+  });
+  afterEach(() => get.mockRestore());
+
+  function make(cloud = true) {
+    const row: any = { licenseKey: 'AMCP-T', organizationId: 'org-1', plan: 'trial', status: 'active', createdAt: new Date() };
+    const prisma = {
+      license: {
+        findFirst: jest.fn(async ({ where }: any) =>
+          where?.organizationId === 'org-1' && (!where.status || row.status === where.status) ? { ...row } : null,
+        ),
+        update: jest.fn(async ({ data }: any) => Object.assign(row, data)),
+      },
+    };
+    const svc = new LicenseService(prisma as any, {} as any, { isCloud: () => cloud } as any);
+    return { svc, row };
+  }
+  const flush = () => new Promise((r) => setImmediate(r));
+
+  it('tells listeners when a verification changes the plan', async () => {
+    const { svc } = make();
+    const seen: any[] = [];
+    svc.onPlanChange((c) => {
+      seen.push(c);
+    });
+    get.mockResolvedValue({ data: { valid: true, plan: 'starter', features: {} } });
+    await svc.verifyLicense('AMCP-T', 'org-1');
+    await flush();
+    expect(seen).toEqual([{ organizationId: 'org-1', from: 'trial', to: 'starter' }]);
+  });
+
+  it('stays quiet when the plan is the same, and a failing listener never fails the write', async () => {
+    const { svc } = make();
+    const listener = jest.fn().mockRejectedValue(new Error('boom'));
+    svc.onPlanChange(listener);
+    get.mockResolvedValue({ data: { valid: true, plan: 'trial', features: {} } });
+    await expect(svc.verifyLicense('AMCP-T', 'org-1')).resolves.toMatchObject({ valid: true });
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
+
+    get.mockResolvedValue({ data: { valid: true, plan: 'team', features: {} } });
+    await expect(svc.verifyLicense('AMCP-T', 'org-1')).resolves.toMatchObject({ valid: true });
+    await flush();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces nothing on self-hosted', async () => {
+    const { svc } = make(false);
+    const listener = jest.fn();
+    svc.onPlanChange(listener);
+    get.mockResolvedValue({ data: { valid: true, plan: 'starter', features: {} } });
+    await svc.verifyLicense('AMCP-T', 'org-1');
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
   });
 });

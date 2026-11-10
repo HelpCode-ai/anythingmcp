@@ -5,6 +5,7 @@ import {
   type RetentionOffer,
   activationReminderEmail,
   appApprovedEmail,
+  planCapsAppliedEmail,
   cardTrialOfferEmail,
   connectorAuthEmail,
   existingAccountEmail,
@@ -102,6 +103,22 @@ export const EMAIL_SAMPLES: EmailSample[] = [
           connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector`,
           prompt: 'Show my last 10 Etsy orders',
           promptUrl: 'https://claude.ai/new?q=Show%20my%20last%2010%20Etsy%20orders',
+        },
+        ctx,
+      ),
+  },
+  {
+    id: 'plan-caps-applied',
+    render: (ctx, n) =>
+      planCapsAppliedEmail(
+        {
+          name: n.name,
+          workspaceName: n.other,
+          planName: 'Starter',
+          paused: { connectors: ['Etsy', n.other], mcpServers: ['Support desk'], fileSearch: [] },
+          kept: { connectors: 5, mcpServers: 3 },
+          connectorsUrl: `${SAMPLE_CLOUD_URL}/connectors`,
+          planUrl: `${SAMPLE_CLOUD_URL}/settings/license`,
         },
         ctx,
       ),

@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
-import { adapters, connectors, isMachineGrant, type CatalogUrlMatch, type OAuthGrant } from '@/lib/api';
+import { adapters, connectors, isMachineGrant, planLimitOf, type CatalogUrlMatch, type OAuthGrant, type PlanLimitError } from '@/lib/api';
+import { PlanLimitNotice } from '@/components/plan-swap-dialog';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
@@ -111,6 +112,8 @@ export default function NewConnectorPage() {
   // EMAIL: servers, login and sender (IMAP + SMTP).
   const [emailForm, setEmailForm] = useState<EmailFormState>(EMPTY_EMAIL_FORM);
   const [error, setError] = useState('');
+  // A create refused at the plan's limit (Cloud): "Pause one or upgrade".
+  const [planLimit, setPlanLimit] = useState<PlanLimitError | null>(null);
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
@@ -235,6 +238,7 @@ export default function NewConnectorPage() {
     e.preventDefault();
     if (!token || !selectedType) return;
     setError('');
+    setPlanLimit(null);
     if (
       authType === 'OAUTH2' &&
       selectedType !== 'MCP' &&
@@ -299,6 +303,7 @@ export default function NewConnectorPage() {
         setCreatedConnector({ id: created.id, name: name || created.name });
       }
     } catch (err: any) {
+      setPlanLimit(planLimitOf(err));
       setError(err.message);
     } finally {
       setLoading(false);
@@ -428,7 +433,11 @@ export default function NewConnectorPage() {
               {t('configure', { type: t(`types.${selectedType}.name`) })}
             </h3>
 
-            {error && isTrialLimitMessage(error) ? (
+            {planLimit ? (
+              <div className="mb-4">
+                <PlanLimitNotice limit={planLimit} />
+              </div>
+            ) : error && isTrialLimitMessage(error) ? (
               <div className="mb-4">
                 <TrialLimitNotice message={error} />
               </div>

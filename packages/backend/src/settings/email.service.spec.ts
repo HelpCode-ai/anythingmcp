@@ -81,7 +81,7 @@ describe('EmailService', () => {
     // Downloads and tool calls at their floors; no GitHub star count.
     expect(mail.html).not.toContain('stars on GitHub');
     expect(mail.html).toContain('200,000+');
-    expect(mail.html).toContain('1M+');
+    expect(mail.html).toContain('2M+');
   });
 
   describe('Reply-To of the system SMTP', () => {
