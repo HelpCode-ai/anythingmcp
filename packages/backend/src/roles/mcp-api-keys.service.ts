@@ -78,6 +78,10 @@ export class McpApiKeysService implements OnApplicationBootstrap {
       if (!membership || membership.deactivatedAt) {
         throw new NotFoundException('MCP server not found');
       }
+      // A server's key belongs to the server's workspace (resolveUserByKey
+      // scopes a key to its organization), whichever workspace the owner
+      // happened to be in when creating it.
+      organizationId = server!.organizationId;
     }
 
     const key = `mcp_${randomBytes(32).toString('hex')}`;
@@ -159,7 +163,7 @@ export class McpApiKeysService implements OnApplicationBootstrap {
       where: {
         userId_organizationId: { userId: record.userId, organizationId: record.organizationId },
       },
-      select: { deactivatedAt: true },
+      select: { deactivatedAt: true, role: true },
     });
     if (!membership || membership.deactivatedAt) return null;
 
@@ -173,11 +177,16 @@ export class McpApiKeysService implements OnApplicationBootstrap {
       },
     }).catch(() => {});
 
+    // A key acts in the workspace it was created in, with the owner's role
+    // THERE. `users.organization_id` / `users.role` describe the workspace the
+    // owner last switched to in the dashboard, which can be another one: taking
+    // them would let a key created for workspace A reach workspace B.
+    const scoped = { ...record.user, organizationId: record.organizationId, role: membership.role };
     if (record.isSupport) {
       // No key name for a support key: it would reach the workspace's logs
       // and, through {{amcp.api_key_name}}, its connectors' target systems.
-      return { ...record.user, mcpServerId: record.mcpServerId, apiKeyName: undefined, supportKeyId: record.id };
+      return { ...scoped, mcpServerId: record.mcpServerId, apiKeyName: undefined, supportKeyId: record.id };
     }
-    return { ...record.user, mcpServerId: record.mcpServerId, apiKeyName: record.name, supportKeyId: undefined };
+    return { ...scoped, mcpServerId: record.mcpServerId, apiKeyName: record.name, supportKeyId: undefined };
   }
 }

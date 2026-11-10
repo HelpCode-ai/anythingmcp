@@ -1296,6 +1296,10 @@ export class McpEndpointController {
     // workspaces must reach servers in any org they're a member of, while a
     // non-member is still denied. The primary-org match is kept as a
     // zero-query fast path for the common single-org case.
+    //
+    // An API key is the exception: it belongs to the workspace it was created
+    // in (its `organizationId`, set by resolveUserByKey), so it reaches that
+    // workspace's servers only, even when its owner is a member of others.
     const user = (req as any).user;
     const isInstanceLevel =
       user?.authMethod === 'static_api_key' ||
@@ -1307,7 +1311,8 @@ export class McpEndpointController {
         !!user?.organizationId && user.organizationId === serverOrg;
       const isMember =
         primaryOrgMatches ||
-        (!!user?.sub &&
+        (user?.authMethod !== 'mcp_api_key' &&
+          !!user?.sub &&
           !!serverOrg &&
           (await this.mcpServersService.isUserInOrganization(
             user.sub,

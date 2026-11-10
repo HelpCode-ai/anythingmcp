@@ -192,6 +192,36 @@ describe('McpEndpointController — tenant isolation', () => {
     expect((controller as any).kgService.captureIntentEnabled).toHaveBeenCalledWith('org-A', 'u-multi');
   });
 
+  // An API key belongs to the workspace it was created in: unlike a sign-in,
+  // it does not reach the servers of the owner's other workspaces.
+  it("refuses an API key on a server of the owner's other workspace, even for a member", async () => {
+    mcpServersService.isUserInOrganization.mockResolvedValue(true);
+    const req: any = {
+      user: { sub: 'u-multi', organizationId: 'org-B', authMethod: 'mcp_api_key', apiKeyName: 'laptop' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mcpServersService.isUserInOrganization).not.toHaveBeenCalled();
+    expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+  });
+
+  it("serves an API key on a server of the key's own workspace", async () => {
+    const req: any = {
+      user: { sub: 'u-multi', organizationId: 'org-A', authMethod: 'mcp_api_key', apiKeyName: 'laptop' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+  });
+
   it('logs who was refused (ids and key name, no secret) and tells the client why', async () => {
     const warn = jest.spyOn((controller as any).logger, 'warn').mockImplementation(() => undefined);
     const req: any = {

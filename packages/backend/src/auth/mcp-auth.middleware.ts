@@ -47,7 +47,7 @@ export class McpAuthMiddleware implements NestMiddleware {
       const user = await this.mcpApiKeysService.resolveUserByKey(presentedKey);
       if (user) {
         (req as any).user = {
-          sub: user.id, email: user.email, role: user.role,
+          sub: user.id, email: user.email, role: user.role, organizationId: user.organizationId,
           mcpRoleId: user.mcpRoleId, mcpServerId: user.mcpServerId,
           authMethod: 'mcp_api_key', apiKeyName: user.apiKeyName, supportKeyId: user.supportKeyId,
         };
