@@ -1,3 +1,5 @@
+import { PlanFitService } from './plan-fit.service';
+import { anonymizePlanFit, type FitPlan, type PlanFit } from './plan-fit';
 import {
   BadGatewayException,
   Body,
@@ -59,6 +61,12 @@ export interface ReactivationView {
   offerArm: ReactivationOfferArm | null;
   /** The discounted price shown in the 'personal' arm (Cloud Starter monthly); null otherwise. */
   offer: { plan: 'starter'; billingPeriod: 'monthly'; monthlyEur: number; months: number } | null;
+  /**
+   * What the workspace keeps and loses on each plan, without connector or
+   * server names (the page opens without a sign-in); null when it could not
+   * be read.
+   */
+  planFit: Record<FitPlan, PlanFit> | null;
 }
 
 /** The catalog adapter of the Telegram bot connector. */
@@ -131,6 +139,7 @@ export class ReactivationController {
     private readonly productEvents: ProductEventService,
     @Optional() private readonly licenseWall?: LicenseWallService,
     @Optional() private readonly retention?: RetentionLicenceClient,
+    @Optional() private readonly planFit?: PlanFitService,
   ) {}
 
   @Get(':token')
@@ -148,11 +157,15 @@ export class ReactivationController {
     });
     if (!org) throw new NotFoundException(INVALID_LINK);
 
-    const [{ state, trialEndedAt }, usage, client] = await Promise.all([
+    const [{ state, trialEndedAt }, usage, client, fits] = await Promise.all([
       this.stateOf(organizationId),
       this.licenseGuard.getUsage(undefined, organizationId),
       this.clientOf(organizationId).catch(() => null),
+      this.planFit ? this.planFit.fitAll(organizationId).catch(() => null) : Promise.resolve(null),
     ]);
+    const planFit = fits
+      ? { starter: anonymizePlanFit(fits.starter), team: anonymizePlanFit(fits.team) }
+      : null;
     const offerArm = await this.offerArmOf(organizationId, state).catch(() => null);
     await this.recordView(organizationId, state, offerArm);
     return {
@@ -175,6 +188,7 @@ export class ReactivationController {
         mcpServers: usage.mcpServers.current,
         users: usage.users.current,
       },
+      planFit,
     };
   }
 

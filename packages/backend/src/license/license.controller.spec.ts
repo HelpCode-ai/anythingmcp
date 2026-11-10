@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { LicenseController } from './license.controller';
 import { readEmailLinkToken } from '../common/email-link-token';
 
@@ -269,5 +269,50 @@ describe('LicenseController — the licence site reports a changed licence', () 
     process.env.LICENSE_SERVICE_TOKEN = TOKEN;
     const { controller } = make(true, jest.fn(async () => { throw new Error('site down'); }));
     await expect(controller.syncFromSite(req(TOKEN), { licenseKey: KEY })).resolves.toEqual({ synced: false });
+  });
+});
+
+describe('LicenseController — plan fit', () => {
+  function make(cloud = true) {
+    const planFit = {
+      fit: jest.fn(async (_org: string, plan: string) => ({ plan, fits: true })),
+      fitAll: jest.fn(async () => ({ starter: { plan: 'starter', fits: false }, team: { plan: 'team', fits: true } })),
+    };
+    const controller = new LicenseController(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { isCloud: () => cloud } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      undefined,
+      undefined,
+      undefined,
+      planFit as any,
+    );
+    return { controller, planFit };
+  }
+  const req = { user: { organizationId: 'org-1', sub: 'u1', role: 'MEMBER' } };
+
+  it('returns both plans for the caller\'s workspace', async () => {
+    const { controller, planFit } = make();
+    await expect(controller.planFitForUser(req)).resolves.toEqual({
+      plans: { starter: { plan: 'starter', fits: false }, team: { plan: 'team', fits: true } },
+    });
+    expect(planFit.fitAll).toHaveBeenCalledWith('org-1');
+  });
+
+  it('returns one plan on request and refuses others', async () => {
+    const { controller, planFit } = make();
+    await expect(controller.planFitForUser(req, 'team')).resolves.toEqual({ plans: { team: { plan: 'team', fits: true } } });
+    expect(planFit.fit).toHaveBeenCalledWith('org-1', 'team');
+    await expect(controller.planFitForUser(req, 'enterprise')).rejects.toThrow(BadRequestException);
+  });
+
+  it('is Cloud only and needs a workspace', async () => {
+    await expect(make(false).controller.planFitForUser(req)).rejects.toThrow(NotFoundException);
+    await expect(make().controller.planFitForUser({ user: {} })).rejects.toThrow(NotFoundException);
   });
 });

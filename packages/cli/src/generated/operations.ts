@@ -1654,6 +1654,16 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "license",
+    "action": "planFitForUser",
+    "method": "GET",
+    "path": "/api/license/plan-fit",
+    "summary": "Cloud: what this workspace keeps and loses on Starter and Team (connectors, MCP servers, users, File Search, code mode), with the connectors and servers that would stay active or be paused",
+    "admin": false,
+    "pathParams": [],
+    "hasBody": false
+  },
+  {
+    "resource": "license",
     "action": "pricingLinkToken",
     "method": "GET",
     "path": "/api/license/pricing-link-token",
