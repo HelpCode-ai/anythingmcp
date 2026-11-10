@@ -20,7 +20,27 @@ export function planCapsMode(env: NodeJS.ProcessEnv = process.env): PlanCapsMode
   return v === 'on' || v === 'off' ? v : 'dry-run';
 }
 
-export type PlanCapAxis = 'connectors' | 'mcpServers' | 'users' | 'fileSearchConnectors';
+export type PlanCapAxis = 'connectors' | 'mcpServers' | 'users' | 'fileSearchConnectors' | 'webhooks';
+
+/**
+ * How many connectors of a Cloud workspace may receive inbound webhooks
+ * (`webhookEnabled`), by plan (#1393). The trial has the Team limit; null is
+ * no limit. A licence feature `maxWebhookConnectors` overrides the plan, so a
+ * customer can get more by arrangement. An unknown plan is not capped.
+ */
+const WEBHOOK_CONNECTOR_CAPS: Record<string, number | null> = {
+  starter: 1,
+  trial: 5,
+  team: 5,
+  business: null,
+  enterprise: null,
+};
+
+export function webhookConnectorCap(plan: string | null | undefined, override?: unknown): number | null {
+  if (typeof override === 'number' && Number.isFinite(override) && override >= 0) return override;
+  if (!plan) return null;
+  return WEBHOOK_CONNECTOR_CAPS[plan] ?? null;
+}
 
 /** The 403 the dashboard recognises (`code: 'PLAN_LIMIT'`) and turns into the swap dialog. */
 export class PlanLimitException extends ForbiddenException {

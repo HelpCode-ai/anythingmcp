@@ -43,6 +43,7 @@ function buildController(overrides: {
   };
   const licenseGuard = overrides.licenseGuard ?? {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
+    checkCanEnableWebhook: jest.fn().mockResolvedValue(undefined),
   };
   const configService = {
     get: jest.fn((key: string) =>
@@ -2112,6 +2113,79 @@ describe('GET :id/webhook/url and :id/webhook/events', () => {
       const otherMember = { user: { sub: 'u2', organizationId: 'org1', role: 'MEMBER' } };
       await expect(controller.webhookEventsList(otherMember, 'c1')).rejects.toThrow(ForbiddenException);
     });
+  });
+});
+
+describe('PUT :id and POST — the webhook plan cap (#1393)', () => {
+  const baseConnector = {
+    id: 'c1',
+    type: 'REST',
+    userId: 'u1',
+    organizationId: 'org1',
+    name: 'Stripe Billing',
+    baseUrl: 'https://api.example.test',
+    authType: 'NONE',
+    config: null,
+    envVars: null,
+    headers: null,
+    webhookEnabled: false,
+    isActive: true,
+    tools: [] as Array<{ id: string; endpointMapping: unknown }>,
+  };
+  const prisma = () => ({
+    connector: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+    mcpTool: { create: jest.fn(), deleteMany: jest.fn() },
+  });
+
+  it('checks the cap when webhooks go from off to on, before anything is saved', async () => {
+    const update = jest.fn().mockResolvedValue({ ...baseConnector, webhookEnabled: true });
+    const { controller, licenseGuard } = buildController({
+      connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector), update },
+      prisma: prisma(),
+    });
+    await controller.update(req('ADMIN'), 'c1', { webhookEnabled: true } as any);
+    expect(licenseGuard.checkCanEnableWebhook).toHaveBeenCalledWith('org1');
+    expect(licenseGuard.checkCanEnableWebhook.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]);
+  });
+
+  it('saves nothing when the cap refuses', async () => {
+    const update = jest.fn();
+    const refusal = new Error('Your plan includes inbound webhooks on 1 connector.');
+    const { controller } = buildController({
+      connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector), update },
+      prisma: prisma(),
+      licenseGuard: {
+        checkCanCreateConnector: jest.fn(),
+        checkCanEnableWebhook: jest.fn().mockRejectedValue(refusal),
+      },
+    });
+    await expect(controller.update(req('ADMIN'), 'c1', { webhookEnabled: true } as any)).rejects.toBe(refusal);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('never checks when webhooks stay on or are turned off', async () => {
+    const on = { ...baseConnector, webhookEnabled: true };
+    for (const dto of [{ webhookEnabled: true }, { webhookEnabled: false }, { name: 'Renamed' }]) {
+      const { controller, licenseGuard } = buildController({
+        connectorsService: {
+          findById: jest.fn().mockResolvedValue(on),
+          update: jest.fn().mockResolvedValue({ ...on, ...dto }),
+        },
+        prisma: prisma(),
+      });
+      await controller.update(req('ADMIN'), 'c1', dto as any);
+      expect(licenseGuard.checkCanEnableWebhook).not.toHaveBeenCalled();
+    }
+  });
+
+  it('checks the cap when a connector is created with webhooks on, and only then', async () => {
+    const withWebhook = buildController();
+    await withWebhook.controller.create(req('ADMIN'), { name: 'Stripe', type: 'REST', baseUrl: 'https://api.example.test', webhookEnabled: true } as any);
+    expect(withWebhook.licenseGuard.checkCanEnableWebhook).toHaveBeenCalledWith('org1');
+
+    const without = buildController();
+    await without.controller.create(req('ADMIN'), { name: 'Plain', type: 'REST', baseUrl: 'https://api.example.test' } as any);
+    expect(without.licenseGuard.checkCanEnableWebhook).not.toHaveBeenCalled();
   });
 });
 

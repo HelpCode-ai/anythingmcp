@@ -231,7 +231,7 @@ The connector page's "Inbound webhooks" card (`webhook-card.tsx`) is this featur
 
 ### Cloud vs self-hosted
 
-Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch.
+Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch. The one difference: on Cloud, the plan caps how many active connectors may have webhooks turned on (Starter 1, Team and the trial 5, Business and Enterprise no limit; see [Cloud plan limits](../cloud-plans.md)). The cap follows `PLAN_CAPS_ENFORCE` like the other plan caps: `dry-run` only logs. Self-hosted has no cap.
 
 ## Fatal crash reports (always on in the Docker image)
 

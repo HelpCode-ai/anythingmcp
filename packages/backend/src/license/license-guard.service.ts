@@ -7,7 +7,7 @@ import { codeToolCapForPlan, inlineCodeAllowedForPlan, effectiveCodeModePlan } f
 import { codeRunQuotaPlan } from './code-run-quotas';
 import type { LicenseInfo } from './license.service';
 import { quotaForPlan } from '../file-search/file-search-quotas';
-import { PlanLimitException, planCapsMode, parsePausedByPlan, PAUSED_BY_PLAN_KEY, type PlanCapAxis } from './plan-caps';
+import { PlanLimitException, planCapsMode, parsePausedByPlan, PAUSED_BY_PLAN_KEY, webhookConnectorCap, type PlanCapAxis } from './plan-caps';
 
 export interface UsageCap {
   current: number;
@@ -254,6 +254,30 @@ export class LicenseGuardService {
       max,
       count,
       `Your plan includes ${max} user${max === 1 ? '' : 's'}. Upgrade the plan to invite more people.`,
+    );
+  }
+
+  /**
+   * Turning inbound webhooks on for a connector (Cloud, #1393): capped by the
+   * number of active connectors that already receive them (webhookConnectorCap).
+   * Soft like the other paid-plan caps: it only refuses when
+   * PLAN_CAPS_ENFORCE is `on`, and logs in dry-run. Callers check only a
+   * change from off to on; turning webhooks off is never refused.
+   */
+  async checkCanEnableWebhook(organizationId: string | undefined): Promise<void> {
+    if (!this.deployment.isCloud() || !organizationId) return;
+    const license = await this.licenseService.getCurrentLicense(organizationId);
+    if (!license) return;
+    const max = webhookConnectorCap(license.plan, (license.features as any)?.maxWebhookConnectors);
+    if (max == null) return;
+    const count = await this.prisma.connector.count({ where: { organizationId, isActive: true, webhookEnabled: true } });
+    if (count < max) return;
+    this.refuseOverCap(
+      organizationId,
+      'webhooks',
+      max,
+      count,
+      `Your plan includes inbound webhooks on ${max} connector${max === 1 ? '' : 's'}. Turn them off on another connector, or upgrade the plan.`,
     );
   }
 

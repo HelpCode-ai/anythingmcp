@@ -13,6 +13,7 @@ Enterprise features follow the licence key (see [license FAQ](license-faq.md)).
 | Users | 3 | 1 | 3 | by contract |
 | File Search | Team limits | 1 folder, 500 files | 3 folders, 2,000 files | by contract |
 | Code mode | Team features | 5 saved code tools, no inline code | 20 saved code tools, inline code | unlimited |
+| Connectors with inbound webhooks | 5 | 1 | 5 | unlimited |
 
 The trial includes everything in Team, so you can try every feature before you
 choose a plan. File Search and code mode have their own limits, described in
@@ -21,6 +22,12 @@ choose a plan. File Search and code mode have their own limits, described in
 
 Only **active** connectors and MCP servers count. A File Search folder counts
 against the File Search folders, not against the connectors.
+
+[Inbound webhooks](operations/observability.md#7-inbound-webhook-ingestion-opt-in-per-connector)
+count the active connectors that receive them. Turning them on above the limit
+asks you to turn them off on another connector first. Turning them off is
+always possible. The stored events (500 per connector, kept 7 days) are the
+same on every plan.
 
 ## Before you choose a plan
 
@@ -54,5 +61,5 @@ Members keep their access when the plan includes fewer users. New
 invitations above the limit are refused.
 
 Over a limit, the API answers `403` with `code: "PLAN_LIMIT"`, the `axis`
-(`connectors`, `mcpServers`, `users` or `fileSearchConnectors`), `max` and
+(`connectors`, `mcpServers`, `users`, `fileSearchConnectors` or `webhooks`), `max` and
 `current`.
