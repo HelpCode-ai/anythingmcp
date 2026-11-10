@@ -551,7 +551,8 @@ live('filemaker adapter: live (read-only)', () => {
           expect(one.record).toMatchObject({ recordId: String(recordId) });
         }
       } catch (e: any) {
-        // Empty find: FileMaker HTTP 500 + messages code 401.
+        // Empty find on Servers that answer non-2xx (e.g. HTTP 500) + messages code 401.
+        // FileMaker Server 26 answers HTTP 200 + code 401 instead, which lands in the try block as zero records.
         const code = e?.response?.data?.messages?.[0]?.code ?? e?.data?.messages?.[0]?.code;
         if (String(code) === '401') {
           expect(tool('filemaker_find_records').description).toMatch(/empty result/i);
