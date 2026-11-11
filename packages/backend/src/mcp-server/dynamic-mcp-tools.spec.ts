@@ -1,4 +1,4 @@
-import { DynamicMcpTools } from './dynamic-mcp-tools';
+import { COMPACT_RENDER_CHARS, DynamicMcpTools } from './dynamic-mcp-tools';
 import type { RegisteredTool } from './tool-registry';
 import { Logger } from '@nestjs/common';
 import * as metrics from '../common/metrics';
@@ -1273,6 +1273,19 @@ describe('DynamicMcpTools — the size limit on the rendered result', () => {
     const res = await executor.executeTool('list_devices', {});
     expect(restEngine.execute).not.toHaveBeenCalled();
     expectTooLarge(res);
+  });
+
+  it('renders a large object compactly from the start, without a pretty-printed pass', async () => {
+    setLimit(50 * 1024 * 1024);
+    const big = { items: Array.from({ length: 12_000 }, (_, i) => ({ id: i, name: `order-${i}`, note: 'x'.repeat(60) })) };
+    const compact = JSON.stringify(big);
+    expect(compact.length).toBeGreaterThan(COMPACT_RENDER_CHARS);
+    const { executor } = build(makeTool(), { engineResult: big });
+    const stringify = jest.spyOn(JSON, 'stringify');
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toBe(compact);
+    expect(stringify.mock.calls.some(([v, , indent]) => v === big && indent === 2)).toBe(false);
   });
 
   it('uses the 10 MB default when TOOL_MAX_RESPONSE_BYTES is unset', async () => {

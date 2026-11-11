@@ -30,13 +30,22 @@ describe('woocommerce adapter: static spec conformance', () => {
     expect(a.probe).toEqual({ tool: 'woocommerce_list_orders', params: { per_page: 1, _fields: 'id' } });
   });
 
-  it('list tools take optional _fields and bounded pages, with no default that would change existing calls', () => {
+  it('list tools return a compact form by default, bounded pages, and full objects on request', () => {
     for (const name of ['woocommerce_list_orders', 'woocommerce_search_products']) {
       const t = tool(name);
       expect(t.endpointMapping.queryParams?._fields).toBe('$_fields');
-      expect(t.parameters.properties?._fields?.default).toBeUndefined();
+      expect(t.parameters.required ?? []).not.toContain('_fields');
+      expect(t.parameters.properties?._fields?.description).toMatch(/Pass "" \(empty\) for complete/);
       expect(t.parameters.properties?.per_page).toMatchObject({ minimum: 1, maximum: 100 });
     }
+    const orders = tool('woocommerce_list_orders').parameters.properties!._fields.default.split(',');
+    for (const f of ['id', 'number', 'status', 'date_created', 'date_modified', 'total', 'currency', 'customer_id', 'billing', 'line_items.name', 'line_items.quantity', 'line_items.total', 'refunds']) {
+      expect(orders).toContain(f);
+    }
+    expect(orders).not.toContain('meta_data');
+    const products = tool('woocommerce_search_products').parameters.properties!._fields.default.split(',');
+    for (const f of ['id', 'name', 'sku', 'price', 'stock_status', 'stock_quantity']) expect(products).toContain(f);
+    expect(products).not.toContain('description');
   });
 
   it('list_orders can ask only for orders changed since the last run', () => {
@@ -49,14 +58,19 @@ describe('woocommerce adapter: static spec conformance', () => {
     }
   });
 
-  it('the new list_orders parameters reach installed connectors as a safe update', () => {
-    // An installed list_orders from before #1619: no _fields, no modified_*.
+  it('the modified_* parameters reach installed connectors as a safe (additive) update', () => {
     const t = tool('woocommerce_list_orders');
     const old = { ...t.endpointMapping, queryParams: { ...t.endpointMapping.queryParams } };
-    for (const p of ['_fields', 'modified_after', 'modified_before', 'dates_are_gmt']) delete old.queryParams[p];
+    for (const p of ['modified_after', 'modified_before', 'dates_are_gmt']) delete old.queryParams[p];
     expect(additiveQueryParams(t, { endpointMapping: old })?.sort()).toEqual(
-      ['_fields', 'dates_are_gmt', 'modified_after', 'modified_before'],
+      ['dates_are_gmt', 'modified_after', 'modified_before'],
     );
+    // A query key that arrives together with its default is not additive:
+    // the default changes calls that leave it out, so it waits for an update.
+    // That is why the _fields default ships one deploy after the key (#1631).
+    const noFields = { ...t.endpointMapping, queryParams: { ...t.endpointMapping.queryParams } };
+    delete noFields.queryParams._fields;
+    expect(additiveQueryParams(t, { endpointMapping: noFields })).toBeNull();
   });
 
   it('gives slow product writes 90 s', () => {

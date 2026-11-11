@@ -120,6 +120,13 @@ import {
  * Each tool is mapped to a connector engine (REST, GraphQL, SOAP, etc.)
  * and executed with caching, audit logging, and env interpolation.
  */
+/**
+ * Above this many characters of compact JSON a tool result is rendered without
+ * indentation (renderResult). About 1 MB: far more than any answer a person
+ * reads, small enough that the event loop never pretty-prints megabytes.
+ */
+export const COMPACT_RENDER_CHARS = 1_000_000;
+
 @Injectable()
 export class DynamicMcpTools {
   private readonly logger = new Logger(DynamicMcpTools.name);
@@ -1034,15 +1041,27 @@ export class DynamicMcpTools {
     const hint = responseMapping?.followUp
       ? `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`
       : '';
-    let resultText = (JSON.stringify(value, null, 2) ?? 'null') + hint;
+    // A large result is rendered compactly from the start: indenting a
+    // multi-megabyte object (a page of 100 full WooCommerce orders) more than
+    // doubles its text and costs a second full serialization on the event
+    // loop, for a reader (the model) that does not need the whitespace.
+    // Small results keep the readable indented form.
+    // Only an object or an array has indentation; anything else serializes to
+    // the same text either way, so it is serialized once.
+    const isObject = value !== null && typeof value === 'object';
+    const compact = JSON.stringify(value) ?? 'null';
+    let resultText =
+      (isObject && compact.length <= COMPACT_RENDER_CHARS
+        ? (JSON.stringify(value, null, 2) ?? 'null')
+        : compact) + hint;
 
     const limitBytes = toolMaxResponseBytes();
     if (!fitsResponseLimit(resultText, limitBytes)) {
       // Indentation can make up much of a large text. Only an object or an
       // array has any: anything else would serialize to the same text again.
       const prettyChars = resultText.length;
-      if (value !== null && typeof value === 'object') {
-        resultText = (JSON.stringify(value) ?? 'null') + hint;
+      if (isObject) {
+        resultText = compact + hint;
       }
       if (!fitsResponseLimit(resultText, limitBytes)) {
         const tooLarge = new ResponseTooLargeError(limitBytes, { source: 'result' });

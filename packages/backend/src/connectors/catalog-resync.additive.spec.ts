@@ -62,11 +62,11 @@ describe('additiveQueryParams', () => {
   });
 });
 
-describe('CatalogResyncService with an added optional query parameter (WooCommerce _fields)', () => {
+describe('CatalogResyncService with added optional query parameters (WooCommerce modified_*)', () => {
   const SLUG = 'woocommerce';
   const LIST = 'woocommerce_list_orders';
 
-  /** An installed connector from before #1619: list_orders without `_fields`. */
+  /** An installed connector from before these keys: list_orders without `modified_*`. */
   function setup(mutate?: (tools: any[]) => void) {
     const adapter = getAdapter(SLUG)!;
     const tools = adapter.tools.map((t: any, i: number) => ({
@@ -81,8 +81,10 @@ describe('CatalogResyncService with an added optional query parameter (WooCommer
       deprecatedAt: null,
     }));
     const list = tools.find((t: any) => t.name === LIST)!;
-    delete list.endpointMapping.queryParams._fields;
-    delete list.parameters.properties._fields;
+    for (const p of ['modified_after', 'modified_before', 'dates_are_gmt']) {
+      delete list.endpointMapping.queryParams[p];
+      delete list.parameters.properties[p];
+    }
     list.description = 'old description';
     if (mutate) mutate(tools);
     const connector = {
@@ -110,7 +112,7 @@ describe('CatalogResyncService with an added optional query parameter (WooCommer
   it('classifies the tool as safe and the diff as safe class', async () => {
     const { service } = setup();
     const diff = await service.computeDiff('c-woo');
-    expect(diff!.updated).toEqual([{ name: LIST, kind: 'safe', addedQueryParams: ['_fields'] }]);
+    expect(diff!.updated).toEqual([{ name: LIST, kind: 'safe', addedQueryParams: ['modified_after', 'modified_before', 'dates_are_gmt'] }]);
     expect(diff!.isSafeClass).toBe(true);
     expect(CatalogResyncService.hasSafeWork(diff!)).toBe(true);
   });
@@ -123,7 +125,7 @@ describe('CatalogResyncService with an added optional query parameter (WooCommer
     const call = toolUpdate.mock.calls.find((c) => c[0].where.id === listId)![0];
     const catalogList = (adapter.tools as any[]).find((t) => t.name === LIST);
     expect(call.data.endpointMapping).toEqual(catalogList.endpointMapping);
-    expect(call.data.parameters.properties._fields).toBeDefined();
+    expect(call.data.parameters.properties.modified_after).toBeDefined();
     expect(call.data.description).toBe(catalogList.description);
     // The operator's response mapping is never part of a safe update.
     expect(call.data.responseMapping).toBeUndefined();
@@ -151,7 +153,7 @@ describe('CatalogResyncService with an added optional query parameter (WooCommer
     const diff = await service.computeDiff('c-woo');
     expect(diff!.updated).toEqual(
       expect.arrayContaining([
-        { name: LIST, kind: 'safe', addedQueryParams: ['_fields'] },
+        { name: LIST, kind: 'safe', addedQueryParams: ['modified_after', 'modified_before', 'dates_are_gmt'] },
         { name: 'woocommerce_get_order', kind: 'structural' },
       ]),
     );
