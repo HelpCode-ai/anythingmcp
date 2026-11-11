@@ -14,12 +14,13 @@ describe('ConnectorsService: credential status after an edit', () => {
   let authStatus: { clear: jest.Mock };
   let bearer: { forget: jest.Mock };
   let service: ConnectorsService;
+  let findUnique: jest.Mock;
 
   beforeEach(() => {
     const row = { id: 'conn-gsc', type: 'REST', authConfig: encrypt(JSON.stringify(stored), KEY) };
     const prisma = {
       connector: {
-        findUnique: jest.fn().mockResolvedValue(row),
+        findUnique: (findUnique = jest.fn().mockResolvedValue(row)),
         update: jest.fn().mockResolvedValue(row),
       },
     };
@@ -56,6 +57,19 @@ describe('ConnectorsService: credential status after an edit', () => {
     expect(authStatus.clear).toHaveBeenLastCalledWith('conn-gsc', { exceptRef: credentialRef('rt-dead') });
     await service.update('conn-gsc', { authConfig: { token: 'EAApasted' } });
     expect(authStatus.clear).toHaveBeenLastCalledWith('conn-gsc', { exceptRef: credentialRef('EAApasted') });
+  });
+
+  it('reads only the type and the stored credential, not the tools, resources and prompts', async () => {
+    await service.update('conn-gsc', { envVars: { A: '1' } });
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: 'conn-gsc' },
+      select: { type: true, authConfig: true },
+    });
+  });
+
+  it('still answers 404 for a connector that does not exist', async () => {
+    findUnique.mockResolvedValueOnce(null);
+    await expect(service.update('missing', { name: 'x' })).rejects.toThrow('Connector missing not found');
   });
 });
 
