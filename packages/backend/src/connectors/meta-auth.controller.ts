@@ -118,6 +118,12 @@ export class MetaAuthController {
     return `${this.serverUrl()}/api/meta/callback`;
   }
 
+  /** The connector page, where every outcome of a sign-in is shown with its next step. */
+  private connectorPage(connectorId: string, params: Record<string, string>): string {
+    const base = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000').replace(/\/+$/, '');
+    return `${base}/connectors/${encodeURIComponent(connectorId)}?${new URLSearchParams(params).toString()}`;
+  }
+
   private completePage(params: Record<string, string>): string {
     const base = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000').replace(/\/+$/, '');
     return `${base}/connectors/oauth/complete?${new URLSearchParams(params).toString()}`;
@@ -246,11 +252,11 @@ export class MetaAuthController {
       await this.oauthFlows.deletePendingFlow(state);
       const denied = rawError === 'access_denied' || rawReason === 'user_denied';
       return res.redirect(
-        this.completePage({
-          error: denied
-            ? 'The sign-in was cancelled or the permissions were declined. Start it again from the connector and approve the app.'
-            : 'Meta came back without an authorization code. Start the authorization again from the connector.',
-          connectorId,
+        this.connectorPage(connectorId, {
+          meta: 'error',
+          message: denied
+            ? 'The sign-in was cancelled or the permissions were declined. Authorize again and approve the app.'
+            : 'Meta came back without an authorization code. Authorize again.',
         }),
       );
     }
@@ -272,6 +278,8 @@ export class MetaAuthController {
     returnTo?: string;
     account?: MetaInstagramAccount;
     accounts?: MetaInstagramAccount[];
+    /** Signed in, token kept, but no Instagram account could be read with it yet. */
+    noAccount?: boolean;
   }> {
     const state = String(body?.state || '');
     // Check who started the flow before consuming it: another signed-in user
@@ -311,6 +319,16 @@ export class MetaAuthController {
       result = await this.metaLogin.exchangeCode({ flavour, app, code, redirectUri: flow.redirectUri });
     } catch (err) {
       throw this.exchangeException(err, flavour, flow.connectorId, usesPlatformApp);
+    }
+    if (result.accounts.length === 0 && result.systemUser) {
+      // The sign-in worked and the token is good: keep it, so the user can
+      // name the account or sign in again from the connector page instead of
+      // losing the login.
+      await this.storeVariables(connector, { [META_LOGIN_TOKEN_VAR]: result.token });
+      await this.bearerTokens.seed(flow.connectorId, result.token, { expiresAt: result.expiresAt, systemUser: true });
+      await this.reload(flow.connectorId);
+      this.logger.warn(`Connector ${flow.connectorId}: Unified Login stored, but no Instagram account was found`);
+      return { connectorId: flow.connectorId, toolsImported: 0, ...(returnTo ? { returnTo } : {}), accounts: [], noAccount: true };
     }
     if (result.accounts.length === 0) {
       throw new BadRequestException({
@@ -356,12 +374,53 @@ export class MetaAuthController {
     };
   }
 
+  @Get('connectors/:id/accounts')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'List the Instagram accounts an Instagram connector can use',
+    description:
+      'The accounts the connector\'s stored token reaches (the ones shared in a Unified Login, or the ones linked ' +
+      'to the Facebook Pages of a Facebook sign-in), and the one set in INSTAGRAM_ACCOUNT_ID. The connector owner or ' +
+      'an admin, never a VIEWER.',
+  })
+  async listAccounts(
+    @Req() req: any,
+    @Param('id') id: string,
+  ): Promise<{ connectorId: string; current?: string; accounts: MetaInstagramAccount[] }> {
+    const connector = (await this.connectorsService.findById(id)) as ConnectorRow;
+    this.assertCanModify(connector, req);
+    if (metaLoginFlavourOf(connector) !== 'facebook') {
+      throw new BadRequestException('Only the Instagram connector signed in with Meta has accounts to choose from.');
+    }
+    const env = this.envOf(connector);
+    const token = (env[META_LOGIN_TOKEN_VAR] ?? '').trim();
+    if (!token || /\{\{/.test(token)) throw new BadRequestException('The connector has no token yet. Authorize first.');
+    const accounts = await this.accountsOf(connector, token);
+    const current = (env[META_LOGIN_ACCOUNT_VAR] ?? '').trim();
+    return { connectorId: id, ...(current ? { current } : {}), accounts };
+  }
+
+  private async accountsOf(connector: ConnectorRow, token: string): Promise<MetaInstagramAccount[]> {
+    // A Unified Login token reaches the accounts the client shared; a
+    // Facebook User token the ones linked to its Pages.
+    const { app } = metaLoginAppOf('facebook', this.envOf(connector));
+    try {
+      return isUnifiedLogin(app)
+        ? await this.metaLogin.unifiedAccounts(token, app)
+        : await this.metaLogin.facebookAccounts(token);
+    } catch (err) {
+      const e = err instanceof MetaLoginError ? err : new MetaLoginError('network error');
+      throw new BadGatewayException(`Meta did not list the accounts (${e.message}). Authorize again.`);
+    }
+  }
+
   @Post('connectors/:id/account')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(200)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Choose the Instagram account of a connector signed in with Facebook',
+    summary: 'Choose the Instagram account of an Instagram connector signed in with Meta',
     description:
       'After a Facebook sign-in that reaches several Instagram accounts: stores the one to use in ' +
       'INSTAGRAM_ACCOUNT_ID. Only an account the stored token reaches is accepted. The connector owner or an ' +
@@ -390,20 +449,12 @@ export class MetaAuthController {
     if (!token || /\{\{/.test(token)) {
       throw new BadRequestException('The connector has no token yet. Authorize with Facebook first.');
     }
-    // A Unified Login token reaches the accounts the client shared; a
-    // Facebook User token the ones linked to its Pages.
-    const unified = isUnifiedLogin(metaLoginAppOf('facebook', this.envOf(connector)).app);
-    let accounts: MetaInstagramAccount[];
-    try {
-      accounts = unified ? await this.metaLogin.unifiedAccounts(token) : await this.metaLogin.facebookAccounts(token);
-    } catch (err) {
-      const e = err instanceof MetaLoginError ? err : new MetaLoginError('network error');
-      throw new BadGatewayException(`Facebook did not list the accounts (${e.message}). Authorize again.`);
-    }
-    const account = accounts.find((a) => a.id === accountId);
+    const accounts = await this.accountsOf(connector, token);
+    // Not in the lists (Meta returned none): accept an id the token can read.
+    const account = accounts.find((a) => a.id === accountId) ?? (await this.metaLogin.accountById(token, accountId));
     if (!account) {
       throw new BadRequestException(
-        'The signed-in Facebook user cannot reach this Instagram account. Pick one from the list, or authorize again with another user.',
+        'The connector\'s sign-in cannot reach this Instagram account. Pick one from the list, or authorize again and share that account.',
       );
     }
     await this.storeVariables(connector, { [META_LOGIN_ACCOUNT_VAR]: account.id });

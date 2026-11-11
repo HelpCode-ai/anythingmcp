@@ -1531,6 +1531,33 @@
       "authorizeFacebook": "Authorize with Instagram or Facebook",
       "authorizeInstagram": "Authorize with Instagram"
     },
+    "metaBanner": {
+      "dismiss": "Dismiss",
+      "connected": {
+        "title": "Instagram is connected",
+        "body": "The sign-in worked and the token is stored on this connector. Test the connection, then use the tools from your AI assistant.",
+        "bodyAs": "Signed in, and the connector uses {account}. Test the connection, then use the tools from your AI assistant."
+      },
+      "choose": {
+        "title": "Choose the Instagram account",
+        "body": "The sign-in reaches several Instagram accounts. Pick the one this connector should use; you can switch later."
+      },
+      "no_account": {
+        "title": "Signed in, but no Instagram account was shared",
+        "body": "The sign-in worked and is kept, but Meta returned no Instagram account for it. Authorize again and, in the Meta dialog, select the business portfolio and tick the Instagram business or creator account. Or enter the account id below if you know it."
+      },
+      "error": {
+        "title": "The sign-in did not finish",
+        "body": "Meta did not complete the sign-in. Authorize again."
+      },
+      "testNow": "Test connection",
+      "switchAccount": "Use another account",
+      "authorizeAgain": "Authorize again",
+      "manualLabel": "Instagram account id",
+      "manualSave": "Use this account id",
+      "manualHint": "The id is a number starting with 1784, shown in Meta Business settings → Accounts → Instagram accounts. It is checked with the stored sign-in before it is saved.",
+      "manualInvalid": "Enter the numeric Instagram account id (digits only), not the username."
+    },
     "env": {
       "title": "Environment Variables",
       "hint": "Use {variable} in URLs, paths, headers, and body fields. Variables are interpolated at runtime.",

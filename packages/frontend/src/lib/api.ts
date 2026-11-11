@@ -696,8 +696,15 @@ export const connectors = {
       returnTo?: string;
       account?: MetaInstagramAccount;
       accounts?: MetaInstagramAccount[];
+      noAccount?: boolean;
     }>('/api/meta/complete', { method: 'POST', token, body: { state, code } }),
   /** Store the Instagram account a Facebook sign-in should use. */
+  /** The Instagram accounts an Instagram connector's Meta sign-in reaches, and the one in use. */
+  metaAccounts: (id: string, token: string) =>
+    request<{ connectorId: string; current?: string; accounts: MetaInstagramAccount[] }>(
+      `/api/meta/connectors/${id}/accounts`,
+      { token },
+    ),
   metaChooseAccount: (id: string, accountId: string, token: string) =>
     request<{ connectorId: string; account: MetaInstagramAccount }>(`/api/meta/connectors/${id}/account`, {
       method: 'POST',

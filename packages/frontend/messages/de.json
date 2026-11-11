@@ -1531,6 +1531,33 @@
       "authorizeFacebook": "Mit Instagram oder Facebook autorisieren",
       "authorizeInstagram": "Mit Instagram autorisieren"
     },
+    "metaBanner": {
+      "dismiss": "Schließen",
+      "connected": {
+        "title": "Instagram ist verbunden",
+        "body": "Die Anmeldung hat geklappt, das Token ist an diesem Connector gespeichert. Testen Sie die Verbindung und nutzen Sie die Tools dann in Ihrem KI-Assistenten.",
+        "bodyAs": "Angemeldet, der Connector nutzt {account}. Testen Sie die Verbindung und nutzen Sie die Tools dann in Ihrem KI-Assistenten."
+      },
+      "choose": {
+        "title": "Instagram-Konto wählen",
+        "body": "Die Anmeldung erreicht mehrere Instagram-Konten. Wählen Sie das Konto für diesen Connector; Sie können es später wechseln."
+      },
+      "no_account": {
+        "title": "Angemeldet, aber kein Instagram-Konto freigegeben",
+        "body": "Die Anmeldung hat geklappt und bleibt gespeichert, Meta hat dafür aber kein Instagram-Konto zurückgegeben. Autorisieren Sie erneut und wählen Sie im Meta-Dialog das Business-Portfolio und das Instagram-Business- oder Creator-Konto aus. Oder geben Sie unten die Konto-ID ein, wenn Sie sie kennen."
+      },
+      "error": {
+        "title": "Die Anmeldung wurde nicht abgeschlossen",
+        "body": "Meta hat die Anmeldung nicht abgeschlossen. Autorisieren Sie erneut."
+      },
+      "testNow": "Verbindung testen",
+      "switchAccount": "Anderes Konto nutzen",
+      "authorizeAgain": "Erneut autorisieren",
+      "manualLabel": "Instagram-Konto-ID",
+      "manualSave": "Diese Konto-ID nutzen",
+      "manualHint": "Die ID ist eine Zahl, die mit 1784 beginnt; sie steht in den Meta-Business-Einstellungen → Konten → Instagram-Konten. Sie wird vor dem Speichern mit der gespeicherten Anmeldung geprüft.",
+      "manualInvalid": "Geben Sie die numerische Instagram-Konto-ID ein (nur Ziffern), nicht den Benutzernamen."
+    },
     "env": {
       "title": "Umgebungsvariablen",
       "hint": "Verwenden Sie {variable} in URLs, Pfaden, Headern und Body-Feldern. Variablen werden zur Laufzeit eingesetzt.",

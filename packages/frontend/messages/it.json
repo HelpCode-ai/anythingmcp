@@ -1531,6 +1531,33 @@
       "authorizeFacebook": "Autorizza con Instagram o Facebook",
       "authorizeInstagram": "Autorizza con Instagram"
     },
+    "metaBanner": {
+      "dismiss": "Chiudi",
+      "connected": {
+        "title": "Instagram è collegato",
+        "body": "L'accesso è riuscito e il token è salvato su questo connettore. Prova la connessione, poi usa i tool dal tuo assistente AI.",
+        "bodyAs": "Accesso eseguito, il connettore usa {account}. Prova la connessione, poi usa i tool dal tuo assistente AI."
+      },
+      "choose": {
+        "title": "Scegli l'account Instagram",
+        "body": "L'accesso raggiunge più account Instagram. Scegli quello che deve usare questo connettore; potrai cambiarlo in seguito."
+      },
+      "no_account": {
+        "title": "Accesso eseguito, ma nessun account Instagram condiviso",
+        "body": "L'accesso è riuscito e resta salvato, ma Meta non ha restituito alcun account Instagram. Autorizza di nuovo e, nella finestra di Meta, seleziona il portfolio business e spunta l'account Instagram business o creator. Oppure inserisci qui sotto l'ID dell'account, se lo conosci."
+      },
+      "error": {
+        "title": "L'accesso non è stato completato",
+        "body": "Meta non ha completato l'accesso. Autorizza di nuovo."
+      },
+      "testNow": "Prova la connessione",
+      "switchAccount": "Usa un altro account",
+      "authorizeAgain": "Autorizza di nuovo",
+      "manualLabel": "ID dell'account Instagram",
+      "manualSave": "Usa questo ID",
+      "manualHint": "L'ID è un numero che inizia con 1784, visibile in Impostazioni di Meta Business → Account → Account Instagram. Viene verificato con l'accesso salvato prima di essere salvato.",
+      "manualInvalid": "Inserisci l'ID numerico dell'account Instagram (solo cifre), non il nome utente."
+    },
     "env": {
       "title": "Variabili d'ambiente",
       "hint": "Usa {variable} in URL, percorsi, header e campi del body. Le variabili vengono sostituite in fase di esecuzione.",

@@ -31,17 +31,27 @@ function CompleteContent() {
   const [error, setError] = useState<string | null>(params.get('error'));
   const started = useRef(false);
 
-  const state = params.get('state');
-  const code = params.get('code');
+  // Read once: the address is cleared below (the code has no business in the
+  // history), and reading it again would show "Nothing to complete here"
+  // while the completion is still running.
+  const [initial] = useState(() => ({
+    state: params.get('state'),
+    code: params.get('code'),
+    provider: params.get('provider'),
+    shopId: params.get('shop_id'),
+  }));
+  const state = initial.state;
+  const code = initial.code;
   // A Shopee shop authorization comes back through its own callback, with the
   // shop id next to the code, and is completed by its own endpoint.
-  const shopeeShopId = params.get('provider') === 'shopee' ? params.get('shop_id') : null;
+  const shopeeShopId = initial.provider === 'shopee' ? initial.shopId : null;
   // A TikTok Shop authorization too, completed by its own endpoint.
-  const isTikTokShop = params.get('provider') === 'tiktok-shop';
+  const isTikTokShop = initial.provider === 'tiktok-shop';
   // A TikTok Shop App Store install: no code in the address, the server keeps it.
-  const isTikTokShopInstall = params.get('provider') === 'tiktok-shop-install';
-  // A Facebook or Instagram sign-in of an Instagram connector.
-  const isMeta = params.get('provider') === 'meta';
+  const isTikTokShopInstall = initial.provider === 'tiktok-shop-install';
+  // A Meta sign-in of an Instagram connector: every outcome goes back to the
+  // connector page, which shows what happened and the next step.
+  const isMeta = initial.provider === 'meta';
   // Several Instagram accounts behind one Meta sign-in: the user picks one.
   const [choice, setChoice] = useState<{
     connectorId: string;
@@ -81,13 +91,26 @@ function CompleteContent() {
     // The code is single-use and bound to a verifier the server keeps, but it
     // still has no business staying in the address bar or the history.
     window.history.replaceState({}, '', '/connectors/oauth/complete');
+    if (isMeta) {
+      connectors
+        .metaComplete(state, code, token)
+        .then((out) => {
+          const status = out.account ? 'connected' : out.noAccount ? 'no_account' : 'choose';
+          router.replace(`/connectors/${out.connectorId}?meta=${status}`);
+        })
+        .catch((err: Error) => {
+          const id = err instanceof ApiError && typeof err.body?.connectorId === 'string' ? err.body.connectorId : null;
+          const message = err.message || 'The authorization could not be completed.';
+          if (id) router.replace(`/connectors/${id}?meta=error&message=${encodeURIComponent(message)}`);
+          else setError(message);
+        });
+      return;
+    }
     (shopeeShopId !== null
       ? connectors.shopeeComplete(state, code, shopeeShopId, token)
       : isTikTokShop
         ? connectors.tiktokShopComplete(state, code, token)
-        : isMeta
-          ? connectors.metaComplete(state, code, token)
-          : connectors.oauthComplete(state, code, token))
+        : connectors.oauthComplete(state, code, token))
       .then((out: { connectorId: string; toolsImported: number; returnTo?: string; accounts?: MetaInstagramAccount[] }) => {
         if (out.accounts && out.accounts.length > 0) {
           setChoice({ connectorId: out.connectorId, accounts: out.accounts, returnTo: out.returnTo });
@@ -146,7 +169,17 @@ function CompleteContent() {
   }
 
   if (!error && !state) {
-    return <p className="text-sm text-[var(--text-2)]">Nothing to complete here.</p>;
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-[var(--text-2)]">There is no authorization waiting here.</p>
+        <Link
+          href={connectorId ? `/connectors/${connectorId}` : '/connectors'}
+          className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}
+        >
+          {connectorId ? 'Back to the connector' : 'Back to connectors'}
+        </Link>
+      </div>
+    );
   }
 
   // Someone coming from the TikTok Shop App Store may have no account yet:

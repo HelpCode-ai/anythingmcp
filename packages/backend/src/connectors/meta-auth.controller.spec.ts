@@ -36,7 +36,7 @@ describe('MetaAuthController', () => {
 
   let connector: Record<string, any>;
   let connectorsService: { findById: jest.Mock; findByIdInternal: jest.Mock; update: jest.Mock };
-  let metaLogin: { exchangeCode: jest.Mock; facebookAccounts: jest.Mock; unifiedAccounts: jest.Mock };
+  let metaLogin: { exchangeCode: jest.Mock; facebookAccounts: jest.Mock; unifiedAccounts: jest.Mock; accountById: jest.Mock };
   let bearerTokens: { seed: jest.Mock };
   let mcpServer: { reloadConnectorTools: jest.Mock };
   let flows: McpOAuthService;
@@ -82,6 +82,7 @@ describe('MetaAuthController', () => {
       exchangeCode: jest.fn(async () => ({ token: 'EAAlong', expiresAt: 1_900_000_000_000, accounts: [ACCOUNT_A] })),
       facebookAccounts: jest.fn(async () => [ACCOUNT_A, ACCOUNT_B]),
       unifiedAccounts: jest.fn(async () => [ACCOUNT_A, ACCOUNT_B]),
+      accountById: jest.fn(async () => undefined),
     };
     bearerTokens = { seed: jest.fn(async () => undefined) };
     mcpServer = { reloadConnectorTools: jest.fn(async () => undefined) };
@@ -177,20 +178,38 @@ describe('MetaAuthController', () => {
     expect(bearerTokens.seed).toHaveBeenCalledWith('conn-1', 'BISU', { expiresAt: null, viaPlatformApp: false, systemUser: true });
     // Choosing reads the accounts the client shared, not Facebook Pages.
     await controller.chooseAccount(admin, 'conn-1', { accountId: ACCOUNT_A.id });
-    expect(metaLogin.unifiedAccounts).toHaveBeenCalledWith('BISU');
+    expect(metaLogin.unifiedAccounts).toHaveBeenCalledWith('BISU', expect.objectContaining({ configId: '2539939149839675' }));
     expect(metaLogin.facebookAccounts).not.toHaveBeenCalled();
     expect(connector.envVars.INSTAGRAM_ACCOUNT_ID).toBe(ACCOUNT_A.id);
     expect(JSON.stringify(connector.envVars)).not.toContain('server-secret');
   });
 
-  it("uses a connector's own Unified Login configuration, and explains an empty share", async () => {
+  it("uses a connector's own Unified Login configuration, and keeps a sign-in that shared no account", async () => {
     connector.envVars = { ...connector.envVars, META_CONFIG_ID: '1112223334445' };
     const { out, state } = await start();
     expect(new URL(out.authorizationUrl!).searchParams.get('config_id')).toBe('1112223334445');
     metaLogin.exchangeCode.mockResolvedValueOnce({ token: 'BISU', expiresAt: null, accounts: [], systemUser: true });
-    const none = await controller.complete(admin, { state, code: 'CODE' }).catch((e) => e);
-    expect(none).toBeInstanceOf(BadRequestException);
-    expect(none.getResponse().message).toMatch(/no Instagram account was shared/);
+    const done = await controller.complete(admin, { state, code: 'CODE' });
+    expect(done).toEqual({ connectorId: 'conn-1', toolsImported: 0, accounts: [], noAccount: true });
+    expect(connector.envVars.INSTAGRAM_ACCESS_TOKEN).toBe('BISU');
+    expect(connector.envVars.INSTAGRAM_ACCOUNT_ID).toBeUndefined();
+    expect(bearerTokens.seed).toHaveBeenCalledWith('conn-1', 'BISU', { expiresAt: null, systemUser: true });
+
+    // The connector page lists what the token reaches (nothing), and accepts an id the token can read.
+    metaLogin.unifiedAccounts.mockResolvedValue([]);
+    expect(await controller.listAccounts(admin, 'conn-1')).toEqual({ connectorId: 'conn-1', accounts: [] });
+    metaLogin.accountById.mockResolvedValueOnce({ id: '17841400000000077', username: 'mine' });
+    expect(await controller.chooseAccount(admin, 'conn-1', { accountId: '17841400000000077' })).toEqual({
+      connectorId: 'conn-1',
+      account: { id: '17841400000000077', username: 'mine' },
+    });
+    expect(metaLogin.accountById).toHaveBeenCalledWith('BISU', '17841400000000077');
+    expect(connector.envVars.INSTAGRAM_ACCOUNT_ID).toBe('17841400000000077');
+    // An id the token cannot read is refused.
+    metaLogin.accountById.mockResolvedValueOnce(undefined);
+    await expect(controller.chooseAccount(admin, 'conn-1', { accountId: '17841400000000078' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('only lets the owner or an admin start it, and only on an Instagram connector', async () => {
@@ -213,8 +232,10 @@ describe('MetaAuthController', () => {
     expect((await redirectOf({ state: 'nope', code: 'c' })).searchParams.get('error')).toMatch(/expired/);
 
     const denied = await redirectOf({ state, error: 'access_denied', error_reason: 'user_denied' });
-    expect(denied.searchParams.get('error')).toMatch(/cancelled or the permissions were declined/);
-    expect(denied.searchParams.get('connectorId')).toBe('conn-1');
+    // Back on the connector page, which shows the message and the way forward.
+    expect(denied.origin + denied.pathname).toBe('https://app.test/connectors/conn-1');
+    expect(denied.searchParams.get('meta')).toBe('error');
+    expect(denied.searchParams.get('message')).toMatch(/cancelled or the permissions were declined/);
     expect(await flows.getPendingFlow(state)).toBeUndefined();
   });
 

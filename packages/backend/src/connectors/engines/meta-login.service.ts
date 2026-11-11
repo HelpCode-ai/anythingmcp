@@ -105,11 +105,32 @@ export class MetaLoginService {
   }
 
   /** The Instagram accounts the client shared with a Unified Login token. */
-  async unifiedAccounts(token: string): Promise<MetaInstagramAccount[]> {
+  async unifiedAccounts(token: string, app?: MetaLoginApp): Promise<MetaInstagramAccount[]> {
     try {
-      return await this.listAssignedAccounts(token);
+      return (await this.discoverUnifiedAccounts(token, app)).accounts;
     } catch (err) {
       throw describe(err);
+    }
+  }
+
+  /**
+   * One Instagram account by id, read with the token: the account a user
+   * names by hand when the lists come back empty. Undefined when the token
+   * cannot read it.
+   */
+  async accountById(token: string, id: string): Promise<MetaInstagramAccount | undefined> {
+    if (!/^\d{5,25}$/.test(id)) return undefined;
+    try {
+      const res = await axios.get(`${FB_GRAPH}/${id}`, {
+        params: { fields: 'id,username' },
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: HTTP_TIMEOUT_MS,
+      });
+      return String(res.data?.id) === id
+        ? { id, ...(typeof res.data?.username === 'string' ? { username: res.data.username } : {}) }
+        : undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -135,8 +156,101 @@ export class MetaLoginService {
     }
     // The configuration sets the expiry ("never" for ours): no expires_in
     // then. Such a token is not a user token and is never exchanged.
-    const accounts = await this.listAssignedAccounts(token);
+    const { accounts } = await this.discoverUnifiedAccounts(token, app);
     return { token, expiresAt: expiryOf(res.data?.expires_in), accounts, systemUser: true };
+  }
+
+  /**
+   * The Instagram accounts a Unified Login token can act for. Meta documents
+   * /me/assigned_instagram_accounts; when that comes back empty, the client's
+   * business portfolio (/me?fields=client_business_id) is asked for its
+   * owned and connected Instagram accounts, and the token's granular scopes
+   * (debug_token, with the app token) name the accounts it was granted. Each
+   * step's outcome is logged as counts and error codes, never the token.
+   */
+  private async discoverUnifiedAccounts(
+    token: string,
+    app?: MetaLoginApp,
+  ): Promise<{ accounts: MetaInstagramAccount[]; notes: string[] }> {
+    const notes: string[] = [];
+    const seen = new Map<string, MetaInstagramAccount>();
+    const add = (list: MetaInstagramAccount[]) => {
+      for (const a of list) if (!seen.has(a.id) || (!seen.get(a.id)!.username && a.username)) seen.set(a.id, a);
+    };
+    const step = async (name: string, run: () => Promise<MetaInstagramAccount[]>) => {
+      try {
+        const list = await run();
+        notes.push(`${name}=${list.length}`);
+        add(list);
+      } catch (err) {
+        notes.push(`${name}=error(${describe(err).message.slice(0, 120)})`);
+      }
+    };
+    await step('assigned_instagram_accounts', () => this.listAssignedAccounts(token));
+    if (seen.size === 0) {
+      let businessId: string | undefined;
+      try {
+        const me = await axios.get(`${FB_GRAPH_UNIFIED}/me`, {
+          params: { fields: 'id,client_business_id' },
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: HTTP_TIMEOUT_MS,
+        });
+        const biz = me.data?.client_business_id;
+        businessId = (typeof biz === 'string' || typeof biz === 'number') && /^\d+$/.test(String(biz)) ? String(biz) : undefined;
+        notes.push(`client_business_id=${businessId ? 'present' : 'missing'}`);
+      } catch (err) {
+        notes.push(`me=error(${describe(err).message.slice(0, 120)})`);
+      }
+      if (businessId) {
+        for (const edge of ['owned_instagram_accounts', 'instagram_accounts']) {
+          await step(edge, () => this.listEdgeAccounts(token, `${FB_GRAPH_UNIFIED}/${businessId}/${edge}`));
+        }
+      }
+      if (app) {
+        await step('debug_token_targets', async () => {
+          const res = await axios.get(`${FB_GRAPH_UNIFIED}/debug_token`, {
+            params: { input_token: token },
+            headers: { Authorization: `Bearer ${app.appId}|${app.appSecret}` },
+            timeout: HTTP_TIMEOUT_MS,
+          });
+          const data = res.data?.data ?? {};
+          const scopes: string[] = Array.isArray(data.scopes) ? data.scopes.filter((x: unknown) => typeof x === 'string') : [];
+          notes.push(`scopes=${scopes.join(',') || 'none'}`);
+          const ids = new Set<string>();
+          for (const g of Array.isArray(data.granular_scopes) ? data.granular_scopes : []) {
+            if (typeof g?.scope === 'string' && g.scope.startsWith('instagram') && Array.isArray(g.target_ids)) {
+              for (const id of g.target_ids) if (/^\d{5,25}$/.test(String(id))) ids.add(String(id));
+            }
+          }
+          const found: MetaInstagramAccount[] = [];
+          for (const id of ids) {
+            const account = await this.accountById(token, id);
+            if (account) found.push(account);
+          }
+          return found;
+        });
+      }
+    }
+    const accounts = [...seen.values()];
+    if (accounts.length === 0) this.logger.warn(`Unified Login: no Instagram account found (${notes.join('; ')})`);
+    else this.logger.log(`Unified Login: ${accounts.length} Instagram account(s) (${notes.join('; ')})`);
+    return { accounts, notes };
+  }
+
+  private async listEdgeAccounts(token: string, url: string): Promise<MetaInstagramAccount[]> {
+    const res = await axios.get(url, {
+      params: { fields: 'id,username', limit: '100' },
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: HTTP_TIMEOUT_MS,
+    });
+    const out: MetaInstagramAccount[] = [];
+    for (const row of Array.isArray(res.data?.data) ? res.data.data : []) {
+      const id = row?.id;
+      if ((typeof id === 'string' || typeof id === 'number') && /^\d{5,25}$/.test(String(id))) {
+        out.push({ id: String(id), ...(typeof row.username === 'string' ? { username: row.username } : {}) });
+      }
+    }
+    return out;
   }
 
   /** /me is the business integration system user; its assigned accounts are what the client shared. */

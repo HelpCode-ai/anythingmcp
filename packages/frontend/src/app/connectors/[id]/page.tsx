@@ -20,6 +20,7 @@ import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
 import { SetupStatusBanner, SetupStatusPill } from '@/components/setup-status';
 import { AuthStatusBanner, AuthStatusPill } from '@/components/auth-status';
+import { MetaSignInBanner, type MetaSignInStatus } from '@/components/meta-sign-in-banner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useLocale, useTranslations } from 'next-intl';
@@ -276,6 +277,8 @@ export default function ConnectorDetailPage() {
   const [importEntitySets, setImportEntitySets] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
+  // The outcome of a Meta sign-in of an Instagram connector (?meta=…), with its next step.
+  const [metaSignIn, setMetaSignIn] = useState<{ status: MetaSignInStatus; message: string | null } | null>(null);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     message: string;
@@ -448,6 +451,11 @@ export default function ConnectorDetailPage() {
     } else if (oauthStatus === 'error') {
       const message = searchParams.get('message') || t('msg.authFailedDefault');
       setMsg(t('msg.oauthError', { message }));
+      window.history.replaceState({}, '', `/connectors/${id}`);
+    }
+    const metaStatus = searchParams.get('meta');
+    if (metaStatus === 'connected' || metaStatus === 'choose' || metaStatus === 'no_account' || metaStatus === 'error') {
+      setMetaSignIn({ status: metaStatus, message: searchParams.get('message') });
       window.history.replaceState({}, '', `/connectors/${id}`);
     }
 
@@ -1252,6 +1260,23 @@ export default function ConnectorDetailPage() {
 
         <SetupStatusBanner connector={connector} />
         <AuthStatusBanner connector={connector} />
+
+        {metaSignIn && (
+          <MetaSignInBanner
+            connectorId={id}
+            status={metaSignIn.status}
+            message={metaSignIn.message}
+            token={token}
+            authorizing={authorizing}
+            onAuthorize={handleMetaAuthorize}
+            onTest={handleTest}
+            onSaved={() => {
+              setMetaSignIn({ status: 'connected', message: null });
+              fetchConnector();
+            }}
+            onDismiss={() => setMetaSignIn(null)}
+          />
+        )}
 
         {msg && (
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
