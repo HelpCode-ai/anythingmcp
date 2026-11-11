@@ -97,9 +97,11 @@ export interface PendingOAuthFlow {
    * completed by its own endpoint; unset on every OAuth flow.
    * 'tiktok-shop-install' is a TikTok Shop App Store install: it arrived
    * without a state of ours, so it has no connector and no user yet
-   * (both empty) and carries the authorization code itself.
+   * (both empty) and carries the authorization code itself. 'meta' is a
+   * Facebook or Instagram sign-in of an Instagram connector
+   * (meta-auth.controller.ts).
    */
-  provider?: 'shopee' | 'tiktok-shop' | 'tiktok-shop-install';
+  provider?: 'shopee' | 'tiktok-shop' | 'tiktok-shop-install' | 'meta';
   /**
    * The authorization code of a 'tiktok-shop-install', kept here (encrypted
    * at rest) instead of in the dashboard address. Unset on every other flow.

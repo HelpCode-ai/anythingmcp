@@ -1048,6 +1048,14 @@
       "useOwn": "Use your own TikTok Shop app",
       "ownHint": "Only for a Partner Center app of your own. Set its Redirect URL to:"
     },
+    "metaLogin": {
+      "signIn": "Save and sign in with {provider}",
+      "modeSignIn": "Sign in with {provider} (recommended)",
+      "modePaste": "Paste an access token",
+      "serverApp": "This server has its own Meta app: you only sign in and approve it. There is no app id or secret to enter.",
+      "useOwn": "Use your own Meta app",
+      "ownHint": "Enter your Meta app's id and secret below (and META_CONFIG_ID for Unified Login), and register this address as the redirect URL:"
+    },
     "copy": "Copy",
     "noInput": "Nothing to enter: it works without an account.",
     "working": "Working…",
@@ -1514,6 +1522,43 @@
     "tiktokShop": {
       "title": "TikTok Shop authorization",
       "body": "Sign in to TikTok Shop Seller Center with the shop owner account and approve the app. With an app of your own, its Redirect URL in Partner Center must be your AnythingMCP address followed by /api/tiktok-shop/callback; without one, the connector uses this server's TikTok Shop app. The tokens are stored encrypted and renewed automatically; authorize again when the authorization expires or the connector asks for it."
+    },
+    "meta": {
+      "titleFacebook": "Sign in with Instagram or Facebook",
+      "titleInstagram": "Sign in with Instagram",
+      "bodyFacebook": "Sign in with the Instagram account or with Facebook and approve the app. With Unified Login (AnythingMCP Cloud, and every Meta app created since autumn 2026) you choose the business portfolio and the Instagram account to share, no Facebook Page needed, and the token does not expire. With an older app you sign in with a Facebook user who manages the Page linked to the Instagram account, and the token is renewed before it expires. The token and the account id are stored on this connector, encrypted. With an app of your own, set META_APP_ID, META_APP_SECRET and, for Unified Login, META_CONFIG_ID, and register your AnythingMCP address followed by /api/meta/callback as the redirect URL.",
+      "bodyInstagram": "Sign in with the Instagram business or creator account and approve the app; no Facebook Page is needed. The token and the account id are stored on this connector, encrypted, and the token is refreshed before it expires. With an app of your own, set INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET and add your AnythingMCP address followed by /api/meta/callback to its OAuth redirect URIs.",
+      "authorizeFacebook": "Authorize with Instagram or Facebook",
+      "authorizeInstagram": "Authorize with Instagram"
+    },
+    "metaBanner": {
+      "dismiss": "Dismiss",
+      "connected": {
+        "title": "Instagram is connected",
+        "titleAs": "Instagram is connected as {account}",
+        "body": "The sign-in worked and the token is stored on this connector. Test the connection, then use the tools from your AI assistant.",
+        "bodyAs": "Signed in, and the connector uses {account}. Test the connection, then use the tools from your AI assistant."
+      },
+      "choose": {
+        "title": "Choose the Instagram account",
+        "body": "The sign-in reaches several Instagram accounts. Pick the one this connector should use; you can switch later."
+      },
+      "no_account": {
+        "title": "Signed in, but no Instagram account was shared",
+        "body": "The sign-in worked and is kept, but Meta returned no Instagram account for it. Authorize again and, in the Meta dialog, select the business portfolio and tick the Instagram business or creator account. Or enter the account id below if you know it.",
+        "bodyNoAssets": "Meta approved the permissions but shared no Instagram account with the app. This happens when the business portfolio chosen in the dialog does not own the account (it is only shared with it). Authorize again and choose the portfolio that owns the Instagram account, then tick the account."
+      },
+      "error": {
+        "title": "The sign-in did not finish",
+        "body": "Meta did not complete the sign-in. Authorize again."
+      },
+      "testNow": "Test connection",
+      "switchAccount": "Use another account",
+      "authorizeAgain": "Authorize again",
+      "manualLabel": "Instagram account id",
+      "manualSave": "Use this account id",
+      "manualHint": "Enter the account id that Meta's API returns for the Instagram professional account (usually a number starting with 1784; the asset id shown in Business settings can differ). It is checked with the stored sign-in before it is saved.",
+      "manualInvalid": "Enter the numeric Instagram account id (digits only), not the username."
     },
     "env": {
       "title": "Environment Variables",

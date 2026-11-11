@@ -1048,6 +1048,14 @@
       "useOwn": "Eigene TikTok-Shop-App verwenden",
       "ownHint": "Nur für eine eigene App im Partner Center. Setzen Sie ihre Redirect URL auf:"
     },
+    "metaLogin": {
+      "signIn": "Speichern und mit {provider} anmelden",
+      "modeSignIn": "Mit {provider} anmelden (empfohlen)",
+      "modePaste": "Access Token einfügen",
+      "serverApp": "Dieser Server hat eine eigene Meta-App: Sie melden sich nur an und genehmigen sie. App-ID und Secret müssen Sie nicht eingeben.",
+      "useOwn": "Eigene Meta-App verwenden",
+      "ownHint": "Geben Sie unten ID und Secret Ihrer Meta-App ein (für Unified Login auch META_CONFIG_ID) und tragen Sie diese Adresse als Weiterleitungs-URL ein:"
+    },
     "copy": "Kopieren",
     "noInput": "Keine Eingabe nötig: Er funktioniert ohne Konto.",
     "working": "Wird ausgeführt…",
@@ -1514,6 +1522,43 @@
     "tiktokShop": {
       "title": "TikTok-Shop-Autorisierung",
       "body": "Melden Sie sich im TikTok Shop Seller Center mit dem Inhaberkonto des Shops an und genehmigen Sie die App. Mit einer eigenen App muss deren Redirect URL im Partner Center Ihre AnythingMCP-Adresse gefolgt von /api/tiktok-shop/callback sein; ohne eigene App verwendet der Connector die TikTok-Shop-App dieses Servers. Die Tokens werden verschlüsselt gespeichert und automatisch erneuert; autorisieren Sie erneut, wenn die Autorisierung abläuft oder der Connector danach fragt."
+    },
+    "meta": {
+      "titleFacebook": "Mit Instagram oder Facebook anmelden",
+      "titleInstagram": "Mit Instagram anmelden",
+      "bodyFacebook": "Melden Sie sich mit dem Instagram-Konto oder mit Facebook an und genehmigen Sie die App. Mit Unified Login (AnythingMCP Cloud und jede seit Herbst 2026 erstellte Meta-App) wählen Sie das Business-Portfolio und das Instagram-Konto, das Sie freigeben; eine Facebook-Seite ist nicht nötig, und das Token läuft nicht ab. Mit einer älteren App melden Sie sich mit einem Facebook-Nutzer an, der die mit dem Instagram-Konto verknüpfte Seite verwaltet; das Token wird vor Ablauf erneuert. Token und Konto-ID werden verschlüsselt an diesem Connector gespeichert. Mit einer eigenen App setzen Sie META_APP_ID, META_APP_SECRET und für Unified Login META_CONFIG_ID und tragen Ihre AnythingMCP-Adresse gefolgt von /api/meta/callback als Weiterleitungs-URL ein.",
+      "bodyInstagram": "Melden Sie sich mit dem Instagram-Business- oder Creator-Konto an und genehmigen Sie die App; eine Facebook-Seite ist nicht nötig. Token und Konto-ID werden verschlüsselt an diesem Connector gespeichert, das Token wird vor Ablauf erneuert. Mit einer eigenen App setzen Sie INSTAGRAM_APP_ID und INSTAGRAM_APP_SECRET und tragen Ihre AnythingMCP-Adresse gefolgt von /api/meta/callback als OAuth-Redirect-URI ein.",
+      "authorizeFacebook": "Mit Instagram oder Facebook autorisieren",
+      "authorizeInstagram": "Mit Instagram autorisieren"
+    },
+    "metaBanner": {
+      "dismiss": "Schließen",
+      "connected": {
+        "title": "Instagram ist verbunden",
+        "titleAs": "Instagram ist verbunden als {account}",
+        "body": "Die Anmeldung hat geklappt, das Token ist an diesem Connector gespeichert. Testen Sie die Verbindung und nutzen Sie die Tools dann in Ihrem KI-Assistenten.",
+        "bodyAs": "Angemeldet, der Connector nutzt {account}. Testen Sie die Verbindung und nutzen Sie die Tools dann in Ihrem KI-Assistenten."
+      },
+      "choose": {
+        "title": "Instagram-Konto wählen",
+        "body": "Die Anmeldung erreicht mehrere Instagram-Konten. Wählen Sie das Konto für diesen Connector; Sie können es später wechseln."
+      },
+      "no_account": {
+        "title": "Angemeldet, aber kein Instagram-Konto freigegeben",
+        "body": "Die Anmeldung hat geklappt und bleibt gespeichert, Meta hat dafür aber kein Instagram-Konto zurückgegeben. Autorisieren Sie erneut und wählen Sie im Meta-Dialog das Business-Portfolio und das Instagram-Business- oder Creator-Konto aus. Oder geben Sie unten die Konto-ID ein, wenn Sie sie kennen.",
+        "bodyNoAssets": "Meta hat die Berechtigungen genehmigt, der App aber kein Instagram-Konto freigegeben. Das passiert, wenn das im Dialog gewählte Business-Portfolio das Konto nicht besitzt (es ist dort nur geteilt). Autorisieren Sie erneut, wählen Sie das Portfolio, dem das Instagram-Konto gehört, und haken Sie das Konto an."
+      },
+      "error": {
+        "title": "Die Anmeldung wurde nicht abgeschlossen",
+        "body": "Meta hat die Anmeldung nicht abgeschlossen. Autorisieren Sie erneut."
+      },
+      "testNow": "Verbindung testen",
+      "switchAccount": "Anderes Konto nutzen",
+      "authorizeAgain": "Erneut autorisieren",
+      "manualLabel": "Instagram-Konto-ID",
+      "manualSave": "Diese Konto-ID nutzen",
+      "manualHint": "Geben Sie die Konto-ID ein, die Metas API für das Instagram-Professional-Konto liefert (meist eine Zahl, die mit 1784 beginnt; die Asset-ID in den Business-Einstellungen kann davon abweichen). Sie wird vor dem Speichern mit der gespeicherten Anmeldung geprüft.",
+      "manualInvalid": "Geben Sie die numerische Instagram-Konto-ID ein (nur Ziffern), nicht den Benutzernamen."
     },
     "env": {
       "title": "Umgebungsvariablen",

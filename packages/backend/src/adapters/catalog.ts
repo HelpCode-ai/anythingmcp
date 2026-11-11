@@ -338,6 +338,7 @@ import * as infisical from './intl/infisical.json';
 import * as inoreader from './intl/inoreader.json';
 import * as insightly from './intl/insightly.json';
 import * as instagram from './intl/instagram.json';
+import * as instagramLogin from './intl/instagram-login.json';
 import * as instantly from './intl/instantly.json';
 import * as intercom from './intl/intercom.json';
 import * as invoiceNinja from './intl/invoice-ninja.json';
@@ -1385,6 +1386,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   inoreader as unknown as AdapterDefinition,
   insightly as unknown as AdapterDefinition,
   instagram as unknown as AdapterDefinition,
+  instagramLogin as unknown as AdapterDefinition,
   instantly as unknown as AdapterDefinition,
   intercom as unknown as AdapterDefinition,
   invoiceNinja as unknown as AdapterDefinition,
