@@ -212,7 +212,16 @@ export class ConnectorsService {
       webhookSecret: string;
     }>,
   ): Promise<Connector> {
-    const existing = await this.findById(id);
+    // Only the type (base URL normalisation) and the stored credential (auth
+    // status below) are needed: loading every tool, resource and prompt here
+    // made each save as heavy as the connector was large.
+    const existing = await this.prisma.connector.findUnique({
+      where: { id },
+      select: { type: true, authConfig: true },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Connector ${id} not found`);
+    }
     assertValidHeaderNames(data.headers, data.authConfig);
 
     const updateData: any = { ...data };
