@@ -1,31 +1,25 @@
 import * as adapter from './dchub.json';
-import { RestEngine } from '../../connectors/engines/rest.engine';
-import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
-import { LoginTokenService } from '../../connectors/engines/login-token.service';
+import { localMcpToolName } from '../../connectors/mcp-connector-config.util';
 
 /**
- * Two layers of verification for the DC Hub adapter:
+ * The DC Hub adapter bridges DC Hub's official remote MCP server
+ * (https://dchub.cloud/mcp). DC Hub's server owns the tools; the adapter's
+ * `tools` array is the snapshot the catalog shows and the policy layer:
+ * which tools install switched off, and which parameters are dropped.
  *
- *   1. Static — always runs. Pins the thing that makes this connector unusual:
- *      the API key is OPTIONAL. Sixteen of the twenty tools answer without
- *      credentials (eleven in full, five redacted), so DCHUB_API_KEY lives in
- *      optionalEnvVars and requiredEnvVars is empty (an empty X-API-Key
- *      header is accepted by DC Hub on the keyless endpoints — verified
- *      live, 200). If anyone later moves the variable into requiredEnvVars,
- *      the install stops being one click and the reason to ship this adapter
- *      mostly goes away, so it is worth failing a test over. Also pins that the four endpoints which DO
- *      need a key say so in their own description, because that is the only
- *      place the model can read it.
+ *   1. Static, always runs. Pins what makes this connector unusual:
+ *      - the API key is OPTIONAL. The server lists its tools and answers
+ *        previews without a key (an empty X-API-Key header is accepted,
+ *        verified live), so DCHUB_API_KEY stays in optionalEnvVars and the
+ *        install stays one click;
+ *      - the tools that act for the user outside AnythingMCP (an email address
+ *        sent to DC Hub, subscriptions, alerts, webhooks, accepted terms,
+ *        operator introductions) install switched off;
+ *      - the per-call payment parameters are never offered to the model.
  *
- *   2. Live — skipped unless RUN_DCHUB_LIVE is set. Calls the real API with no
- *      credentials and asserts, for EVERY tool, that the ones we advertise as
- *      keyless really are and the gated ones really are gated.
- *
- *      The original version of this file only exercised three endpoints that
- *      happened to work, which is why the adapter shipped claiming fourteen
- *      keyless tools when four of them answer 403. A live test that only
- *      visits the passing cases cannot catch that, so this one enumerates the
- *      whole surface from a single table.
+ *   2. Live, skipped unless RUN_DCHUB_LIVE is set. Lists the server's tools
+ *      without a key and checks that every tool the snapshot switches off or
+ *      trims still exists under the same name, so the policy keeps applying.
  *
  *   Run live with:  RUN_DCHUB_LIVE=1 npx jest src/adapters/intl/dchub.live.spec.ts
  */
@@ -33,7 +27,11 @@ import { LoginTokenService } from '../../connectors/engines/login-token.service'
 type Tool = {
   name: string;
   description: string;
+  enabled?: boolean;
+  omitParameters?: string[];
+  parameters: { properties?: Record<string, { description?: string }>; required?: string[] };
   endpointMapping: { method: string; path: string };
+  annotations?: Record<string, unknown>;
 };
 
 const a = adapter as unknown as {
@@ -41,252 +39,146 @@ const a = adapter as unknown as {
   instructions: string;
   requiredEnvVars: string[];
   optionalEnvVars: string[];
+  probe?: unknown;
   connector: {
+    type: string;
     baseUrl: string;
     authType: string;
     authConfig: { headerName: string; apiKey: string };
     headers: Record<string, string>;
+    config: { mcpToolPrefix: string };
   };
   tools: Tool[];
 };
 
-/**
- * What each tool actually does without credentials, verified against the live
- * API on 2026-09-20 and re-checked on 2026-10-27, when the market, DCPI, AI
- * capacity and queue tools moved from open to redacted. Not copied from DC
- * Hub's spec: the spec declared `dchub_facility_detail` as gated when it in
- * fact answers 200 with a redacted body, and declared nothing for
- * `dchub_pipeline` and `dchub_energy_prices` when both answer 403.
- *
- *   'open'     — 200 with real data, no key.
- *   'gated'    — 403; a free developer key unlocks it.
- *   'paid'     — 403 `plan_required`; only a paid Pro key unlocks it.
- *   'redacted' — 200, but the body carries `_gated: true`.
- */
-const ANON_BEHAVIOUR: Record<string, 'open' | 'gated' | 'paid' | 'redacted'> = {
-  dchub_stats: 'open',
-  dchub_search_facilities: 'open',
-  dchub_facility_detail: 'redacted',
-  dchub_list_markets: 'open',
-  dchub_compare_markets: 'redacted',
-  dchub_market_dcpi: 'redacted',
-  dchub_ai_capacity_index: 'redacted',
-  dchub_interconnection_queue: 'redacted',
-  dchub_pipeline: 'gated',
-  dchub_transactions: 'open',
-  dchub_news: 'open',
-  dchub_site_score: 'paid',
-  dchub_grid_fuel_mix: 'gated',
-  dchub_energy_prices: 'gated',
-  dchub_analyze_parcel: 'open',
-  dchub_rank_sites: 'open',
-  dchub_dcpi_receipt: 'open',
-  dchub_queue_receipt: 'open',
-  dchub_listings_summary: 'open',
-  // 200 anonymously, with teaser cards whose provider is withheld; the
-  // listing data itself is not tier-gated.
-  dchub_search_listings: 'open',
-};
+const SWITCHED_OFF = [
+  'accept_capacity_terms',
+  'bind_email',
+  'claim_free_key',
+  'delete_standing_intent',
+  'recover_my_key',
+  'register_standing_intent',
+  'report_finding',
+  'request_capacity_intro',
+  'set_market_alert',
+  'set_shortlist_alert',
+  'set_site_alert',
+  'subscribe_digest',
+];
+const PAYMENT_PARAMETERS = ['mpp_pay', 'mpp_credential'];
 
-/** Every tool that cannot be used on an unkeyed install must say so itself. */
-const KEYED_TOOLS = Object.entries(ANON_BEHAVIOUR)
-  .filter(([, b]) => b === 'gated' || b === 'paid')
-  .map(([name]) => name);
-
-describe('dchub adapter — static spec conformance', () => {
-  it('keeps the API key optional so the connector installs in one click', () => {
+describe('dchub adapter: static spec conformance', () => {
+  it("bridges DC Hub's official MCP server with an optional X-API-Key", () => {
+    expect(a.connector.type).toBe('MCP');
+    expect(a.connector.baseUrl).toBe('https://dchub.cloud/mcp');
+    expect(a.connector.authType).toBe('API_KEY');
+    expect(a.connector.authConfig).toEqual({ headerName: 'X-API-Key', apiKey: '{{DCHUB_API_KEY}}' });
+    expect(a.connector.config).toEqual({ mcpToolPrefix: 'dchub_' });
     expect(a.requiredEnvVars).toEqual([]);
     expect(a.optionalEnvVars).toEqual(['DCHUB_API_KEY']);
+    // An MCP adapter is checked by listing the server's tools.
+    expect(a.probe).toBeUndefined();
   });
 
-  it('sends the key as the X-API-Key header the spec declares', () => {
-    expect(a.connector.authType).toBe('API_KEY');
-    expect(a.connector.authConfig.headerName).toBe('X-API-Key');
-    expect(a.connector.authConfig.apiKey).toBe('{{DCHUB_API_KEY}}');
-    expect(a.connector.baseUrl).toBe('https://dchub.cloud');
-  });
-
-  it('tags every request with the attribution header DC Hub asked for', () => {
-    // DC Hub counts the traffic AnythingMCP sends them by this header; it
-    // changes neither access nor results. The instructions say so too.
-    expect(a.connector.headers['X-DCHub-Via']).toBe('anythingmcp');
-    expect(a.instructions).toContain('X-DCHub-Via: anythingmcp');
-  });
-
-  it('tells the model, in the tool description, which tools need a key', () => {
-    for (const name of KEYED_TOOLS) {
-      const tool = a.tools.find((t) => t.name === name);
-      expect(tool).toBeDefined();
-      expect(tool!.description).toMatch(/requires an? (api key|paid)/i);
-      expect(tool!.description).toContain('DCHUB_API_KEY');
+  it('names every tool <prefix><remote name> and calls it on /mcp', () => {
+    expect(a.tools.length).toBeGreaterThan(50);
+    const names = new Set<string>();
+    for (const t of a.tools) {
+      expect(t.name).toBe(localMcpToolName(t.endpointMapping.method, a.connector.config.mcpToolPrefix));
+      expect(t.name.length).toBeLessThanOrEqual(64);
+      expect(t.endpointMapping.path).toBe('/mcp');
+      expect(names.has(t.name)).toBe(false);
+      names.add(t.name);
     }
-  });
-
-  it('warns that the redacted tool answers 200 rather than failing', () => {
-    // The dangerous shape: it does not error, so a model reports a gated
-    // record as the full one unless the description says to check `_gated`.
-    const tool = a.tools.find((t) => t.name === 'dchub_facility_detail')!;
-    expect(tool.description).toMatch(/does NOT fail/);
-    expect(tool.description).toContain('_gated');
-  });
-
-  it('does not bake a facility count into any copy we publish', () => {
-    // DC Hub asked for this: the numbers move weekly and they cannot edit
-    // our listing. Live figures come from dchub_stats instead.
-    //
-    // Tool descriptions count. The website generates its guides from this
-    // file, so a stale number here reaches 35 published pages across seven
-    // languages — which is exactly how "22,900+ facilities" survived being
-    // removed from the adapter description.
-    const COUNT = /[\d,]{4,}\+?\s*(facilities|data ?centres|data ?centers)/i;
-    expect(a.description).not.toMatch(COUNT);
-    expect(a.instructions).not.toMatch(COUNT);
-    for (const tool of a.tools) {
-      expect(tool.description).not.toMatch(COUNT);
-    }
-  });
-
-  it('covers the twenty operations we chose to wrap, and nothing invented', () => {
-    const mapped = a.tools
-      .map((t) => `${t.endpointMapping.method} ${t.endpointMapping.path}`)
-      .sort();
-    expect(mapped).toEqual(
-      [
-        'GET /api/grid/fuel-mix',
-        'GET /api/energy/prices/{state}',
-        'GET /api/news',
-        'GET /api/site-score',
-        'GET /api/v1/ai-capacity-index',
-        'GET /api/v1/dcpi/scores/{market_slug}',
-        'GET /api/v1/facilities',
-        'GET /api/v1/facilities/{facility_id}',
-        'GET /api/v1/interconnection-queue/refined',
-        'GET /api/v1/listings',
-        'GET /api/v1/listings/summary',
-        'GET /api/v1/markets',
-        'GET /api/v1/markets/compare',
-        'GET /api/v1/pipeline',
-        'GET /api/v1/receipt/dcpi/{market_slug}',
-        'GET /api/v1/receipt/queue',
-        'GET /api/v1/stats',
-        'GET /api/v1/transactions',
-        'POST /api/v1/analyze-parcel',
-        'POST /api/v1/rank-sites',
-      ].sort(),
+    expect([...names]).toEqual(
+      expect.arrayContaining(['dchub_execute_plan', 'dchub_search_facilities', 'dchub_get_market_intel', 'dchub_get_grid_data']),
     );
   });
 
-  it('writes nothing: only the two analysis endpoints POST, and they are computations', () => {
-    const writes = a.tools.filter((t) => t.endpointMapping.method !== 'GET');
-    expect(writes.map((t) => t.name).sort()).toEqual([
-      'dchub_analyze_parcel',
-      'dchub_rank_sites',
-    ]);
-    for (const tool of writes) {
-      expect(tool.description).toMatch(/stores nothing/i);
+  it('describes every top-level parameter', () => {
+    for (const t of a.tools) {
+      for (const [p, def] of Object.entries(t.parameters.properties ?? {})) {
+        expect(`${t.name}.${p}: ${def.description ? 'ok' : 'missing'}`).toBe(`${t.name}.${p}: ok`);
+      }
     }
   });
 
-  it('never registers deals or accepts terms on the person\'s behalf', () => {
-    // Capacity Source introductions put the person's name and company into
-    // DC Hub's lead register and bind them to a 12-month introduction term.
-    // That is the person's decision on dchub.cloud, so neither endpoint is a
-    // tool, and the listing tool tells the model so.
-    const paths = a.tools.map((t) => t.endpointMapping.path);
-    expect(paths.some((p) => p.includes('/intro'))).toBe(false);
-    expect(paths.some((p) => p.includes('/terms'))).toBe(false);
-    const search = a.tools.find((t) => t.name === 'dchub_search_listings')!;
-    expect(search.description).toMatch(/introduction .* on dchub\.cloud/i);
+  it('installs the tools that act for the user outside AnythingMCP switched off', () => {
+    const off = a.tools.filter((t) => t.enabled === false).map((t) => t.endpointMapping.method);
+    expect(off.sort()).toEqual(SWITCHED_OFF);
+    for (const name of SWITCHED_OFF) {
+      expect(a.instructions).toContain(`dchub_${name}`);
+    }
+    // Every tool the server marks destructive is among them.
+    const destructiveOn = a.tools.filter((t) => t.annotations?.destructiveHint === true && t.enabled !== false);
+    expect(destructiveOn).toEqual([]);
   });
 
-  it('prefixes every tool name with dchub_', () => {
-    expect(a.tools).toHaveLength(20);
-    for (const tool of a.tools) {
-      expect(tool.name.startsWith('dchub_')).toBe(true);
+  it('never offers the per-call payment parameters to the model', () => {
+    for (const t of a.tools) {
+      for (const p of PAYMENT_PARAMETERS) {
+        expect(Object.keys(t.parameters.properties ?? {})).not.toContain(p);
+        expect(t.parameters.required ?? []).not.toContain(p);
+      }
     }
+    const trimmed = a.tools.filter((t) => t.omitParameters?.length);
+    expect(trimmed.length).toBeGreaterThan(0);
+    for (const t of trimmed) {
+      expect(t.omitParameters!.every((p) => PAYMENT_PARAMETERS.includes(p))).toBe(true);
+    }
+  });
+
+  it('keeps the key wording neutral and links the official endpoint', () => {
+    const text = `${a.description}\n${a.instructions}`;
+    expect(text).toContain('A few tools return previews without a DC Hub key; a key unlocks full answers.');
+    expect(text).toContain('https://dchub.cloud/connect');
+    expect(a.instructions).toContain('https://dchub.cloud/mcp');
+    expect(a.description).toContain('Cite results with the as-of date returned by each tool.');
+    // Our own wording names no plan: plan names change. (The tool descriptions
+    // are DC Hub's own, copied from its server.)
+    expect(text).not.toMatch(/\bPro\b|paid plan|plan key/i);
+  });
+
+  it('uses no em or en dashes', () => {
+    expect(JSON.stringify(adapter)).not.toMatch(/[–—]/);
   });
 });
 
 const live = process.env.RUN_DCHUB_LIVE ? describe : describe.skip;
 
-/** Arguments good enough to get a real answer out of each tool. */
-const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
-  dchub_facility_detail: { facility_id: '11342' },
-  dchub_market_dcpi: { market_slug: 'northern-virginia' },
-  dchub_dcpi_receipt: { market_slug: 'phoenix' },
-  dchub_queue_receipt: { iso: 'pjm' },
-  dchub_compare_markets: { markets: 'northern-virginia,phoenix' },
-  dchub_grid_fuel_mix: { iso: 'PJM' },
-  dchub_energy_prices: { state: 'VA' },
-  dchub_site_score: { lat: 39.0, lon: -77.4 },
-  dchub_analyze_parcel: {
-    geometry: {
-      type: 'Polygon',
-      coordinates: [
-        [
-          [-77.5, 39.0],
-          [-77.4, 39.0],
-          [-77.4, 39.1],
-          [-77.5, 39.1],
-          [-77.5, 39.0],
-        ],
-      ],
-    },
-  },
-  // `objectives` must be non-empty and candidates use `lng`, not `lon` —
-  // both are 400s from the real API, not schema guesses.
-  dchub_rank_sites: {
-    candidates: [{ id: 'a', lat: 39.0, lng: -77.4, mw: 100 }],
-    objectives: { mw: 1 },
-  },
-};
+live('dchub adapter: live tools/list without a key', () => {
+  jest.setTimeout(60_000);
 
-live('dchub adapter — live API, no credentials', () => {
-  const engine = new RestEngine(
-    {} as unknown as OAuth2TokenService,
-    {} as unknown as LoginTokenService,
-  );
-  // Deliberately NONE, not an empty API_KEY: this asserts the endpoints are
-  // keyless, not that DC Hub tolerates a blank header.
-  const config = { baseUrl: 'https://dchub.cloud', authType: 'NONE' };
-
-  /** Runs a tool anonymously and reports status plus body, never throwing. */
-  async function callAnonymously(tool: Tool) {
-    try {
-      const body = await engine.execute(
-        config,
-        tool.endpointMapping,
-        SAMPLE_ARGS[tool.name] ?? {},
-      );
-      return { status: 200, body: body as Record<string, unknown> };
-    } catch (err) {
-      const e = err as { status?: number; response?: { status?: number } };
-      return { status: e.status ?? e.response?.status ?? 0, body: {} };
-    }
+  async function rpc(body: unknown, session?: string) {
+    const res = await fetch(a.connector.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'X-API-Key': '',
+        ...(session ? { 'Mcp-Session-Id': session } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    const data = text.startsWith('{') ? text : text.split('\n').find((l) => l.startsWith('data: '))?.slice(6);
+    return { res, json: data ? JSON.parse(data) : undefined };
   }
 
-  for (const tool of (adapter as unknown as { tools: Tool[] }).tools) {
-    const expected = ANON_BEHAVIOUR[tool.name];
-
-    it(`${tool.name} is ${expected} without a key`, async () => {
-      const { status, body } = await callAnonymously(tool);
-
-      if (expected === 'open') {
-        expect(status).toBe(200);
-        // An "open" tool that starts answering with a gated body is the
-        // regression this catches: it still returns 200, so only the
-        // marker distinguishes it.
-        expect(body._gated).toBeFalsy();
-        expect(body.tier_signal).not.toBe('preview');
-      } else if (expected === 'redacted') {
-        expect(status).toBe(200);
-        expect(body._gated).toBe(true);
-      } else {
-        // gated | paid — both refuse, and the adapter must have said so.
-        expect(status).toBe(403);
-        const description = tool.description;
-        expect(description).toContain('DCHUB_API_KEY');
-      }
-    }, 30000);
-  }
+  it('lists every tool the snapshot switches off or trims', async () => {
+    const init = await rpc({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'anythingmcp-spec', version: '1' } },
+    });
+    expect(init.res.status).toBe(200);
+    const session = init.res.headers.get('mcp-session-id') ?? undefined;
+    await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' }, session);
+    const list = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, session);
+    const remote = new Set<string>((list.json?.result?.tools ?? []).map((t: { name: string }) => t.name));
+    expect(remote.size).toBeGreaterThan(50);
+    const policy = a.tools.filter((t) => t.enabled === false || t.omitParameters?.length).map((t) => t.endpointMapping.method);
+    expect(policy.filter((name) => !remote.has(name))).toEqual([]);
+  });
 });
