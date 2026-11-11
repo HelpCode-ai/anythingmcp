@@ -9,7 +9,7 @@ const outbound = outboundRequest as jest.MockedFunction<typeof outboundRequest>;
 
 const KEY = 'k'.repeat(32);
 
-function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any; cloud?: boolean; lastCalls?: Record<string, any>; verify?: any } = {}) {
+function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any; cloud?: boolean; lastCalls?: Record<string, any>; verify?: any; woo?: any } = {}) {
   process.env.ENCRYPTION_KEY = KEY;
   const links: any[] = [];
   const serverConnectors: any[] = [];
@@ -43,6 +43,7 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
     listAll: () => realAdapters.listAll(),
     describe: (slug: string) => realAdapters.describe(slug),
     verifyCredentials: jest.fn().mockResolvedValue(opts.verify ?? { ok: null, skipped: 'no_probe' }),
+    inspectWooCommerceAddress: jest.fn().mockResolvedValue(opts.woo),
     importAdapter: jest.fn(async (slug: string, _u: string, orgId: string, settings: Record<string, string>) => {
       const def = realAdapters.getBySlug(slug);
       const id = `c-${slug}`;
@@ -359,10 +360,26 @@ describe('ConnectorSetupService — install', () => {
     );
 
     adapters.importAdapter.mockClear();
-    const out: any = await service.install(ctx, { adapter: 'woocommerce', settings: { WOOCOMMERCE_URL: 'http://shop.example.com/' } });
+    const out: any = await service.install(ctx, { adapter: 'prestashop', settings: { PRESTASHOP_URL: 'http://shop.example.com/' } });
     expect(out.isError).toBe(true);
-    expect(out.body.error).toMatch(/Use https:\/\/ instead of http:\/\/ and remove the \/ at the end: https:\/\/shop\.example\.com\./);
+    expect(out.body.error).toMatch(/Use https:\/\/ instead of http:\/\//);
     expect(adapters.importAdapter).not.toHaveBeenCalled();
+  });
+
+  it('cleans a WooCommerce address from the chat silently (WooCommerce has its own rule)', async () => {
+    const { service, ctx, adapters } = build();
+    await service.install(ctx, {
+      adapter: 'woocommerce',
+      settings: { WOOCOMMERCE_URL: 'http://shop.example.com/wp-admin/admin.php?page=wc-settings' },
+    });
+    expect(adapters.importAdapter).toHaveBeenLastCalledWith(
+      'woocommerce',
+      'u1',
+      'org-1',
+      { WOOCOMMERCE_URL: 'https://shop.example.com' },
+      { addressMayWait: true },
+    );
+    expect(adapters.inspectWooCommerceAddress).toHaveBeenCalledWith('https://shop.example.com');
   });
 
   it('respects the trial limit', async () => {
@@ -722,5 +739,115 @@ describe('ConnectorSetupService — where a setup call comes from', () => {
       via: 'post_approve',
       verified: false,
     });
+  });
+});
+
+describe('ConnectorSetupService — a WooCommerce address asked before a chat install', () => {
+  it('uses the address WordPress names itself, and says WooCommerce was found', async () => {
+    const { service, ctx, adapters } = build({
+      woo: {
+        url: 'https://shop.example.com',
+        home: 'https://www.shop.example.com',
+        corrected: 'https://www.shop.example.com',
+        woocommerce: true,
+      },
+    });
+    const out: any = await service.install(ctx, { adapter: 'woocommerce', settings: { WOOCOMMERCE_URL: 'shop.example.com' } });
+    expect(adapters.importAdapter.mock.calls[0][3]).toEqual({ WOOCOMMERCE_URL: 'https://www.shop.example.com' });
+    expect(out.body.checkedTheAddress).toBe(
+      'WooCommerce answers at https://www.shop.example.com: that address was used instead of https://shop.example.com.',
+    );
+    expect(out.body.finishSetupUrl).toMatch(/\/s\//);
+  });
+
+  it('refuses a host name that does not exist, so the assistant asks again', async () => {
+    const { service, ctx, adapters } = build({
+      woo: { url: 'https://shpo.example.com', problem: 'dns', final: true, message: 'No site answers at shpo.example.com: that name does not exist.' },
+    });
+    const out: any = await service.install(ctx, { adapter: 'woocommerce', settings: { WOOCOMMERCE_URL: 'https://shpo.example.com' } });
+    expect(out.isError).toBe(true);
+    expect(out.body.error).toMatch(/that name does not exist/);
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
+  });
+
+  it('installs, and passes on what the user must change in WordPress first, with the link', async () => {
+    const { service, ctx, adapters } = build({
+      woo: {
+        url: 'https://shop.example.com',
+        home: 'https://shop.example.com',
+        problem: 'plain_permalinks',
+        final: true,
+        fixUrl: 'https://shop.example.com/wp-admin/options-permalink.php',
+        message: 'Permalinks are Plain.',
+      },
+    });
+    const out: any = await service.install(ctx, { adapter: 'woocommerce', settings: { WOOCOMMERCE_URL: 'https://shop.example.com' } });
+    expect(adapters.importAdapter).toHaveBeenCalled();
+    expect(out.body.checkedTheAddress).toBe(
+      'Permalinks are Plain. Tell the user this before they create the key, with the link https://shop.example.com/wp-admin/options-permalink.php.',
+    );
+  });
+
+  it('changes nothing when the address says nothing', async () => {
+    const { service, ctx, adapters } = build();
+    const out: any = await service.install(ctx, { adapter: 'woocommerce', settings: { WOOCOMMERCE_URL: 'https://shop.example.com' } });
+    expect(adapters.importAdapter.mock.calls[0][3]).toEqual({ WOOCOMMERCE_URL: 'https://shop.example.com' });
+    expect(out.body.checkedTheAddress).toBeUndefined();
+  });
+});
+
+describe('ConnectorSetupService — unfinished and refused connectors in status', () => {
+  /** A WooCommerce connector installed from a chat without any value, created `ageMs` ago. */
+  async function pendingRow(ageMs: number) {
+    const { service, ctx, prisma } = build();
+    await service.install(ctx, { adapter: 'woocommerce' });
+    const row = await prisma.connector.findUnique({ where: { id: 'c-woocommerce' } });
+    const at = new Date(Date.now() - ageMs);
+    return { ...row, name: 'WooCommerce', envVars: {}, createdAt: at, updatedAt: at };
+  }
+
+  it('offers the link again for a catalog connector still waiting for its values after a day', async () => {
+    const row = await pendingRow(2 * 86_400_000);
+    const { service, ctx } = build({ connectors: [row] });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.connectors[0]).toMatchObject({
+      status: 'needs_input',
+      finishSetupUrl: expect.stringMatching(/\/s\//),
+      unfinishedSince: row.createdAt.toISOString(),
+    });
+    expect(out.unfinishedHint).toMatch(/Offer the user its finishSetupUrl/);
+  });
+
+  it('says nothing extra about one added today', async () => {
+    const row = await pendingRow(60 * 60 * 1000);
+    const { service, ctx } = build({ connectors: [row] });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.connectors[0].finishSetupUrl).toMatch(/\/s\//);
+    expect(out.connectors[0].unfinishedSince).toBeUndefined();
+    expect(out.unfinishedHint).toBeUndefined();
+  });
+
+  it('names a ready connector whose saved credentials the provider keeps refusing, with a link to fix them', async () => {
+    const first = build();
+    await first.service.install(first.ctx, { adapter: 'openplz' });
+    const ready = await first.prisma.connector.findUnique({ where: { id: 'c-openplz' } });
+    const since = new Date(Date.now() - 3 * 86_400_000);
+    const row = {
+      ...ready,
+      name: 'OpenPLZ',
+      createdAt: since,
+      updatedAt: since,
+      authStatus: 'needs_reauth',
+      authStatusMessage: "The API refused this connector's saved credentials on 5 calls in a row (HTTP 401).",
+      authStatusAt: since,
+    };
+    const { service, ctx } = build({ connectors: [row] });
+    const out: any = (await service.status(ctx)).body;
+    expect(out.connectors[0]).toMatchObject({
+      status: 'ready',
+      credential: { ok: false, since: since.toISOString(), message: expect.stringMatching(/5 calls in a row/) },
+      fixUrl: expect.stringMatching(/\/s\//),
+    });
+    expect(out.credentialHint).toMatch(/fixUrl/);
   });
 });
