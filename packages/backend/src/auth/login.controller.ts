@@ -29,6 +29,7 @@ import {
   MCP_RESOURCE_COOKIE,
   type DirectoryPluginEndpoint,
 } from './resource-indicator.middleware';
+import { serverReachability } from './server-reachability.util';
 import { markDirectorySignup } from '../audit/directory-signup';
 import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
@@ -96,7 +97,8 @@ const TOO_MANY_CODES =
  */
 export const WRONG_WORKSPACE_MESSAGE =
   'The MCP server you are connecting belongs to another workspace, and this account is not a member of it. ' +
-  'Sign in with an account of that workspace, or ask its admin to invite you.';
+  'Sign in with an account of that workspace, or ask its admin to invite you. ' +
+  'If you do not need this connection, remove it from your AI client.';
 
 /**
  * Context describing the OAuth client that initiated the current authorize
@@ -288,8 +290,8 @@ export class LoginController {
    * True when the client asked for one MCP server by URL (RFC 8707 `resource`)
    * and the user cannot reach it: the server exists, and the user is neither
    * in its workspace as primary organization nor an active member of it. The
-   * same membership rule as the per-server MCP endpoint, which would refuse
-   * every call of such a token.
+   * same rule as the per-server MCP endpoint, which would refuse every call
+   * of such a token, and as the refresh grant (server-reachability.util).
    *
    * The requested id is client input. It is used here only to refuse, never
    * to grant: a forged value can only stop this user's own authorization.
@@ -300,25 +302,7 @@ export class LoginController {
     const serverId = (req as Request & { signedCookies?: Record<string, unknown> })
       .signedCookies?.[MCP_RESOURCE_COOKIE];
     if (typeof serverId !== 'string' || !serverId) return false;
-    try {
-      const server = await this.prisma.mcpServerConfig.findUnique({
-        where: { id: serverId },
-        select: { organizationId: true },
-      });
-      if (!server?.organizationId) return false;
-      const account = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { organizationId: true },
-      });
-      if (account?.organizationId === server.organizationId) return false;
-      const member = await this.prisma.organizationMember.findFirst({
-        where: { userId, organizationId: server.organizationId, deactivatedAt: null },
-        select: { userId: true },
-      });
-      return !member;
-    } catch {
-      return false;
-    }
+    return (await serverReachability(this.prisma, userId, serverId)) === 'unreachable';
   }
 
   @Get('login')

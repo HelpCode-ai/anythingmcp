@@ -10,11 +10,16 @@
  * longer be used and it must authorize again, rather than retry. A request
  * that carried no token at all gets no error code: the RFC says so, and a
  * client's first unauthenticated probe should not be told its token is bad.
+ *
+ * `errorDescription` (RFC 6750 §3) is added only together with
+ * `error="invalid_token"`. The RFC allows printable ASCII without `"` and `\`
+ * there; a description outside that set is left out rather than escaped.
  */
 export function mcpWwwAuthenticate(
   req: { headers: Record<string, string | string[] | undefined>; secure?: boolean },
   resourcePath: string,
   fallbackBaseUrl: string,
+  errorDescription?: string,
 ): string {
   const header = (name: string): string | undefined => {
     const value = req.headers[name];
@@ -27,6 +32,15 @@ export function mcpWwwAuthenticate(
     ? `${baseUrl}/.well-known/oauth-protected-resource${resourcePath}`
     : `${baseUrl}/.well-known/oauth-protected-resource`;
   const presentedToken = header('authorization')?.toLowerCase().startsWith('bearer ');
-  const errorAttr = presentedToken ? 'error="invalid_token", ' : '';
+  const description =
+    presentedToken && errorDescription && isValidErrorDescription(errorDescription)
+      ? `error_description="${errorDescription}", `
+      : '';
+  const errorAttr = presentedToken ? `error="invalid_token", ${description}` : '';
   return `Bearer realm="AnythingMCP MCP Server", ${errorAttr}resource_metadata="${resourceMetadataUrl}"`;
+}
+
+/** RFC 6750 §3: %x20-21 / %x23-5B / %x5D-7E, i.e. printable ASCII without `"` and `\`. */
+function isValidErrorDescription(value: string): boolean {
+  return /^[\x20\x21\x23-\x5B\x5D-\x7E]+$/.test(value);
 }
