@@ -1048,6 +1048,21 @@
       "useOwn": "Use your own TikTok Shop app",
       "ownHint": "Only for a Partner Center app of your own. Set its Redirect URL to:"
     },
+    "wooOneClick": {
+      "title": "Connect with one click",
+      "body": "Approve a key on your shop instead of creating one and pasting it here. You sign in to WordPress as an administrator or shop manager and click Approve; WooCommerce sends the key to AnythingMCP and brings you back.",
+      "scopeLegend": "What the AI may do",
+      "read": "Read only (recommended to start)",
+      "readHint": "The AI can look at orders, products and customers, but cannot change anything.",
+      "readWrite": "Read and write",
+      "readWriteHint": "The AI can also change products, orders and customers.",
+      "connect": "Connect with one click",
+      "orPaste": "Or create a key yourself as described here and paste it below.",
+      "checking": "Checking the new key with your shop…",
+      "denied": "The key was not approved in WooCommerce. Connect again, or create a key yourself and paste it.",
+      "timeout": "Your shop did not send the key to AnythingMCP. A security plugin or firewall may block /wc-auth/ or the call to AnythingMCP. Try again, or create a key yourself and paste it.",
+      "failed": "The key could not be connected: {message}"
+    },
     "copy": "Copy",
     "noInput": "Nothing to enter: it works without an account.",
     "working": "Working…",

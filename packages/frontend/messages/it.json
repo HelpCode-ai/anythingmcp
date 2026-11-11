@@ -1048,6 +1048,21 @@
       "useOwn": "Usa la tua app TikTok Shop",
       "ownHint": "Solo per un'app tua nel Partner Center. Imposta la sua Redirect URL su:"
     },
+    "wooOneClick": {
+      "title": "Connetti con un clic",
+      "body": "Approva una chiave nel tuo negozio invece di crearne una e incollarla qui. Accedi a WordPress come amministratore o shop manager e fai clic su Approva; WooCommerce invia la chiave ad AnythingMCP e ti riporta qui.",
+      "scopeLegend": "Cosa può fare l'IA",
+      "read": "Solo lettura (consigliato per iniziare)",
+      "readHint": "L'IA può vedere ordini, prodotti e clienti, ma non può modificare nulla.",
+      "readWrite": "Lettura e scrittura",
+      "readWriteHint": "L'IA può anche modificare prodotti, ordini e clienti.",
+      "connect": "Connetti con un clic",
+      "orPaste": "Oppure crea tu una chiave come descritto qui e incollala sotto.",
+      "checking": "Verifica della nuova chiave con il tuo negozio…",
+      "denied": "La chiave non è stata approvata in WooCommerce. Connetti di nuovo, oppure crea tu una chiave e incollala.",
+      "timeout": "Il tuo negozio non ha inviato la chiave ad AnythingMCP. Un plugin di sicurezza o un firewall potrebbe bloccare /wc-auth/ o la chiamata ad AnythingMCP. Riprova, oppure crea tu una chiave e incollala.",
+      "failed": "Non è stato possibile collegare la chiave: {message}"
+    },
     "copy": "Copia",
     "noInput": "Niente da inserire: funziona senza account.",
     "working": "In corso…",

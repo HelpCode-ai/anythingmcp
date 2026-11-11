@@ -32,6 +32,7 @@ import { addressFix, isPlainAddressField, switchSetupHref, withMissingScheme, ty
 import { GuideIntro, GuideStepper, GuideStepView, GuideWaitPanel, StuckLink } from '@/components/connector-setup/setup-guide';
 import { SetupSuccess } from '@/components/connector-setup/setup-success';
 import { NetworkNote } from '@/components/connector-setup/network-note';
+import { WooCommerceOneClick, type WooCommerceScope } from '@/components/connector-setup/woocommerce-one-click';
 
 /**
  * Guided setup of a catalog connector, in one place: what to enter (grouped,
@@ -52,6 +53,8 @@ import { NetworkNote } from '@/components/connector-setup/network-note';
  *                   settings only: a credential is never read from a link.
  *   source=<slug>   where the setup was opened from, kept on the setup events
  *                   (odoo_module: the AnythingMCP module in Odoo's Settings)
+ *   wc=done         back from WooCommerce's key approval ("Connect with one
+ *                   click"); WooCommerce adds success=1|0 and user_id=<state>
  *   replaces=<id>   opened from "Switch to …" on another connector's setup
  *                   (an Odoo below 19 on the JSON-2 connector): once this one
  *                   is saved, that connector is deleted if it is still not
@@ -88,6 +91,9 @@ function SetupContent() {
   const replaces = params.get('replaces');
   const back = returnAssistant(params.get('from'));
   const backFromProvider = params.get('step') === 'done';
+  // Back from approving a WooCommerce key on the shop ("Connect with one click").
+  const isWooCommerce = slug === 'woocommerce';
+  const wooReturn = isWooCommerce && params.get('wc') === 'done';
   // Where the setup was opened from, for the setup events only (`source=odoo_module`:
   // the AnythingMCP module in Odoo's Settings). A short slug, or nothing.
   const sourceParam = params.get('source') ?? '';
@@ -109,7 +115,7 @@ function SetupContent() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [phase, setPhase] = useState<Phase>(backFromProvider ? 'working' : 'form');
+  const [phase, setPhase] = useState<Phase>(backFromProvider || wooReturn ? 'working' : 'form');
   const [error, setError] = useState('');
   // The install refused at the plan's limit (Cloud): "Pause one or upgrade".
   const [planLimit, setPlanLimit] = useState<PlanLimitError | null>(null);
@@ -144,6 +150,11 @@ function SetupContent() {
   const [tiktokPlatform, setTiktokPlatform] = useState<{ available: boolean; redirectUrl: string } | null>(null);
   const [ownTikTokApp, setOwnTikTokApp] = useState(false);
   const serverTikTokApp = isTikTokShop && tiktokPlatform?.available === true && !ownTikTokApp;
+  // WooCommerce: whether this server offers the one-click key (flag on and a
+  // public https server), the permission chosen, and the check after the return.
+  const [wooOneClick, setWooOneClick] = useState(false);
+  const [wooScope, setWooScope] = useState<WooCommerceScope>('read');
+  const [wooChecking, setWooChecking] = useState(wooReturn);
 
   /** This setup's address for a saved connector, keeping the other parameters (from=…). */
   const withConnector = useCallback(
@@ -186,7 +197,7 @@ function SetupContent() {
           })
           .catch(() => {});
       }
-      if (backFromProvider) {
+      if (backFromProvider || wooReturn) {
         setStepIndex(steps.length - 1);
         return;
       }
@@ -229,7 +240,7 @@ function SetupContent() {
         })
         .catch(() => {});
     }
-  }, [token, slug, existingId, progressKey, backFromProvider, t, handed, router, withConnector, fromSource]);
+  }, [token, slug, existingId, progressKey, backFromProvider, wooReturn, t, handed, router, withConnector, fromSource]);
 
   useEffect(() => {
     if (!token || !isTikTokShop) return;
@@ -238,6 +249,76 @@ function SetupContent() {
       .then(setTiktokPlatform)
       .catch(() => setTiktokPlatform({ available: false, redirectUrl: '' }));
   }, [token, isTikTokShop]);
+
+  useEffect(() => {
+    if (!token || !isWooCommerce) return;
+    connectors
+      .woocommerceOneClick(token)
+      .then((r) => setWooOneClick(r.available === true))
+      .catch(() => setWooOneClick(false));
+  }, [token, isWooCommerce]);
+
+  // Back from WooCommerce's key approval: the shop has posted the key to the
+  // server, which checks it on the shop before storing it. Ask how it ended,
+  // every 2 seconds for a minute.
+  useEffect(() => {
+    if (!wooReturn || !existingId || !token) return;
+    const state = params.get('user_id') ?? '';
+    const stop = (message: string) => {
+      setWooChecking(false);
+      setError(message);
+      setPhase('form');
+    };
+    if (params.get('success') === '0') {
+      stop(t('wooOneClick.denied'));
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    const tick = async () => {
+      try {
+        let status: string;
+        let message: string | undefined;
+        if (state) {
+          const r = await connectors.woocommerceOneClickStatus(existingId, state, token);
+          status = r.status;
+          message = r.message;
+        } else {
+          // A return address without the state (stripped on the way): the
+          // connector's own status is the only clue.
+          const c = await connectors.get(existingId, token);
+          status = c?.setupStatus === 'ready' ? 'ready' : 'pending';
+        }
+        if (cancelled) return;
+        if (status === 'ready') {
+          setWooChecking(false);
+          setResult({ connectorId: existingId, verified: true });
+          setPhase('done');
+          productEvents.track('setup_completed', token, { adapterSlug: slug, kind: 'one_click', verified: true, ...fromSource });
+          return;
+        }
+        if (status === 'failed') {
+          productEvents.track('setup_verify_failed', token, { adapterSlug: slug, kind: 'one_click', ...fromSource });
+          stop(t('wooOneClick.failed', { message: message ?? '' }));
+          return;
+        }
+      } catch {
+        // Asked again on the next tick.
+      }
+      if (cancelled) return;
+      if (Date.now() - startedAt > 60_000) {
+        stop(t('wooOneClick.timeout'));
+        return;
+      }
+      timer = setTimeout(() => void tick(), 2000);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [wooReturn, existingId, token, params, slug, t, fromSource]);
 
   useEffect(() => {
     if (!token || info?.setupKind !== 'oauth_browser') return;
@@ -621,6 +702,38 @@ function SetupContent() {
     }
   };
 
+  /**
+   * WooCommerce "Connect with one click": save the shop address (a draft when
+   * new), then send the browser to the shop, where the merchant approves a key
+   * that WooCommerce posts to the server. The paste fields stay the fallback.
+   */
+  const connectOneClick = async () => {
+    if (!token || !validate([WOOCOMMERCE_URL_VAR])) return;
+    setError('');
+    setVerifyFailed(null);
+    setPhase('working');
+    try {
+      const id = await save();
+      const auth = await connectors.woocommerceAuthorize(id, wooScope, token, back?.id);
+      productEvents.track('oauth_started', token, { adapterSlug: slug, kind: 'one_click', scope: wooScope, ...fromSource });
+      window.location.href = auth.authorizationUrl;
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  /** The one-click panel, where the WooCommerce key fields are asked for. */
+  const oneClickPanel = (show: boolean) =>
+    isWooCommerce && show && (wooOneClick || wooChecking) ? (
+      <WooCommerceOneClick
+        scope={wooScope}
+        onScope={setWooScope}
+        onConnect={() => void connectOneClick()}
+        disabled={phase === 'working'}
+        checking={wooChecking}
+      />
+    ) : null;
+
   /** Keep what was entered without checking it; the connector stays hidden from MCP until complete. */
   const saveAnyway = async (draft: boolean) => {
     if (!token) return;
@@ -906,6 +1019,7 @@ function SetupContent() {
           confirmed={!!confirmed[step.id]}
           onConfirm={(v) => setConfirmed((c) => ({ ...c, [step.id]: v }))}
         >
+          {oneClickPanel(stepFields.some((f) => f.name === WOOCOMMERCE_KEY_VAR))}
           {(stepFields.length > 0 || extraFields.length > 0) && (
             <div className="space-y-3">{[...stepFields, ...extraFields].map(renderField)}</div>
           )}
@@ -1045,10 +1159,14 @@ function SetupContent() {
           const group = visibleFields.filter((f) => f.kind === kind);
           if (group.length === 0) return null;
           return (
-            <fieldset key={kind} className="space-y-3">
-              <legend className="mb-1 text-xs font-semibold uppercase tracking-[0.06em] text-[var(--text-3)]">{t(`groups.${kind}`)}</legend>
-              {group.map(renderField)}
-            </fieldset>
+            <div key={kind} className="space-y-3">
+              {/* After the shop address, before the key fields it replaces. */}
+              {kind === 'credential' && oneClickPanel(group.some((f) => f.name === WOOCOMMERCE_KEY_VAR))}
+              <fieldset className="space-y-3">
+                <legend className="mb-1 text-xs font-semibold uppercase tracking-[0.06em] text-[var(--text-3)]">{t(`groups.${kind}`)}</legend>
+                {group.map(renderField)}
+              </fieldset>
+            </div>
           );
         })}
 
@@ -1096,6 +1214,10 @@ function SetupContent() {
 
 /** The seller's own TikTok Shop app, as the catalog adapter names its variables. */
 const TIKTOK_SHOP_APP_VARS: readonly string[] = ['TIKTOK_SHOP_APP_KEY', 'TIKTOK_SHOP_APP_SECRET', 'TIKTOK_SHOP_SERVICE_ID'];
+
+/** The WooCommerce adapter's shop address and consumer key variables (one-click key). */
+const WOOCOMMERCE_URL_VAR = 'WOOCOMMERCE_URL';
+const WOOCOMMERCE_KEY_VAR = 'WOOCOMMERCE_CONSUMER_KEY';
 
 /** A setup page's draft that the "Switch to …" button may replace: old adapter → new adapter. */
 const REPLACEABLE_DRAFTS: Readonly<Record<string, string>> = { odoo: 'odoo-jsonrpc' };

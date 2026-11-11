@@ -99,7 +99,20 @@ export interface PendingOAuthFlow {
    * without a state of ours, so it has no connector and no user yet
    * (both empty) and carries the authorization code itself.
    */
-  provider?: 'shopee' | 'tiktok-shop' | 'tiktok-shop-install';
+  provider?: 'shopee' | 'tiktok-shop' | 'tiktok-shop-install' | 'woocommerce' | 'woocommerce-outcome';
+  /**
+   * A WooCommerce one-click key (woocommerce-auth.controller.ts): the
+   * workspace the key may be written to, the shop address it must work on,
+   * the permission asked for and, on a 'woocommerce-outcome' record, how the
+   * callback ended. Unset on every other flow.
+   */
+  woocommerce?: {
+    organizationId: string;
+    shopUrl: string;
+    scope: 'read' | 'read_write';
+    outcome?: 'ready' | 'failed';
+    message?: string;
+  };
   /**
    * The authorization code of a 'tiktok-shop-install', kept here (encrypted
    * at rest) instead of in the dashboard address. Unset on every other flow.

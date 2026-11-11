@@ -1048,6 +1048,21 @@
       "useOwn": "Eigene TikTok-Shop-App verwenden",
       "ownHint": "Nur für eine eigene App im Partner Center. Setzen Sie ihre Redirect URL auf:"
     },
+    "wooOneClick": {
+      "title": "Mit einem Klick verbinden",
+      "body": "Genehmigen Sie einen Schlüssel in Ihrem Shop, statt einen zu erstellen und hier einzufügen. Sie melden sich als Administrator oder Shop-Manager bei WordPress an und klicken auf Genehmigen; WooCommerce sendet den Schlüssel an AnythingMCP und bringt Sie zurück.",
+      "scopeLegend": "Was die KI tun darf",
+      "read": "Nur lesen (zum Start empfohlen)",
+      "readHint": "Die KI kann Bestellungen, Produkte und Kunden ansehen, aber nichts ändern.",
+      "readWrite": "Lesen und schreiben",
+      "readWriteHint": "Die KI kann auch Produkte, Bestellungen und Kunden ändern.",
+      "connect": "Mit einem Klick verbinden",
+      "orPaste": "Oder erstellen Sie selbst einen Schlüssel wie hier beschrieben und fügen Sie ihn unten ein.",
+      "checking": "Der neue Schlüssel wird mit Ihrem Shop geprüft…",
+      "denied": "Der Schlüssel wurde in WooCommerce nicht genehmigt. Verbinden Sie erneut oder erstellen Sie selbst einen Schlüssel und fügen Sie ihn ein.",
+      "timeout": "Ihr Shop hat den Schlüssel nicht an AnythingMCP gesendet. Ein Sicherheits-Plugin oder eine Firewall blockiert eventuell /wc-auth/ oder den Aufruf an AnythingMCP. Versuchen Sie es erneut oder erstellen Sie selbst einen Schlüssel und fügen Sie ihn ein.",
+      "failed": "Der Schlüssel konnte nicht verbunden werden: {message}"
+    },
     "copy": "Kopieren",
     "noInput": "Keine Eingabe nötig: Er funktioniert ohne Konto.",
     "working": "Wird ausgeführt…",

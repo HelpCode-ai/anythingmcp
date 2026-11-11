@@ -179,6 +179,8 @@ x-backend: &backend
     - TIKTOK_SHOP_PLATFORM_APP_KEY=${TIKTOK_SHOP_PLATFORM_APP_KEY:-}
     - TIKTOK_SHOP_PLATFORM_APP_SECRET=${TIKTOK_SHOP_PLATFORM_APP_SECRET:-}
     - TIKTOK_SHOP_PLATFORM_SERVICE_ID=${TIKTOK_SHOP_PLATFORM_SERVICE_ID:-}
+    # WooCommerce one-click key: off unless set to true (see .env.example).
+    - WOOCOMMERCE_ONE_CLICK=${WOOCOMMERCE_ONE_CLICK:-}
     # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
     # a private docker IP, which the guard blocks by default). Harmless on
     # self-host (no such host on their network).
