@@ -17,10 +17,13 @@ import {
  * (responseMapping, role access, manual enable/disable, useProxy).
  *
  * Change classes:
- *   - safe       — only description/parameters changed. Non-breaking guidance;
- *                  eligible for automatic (boot-time) application.
- *   - structural — endpointMapping changed, or a tool was added/removed.
- *                  Requires an explicit user/operator action.
+ *   - safe       — only description/parameters changed, or the catalog only
+ *                  added optional query parameters (see additiveQueryParams).
+ *                  Non-breaking: a call that does not pass the new argument
+ *                  sends exactly the same request as before. Eligible for
+ *                  automatic (boot-time) application.
+ *   - structural — any other endpointMapping change, or a tool was
+ *                  added/removed. Requires an explicit user/operator action.
  */
 
 export type ToolChangeKind = 'safe' | 'structural';
@@ -53,7 +56,11 @@ export interface CatalogDiff {
   slug: string;
   catalogVersion: string;
   connectorVersion: string | null;
-  updated: Array<{ name: string; kind: ToolChangeKind }>;
+  /**
+   * `addedQueryParams` is set on a safe change whose endpointMapping only
+   * gains optional query parameters (additiveQueryParams).
+   */
+  updated: Array<{ name: string; kind: ToolChangeKind; addedQueryParams?: string[] }>;
   added: string[];
   removed: string[];
   /**
@@ -79,6 +86,71 @@ type CatalogTool = AdapterDefinition['tools'][number] & {
   responseMapping?: unknown;
   useProxy?: boolean;
 };
+
+const PLAIN_PARAM_REF = /^\$([A-Za-z_][A-Za-z0-9_]*)$/;
+
+/**
+ * The names of the query parameters the catalog added to an installed tool,
+ * when that is the ONLY difference in its endpointMapping and each addition
+ * is harmless for every existing call. Otherwise null.
+ *
+ * Harmless means: the new key maps a plain `$arg` (never a constant or a
+ * template), and `arg` is an optional property of the catalog's parameters
+ * with no `default`. The REST engine drops a `$arg` query key when the
+ * argument is absent (rest.engine.ts resolveValue), so a call that does not
+ * pass it sends byte for byte the request it sent before; only a model that
+ * reads the new parameter and passes it changes anything. Everything else in
+ * the mapping (method, path, existing query keys and their values, body,
+ * headers, timeouts) must be identical, so an operator's own edit of the
+ * mapping keeps the tool structural and untouched.
+ *
+ * Example: WooCommerce list_orders gained `_fields` (#1619); without this,
+ * the reconciler skipped the whole tool on 106 of 109 installed connectors.
+ */
+export function additiveQueryParams(
+  catalog: { endpointMapping?: unknown; parameters?: unknown },
+  installed: { endpointMapping?: unknown },
+): string[] | null {
+  const ce = asRecord(catalog.endpointMapping);
+  const ie = asRecord(installed.endpointMapping);
+  if (!ce || !ie) return null;
+  const cq = asRecord(ce.queryParams ?? {});
+  const iq = asRecord(ie.queryParams ?? {});
+  if (!cq || !iq) return null;
+
+  const { queryParams: _cq, ...cRest } = ce;
+  const { queryParams: _iq, ...iRest } = ie;
+  if (hashContent(cRest) !== hashContent(iRest)) return null;
+
+  for (const [key, value] of Object.entries(iq)) {
+    if (!Object.hasOwn(cq, key) || hashContent(cq[key]) !== hashContent(value)) {
+      return null;
+    }
+  }
+  const addedKeys = Object.keys(cq).filter((k) => !Object.hasOwn(iq, k));
+  if (addedKeys.length === 0) return null;
+
+  const params = asRecord(catalog.parameters) ?? {};
+  const properties = asRecord(params.properties) ?? {};
+  const required = Array.isArray(params.required) ? params.required : [];
+  for (const key of addedKeys) {
+    const value = cq[key];
+    const ref = typeof value === 'string' ? PLAIN_PARAM_REF.exec(value) : null;
+    if (!ref) return null;
+    const arg = ref[1];
+    const schema = asRecord(properties[arg]);
+    if (!schema || required.includes(arg) || Object.hasOwn(schema, 'default')) {
+      return null;
+    }
+  }
+  return addedKeys;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
 
 @Injectable()
 export class CatalogResyncService {
@@ -143,6 +215,8 @@ export class CatalogResyncService {
     const catalogTools = serverOwnsTools ? [] : (adapter.tools as CatalogTool[]);
     const catalogByName = new Map(catalogTools.map((t) => [t.name, t]));
     const existingByName = new Map(connector.tools.map((t) => [t.name, t]));
+    // Only the REST engine is known to drop an absent `$arg` query key.
+    const additiveAllowed = adapter.connector.type === 'REST';
 
     const updated: CatalogDiff['updated'] = [];
     const added: string[] = [];
@@ -160,7 +234,12 @@ export class CatalogResyncService {
         (ct.description ?? '') !== (et.description ?? '') ||
         hashContent(ct.parameters ?? {}) !== hashContent(et.parameters ?? {});
       if (endpointChanged) {
-        updated.push({ name: ct.name, kind: 'structural' });
+        const additive = additiveAllowed ? additiveQueryParams(ct, et) : null;
+        updated.push(
+          additive
+            ? { name: ct.name, kind: 'safe', addedQueryParams: additive }
+            : { name: ct.name, kind: 'structural' },
+        );
       } else if (descParamsChanged) {
         updated.push({ name: ct.name, kind: 'safe' });
       }
@@ -316,6 +395,7 @@ export class CatalogResyncService {
       };
 
       const existingByName = new Map(connector.tools.map((t) => [t.name, t]));
+      const additiveAllowed = adapter.connector.type === 'REST';
       let updatedCount = 0;
       let createdCount = 0;
       let deprecatedCount = 0;
@@ -326,8 +406,13 @@ export class CatalogResyncService {
           const endpointChanged =
             hashContent(ct.endpointMapping ?? {}) !==
             hashContent(et.endpointMapping ?? {});
-          // In safe mode never touch endpointMapping.
-          if (mode === 'safe' && endpointChanged) continue;
+          // In safe mode the endpointMapping changes only when the catalog
+          // merely added optional query parameters (re-checked here against
+          // the row read inside the transaction); any other endpoint change
+          // waits for an explicit update.
+          const additive =
+            endpointChanged && additiveAllowed ? additiveQueryParams(ct, et) : null;
+          if (mode === 'safe' && endpointChanged && !additive) continue;
           // A response mapping the operator wrote is theirs and stays. One
           // the catalog ships is only applied where the tool has none — so an
           // adapter that gains a mapping (Deutsche Bahn's move to MOTIS cut its
@@ -343,7 +428,7 @@ export class CatalogResyncService {
               description: ct.description,
               parameters: ct.parameters as any,
               endpointMapping:
-                mode === 'safe'
+                mode === 'safe' && !additive
                   ? (et.endpointMapping as any)
                   : (ct.endpointMapping as any),
               ...(takeCatalogMapping
