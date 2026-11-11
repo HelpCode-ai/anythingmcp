@@ -418,6 +418,22 @@ describe('gemini adapter: static spec conformance', () => {
     });
   });
 
+  it('still shapes an answer whose candidate has no parts (safety stop, empty answer)', () => {
+    // A blocked or empty answer comes without content.parts; join() on null
+    // failed and the raw response went back unshaped.
+    for (const raw of [
+      { candidates: [{ finishReason: 'SAFETY' }], modelVersion: 'm', responseId: 'r2' },
+      { candidates: [{ content: { role: 'model' }, finishReason: 'MAX_TOKENS' }], modelVersion: 'm', responseId: 'r3' },
+      { promptFeedback: { blockReason: 'SAFETY' }, modelVersion: 'm', responseId: 'r4' },
+    ]) {
+      for (const name of ['gemini_generate_text', 'gemini_generate_content', 'gemini_analyze_file_url']) {
+        const out = applyResponseTransform(raw, tool(name).responseMapping as any);
+        expect(out.error).toBeUndefined();
+        expect((out.value as { text: string }).text).toBe('');
+      }
+    }
+  });
+
   it('hands generated pictures to the client as images and keeps the text small', () => {
     const raw = {
       candidates: [

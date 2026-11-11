@@ -534,14 +534,15 @@
           },
           "status": {
             "type": "string",
-            "description": "Only orders in this status: pending, readytoship, shipped, delivered, canceled or returned.",
+            "description": "Only orders in this status: pending, ready_to_ship, shipped, delivered, canceled, returned or failed.",
             "enum": [
               "pending",
               "canceled",
-              "readytoship",
+              "ready_to_ship",
               "delivered",
               "returned",
-              "shipped"
+              "shipped",
+              "failed"
             ]
           },
           "shipping_type": {
@@ -554,10 +555,10 @@
           },
           "sort_by": {
             "type": "string",
-            "description": "Sort column: createdat or updatedat.",
+            "description": "Sort column: created_at or updated_at.",
             "enum": [
-              "createdat",
-              "updatedat"
+              "created_at",
+              "updated_at"
             ]
           },
           "sort_direction": {
