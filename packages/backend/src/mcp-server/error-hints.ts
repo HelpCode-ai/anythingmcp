@@ -17,6 +17,14 @@
  */
 
 import { ipRefusalHint, looksLikeIpRefusal } from '../connectors/egress';
+import {
+  WOOCOMMERCE_CANNOT_VIEW_HINT,
+  WOOCOMMERCE_UNKNOWN_KEY_HINT,
+  wooCommerceAuthHint,
+} from '../adapters/woocommerce-setup';
+
+const WOOCOMMERCE_CANNOT_VIEW_TOOL_HINT = `${WOOCOMMERCE_CANNOT_VIEW_HINT} Retrying will not help.`;
+const WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT = `${WOOCOMMERCE_UNKNOWN_KEY_HINT} Retrying will not help.`;
 
 export interface ErrorHintInput {
   /** Upstream host the request went to, if known (e.g. `purora.weclapp.com`). */
@@ -611,6 +619,8 @@ const CREDENTIAL_HINTS = new Set<string>([
   MISSING_SCOPE_HINT,
   ATLASSIAN_TOKEN_REFUSED_HINT,
   ATLASSIAN_UNSCOPED_TOKEN_HINT,
+  WOOCOMMERCE_CANNOT_VIEW_TOOL_HINT,
+  WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT,
 ]);
 
 function bodyText(body: unknown): string {
@@ -680,6 +690,15 @@ function ruleHint(input: ErrorHintInput, text: string): string | undefined {
   // the scope claim" is an API token without scopes, which no re-authorization
   // fixes. Only the catalog adapter, which signs in with an API token: a
   // hand-built connector to the same server may use OAuth, where it would.
+  // WooCommerce's two 401s mean different things: a key it does not know, and
+  // a call it treated as coming from a user who may not see the data (or from
+  // nobody: the key was not seen at all). Same texts as the setup check.
+  if (input.adapterSlug === 'woocommerce') {
+    const woo = wooCommerceAuthHint(input.status, text);
+    if (woo === WOOCOMMERCE_CANNOT_VIEW_HINT) return WOOCOMMERCE_CANNOT_VIEW_TOOL_HINT;
+    if (woo === WOOCOMMERCE_UNKNOWN_KEY_HINT) return WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT;
+  }
+
   if (input.adapterSlug === 'atlassian') {
     if (/missing the scope claim|Unable to resolve user scopes/i.test(text)) {
       return ATLASSIAN_UNSCOPED_TOKEN_HINT;

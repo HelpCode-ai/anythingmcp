@@ -1,5 +1,6 @@
 import { describeAdapterEnvVars, EnvVarDescriptor } from './env-var-meta';
 import { addressFix, describeAddressFix, withMissingScheme } from './address-fix';
+import { normalizeWooCommerceUrl } from './woocommerce-setup';
 
 /**
  * Values that cannot be what the user meant, refused field by field before a
@@ -147,6 +148,13 @@ const NORMALISERS: Record<string, Record<string, (value: string) => string>> = {
       return m ? `${m[1]}/` : v;
     },
   },
+  // What the browser shows in WordPress (`/wp-admin/…`, `/wp-json/wc/v3`,
+  // `/wp-login.php`, a query, a trailing slash) cut back to the site's
+  // address, with https://. A subfolder stays; the setup check asks the site
+  // whether it is WordPress's (woocommerce-setup.ts).
+  woocommerce: {
+    WOOCOMMERCE_URL: normalizeWooCommerceUrl,
+  },
 };
 
 /** The adapter fields a checker needs. */
@@ -191,12 +199,16 @@ export function normalizeAdapterEnvValues<T extends Record<string, unknown>>(
 }
 
 /**
- * One value as the setup stores it: the scheme clean-up of
+ * One value as the setup stores it: the clean-ups of
  * {@link normalizeAdapterEnvValues} for this field alone (a chat install
- * checks each setting as it arrives).
+ * checks each setting as it arrives). The adapter's own rules (NORMALISERS)
+ * apply when its slug is given.
  */
-export function normalizeAdapterEnvValue(d: EnvVarDescriptor, value: string): string {
-  return isPlainAddress(d) ? withMissingScheme(d.pattern, value) : value;
+export function normalizeAdapterEnvValue(d: EnvVarDescriptor, value: string, slug?: string): string {
+  const rules = slug ? NORMALISERS[slug] : undefined;
+  const ruled =
+    rules && Object.prototype.hasOwnProperty.call(rules, d.name) && value ? rules[d.name](value) : value;
+  return isPlainAddress(d) ? withMissingScheme(d.pattern, ruled) : ruled;
 }
 
 /**

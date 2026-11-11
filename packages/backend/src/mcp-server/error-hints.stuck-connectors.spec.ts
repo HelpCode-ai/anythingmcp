@@ -219,6 +219,44 @@ describe('deriveErrorHint: stuck-connector errors', () => {
     });
   });
 
+  describe('WooCommerce 401s', () => {
+    const page = 'https://cloud.example.com/connectors/c7';
+    const verifyHints = { '401': 'WooCommerce refused the key.' };
+
+    it('reads woocommerce_rest_cannot_view as a user who may not see the data (377 of 384 refusals)', () => {
+      const hint = deriveErrorHint({
+        status: 401,
+        body: { code: 'woocommerce_rest_cannot_view', message: 'Sorry, you cannot list resources.', data: { status: 401 } },
+        adapterSlug: 'woocommerce',
+        verifyHints,
+        connectorPage: page,
+      })!;
+      expect(hint).toMatch(/administrator or shop manager/);
+      expect(hint).toMatch(/does not know it runs on https/);
+      expect(hint).toMatch(/Retrying will not help\./);
+      expect(hint.endsWith(`The connector's settings are at ${page}`)).toBe(true);
+    });
+
+    it('reads an unknown consumer key as a key from elsewhere', () => {
+      const hint = deriveErrorHint({
+        status: 401,
+        body: { code: 'woocommerce_rest_authentication_error', message: 'Consumer key is invalid.' },
+        adapterSlug: 'woocommerce',
+        verifyHints,
+      })!;
+      expect(hint).toMatch(/does not know this key/);
+    });
+
+    it('keeps the adapter advice for another 401, and leaves other adapters alone', () => {
+      expect(deriveErrorHint({ status: 401, body: 'Unauthorized', adapterSlug: 'woocommerce', verifyHints })).toMatch(
+        /WooCommerce refused the key\./,
+      );
+      expect(
+        deriveErrorHint({ status: 401, body: { code: 'woocommerce_rest_cannot_view' }, adapterSlug: 'wordpress' }),
+      ).toBeUndefined();
+    });
+  });
+
   describe("Atlassian's Rovo MCP server with an API token", () => {
     const page = 'https://app.example.test/connectors/c1';
     const unscoped =

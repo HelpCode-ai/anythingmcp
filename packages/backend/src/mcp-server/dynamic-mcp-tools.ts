@@ -113,6 +113,13 @@ import {
   fitsResponseLimit,
   toolMaxResponseBytes,
 } from '../common/response-size-limit';
+import { ConnectorAuthStatusService } from '../connectors/engines/connector-auth-status.service';
+import {
+  CREDENTIAL_REFUSED_CODE,
+  CredentialRefusalTracker,
+  STATIC_CREDENTIAL_AUTH_TYPES,
+  credentialRefusedMessage,
+} from '../connectors/engines/credential-refusal-tracker';
 
 /**
  * ToolExecutor — executes dynamically registered MCP tools.
@@ -130,6 +137,8 @@ export const COMPACT_RENDER_CHARS = 1_000_000;
 @Injectable()
 export class DynamicMcpTools {
   private readonly logger = new Logger(DynamicMcpTools.name);
+  /** Repeated 401s on read tools, recorded as the connector's credential status. */
+  private readonly credentialRefusals = new CredentialRefusalTracker();
 
   constructor(
     private readonly toolRegistry: ToolRegistry,
@@ -153,6 +162,7 @@ export class DynamicMcpTools {
     @Optional() private readonly fileSearchEngine?: FileSearchEngine,
     // Required by Nest (no @Optional); older manually built test fixtures may omit it.
     @Inject(ToolRateLimitService) private readonly toolRateLimits?: ToolRateLimitService,
+    @Optional() private readonly authStatus?: ConnectorAuthStatusService,
   ) {
     this.blockedCalls = new TrialBlockedCallRecorder(prisma, productEvents);
   }
@@ -846,6 +856,9 @@ export class DynamicMcpTools {
         return rendered;
       }
 
+      // The credential works: a status recorded for repeated 401s is over.
+      this.noteCredentialAccepted(tool);
+
       // Grow the knowledge graph from this real call (debounced, fire-and-forget).
       void this.kgService.scheduleObservationalIngest(context?.organizationId);
 
@@ -921,6 +934,10 @@ export class DynamicMcpTools {
       }
       if (hint) errorDetail.hint = hint;
 
+      // A stored key refused again and again: the dashboard and
+      // setup_get_status show it (credential-refusal-tracker.ts).
+      if (errorDetail.status === 401) this.noteCredentialRefused(tool, hint);
+
       await this.auditService.logInvocation({
         toolId: tool.id,
         userId: context?.userId,
@@ -954,6 +971,56 @@ export class DynamicMcpTools {
         isError: true,
       };
     }
+  }
+
+  /**
+   * Whether a 401 on this tool says something about the connector's own
+   * stored credential: a read tool, a key stored on the connector (not a
+   * user's own sign-in, not one built from the caller, not an OAuth2 or
+   * login flow, which record their refusals themselves).
+   */
+  private tracksStoredCredential(tool: RegisteredTool): boolean {
+    const cfg = tool.connectorConfig;
+    if (!this.authStatus || !cfg || cfg.credentialScope === 'USER') return false;
+    if (!STATIC_CREDENTIAL_AUTH_TYPES.has(String(cfg.authType))) return false;
+    if (usesCallerContext(cfg.authConfig)) return false;
+    return (
+      deriveToolAnnotations({
+        name: tool.name,
+        connectorType: tool.connectorType,
+        endpointMapping: tool.endpointMapping as { method?: string; path?: string },
+        connectorConfig: { config: cfg.config ?? null },
+        annotations: tool.annotations,
+      }).readOnlyHint === true
+    );
+  }
+
+  /** A refused read call; at the threshold the connector's credential status is recorded (no email). */
+  private noteCredentialRefused(tool: RegisteredTool, hint: string | undefined): void {
+    if (!this.tracksStoredCredential(tool)) return;
+    const count = this.credentialRefusals.refused(tool.connectorId);
+    if (count === undefined) return;
+    const authStatus = this.authStatus!;
+    void (async () => {
+      // Never over a status another service recorded (a revoked sign-in, a logged-out session).
+      const current = await authStatus.get(tool.connectorId);
+      if (current && current.code !== CREDENTIAL_REFUSED_CODE) return;
+      await authStatus.mark(
+        tool.connectorId,
+        { status: 'needs_reauth', code: CREDENTIAL_REFUSED_CODE, message: credentialRefusedMessage(count, hint) },
+        { notify: false },
+      );
+    })().catch((err) =>
+      this.logger.warn(`Could not record refused credentials for connector ${tool.connectorId}: ${err?.message ?? err}`),
+    );
+  }
+
+  /** A call that worked: clear a status recorded for repeated 401s (once per connector and process otherwise). */
+  private noteCredentialAccepted(tool: RegisteredTool): void {
+    if (!this.authStatus || !tool.connectorConfig || tool.connectorConfig.credentialScope === 'USER') return;
+    if (!STATIC_CREDENTIAL_AUTH_TYPES.has(String(tool.connectorConfig.authType))) return;
+    if (!this.credentialRefusals.succeeded(tool.connectorId)) return;
+    void this.authStatus.clear(tool.connectorId, { onlyCodes: [CREDENTIAL_REFUSED_CODE] });
   }
 
   /**
