@@ -48,6 +48,30 @@ export function findTelegramTokens(text: string | null | undefined): string[] {
   return [...found];
 }
 
+/**
+ * Something shaped like a bot token (a bot id, a colon, a long secret) whose
+ * secret part has the wrong length, such as the example from Telegram's
+ * guides. Only checked when the text holds no real token.
+ */
+const NEAR_MISS_RE = /(?<![A-Za-z0-9_:-])(\d{5,15}):([A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])/g;
+/** Example tokens from Telegram's guides and tutorials: never a real bot. */
+const EXAMPLE_TOKENS = new Set(['123456789:ABCDefGhIJklmNoPQRstUVwxyZ']);
+
+/** Token-shaped strings in a text that are not valid bot tokens. */
+export function findTelegramTokenNearMisses(text: string | null | undefined): string[] {
+  if (!text) return [];
+  const valid = new Set(findTelegramTokens(text));
+  const found = new Set<string>();
+  for (const m of text.matchAll(NEAR_MISS_RE)) {
+    const candidate = `${m[1]}:${m[2]}`;
+    // A secret part of letters only or digits only is unlikely to be a paste
+    // of a token (order numbers, ids): keep it quiet.
+    if (valid.has(candidate) || !/[A-Za-z]/.test(m[2]) || !/\d|[A-Z]/.test(m[2])) continue;
+    found.add(candidate);
+  }
+  return [...found];
+}
+
 type Outcome =
   | 'ignored'
   | 'installed'
@@ -58,6 +82,7 @@ type Outcome =
   | 'viewer'
   | 'email_unverified'
   | 'invalid_token'
+  | 'not_a_token'
   | 'telegram_unreachable'
   | 'plan_limit'
   | 'rate_limited'
@@ -88,6 +113,8 @@ export class SupportTelegramSetupService {
   private readonly seen = new Set<string>();
   private readonly busy = new Set<string>();
   private readonly installs = new Map<string, number[]>();
+  /** Conversations already told that a pasted string is not a bot token. */
+  private readonly hinted = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -124,9 +151,16 @@ export class SupportTelegramSetupService {
     if (msg.private || msg.sender_type !== 'contact' || msg.type !== 'incoming') return 'ignored';
     // Libredesk's text_content is the plain text; the HTML content works too:
     // tag characters are outside the token pattern.
-    const tokens = findTelegramTokens(msg.text_content || msg.content);
-    // None, or several bots at once: nothing to decide for the customer.
-    if (tokens.length !== 1) return 'ignored';
+    const text = msg.text_content || msg.content;
+    const tokens = findTelegramTokens(text);
+    // No real token, but something shaped like one (the example from
+    // Telegram's guides, a token cut short): say so once, instead of leaving
+    // the customer waiting for a connection that never comes.
+    const nearMisses = tokens.length === 0 ? findTelegramTokenNearMisses(text) : [];
+    if (tokens.length === 0 && nearMisses.length === 0) return 'ignored';
+    // Several bots at once: nothing to decide for the customer.
+    if (tokens.length > 1) return 'ignored';
+    if (tokens.length === 0 && this.hinted.has(msg.conversation_uuid)) return 'ignored';
     if (this.seen.has(msg.uuid) || this.busy.has(msg.conversation_uuid)) return 'ignored';
     this.remember(msg.uuid);
 
@@ -135,6 +169,7 @@ export class SupportTelegramSetupService {
 
     this.busy.add(msg.conversation_uuid);
     try {
+      if (tokens.length === 0) return await this.hintNotAToken(desk, msg, nearMisses);
       return await this.setUp(desk, msg, tokens[0]);
     } catch (err) {
       this.logger.warn(`Telegram setup from support chat ${msg.conversation_uuid} failed: ${compactError((err as Error).message)}`);
@@ -144,20 +179,53 @@ export class SupportTelegramSetupService {
     }
   }
 
+  /**
+   * The user id behind a live-chat conversation, when the message comes from
+   * its verified contact and the conversation has not installed a bot yet.
+   */
+  private async contactUserId(desk: LibredeskClient, msg: DeskMessage): Promise<string | null> {
+    const conv = await desk.conversation(msg.conversation_uuid!);
+    const contact = conv?.contact;
+    if (!conv || conv.inbox_channel !== 'livechat' || !contact) return null;
+    if (contact.type !== 'contact' || contact.id !== msg.sender_id) return null;
+    const prefix = `${this.host()}:`;
+    const external = contact.external_user_id || '';
+    if (!external.startsWith(prefix)) return null;
+    const userId = external.slice(prefix.length);
+    if (!userId) return null;
+    if ((conv.tags ?? []).includes(AUTO_SETUP_TAG)) return null;
+    return userId;
+  }
+
+  /** A token-shaped string that cannot be a bot token: explain how to get one. */
+  private async hintNotAToken(desk: LibredeskClient, msg: DeskMessage, candidates: string[]): Promise<Outcome> {
+    const conversationUuid = msg.conversation_uuid!;
+    const userId = await this.contactUserId(desk, msg);
+    if (!userId) return 'ignored';
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) return 'ignored';
+
+    this.rememberHint(conversationUuid);
+    const setupUrl = `${this.dashboardBase()}/connectors/setup/${TELEGRAM_SLUG}`;
+    const example = candidates.some((c) => EXAMPLE_TOKENS.has(c));
+    await desk.reply(
+      conversationUuid,
+      (example
+        ? `<p>This is the example token from Telegram's guides, not a real bot, so nothing was connected.</p>`
+        : `<p>This is not a valid Telegram bot token, so nothing was connected. A bot token is a number, a colon and a secret of about 35 letters and digits.</p>`) +
+        `<p>To get your own token: in Telegram, open @BotFather and send /newbot, then pick a name and a username for your bot. BotFather answers with the token. ` +
+        `Paste it here, or at <a href="${esc(setupUrl)}">${esc(setupUrl)}</a>.</p>`,
+    );
+    this.logger.log(`Answered a token-shaped message that is not a bot token in support chat ${conversationUuid}`);
+    return 'not_a_token';
+  }
+
   private async setUp(desk: LibredeskClient, msg: DeskMessage, token: string): Promise<Outcome> {
     const conversationUuid = msg.conversation_uuid!;
 
     // ── Who: the verified contact of this live-chat conversation ──────────
-    const conv = await desk.conversation(conversationUuid);
-    const contact = conv?.contact;
-    if (!conv || conv.inbox_channel !== 'livechat' || !contact) return 'ignored';
-    if (contact.type !== 'contact' || contact.id !== msg.sender_id) return 'ignored';
-    const prefix = `${this.host()}:`;
-    const external = contact.external_user_id || '';
-    if (!external.startsWith(prefix)) return 'ignored';
-    const userId = external.slice(prefix.length);
+    const userId = await this.contactUserId(desk, msg);
     if (!userId) return 'ignored';
-    if ((conv.tags ?? []).includes(AUTO_SETUP_TAG)) return 'ignored';
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -386,6 +454,14 @@ export class SupportTelegramSetupService {
     recent.push(now);
     this.installs.set(organizationId, recent);
     return true;
+  }
+
+  private rememberHint(conversationUuid: string) {
+    if (this.hinted.size >= SEEN_MAX) {
+      const oldest = this.hinted.values().next().value;
+      if (oldest !== undefined) this.hinted.delete(oldest);
+    }
+    this.hinted.add(conversationUuid);
   }
 
   private remember(uuid: string) {

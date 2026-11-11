@@ -2,6 +2,7 @@ import {
   AUTO_SETUP_TAG,
   DeskMessage,
   SupportTelegramSetupService,
+  findTelegramTokenNearMisses,
   findTelegramTokens,
 } from './support-telegram-setup.service';
 
@@ -152,7 +153,74 @@ describe('findTelegramTokens', () => {
   });
 });
 
+// Telegram's guide example (26 characters after the colon), and a real
+// token cut short. Neither matches the token pattern.
+const EXAMPLE = ['123456789', 'ABCDefGhIJklmNoPQRstUVwxyZ'].join(':');
+const CUT_SHORT = TOKEN.slice(0, -10);
+
+describe('findTelegramTokenNearMisses', () => {
+  it('finds token-shaped strings that are not tokens and leaves real tokens and ordinary text alone', () => {
+    expect(findTelegramTokenNearMisses(`my token ${EXAMPLE}`)).toEqual([EXAMPLE]);
+    expect(findTelegramTokenNearMisses(CUT_SHORT)).toEqual([CUT_SHORT]);
+    expect(findTelegramTokenNearMisses(`${TOKEN}EXTRA_CHARS_THAT_MAKE_IT_TOO_LONG_FOR_A_TOKEN_1234567890`)).toHaveLength(1);
+    expect(findTelegramTokenNearMisses(TOKEN)).toEqual([]);
+    expect(findTelegramTokenNearMisses('order 1234567:shipped_to_customer_today')).toEqual([]);
+    expect(findTelegramTokenNearMisses('ref 1234567:12345678901234567890123')).toEqual([]);
+    expect(findTelegramTokenNearMisses('at 10:30 we met')).toEqual([]);
+    expect(findTelegramTokenNearMisses('<'.repeat(50_000))).toEqual([]);
+    expect(findTelegramTokenNearMisses(null)).toEqual([]);
+  });
+});
+
 describe('SupportTelegramSetupService', () => {
+  it("says once that Telegram's example token is not a bot, and how to get one", async () => {
+    const { service, desk, deps, telegram } = setup();
+    await expect(service.handleMessage(message({ text_content: EXAMPLE }))).resolves.toBe('not_a_token');
+    expect(telegram).not.toHaveBeenCalled();
+    expect(deps.adapters.importAdapter).not.toHaveBeenCalled();
+    const text = replies(desk);
+    expect(text).toContain("example token from Telegram's guides");
+    expect(text).toContain('@BotFather');
+    expect(text).toContain('/newbot');
+    expect(text).toContain('https://cloud.anythingmcp.com/connectors/setup/telegram-bot');
+    expect(text).not.toContain(EXAMPLE);
+
+    // Once per conversation: a second paste stays quiet.
+    await expect(service.handleMessage(message({ text_content: EXAMPLE }))).resolves.toBe('ignored');
+    expect(desk.reply).toHaveBeenCalledTimes(1);
+  });
+
+  it('says that a token cut short is not valid', async () => {
+    const { service, desk, telegram } = setup();
+    await expect(service.handleMessage(message({ text_content: `token: ${CUT_SHORT}` }))).resolves.toBe('not_a_token');
+    expect(telegram).not.toHaveBeenCalled();
+    expect(replies(desk)).toContain('not a valid Telegram bot token');
+    expect(replies(desk)).not.toContain(CUT_SHORT);
+  });
+
+  it.each([
+    ['a visitor', { inbox_channel: 'livechat', contact: { id: 42, type: 'visitor', external_user_id: null } }],
+    ['another contact than the sender', { inbox_channel: 'livechat', contact: { id: 99, type: 'contact', external_user_id: `${HOST}:${USER_ID}` } }],
+    ['another channel', { inbox_channel: 'email', contact: { id: 42, type: 'contact', external_user_id: `${HOST}:${USER_ID}` } }],
+  ])('keeps quiet about a near-miss token from %s', async (_label, conversation) => {
+    const { service, desk } = setup({ conversation });
+    await expect(service.handleMessage(message({ text_content: EXAMPLE }))).resolves.toBe('ignored');
+    expect(desk.reply).not.toHaveBeenCalled();
+  });
+
+  it('keeps quiet about a near-miss token from an unknown user', async () => {
+    const { service, desk } = setup({ user: null });
+    await expect(service.handleMessage(message({ text_content: EXAMPLE }))).resolves.toBe('ignored');
+    expect(desk.reply).not.toHaveBeenCalled();
+  });
+
+  it('still installs a real token after a near-miss in the same conversation', async () => {
+    const { service, deps } = setup();
+    await expect(service.handleMessage(message({ text_content: EXAMPLE }))).resolves.toBe('not_a_token');
+    await expect(service.handleMessage(message())).resolves.toBe('installed');
+    expect(deps.adapters.importAdapter).toHaveBeenCalledTimes(1);
+  });
+
   it('installs the connector for the verified single-workspace editor and tells everyone', async () => {
     const { service, desk, deps, telegram } = setup();
     await expect(service.handleMessage(message())).resolves.toBe('installed');
