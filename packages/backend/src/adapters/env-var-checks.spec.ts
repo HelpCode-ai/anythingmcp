@@ -27,6 +27,19 @@ describe('normalisation before the checks (shapes working connectors were saved 
     }
   });
 
+  it('woocommerce: cuts what the browser shows in WordPress back to the site, keeping a subfolder', () => {
+    for (const [pasted, stored] of [
+      ['https://shop.example.com/wp-admin/admin.php?page=wc-settings&tab=advanced&section=keys', 'https://shop.example.com'],
+      ['http://shop.example.com/wp-json/wc/v3/', 'https://shop.example.com'],
+      ['shop.example.com/', 'https://shop.example.com'],
+      ['https://acme-store.test/shop/wp-login.php', 'https://acme-store.test/shop'],
+    ]) {
+      const values = prepare('woocommerce', { WOOCOMMERCE_URL: pasted });
+      expect(values.WOOCOMMERCE_URL).toBe(stored);
+      expect(checkAdapterEnvValues(getAdapter('woocommerce')!, values, ['WOOCOMMERCE_URL'])).toEqual({});
+    }
+  });
+
   it('bitrix24: cuts a method name and query copied after /rest/<id>/<code>/', () => {
     const base = 'https://acme.bitrix24.de/rest/12/abc123def456ghi7/';
     for (const pasted of [base, base.slice(0, -1), `${base}crm.deal.list`, `${base}crm.deal.list.json?ID=4`, `${base}profile/`]) {

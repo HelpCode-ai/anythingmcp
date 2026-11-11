@@ -6,8 +6,9 @@ import { CatalogResyncService } from './catalog-resync.service';
 
 /**
  * On startup, auto-applies the **safe class** of catalog updates (description /
- * parameters only — no endpoint change, no tool added/removed) to every
- * catalog-installed connector. Structural updates are left for an explicit
+ * parameters, and endpoint changes that only add optional query parameters —
+ * see additiveQueryParams; no other endpoint change, no tool added/removed) to
+ * every catalog-installed connector. Structural updates are left for an explicit
  * user/operator action (surfaced as "update available").
  *
  * This is what makes adapter fixes like the weclapp filter/description bug
